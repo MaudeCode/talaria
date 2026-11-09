@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
@@ -24,6 +24,7 @@ vi.mock('@tanstack/react-router', () => ({
 import * as api from '../../api/endpoints'
 import { showRichToast, showToast } from '../toast/toast'
 import { ChatSidePanel } from './ChatSidePanel'
+import { requestOpenFile } from '../workspace/openFileRequest'
 
 const agent = (overrides: Partial<BackgroundTask>): BackgroundTask => ({
   task_id: 'd', kind: 'delegation', status: 'running', title: 'Fix CI', started_at: 1, updated_at: Date.now() / 1000, completed_at: null,
@@ -169,6 +170,17 @@ describe('chat side panel (TAL-373)', () => {
     await userEvent.click(screen.getByRole('tab', { name: 'Files' }))
     expect(screen.getByRole('textbox', { name: 'Preview' })).toHaveValue('original draft')
     expect(api.saveFile).not.toHaveBeenCalled()
+  })
+  it('shows the file a transcript block opens on Files, in its folder, from another page (TAL-1968)', async () => {
+    vi.mocked(api.readFile).mockReset().mockResolvedValue({ content: '# Notes', binary: false, size: 7, preview: 'text' })
+    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue(tasks([agent({ task_id: 'd1' })]))
+    render(<Panel />)
+    await waitFor(() => { expect(screen.getByRole('tab', { name: 'Agents' })).toHaveAttribute('aria-selected', 'true') })
+    act(() => { requestOpenFile({ sessionId: 'other', path: 'x.md' }); requestOpenFile({ sessionId: 's1', path: 'docs/notes.md' }) })
+    await waitFor(() => { expect(screen.getByRole('tab', { name: 'Files' })).toHaveAttribute('aria-selected', 'true') })
+    await waitFor(() => { expect(api.readFile).toHaveBeenCalledWith('s1', 'docs/notes.md') })
+    expect(vi.mocked(api.listDir).mock.calls.at(-1)?.[1]).toBe('docs')
+    expect(vi.mocked(api.readFile).mock.calls.map(([sid]) => sid)).toEqual(['s1'])
   })
 })
 

@@ -19,6 +19,13 @@ public struct WorkspaceFileLink: Hashable, Identifiable, Sendable {
 
     public var id: String { "\(path):\(line ?? 0)" }
 
+    /// A workspace path the server named, taken literally: no link parsing, so `#`, `%` and `:` stay in the name
+    /// (TAL-1968).
+    public init(path: String, line: Int? = nil) {
+        self.path = path
+        self.line = line
+    }
+
     public var name: String {
         path.split(separator: "/").last.map(String.init) ?? path
     }

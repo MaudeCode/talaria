@@ -55,6 +55,11 @@ struct ToolCallCardView: View {
                 ProposalResultSection(reference: reference)
             }
 
+            // TAL-1968: and a block the agent showed.
+            if let reference = toolCall.resultView?.block {
+                ShowBlockResultSection(reference: reference)
+            }
+
             if isExpanded {
                 expandedContent(statusDisplay: statusDisplay)
                     .padding(.leading, 24)

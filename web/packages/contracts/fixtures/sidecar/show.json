@@ -1,0 +1,34 @@
+{
+  "server.show_put": [
+    {
+      "params": {
+        "caller_session_id": "20261109_090000_caller",
+        "kind": "table",
+        "payload": {
+          "title": "Latency by region",
+          "columns": [
+            "Region",
+            "p50 ms"
+          ],
+          "rows": [
+            [
+              "us-east",
+              42
+            ],
+            [
+              "eu-west",
+              57
+            ]
+          ]
+        }
+      },
+      "result": {
+        "block_id": "sb_0a1b2c3d4e5f",
+        "url": "/session/20261109_090000_caller",
+        "kind": "table",
+        "title": "Latency by region",
+        "note": null
+      }
+    }
+  ]
+}

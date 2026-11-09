@@ -30,6 +30,8 @@ const formats: Record<string, Format> = {
   'decision-reviews': { directory: 'decision-reviews', secret: true },
   // TAL-1967: one proposal per file, keyed by its proposal id.
   proposals: { directory: 'proposals', secret: true },
+  // TAL-1968: one `show` block per file, keyed by its block id; an HTML block holds its page.
+  'show-blocks': { directory: 'show-blocks', secret: true },
   'skill-replays': { directory: 'skill-replays', secret: true },
   'skill-replay-receipts': { directory: 'skill-replay-receipts', secret: true },
   catalog: { files: { 'quota-scope': '.quota_scope_id' }, text: true },

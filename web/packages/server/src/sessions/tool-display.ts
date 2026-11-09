@@ -4,7 +4,7 @@
  * redacted args, so the target never shows more than the arguments it came from.
  */
 import type { ToolEditDiff, ToolKind, ToolProgress } from '@maudecode/talaria-web-contracts'
-import { DecisionReviewRefSchema, OutboundDraftRefSchema, ProposalRefSchema, type DecisionReviewRef, type OutboundDraftRef, type ProposalRef } from '@maudecode/talaria-web-contracts'
+import { DecisionReviewRefSchema, OutboundDraftRefSchema, ProposalRefSchema, ShowBlockRefSchema, type DecisionReviewRef, type OutboundDraftRef, type ProposalRef, type ShowBlockRef } from '@maudecode/talaria-web-contracts'
 import { posix } from 'node:path'
 import { str } from '../util.js'
 import { expandHome } from '../workspace/paths.js'
@@ -32,6 +32,12 @@ export function decisionReviewRef(name: unknown, value: unknown): DecisionReview
 export function proposalRef(name: unknown, value: unknown): ProposalRef | undefined {
   if (name !== 'propose' || !isDict(value) || value.error) return undefined
   return ProposalRefSchema.safeParse({ proposal_id: value.proposal_id, kind: value.kind, summary: value.summary }).data
+}
+
+/** TAL-1968: the transcript block's reference from a `show` result (parsed JSON), or nothing. */
+export function showBlockRef(name: unknown, value: unknown): ShowBlockRef | undefined {
+  if (name !== 'show' || !isDict(value) || value.error) return undefined
+  return ShowBlockRefSchema.safeParse({ block_id: value.block_id, kind: value.kind, title: value.title }).data
 }
 
 /** Ordered rules over whole `_`-separated name tokens (a substring match would read `merge` as `rg`). */
@@ -143,14 +149,20 @@ function delegateTarget(arg: (keys: string[]) => string): string {
  * A call's display class and label: the first line of its kind's argument, whitespace-collapsed and capped. TAL-1458:
  * `focus_path` is a read or write call's file inside the session's `workspace` root, the file a companion page shows.
  */
-export function toolDisplay(name: unknown, args: unknown, workspace: string | null = null): { kind: ToolKind; target: string; focus_path: string | null } {
+export function toolDisplay(name: unknown, args: unknown, workspace: string | null = null): { kind: ToolKind; target: string; focus_path: string | null; shows_card?: true } {
   const kind = toolKind(name)
   const a = isDict(args) ? args : {}
   const arg = (keys: string[]) => keys.map((k) => snapshotArg(a, k)).find((v): v is string => typeof v === 'string' && Boolean(v.trim())) ?? ''
   const first = ((name === 'delegate_task' ? delegateTarget(arg) : '') || arg(TARGET_KEYS[kind] ?? FALLBACK_KEYS)).trim().split('\n')[0] ?? ''
   // Capped by code point, so the cap never splits a surrogate pair into invalid JSON.
-  return { kind, target: Array.from(first.replace(/\s+/g, ' ').trim()).slice(0, TOOL_TARGET_MAX).join(''), focus_path: kind === 'read' || kind === 'write' ? focusPath(arg(FOCUS_KEYS), workspace) : null }
+  return {
+    kind, target: Array.from(first.replace(/\s+/g, ' ').trim()).slice(0, TOOL_TARGET_MAX).join(''), focus_path: kind === 'read' || kind === 'write' ? focusPath(arg(FOCUS_KEYS), workspace) : null,
+    ...(typeof name === 'string' && CARD_TOOLS.has(name) ? { shows_card: true as const } : {}),
+  }
 }
+
+/** TAL-1968: calls whose transcript card the user must see, as a settled turn keeps them open (`buildTurnScene`). */
+const CARD_TOOLS = new Set(['show', 'propose', 'draft_card'])
 
 const FOCUS_KEYS = ['path', 'file_path', 'file', 'target']
 

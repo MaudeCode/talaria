@@ -19,8 +19,9 @@ import { FileExistsError, makeAnchoredDir, openAnchoredCreateFd, openAnchoredFd,
 import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
 import { isLoopback } from '../http/origin.js'
 import { truthy } from '../config.js'
-import { AUDIO_VIDEO_PDF_TYPES, contentDispositionValue, INLINE_IMAGE_TYPES, mediaAnchorRoot, mediaTarget, mimeFor, serveFileBytes, serveInlineHtmlPreview } from '../workspace/media.js'
+import { AUDIO_VIDEO_PDF_TYPES, contentDispositionValue, INLINE_IMAGE_TYPES, mediaAnchorRoot, mediaTarget, mimeFor, previewHeaders, serveFileBytes, serveInlineHtmlPreview } from '../workspace/media.js'
 import { PREVIEW_PREFIX, previewGrantRoot } from '../workspace/preview.js'
+import { SHOW_FRAME_CSP, SHOW_FRAME_PREFIX } from '../sessions/show.js'
 import { REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE } from '../workspace/workspaces.js'
 import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
 import { ZipWriter } from '../workspace/zip.js'
@@ -206,6 +207,19 @@ export async function handleWorkspacePreview(ctx: RequestContext): Promise<void>
   const mime = mimeFor(target)
   if (mime === 'text/html') (await serveInlineHtmlPreview(ctx, target, 'no-store', SANDBOX_CSP, root))
   else (await serveFileBytes(ctx, target, { mime, disposition: 'inline', cacheControl: 'no-store', csp: SANDBOX_CSP, anchorRoot: root }))
+}
+
+/**
+ * `/show-frame/<grant>` (TAL-1968): a `show` block's HTML page, authorized by the signed grant rather than a cookie.
+ * Its CSP sandboxes it to an opaque origin with scripts and no network source, so it reaches neither `/api` nor anything else.
+ */
+export async function handleShowFrame(ctx: RequestContext): Promise<void> {
+  const body = await ctx.deps.show.frame(ctx.path.slice(SHOW_FRAME_PREFIX.length))
+  if (body === null) {
+    await ctx.json({ error: 'not found' }, { status: 404 })
+    return
+  }
+  await ctx.send({ status: 200, security: false, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', ...previewHeaders(SHOW_FRAME_CSP) }, body: Buffer.from(body, 'utf8') })
 }
 
 async function handleMedia(ctx: RequestContext): Promise<void> {

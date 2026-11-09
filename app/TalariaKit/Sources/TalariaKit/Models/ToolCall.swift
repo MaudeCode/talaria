@@ -95,10 +95,12 @@ public struct ToolResultView: Decodable, Equatable, Sendable {
     public let decisionReview: DecisionReviewRef?
     /// TAL-1967: the proposal a `propose` result made.
     public let proposal: ProposalRef?
+    /// TAL-1968: the block a `show` result stored.
+    public let block: ShowBlockRef?
 
     public init(
         text: String? = nil, stdout: String? = nil, stderr: String? = nil, error: String? = nil, exitCode: Int? = nil,
-        decisionReview: DecisionReviewRef? = nil, proposal: ProposalRef? = nil
+        decisionReview: DecisionReviewRef? = nil, proposal: ProposalRef? = nil, block: ShowBlockRef? = nil
     ) {
         self.text = text
         self.stdout = stdout
@@ -107,6 +109,7 @@ public struct ToolResultView: Decodable, Equatable, Sendable {
         self.exitCode = exitCode
         self.decisionReview = decisionReview
         self.proposal = proposal
+        self.block = block
     }
 
     enum CodingKeys: String, CodingKey {
@@ -114,6 +117,7 @@ public struct ToolResultView: Decodable, Equatable, Sendable {
         case exitCode = "exit_code"
         case decisionReview = "decision_review"
         case proposal
+        case block
     }
 
     public init(from decoder: Decoder) throws {
@@ -125,6 +129,7 @@ public struct ToolResultView: Decodable, Equatable, Sendable {
         exitCode = container.decodeLossyIntIfPresent(forKey: .exitCode)
         decisionReview = DecisionReview.decode(DecisionReviewRef.self, from: try? container.decodeIfPresent(JSONValue.self, forKey: .decisionReview))
         proposal = DecisionReview.decode(ProposalRef.self, from: try? container.decodeIfPresent(JSONValue.self, forKey: .proposal))
+        block = DecisionReview.decode(ShowBlockRef.self, from: try? container.decodeIfPresent(JSONValue.self, forKey: .block))
     }
 
     /// The view a decoded JSON field holds; nil when the server sent none.

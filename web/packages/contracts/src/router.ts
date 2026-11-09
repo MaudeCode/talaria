@@ -10,6 +10,7 @@ import { automationContract } from './routes/automation.js'
 import { groupsContract } from './routes/groups.js'
 import { decisionsContract } from './routes/decisions.js'
 import { proposalsContract } from './routes/proposals.js'
+import { showContract } from './routes/show.js'
 
 /**
  * The composed route contract. Domain segments are added per checkpoint
@@ -19,7 +20,7 @@ import { proposalsContract } from './routes/proposals.js'
  */
 export const routeContract: EnhancedContractRouter<
   typeof coreContract & typeof sessionsContract & typeof workspacesContract & typeof gitContract
-  & typeof chatContract & typeof settingsContract & typeof toolsContract & typeof automationContract & typeof groupsContract & typeof decisionsContract & typeof proposalsContract,
+  & typeof chatContract & typeof settingsContract & typeof toolsContract & typeof automationContract & typeof groupsContract & typeof decisionsContract & typeof proposalsContract & typeof showContract,
   (typeof oc)['~orpc']['errorMap']
 > = oc.router({
   ...coreContract,
@@ -33,6 +34,7 @@ export const routeContract: EnhancedContractRouter<
   ...groupsContract,
   ...decisionsContract,
   ...proposalsContract,
+  ...showContract,
 })
 
 export type RouteContract = typeof routeContract

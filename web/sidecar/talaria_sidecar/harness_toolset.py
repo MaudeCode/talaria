@@ -3,6 +3,8 @@
 TAL-1967 adds ``propose`` and ``proposal_read``: a change the agent may not make itself waits for the owner's approval on a
 transcript card, and the server applies an approved one through the route that owns it.
 
+TAL-1968 adds ``show``: a workspace file, table, chart or HTML page the server stores and the transcript renders.
+
 Unlike the opt-in ``talaria`` toolset, these tools only write Talaria state for the session that calls them, so every
 Web turn gets the toolset unless the profile's ``agent.disabled_toolsets`` names it. Each handler forwards its call to
 the server with ``talaria_toolset._tool`` and returns the server's result unchanged.
@@ -18,7 +20,8 @@ TOOLSET = "harness"
 # The Agent describes a registry-only toolset as "Plugin toolset: <name>"; the catalog shows this instead.
 TOOLSET_DESCRIPTION = (
     "Hand the user a decision review to answer on a Talaria page, read their answers, and record what you did with each; "
-    "propose a plugin install, MCP server, setting or scheduled task for the owner to approve."
+    "propose a plugin install, MCP server, setting or scheduled task for the owner to approve; show a file, table, chart or "
+    "page in the chat."
 )
 
 _WHEN = (
@@ -168,18 +171,44 @@ PROPOSAL_READ_SCHEMA = {
 }
 
 
-def _proposal(args: dict, params: dict) -> None:
-    """The agent's payload as given, and the session's clarify timeout, which the proposal expires with."""
-    from .methods import chat  # chat imports this module
+SHOW_SCHEMA = {
+    "name": "show",
+    "description": (
+        "Show the user something in this chat instead of describing it. Returns at once with its block_id and the url of this "
+        "chat, where the block renders; it collects no answer. Kinds and payloads: file {path, title} shows a file of the "
+        "session's workspace (an image, audio, video or PDF plays in place; a text or code file opens on the side page); "
+        "table {title, columns, rows} shows at most 20 columns and 500 rows, cutting the rest and saying so; "
+        "chart {title, kind: bar or line, series: [{name, points: [{label, value}]}], unit} draws up to 6 series of up to "
+        "200 points; html {title, body} runs a page of at most 512 KB in a sandbox with scripts and no network. A refused "
+        "payload comes back as an error with a condition and shows nothing."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "kind": {"type": "string", "enum": ["file", "table", "chart", "html"]},
+            "payload": {"type": "object", "description": "The kind's fields, as listed in this tool's description."},
+        },
+        "required": ["kind", "payload"],
+    },
+}
 
+
+def _payload(args: dict, params: dict) -> None:
+    """The agent's payload as given; the server names each missing field of an absent or malformed one."""
     payload = args.get("payload")
     if isinstance(payload, str):  # a model that sends the object as JSON text
         try:
             payload = json.loads(payload)
         except ValueError:
             pass
-    # The server names each missing field of an absent or malformed payload.
     params["payload"] = payload if isinstance(payload, dict) else {}
+
+
+def _proposal(args: dict, params: dict) -> None:
+    """The agent's payload, and the session's clarify timeout, which the proposal expires with."""
+    from .methods import chat  # chat imports this module
+
+    _payload(args, params)
     params["timeout_seconds"] = chat._clarify_timeout({})
 
 
@@ -188,6 +217,7 @@ decision_review_read = _tool("server.decision_review_read", "decision_review_rea
 decision_review_record = _tool("server.decision_review_record", "decision_review_record", ("review_id",), _passed("outcomes"))
 propose = _tool("server.proposal_put", "propose", ("kind",), _proposal)
 proposal_read = _tool("server.proposal_read", "proposal_read", ("proposal_id",))
+show = _tool("server.show_put", "show", ("kind",), _payload)
 
 _TOOLS = (
     (DECISION_REVIEW_PUT_SCHEMA, decision_review_put, "🗳️"),
@@ -195,6 +225,7 @@ _TOOLS = (
     (DECISION_REVIEW_RECORD_SCHEMA, decision_review_record, "🧾"),
     (PROPOSE_SCHEMA, propose, "🔐"),
     (PROPOSAL_READ_SCHEMA, proposal_read, "📨"),
+    (SHOW_SCHEMA, show, "🖼️"),
 )
 
 

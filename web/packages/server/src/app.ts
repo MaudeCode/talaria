@@ -12,9 +12,10 @@ import type { AnyContractRouter } from '@orpc/contract'
 import { OpenAPIHandler } from '@orpc/openapi/node'
 import { sessionsRouter } from './api/sessions-router.js'
 import { gitRouter } from './api/git-router.js'
-import { handleWorkspacePreview, RAW_GET_ROUTES, RAW_POST_ROUTES, runRaw } from './api/raw-routes.js'
+import { handleShowFrame, handleWorkspacePreview, RAW_GET_ROUTES, RAW_POST_ROUTES, runRaw } from './api/raw-routes.js'
 import { rememberUpgrade } from './api/transcribe-stream.js'
 import { PREVIEW_PREFIX } from './workspace/preview.js'
+import { SHOW_FRAME_PREFIX } from './sessions/show.js'
 import { chatRouter } from './api/chat-router.js'
 import { settingsRouter } from './api/settings-router.js'
 import { toolsRouter } from './api/tools-router.js'
@@ -22,6 +23,7 @@ import { automationRouter } from './api/automation-router.js'
 import { groupsRouter, handleGroupStream } from './api/groups-router.js'
 import { decisionsRouter } from './api/decisions-router.js'
 import { proposalsRouter } from './api/proposals-router.js'
+import { showRouter } from './api/show-router.js'
 import { handleDashboardPlugin, handleExtensionSidecarProxy, handleExtensionStatic, handleKanbanEventsStream, handleTerminalOutput, matchSidecarProxy } from './api/automation-raw.js'
 import { handleApprovalStream, handleChatStream, handleClarifyStream, handleGatewayStream, handleSessionEvents, handleSessionJournalStream, handleSessionStream, sessionEventsPathSessionId } from './api/sse-routes.js'
 import { BodyError, RequestContext, acceptsEncoding, encodeJsonResponse, loggedUrl, type AppDeps, type HeaderMap } from './http/context.js'
@@ -172,7 +174,7 @@ async function preflight(ctx: RequestContext): Promise<void> {
 }
 
 /** Every implemented procedure, keyed like the contract. */
-const appRouter = { ...coreRouter, ...sessionsRouter, ...gitRouter, ...chatRouter, ...settingsRouter, ...toolsRouter, ...automationRouter, ...groupsRouter, ...decisionsRouter, ...proposalsRouter }
+const appRouter = { ...coreRouter, ...sessionsRouter, ...gitRouter, ...chatRouter, ...settingsRouter, ...toolsRouter, ...automationRouter, ...groupsRouter, ...decisionsRouter, ...proposalsRouter, ...showRouter }
 
 const SSE_GET_ROUTES: Record<string, (ctx: RequestContext) => Promise<void>> = {
   '/api/groups/stream': handleGroupStream,
@@ -471,6 +473,10 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
         }
         if (path.startsWith(PREVIEW_PREFIX)) {
           await runRaw(ctx, handleWorkspacePreview)
+          return
+        }
+        if (path.startsWith(SHOW_FRAME_PREFIX)) {
+          await runRaw(ctx, handleShowFrame)
           return
         }
         if (path === '/favicon.ico') {

@@ -69,6 +69,8 @@ export const keys = {
   decisionReview: (id: string) => ['decision-review', id] as const,
   /** TAL-1967: one proposal; its session's `proposal` events refresh it. */
   proposal: (id: string) => ['proposal', id] as const,
+  /** TAL-1968: one `show` block; it never changes, but an HTML block's frame grant is minted per read. */
+  showBlock: (id: string) => ['show-block', id] as const,
   logs: (file: string, tail: number) => ['logs', file, tail] as const,
   onboarding: ['onboarding'] as const,
   extensions: { all: ['extensions'] as const, status: ['extensions', 'status'] as const, registry: ['extensions', 'registry'] as const, manifests: ['extensions', 'manifests'] as const },

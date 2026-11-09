@@ -5201,5 +5201,71 @@
         }
       ]
     }
+  },
+  "server.show_put": {
+    "params": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "caller_session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string"
+        },
+        "payload": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "caller_session_id",
+        "kind",
+        "payload"
+      ]
+    },
+    "result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "block_id": {
+          "type": "string",
+          "pattern": "^sb_[0-9a-f]{12}$"
+        },
+        "url": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "file",
+            "table",
+            "chart",
+            "html"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "block_id",
+        "url",
+        "kind",
+        "title",
+        "note"
+      ],
+      "additionalProperties": false
+    }
   }
 }

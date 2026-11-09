@@ -42,6 +42,7 @@ import type { BackgroundActivity } from '../sessions/background-tasks.js'
 import type { PromptQueues } from '../sessions/prompt-queues.js'
 import type { DecisionReviews } from '../sessions/decisions.js'
 import type { Proposals } from '../sessions/proposals.js'
+import type { ShowBlocks } from '../sessions/show.js'
 import type { ConnectorOffers } from '../tools/connectors.js'
 import type { StreamSlots } from '../api/sse-routes.js'
 import type { BootstrapFeatures, ReleaseInfo, WhatsNewAnnouncement } from '@maudecode/talaria-web-contracts'
@@ -175,6 +176,7 @@ export interface AppDeps {
   promptQueues: PromptQueues
   decisions: DecisionReviews
   proposals: Proposals
+  show: ShowBlocks
   groups: Groups
   streamSlots: StreamSlots
   /** How long a feed with no natural end runs before it ends cleanly (`SSE_STREAM_LEASE_MS`). */

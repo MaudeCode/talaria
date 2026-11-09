@@ -114,9 +114,11 @@ function ActivityBody({ activity, mode, earlier, sessionId }: { activity: TurnAc
     for (let i = 0; i < list.length;) {
       const item = list[i]
       if (!item) break
-      if (item.kind === 'text' || item.kind === 'steering' || mode !== 'compact_worklog') { blocks.push(render(item, tail && i === list.length - 1)); i++; continue }
+      // TAL-1968: a call whose card the user must see (server `shows_card`) stands alone, outside a folded run.
+      const alone = (entry: ActivityItem | undefined) => entry?.kind === 'text' || entry?.kind === 'steering' || (entry?.kind === 'tool' && entry.call.showsCard === true)
+      if (alone(item) || mode !== 'compact_worklog') { blocks.push(render(item, tail && i === list.length - 1)); i++; continue }
       const start = i
-      while (i < list.length && list[i]?.kind !== 'text' && list[i]?.kind !== 'steering') i++
+      while (i < list.length && !alone(list[i])) i++
       const run = list.slice(start, i)
       const contents = run.map((entry, j) => render(entry, tail && start + j === list.length - 1))
       const active = activeTail && tail && i === list.length

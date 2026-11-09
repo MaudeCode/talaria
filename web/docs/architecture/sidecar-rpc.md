@@ -1,5 +1,20 @@
 # Sidecar RPC (TAL-245)
 
+RPC v90 adds the `harness` toolset's `show` (TAL-1968, `server.show_put`). The
+agent names a kind and its payload: `file {path, title?}` (a file of the
+session's workspace, resolved as `/api/file` resolves it), `table {title?,
+columns, rows}` (cut to 20 columns and 500 rows, with the cut reported),
+`chart {title, kind: bar | line, series, unit?}` (up to 6 series of up to 200
+labelled points, each value formatted by the server) or `html {title, body}`
+(at most 512 KB). The server validates the payload, refuses with the failed
+condition (`path_outside_workspace`, `file_not_found`, `media_unsupported`,
+`html_too_large`, `payload_invalid`, `kind_unknown`) and stores nothing, or
+stores one immutable `show-blocks` document and answers `{block_id, url, kind,
+title, note}`. The tool collects no input. Clients read the block from
+`GET /api/show/{block_id}`; an HTML block's page is served from
+`/show-frame/<grant>`, an expiring grant minted per read, with `sandbox
+allow-scripts` and a CSP that has no network source.
+
 RPC v89 adds `pinned_count` to the `server.background_list` result (TAL-1531): how
 many of its `tasks` are pinned.
 

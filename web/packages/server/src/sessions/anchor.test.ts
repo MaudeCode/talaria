@@ -45,6 +45,16 @@ it('keeps a proposal visible after its producing turn settles (TAL-1967)', () =>
   expect(scene?.activity_rows).toMatchObject([{ tool: { result_view: { proposal: { proposal_id: 'pr_0a1b2c3d', kind: 'setting', summary: 'Change setting show_tps' } } } }])
 })
 
+it('keeps a shown block visible after its producing turn settles (TAL-1968)', () => {
+  const scene = buildTurnScene([
+    [{ role: 'assistant', content: '', tool_calls: [{ id: 'show', function: { name: 'show', arguments: '{}' } }] }, 0],
+    [{ role: 'tool', tool_call_id: 'show', content: JSON.stringify({ block_id: 'sb_0a1b2c3d4e5f', url: '/session/s', kind: 'table', title: 'Latency', note: null }) }, 1],
+    [{ role: 'assistant', content: 'Here is the table.' }, 2],
+  ])
+  expect(scene?.expanded_by_default, 'The user must see the block without opening the worklog').toBe(true)
+  expect(scene?.activity_rows).toMatchObject([{ tool: { result_view: { block: { block_id: 'sb_0a1b2c3d4e5f', kind: 'table', title: 'Latency' } } } }])
+})
+
 /** A legacy scene as the predecessor browser saved it: every shape the clients used to decode differently. */
 const legacyRows = [
   { row_id: 'steer', order_index: '4', role: 'steering', text: 'Also check b.txt', status: 'pending', payload: { steer_id: 's1', created_at: 3 } },

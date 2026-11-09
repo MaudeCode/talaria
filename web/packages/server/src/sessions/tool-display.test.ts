@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { withToolCallOutcomes } from './merge.js'
 import { diffHunks } from '../text/diff.js'
 import { decidedEditDiff, EDIT_DIFF_MAX_LINES, toolArgs, toolDisplay, toolEditDiff, toolKind, toolProgress } from './tool-display.js'
+import { publicToolFrame } from '../redact.js'
 
 // TAL-1537: a `~/` path expands against a stubbed home.
 vi.mock('node:os', async (importOriginal) => {
@@ -109,6 +110,13 @@ describe('toolDisplay', () => {
   it('leaves subagent progress on its own target (TAL-1758)', () => {
     expect(toolDisplay('subagent_progress', { goal: 'Audit auth', tasks: [{ goal: 'a' }], action: 'list' }).target).toBe('')
     expect(toolDisplay('subagent_progress', { task: 'Summarize' }).target).toBe('Summarize')
+  })
+
+  it('marks a call whose transcript card the user must see, and no other (TAL-1968)', () => {
+    for (const name of ['show', 'propose', 'draft_card']) expect(toolDisplay(name, {}).shows_card).toBe(true)
+    for (const name of ['read_file', 'proposal_read', 'decision_review_put', 'showcase']) expect(toolDisplay(name, {})).not.toHaveProperty('shows_card')
+    // The live frame carries it from its start.
+    expect(publicToolFrame({ id: 'c', name: 'show', args: { kind: 'table' } }, true)).toMatchObject({ shows_card: true })
   })
 
   it('names a read or write call\'s workspace-relative file as its focus path (TAL-1458)', () => {

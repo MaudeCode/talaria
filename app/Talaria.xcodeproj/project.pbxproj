@@ -65,6 +65,7 @@
 		D857083559F0B34BD088CA05 /* InsightsHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856083559F0B34BD088CA05 /* InsightsHostedTests.swift */; };
 		D1965A000000000000000005 /* DecisionReviewHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1965A000000000000000004 /* DecisionReviewHostedTests.swift */; };
 		D1967A000000000000000005 /* ProposalHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1967A000000000000000004 /* ProposalHostedTests.swift */; };
+		D1968A000000000000000003 /* ShowBlockHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1968A000000000000000004 /* ShowBlockHostedTests.swift */; };
 		D857297464F3055587B2ACEF /* TranscriptHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856297464F3055587B2ACEF /* TranscriptHostedTests.swift */; };
 		D857E7989860057E41C369DF /* HostedViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856E7989860057E41C369DF /* HostedViewTests.swift */; };
 		157503000000000000000001 /* APIClientFeedbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 157503000000000000000002 /* APIClientFeedbackTests.swift */; };
@@ -212,6 +213,7 @@
 		C1TAL1396000000000000002 /* ChatCodeBlockStreamingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1TAL1396000000000000001 /* ChatCodeBlockStreamingTests.swift */; };
 		C12800000000000000000001 /* ToolActivityGroupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C12800000000000000000002 /* ToolActivityGroupView.swift */; };
 		1A2B3C4D5E6F7000000000E0 /* ToolCallCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000E1 /* ToolCallCardView.swift */; };
+		D1968A000000000000000001 /* ShowBlockResultSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1968A000000000000000002 /* ShowBlockResultSection.swift */; };
 		C12800000000000000000003 /* ChatTimelineAccessorySurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = C12800000000000000000004 /* ChatTimelineAccessorySurface.swift */; };
 		C12900000000000000000001 /* RunStatusChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = C12900000000000000000002 /* RunStatusChip.swift */; };
 		1A2B3C4D5E6F7000000000E2 /* ReasoningBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000E3 /* ReasoningBlockView.swift */; };
@@ -527,6 +529,7 @@
 		D856083559F0B34BD088CA05 /* InsightsHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsHostedTests.swift; sourceTree = "<group>"; };
 		D1965A000000000000000004 /* DecisionReviewHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionReviewHostedTests.swift; sourceTree = "<group>"; };
 		D1967A000000000000000004 /* ProposalHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProposalHostedTests.swift; sourceTree = "<group>"; };
+		D1968A000000000000000004 /* ShowBlockHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShowBlockHostedTests.swift; sourceTree = "<group>"; };
 		D856297464F3055587B2ACEF /* TranscriptHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptHostedTests.swift; sourceTree = "<group>"; };
 		D856E7989860057E41C369DF /* HostedViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostedViewTests.swift; sourceTree = "<group>"; };
 		157503000000000000000002 /* APIClientFeedbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../TalariaKit/Tests/TalariaKitTests/APIClientFeedbackTests.swift; sourceTree = "<group>"; };
@@ -659,6 +662,7 @@
 		C1TAL1396000000000000001 /* ChatCodeBlockStreamingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatCodeBlockStreamingTests.swift; sourceTree = "<group>"; };
 		C12800000000000000000002 /* ToolActivityGroupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolActivityGroupView.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000E1 /* ToolCallCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolCallCardView.swift; sourceTree = "<group>"; };
+		D1968A000000000000000002 /* ShowBlockResultSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShowBlockResultSection.swift; sourceTree = "<group>"; };
 		C12800000000000000000004 /* ChatTimelineAccessorySurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTimelineAccessorySurface.swift; sourceTree = "<group>"; };
 		C12900000000000000000002 /* RunStatusChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RunStatusChip.swift"; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000E3 /* ReasoningBlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReasoningBlockView.swift; sourceTree = "<group>"; };
@@ -1010,6 +1014,7 @@
 				D856083559F0B34BD088CA05 /* InsightsHostedTests.swift */,
 				D1965A000000000000000004 /* DecisionReviewHostedTests.swift */,
 				D1967A000000000000000004 /* ProposalHostedTests.swift */,
+				D1968A000000000000000004 /* ShowBlockHostedTests.swift */,
 				D856297464F3055587B2ACEF /* TranscriptHostedTests.swift */,
 				D856E7989860057E41C369DF /* HostedViewTests.swift */,
 				157503000000000000000002 /* APIClientFeedbackTests.swift */,
@@ -1259,6 +1264,7 @@
 				BEEF02400000000000000002 /* ChatAttachmentPreviewView.swift */,
 				C12800000000000000000002 /* ToolActivityGroupView.swift */,
 				1A2B3C4D5E6F7000000000E1 /* ToolCallCardView.swift */,
+				D1968A000000000000000002 /* ShowBlockResultSection.swift */,
 				C12800000000000000000004 /* ChatTimelineAccessorySurface.swift */,
 				C12900000000000000000002 /* RunStatusChip.swift */,
 				1A2B3C4D5E6F7000000000E3 /* ReasoningBlockView.swift */,
@@ -1976,6 +1982,7 @@
 				BEEF02400000000000000001 /* ChatAttachmentPreviewView.swift in Sources */,
 				C12800000000000000000001 /* ToolActivityGroupView.swift in Sources */,
 				1A2B3C4D5E6F7000000000E0 /* ToolCallCardView.swift in Sources */,
+				D1968A000000000000000001 /* ShowBlockResultSection.swift in Sources */,
 				C12800000000000000000003 /* ChatTimelineAccessorySurface.swift in Sources */,
 				C12900000000000000000001 /* RunStatusChip.swift in Sources */,
 				1A2B3C4D5E6F7000000000E2 /* ReasoningBlockView.swift in Sources */,
@@ -2095,6 +2102,7 @@
 				D857083559F0B34BD088CA05 /* InsightsHostedTests.swift in Sources */,
 				D1965A000000000000000005 /* DecisionReviewHostedTests.swift in Sources */,
 				D1967A000000000000000005 /* ProposalHostedTests.swift in Sources */,
+				D1968A000000000000000003 /* ShowBlockHostedTests.swift in Sources */,
 				D857297464F3055587B2ACEF /* TranscriptHostedTests.swift in Sources */,
 				D857E7989860057E41C369DF /* HostedViewTests.swift in Sources */,
 				157503000000000000000001 /* APIClientFeedbackTests.swift in Sources */,

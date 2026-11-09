@@ -107,7 +107,7 @@ export function sceneItems(value: unknown): ActivityItem[] {
     if (row.role !== 'tool') return []
     const tool = record(row.tool)
     return [{ key, kind: 'tool', call: {
-      progress: ToolProgressSchema.safeParse(tool.progress).data ?? null, id: text(tool.id), name: text(tool.name), kind: toolKindOf(tool.kind), target: text(tool.target), args: tool.args, preview: typeof tool.preview === 'string' ? tool.preview : null, resultView: resultViewOf(tool.result_view),
+      progress: ToolProgressSchema.safeParse(tool.progress).data ?? null, id: text(tool.id), name: text(tool.name), kind: toolKindOf(tool.kind), target: text(tool.target), args: tool.args, preview: typeof tool.preview === 'string' ? tool.preview : null, resultView: resultViewOf(tool.result_view), ...(tool.shows_card === true ? { showsCard: true as const } : {}),
       done: tool.done === true, isError: tool.is_error === true, duration: typeof tool.duration === 'number' ? tool.duration : null, costUsd: typeof tool.cost_usd === 'number' ? tool.cost_usd : null,
       ...backgroundOf(tool.background), ...answeredByOf(tool.approval_answered_by), ...(tool.result_truncated === true ? { resultTruncated: true } : {}),
     } }]
