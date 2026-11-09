@@ -16,6 +16,9 @@ public enum SessionListUtilityDestination: Hashable, Identifiable, Sendable {
     case archived
     case scheduled
     case webhook
+    /// TAL-1966: the Decisions list, and one review pushed once above the current root (its push alert).
+    case decisions
+    case decisionReview(String)
 
     public var id: Self { self }
 

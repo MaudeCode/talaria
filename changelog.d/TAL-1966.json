@@ -1,0 +1,26 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "A Decisions list shows every open and submitted decision review of the profile, with its chat, progress and status, and a push alert opens a review your agent hands you while no Talaria tab is open.",
+      "highlight": true,
+      "components": [
+        "app",
+        "web"
+      ],
+      "announcement": {
+        "title": "Decision reviews",
+        "description": "Your agent can hand you a decision to review in your own time, with a Decisions list and an alert.",
+        "icon": "automation"
+      }
+    },
+    {
+      "category": "Added",
+      "summary": "Relay delivers a decision review alert that opens the review, once per review, under the input alert preference.",
+      "highlight": false,
+      "components": [
+        "relay"
+      ]
+    }
+  ]
+}

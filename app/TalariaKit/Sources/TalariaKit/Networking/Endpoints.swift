@@ -167,6 +167,8 @@ public enum Endpoint: Sendable {
     case memoryWrite
     /// TAL-1965: one decision review, one answer's save, and the review's submit.
     case decisionReview(id: String)
+    /// TAL-1966: the profile's open and submitted reviews, newest first.
+    case decisionReviews
     case decisionAnswer(reviewID: String, itemID: String)
     case decisionSubmit(reviewID: String)
     case feedbackDiagnostics
@@ -490,6 +492,8 @@ public enum Endpoint: Sendable {
             return "/api/memory"
         case .memoryWrite:
             return "/api/memory/write"
+        case .decisionReviews:
+            return "/api/decisions"
         case let .decisionReview(id):
             return "/api/decisions/\(id)"
         case let .decisionAnswer(reviewID, itemID):

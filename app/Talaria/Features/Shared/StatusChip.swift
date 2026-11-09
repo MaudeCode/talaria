@@ -244,3 +244,15 @@ private struct StatusChipGroupLayout: Layout {
         return (CGSize(width: stackWidth, height: max(0, y - spacing)), frames, false, reservedHeight)
     }
 }
+
+extension View {
+    /// The plan or kind chip of `docs/design-system.md` §7: `.caption2.weight(.medium)` secondary in a row, `.caption`
+    /// in a detail header, on a tertiary-fill capsule.
+    func kindChip(inHeader: Bool = false) -> some View {
+        font(inHeader ? .caption.weight(.medium) : .caption2.weight(.medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(Color(.tertiarySystemFill)))
+    }
+}

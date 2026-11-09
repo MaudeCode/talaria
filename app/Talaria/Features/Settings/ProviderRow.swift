@@ -37,11 +37,7 @@ struct ProviderRow: View {
                 if let badge = ProvidersViewModel.keySourceBadge(for: provider) {
                     // Technical token (env / OAuth / config) — deliberately not localized.
                     Text(verbatim: badge)
-                        .font(.caption2.weight(.medium))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(Capsule().fill(Color(.tertiarySystemFill)))
-                        .foregroundStyle(.secondary)
+                        .kindChip()
                 }
 
                 Button(action: toggleInsightsVisibility) {

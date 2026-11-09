@@ -212,6 +212,8 @@ public enum SessionNotificationRefresh {
     public static let sessionIDKey = "sessionId"
     /// The publisher origin a relay push names, so a tap opens the session on the server that owns it.
     public static let publisherIDKey = "publisherId"
+    /// TAL-1966: where a relay push leads; a decision review alert's opens the review.
+    public static let deepLinkKey = "deepLink"
 
     /// Only a notification that names a session says anything about the list.
     /// Relay and response-completion notifications both carry `sessionId`.
@@ -220,9 +222,13 @@ public enum SessionNotificationRefresh {
         return !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    /// Where a tapped relay push or local fallback leads: its session, on its publisher when it names one.
+    /// Where a tapped relay push or local fallback leads: its session, or the decision review its deep link names, on its
+    /// publisher when it names one.
     public static func sessionURL(userInfo: [AnyHashable: Any]) -> URL? {
         guard namesASession(userInfo: userInfo), let sessionID = userInfo[sessionIDKey] as? String else { return nil }
-        return TalariaDeepLink.sessionURL(sessionID: sessionID, publisherID: userInfo[publisherIDKey] as? String)
+        return TalariaDeepLink.sessionURL(
+            sessionID: sessionID, publisherID: userInfo[publisherIDKey] as? String,
+            reviewID: TalariaDeepLink.normalizedDecisionReviewID(userInfo[deepLinkKey] as? String)
+        )
     }
 }

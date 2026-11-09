@@ -403,6 +403,7 @@
 		8618A9261B8047CEA6084798 /* SlashCommandAutocompleteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC2A37872AC842629FBDDFA4 /* SlashCommandAutocompleteView.swift */; };
 		8B71DA2AAC521382F54A841C /* InsightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57B5FD09B6B5937573B5F9A4 /* InsightsView.swift */; };
 		D1965A000000000000000002 /* DecisionReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1965A000000000000000001 /* DecisionReviewView.swift */; };
+		D1966A000000000000000002 /* DecisionsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1966A000000000000000001 /* DecisionsListView.swift */; };
 		D1461A000000000000000001 /* ComposerDropHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1461A000000000000000002 /* ComposerDropHostedTests.swift */; };
 		A710739233F64F4FA4C2B701 /* ComposerVoiceDraftComposerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A710739233F64F4FA4C2B711 /* ComposerVoiceDraftComposerTests.swift */; };
 		C0CAM000000000000000B001 /* CameraPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0CAM000000000000000B002 /* CameraPickerView.swift */; };
@@ -831,6 +832,7 @@
 		C166A0000000000000000101 /* TaskRunHistoryViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskRunHistoryViews.swift; sourceTree = "<group>"; };
 		57B5FD09B6B5937573B5F9A4 /* InsightsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = InsightsView.swift; sourceTree = "<group>"; };
 		D1965A000000000000000001 /* DecisionReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionReviewView.swift; sourceTree = "<group>"; };
+		D1966A000000000000000001 /* DecisionsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionsListView.swift; sourceTree = "<group>"; };
 		26AB000000000000000000F1 /* ProvidersViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvidersViewModel.swift; sourceTree = "<group>"; };
 		26AB000000000000000388F1 /* AuxiliaryModelsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuxiliaryModelsSettingsView.swift; sourceTree = "<group>"; };
 		26AB000000000000000000F2 /* ProvidersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvidersView.swift; sourceTree = "<group>"; };
@@ -1518,6 +1520,7 @@
 			isa = PBXGroup;
 			children = (
 				D1965A000000000000000001 /* DecisionReviewView.swift */,
+				D1966A000000000000000001 /* DecisionsListView.swift */,
 			);
 			path = Decisions;
 			sourceTree = "<group>";
@@ -2041,6 +2044,7 @@
 				8618A9261B8047CEA6084798 /* SlashCommandAutocompleteView.swift in Sources */,
 				8B71DA2AAC521382F54A841C /* InsightsView.swift in Sources */,
 				D1965A000000000000000002 /* DecisionReviewView.swift in Sources */,
+				D1966A000000000000000002 /* DecisionsListView.swift in Sources */,
 				26AB000000000000000000B1 /* ProvidersViewModel.swift in Sources */,
 				26AB000000000000000388B1 /* AuxiliaryModelsSettingsView.swift in Sources */,
 				26AB000000000000000000B2 /* ProvidersView.swift in Sources */,

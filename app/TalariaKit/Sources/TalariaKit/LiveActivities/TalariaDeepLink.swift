@@ -181,7 +181,8 @@ public enum TalariaDeepLink {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    public static func sessionURL(sessionID: String, publisherID: String? = nil) -> URL? {
+    /// TAL-1966: `reviewID` opens that decision review of the session's server rather than the chat.
+    public static func sessionURL(sessionID: String, publisherID: String? = nil, reviewID: String? = nil) -> URL? {
         guard !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return nil
         }
@@ -195,8 +196,27 @@ public enum TalariaDeepLink {
         if let publisherID = normalizedPublisherID(publisherID) {
             queryItems.append(URLQueryItem(name: "publisher", value: publisherID))
         }
+        if let reviewID = normalizedDecisionReviewID(reviewID) {
+            queryItems.append(URLQueryItem(name: "review", value: reviewID))
+        }
         components.queryItems = queryItems
         return components.url
+    }
+
+    /// TAL-1966: the decision review a session link opens; nil for a plain chat link.
+    public static func decisionReviewID(from url: URL) -> String? {
+        guard url.scheme?.lowercased() == scheme, url.host?.lowercased() == sessionHost else { return nil }
+        return normalizedDecisionReviewID(
+            URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "review" })?.value
+        )
+    }
+
+    /// A review id as Talaria Web mints it (`dr_` and 8 lowercase hex digits), or the review of a `/decisions/<id>`
+    /// Relay deep link; anything else is nil.
+    public static func normalizedDecisionReviewID(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let id = raw.hasPrefix("/decisions/") ? String(raw.dropFirst("/decisions/".count)) : raw
+        return id.wholeMatch(of: /dr_[0-9a-f]{8}/) == nil ? nil : id
     }
 
     public static func publisherID(from url: URL) -> String? {

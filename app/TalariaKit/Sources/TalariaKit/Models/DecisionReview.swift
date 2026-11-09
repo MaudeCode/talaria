@@ -293,6 +293,63 @@ public struct DecisionReviewRef: Decodable, Equatable, Hashable, Sendable {
     }
 }
 
+/// TAL-1966: one row of the Decisions list (`DecisionReviewRowSchema`). `sessionTitle` is nil when the owning session
+/// has no title or is gone.
+public struct DecisionReviewRow: Decodable, Equatable, Hashable, Identifiable, Sendable {
+    public let reviewId: String
+    public let sessionId: String
+    public let sessionTitle: String?
+    public let title: String
+    public let status: DecisionReview.Status
+    public let progress: DecisionProgress
+
+    public var id: String { reviewId }
+
+    public init(reviewId: String, sessionId: String, sessionTitle: String?, title: String, status: DecisionReview.Status, progress: DecisionProgress) {
+        self.reviewId = reviewId
+        self.sessionId = sessionId
+        self.sessionTitle = sessionTitle
+        self.title = title
+        self.status = status
+        self.progress = progress
+    }
+
+    enum CodingKeys: String, CodingKey { case reviewId, sessionId, sessionTitle, title, status, progress }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        reviewId = try container.decode(String.self, forKey: .reviewId)
+        sessionId = container.decodeLossyStringIfPresent(forKey: .sessionId) ?? ""
+        sessionTitle = container.decodeLossyStringIfPresent(forKey: .sessionTitle)
+        title = container.decodeLossyStringIfPresent(forKey: .title) ?? ""
+        status = (try? container.decode(DecisionReview.Status.self, forKey: .status)) ?? .open
+        progress = (try? container.decode(DecisionProgress.self, forKey: .progress)) ?? DecisionProgress(total: 0, answered: 0)
+    }
+}
+
+/// TAL-1966: `GET /api/decisions`. The rows keep the server's order; `empty` says why there are none: `none` when the
+/// profile has no review, `closed` when every one is applied or cancelled.
+public struct DecisionReviewList: Decodable, Equatable, Sendable {
+    public enum Empty: String, Decodable, Equatable, Sendable { case none, closed }
+
+    public let reviews: [DecisionReviewRow]
+    public let empty: Empty?
+
+    public init(reviews: [DecisionReviewRow], empty: Empty?) {
+        self.reviews = reviews
+        self.empty = empty
+    }
+
+    enum CodingKeys: String, CodingKey { case reviews, empty }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        reviews = container.decodeLossyArrayIfPresent(DecisionReviewRow.self, forKey: .reviews) ?? []
+        // A reason this App does not know reads as nil; an empty list still shows as empty.
+        empty = (try? container.decodeIfPresent(Empty.self, forKey: .empty)) ?? nil
+    }
+}
+
 /// The `decision_review` session stream event, sent after each change to a review of that session.
 public struct DecisionReviewEvent: Decodable, Equatable, Sendable {
     public let sessionId: String

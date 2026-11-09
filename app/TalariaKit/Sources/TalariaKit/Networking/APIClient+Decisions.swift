@@ -2,6 +2,11 @@ import Foundation
 
 /// TAL-1965: the decision review routes (`/api/decisions/…`). Each write answers with the whole review.
 extension APIClient {
+    /// TAL-1966: the Decisions list in the server's order, and why it is empty.
+    public func decisionReviews() async throws -> DecisionReviewList {
+        try await send(endpoint: .decisionReviews, method: "GET")
+    }
+
     public func decisionReview(id: String) async throws -> DecisionReview {
         try await send(endpoint: .decisionReview(id: id), method: "GET")
     }

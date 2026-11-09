@@ -42,11 +42,7 @@ struct ProviderQuotaAccountRow: View {
                 .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
             if let plan = source.plan, !plan.isEmpty {
                 Text(plan)
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(Capsule().fill(Color(.tertiarySystemFill)))
+                    .kindChip()
                     .fixedSize()
             }
             if source.isActiveProvider {
