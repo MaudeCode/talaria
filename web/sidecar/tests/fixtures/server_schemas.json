@@ -4167,5 +4167,1014 @@
       ],
       "additionalProperties": false
     }
+  },
+  "server.proposal_put": {
+    "params": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "caller_session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string"
+        },
+        "payload": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "caller_session_id",
+        "kind",
+        "payload"
+      ]
+    },
+    "result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "proposal_id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "approved",
+            "rejected",
+            "applied",
+            "failed",
+            "expired"
+          ]
+        },
+        "url": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "plugin_install",
+            "mcp_server",
+            "setting",
+            "cron_job"
+          ]
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "proposal_id",
+        "status",
+        "url",
+        "kind",
+        "summary"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "server.proposal_read": {
+    "params": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "caller_session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "proposal_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "caller_session_id",
+        "proposal_id"
+      ]
+    },
+    "result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "proposal_id": {
+              "type": "string",
+              "pattern": "^pr_[0-9a-f]{8}$"
+            },
+            "session_id": {
+              "type": "string"
+            },
+            "profile": {
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "diff": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "addition",
+                      "deletion",
+                      "context"
+                    ]
+                  },
+                  "old_line": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "new_line": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "old_line",
+                  "new_line",
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "fields": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "label",
+                  "value"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "risk_notes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "payload_hash": {
+              "type": "string"
+            },
+            "actions": {
+              "type": "object",
+              "properties": {
+                "can_approve": {
+                  "type": "boolean"
+                },
+                "can_reject": {
+                  "type": "boolean"
+                },
+                "reason": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "not_owner",
+                        "closed",
+                        "expired"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "can_approve",
+                "can_reject",
+                "reason"
+              ],
+              "additionalProperties": false
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "approved",
+                "rejected",
+                "applied",
+                "failed",
+                "expired"
+              ]
+            },
+            "outcome": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "error": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "text",
+                "error"
+              ],
+              "additionalProperties": false
+            },
+            "created_at": {
+              "type": "number"
+            },
+            "updated_at": {
+              "type": "number"
+            },
+            "expires_at": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "decided_at": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "plugin_install"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "catalog_id": {
+                  "type": "string"
+                },
+                "pin": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "catalog_id",
+                "pin"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "proposal_id",
+            "session_id",
+            "profile",
+            "summary",
+            "diff",
+            "fields",
+            "risk_notes",
+            "payload_hash",
+            "actions",
+            "status",
+            "outcome",
+            "created_at",
+            "updated_at",
+            "expires_at",
+            "decided_at",
+            "kind",
+            "payload"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "proposal_id": {
+              "type": "string",
+              "pattern": "^pr_[0-9a-f]{8}$"
+            },
+            "session_id": {
+              "type": "string"
+            },
+            "profile": {
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "diff": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "addition",
+                      "deletion",
+                      "context"
+                    ]
+                  },
+                  "old_line": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "new_line": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "old_line",
+                  "new_line",
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "fields": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "label",
+                  "value"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "risk_notes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "payload_hash": {
+              "type": "string"
+            },
+            "actions": {
+              "type": "object",
+              "properties": {
+                "can_approve": {
+                  "type": "boolean"
+                },
+                "can_reject": {
+                  "type": "boolean"
+                },
+                "reason": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "not_owner",
+                        "closed",
+                        "expired"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "can_approve",
+                "can_reject",
+                "reason"
+              ],
+              "additionalProperties": false
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "approved",
+                "rejected",
+                "applied",
+                "failed",
+                "expired"
+              ]
+            },
+            "outcome": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "error": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "text",
+                "error"
+              ],
+              "additionalProperties": false
+            },
+            "created_at": {
+              "type": "number"
+            },
+            "updated_at": {
+              "type": "number"
+            },
+            "expires_at": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "decided_at": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "mcp_server"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "command": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "args": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "env_names": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "name",
+                "url",
+                "command",
+                "args",
+                "env_names"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "proposal_id",
+            "session_id",
+            "profile",
+            "summary",
+            "diff",
+            "fields",
+            "risk_notes",
+            "payload_hash",
+            "actions",
+            "status",
+            "outcome",
+            "created_at",
+            "updated_at",
+            "expires_at",
+            "decided_at",
+            "kind",
+            "payload"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "proposal_id": {
+              "type": "string",
+              "pattern": "^pr_[0-9a-f]{8}$"
+            },
+            "session_id": {
+              "type": "string"
+            },
+            "profile": {
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "diff": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "addition",
+                      "deletion",
+                      "context"
+                    ]
+                  },
+                  "old_line": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "new_line": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "old_line",
+                  "new_line",
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "fields": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "label",
+                  "value"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "risk_notes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "payload_hash": {
+              "type": "string"
+            },
+            "actions": {
+              "type": "object",
+              "properties": {
+                "can_approve": {
+                  "type": "boolean"
+                },
+                "can_reject": {
+                  "type": "boolean"
+                },
+                "reason": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "not_owner",
+                        "closed",
+                        "expired"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "can_approve",
+                "can_reject",
+                "reason"
+              ],
+              "additionalProperties": false
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "approved",
+                "rejected",
+                "applied",
+                "failed",
+                "expired"
+              ]
+            },
+            "outcome": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "error": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "text",
+                "error"
+              ],
+              "additionalProperties": false
+            },
+            "created_at": {
+              "type": "number"
+            },
+            "updated_at": {
+              "type": "number"
+            },
+            "expires_at": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "decided_at": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "setting"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "value": {}
+              },
+              "required": [
+                "key",
+                "value"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "proposal_id",
+            "session_id",
+            "profile",
+            "summary",
+            "diff",
+            "fields",
+            "risk_notes",
+            "payload_hash",
+            "actions",
+            "status",
+            "outcome",
+            "created_at",
+            "updated_at",
+            "expires_at",
+            "decided_at",
+            "kind",
+            "payload"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "proposal_id": {
+              "type": "string",
+              "pattern": "^pr_[0-9a-f]{8}$"
+            },
+            "session_id": {
+              "type": "string"
+            },
+            "profile": {
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "diff": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "addition",
+                      "deletion",
+                      "context"
+                    ]
+                  },
+                  "old_line": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "new_line": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "old_line",
+                  "new_line",
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "fields": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "label",
+                  "value"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "risk_notes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "payload_hash": {
+              "type": "string"
+            },
+            "actions": {
+              "type": "object",
+              "properties": {
+                "can_approve": {
+                  "type": "boolean"
+                },
+                "can_reject": {
+                  "type": "boolean"
+                },
+                "reason": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "not_owner",
+                        "closed",
+                        "expired"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "can_approve",
+                "can_reject",
+                "reason"
+              ],
+              "additionalProperties": false
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "approved",
+                "rejected",
+                "applied",
+                "failed",
+                "expired"
+              ]
+            },
+            "outcome": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "error": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "text",
+                "error"
+              ],
+              "additionalProperties": false
+            },
+            "created_at": {
+              "type": "number"
+            },
+            "updated_at": {
+              "type": "number"
+            },
+            "expires_at": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "decided_at": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "cron_job"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "schedule": {
+                  "type": "string"
+                },
+                "prompt": {
+                  "type": "string"
+                },
+                "context_sources": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "title",
+                "schedule",
+                "prompt",
+                "context_sources"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "proposal_id",
+            "session_id",
+            "profile",
+            "summary",
+            "diff",
+            "fields",
+            "risk_notes",
+            "payload_hash",
+            "actions",
+            "status",
+            "outcome",
+            "created_at",
+            "updated_at",
+            "expires_at",
+            "decided_at",
+            "kind",
+            "payload"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
   }
 }

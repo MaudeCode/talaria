@@ -25,6 +25,7 @@ import { CompletionDrain } from './sessions/completions.js'
 import { BackgroundActivity, BackgroundTaskStore, settledActivityPhase } from './sessions/background-tasks.js'
 import { PromptQueues } from './sessions/prompt-queues.js'
 import { DecisionReviews } from './sessions/decisions.js'
+import { Proposals } from './sessions/proposals.js'
 import { ConnectorOffers } from './tools/connectors.js'
 import { Groups } from './sessions/groups.js'
 import { HygieneTicker } from './tools/hygiene.js'
@@ -140,6 +141,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   const storage = await opts.storage?.(config) ?? await createStorage(config, now, (name) => profileHome(name), log)
   // TAL-1963: the sidebar attention summary reads its open-review index synchronously.
   const decisions = new DecisionReviews(storage.documents, () => deps, now)
+  const proposals = new Proposals(storage.documents, () => deps, now)
   const settings = new SettingsStore({ documents: storage.documents, env, stateDir: config.stateDir, defaultWorkspace: config.defaultWorkspace, botName: config.botName, log })
   await settings.load()
   const passkeys = new PasskeyStore(storage.documents, now)
@@ -434,7 +436,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       evictAgent: async (sid, endSession) => { if (sidecar && (!endSession || !(await sessions.readOnlyReason(sid)))) sidecar.call('chat.evict_agent', endSession ? { session_id: sid, clear_session: true } : { session_id: sid }).catch(() => undefined) },
       closeTerminal: (sid) => { deps.terminals.close(sid) },
       openDecisionReview: (sid) => decisions.openRef(sid),
-      deleteDecisionReviews: (sid) => decisions.deleteForSession(sid),
+      deleteAgentRequests: async (sid) => { await decisions.deleteForSession(sid); await proposals.deleteForSession(sid) },
       deleteCliSession: async (profile, sid) => {
         if (!sidecar) return { ok: false }
         const targetProfile = profile ?? activeProfile()
@@ -954,6 +956,9 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     'server.decision_review_put': ({ caller_session_id, ...params }) => asCaller(caller_session_id, (caller) => decisions.put(caller, params)),
     'server.decision_review_read': ({ caller_session_id, review_id }) => asCaller(caller_session_id, (caller) => decisions.read(caller, review_id)),
     'server.decision_review_record': ({ caller_session_id, review_id, outcomes }) => asCaller(caller_session_id, (caller) => decisions.record(caller, review_id, outcomes)),
+    // TAL-1967: the `harness` toolset's proposals, each of the calling session.
+    'server.proposal_put': ({ caller_session_id, ...params }) => asCaller(caller_session_id, (caller) => proposals.put(caller, params)),
+    'server.proposal_read': ({ caller_session_id, proposal_id }) => asCaller(caller_session_id, (caller) => proposals.read(caller, proposal_id)),
   })
   const dashboardPlugins = new DashboardPlugins({ env, hermesHome: config.hermesHome, settings, sidecar: () => sidecar })
   const deps: AppDeps = {
@@ -1011,6 +1016,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     background,
     promptQueues: new PromptQueues(storage.documents, () => deps),
     decisions,
+    proposals,
     connectorOffers: new ConnectorOffers(storage.documents),
     groups: new Groups(() => deps),
     streamSlots,

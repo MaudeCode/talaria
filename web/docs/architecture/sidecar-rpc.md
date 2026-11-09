@@ -1,5 +1,17 @@
 # Sidecar RPC (TAL-245)
 
+RPC v88 adds the `harness` toolset's proposals (TAL-1967): `propose` and
+`proposal_read` (`server.proposal_put`, `server.proposal_read`). `propose`
+names a kind (`plugin_install`, `mcp_server`, `setting` or `cron_job`) and its
+payload; the server validates it and refuses with the failed condition, writing
+nothing. A plugin is previewed through the install route's sidecar call at put,
+and an MCP server carries `.env` names, never values. A proposal belongs to the
+calling session (another session's is `proposal_unknown`) and expires with the
+session's clarify timeout, which the sidecar resolves and sends. The owner
+approves or rejects it once on `/api/proposals/{id}`; approval is bound to the
+reviewed `payload_hash` and applies through the route that owns the kind, and
+either decision sends the session one line naming the proposal.
+
 RPC v87 adds what the review page renders to `decision_review_read` and
 `decision_review_record` results (TAL-1964): `filters.new` and `filters.pending`
 (item ids in display order) and `next_item_id`, the first item with no answer,

@@ -138,7 +138,8 @@ export type SessionListEvent = z.infer<typeof SessionListEventSchema>
 
 /** `/api/session/stream`: invalidate session detail, including while its native owner is idle. */
 /** TAL-1963: `decision_review` carries a review's `review_id`, `status` and `progress` (`DecisionReviewEventSchema`) after each change. */
-export const SESSION_STREAM_EVENT_NAMES = ['initial', 'session-updated', 'server_turn_started', 'bg_task_complete', 'process_complete', 'decision_review'] as const
+/** TAL-1967: `proposal` carries a proposal's `proposal_id` and `status` (`ProposalEventSchema`) after each change. */
+export const SESSION_STREAM_EVENT_NAMES = ['initial', 'session-updated', 'server_turn_started', 'bg_task_complete', 'process_complete', 'decision_review', 'proposal'] as const
 export const SessionStreamEventSchema = z.object({
   event: z.enum(SESSION_STREAM_EVENT_NAMES), data: z.looseObject({ session_id: z.string() }),
 })

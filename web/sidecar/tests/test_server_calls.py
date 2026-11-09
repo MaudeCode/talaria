@@ -20,6 +20,7 @@ SCHEMAS = json.loads((HERE / "fixtures" / "server_schemas.json").read_text())
 SERVER_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "fixtures" / "sidecar" / "server.json").read_text())
 RECORDED = SERVER_FIXTURES["server.session_list"][0]
 DECISION_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "fixtures" / "sidecar" / "decisions.json").read_text())
+PROPOSAL_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "fixtures" / "sidecar" / "proposals.json").read_text())
 
 
 class Peer:
@@ -372,7 +373,37 @@ def test_the_harness_toolset_registers_its_tools_and_the_talaria_one_stays_separ
         ("decision_review_put", "harness", "decision_review_put"),
         ("decision_review_read", "harness", "decision_review_read"),
         ("decision_review_record", "harness", "decision_review_record"),
+        ("propose", "harness", "propose"),
+        ("proposal_read", "harness", "proposal_read"),
     ]
     assert all(r["schema"]["name"] == r["name"] for r in registered)
     # The descriptions tell the agent when a review beats clarify.
     assert "instead of clarify" in registered[0]["description"]
+
+
+@pytest.mark.parametrize(("tool", "method"), [("propose", "server.proposal_put"), ("proposal_read", "server.proposal_read")])
+def test_harness_proposal_tools_forward_their_call_and_return_the_server_result_unchanged(monkeypatch, tool, method) -> None:
+    """TAL-1967: ``propose`` sends the kind, the payload as given and the session's clarify timeout; ``proposal_read`` the id."""
+    from types import SimpleNamespace
+
+    from talaria_sidecar.methods import chat
+
+    recorded = PROPOSAL_FIXTURES[method][0]
+    handler = getattr(harness_toolset, tool)
+    monkeypatch.setitem(chat._RUNS, "stream-1", SimpleNamespace(session_id=recorded["params"]["caller_session_id"], agent=SimpleNamespace(session_id="20261109_090000_tip")))
+    monkeypatch.setattr(chat, "_clarify_timeout", lambda params: 3600)
+    sent: list[tuple[str, dict]] = []
+    monkeypatch.setattr(rpc, "call_server", lambda m, params, timeout=None: sent.append((m, params)) or recorded["result"])
+    args = {key: value for key, value in recorded["params"].items() if key not in ("caller_session_id", "timeout_seconds")}
+    assert json.loads(handler(args, session_id="20261109_090000_tip")) == recorded["result"]
+    assert sent == [(method, recorded["params"])]
+    assert validate(sent[0][1], SCHEMAS[method]["params"]) == []
+    assert validate(recorded["result"], SCHEMAS[method]["result"]) == []
+
+    def refuse(m, params, timeout=None):
+        raise RpcError("_set_password is not a setting a proposal can change", condition="setting_unknown")
+
+    monkeypatch.setattr(rpc, "call_server", refuse)
+    assert json.loads(handler(args, session_id="20261109_090000_tip")) == {"error": "_set_password is not a setting a proposal can change", "condition": "setting_unknown"}
+    assert json.loads(handler(args))["condition"] == "caller_unknown"
+    assert len(sent) == 1

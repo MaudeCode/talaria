@@ -1,0 +1,72 @@
+{
+  "server.proposal_put": [
+    {
+      "params": {
+        "caller_session_id": "20261109_090000_caller",
+        "kind": "setting",
+        "payload": {
+          "key": "show_token_usage",
+          "value": true
+        },
+        "timeout_seconds": 3600
+      },
+      "result": {
+        "proposal_id": "pr_0a1b2c3d",
+        "status": "pending",
+        "url": "/session/20261109_090000_caller",
+        "kind": "setting",
+        "summary": "Change setting show_token_usage"
+      }
+    }
+  ],
+  "server.proposal_read": [
+    {
+      "params": {
+        "caller_session_id": "20261109_090000_caller",
+        "proposal_id": "pr_0a1b2c3d"
+      },
+      "result": {
+        "proposal_id": "pr_0a1b2c3d",
+        "session_id": "20261109_090000_caller",
+        "profile": "default",
+        "summary": "Change setting show_token_usage",
+        "diff": [
+          {
+            "kind": "deletion",
+            "old_line": 1,
+            "new_line": null,
+            "text": "-show_token_usage: false"
+          },
+          {
+            "kind": "addition",
+            "old_line": null,
+            "new_line": 1,
+            "text": "+show_token_usage: true"
+          }
+        ],
+        "fields": [],
+        "risk_notes": [],
+        "payload_hash": "88e2218f5a31d598",
+        "actions": {
+          "can_approve": false,
+          "can_reject": false,
+          "reason": "not_owner"
+        },
+        "status": "rejected",
+        "outcome": {
+          "text": null,
+          "error": null
+        },
+        "created_at": 1794100000,
+        "updated_at": 1794100060,
+        "expires_at": 1794103600,
+        "decided_at": 1794100060,
+        "kind": "setting",
+        "payload": {
+          "key": "show_token_usage",
+          "value": true
+        }
+      }
+    }
+  ]
+}
