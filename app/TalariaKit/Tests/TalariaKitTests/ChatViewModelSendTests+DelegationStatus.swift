@@ -86,7 +86,7 @@ extension ChatViewModelSendTests {
         log.tasks = try Self.delegationTasksAnswer(try Self.delegationStatusFixture("available_zero"))
         try await waitUntil { viewModel.backgroundDelegationSummary?.refresh == false }
         XCTAssertEqual(viewModel.backgroundDelegationSummary?.runningCount, 0)
-        XCTAssertFalse(viewModel.showsBackgroundWorkEntry)
+        XCTAssertTrue(viewModel.showsBackgroundWorkEntry, "The server still shows the settled summary")
         let settled = log.taskReads
         try await Task.sleep(for: .milliseconds(100))
         XCTAssertEqual(log.taskReads, settled, "A settled summary keeps polling")
@@ -94,6 +94,7 @@ extension ChatViewModelSendTests {
         log.tasks = try Self.delegationTasksAnswer(try Self.delegationStatusFixture("hidden"))
         await viewModel.refreshBackgroundTasks()
         XCTAssertNil(viewModel.backgroundDelegationSummary, "The server hid the summary")
+        XCTAssertFalse(viewModel.showsBackgroundWorkEntry)
 
         log.tasks = try Self.delegationTasksAnswer(try Self.delegationStatusFixture("unknown"))
         await viewModel.refreshBackgroundTasks()

@@ -708,9 +708,9 @@ public final class ChatViewModel {
     }
     /// What Background Work shows above its rows, while the server says to show it.
     public var backgroundDelegationSummary: DelegationStatus? { backgroundDelegationStatus.flatMap { $0.visible ? $0 : nil } }
-    /// The toolbar item and chip open Background Work while the server pins work or its summary is still changing, so a
-    /// completion awaiting delivery stays reachable after its row finishes.
-    public var showsBackgroundWorkEntry: Bool { pinnedBackgroundTaskCount > 0 || backgroundDelegationSummary?.refresh == true }
+    /// The toolbar item and chip open Background Work while the server pins work or shows its summary, so a completion
+    /// awaiting delivery stays reachable after its row finishes.
+    public var showsBackgroundWorkEntry: Bool { pinnedBackgroundTaskCount > 0 || backgroundDelegationSummary != nil }
     /// Reads continue while any record is unsettled or the server's summary asks for them.
     private var backgroundWorkNeedsRefresh: Bool { backgroundTasks.contains(where: \.active) || backgroundDelegationStatus?.refresh == true }
     /// What the Queued messages toolbar badge and chip show: this device's unsent queue plus the owner's inputs as the
