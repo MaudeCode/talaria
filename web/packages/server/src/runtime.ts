@@ -520,7 +520,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     try { profile = (await store.get(sid, { metadataOnly: true, promote: false, cacheOnMiss: false })).profile } catch { profile = null }
     events.publish('background_task', { profile, sessionId: sid })
   })
-  const background = new BackgroundActivity({ store: backgroundStore, sidecar: () => sidecar, profileHome: (p) => profileHome(p ?? 'default'), liveStream: (id) => registry.liveIds.has(id), now, log,
+  const background = new BackgroundActivity({ store: backgroundStore, sidecar: () => sidecar, owner: () => sessions.owner ?? null, profileHome: (p) => profileHome(p ?? 'default'), liveStream: (id) => registry.liveIds.has(id), now, log,
     validateSession: async (sid, profile) => {
       const session = await store.get(sid, { metadataOnly: true }).catch(() => null)
       if (!session && (await sessions.stateDbSources([sid], profile ?? 'default'))?.has(sid)) return

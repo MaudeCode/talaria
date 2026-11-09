@@ -20,8 +20,12 @@ from .connectors import snapshot_view
 
 _ACTIONS = {"snapshot", "watch", "context_detail", "submit", "receipt", "cancel", "steer", "steer_queued", "replace_queued", "interrupt", "approval", "clarify",
             "clarify_lock", "discard", "mutate", "export", "checkpoint_diff", "terminal_info", "shell_exec", "react",
-            "connection_status", "connection_wake", "connection_respond", "connection_retry"}
+            "connection_status", "connection_wake", "connection_respond", "connection_retry",
+            "work_list", "work_tail", "work_stop", "work_steer"}
 _CONNECTION_ACTIONS = {action for action in _ACTIONS if action.startswith("connection_")}
+_WORK_ACTIONS = {action for action in _ACTIONS if action.startswith("work_")}
+# The owner's own refusals for a row it no longer lists for this session (a cold session, an exited child or process).
+_WORK_GONE = {"not_found", "process_not_found"}
 _CONNECTION_EVENTS = {"connection.request", "connection.update"}
 _OWNER_READ_MAX_BYTES = 4 * 1024 * 1024
 _REACTION_EMOJIS = {"👍", "👎", "❤️", "😂", "😮", "🎉"}
@@ -288,6 +292,73 @@ async def _connection_action(client, params: dict, described: dict) -> dict:
     return {**result, "connection": view} if view else _refused("refused", "owner_connection_invalid")
 
 
+def _number(value) -> float | None:
+    return value if type(value) in (int, float) else None
+
+
+def _work(described: dict, processes, subagents, tails) -> dict:
+    """The owner's rosters through a closed allowlist. A subagent is resident when its owner serves its tail: control and
+    tail stay pinned to the parent that dispatched it, while a rebuilt parent's children are listed read-only."""
+    rows = []
+    for row in processes if isinstance(processes, list) else []:
+        if isinstance(row, dict) and isinstance(row.get("session_id"), str) and row["session_id"]:
+            rows.append({"process_id": row["session_id"], "command": str(row.get("command") or ""), "running": row.get("status") == "running",
+                         "exit_code": row["exit_code"] if type(row.get("exit_code")) is int else None,
+                         "started_at": _number(row.get("started_epoch")), "exited_at": _number(row.get("exited_at")) or None,
+                         "completion_reason": row["completion_reason"] if isinstance(row.get("completion_reason"), str) else None,
+                         "output_tail": row["output_tail"] if isinstance(row.get("output_tail"), str) else ""})
+    children = []
+    for row, tail in zip(subagents, tails):
+        children.append({"subagent_id": row["subagent_id"], "goal": str(row.get("goal") or ""), "status": str(row.get("status") or ""),
+                         "started_at": _number(row.get("started_at")), "accepting_steer": row.get("accepting_steer") is True,
+                         "resident": isinstance(tail, dict) and tail.get("available") is True})
+    return {"authority_epoch": described["authority_epoch"], "processes": rows, "subagents": children}
+
+
+async def _work_action(client, params: dict, described: dict) -> dict:
+    """TAL-1336: one session's processes and subagents on its owner, through the owner's session-scoped verbs only. Never a
+    resume (an ancillary read adopts nothing), the session-wide ``process.stop`` or the owner-wide ``delegation.pause``."""
+    from hermes_cli.gateway_client import GatewayRPCError
+    action, sid = params["action"], params["session_id"]
+    result = {"state": "attached", "reason": None, "snapshot": None, "receipt": None}
+    if action != "work_list" and described["authority_epoch"] != params["authority_epoch"]:
+        return _refused("refused", "owner_changed")
+    try:
+        if action == "work_list":
+            processes = (await client.rpc("process.list", session_id=sid) or {}).get("processes")
+            listed = (await client.rpc("subagent.list", session_id=sid) or {}).get("subagents")
+            subagents = [row for row in listed if isinstance(row, dict) and isinstance(row.get("subagent_id"), str) and row["subagent_id"]] \
+                if isinstance(listed, list) else []
+            tails = [await client.rpc("subagent.tail", session_id=sid, subagent_id=row["subagent_id"]) for row in subagents]
+            return {**result, "work": _work(described, processes, subagents, tails)}
+        native = params["work_id"]
+        if action == "work_tail":
+            value = await client.rpc("subagent.tail", session_id=sid, subagent_id=native)
+            if not isinstance(value, dict) or not isinstance(value.get("text"), str):
+                return _refused("refused", "owner_work_invalid")
+            return {**result, "work_tail": {"available": value.get("available") is True, "text": value["text"], "truncated": value.get("truncated") is True}}
+        if action == "work_steer":
+            value = await client.rpc("subagent.steer", session_id=sid, subagent_id=native, text=params["text"])
+            return {**result, "work_outcome": "queued" if isinstance(value, dict) and value.get("status") == "queued" else "rejected"}
+        if params["work_kind"] == "subagent":
+            value = await client.rpc("subagent.interrupt", session_id=sid, subagent_id=native)
+            return {**result, "work_outcome": "stopped" if isinstance(value, dict) and value.get("found") is True else "not_found"}
+        # One row: the owner kills only a process ``process.list`` shows for this session.
+        value = await client.rpc("process.kill", session_id=sid, process_id=native)
+        status = value.get("status") if isinstance(value, dict) else None
+        if status in {"killed", "already_exited", "not_found"}:
+            return {**result, "work_outcome": {"killed": "stopped", "already_exited": "not_running"}.get(status, "not_found")}
+        return _refused("refused", "owner_work_stop_failed")
+    except GatewayRPCError as exc:
+        if str(exc) not in _WORK_GONE:
+            raise
+        if action == "work_list":
+            return {**result, "work": _work(described, [], [], [])}
+        if action == "work_tail":
+            return {**result, "work_tail": {"available": False, "text": "", "truncated": False}}
+        return {**result, "work_outcome": "not_found"}
+
+
 async def _run(ctx, params: dict, home: Path, discovery) -> dict:
     from hermes_cli.gateway_client import GatewayRPCError
 
@@ -331,6 +402,8 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
         try:
             if params["action"] in _CONNECTION_ACTIONS:
                 return await _connection_action(client, params, described)
+            if params["action"] in _WORK_ACTIONS:
+                return await _work_action(client, params, described)
             if params["action"] == "checkpoint_diff":
                 # The owner resolves the physical target and frozen policy. Never resume or read host files.
                 value = await asyncio.wait_for(client.rpc("rollback.session_diff", session_id=sid, _timeout=25), timeout=30)
@@ -566,6 +639,12 @@ def session(ctx, params: dict) -> dict:
         raise InvalidParams("captured command requires command and owner identity")
     if action in _CONNECTION_ACTIONS:
         _validate_connection(action, params)
+    if action in _WORK_ACTIONS - {"work_list"} and (
+            params.get("work_kind") not in ({"process", "subagent"} if action == "work_stop" else {"subagent"})
+            or not isinstance(params.get("work_id"), str) or not params["work_id"]
+            or type(params.get("authority_epoch")) is not int or params["authority_epoch"] < 0
+            or action == "work_steer" and (not isinstance(params.get("text"), str) or not params["text"].strip())):
+        raise InvalidParams("a work control requires its row, owner identity and, to steer, a message")
     required = {
         "submit": ("request_id", "text"), "receipt": ("admission_id",), "cancel": ("admission_id",),
         "steer": ("execution_generation", "text"), "steer_queued": ("admission_id",), "replace_queued": ("admission_id", "submission_id", "text"),

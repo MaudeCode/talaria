@@ -1,0 +1,33 @@
+{
+  "description": "TAL-1336: one native owner's process and subagent rosters for a session (owner), the tail it serves for its resident child, and the work_list projection the sidecar returns (work).",
+  "owner": {
+    "process.list": {
+      "processes": [
+        { "session_id": "proc_server", "command": "npm run dev", "status": "running", "exit_code": null, "started_epoch": 1700000000.5, "exited_at": null, "completion_reason": null, "output_tail": "listening on 5173\n" },
+        { "session_id": "proc_build", "command": "make build", "status": "exited", "exit_code": 0, "started_epoch": 1699999990, "exited_at": 1699999999, "completion_reason": "exited", "output_tail": "built\n" }
+      ]
+    },
+    "subagent.list": {
+      "subagents": [
+        { "subagent_id": "sa-resident", "parent_id": null, "depth": 1, "goal": "Read the logs", "delegation_id": "deleg-1", "model": "m", "started_at": 1700000001, "status": "running", "tool_count": 3, "last_tool": "read_file", "accepting_steer": true },
+        { "subagent_id": "sa-rebuilt", "parent_id": null, "depth": 1, "goal": "Check the tests", "delegation_id": "deleg-1", "model": "m", "started_at": 1700000002, "status": "running", "tool_count": 1, "last_tool": "terminal", "accepting_steer": true }
+      ],
+      "delegations": []
+    },
+    "subagent.tail": {
+      "sa-resident": { "subagent_id": "sa-resident", "available": true, "text": "read_file logs/app.log\n", "truncated": false },
+      "sa-rebuilt": { "subagent_id": "sa-rebuilt", "available": false, "text": "", "truncated": false }
+    }
+  },
+  "work": {
+    "authority_epoch": 1,
+    "processes": [
+      { "process_id": "proc_server", "command": "npm run dev", "running": true, "exit_code": null, "started_at": 1700000000.5, "exited_at": null, "completion_reason": null, "output_tail": "listening on 5173\n" },
+      { "process_id": "proc_build", "command": "make build", "running": false, "exit_code": 0, "started_at": 1699999990, "exited_at": 1699999999, "completion_reason": "exited", "output_tail": "built\n" }
+    ],
+    "subagents": [
+      { "subagent_id": "sa-resident", "goal": "Read the logs", "status": "running", "started_at": 1700000001, "accepting_steer": true, "resident": true },
+      { "subagent_id": "sa-rebuilt", "goal": "Check the tests", "status": "running", "started_at": 1700000002, "accepting_steer": true, "resident": false }
+    ]
+  }
+}

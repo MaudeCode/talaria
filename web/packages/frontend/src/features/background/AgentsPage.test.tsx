@@ -88,3 +88,14 @@ describe('Agents page delegation summary (TAL-1579)', () => {
     expect(screen.queryByText('1 awaiting delivery')).not.toBeInTheDocument()
   })
 })
+
+describe('Agents page on a native-owner chat (TAL-1336)', () => {
+  it.each([
+    ['unsupported', 'This chat’s agents run in a worker Talaria can’t show'],
+    ['unavailable', 'The agent can’t report status right now.'],
+  ] as const)('says when the owner\'s work is %s', async (owner_work, text) => {
+    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ ...response(), tasks: [], owner_work })
+    renderPage()
+    expect(await screen.findByText(text)).toBeInTheDocument()
+  })
+})

@@ -1,7 +1,7 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
 import { ModelChangeSchema, OwnerActionRequestSchema } from '../gateway-session.js'
-import { ChatStartRequestSchema, ChatStartResponseSchema, StreamStatusSchema, CancelResponseSchema, SteerResponseSchema, SteerWithdrawRequestSchema, SteerWithdrawResponseSchema, SteerSendNowRequestSchema, SteerSendNowResponseSchema, ApprovalPendingEnvelopeSchema, ApprovalRespondResponseSchema, ClarifyPendingEnvelopeSchema, ClarifyRespondResponseSchema, ClarifyAnswersSchema, GoalResponseSchema, SessionSchema, BackgroundTaskSchema, BackgroundTasksResponseSchema, BackgroundTaskResultSchema, BackgroundDismissRequestSchema, BackgroundDismissResponseSchema, BackgroundStopResponseSchema } from '../views.js'
+import { ChatStartRequestSchema, ChatStartResponseSchema, StreamStatusSchema, CancelResponseSchema, SteerResponseSchema, SteerWithdrawRequestSchema, SteerWithdrawResponseSchema, SteerSendNowRequestSchema, SteerSendNowResponseSchema, ApprovalPendingEnvelopeSchema, ApprovalRespondResponseSchema, ClarifyPendingEnvelopeSchema, ClarifyRespondResponseSchema, ClarifyAnswersSchema, GoalResponseSchema, SessionSchema, BackgroundTaskSchema, BackgroundTasksResponseSchema, BackgroundTaskResultSchema, BackgroundDismissRequestSchema, BackgroundDismissResponseSchema, BackgroundStopResponseSchema, BackgroundSteerRequestSchema, BackgroundSteerResponseSchema } from '../views.js'
 
 /** Agent turns, approvals, clarify prompts, goals, background tasks, and side questions. */
 
@@ -43,6 +43,7 @@ export const chatContract = {
     tasks: oc.route({ method: 'GET', path: '/api/background/tasks', tags, summary: 'The background work a session owns: delegations, notified processes and /background tasks (TAL-372).' }).input(z.object({ session_id: z.string(), kind: BackgroundTaskSchema.shape.kind.optional() })).output(BackgroundTasksResponseSchema),
     result: oc.route({ method: 'GET', path: '/api/background/result', tags }).input(z.object({ session_id: z.string(), task_id: z.string() })).output(BackgroundTaskResultSchema),
     stop: oc.route({ method: 'POST', path: '/api/background/stop', tags }).input(BackgroundDismissRequestSchema).output(BackgroundStopResponseSchema),
+    steer: oc.route({ method: 'POST', path: '/api/background/steer', tags, summary: 'Send a steering message to one native-owner subagent that offers `can_steer` (TAL-1336).' }).input(BackgroundSteerRequestSchema).output(BackgroundSteerResponseSchema),
     dismiss: oc.route({ method: 'POST', path: '/api/background/dismiss', tags }).input(BackgroundDismissRequestSchema).output(BackgroundDismissResponseSchema),
     ack: oc.route({ method: 'POST', path: '/api/bg-task-complete-ack', tags }).input(z.object({ session_id: z.string().optional(), task_id: z.string().optional(), process_id: z.string().optional() }).catchall(Json)).output(z.object({ ok: z.literal(true), session_id: z.string(), task_id: z.string(), noop: z.literal(true) })),
   },

@@ -4,13 +4,14 @@
  */
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import type { DelegationStatus } from '@maudecode/talaria-web-contracts'
+import type { BackgroundTask, DelegationStatus } from '@maudecode/talaria-web-contracts'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { ErrorState, LoadingState } from '../../ui/States'
 import { relativeTime } from '../sessions/SessionListPanel'
 import { m } from '../../paraglide/messages.js'
-import { BackgroundTaskAction, agentsSummary, StatusIcon, statusLabel } from './BackgroundWork'
+import { useState } from 'react'
+import { BackgroundTaskAction, SteerForm, TaskHeading, agentsSummary, statusLabel } from './BackgroundWork'
 
 const LIVE_REFRESH_MS = 10_000
 
@@ -53,41 +54,48 @@ export function AgentsPage({ sessionId, active }: { sessionId: string; active: b
   })
   if (query.isPending) return <LoadingState />
   if (query.isError) return <ErrorState error={query.error} onRetry={() => { void query.refetch() }} />
-  const { tasks, agent_available: available, delegation_status: delivery } = query.data
+  const { tasks, agent_available: available, delegation_status: delivery, owner_work: owner } = query.data
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      {!available && <div className="border-b border-border-subtle px-3 py-2 text-xs text-muted" role="status">{m.panel_agents_unavailable()}</div>}
+      {(!available || owner === 'unavailable') && <div className="border-b border-border-subtle px-3 py-2 text-xs text-muted" role="status">{m.panel_agents_unavailable()}</div>}
+      {owner === 'unsupported' && <div className="border-b border-border-subtle px-3 py-2 text-xs text-muted" role="status">{m.panel_agents_owner_unsupported()}</div>}
       {delivery?.visible && <div className="agents-delivery border-b border-border-subtle px-3 py-2 text-xs text-muted" role="status" data-availability={delivery.availability}>{delegationSummary(delivery)}</div>}
       {tasks.length === 0 ? (
         <div className="p-3 text-xs text-muted" role="status">{m.panel_agents_empty()}</div>
       ) : (
         <ul className="flex flex-col" aria-label={m.panel_agents()}>
           {tasks.map((t) => (
-            <li key={t.task_id} className="agents-entry flex flex-col gap-0.5 border-b border-border-subtle px-3 py-2" data-task-id={t.task_id} data-status={t.status}>
-              <div className="flex min-w-0 items-center gap-1.5">
-                <StatusIcon status={t.status} />
-                <span className="min-w-0 flex-1 truncate text-[13px] text-text" title={t.title}>{t.title}</span>
-                <span className="shrink-0 text-[11px] text-muted">{statusLabel(t.status)}</span>
-                <BackgroundTaskAction sessionId={sessionId} task={t} />
-              </div>
-              <div className="flex min-w-0 items-center gap-2 pl-5 text-[11px] text-muted">
-                {t.agents && <span>{agentsSummary(t.agents)}</span>}
-                <span>{m.panel_agents_updated({ time: relativeTime(t.updated_at) })}</span>
-              </div>
-              {/* TAL-494: each subagent's own read-only transcript, by its goal when the unit ran several. */}
-              {t.child_sessions.length > 0 && (
-                <div className="flex min-w-0 flex-col gap-0.5 pl-5 text-[11px]">
-                  {t.child_sessions.map((c) => (
-                    <Link key={c.session_id} to="/session/$sessionId" params={{ sessionId: c.session_id }} className="min-w-0 truncate text-accent-text underline" title={c.goal}>
-                      {t.child_sessions.length > 1 ? m.panel_agents_transcript_for({ goal: c.goal }) : m.panel_agents_transcript()}
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </li>
+            <AgentEntry key={t.task_id} sessionId={sessionId} task={t} />
           ))}
         </ul>
       )}
     </div>
+  )
+}
+
+function AgentEntry({ sessionId, task: t }: { sessionId: string; task: BackgroundTask }) {
+  const [steering, setSteering] = useState(false)
+  return (
+    <li className="agents-entry flex flex-col gap-0.5 border-b border-border-subtle px-3 py-2" data-task-id={t.task_id} data-status={t.status}>
+      <TaskHeading task={t} title={<span className="text-[13px] text-text">{t.title}</span>}>
+        <span className="text-[11px] text-muted">{statusLabel(t.status)}</span>
+        <BackgroundTaskAction sessionId={sessionId} task={t} onSteer={steering ? undefined : () => setSteering(true)} />
+      </TaskHeading>
+      {steering && t.can_steer && <SteerForm sessionId={sessionId} task={t} onClose={() => setSteering(false)} />}
+      <div className="flex min-w-0 items-center gap-2 pl-5 text-[11px] text-muted">
+        {t.agents && <span>{agentsSummary(t.agents)}</span>}
+        <span>{m.panel_agents_updated({ time: relativeTime(t.updated_at) })}</span>
+      </div>
+      {/* TAL-494: each subagent's own read-only transcript, by its goal when the unit ran several. */}
+      {t.child_sessions.length > 0 && (
+        <div className="flex min-w-0 flex-col gap-0.5 pl-5 text-[11px]">
+          {t.child_sessions.map((c) => (
+            <Link key={c.session_id} to="/session/$sessionId" params={{ sessionId: c.session_id }} className="min-w-0 truncate text-accent-text underline" title={c.goal}>
+              {t.child_sessions.length > 1 ? m.panel_agents_transcript_for({ goal: c.goal }) : m.panel_agents_transcript()}
+            </Link>
+          ))}
+        </div>
+      )}
+    </li>
   )
 }

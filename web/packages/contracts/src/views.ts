@@ -670,8 +670,10 @@ export const BackgroundTaskSchema = z.object({
   agents: BackgroundLinkSchema.shape.agents.nullable(),
   pinned: z.boolean(),
   dismissible: z.boolean(),
-  /** TAL-1172: confirmed running work this session may stop. */
+  /** TAL-1172: confirmed running work this session may stop. TAL-1336: a native-owner row stops through its owner. */
   can_stop: z.boolean().optional(),
+  /** TAL-1336: a native-owner subagent that takes a steering message now. */
+  can_steer: z.boolean().optional(),
   active: z.boolean(),
 })
 export type BackgroundTask = z.infer<typeof BackgroundTaskSchema>
@@ -697,12 +699,17 @@ export type DelegationStatus = z.infer<typeof DelegationStatusSchema>
  * `agent_available: false` when the Agent could not be asked: running work then shows `unknown`. Reading never consumes a
  * result. `agents_working` (TAL-373): a delegation is running or needs attention, whatever `kind` the list is narrowed to;
  * the chat's side panel opens on Agents for it. Absent from servers before TAL-373. `delegation_status` (TAL-1579) is
- * absent from servers before TAL-1579.
+ * absent from servers before TAL-1579. `owner_work` (TAL-1336), on a native-owner chat only: whether its owner's
+ * processes and subagents are in `tasks` (`available`), run in a worker the owner cannot project (`unsupported`), or could
+ * not be read now (`unavailable`).
  */
-export const BackgroundTasksResponseSchema = z.object({ activity_phase: SessionActivityPhaseSchema.optional(), session_id: z.string(), tasks: z.array(BackgroundTaskSchema), agent_available: z.boolean(), agents_working: z.boolean().optional(), delegation_status: DelegationStatusSchema.optional() })
+export const BackgroundTasksResponseSchema = z.object({ activity_phase: SessionActivityPhaseSchema.optional(), session_id: z.string(), tasks: z.array(BackgroundTaskSchema), agent_available: z.boolean(), agents_working: z.boolean().optional(), delegation_status: DelegationStatusSchema.optional(), owner_work: z.enum(['available', 'unsupported', 'unavailable']).optional() })
 export const BackgroundTaskResultSchema = z.object({ task_id: z.string(), text: z.string() })
 export const BackgroundDismissRequestSchema = z.object({ session_id: SessionIdSchema, task_id: z.string().min(1) })
 export const BackgroundStopResponseSchema = z.object({ outcome: z.enum(['stopped', 'not_running', 'not_found']) })
+/** TAL-1336: a steering message for one native-owner subagent; `rejected` means no running child took it. */
+export const BackgroundSteerRequestSchema = BackgroundDismissRequestSchema.extend({ text: z.string().trim().min(1).max(4000) })
+export const BackgroundSteerResponseSchema = z.object({ outcome: z.enum(['queued', 'rejected', 'not_found']) })
 export const BackgroundDismissResponseSchema = z.object({ ok: z.literal(true), task: BackgroundTaskSchema })
 export const ShareCreateResponseSchema = z.looseObject({ ok: z.literal(true), share: z.looseObject({ token: z.string(), url: z.string(), title: z.string(), message_count: z.number().int(), created_at: z.number(), updated_at: z.number() }), session: SessionRowSchema })
 export const ShareMessageSchema = z.looseObject({ role: z.string(), content: z.union([z.string(), z.null(), z.array(Json)]).optional() })

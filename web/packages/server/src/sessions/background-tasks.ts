@@ -5,7 +5,8 @@
  * `sessions/_background/<sid>.json`, so reloads, restarts and every client read the same history, and reading never
  * consumes anything. The Agent stays authoritative for its own work: a receipt only fills in what it no longer reports.
  */
-import type { BackgroundLink, BackgroundTask, DelegationStatus, SessionActivityPhase, SidecarResult } from '@maudecode/talaria-web-contracts'
+import { createHash } from 'node:crypto'
+import type { BackgroundLink, BackgroundTask, DelegationStatus, OwnerWork, SessionActivityPhase, SidecarResult } from '@maudecode/talaria-web-contracts'
 import type { DocumentBackend } from './storage/backend.js'
 import { updateDocument } from './storage/document.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
@@ -14,6 +15,7 @@ import { isDict, stripToolCallXml } from './merge.js'
 import { toolKind } from './tool-display.js'
 import { isSafeSessionId } from './session.js'
 import { backgroundEventKind } from './background-events.js'
+import type { OwnerWorkOutcome, OwnerWorkRead, OwnerWorkRef } from './gateway-sessions.js'
 
 type Dict = Record<string, unknown>
 type Status = BackgroundTask['status']
@@ -336,6 +338,38 @@ export function delegationStatus(read: SidecarResult<'process.delegation_status'
   return { availability, running_count, awaiting_delivery_count, memory_live, visible: opts.hasDelegations || refresh, refresh }
 }
 
+/** TAL-1336: one native-owner row: the task every client sees and the owner reference only this server holds. */
+export interface OwnerWorkRow { task: BackgroundTask; ref: OwnerWorkRef; tail: string | null; resident: boolean }
+
+/**
+ * TAL-1336: the session's owner work as Background Work rows. Ids are opaque and bound to the profile home, session and
+ * owner authority, so an id never reaches another profile's, chat's or restarted owner's work. Nothing is stored: the
+ * owner stays the only task owner and the next read settles what a control did.
+ */
+export function ownerWorkRows(home: string, sid: string, work: OwnerWork, now: number): OwnerWorkRow[] {
+  const id = (kind: OwnerWorkRef['kind'], native: string): string => `owner-work-${createHash('sha256').update(JSON.stringify([home, sid, work.authority_epoch, kind, native])).digest('hex').slice(0, 32)}`
+  const ref = (kind: OwnerWorkRef['kind'], native: string): OwnerWorkRef => ({ kind, id: native, epoch: work.authority_epoch })
+  const processes = work.processes.map((p): OwnerWorkRow => {
+    const receipt = mergeReceipt(undefined, { ...processReceipt({ process_id: p.process_id, command: p.command, started_at: p.started_at, exited: !p.running, exited_at: p.exited_at, exit_code: p.exit_code, completion_reason: p.completion_reason ?? '', watched: false }), task_id: id('process', p.process_id) }, now)
+    return { task: { ...taskView(receipt, { canStop: p.running }), result_available: p.output_tail.length > 0 }, ref: ref('process', p.process_id), tail: p.output_tail || null, resident: true }
+  })
+  const subagents = work.subagents.map((a): OwnerWorkRow => {
+    const running = RUNNING_STATES.has(a.status)
+    const receipt = mergeReceipt(undefined, delegationReceipt({ delegation_id: id('subagent', a.subagent_id), state: a.status, dispatched_at: a.started_at, completed_at: null, updated_at: null, goals: [a.goal], child_statuses: running ? [] : [a.status], has_result: false, live_status: null }, now), now)
+    // A child of a rebuilt parent stays readable; only its resident owner can tail, stop or steer it.
+    const task = taskView(receipt, { canStop: a.resident })
+    return { task: { ...task, can_steer: Boolean(task.can_stop) && a.accepting_steer, result_available: a.resident }, ref: ref('subagent', a.subagent_id), tail: null, resident: a.resident }
+  })
+  return [...processes, ...subagents]
+}
+
+/** TAL-1336: the owner side Background Work reads and controls a native-owner chat's work through. */
+export interface OwnerWorkPort {
+  work(sid: string, profile?: string): Promise<OwnerWorkRead | null>
+  workTail(sid: string, profile: string | undefined, ref: OwnerWorkRef): Promise<string | null>
+  workControl(sid: string, profile: string | undefined, ref: OwnerWorkRef, verb: 'stop' | 'steer', text?: string): Promise<OwnerWorkOutcome>
+}
+
 /** TAL-1305: waits before re-reading after a refresh that could not reach the Agent (a sidecar restart, a busy call). */
 const REFRESH_RETRY_MS = [1_000, 4_000, 15_000]
 
@@ -344,6 +378,8 @@ export interface BackgroundActivityDeps {
   validateSession?: (sid: string, profile: string | null) => Promise<void>
   sessionState?: (sid: string, excludeStreamId?: string, profile?: string | null) => Promise<{ foreground: SessionActivityPhase | null; settled: SessionActivityPhase; since: number }>
   sidecar: () => SidecarLike | null
+  /** TAL-1336: the native owner, when this server attaches to one. */
+  owner?: () => OwnerWorkPort | null
   profileHome: (profile: string | null) => string
   /** The stream is still running in this server. */
   liveStream: (streamId: string) => boolean
@@ -358,7 +394,7 @@ export class BackgroundActivity {
   async sessionIds(): Promise<string[]> { return this.deps.store.sessionIds() }
 
   async activityPhase(sid: string, profile: string | null, opts: { excludeStreamId?: string; terminalPhase?: SessionActivityPhase } = {}): Promise<SessionActivityPhase> {
-    if (opts.terminalPhase || opts.excludeStreamId || (await this.receipts(sid)).length) return (await this.snapshot(sid, profile, opts)).activity_phase
+    if (opts.terminalPhase || opts.excludeStreamId || (await this.receipts(sid)).length) return (await this.snapshot(sid, profile, { ...opts, owner: false })).activity_phase
     const state = await this.deps.sessionState?.(sid, undefined, profile)
     return state?.foreground ?? state?.settled ?? 'completed'
   }
@@ -408,7 +444,22 @@ export class BackgroundActivity {
   }
 
   /** The session's records, refreshed from the Agent; work it cannot confirm right now shows `unknown`. */
-  async snapshot(sid: string, profile: string | null, opts: { agentOnly?: boolean; canStop?: boolean; excludeStreamId?: string; terminalPhase?: SessionActivityPhase } = {}): Promise<{ tasks: BackgroundTask[]; agent_available: boolean; agents_working: boolean; activity_phase: SessionActivityPhase }> {
+  /** TAL-1336: the native owner's rows for `sid`, read fresh; null when `sid` is not an owner chat. */
+  private async ownerWork(sid: string, profile: string | null): Promise<{ port: OwnerWorkPort; state: OwnerWorkRead['state']; rows: OwnerWorkRow[] } | null> {
+    const port = this.deps.owner?.() ?? null
+    const read = port ? await port.work(sid, profile ?? undefined) : null
+    if (!port || !read) return null
+    return { port, state: read.state, rows: read.work ? ownerWorkRows(read.home, sid, read.work, this.deps.now()) : [] }
+  }
+
+  private async ownerRow(sid: string, profile: string | null, taskId: string) {
+    const owner = await this.ownerWork(sid, profile)
+    const row = owner?.rows.find((r) => r.task.task_id === taskId)
+    return owner && row ? { port: owner.port, row } : null
+  }
+
+  /** `owner: false` leaves out a native owner's rows (TAL-1336), which only Background Work reads. */
+  async snapshot(sid: string, profile: string | null, opts: { agentOnly?: boolean; canStop?: boolean; owner?: boolean; excludeStreamId?: string; terminalPhase?: SessionActivityPhase } = {}): Promise<{ tasks: BackgroundTask[]; agent_available: boolean; agents_working: boolean; activity_phase: SessionActivityPhase; owner_work?: OwnerWorkRead['state'] }> {
     const generation = this.deps.store.generation(sid)
     const sidecar = this.deps.sidecar()
     let agent: SidecarResult<'process.background_list'> | null = null
@@ -439,6 +490,9 @@ export class BackgroundActivity {
     }
     await this.deps.store.update(sid, (await this.deps.store.list(sid)).filter((receipt) => receipt.kind === 'background_command' && receipt.status === 'unknown' && confirmed(receipt)).map((receipt) => ({ task_id: receipt.task_id, kind: receipt.kind, status: 'running' as const })), { generation })
     const tasks = (await this.deps.store.list(sid)).map((r) => taskView(r, { unconfirmed: !agent && !confirmed(r), canStop: opts.canStop !== false && agent !== null && confirmed(r) }))
+    const owner = opts.agentOnly || opts.owner === false ? null : await this.ownerWork(sid, profile)
+    // Owner rows carry the owner's permissions: Web's direct-write gate never applies to work the owner controls.
+    for (const { task } of owner?.rows ?? []) tasks.push(task)
     tasks.sort((a, b) => (b.started_at ?? b.updated_at) - (a.started_at ?? a.updated_at))
     const state = await this.deps.sessionState?.(sid, opts.excludeStreamId, profile)
     const settled = opts.terminalPhase ?? state?.settled ?? 'completed'
@@ -447,7 +501,7 @@ export class BackgroundActivity {
       : tasks.some((task) => task.status === 'unknown') ? 'stale'
       : settled === 'failed' || recent.some((task) => task.status === 'failed') ? 'failed'
       : settled === 'cancelled' || recent.some((task) => task.status === 'cancelled') ? 'cancelled' : settled)
-    return { tasks, activity_phase, agent_available: agent !== null, agents_working: tasks.some((t) => t.kind === 'delegation' && (t.status === 'running' || t.status === 'attention')) }
+    return { tasks, activity_phase, agent_available: agent !== null, agents_working: tasks.some((t) => t.kind === 'delegation' && (t.status === 'running' || t.status === 'attention')), ...(owner ? { owner_work: owner.state } : {}) }
   }
 
   /**
@@ -455,7 +509,7 @@ export class BackgroundActivity {
    * the Agents page polls. Work nobody can confirm (`unknown`) may never settle, so it is not running.
    */
   async delegationRunning(sid: string, profile: string | null, childIds: ReadonlySet<string>): Promise<boolean> {
-    const { tasks } = await this.snapshot(sid, profile, { canStop: false })
+    const { tasks } = await this.snapshot(sid, profile, { canStop: false, owner: false })
     return tasks.some((task) => task.kind === 'delegation' && RUNNING_LIKE.has(task.status) && task.child_sessions.some((child) => childIds.has(child.session_id)))
   }
 
@@ -478,6 +532,8 @@ export class BackgroundActivity {
    * Leaked tool-call XML is removed, as from a transcript reply (TAL-302).
    */
   async result(sid: string, profile: string | null, taskId: string): Promise<string | null> {
+    const native = await this.ownerRow(sid, profile, taskId)
+    if (native) return native.row.ref.kind === 'process' ? native.row.tail : native.row.resident ? await native.port.workTail(sid, profile ?? undefined, native.row.ref) : null
     const receipt = (await this.deps.store.get(sid, taskId))
     if (!receipt) return null
     if (receipt.result) return stripToolCallXml(receipt.result)
@@ -487,8 +543,19 @@ export class BackgroundActivity {
   }
 
   /** Recheck the session's authoritative snapshot before routing a stop; the sidecar checks ownership again. */
-  async stop(sid: string, profile: string | null, taskId: string): Promise<SidecarResult<'process.stop'>> {
-    const snapshot = await this.snapshot(sid, profile)
+  /** `assertWritable` gates only this sidecar's own work: an owner authorizes controls of the work it runs. */
+  async stop(sid: string, profile: string | null, taskId: string, assertWritable: () => Promise<void>): Promise<SidecarResult<'process.stop'>> {
+    // TAL-1336: an owner row stops through its owner, one row at a time; never this sidecar's registry.
+    const owner = await this.ownerWork(sid, profile)
+    if (owner) {
+      const row = owner.rows.find((r) => r.task.task_id === taskId)
+      if (!row) return { outcome: 'not_found' }
+      if (!row.task.can_stop) return { outcome: 'not_running' }
+      const outcome = await owner.port.workControl(sid, profile ?? undefined, row.ref, 'stop')
+      return { outcome: outcome === 'stopped' || outcome === 'not_running' ? outcome : 'not_found' }
+    }
+    await assertWritable()
+    const snapshot = await this.snapshot(sid, profile, { owner: false })
     if (!snapshot.agent_available) throw new SidecarError('Background work is unavailable from the Agent', { condition: 'sidecar_unavailable' })
     const task = snapshot.tasks.find((t) => t.task_id === taskId)
     if (!task) return { outcome: 'not_found' }
@@ -498,6 +565,15 @@ export class BackgroundActivity {
     const result = await sidecar.call('process.stop', { profile_home: this.deps.profileHome(profile), session_id: sid, process_id: taskId })
     this.refresh(sid, profile)
     return result
+  }
+
+  /** TAL-1336: a steering message for one resident owner subagent; anything that cannot take one is refused unsent. */
+  async steer(sid: string, profile: string | null, taskId: string, text: string): Promise<{ outcome: 'queued' | 'rejected' | 'not_found' }> {
+    const native = await this.ownerRow(sid, profile, taskId)
+    if (!native) return { outcome: 'not_found' }
+    if (!native.row.task.can_steer) return { outcome: 'rejected' }
+    const outcome = await native.port.workControl(sid, profile ?? undefined, native.row.ref, 'steer', text)
+    return { outcome: outcome === 'queued' || outcome === 'not_found' ? outcome : 'rejected' }
   }
 
   /** Dismissal is read state, separate from the task: the record stays in the history and leaves the tray. */

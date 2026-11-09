@@ -8,7 +8,7 @@ import type { QueueAdmissionFence } from './admission.js'
 import type { StartupTiming } from '../startup-timing.js'
 import { createHash, randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
-import { ConnectorOperationSnapshotSchema, OWNER_EXPORT_MAX_BYTES, SessionNoticeSchema, GatewayClarifyBatchSchema, GatewaySessionResultSchema, type ConnectorOperationSnapshot, type ConnectorOperationView, type OwnerReasoning, type ClarifyAnswers, type ClarifyStep, type ExecutionModes, type GatewayClarifyBatch, type GatewayCreateParams, type GatewaySessionParams, type GatewaySessionResult, type GatewaySnapshot, type OwnerAttachment, type ModelChange } from '@maudecode/talaria-web-contracts'
+import { ConnectorOperationSnapshotSchema, OWNER_EXPORT_MAX_BYTES, SessionNoticeSchema, GatewayClarifyBatchSchema, GatewaySessionResultSchema, type ConnectorOperationSnapshot, type ConnectorOperationView, type OwnerReasoning, type ClarifyAnswers, type ClarifyStep, type ExecutionModes, type GatewayClarifyBatch, type GatewayCreateParams, type GatewaySessionParams, type GatewaySessionResult, type GatewaySnapshot, type OwnerAttachment, type ModelChange, type OwnerWork } from '@maudecode/talaria-web-contracts'
 import type { SidecarLike, StreamFrame } from '../sidecar/client.js'
 import { redactNestedMessageContainers, publicToolFrame, redactString } from '../redact.js'
 import { str } from '../util.js'
@@ -131,6 +131,12 @@ const keepConnection = (safe: Row, source: Row): Row => {
 /** The owner names the opening tool call only on its request and resume payloads; later frames of that operation keep it. */
 const keepToolCall = (operation: ConnectorOperationSnapshot, held: GatewaySnapshot['pending_connection']): ConnectorOperationSnapshot =>
   ({ ...operation, tool_call_id: operation.tool_call_id ?? (held?.op_id === operation.op_id ? held.tool_call_id : null) })
+
+/** TAL-1336: owner events after which the session's processes or subagents read differently. */
+const OWNER_WORK_EVENTS: ReadonlySet<string> = new Set(['subagent.start', 'subagent.complete', 'background.complete'])
+export type OwnerWorkOutcome = NonNullable<GatewaySessionResult['work_outcome']>
+export interface OwnerWorkRef { kind: 'process' | 'subagent'; id: string; epoch: number }
+export interface OwnerWorkRead { home: string; state: 'available' | 'unsupported' | 'unavailable'; work: OwnerWork | null }
 
 export class GatewaySessions {
   private readonly watches = new Map<string, Watch>()
@@ -288,6 +294,8 @@ export class GatewaySessions {
                 && Number.isSafeInteger(event.execution_generation) && Number(event.execution_generation) >= observation.snapshot.execution_generation) {
               observation.completion = frame
             } else if (event.type === 'session.updated') this.changed(target)
+            // TAL-1336: the owner's work changed; Background Work rereads it from the owner.
+            else if (event.session_id === target.sid && OWNER_WORK_EVENTS.has(str(event.type))) this.deps.events.publish('background_task', { profile: target.profile, sessionId: target.sid })
           }
           for (const listener of observation.listeners) listener(frame)
         },
@@ -756,6 +764,40 @@ export class GatewaySessions {
   }
 
   /** The operation as its exact owner holds it now. Opens no Agent, account or operation. */
+  /**
+   * TAL-1336: the processes and subagents the session's owner runs, read through that owner alone. Null: not an owner
+   * chat. A managed worker the owner cannot project is `unsupported`; nothing else is guessed for it.
+   */
+  async work(sid: string, profile?: string): Promise<OwnerWorkRead | null> {
+    const target = await this.target(sid, profile)
+    if (!target) return null
+    const result = await this.call(target, { action: 'work_list' })
+    if (result.state === 'attached' && result.work) return { home: target.home, state: 'available', work: result.work }
+    return { home: target.home, state: result.reason === 'unsupported_projection' ? 'unsupported' : 'unavailable', work: null }
+  }
+
+  /** A resident subagent's live transcript tail from its owner, or null when the owner cannot serve one. */
+  async workTail(sid: string, profile: string | undefined, ref: OwnerWorkRef): Promise<string | null> {
+    const target = await this.target(sid, profile)
+    if (!target) return null
+    const result = await this.call(target, { action: 'work_tail', work_kind: ref.kind, work_id: ref.id, authority_epoch: ref.epoch })
+    return result.state === 'attached' && result.work_tail?.available ? result.work_tail.text : null
+  }
+
+  /**
+   * One row's Stop (`process.kill` or `subagent.interrupt`) or a subagent's steer, fenced to the owner that listed it.
+   * An owner that moved on reads as not found; a lost answer is unknown and never sent again.
+   */
+  async workControl(sid: string, profile: string | undefined, ref: OwnerWorkRef, verb: 'stop' | 'steer', text?: string): Promise<OwnerWorkOutcome> {
+    const target = await this.target(sid, profile)
+    if (!target) return 'not_found'
+    const result = await this.call(target, { action: verb === 'stop' ? 'work_stop' : 'work_steer', work_kind: ref.kind, work_id: ref.id, authority_epoch: ref.epoch, ...(text === undefined ? {} : { text }) })
+    if (result.state === 'attached' && result.work_outcome) return result.work_outcome
+    if (result.state === 'unavailable') throw new HttpFailure(503, 'Could not confirm what the owning Agent did. Background Work shows its current state.', { outcome_unknown: true })
+    if (['owner_changed', 'stale_generation', 'not_found', 'process_not_found'].includes(str(result.reason))) return 'not_found'
+    throw new HttpFailure(409, 'The owning Agent refused the action')
+  }
+
   async connection(sid: string, epoch: number, opId: string): Promise<ConnectorOperationView> {
     return this.connectionRead(await this.connectionTarget(sid), epoch, opId)
   }

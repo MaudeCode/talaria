@@ -9,6 +9,7 @@ vi.mock('../../api/endpoints', () => ({
   fetchBackgroundResult: vi.fn(),
   dismissBackgroundTask: vi.fn(),
   stopBackgroundTask: vi.fn(),
+  steerBackgroundTask: vi.fn(),
 }))
 import * as api from '../../api/endpoints'
 import { BackgroundWorkCard, useBackgroundTasks } from './BackgroundWork'
@@ -119,5 +120,37 @@ describe('Background dismiss (TAL-1179)', () => {
     expect(screen.queryByText('Finished work')).toBeNull()
     refuse(new ApiError({ kind: 'http', status: 409, path: '/x', message: 'Busy' }))
     expect(await screen.findByText('Finished work')).toBeInTheDocument()
+  })
+})
+
+describe('Steer an owner subagent (TAL-1336)', () => {
+  beforeEach(() => {
+    vi.mocked(api.steerBackgroundTask).mockReset()
+    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 'sess-1', agent_available: true, owner_work: 'available', tasks: [
+      task({ task_id: 'resident', kind: 'delegation', title: 'Read the logs', can_stop: true, can_steer: true }),
+      task({ task_id: 'rebuilt', kind: 'delegation', title: 'Check the tests', can_stop: false, can_steer: false }),
+    ] })
+  })
+
+  it('offers Steer only where the server allows it and sends the message to that row', async () => {
+    vi.mocked(api.steerBackgroundTask).mockResolvedValue({ outcome: 'queued' })
+    renderCard()
+    const steer = await screen.findByRole('button', { name: 'Steer' })
+    expect(screen.getAllByRole('button', { name: 'Steer' })).toHaveLength(1)
+    await userEvent.click(steer)
+    await userEvent.type(screen.getByRole('textbox', { name: 'Message for this agent' }), 'Look at stderr too')
+    await userEvent.click(screen.getByRole('button', { name: 'Send' }))
+    expect(api.steerBackgroundTask).toHaveBeenCalledWith('sess-1', 'resident', 'Look at stderr too')
+    await waitFor(() => { expect(screen.queryByRole('textbox', { name: 'Message for this agent' })).toBeNull() })
+  })
+
+  it('keeps the message and says so when the agent did not take it', async () => {
+    vi.mocked(api.steerBackgroundTask).mockResolvedValue({ outcome: 'rejected' })
+    renderCard()
+    await userEvent.click(await screen.findByRole('button', { name: 'Steer' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Message for this agent' }), 'Stop early')
+    await userEvent.click(screen.getByRole('button', { name: 'Send' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('The agent didn’t take the message.')
+    expect(screen.getByRole('textbox', { name: 'Message for this agent' })).toHaveValue('Stop early')
   })
 })
