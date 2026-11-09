@@ -29,3 +29,11 @@ export function alertForTransition(previous: string | null, next: { phase: strin
   const entry = KIND_BY_PHASE[next.phase]
   return entry && preferences[entry.pref] ? entry.kind : null
 }
+
+/**
+ * TAL-1970: an agent notice the row did not carry before alerts once, whatever the phase, the presence mute or the run
+ * preferences did: the server muted an `info` notice before it reached the row, and the agent asked for this alert.
+ */
+export function agentNotifyAlert(previousAgentNotifyId: string | null | undefined, next: { agentNotifyId?: string | undefined }): boolean {
+  return Boolean(next.agentNotifyId) && next.agentNotifyId !== previousAgentNotifyId
+}

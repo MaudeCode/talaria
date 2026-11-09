@@ -1,0 +1,18 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "The agent can send a notification to your phone and browsers when something is ready or needs you; tapping it opens the chat.",
+      "highlight": true,
+      "components": [
+        "web",
+        "relay"
+      ],
+      "announcement": {
+        "title": "Hear back from the agent",
+        "description": "The agent can notify your devices when something is ready or needs you.",
+        "icon": "notifications"
+      }
+    }
+  ]
+}

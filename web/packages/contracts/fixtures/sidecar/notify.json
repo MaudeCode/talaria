@@ -1,0 +1,39 @@
+{
+  "server.notify": [
+    {
+      "params": {
+        "caller_session_id": "20261109_090000_caller",
+        "title": "Weekly report ready",
+        "body": "The report is in reports/week-45.md; three numbers need your check before Friday.",
+        "level": "attention"
+      },
+      "result": {
+        "status": "sent",
+        "notice_id": "an_0123456789abcdef",
+        "level": "attention",
+        "url": "/session/20261109_090000_caller",
+        "channels": {
+          "relay": "sent",
+          "web-push": "unavailable"
+        },
+        "retry_after_seconds": null
+      }
+    },
+    {
+      "params": {
+        "caller_session_id": "20261109_090000_caller",
+        "title": "Still working",
+        "body": "Halfway through the import.",
+        "level": "info"
+      },
+      "result": {
+        "status": "rate_limited",
+        "notice_id": null,
+        "level": "info",
+        "url": "/session/20261109_090000_caller",
+        "channels": {},
+        "retry_after_seconds": 312
+      }
+    }
+  ]
+}

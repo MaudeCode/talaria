@@ -1,5 +1,21 @@
 # Sidecar RPC (TAL-245)
 
+RPC v92 adds the `harness` toolset's `notify` (TAL-1970, `server.notify`). The agent
+sends a `title` (at most 80 characters), a `body` (at most 300) and a `level`, `info`
+(the default) or `attention`; a longer one is refused with `title_too_long` or
+`body_too_long` before anything is sent. The server counts the call against the
+session's limits (5 per 10 minutes, one `attention` per minute) and otherwise answers
+`rate_limited` with `retry_after_seconds`. An accepted notice goes on the session's
+activity row, where every notification channel alerts once for a notice it has not
+seen: Web Push sends the agent's title and body and opens `/session/<id>`, and the
+Relay forwards it to the App (`agentNotify`, relay/docs/http-api.md). While a Talaria
+tab is attached to the profile an `info` notice is muted and never reaches the row;
+`attention` always does. Under person isolation only the owner's subscriptions get it,
+and the Relay never does, as with run alerts. The result names each channel's outcome,
+`sent`, `muted` or `unavailable` (no subscribed device of the session's owner, or no
+live or recently finished run of the session to alert about). A child run shown on its
+parent's row (`activity_parent_session_id`) alerts on the parent, whose chat `url` opens.
+
 RPC v91 adds the `harness` toolset's `request_secret` (TAL-1969,
 `server.secret_request`). The agent names an `.env` variable (`^[A-Z][A-Z0-9_]{2,63}$`
 and a credential's name by the launcher's own rule, `*_KEY`, `*_TOKEN` or `*_SECRET`, outside

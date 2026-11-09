@@ -22,7 +22,7 @@ import type { Session } from './session.js'
 import type { SessionPrefixIndex } from './prefix-index.js'
 import type { SessionStore } from './store.js'
 import { str } from '../util.js'
-import { ActivityStates, hasSessionData } from './notify/activity.js'
+import { ActivityStates, hasSessionData, type AgentNotice } from './notify/activity.js'
 import type { NotificationChannel } from './notify/channel.js'
 
 export const PRESENCE_LEASE_SECONDS = 90
@@ -228,7 +228,7 @@ export interface RelayPublisherDeps {
 /** Per relay profile scope: sessions started before `floor` (first tracking) are never announced. */
 type StartedLedger = Map<string, { floor: number; sessions: Map<string, { startedAt: number; sent: boolean }> }>
 
-export interface RelayState { sessionId: string; streamId: string | null; eventId: string; revision: number; title: string; phase: string; activityPhase?: SessionActivityPhase; startedAt: number; updatedAt: number; deepLink: string; alertEligible?: false; approvalHeadId?: string; decisionReviewId?: string; decisionReviewTitle?: string }
+export interface RelayState { sessionId: string; streamId: string | null; eventId: string; revision: number; title: string; phase: string; activityPhase?: SessionActivityPhase; startedAt: number; updatedAt: number; deepLink: string; alertEligible?: false; approvalHeadId?: string; decisionReviewId?: string; decisionReviewTitle?: string; agentNotify?: AgentNotice }
 
 /** Python `TalariaRelayPublisher`: coalesces changes into signed complete snapshots with capped backoff. */
 export class RelayPublisher {
@@ -399,10 +399,17 @@ export class RelayPublisher {
     return !(this.deps.personIsolation?.() && owner)
   }
 
+  /** TAL-1970: a session of `profile` owned by `owner` is published to an enrolled relay profile. */
+  async reaches(profile: string | null, owner: string | null): Promise<boolean> {
+    if (!this.publishesOwner(owner)) return false
+    for (const [name, cfg] of Object.entries(this.config.profiles)) if (this.deps.profilesMatch(profile, name) && await this.publishes(name, cfg)) return true
+    return false
+  }
+
   /** Python `build_states`: the shared activity rows, numbered with this relay's revisions. */
   async buildStates(profile: string): Promise<RelayState[]> {
     const states: RelayState[] = (await this.activity.states(profile, () => { this.changed() })).filter((row) => this.publishesOwner(row.ownerPersonId)).map((row) => {
-      const state: RelayState = { sessionId: row.sessionId, streamId: row.streamId, eventId: 'snapshot:0:' + row.sessionId, revision: 0, ...(row.activityPhase ? { activityPhase: row.activityPhase } : {}), title: row.title, phase: row.phase, startedAt: row.startedAt, updatedAt: row.updatedAt, deepLink: row.deepLink, ...(row.approvalHeadId ? { approvalHeadId: row.approvalHeadId } : {}), ...(row.decisionReviewId ? { decisionReviewId: row.decisionReviewId, decisionReviewTitle: row.decisionReviewTitle ?? '' } : {}) }
+      const state: RelayState = { sessionId: row.sessionId, streamId: row.streamId, eventId: 'snapshot:0:' + row.sessionId, revision: 0, ...(row.activityPhase ? { activityPhase: row.activityPhase } : {}), title: row.title, phase: row.phase, startedAt: row.startedAt, updatedAt: row.updatedAt, deepLink: row.deepLink, ...(row.approvalHeadId ? { approvalHeadId: row.approvalHeadId } : {}), ...(row.decisionReviewId ? { decisionReviewId: row.decisionReviewId, decisionReviewTitle: row.decisionReviewTitle ?? '' } : {}), ...(row.agentNotice ? { agentNotify: row.agentNotice } : {}) }
       if (this.alertEligibilitySupported && !row.alertEligible) state.alertEligible = false
       return state
     })
@@ -637,6 +644,9 @@ export class RelayService implements NotificationChannel {
 
   /** The notification hub forwards every session event; only the adopted publisher republishes. */
   changed(): void { this.publisher?.changed() }
+
+  /** TAL-1970: the adopted publisher sends a session's agent notice to the relay; without one it reaches no device. */
+  async noticeReach(profile: string | null, owner: string | null): Promise<boolean> { return await this.publisher?.reaches(profile, owner) ?? false }
 
   private adopt(candidate: RelayPublisher, previous: RelayPublisher | null): void {
     this.publisher = candidate

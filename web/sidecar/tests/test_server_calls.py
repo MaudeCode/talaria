@@ -23,6 +23,7 @@ DECISION_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / 
 PROPOSAL_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "fixtures" / "sidecar" / "proposals.json").read_text())
 SHOW_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "fixtures" / "sidecar" / "show.json").read_text())
 SECRET_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "fixtures" / "sidecar" / "secrets.json").read_text())
+NOTIFY_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "fixtures" / "sidecar" / "notify.json").read_text())
 
 
 class Peer:
@@ -379,6 +380,7 @@ def test_the_harness_toolset_registers_its_tools_and_the_talaria_one_stays_separ
         ("proposal_read", "harness", "proposal_read"),
         ("show", "harness", "show"),
         ("request_secret", "harness", "request_secret"),
+        ("notify", "harness", "notify"),
     ]
     assert all(r["schema"]["name"] == r["name"] for r in registered)
     # The descriptions tell the agent when a review beats clarify.
@@ -498,3 +500,27 @@ def test_harness_request_secret_forwards_its_call_and_never_returns_the_value(mo
     monkeypatch.setattr(rpc, "call_server", refuse)
     assert json.loads(harness_toolset.request_secret({**args, "env_name": "HERMES_HOME"}, session_id="20261109_090000_tip"))["condition"] == "env_name_reserved"
     assert json.loads(harness_toolset.request_secret({"env_name": "FOO_API_KEY"}, session_id="20261109_090000_tip")) == {"error": "purpose is required", "condition": "invalid_params"}
+
+
+@pytest.mark.parametrize("recorded", NOTIFY_FIXTURES["server.notify"], ids=["sent", "rate_limited"])
+def test_harness_notify_forwards_its_call_and_returns_the_server_result_unchanged(monkeypatch, recorded) -> None:
+    """TAL-1970: ``notify`` sends the title, body and level to ``server.notify`` and returns its JSON as the server sent it."""
+    from types import SimpleNamespace
+
+    from talaria_sidecar.methods import chat
+
+    monkeypatch.setitem(chat._RUNS, "stream-1", SimpleNamespace(session_id=recorded["params"]["caller_session_id"], agent=SimpleNamespace(session_id="20261109_090000_tip")))
+    sent: list[tuple[str, dict]] = []
+    monkeypatch.setattr(rpc, "call_server", lambda m, params, timeout=None: sent.append((m, params)) or recorded["result"])
+    args = {key: value for key, value in recorded["params"].items() if key != "caller_session_id"}
+    assert json.loads(harness_toolset.notify(args, session_id="20261109_090000_tip")) == recorded["result"]
+    assert sent == [("server.notify", recorded["params"])]
+    assert validate(sent[0][1], SCHEMAS["server.notify"]["params"]) == []
+    assert validate(recorded["result"], SCHEMAS["server.notify"]["result"]) == []
+
+    def refuse(m, params, timeout=None):
+        raise RpcError("title is 81 characters; at most 80", condition="title_too_long")
+
+    monkeypatch.setattr(rpc, "call_server", refuse)
+    assert json.loads(harness_toolset.notify(args, session_id="20261109_090000_tip")) == {"error": "title is 81 characters; at most 80", "condition": "title_too_long"}
+    assert json.loads(harness_toolset.notify({"title": args["title"]}, session_id="20261109_090000_tip")) == {"error": "body is required", "condition": "invalid_params"}

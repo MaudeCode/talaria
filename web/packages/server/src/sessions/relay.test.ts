@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
+import { fakeRelay, type Captured, type FakeRelay } from '../test/notifications.js'
 import * as atomic from '../fs/atomic.js'
 import { loadRelayConfig, saveRelayConfig, PRESENCE_FENCE_SECONDS, PRESENCE_LEASE_SECONDS, PRESENCE_MAX_LEASES, PresenceLeases, RelayPairingError, RelayPublisher, validatedOrigin, type RelayConfig } from './relay.js'
 
@@ -35,36 +36,6 @@ const RELAY = 'https://relay.talaria.kil.dev'
 const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
 const deletedViews = (s: TestServer): Json[] => (JSON.parse(readFileSync(join(s.state, 'talaria-relay-deleted.json'), 'utf8')) as { views: Json[] }).views
-
-interface Captured { method: string; url: string; body: Json; headers: Record<string, string> }
-interface FakeRelay { calls: Captured[]; snapshotStatus: number; viewedStatus: number; failOnly: string | null; snapshots: () => Captured[]; views: () => Captured[]; publicKey: Buffer | null; fetch: typeof fetch }
-
-function fakeRelay(): FakeRelay {
-  const relay: FakeRelay = {
-    calls: [], snapshotStatus: 200, viewedStatus: 200, failOnly: null, publicKey: null,
-    snapshots: () => relay.calls.filter((c) => c.method === 'PUT' && c.url.endsWith('/snapshot')),
-    views: () => relay.calls.filter((c) => c.method === 'PUT' && c.url.endsWith('/viewed')),
-    fetch: (input, init) => {
-      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
-      const headers = Object.fromEntries(Object.entries((init?.headers ?? {}) as Record<string, string>).map(([k, v]) => [k.toLowerCase(), v]))
-      const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as Json
-      const call = { method: init?.method ?? 'GET', url, body, headers }
-      relay.calls.push(call)
-      if (url.endsWith('/v1/pairings/publisher/redeem')) {
-        relay.publicKey = Buffer.from(String(body.publicKey), 'base64url')
-        return Promise.resolve(Response.json({ protocolVersion: 2, keyId: 'key-1', publisherId: body.publisherId, profileId: body.profileId, profileIdPreserved: false }))
-      }
-      if (url.endsWith('/v1/pairings/profile/redeem')) return Promise.resolve(Response.json({ protocolVersion: 2, publisherId: body.publisherId, profileId: body.profileId }))
-      if (call.method === 'PUT' && url.endsWith('/viewed')) return Promise.resolve(new Response(relay.viewedStatus === 200 ? '{}' : 'nope', { status: relay.viewedStatus }))
-      if (call.method === 'PUT') {
-        const status = relay.failOnly && !url.includes(relay.failOnly) ? 200 : relay.snapshotStatus
-        return Promise.resolve(new Response(status === 200 ? '{}' : 'nope', { status }))
-      }
-      return Promise.resolve(new Response('not found', { status: 404 }))
-    },
-  }
-  return relay
-}
 
 function verifySigned(relay: FakeRelay, call: Captured, path: string): void {
   const raw = JSON.stringify(call.body)
