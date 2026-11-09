@@ -7089,6 +7089,10 @@
                                       ],
                                       "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
+                                    "shows_card": {
+                                      "const": true,
+                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -7249,6 +7253,32 @@
                                                 "proposal_id",
                                                 "kind",
                                                 "summary"
+                                              ]
+                                            },
+                                            "block": {
+                                              "type": "object",
+                                              "properties": {
+                                                "block_id": {
+                                                  "type": "string",
+                                                  "pattern": "^sb_[0-9a-f]{12}$"
+                                                },
+                                                "kind": {
+                                                  "enum": [
+                                                    "file",
+                                                    "table",
+                                                    "chart",
+                                                    "html"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "block_id",
+                                                "kind",
+                                                "title"
                                               ]
                                             },
                                             "text": {
@@ -7551,6 +7581,10 @@
                                               ],
                                               "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                             },
+                                            "shows_card": {
+                                              "const": true,
+                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                            },
                                             "approval_answered_by": {
                                               "type": "object",
                                               "properties": {
@@ -7661,6 +7695,32 @@
                                                         "proposal_id",
                                                         "kind",
                                                         "summary"
+                                                      ]
+                                                    },
+                                                    "block": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "block_id": {
+                                                          "type": "string",
+                                                          "pattern": "^sb_[0-9a-f]{12}$"
+                                                        },
+                                                        "kind": {
+                                                          "enum": [
+                                                            "file",
+                                                            "table",
+                                                            "chart",
+                                                            "html"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "title": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "block_id",
+                                                        "kind",
+                                                        "title"
                                                       ]
                                                     },
                                                     "text": {
@@ -8563,6 +8623,10 @@
                                 ],
                                 "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                               },
+                              "shows_card": {
+                                "const": true,
+                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                              },
                               "approval_answered_by": {
                                 "type": "object",
                                 "properties": {
@@ -8723,6 +8787,32 @@
                                           "proposal_id",
                                           "kind",
                                           "summary"
+                                        ]
+                                      },
+                                      "block": {
+                                        "type": "object",
+                                        "properties": {
+                                          "block_id": {
+                                            "type": "string",
+                                            "pattern": "^sb_[0-9a-f]{12}$"
+                                          },
+                                          "kind": {
+                                            "enum": [
+                                              "file",
+                                              "table",
+                                              "chart",
+                                              "html"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "block_id",
+                                          "kind",
+                                          "title"
                                         ]
                                       },
                                       "text": {
@@ -12529,6 +12619,10 @@
                                       ],
                                       "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
+                                    "shows_card": {
+                                      "const": true,
+                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -12689,6 +12783,32 @@
                                                 "proposal_id",
                                                 "kind",
                                                 "summary"
+                                              ]
+                                            },
+                                            "block": {
+                                              "type": "object",
+                                              "properties": {
+                                                "block_id": {
+                                                  "type": "string",
+                                                  "pattern": "^sb_[0-9a-f]{12}$"
+                                                },
+                                                "kind": {
+                                                  "enum": [
+                                                    "file",
+                                                    "table",
+                                                    "chart",
+                                                    "html"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "block_id",
+                                                "kind",
+                                                "title"
                                               ]
                                             },
                                             "text": {
@@ -12991,6 +13111,10 @@
                                               ],
                                               "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                             },
+                                            "shows_card": {
+                                              "const": true,
+                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                            },
                                             "approval_answered_by": {
                                               "type": "object",
                                               "properties": {
@@ -13101,6 +13225,32 @@
                                                         "proposal_id",
                                                         "kind",
                                                         "summary"
+                                                      ]
+                                                    },
+                                                    "block": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "block_id": {
+                                                          "type": "string",
+                                                          "pattern": "^sb_[0-9a-f]{12}$"
+                                                        },
+                                                        "kind": {
+                                                          "enum": [
+                                                            "file",
+                                                            "table",
+                                                            "chart",
+                                                            "html"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "title": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "block_id",
+                                                        "kind",
+                                                        "title"
                                                       ]
                                                     },
                                                     "text": {
@@ -14003,6 +14153,10 @@
                                 ],
                                 "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                               },
+                              "shows_card": {
+                                "const": true,
+                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                              },
                               "approval_answered_by": {
                                 "type": "object",
                                 "properties": {
@@ -14163,6 +14317,32 @@
                                           "proposal_id",
                                           "kind",
                                           "summary"
+                                        ]
+                                      },
+                                      "block": {
+                                        "type": "object",
+                                        "properties": {
+                                          "block_id": {
+                                            "type": "string",
+                                            "pattern": "^sb_[0-9a-f]{12}$"
+                                          },
+                                          "kind": {
+                                            "enum": [
+                                              "file",
+                                              "table",
+                                              "chart",
+                                              "html"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "block_id",
+                                          "kind",
+                                          "title"
                                         ]
                                       },
                                       "text": {
@@ -16725,6 +16905,10 @@
                                       ],
                                       "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
+                                    "shows_card": {
+                                      "const": true,
+                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -16885,6 +17069,32 @@
                                                 "proposal_id",
                                                 "kind",
                                                 "summary"
+                                              ]
+                                            },
+                                            "block": {
+                                              "type": "object",
+                                              "properties": {
+                                                "block_id": {
+                                                  "type": "string",
+                                                  "pattern": "^sb_[0-9a-f]{12}$"
+                                                },
+                                                "kind": {
+                                                  "enum": [
+                                                    "file",
+                                                    "table",
+                                                    "chart",
+                                                    "html"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "block_id",
+                                                "kind",
+                                                "title"
                                               ]
                                             },
                                             "text": {
@@ -17187,6 +17397,10 @@
                                               ],
                                               "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                             },
+                                            "shows_card": {
+                                              "const": true,
+                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                            },
                                             "approval_answered_by": {
                                               "type": "object",
                                               "properties": {
@@ -17297,6 +17511,32 @@
                                                         "proposal_id",
                                                         "kind",
                                                         "summary"
+                                                      ]
+                                                    },
+                                                    "block": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "block_id": {
+                                                          "type": "string",
+                                                          "pattern": "^sb_[0-9a-f]{12}$"
+                                                        },
+                                                        "kind": {
+                                                          "enum": [
+                                                            "file",
+                                                            "table",
+                                                            "chart",
+                                                            "html"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "title": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "block_id",
+                                                        "kind",
+                                                        "title"
                                                       ]
                                                     },
                                                     "text": {
@@ -18199,6 +18439,10 @@
                                 ],
                                 "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                               },
+                              "shows_card": {
+                                "const": true,
+                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                              },
                               "approval_answered_by": {
                                 "type": "object",
                                 "properties": {
@@ -18359,6 +18603,32 @@
                                           "proposal_id",
                                           "kind",
                                           "summary"
+                                        ]
+                                      },
+                                      "block": {
+                                        "type": "object",
+                                        "properties": {
+                                          "block_id": {
+                                            "type": "string",
+                                            "pattern": "^sb_[0-9a-f]{12}$"
+                                          },
+                                          "kind": {
+                                            "enum": [
+                                              "file",
+                                              "table",
+                                              "chart",
+                                              "html"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "block_id",
+                                          "kind",
+                                          "title"
                                         ]
                                       },
                                       "text": {
@@ -23952,6 +24222,10 @@
                                       ],
                                       "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
+                                    "shows_card": {
+                                      "const": true,
+                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -24112,6 +24386,32 @@
                                                 "proposal_id",
                                                 "kind",
                                                 "summary"
+                                              ]
+                                            },
+                                            "block": {
+                                              "type": "object",
+                                              "properties": {
+                                                "block_id": {
+                                                  "type": "string",
+                                                  "pattern": "^sb_[0-9a-f]{12}$"
+                                                },
+                                                "kind": {
+                                                  "enum": [
+                                                    "file",
+                                                    "table",
+                                                    "chart",
+                                                    "html"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "block_id",
+                                                "kind",
+                                                "title"
                                               ]
                                             },
                                             "text": {
@@ -24414,6 +24714,10 @@
                                               ],
                                               "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                             },
+                                            "shows_card": {
+                                              "const": true,
+                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                            },
                                             "approval_answered_by": {
                                               "type": "object",
                                               "properties": {
@@ -24524,6 +24828,32 @@
                                                         "proposal_id",
                                                         "kind",
                                                         "summary"
+                                                      ]
+                                                    },
+                                                    "block": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "block_id": {
+                                                          "type": "string",
+                                                          "pattern": "^sb_[0-9a-f]{12}$"
+                                                        },
+                                                        "kind": {
+                                                          "enum": [
+                                                            "file",
+                                                            "table",
+                                                            "chart",
+                                                            "html"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "title": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "block_id",
+                                                        "kind",
+                                                        "title"
                                                       ]
                                                     },
                                                     "text": {
@@ -25426,6 +25756,10 @@
                                 ],
                                 "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                               },
+                              "shows_card": {
+                                "const": true,
+                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                              },
                               "approval_answered_by": {
                                 "type": "object",
                                 "properties": {
@@ -25586,6 +25920,32 @@
                                           "proposal_id",
                                           "kind",
                                           "summary"
+                                        ]
+                                      },
+                                      "block": {
+                                        "type": "object",
+                                        "properties": {
+                                          "block_id": {
+                                            "type": "string",
+                                            "pattern": "^sb_[0-9a-f]{12}$"
+                                          },
+                                          "kind": {
+                                            "enum": [
+                                              "file",
+                                              "table",
+                                              "chart",
+                                              "html"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "block_id",
+                                          "kind",
+                                          "title"
                                         ]
                                       },
                                       "text": {
@@ -30521,6 +30881,10 @@
                                       ],
                                       "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
+                                    "shows_card": {
+                                      "const": true,
+                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -30681,6 +31045,32 @@
                                                 "proposal_id",
                                                 "kind",
                                                 "summary"
+                                              ]
+                                            },
+                                            "block": {
+                                              "type": "object",
+                                              "properties": {
+                                                "block_id": {
+                                                  "type": "string",
+                                                  "pattern": "^sb_[0-9a-f]{12}$"
+                                                },
+                                                "kind": {
+                                                  "enum": [
+                                                    "file",
+                                                    "table",
+                                                    "chart",
+                                                    "html"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "block_id",
+                                                "kind",
+                                                "title"
                                               ]
                                             },
                                             "text": {
@@ -30983,6 +31373,10 @@
                                               ],
                                               "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                             },
+                                            "shows_card": {
+                                              "const": true,
+                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                            },
                                             "approval_answered_by": {
                                               "type": "object",
                                               "properties": {
@@ -31093,6 +31487,32 @@
                                                         "proposal_id",
                                                         "kind",
                                                         "summary"
+                                                      ]
+                                                    },
+                                                    "block": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "block_id": {
+                                                          "type": "string",
+                                                          "pattern": "^sb_[0-9a-f]{12}$"
+                                                        },
+                                                        "kind": {
+                                                          "enum": [
+                                                            "file",
+                                                            "table",
+                                                            "chart",
+                                                            "html"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "title": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "block_id",
+                                                        "kind",
+                                                        "title"
                                                       ]
                                                     },
                                                     "text": {
@@ -31995,6 +32415,10 @@
                                 ],
                                 "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                               },
+                              "shows_card": {
+                                "const": true,
+                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                              },
                               "approval_answered_by": {
                                 "type": "object",
                                 "properties": {
@@ -32155,6 +32579,32 @@
                                           "proposal_id",
                                           "kind",
                                           "summary"
+                                        ]
+                                      },
+                                      "block": {
+                                        "type": "object",
+                                        "properties": {
+                                          "block_id": {
+                                            "type": "string",
+                                            "pattern": "^sb_[0-9a-f]{12}$"
+                                          },
+                                          "kind": {
+                                            "enum": [
+                                              "file",
+                                              "table",
+                                              "chart",
+                                              "html"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "block_id",
+                                          "kind",
+                                          "title"
                                         ]
                                       },
                                       "text": {
@@ -37722,6 +38172,10 @@
                                       ],
                                       "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
+                                    "shows_card": {
+                                      "const": true,
+                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -37882,6 +38336,32 @@
                                                 "proposal_id",
                                                 "kind",
                                                 "summary"
+                                              ]
+                                            },
+                                            "block": {
+                                              "type": "object",
+                                              "properties": {
+                                                "block_id": {
+                                                  "type": "string",
+                                                  "pattern": "^sb_[0-9a-f]{12}$"
+                                                },
+                                                "kind": {
+                                                  "enum": [
+                                                    "file",
+                                                    "table",
+                                                    "chart",
+                                                    "html"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "block_id",
+                                                "kind",
+                                                "title"
                                               ]
                                             },
                                             "text": {
@@ -38184,6 +38664,10 @@
                                               ],
                                               "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                             },
+                                            "shows_card": {
+                                              "const": true,
+                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                            },
                                             "approval_answered_by": {
                                               "type": "object",
                                               "properties": {
@@ -38294,6 +38778,32 @@
                                                         "proposal_id",
                                                         "kind",
                                                         "summary"
+                                                      ]
+                                                    },
+                                                    "block": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "block_id": {
+                                                          "type": "string",
+                                                          "pattern": "^sb_[0-9a-f]{12}$"
+                                                        },
+                                                        "kind": {
+                                                          "enum": [
+                                                            "file",
+                                                            "table",
+                                                            "chart",
+                                                            "html"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "title": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "block_id",
+                                                        "kind",
+                                                        "title"
                                                       ]
                                                     },
                                                     "text": {
@@ -39196,6 +39706,10 @@
                                 ],
                                 "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                               },
+                              "shows_card": {
+                                "const": true,
+                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                              },
                               "approval_answered_by": {
                                 "type": "object",
                                 "properties": {
@@ -39356,6 +39870,32 @@
                                           "proposal_id",
                                           "kind",
                                           "summary"
+                                        ]
+                                      },
+                                      "block": {
+                                        "type": "object",
+                                        "properties": {
+                                          "block_id": {
+                                            "type": "string",
+                                            "pattern": "^sb_[0-9a-f]{12}$"
+                                          },
+                                          "kind": {
+                                            "enum": [
+                                              "file",
+                                              "table",
+                                              "chart",
+                                              "html"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "block_id",
+                                          "kind",
+                                          "title"
                                         ]
                                       },
                                       "text": {
@@ -41867,6 +42407,10 @@
                                       ],
                                       "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
+                                    "shows_card": {
+                                      "const": true,
+                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -42027,6 +42571,32 @@
                                                 "proposal_id",
                                                 "kind",
                                                 "summary"
+                                              ]
+                                            },
+                                            "block": {
+                                              "type": "object",
+                                              "properties": {
+                                                "block_id": {
+                                                  "type": "string",
+                                                  "pattern": "^sb_[0-9a-f]{12}$"
+                                                },
+                                                "kind": {
+                                                  "enum": [
+                                                    "file",
+                                                    "table",
+                                                    "chart",
+                                                    "html"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "block_id",
+                                                "kind",
+                                                "title"
                                               ]
                                             },
                                             "text": {
@@ -42329,6 +42899,10 @@
                                               ],
                                               "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                             },
+                                            "shows_card": {
+                                              "const": true,
+                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                            },
                                             "approval_answered_by": {
                                               "type": "object",
                                               "properties": {
@@ -42439,6 +43013,32 @@
                                                         "proposal_id",
                                                         "kind",
                                                         "summary"
+                                                      ]
+                                                    },
+                                                    "block": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "block_id": {
+                                                          "type": "string",
+                                                          "pattern": "^sb_[0-9a-f]{12}$"
+                                                        },
+                                                        "kind": {
+                                                          "enum": [
+                                                            "file",
+                                                            "table",
+                                                            "chart",
+                                                            "html"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "title": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "block_id",
+                                                        "kind",
+                                                        "title"
                                                       ]
                                                     },
                                                     "text": {
@@ -43341,6 +43941,10 @@
                                 ],
                                 "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                               },
+                              "shows_card": {
+                                "const": true,
+                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                              },
                               "approval_answered_by": {
                                 "type": "object",
                                 "properties": {
@@ -43501,6 +44105,32 @@
                                           "proposal_id",
                                           "kind",
                                           "summary"
+                                        ]
+                                      },
+                                      "block": {
+                                        "type": "object",
+                                        "properties": {
+                                          "block_id": {
+                                            "type": "string",
+                                            "pattern": "^sb_[0-9a-f]{12}$"
+                                          },
+                                          "kind": {
+                                            "enum": [
+                                              "file",
+                                              "table",
+                                              "chart",
+                                              "html"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "block_id",
+                                          "kind",
+                                          "title"
                                         ]
                                       },
                                       "text": {
@@ -46074,6 +46704,10 @@
                                       ],
                                       "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
+                                    "shows_card": {
+                                      "const": true,
+                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -46234,6 +46868,32 @@
                                                 "proposal_id",
                                                 "kind",
                                                 "summary"
+                                              ]
+                                            },
+                                            "block": {
+                                              "type": "object",
+                                              "properties": {
+                                                "block_id": {
+                                                  "type": "string",
+                                                  "pattern": "^sb_[0-9a-f]{12}$"
+                                                },
+                                                "kind": {
+                                                  "enum": [
+                                                    "file",
+                                                    "table",
+                                                    "chart",
+                                                    "html"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "block_id",
+                                                "kind",
+                                                "title"
                                               ]
                                             },
                                             "text": {
@@ -46536,6 +47196,10 @@
                                               ],
                                               "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                             },
+                                            "shows_card": {
+                                              "const": true,
+                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                            },
                                             "approval_answered_by": {
                                               "type": "object",
                                               "properties": {
@@ -46646,6 +47310,32 @@
                                                         "proposal_id",
                                                         "kind",
                                                         "summary"
+                                                      ]
+                                                    },
+                                                    "block": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "block_id": {
+                                                          "type": "string",
+                                                          "pattern": "^sb_[0-9a-f]{12}$"
+                                                        },
+                                                        "kind": {
+                                                          "enum": [
+                                                            "file",
+                                                            "table",
+                                                            "chart",
+                                                            "html"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "title": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "block_id",
+                                                        "kind",
+                                                        "title"
                                                       ]
                                                     },
                                                     "text": {
@@ -47548,6 +48238,10 @@
                                 ],
                                 "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                               },
+                              "shows_card": {
+                                "const": true,
+                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                              },
                               "approval_answered_by": {
                                 "type": "object",
                                 "properties": {
@@ -47708,6 +48402,32 @@
                                           "proposal_id",
                                           "kind",
                                           "summary"
+                                        ]
+                                      },
+                                      "block": {
+                                        "type": "object",
+                                        "properties": {
+                                          "block_id": {
+                                            "type": "string",
+                                            "pattern": "^sb_[0-9a-f]{12}$"
+                                          },
+                                          "kind": {
+                                            "enum": [
+                                              "file",
+                                              "table",
+                                              "chart",
+                                              "html"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "block_id",
+                                          "kind",
+                                          "title"
                                         ]
                                       },
                                       "text": {
@@ -50279,6 +50999,10 @@
                                       ],
                                       "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
+                                    "shows_card": {
+                                      "const": true,
+                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -50439,6 +51163,32 @@
                                                 "proposal_id",
                                                 "kind",
                                                 "summary"
+                                              ]
+                                            },
+                                            "block": {
+                                              "type": "object",
+                                              "properties": {
+                                                "block_id": {
+                                                  "type": "string",
+                                                  "pattern": "^sb_[0-9a-f]{12}$"
+                                                },
+                                                "kind": {
+                                                  "enum": [
+                                                    "file",
+                                                    "table",
+                                                    "chart",
+                                                    "html"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "block_id",
+                                                "kind",
+                                                "title"
                                               ]
                                             },
                                             "text": {
@@ -50741,6 +51491,10 @@
                                               ],
                                               "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                             },
+                                            "shows_card": {
+                                              "const": true,
+                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                            },
                                             "approval_answered_by": {
                                               "type": "object",
                                               "properties": {
@@ -50851,6 +51605,32 @@
                                                         "proposal_id",
                                                         "kind",
                                                         "summary"
+                                                      ]
+                                                    },
+                                                    "block": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "block_id": {
+                                                          "type": "string",
+                                                          "pattern": "^sb_[0-9a-f]{12}$"
+                                                        },
+                                                        "kind": {
+                                                          "enum": [
+                                                            "file",
+                                                            "table",
+                                                            "chart",
+                                                            "html"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "title": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "block_id",
+                                                        "kind",
+                                                        "title"
                                                       ]
                                                     },
                                                     "text": {
@@ -51753,6 +52533,10 @@
                                 ],
                                 "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                               },
+                              "shows_card": {
+                                "const": true,
+                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                              },
                               "approval_answered_by": {
                                 "type": "object",
                                 "properties": {
@@ -51913,6 +52697,32 @@
                                           "proposal_id",
                                           "kind",
                                           "summary"
+                                        ]
+                                      },
+                                      "block": {
+                                        "type": "object",
+                                        "properties": {
+                                          "block_id": {
+                                            "type": "string",
+                                            "pattern": "^sb_[0-9a-f]{12}$"
+                                          },
+                                          "kind": {
+                                            "enum": [
+                                              "file",
+                                              "table",
+                                              "chart",
+                                              "html"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "block_id",
+                                          "kind",
+                                          "title"
                                         ]
                                       },
                                       "text": {
@@ -54314,6 +55124,10 @@
                                 ],
                                 "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                               },
+                              "shows_card": {
+                                "const": true,
+                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                              },
                               "approval_answered_by": {
                                 "type": "object",
                                 "properties": {
@@ -54446,6 +55260,32 @@
                                           "proposal_id",
                                           "kind",
                                           "summary"
+                                        ]
+                                      },
+                                      "block": {
+                                        "type": "object",
+                                        "properties": {
+                                          "block_id": {
+                                            "type": "string",
+                                            "pattern": "^sb_[0-9a-f]{12}$"
+                                          },
+                                          "kind": {
+                                            "enum": [
+                                              "file",
+                                              "table",
+                                              "chart",
+                                              "html"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "block_id",
+                                          "kind",
+                                          "title"
                                         ]
                                       },
                                       "text": {
@@ -55347,6 +56187,32 @@
                             "proposal_id",
                             "kind",
                             "summary"
+                          ]
+                        },
+                        "block": {
+                          "type": "object",
+                          "properties": {
+                            "block_id": {
+                              "type": "string",
+                              "pattern": "^sb_[0-9a-f]{12}$"
+                            },
+                            "kind": {
+                              "enum": [
+                                "file",
+                                "table",
+                                "chart",
+                                "html"
+                              ],
+                              "type": "string"
+                            },
+                            "title": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "block_id",
+                            "kind",
+                            "title"
                           ]
                         },
                         "text": {
@@ -65388,6 +66254,10 @@
                                       ],
                                       "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
+                                    "shows_card": {
+                                      "const": true,
+                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -65548,6 +66418,32 @@
                                                 "proposal_id",
                                                 "kind",
                                                 "summary"
+                                              ]
+                                            },
+                                            "block": {
+                                              "type": "object",
+                                              "properties": {
+                                                "block_id": {
+                                                  "type": "string",
+                                                  "pattern": "^sb_[0-9a-f]{12}$"
+                                                },
+                                                "kind": {
+                                                  "enum": [
+                                                    "file",
+                                                    "table",
+                                                    "chart",
+                                                    "html"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "block_id",
+                                                "kind",
+                                                "title"
                                               ]
                                             },
                                             "text": {
@@ -65850,6 +66746,10 @@
                                               ],
                                               "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                             },
+                                            "shows_card": {
+                                              "const": true,
+                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                            },
                                             "approval_answered_by": {
                                               "type": "object",
                                               "properties": {
@@ -65960,6 +66860,32 @@
                                                         "proposal_id",
                                                         "kind",
                                                         "summary"
+                                                      ]
+                                                    },
+                                                    "block": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "block_id": {
+                                                          "type": "string",
+                                                          "pattern": "^sb_[0-9a-f]{12}$"
+                                                        },
+                                                        "kind": {
+                                                          "enum": [
+                                                            "file",
+                                                            "table",
+                                                            "chart",
+                                                            "html"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "title": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "block_id",
+                                                        "kind",
+                                                        "title"
                                                       ]
                                                     },
                                                     "text": {
@@ -66862,6 +67788,10 @@
                                 ],
                                 "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                               },
+                              "shows_card": {
+                                "const": true,
+                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                              },
                               "approval_answered_by": {
                                 "type": "object",
                                 "properties": {
@@ -67022,6 +67952,32 @@
                                           "proposal_id",
                                           "kind",
                                           "summary"
+                                        ]
+                                      },
+                                      "block": {
+                                        "type": "object",
+                                        "properties": {
+                                          "block_id": {
+                                            "type": "string",
+                                            "pattern": "^sb_[0-9a-f]{12}$"
+                                          },
+                                          "kind": {
+                                            "enum": [
+                                              "file",
+                                              "table",
+                                              "chart",
+                                              "html"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "block_id",
+                                          "kind",
+                                          "title"
                                         ]
                                       },
                                       "text": {
@@ -69585,6 +70541,10 @@
                                       ],
                                       "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
+                                    "shows_card": {
+                                      "const": true,
+                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -69745,6 +70705,32 @@
                                                 "proposal_id",
                                                 "kind",
                                                 "summary"
+                                              ]
+                                            },
+                                            "block": {
+                                              "type": "object",
+                                              "properties": {
+                                                "block_id": {
+                                                  "type": "string",
+                                                  "pattern": "^sb_[0-9a-f]{12}$"
+                                                },
+                                                "kind": {
+                                                  "enum": [
+                                                    "file",
+                                                    "table",
+                                                    "chart",
+                                                    "html"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "block_id",
+                                                "kind",
+                                                "title"
                                               ]
                                             },
                                             "text": {
@@ -70047,6 +71033,10 @@
                                               ],
                                               "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                             },
+                                            "shows_card": {
+                                              "const": true,
+                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                            },
                                             "approval_answered_by": {
                                               "type": "object",
                                               "properties": {
@@ -70157,6 +71147,32 @@
                                                         "proposal_id",
                                                         "kind",
                                                         "summary"
+                                                      ]
+                                                    },
+                                                    "block": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "block_id": {
+                                                          "type": "string",
+                                                          "pattern": "^sb_[0-9a-f]{12}$"
+                                                        },
+                                                        "kind": {
+                                                          "enum": [
+                                                            "file",
+                                                            "table",
+                                                            "chart",
+                                                            "html"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "title": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "block_id",
+                                                        "kind",
+                                                        "title"
                                                       ]
                                                     },
                                                     "text": {
@@ -71059,6 +72075,10 @@
                                 ],
                                 "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                               },
+                              "shows_card": {
+                                "const": true,
+                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                              },
                               "approval_answered_by": {
                                 "type": "object",
                                 "properties": {
@@ -71219,6 +72239,32 @@
                                           "proposal_id",
                                           "kind",
                                           "summary"
+                                        ]
+                                      },
+                                      "block": {
+                                        "type": "object",
+                                        "properties": {
+                                          "block_id": {
+                                            "type": "string",
+                                            "pattern": "^sb_[0-9a-f]{12}$"
+                                          },
+                                          "kind": {
+                                            "enum": [
+                                              "file",
+                                              "table",
+                                              "chart",
+                                              "html"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "block_id",
+                                          "kind",
+                                          "title"
                                         ]
                                       },
                                       "text": {
@@ -74468,6 +75514,10 @@
                                       ],
                                       "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
+                                    "shows_card": {
+                                      "const": true,
+                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -74628,6 +75678,32 @@
                                                 "proposal_id",
                                                 "kind",
                                                 "summary"
+                                              ]
+                                            },
+                                            "block": {
+                                              "type": "object",
+                                              "properties": {
+                                                "block_id": {
+                                                  "type": "string",
+                                                  "pattern": "^sb_[0-9a-f]{12}$"
+                                                },
+                                                "kind": {
+                                                  "enum": [
+                                                    "file",
+                                                    "table",
+                                                    "chart",
+                                                    "html"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "block_id",
+                                                "kind",
+                                                "title"
                                               ]
                                             },
                                             "text": {
@@ -74930,6 +76006,10 @@
                                               ],
                                               "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                             },
+                                            "shows_card": {
+                                              "const": true,
+                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                            },
                                             "approval_answered_by": {
                                               "type": "object",
                                               "properties": {
@@ -75040,6 +76120,32 @@
                                                         "proposal_id",
                                                         "kind",
                                                         "summary"
+                                                      ]
+                                                    },
+                                                    "block": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "block_id": {
+                                                          "type": "string",
+                                                          "pattern": "^sb_[0-9a-f]{12}$"
+                                                        },
+                                                        "kind": {
+                                                          "enum": [
+                                                            "file",
+                                                            "table",
+                                                            "chart",
+                                                            "html"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "title": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "block_id",
+                                                        "kind",
+                                                        "title"
                                                       ]
                                                     },
                                                     "text": {
@@ -75942,6 +77048,10 @@
                                 ],
                                 "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                               },
+                              "shows_card": {
+                                "const": true,
+                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                              },
                               "approval_answered_by": {
                                 "type": "object",
                                 "properties": {
@@ -76102,6 +77212,32 @@
                                           "proposal_id",
                                           "kind",
                                           "summary"
+                                        ]
+                                      },
+                                      "block": {
+                                        "type": "object",
+                                        "properties": {
+                                          "block_id": {
+                                            "type": "string",
+                                            "pattern": "^sb_[0-9a-f]{12}$"
+                                          },
+                                          "kind": {
+                                            "enum": [
+                                              "file",
+                                              "table",
+                                              "chart",
+                                              "html"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "block_id",
+                                          "kind",
+                                          "title"
                                         ]
                                       },
                                       "text": {
@@ -79221,6 +80357,10 @@
                                           ],
                                           "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                         },
+                                        "shows_card": {
+                                          "const": true,
+                                          "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                        },
                                         "approval_answered_by": {
                                           "type": "object",
                                           "properties": {
@@ -79381,6 +80521,32 @@
                                                     "proposal_id",
                                                     "kind",
                                                     "summary"
+                                                  ]
+                                                },
+                                                "block": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "block_id": {
+                                                      "type": "string",
+                                                      "pattern": "^sb_[0-9a-f]{12}$"
+                                                    },
+                                                    "kind": {
+                                                      "enum": [
+                                                        "file",
+                                                        "table",
+                                                        "chart",
+                                                        "html"
+                                                      ],
+                                                      "type": "string"
+                                                    },
+                                                    "title": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "block_id",
+                                                    "kind",
+                                                    "title"
                                                   ]
                                                 },
                                                 "text": {
@@ -79672,6 +80838,10 @@
                                                   ],
                                                   "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                                 },
+                                                "shows_card": {
+                                                  "const": true,
+                                                  "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                                },
                                                 "approval_answered_by": {
                                                   "type": "object",
                                                   "properties": {
@@ -79734,6 +80904,14 @@
                                                             "proposal_id": {},
                                                             "kind": {},
                                                             "summary": {}
+                                                          }
+                                                        },
+                                                        "block": {
+                                                          "type": "object",
+                                                          "properties": {
+                                                            "block_id": {},
+                                                            "kind": {},
+                                                            "title": {}
                                                           }
                                                         },
                                                         "text": {
@@ -80619,6 +81797,10 @@
                                     ],
                                     "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                   },
+                                  "shows_card": {
+                                    "const": true,
+                                    "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                  },
                                   "approval_answered_by": {
                                     "type": "object",
                                     "properties": {
@@ -80779,6 +81961,32 @@
                                               "proposal_id",
                                               "kind",
                                               "summary"
+                                            ]
+                                          },
+                                          "block": {
+                                            "type": "object",
+                                            "properties": {
+                                              "block_id": {
+                                                "type": "string",
+                                                "pattern": "^sb_[0-9a-f]{12}$"
+                                              },
+                                              "kind": {
+                                                "enum": [
+                                                  "file",
+                                                  "table",
+                                                  "chart",
+                                                  "html"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "title": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "block_id",
+                                              "kind",
+                                              "title"
                                             ]
                                           },
                                           "text": {
@@ -124822,6 +126030,10 @@
                                       ],
                                       "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                     },
+                                    "shows_card": {
+                                      "const": true,
+                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -124982,6 +126194,32 @@
                                                 "proposal_id",
                                                 "kind",
                                                 "summary"
+                                              ]
+                                            },
+                                            "block": {
+                                              "type": "object",
+                                              "properties": {
+                                                "block_id": {
+                                                  "type": "string",
+                                                  "pattern": "^sb_[0-9a-f]{12}$"
+                                                },
+                                                "kind": {
+                                                  "enum": [
+                                                    "file",
+                                                    "table",
+                                                    "chart",
+                                                    "html"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "block_id",
+                                                "kind",
+                                                "title"
                                               ]
                                             },
                                             "text": {
@@ -125284,6 +126522,10 @@
                                               ],
                                               "description": "TAL-1458: a read or write call's file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace."
                                             },
+                                            "shows_card": {
+                                              "const": true,
+                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                            },
                                             "approval_answered_by": {
                                               "type": "object",
                                               "properties": {
@@ -125394,6 +126636,32 @@
                                                         "proposal_id",
                                                         "kind",
                                                         "summary"
+                                                      ]
+                                                    },
+                                                    "block": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "block_id": {
+                                                          "type": "string",
+                                                          "pattern": "^sb_[0-9a-f]{12}$"
+                                                        },
+                                                        "kind": {
+                                                          "enum": [
+                                                            "file",
+                                                            "table",
+                                                            "chart",
+                                                            "html"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "title": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "block_id",
+                                                        "kind",
+                                                        "title"
                                                       ]
                                                     },
                                                     "text": {
@@ -132022,6 +133290,357 @@
                         "decided_at",
                         "kind",
                         "payload"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/show/{block_id}": {
+      "get": {
+        "operationId": "show.get",
+        "tags": [
+          "show"
+        ],
+        "parameters": [
+          {
+            "name": "block_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "block_id": {
+                          "type": "string",
+                          "pattern": "^sb_[0-9a-f]{12}$"
+                        },
+                        "session_id": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "created_at": {
+                          "type": "number"
+                        },
+                        "kind": {
+                          "const": "file"
+                        },
+                        "file": {
+                          "type": "object",
+                          "properties": {
+                            "path": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "size": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "path",
+                            "name",
+                            "size"
+                          ]
+                        },
+                        "media": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "url": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "mime": {
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "enum": [
+                                    "image",
+                                    "audio",
+                                    "video",
+                                    "pdf",
+                                    "file",
+                                    "model"
+                                  ],
+                                  "type": "string"
+                                },
+                                "model": {
+                                  "type": "object",
+                                  "properties": {
+                                    "ref": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 4096
+                                    }
+                                  },
+                                  "required": [
+                                    "ref"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "url",
+                                "name",
+                                "mime",
+                                "kind"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "focus_path": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "block_id",
+                        "session_id",
+                        "title",
+                        "created_at",
+                        "kind",
+                        "file",
+                        "media",
+                        "focus_path"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "block_id": {
+                          "type": "string",
+                          "pattern": "^sb_[0-9a-f]{12}$"
+                        },
+                        "session_id": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "created_at": {
+                          "type": "number"
+                        },
+                        "kind": {
+                          "const": "table"
+                        },
+                        "columns": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "rows": {
+                          "type": "array",
+                          "items": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "truncation": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "total_rows": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "total_columns": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "total_rows",
+                                "total_columns"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "tsv": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "block_id",
+                        "session_id",
+                        "title",
+                        "created_at",
+                        "kind",
+                        "columns",
+                        "rows",
+                        "truncation",
+                        "tsv"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "block_id": {
+                          "type": "string",
+                          "pattern": "^sb_[0-9a-f]{12}$"
+                        },
+                        "session_id": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "created_at": {
+                          "type": "number"
+                        },
+                        "kind": {
+                          "const": "chart"
+                        },
+                        "chart": {
+                          "enum": [
+                            "bar",
+                            "line"
+                          ],
+                          "type": "string"
+                        },
+                        "unit": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "series": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "points": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "label": {
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "type": "number"
+                                    },
+                                    "display": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "label",
+                                    "value",
+                                    "display"
+                                  ]
+                                }
+                              },
+                              "max_display": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "points",
+                              "max_display"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "block_id",
+                        "session_id",
+                        "title",
+                        "created_at",
+                        "kind",
+                        "chart",
+                        "unit",
+                        "series"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "block_id": {
+                          "type": "string",
+                          "pattern": "^sb_[0-9a-f]{12}$"
+                        },
+                        "session_id": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "created_at": {
+                          "type": "number"
+                        },
+                        "kind": {
+                          "const": "html"
+                        },
+                        "frame_url": {
+                          "type": "string"
+                        },
+                        "expires_at": {
+                          "type": "number"
+                        },
+                        "bytes": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "block_id",
+                        "session_id",
+                        "title",
+                        "created_at",
+                        "kind",
+                        "frame_url",
+                        "expires_at",
+                        "bytes"
                       ]
                     }
                   ]

@@ -1,0 +1,18 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "The agent can show you a workspace file, a table, a chart or a small web page right in the chat instead of describing it; tables copy as TSV and text files open beside the chat.",
+      "highlight": true,
+      "components": [
+        "app",
+        "web"
+      ],
+      "announcement": {
+        "title": "Tables, charts and pages in chat",
+        "description": "The agent shows files, tables, charts and sandboxed pages in the conversation.",
+        "icon": "chat"
+      }
+    }
+  ]
+}

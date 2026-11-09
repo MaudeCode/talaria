@@ -28,7 +28,7 @@ describe('show blocks (TAL-1968)', () => {
   }
   const shown = async (kind: string, payload: Json) => {
     const reply = await put(kind, payload)
-    if (!reply.result) throw new Error(`refused: ${String(reply.condition)} ${String(reply.message)}`)
+    if (!reply.result) throw new Error(`refused: ${String(reply.condition)} ${reply.message}`)
     return { reply: reply.result, block: ShowBlockSchema.parse((await block(reply.result.block_id)).body) }
   }
 

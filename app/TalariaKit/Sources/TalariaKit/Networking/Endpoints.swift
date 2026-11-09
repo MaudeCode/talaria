@@ -177,6 +177,8 @@ public enum Endpoint: Sendable {
     case proposal(id: String)
     case proposalApprove(id: String)
     case proposalReject(id: String)
+    /// TAL-1968: one `show` block.
+    case showBlock(id: String)
     case feedbackDiagnostics
     case feedbackSubmit
     case feedbackOptions
@@ -516,6 +518,8 @@ public enum Endpoint: Sendable {
             return "/api/proposals/\(id)/approve"
         case let .proposalReject(id):
             return "/api/proposals/\(id)/reject"
+        case let .showBlock(id):
+            return "/api/show/\(id)"
         case .feedbackDiagnostics:
             return "/api/feedback/diagnostics"
         case .feedbackSubmit:
@@ -799,6 +803,8 @@ public enum Endpoint: Sendable {
             url = segmentsURL(relativeTo: baseURL, root: "/api/proposals", segments: [id, "approve"])
         case let .proposalReject(id):
             url = segmentsURL(relativeTo: baseURL, root: "/api/proposals", segments: [id, "reject"])
+        case let .showBlock(id):
+            url = segmentsURL(relativeTo: baseURL, root: "/api/show", segments: [id])
         default:
             url = baseURL.appending(path: path)
         }
