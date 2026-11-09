@@ -7,6 +7,7 @@ import json
 import subprocess
 
 from conftest import AGENT_DIR, AGENT_PYTHON, isolated_env, requires_agent
+from talaria_sidecar import harness_toolset
 
 # Runs on the Agent interpreter: real config loading and toolset resolution, a stand-in AIAgent that records its kwargs.
 PROBE = """
@@ -225,7 +226,7 @@ def test_own_toolsets_are_registered_and_listed_with_talaria_off_and_harness_on_
     picked = handshaken.result('toolsets.catalog', {'profile_home': str(hermes_home), 'enabled_toolsets': ['file', 'talaria']})
     assert next(r for r in picked['toolsets'] if r['name'] == 'talaria')['selected'] is True
     harness = lambda result: next(r for r in result['toolsets'] if r['name'] == 'harness')  # noqa: E731
-    assert harness(defaults) == {'name': 'harness', 'description': 'Hand the user a decision review to answer on a Talaria page, read their answers, and record what you did with each.',
+    assert harness(defaults) == {'name': 'harness', 'description': harness_toolset.TOOLSET_DESCRIPTION,
                                  'available': True, 'selected': True, 'unavailable_reason': None, 'stripped_tools': [], 'stripped_by': []}
     assert 'harness' in defaults['selected_toolsets']
     (hermes_home / 'config.yaml').write_text('agent:\n  disabled_toolsets: [harness]\n')
@@ -285,7 +286,7 @@ def test_harness_toolset_is_on_for_every_web_turn_unless_the_profile_disables_it
     run = subprocess.run([AGENT_PYTHON, '-c', HARNESS_PROBE, str(AGENT_DIR)], env=isolated_env(root), capture_output=True, text=True, timeout=120)
     assert run.returncode == 0, run.stderr[-4000:]
     out = json.loads(run.stdout.strip().splitlines()[-1])
-    decision_tools = {'decision_review_put', 'decision_review_read', 'decision_review_record'}
+    decision_tools = {'decision_review_put', 'decision_review_read', 'decision_review_record', 'propose', 'proposal_read'}
     assert 'harness' in out['default']['enabled'] and decision_tools <= set(out['default']['tools']), out['default']
     assert decision_tools <= set(out['override']['tools'])
     assert 'harness' not in out['disabled']['enabled'] and not decision_tools & set(out['disabled']['tools']), out['disabled']

@@ -1,4 +1,4 @@
-import { ApprovalAnsweredBySchema, DecisionReviewRefSchema, OutboundDraftRefSchema, type ApprovalAnsweredBy } from '@maudecode/talaria-web-contracts'
+import { ApprovalAnsweredBySchema, DecisionReviewRefSchema, OutboundDraftRefSchema, ProposalRefSchema, type ApprovalAnsweredBy } from '@maudecode/talaria-web-contracts'
 import { randomUUID } from 'node:crypto'
 /**
  * Transcript settlement after an Agent turn (the core of Python
@@ -13,7 +13,7 @@ import { stripAttachedFilesMarker, stripWorkspacePrefix, type Message } from './
 
 export { WORKSPACE_PREFIX_RE, stripWorkspacePrefix } from './session.js'
 import type { MediaProjection } from '../workspace/media-refs.js'
-import { decidedEditDiff, decisionReviewRef, outboundDraftRef, toolEditDiff, toolName } from './tool-display.js'
+import { decidedEditDiff, decisionReviewRef, outboundDraftRef, proposalRef, toolEditDiff, toolName } from './tool-display.js'
 import { sourceKind } from './source-kind.js'
 
 const TOOL_RESULT_SNIPPET_MAX = 4000
@@ -505,7 +505,7 @@ function presentError(v: unknown): boolean {
 }
 
 /** A tool result's display sections (TAL-315); clients label and render the fields present, in this order. */
-export interface ToolResultView { outbound_draft?: import('@maudecode/talaria-web-contracts').OutboundDraftRef; decision_review?: import('@maudecode/talaria-web-contracts').DecisionReviewRef; text?: string; stdout?: string; stderr?: string; error?: string; exit_code?: number; approval_note?: string }
+export interface ToolResultView { outbound_draft?: import('@maudecode/talaria-web-contracts').OutboundDraftRef; decision_review?: import('@maudecode/talaria-web-contracts').DecisionReviewRef; proposal?: import('@maudecode/talaria-web-contracts').ProposalRef; text?: string; stdout?: string; stderr?: string; error?: string; exit_code?: number; approval_note?: string }
 
 const RESULT_TEXT_KEYS = ['result', 'results', 'preview', 'content', 'text', 'message', 'summary', 'data', 'items']
 const RESULT_VIEW_MAX_DEPTH = 8
@@ -621,6 +621,8 @@ export function decidedResultView(value: Record<string, unknown>): ToolResultVie
   if (ref) view.outbound_draft = ref
   const review = DecisionReviewRefSchema.safeParse(value.decision_review).data
   if (review) view.decision_review = review
+  const proposal = ProposalRefSchema.safeParse(value.proposal).data
+  if (proposal) view.proposal = proposal
   if (typeof value.exit_code === 'number' && Number.isSafeInteger(value.exit_code)) view.exit_code = value.exit_code
   return view
 }
@@ -650,7 +652,9 @@ export function toolOutcome(raw: unknown, toolName?: unknown, flagged = false): 
   const ref = !failed ? outboundDraftRef(toolName, raw) : undefined
   // TAL-1963: a review the agent made or revised links its transcript card.
   const review = !failed ? decisionReviewRef(toolName, data) : undefined
-  return { is_error: failed && !neutral, result_text: toolResultSnippet(value), result_view: { ...toolResultView(raw), ...(ref ? { outbound_draft: ref } : {}), ...(review ? { decision_review: review } : {}) } }
+  // TAL-1967: a proposal the agent made links its transcript card.
+  const proposal = !failed ? proposalRef(toolName, data) : undefined
+  return { is_error: failed && !neutral, result_text: toolResultSnippet(value), result_view: { ...toolResultView(raw), ...(ref ? { outbound_draft: ref } : {}), ...(review ? { decision_review: review } : {}), ...(proposal ? { proposal } : {}) } }
 }
 
 const finiteOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)

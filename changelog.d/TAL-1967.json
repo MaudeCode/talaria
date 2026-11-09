@@ -1,0 +1,18 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "When the agent needs a plugin, an MCP server, a setting change or a scheduled task it cannot set up itself, it proposes the change in the chat; approve or reject it in one tap and the agent hears the result.",
+      "highlight": true,
+      "components": [
+        "app",
+        "web"
+      ],
+      "announcement": {
+        "title": "Approve agent proposals",
+        "description": "Let the agent install plugins, add MCP servers, change settings and schedule tasks once you approve.",
+        "icon": "security"
+      }
+    }
+  ]
+}

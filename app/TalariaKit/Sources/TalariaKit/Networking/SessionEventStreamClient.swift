@@ -10,6 +10,8 @@ public enum SessionEventFrame: Equatable, Sendable {
     case changed(SessionsChange)
     /// TAL-1965: a decision review of the session changed; the chat rereads it and the session detail.
     case decisionReview(DecisionReviewEvent)
+    /// TAL-1967: a proposal of the session changed; its card rereads it.
+    case proposal(ProposalEvent)
     case ignored
 }
 
@@ -23,6 +25,11 @@ enum SessionEventFrameDecoder {
             guard let event = try? DecisionReview.decoder.decode(DecisionReviewEvent.self, from: Data(data.utf8)),
                   !event.sessionId.isEmpty, !event.reviewId.isEmpty else { return .ignored }
             return .decisionReview(event)
+        }
+        if eventType == "proposal" {
+            guard let event = try? DecisionReview.decoder.decode(ProposalEvent.self, from: Data(data.utf8)),
+                  !event.sessionId.isEmpty, !event.proposalId.isEmpty else { return .ignored }
+            return .proposal(event)
         }
         if ["session-updated", "server_turn_started", "bg_task_complete", "process_complete"].contains(eventType) {
             guard let sessionID = payload.session_id, !sessionID.isEmpty else { return .ignored }
@@ -41,7 +48,7 @@ enum SessionEventFrameDecoder {
 extension SessionEventFrame {
     var isChange: Bool {
         switch self {
-        case .changed, .decisionReview: true
+        case .changed, .decisionReview, .proposal: true
         default: false
         }
     }
@@ -155,6 +162,7 @@ public enum SessionEventsMonitor {
         client: SessionEventStreaming,
         onChange: @escaping @MainActor (SessionsChange) async -> Void,
         onDecisionReview: @MainActor (DecisionReviewEvent) async -> Void = { _ in },
+        onProposal: @MainActor (ProposalEvent) async -> Void = { _ in },
         onLiveChange: @MainActor (Bool) -> Void = { _ in },
         sleep: @escaping (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) async {
@@ -183,6 +191,8 @@ public enum SessionEventsMonitor {
                     await onChange(change)
                 case .decisionReview(let event):
                     await onDecisionReview(event)
+                case .proposal(let event):
+                    await onProposal(event)
                 default:
                     break
                 }

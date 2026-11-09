@@ -64,6 +64,7 @@
 		D857083559F0B34BD088CA04 /* TasksHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856083559F0B34BD088CA04 /* TasksHostedTests.swift */; };
 		D857083559F0B34BD088CA05 /* InsightsHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856083559F0B34BD088CA05 /* InsightsHostedTests.swift */; };
 		D1965A000000000000000005 /* DecisionReviewHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1965A000000000000000004 /* DecisionReviewHostedTests.swift */; };
+		D1967A000000000000000005 /* ProposalHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1967A000000000000000004 /* ProposalHostedTests.swift */; };
 		D857297464F3055587B2ACEF /* TranscriptHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856297464F3055587B2ACEF /* TranscriptHostedTests.swift */; };
 		D857E7989860057E41C369DF /* HostedViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856E7989860057E41C369DF /* HostedViewTests.swift */; };
 		157503000000000000000001 /* APIClientFeedbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 157503000000000000000002 /* APIClientFeedbackTests.swift */; };
@@ -525,6 +526,7 @@
 		D856083559F0B34BD088CA04 /* TasksHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksHostedTests.swift; sourceTree = "<group>"; };
 		D856083559F0B34BD088CA05 /* InsightsHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsHostedTests.swift; sourceTree = "<group>"; };
 		D1965A000000000000000004 /* DecisionReviewHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionReviewHostedTests.swift; sourceTree = "<group>"; };
+		D1967A000000000000000004 /* ProposalHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProposalHostedTests.swift; sourceTree = "<group>"; };
 		D856297464F3055587B2ACEF /* TranscriptHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptHostedTests.swift; sourceTree = "<group>"; };
 		D856E7989860057E41C369DF /* HostedViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostedViewTests.swift; sourceTree = "<group>"; };
 		157503000000000000000002 /* APIClientFeedbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../TalariaKit/Tests/TalariaKitTests/APIClientFeedbackTests.swift; sourceTree = "<group>"; };
@@ -1007,6 +1009,7 @@
 				D856083559F0B34BD088CA04 /* TasksHostedTests.swift */,
 				D856083559F0B34BD088CA05 /* InsightsHostedTests.swift */,
 				D1965A000000000000000004 /* DecisionReviewHostedTests.swift */,
+				D1967A000000000000000004 /* ProposalHostedTests.swift */,
 				D856297464F3055587B2ACEF /* TranscriptHostedTests.swift */,
 				D856E7989860057E41C369DF /* HostedViewTests.swift */,
 				157503000000000000000002 /* APIClientFeedbackTests.swift */,
@@ -2091,6 +2094,7 @@
 				D857083559F0B34BD088CA04 /* TasksHostedTests.swift in Sources */,
 				D857083559F0B34BD088CA05 /* InsightsHostedTests.swift in Sources */,
 				D1965A000000000000000005 /* DecisionReviewHostedTests.swift in Sources */,
+				D1967A000000000000000005 /* ProposalHostedTests.swift in Sources */,
 				D857297464F3055587B2ACEF /* TranscriptHostedTests.swift in Sources */,
 				D857E7989860057E41C369DF /* HostedViewTests.swift in Sources */,
 				157503000000000000000001 /* APIClientFeedbackTests.swift in Sources */,

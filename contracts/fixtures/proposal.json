@@ -1,0 +1,53 @@
+{
+  "proposal": {
+    "proposal_id": "pr_0a1b2c3d",
+    "session_id": "synthetic-session",
+    "profile": "default",
+    "summary": "Add MCP server notes",
+    "diff": [
+      { "kind": "addition", "old_line": null, "new_line": 1, "text": "+command: npx" },
+      { "kind": "addition", "old_line": null, "new_line": 2, "text": "+args: [\"-y\",\"notes-mcp\"]" },
+      { "kind": "addition", "old_line": null, "new_line": 3, "text": "+env: {\"NOTES_TOKEN\":\"${NOTES_TOKEN}\"}" }
+    ],
+    "fields": [],
+    "risk_notes": [
+      "Runs npx -y notes-mcp on this machine and gives the agent its tools.",
+      "Passes NOTES_TOKEN from the profile's .env to it."
+    ],
+    "payload_hash": "5f1c0e9a2b7d4c13",
+    "actions": { "can_approve": true, "can_reject": true, "reason": null },
+    "status": "pending",
+    "outcome": { "text": null, "error": null },
+    "created_at": 1794100000,
+    "updated_at": 1794100000,
+    "expires_at": 1794103600,
+    "decided_at": null,
+    "kind": "mcp_server",
+    "payload": { "name": "notes", "url": null, "command": "npx", "args": ["-y", "notes-mcp"], "env_names": ["NOTES_TOKEN"] }
+  },
+  "applied": {
+    "proposal_id": "pr_0a1b2c3d",
+    "session_id": "synthetic-session",
+    "profile": "default",
+    "summary": "Schedule task Morning digest",
+    "diff": [],
+    "fields": [
+      { "label": "Title", "value": "Morning digest" },
+      { "label": "Schedule", "value": "every day at 08:00" },
+      { "label": "Prompt", "value": "Summarize the inbox." }
+    ],
+    "risk_notes": ["Runs the prompt unattended on this schedule with the profile's tools."],
+    "payload_hash": "9a7e4410c2b3f581",
+    "actions": { "can_approve": false, "can_reject": false, "reason": "closed" },
+    "status": "applied",
+    "outcome": { "text": "Scheduled Morning digest (job-1).", "error": null },
+    "created_at": 1794100000,
+    "updated_at": 1794100060,
+    "expires_at": 1794103600,
+    "decided_at": 1794100060,
+    "kind": "cron_job",
+    "payload": { "title": "Morning digest", "schedule": "every day at 08:00", "prompt": "Summarize the inbox.", "context_sources": [] }
+  },
+  "ref": { "proposal_id": "pr_0a1b2c3d", "kind": "mcp_server", "summary": "Add MCP server notes" },
+  "event": { "session_id": "synthetic-session", "proposal_id": "pr_0a1b2c3d", "status": "applied" }
+}

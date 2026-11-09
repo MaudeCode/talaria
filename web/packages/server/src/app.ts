@@ -21,6 +21,7 @@ import { toolsRouter } from './api/tools-router.js'
 import { automationRouter } from './api/automation-router.js'
 import { groupsRouter, handleGroupStream } from './api/groups-router.js'
 import { decisionsRouter } from './api/decisions-router.js'
+import { proposalsRouter } from './api/proposals-router.js'
 import { handleDashboardPlugin, handleExtensionSidecarProxy, handleExtensionStatic, handleKanbanEventsStream, handleTerminalOutput, matchSidecarProxy } from './api/automation-raw.js'
 import { handleApprovalStream, handleChatStream, handleClarifyStream, handleGatewayStream, handleSessionEvents, handleSessionJournalStream, handleSessionStream, sessionEventsPathSessionId } from './api/sse-routes.js'
 import { BodyError, RequestContext, acceptsEncoding, encodeJsonResponse, loggedUrl, type AppDeps, type HeaderMap } from './http/context.js'
@@ -171,7 +172,7 @@ async function preflight(ctx: RequestContext): Promise<void> {
 }
 
 /** Every implemented procedure, keyed like the contract. */
-const appRouter = { ...coreRouter, ...sessionsRouter, ...gitRouter, ...chatRouter, ...settingsRouter, ...toolsRouter, ...automationRouter, ...groupsRouter, ...decisionsRouter }
+const appRouter = { ...coreRouter, ...sessionsRouter, ...gitRouter, ...chatRouter, ...settingsRouter, ...toolsRouter, ...automationRouter, ...groupsRouter, ...decisionsRouter, ...proposalsRouter }
 
 const SSE_GET_ROUTES: Record<string, (ctx: RequestContext) => Promise<void>> = {
   '/api/groups/stream': handleGroupStream,

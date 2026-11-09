@@ -112,6 +112,10 @@ export const fetchDecisionReviews = (signal?: AbortSignal) => orpc().decisions.l
 export const fetchDecisionReview = (review_id: string, signal?: AbortSignal) => orpc().decisions.get({ review_id }, signal ? { signal } : {})
 export const answerDecision = (input: DecisionAnswerInput) => orpc().decisions.answer(input)
 export const submitDecisionReview = (review_id: string) => orpc().decisions.submit({ review_id })
+/** TAL-1967: an agent's proposal; the server owns its card, actions and outcome. */
+export const fetchProposal = (proposal_id: string, signal?: AbortSignal) => orpc().proposals.get({ proposal_id }, signal ? { signal } : {})
+export const approveProposal = (input: { proposal_id: string; payload_hash: string }) => orpc().proposals.approve(input)
+export const rejectProposal = (input: { proposal_id: string }) => orpc().proposals.reject(input)
 export const fetchSessionStatus = (id: SessionId) => orpc().session.status({ session_id: id })
 export const fetchSessionUsage = (id: SessionId) => orpc().session.usage({ session_id: id })
 export const fetchSessionSkills = (id: SessionId) => orpc().session.skills({ session_id: id })

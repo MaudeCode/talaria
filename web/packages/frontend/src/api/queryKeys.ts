@@ -67,6 +67,8 @@ export const keys = {
   /** TAL-1964: one decision review; its session's `decision_review` events refresh it. */
   decisionReviews: ['decision-reviews'] as const,
   decisionReview: (id: string) => ['decision-review', id] as const,
+  /** TAL-1967: one proposal; its session's `proposal` events refresh it. */
+  proposal: (id: string) => ['proposal', id] as const,
   logs: (file: string, tail: number) => ['logs', file, tail] as const,
   onboarding: ['onboarding'] as const,
   extensions: { all: ['extensions'] as const, status: ['extensions', 'status'] as const, registry: ['extensions', 'registry'] as const, manifests: ['extensions', 'manifests'] as const },

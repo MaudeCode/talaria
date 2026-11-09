@@ -10,8 +10,10 @@ import { isCredentialKey, redactString } from '../redact.js'
 import { str } from '../util.js'
 import type { McpHealthProber } from './mcp-health.js'
 
-const MASK = '••••••'
+export const MASK = '••••••'
 const STDIO_LIFECYCLE_KEYS = ['idle_timeout_seconds', 'max_lifetime_seconds']
+/** TAL-1967: an HTTP server's settings bound to its host: credentials, TLS identity and trust. `null` in an update clears each. */
+export const MCP_HOST_BOUND_KEYS = ['headers', 'auth', 'oauth', 'ssl_verify', 'client_cert', 'client_key', 'skip_preflight', 'identity_header', 'strict_redirect_headers', 'trust']
 
 export function maskSecrets(obj: unknown): unknown {
   if (!isDict(obj)) return obj
@@ -394,7 +396,7 @@ export class McpService {
         if (body.args) server.args = Array.isArray(body.args) ? body.args : [body.args]
         if (body.env) server.env = stripMasked(body.env, existing.env ?? {})
       } else throw new HttpFailure(400, 'url or command is required')
-      for (const key of ['headers', 'args', 'env', 'timeout']) {
+      for (const key of new Set(['headers', 'args', 'env', 'timeout', ...MCP_HOST_BOUND_KEYS])) {
         if (body[key] === null) Reflect.deleteProperty(server, key)
       }
       if (body.timeout !== undefined && body.timeout !== null) {

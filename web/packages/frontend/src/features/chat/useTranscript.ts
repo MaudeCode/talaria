@@ -180,6 +180,8 @@ export function useTranscript(sessionId: string | null, equalLive?: (previous: L
       }
       // TAL-1964: the review's transcript card follows its progress and status.
       if (event === 'decision_review' && typeof data.review_id === 'string') void qc.invalidateQueries({ queryKey: keys.decisionReview(data.review_id) })
+      // TAL-1967: a proposal's card follows its status and outcome.
+      if (event === 'proposal' && typeof data.proposal_id === 'string') void qc.invalidateQueries({ queryKey: keys.proposal(data.proposal_id) })
       const completion = JSON.stringify(data)
       const twin = event === 'process_complete' && completion === backgroundCompletion
       // The server emits the same completion under the current and legacy names, in that order.

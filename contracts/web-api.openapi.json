@@ -7197,6 +7197,32 @@
                                                 "progress"
                                               ]
                                             },
+                                            "proposal": {
+                                              "type": "object",
+                                              "properties": {
+                                                "proposal_id": {
+                                                  "type": "string",
+                                                  "pattern": "^pr_[0-9a-f]{8}$"
+                                                },
+                                                "kind": {
+                                                  "enum": [
+                                                    "plugin_install",
+                                                    "mcp_server",
+                                                    "setting",
+                                                    "cron_job"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "summary": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "proposal_id",
+                                                "kind",
+                                                "summary"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -7581,6 +7607,32 @@
                                                         "review_id",
                                                         "title",
                                                         "progress"
+                                                      ]
+                                                    },
+                                                    "proposal": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "proposal_id": {
+                                                          "type": "string",
+                                                          "pattern": "^pr_[0-9a-f]{8}$"
+                                                        },
+                                                        "kind": {
+                                                          "enum": [
+                                                            "plugin_install",
+                                                            "mcp_server",
+                                                            "setting",
+                                                            "cron_job"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "summary": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "proposal_id",
+                                                        "kind",
+                                                        "summary"
                                                       ]
                                                     },
                                                     "text": {
@@ -8617,6 +8669,32 @@
                                           "review_id",
                                           "title",
                                           "progress"
+                                        ]
+                                      },
+                                      "proposal": {
+                                        "type": "object",
+                                        "properties": {
+                                          "proposal_id": {
+                                            "type": "string",
+                                            "pattern": "^pr_[0-9a-f]{8}$"
+                                          },
+                                          "kind": {
+                                            "enum": [
+                                              "plugin_install",
+                                              "mcp_server",
+                                              "setting",
+                                              "cron_job"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "summary": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "proposal_id",
+                                          "kind",
+                                          "summary"
                                         ]
                                       },
                                       "text": {
@@ -12545,6 +12623,32 @@
                                                 "progress"
                                               ]
                                             },
+                                            "proposal": {
+                                              "type": "object",
+                                              "properties": {
+                                                "proposal_id": {
+                                                  "type": "string",
+                                                  "pattern": "^pr_[0-9a-f]{8}$"
+                                                },
+                                                "kind": {
+                                                  "enum": [
+                                                    "plugin_install",
+                                                    "mcp_server",
+                                                    "setting",
+                                                    "cron_job"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "summary": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "proposal_id",
+                                                "kind",
+                                                "summary"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -12929,6 +13033,32 @@
                                                         "review_id",
                                                         "title",
                                                         "progress"
+                                                      ]
+                                                    },
+                                                    "proposal": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "proposal_id": {
+                                                          "type": "string",
+                                                          "pattern": "^pr_[0-9a-f]{8}$"
+                                                        },
+                                                        "kind": {
+                                                          "enum": [
+                                                            "plugin_install",
+                                                            "mcp_server",
+                                                            "setting",
+                                                            "cron_job"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "summary": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "proposal_id",
+                                                        "kind",
+                                                        "summary"
                                                       ]
                                                     },
                                                     "text": {
@@ -13965,6 +14095,32 @@
                                           "review_id",
                                           "title",
                                           "progress"
+                                        ]
+                                      },
+                                      "proposal": {
+                                        "type": "object",
+                                        "properties": {
+                                          "proposal_id": {
+                                            "type": "string",
+                                            "pattern": "^pr_[0-9a-f]{8}$"
+                                          },
+                                          "kind": {
+                                            "enum": [
+                                              "plugin_install",
+                                              "mcp_server",
+                                              "setting",
+                                              "cron_job"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "summary": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "proposal_id",
+                                          "kind",
+                                          "summary"
                                         ]
                                       },
                                       "text": {
@@ -16656,6 +16812,32 @@
                                                 "progress"
                                               ]
                                             },
+                                            "proposal": {
+                                              "type": "object",
+                                              "properties": {
+                                                "proposal_id": {
+                                                  "type": "string",
+                                                  "pattern": "^pr_[0-9a-f]{8}$"
+                                                },
+                                                "kind": {
+                                                  "enum": [
+                                                    "plugin_install",
+                                                    "mcp_server",
+                                                    "setting",
+                                                    "cron_job"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "summary": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "proposal_id",
+                                                "kind",
+                                                "summary"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -17040,6 +17222,32 @@
                                                         "review_id",
                                                         "title",
                                                         "progress"
+                                                      ]
+                                                    },
+                                                    "proposal": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "proposal_id": {
+                                                          "type": "string",
+                                                          "pattern": "^pr_[0-9a-f]{8}$"
+                                                        },
+                                                        "kind": {
+                                                          "enum": [
+                                                            "plugin_install",
+                                                            "mcp_server",
+                                                            "setting",
+                                                            "cron_job"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "summary": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "proposal_id",
+                                                        "kind",
+                                                        "summary"
                                                       ]
                                                     },
                                                     "text": {
@@ -18076,6 +18284,32 @@
                                           "review_id",
                                           "title",
                                           "progress"
+                                        ]
+                                      },
+                                      "proposal": {
+                                        "type": "object",
+                                        "properties": {
+                                          "proposal_id": {
+                                            "type": "string",
+                                            "pattern": "^pr_[0-9a-f]{8}$"
+                                          },
+                                          "kind": {
+                                            "enum": [
+                                              "plugin_install",
+                                              "mcp_server",
+                                              "setting",
+                                              "cron_job"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "summary": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "proposal_id",
+                                          "kind",
+                                          "summary"
                                         ]
                                       },
                                       "text": {
@@ -23777,6 +24011,32 @@
                                                 "progress"
                                               ]
                                             },
+                                            "proposal": {
+                                              "type": "object",
+                                              "properties": {
+                                                "proposal_id": {
+                                                  "type": "string",
+                                                  "pattern": "^pr_[0-9a-f]{8}$"
+                                                },
+                                                "kind": {
+                                                  "enum": [
+                                                    "plugin_install",
+                                                    "mcp_server",
+                                                    "setting",
+                                                    "cron_job"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "summary": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "proposal_id",
+                                                "kind",
+                                                "summary"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -24161,6 +24421,32 @@
                                                         "review_id",
                                                         "title",
                                                         "progress"
+                                                      ]
+                                                    },
+                                                    "proposal": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "proposal_id": {
+                                                          "type": "string",
+                                                          "pattern": "^pr_[0-9a-f]{8}$"
+                                                        },
+                                                        "kind": {
+                                                          "enum": [
+                                                            "plugin_install",
+                                                            "mcp_server",
+                                                            "setting",
+                                                            "cron_job"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "summary": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "proposal_id",
+                                                        "kind",
+                                                        "summary"
                                                       ]
                                                     },
                                                     "text": {
@@ -25197,6 +25483,32 @@
                                           "review_id",
                                           "title",
                                           "progress"
+                                        ]
+                                      },
+                                      "proposal": {
+                                        "type": "object",
+                                        "properties": {
+                                          "proposal_id": {
+                                            "type": "string",
+                                            "pattern": "^pr_[0-9a-f]{8}$"
+                                          },
+                                          "kind": {
+                                            "enum": [
+                                              "plugin_install",
+                                              "mcp_server",
+                                              "setting",
+                                              "cron_job"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "summary": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "proposal_id",
+                                          "kind",
+                                          "summary"
                                         ]
                                       },
                                       "text": {
@@ -30247,6 +30559,32 @@
                                                 "progress"
                                               ]
                                             },
+                                            "proposal": {
+                                              "type": "object",
+                                              "properties": {
+                                                "proposal_id": {
+                                                  "type": "string",
+                                                  "pattern": "^pr_[0-9a-f]{8}$"
+                                                },
+                                                "kind": {
+                                                  "enum": [
+                                                    "plugin_install",
+                                                    "mcp_server",
+                                                    "setting",
+                                                    "cron_job"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "summary": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "proposal_id",
+                                                "kind",
+                                                "summary"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -30631,6 +30969,32 @@
                                                         "review_id",
                                                         "title",
                                                         "progress"
+                                                      ]
+                                                    },
+                                                    "proposal": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "proposal_id": {
+                                                          "type": "string",
+                                                          "pattern": "^pr_[0-9a-f]{8}$"
+                                                        },
+                                                        "kind": {
+                                                          "enum": [
+                                                            "plugin_install",
+                                                            "mcp_server",
+                                                            "setting",
+                                                            "cron_job"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "summary": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "proposal_id",
+                                                        "kind",
+                                                        "summary"
                                                       ]
                                                     },
                                                     "text": {
@@ -31667,6 +32031,32 @@
                                           "review_id",
                                           "title",
                                           "progress"
+                                        ]
+                                      },
+                                      "proposal": {
+                                        "type": "object",
+                                        "properties": {
+                                          "proposal_id": {
+                                            "type": "string",
+                                            "pattern": "^pr_[0-9a-f]{8}$"
+                                          },
+                                          "kind": {
+                                            "enum": [
+                                              "plugin_install",
+                                              "mcp_server",
+                                              "setting",
+                                              "cron_job"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "summary": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "proposal_id",
+                                          "kind",
+                                          "summary"
                                         ]
                                       },
                                       "text": {
@@ -37349,6 +37739,32 @@
                                                 "progress"
                                               ]
                                             },
+                                            "proposal": {
+                                              "type": "object",
+                                              "properties": {
+                                                "proposal_id": {
+                                                  "type": "string",
+                                                  "pattern": "^pr_[0-9a-f]{8}$"
+                                                },
+                                                "kind": {
+                                                  "enum": [
+                                                    "plugin_install",
+                                                    "mcp_server",
+                                                    "setting",
+                                                    "cron_job"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "summary": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "proposal_id",
+                                                "kind",
+                                                "summary"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -37733,6 +38149,32 @@
                                                         "review_id",
                                                         "title",
                                                         "progress"
+                                                      ]
+                                                    },
+                                                    "proposal": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "proposal_id": {
+                                                          "type": "string",
+                                                          "pattern": "^pr_[0-9a-f]{8}$"
+                                                        },
+                                                        "kind": {
+                                                          "enum": [
+                                                            "plugin_install",
+                                                            "mcp_server",
+                                                            "setting",
+                                                            "cron_job"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "summary": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "proposal_id",
+                                                        "kind",
+                                                        "summary"
                                                       ]
                                                     },
                                                     "text": {
@@ -38769,6 +39211,32 @@
                                           "review_id",
                                           "title",
                                           "progress"
+                                        ]
+                                      },
+                                      "proposal": {
+                                        "type": "object",
+                                        "properties": {
+                                          "proposal_id": {
+                                            "type": "string",
+                                            "pattern": "^pr_[0-9a-f]{8}$"
+                                          },
+                                          "kind": {
+                                            "enum": [
+                                              "plugin_install",
+                                              "mcp_server",
+                                              "setting",
+                                              "cron_job"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "summary": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "proposal_id",
+                                          "kind",
+                                          "summary"
                                         ]
                                       },
                                       "text": {
@@ -41409,6 +41877,32 @@
                                                 "progress"
                                               ]
                                             },
+                                            "proposal": {
+                                              "type": "object",
+                                              "properties": {
+                                                "proposal_id": {
+                                                  "type": "string",
+                                                  "pattern": "^pr_[0-9a-f]{8}$"
+                                                },
+                                                "kind": {
+                                                  "enum": [
+                                                    "plugin_install",
+                                                    "mcp_server",
+                                                    "setting",
+                                                    "cron_job"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "summary": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "proposal_id",
+                                                "kind",
+                                                "summary"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -41793,6 +42287,32 @@
                                                         "review_id",
                                                         "title",
                                                         "progress"
+                                                      ]
+                                                    },
+                                                    "proposal": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "proposal_id": {
+                                                          "type": "string",
+                                                          "pattern": "^pr_[0-9a-f]{8}$"
+                                                        },
+                                                        "kind": {
+                                                          "enum": [
+                                                            "plugin_install",
+                                                            "mcp_server",
+                                                            "setting",
+                                                            "cron_job"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "summary": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "proposal_id",
+                                                        "kind",
+                                                        "summary"
                                                       ]
                                                     },
                                                     "text": {
@@ -42829,6 +43349,32 @@
                                           "review_id",
                                           "title",
                                           "progress"
+                                        ]
+                                      },
+                                      "proposal": {
+                                        "type": "object",
+                                        "properties": {
+                                          "proposal_id": {
+                                            "type": "string",
+                                            "pattern": "^pr_[0-9a-f]{8}$"
+                                          },
+                                          "kind": {
+                                            "enum": [
+                                              "plugin_install",
+                                              "mcp_server",
+                                              "setting",
+                                              "cron_job"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "summary": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "proposal_id",
+                                          "kind",
+                                          "summary"
                                         ]
                                       },
                                       "text": {
@@ -45531,6 +46077,32 @@
                                                 "progress"
                                               ]
                                             },
+                                            "proposal": {
+                                              "type": "object",
+                                              "properties": {
+                                                "proposal_id": {
+                                                  "type": "string",
+                                                  "pattern": "^pr_[0-9a-f]{8}$"
+                                                },
+                                                "kind": {
+                                                  "enum": [
+                                                    "plugin_install",
+                                                    "mcp_server",
+                                                    "setting",
+                                                    "cron_job"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "summary": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "proposal_id",
+                                                "kind",
+                                                "summary"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -45915,6 +46487,32 @@
                                                         "review_id",
                                                         "title",
                                                         "progress"
+                                                      ]
+                                                    },
+                                                    "proposal": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "proposal_id": {
+                                                          "type": "string",
+                                                          "pattern": "^pr_[0-9a-f]{8}$"
+                                                        },
+                                                        "kind": {
+                                                          "enum": [
+                                                            "plugin_install",
+                                                            "mcp_server",
+                                                            "setting",
+                                                            "cron_job"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "summary": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "proposal_id",
+                                                        "kind",
+                                                        "summary"
                                                       ]
                                                     },
                                                     "text": {
@@ -46951,6 +47549,32 @@
                                           "review_id",
                                           "title",
                                           "progress"
+                                        ]
+                                      },
+                                      "proposal": {
+                                        "type": "object",
+                                        "properties": {
+                                          "proposal_id": {
+                                            "type": "string",
+                                            "pattern": "^pr_[0-9a-f]{8}$"
+                                          },
+                                          "kind": {
+                                            "enum": [
+                                              "plugin_install",
+                                              "mcp_server",
+                                              "setting",
+                                              "cron_job"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "summary": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "proposal_id",
+                                          "kind",
+                                          "summary"
                                         ]
                                       },
                                       "text": {
@@ -49651,6 +50275,32 @@
                                                 "progress"
                                               ]
                                             },
+                                            "proposal": {
+                                              "type": "object",
+                                              "properties": {
+                                                "proposal_id": {
+                                                  "type": "string",
+                                                  "pattern": "^pr_[0-9a-f]{8}$"
+                                                },
+                                                "kind": {
+                                                  "enum": [
+                                                    "plugin_install",
+                                                    "mcp_server",
+                                                    "setting",
+                                                    "cron_job"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "summary": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "proposal_id",
+                                                "kind",
+                                                "summary"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -50035,6 +50685,32 @@
                                                         "review_id",
                                                         "title",
                                                         "progress"
+                                                      ]
+                                                    },
+                                                    "proposal": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "proposal_id": {
+                                                          "type": "string",
+                                                          "pattern": "^pr_[0-9a-f]{8}$"
+                                                        },
+                                                        "kind": {
+                                                          "enum": [
+                                                            "plugin_install",
+                                                            "mcp_server",
+                                                            "setting",
+                                                            "cron_job"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "summary": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "proposal_id",
+                                                        "kind",
+                                                        "summary"
                                                       ]
                                                     },
                                                     "text": {
@@ -51071,6 +51747,32 @@
                                           "review_id",
                                           "title",
                                           "progress"
+                                        ]
+                                      },
+                                      "proposal": {
+                                        "type": "object",
+                                        "properties": {
+                                          "proposal_id": {
+                                            "type": "string",
+                                            "pattern": "^pr_[0-9a-f]{8}$"
+                                          },
+                                          "kind": {
+                                            "enum": [
+                                              "plugin_install",
+                                              "mcp_server",
+                                              "setting",
+                                              "cron_job"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "summary": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "proposal_id",
+                                          "kind",
+                                          "summary"
                                         ]
                                       },
                                       "text": {
@@ -53573,6 +54275,32 @@
                                           "progress"
                                         ]
                                       },
+                                      "proposal": {
+                                        "type": "object",
+                                        "properties": {
+                                          "proposal_id": {
+                                            "type": "string",
+                                            "pattern": "^pr_[0-9a-f]{8}$"
+                                          },
+                                          "kind": {
+                                            "enum": [
+                                              "plugin_install",
+                                              "mcp_server",
+                                              "setting",
+                                              "cron_job"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "summary": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "proposal_id",
+                                          "kind",
+                                          "summary"
+                                        ]
+                                      },
                                       "text": {
                                         "type": "string"
                                       },
@@ -54446,6 +55174,32 @@
                             "review_id",
                             "title",
                             "progress"
+                          ]
+                        },
+                        "proposal": {
+                          "type": "object",
+                          "properties": {
+                            "proposal_id": {
+                              "type": "string",
+                              "pattern": "^pr_[0-9a-f]{8}$"
+                            },
+                            "kind": {
+                              "enum": [
+                                "plugin_install",
+                                "mcp_server",
+                                "setting",
+                                "cron_job"
+                              ],
+                              "type": "string"
+                            },
+                            "summary": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "proposal_id",
+                            "kind",
+                            "summary"
                           ]
                         },
                         "text": {
@@ -64609,6 +65363,32 @@
                                                 "progress"
                                               ]
                                             },
+                                            "proposal": {
+                                              "type": "object",
+                                              "properties": {
+                                                "proposal_id": {
+                                                  "type": "string",
+                                                  "pattern": "^pr_[0-9a-f]{8}$"
+                                                },
+                                                "kind": {
+                                                  "enum": [
+                                                    "plugin_install",
+                                                    "mcp_server",
+                                                    "setting",
+                                                    "cron_job"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "summary": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "proposal_id",
+                                                "kind",
+                                                "summary"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -64993,6 +65773,32 @@
                                                         "review_id",
                                                         "title",
                                                         "progress"
+                                                      ]
+                                                    },
+                                                    "proposal": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "proposal_id": {
+                                                          "type": "string",
+                                                          "pattern": "^pr_[0-9a-f]{8}$"
+                                                        },
+                                                        "kind": {
+                                                          "enum": [
+                                                            "plugin_install",
+                                                            "mcp_server",
+                                                            "setting",
+                                                            "cron_job"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "summary": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "proposal_id",
+                                                        "kind",
+                                                        "summary"
                                                       ]
                                                     },
                                                     "text": {
@@ -66029,6 +66835,32 @@
                                           "review_id",
                                           "title",
                                           "progress"
+                                        ]
+                                      },
+                                      "proposal": {
+                                        "type": "object",
+                                        "properties": {
+                                          "proposal_id": {
+                                            "type": "string",
+                                            "pattern": "^pr_[0-9a-f]{8}$"
+                                          },
+                                          "kind": {
+                                            "enum": [
+                                              "plugin_install",
+                                              "mcp_server",
+                                              "setting",
+                                              "cron_job"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "summary": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "proposal_id",
+                                          "kind",
+                                          "summary"
                                         ]
                                       },
                                       "text": {
@@ -68721,6 +69553,32 @@
                                                 "progress"
                                               ]
                                             },
+                                            "proposal": {
+                                              "type": "object",
+                                              "properties": {
+                                                "proposal_id": {
+                                                  "type": "string",
+                                                  "pattern": "^pr_[0-9a-f]{8}$"
+                                                },
+                                                "kind": {
+                                                  "enum": [
+                                                    "plugin_install",
+                                                    "mcp_server",
+                                                    "setting",
+                                                    "cron_job"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "summary": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "proposal_id",
+                                                "kind",
+                                                "summary"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -69105,6 +69963,32 @@
                                                         "review_id",
                                                         "title",
                                                         "progress"
+                                                      ]
+                                                    },
+                                                    "proposal": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "proposal_id": {
+                                                          "type": "string",
+                                                          "pattern": "^pr_[0-9a-f]{8}$"
+                                                        },
+                                                        "kind": {
+                                                          "enum": [
+                                                            "plugin_install",
+                                                            "mcp_server",
+                                                            "setting",
+                                                            "cron_job"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "summary": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "proposal_id",
+                                                        "kind",
+                                                        "summary"
                                                       ]
                                                     },
                                                     "text": {
@@ -70141,6 +71025,32 @@
                                           "review_id",
                                           "title",
                                           "progress"
+                                        ]
+                                      },
+                                      "proposal": {
+                                        "type": "object",
+                                        "properties": {
+                                          "proposal_id": {
+                                            "type": "string",
+                                            "pattern": "^pr_[0-9a-f]{8}$"
+                                          },
+                                          "kind": {
+                                            "enum": [
+                                              "plugin_install",
+                                              "mcp_server",
+                                              "setting",
+                                              "cron_job"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "summary": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "proposal_id",
+                                          "kind",
+                                          "summary"
                                         ]
                                       },
                                       "text": {
@@ -73512,6 +74422,32 @@
                                                 "progress"
                                               ]
                                             },
+                                            "proposal": {
+                                              "type": "object",
+                                              "properties": {
+                                                "proposal_id": {
+                                                  "type": "string",
+                                                  "pattern": "^pr_[0-9a-f]{8}$"
+                                                },
+                                                "kind": {
+                                                  "enum": [
+                                                    "plugin_install",
+                                                    "mcp_server",
+                                                    "setting",
+                                                    "cron_job"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "summary": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "proposal_id",
+                                                "kind",
+                                                "summary"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -73896,6 +74832,32 @@
                                                         "review_id",
                                                         "title",
                                                         "progress"
+                                                      ]
+                                                    },
+                                                    "proposal": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "proposal_id": {
+                                                          "type": "string",
+                                                          "pattern": "^pr_[0-9a-f]{8}$"
+                                                        },
+                                                        "kind": {
+                                                          "enum": [
+                                                            "plugin_install",
+                                                            "mcp_server",
+                                                            "setting",
+                                                            "cron_job"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "summary": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "proposal_id",
+                                                        "kind",
+                                                        "summary"
                                                       ]
                                                     },
                                                     "text": {
@@ -74932,6 +75894,32 @@
                                           "review_id",
                                           "title",
                                           "progress"
+                                        ]
+                                      },
+                                      "proposal": {
+                                        "type": "object",
+                                        "properties": {
+                                          "proposal_id": {
+                                            "type": "string",
+                                            "pattern": "^pr_[0-9a-f]{8}$"
+                                          },
+                                          "kind": {
+                                            "enum": [
+                                              "plugin_install",
+                                              "mcp_server",
+                                              "setting",
+                                              "cron_job"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "summary": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "proposal_id",
+                                          "kind",
+                                          "summary"
                                         ]
                                       },
                                       "text": {
@@ -78173,6 +79161,32 @@
                                                     "progress"
                                                   ]
                                                 },
+                                                "proposal": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "proposal_id": {
+                                                      "type": "string",
+                                                      "pattern": "^pr_[0-9a-f]{8}$"
+                                                    },
+                                                    "kind": {
+                                                      "enum": [
+                                                        "plugin_install",
+                                                        "mcp_server",
+                                                        "setting",
+                                                        "cron_job"
+                                                      ],
+                                                      "type": "string"
+                                                    },
+                                                    "summary": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "proposal_id",
+                                                    "kind",
+                                                    "summary"
+                                                  ]
+                                                },
                                                 "text": {
                                                   "type": "string"
                                                 },
@@ -78516,6 +79530,14 @@
                                                             "review_id": {},
                                                             "title": {},
                                                             "progress": {}
+                                                          }
+                                                        },
+                                                        "proposal": {
+                                                          "type": "object",
+                                                          "properties": {
+                                                            "proposal_id": {},
+                                                            "kind": {},
+                                                            "summary": {}
                                                           }
                                                         },
                                                         "text": {
@@ -79535,6 +80557,32 @@
                                               "review_id",
                                               "title",
                                               "progress"
+                                            ]
+                                          },
+                                          "proposal": {
+                                            "type": "object",
+                                            "properties": {
+                                              "proposal_id": {
+                                                "type": "string",
+                                                "pattern": "^pr_[0-9a-f]{8}$"
+                                              },
+                                              "kind": {
+                                                "enum": [
+                                                  "plugin_install",
+                                                  "mcp_server",
+                                                  "setting",
+                                                  "cron_job"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "summary": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "proposal_id",
+                                              "kind",
+                                              "summary"
                                             ]
                                           },
                                           "text": {
@@ -123700,6 +124748,32 @@
                                                 "progress"
                                               ]
                                             },
+                                            "proposal": {
+                                              "type": "object",
+                                              "properties": {
+                                                "proposal_id": {
+                                                  "type": "string",
+                                                  "pattern": "^pr_[0-9a-f]{8}$"
+                                                },
+                                                "kind": {
+                                                  "enum": [
+                                                    "plugin_install",
+                                                    "mcp_server",
+                                                    "setting",
+                                                    "cron_job"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "summary": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "proposal_id",
+                                                "kind",
+                                                "summary"
+                                              ]
+                                            },
                                             "text": {
                                               "type": "string"
                                             },
@@ -124084,6 +125158,32 @@
                                                         "review_id",
                                                         "title",
                                                         "progress"
+                                                      ]
+                                                    },
+                                                    "proposal": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "proposal_id": {
+                                                          "type": "string",
+                                                          "pattern": "^pr_[0-9a-f]{8}$"
+                                                        },
+                                                        "kind": {
+                                                          "enum": [
+                                                            "plugin_install",
+                                                            "mcp_server",
+                                                            "setting",
+                                                            "cron_job"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "summary": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "proposal_id",
+                                                        "kind",
+                                                        "summary"
                                                       ]
                                                     },
                                                     "text": {
@@ -127745,6 +128845,2975 @@
                     "items",
                     "filters",
                     "next_item_id"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/proposals/{proposal_id}": {
+      "get": {
+        "operationId": "proposals.get",
+        "tags": [
+          "proposals"
+        ],
+        "parameters": [
+          {
+            "name": "proposal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "proposal_id": {
+                          "type": "string",
+                          "pattern": "^pr_[0-9a-f]{8}$"
+                        },
+                        "session_id": {
+                          "type": "string"
+                        },
+                        "profile": {
+                          "type": "string"
+                        },
+                        "summary": {
+                          "type": "string"
+                        },
+                        "diff": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "enum": [
+                                  "addition",
+                                  "deletion",
+                                  "context"
+                                ],
+                                "type": "string"
+                              },
+                              "old_line": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "new_line": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "text": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "old_line",
+                              "new_line",
+                              "text"
+                            ]
+                          }
+                        },
+                        "fields": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "label": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "label",
+                              "value"
+                            ]
+                          }
+                        },
+                        "risk_notes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "payload_hash": {
+                          "type": "string"
+                        },
+                        "actions": {
+                          "type": "object",
+                          "properties": {
+                            "can_approve": {
+                              "type": "boolean"
+                            },
+                            "can_reject": {
+                              "type": "boolean"
+                            },
+                            "reason": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "not_owner",
+                                    "closed",
+                                    "expired"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "can_approve",
+                            "can_reject",
+                            "reason"
+                          ]
+                        },
+                        "status": {
+                          "enum": [
+                            "pending",
+                            "approved",
+                            "rejected",
+                            "applied",
+                            "failed",
+                            "expired"
+                          ],
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "type": "object",
+                          "properties": {
+                            "text": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "error": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "text",
+                            "error"
+                          ]
+                        },
+                        "created_at": {
+                          "type": "number"
+                        },
+                        "updated_at": {
+                          "type": "number"
+                        },
+                        "expires_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "decided_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "kind": {
+                          "const": "plugin_install"
+                        },
+                        "payload": {
+                          "type": "object",
+                          "properties": {
+                            "catalog_id": {
+                              "type": "string"
+                            },
+                            "pin": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "catalog_id",
+                            "pin"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "proposal_id",
+                        "session_id",
+                        "profile",
+                        "summary",
+                        "diff",
+                        "fields",
+                        "risk_notes",
+                        "payload_hash",
+                        "actions",
+                        "status",
+                        "outcome",
+                        "created_at",
+                        "updated_at",
+                        "expires_at",
+                        "decided_at",
+                        "kind",
+                        "payload"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "proposal_id": {
+                          "type": "string",
+                          "pattern": "^pr_[0-9a-f]{8}$"
+                        },
+                        "session_id": {
+                          "type": "string"
+                        },
+                        "profile": {
+                          "type": "string"
+                        },
+                        "summary": {
+                          "type": "string"
+                        },
+                        "diff": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "enum": [
+                                  "addition",
+                                  "deletion",
+                                  "context"
+                                ],
+                                "type": "string"
+                              },
+                              "old_line": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "new_line": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "text": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "old_line",
+                              "new_line",
+                              "text"
+                            ]
+                          }
+                        },
+                        "fields": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "label": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "label",
+                              "value"
+                            ]
+                          }
+                        },
+                        "risk_notes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "payload_hash": {
+                          "type": "string"
+                        },
+                        "actions": {
+                          "type": "object",
+                          "properties": {
+                            "can_approve": {
+                              "type": "boolean"
+                            },
+                            "can_reject": {
+                              "type": "boolean"
+                            },
+                            "reason": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "not_owner",
+                                    "closed",
+                                    "expired"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "can_approve",
+                            "can_reject",
+                            "reason"
+                          ]
+                        },
+                        "status": {
+                          "enum": [
+                            "pending",
+                            "approved",
+                            "rejected",
+                            "applied",
+                            "failed",
+                            "expired"
+                          ],
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "type": "object",
+                          "properties": {
+                            "text": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "error": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "text",
+                            "error"
+                          ]
+                        },
+                        "created_at": {
+                          "type": "number"
+                        },
+                        "updated_at": {
+                          "type": "number"
+                        },
+                        "expires_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "decided_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "kind": {
+                          "const": "mcp_server"
+                        },
+                        "payload": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string"
+                            },
+                            "url": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "command": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "args": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "env_names": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "url",
+                            "command",
+                            "args",
+                            "env_names"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "proposal_id",
+                        "session_id",
+                        "profile",
+                        "summary",
+                        "diff",
+                        "fields",
+                        "risk_notes",
+                        "payload_hash",
+                        "actions",
+                        "status",
+                        "outcome",
+                        "created_at",
+                        "updated_at",
+                        "expires_at",
+                        "decided_at",
+                        "kind",
+                        "payload"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "proposal_id": {
+                          "type": "string",
+                          "pattern": "^pr_[0-9a-f]{8}$"
+                        },
+                        "session_id": {
+                          "type": "string"
+                        },
+                        "profile": {
+                          "type": "string"
+                        },
+                        "summary": {
+                          "type": "string"
+                        },
+                        "diff": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "enum": [
+                                  "addition",
+                                  "deletion",
+                                  "context"
+                                ],
+                                "type": "string"
+                              },
+                              "old_line": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "new_line": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "text": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "old_line",
+                              "new_line",
+                              "text"
+                            ]
+                          }
+                        },
+                        "fields": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "label": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "label",
+                              "value"
+                            ]
+                          }
+                        },
+                        "risk_notes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "payload_hash": {
+                          "type": "string"
+                        },
+                        "actions": {
+                          "type": "object",
+                          "properties": {
+                            "can_approve": {
+                              "type": "boolean"
+                            },
+                            "can_reject": {
+                              "type": "boolean"
+                            },
+                            "reason": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "not_owner",
+                                    "closed",
+                                    "expired"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "can_approve",
+                            "can_reject",
+                            "reason"
+                          ]
+                        },
+                        "status": {
+                          "enum": [
+                            "pending",
+                            "approved",
+                            "rejected",
+                            "applied",
+                            "failed",
+                            "expired"
+                          ],
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "type": "object",
+                          "properties": {
+                            "text": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "error": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "text",
+                            "error"
+                          ]
+                        },
+                        "created_at": {
+                          "type": "number"
+                        },
+                        "updated_at": {
+                          "type": "number"
+                        },
+                        "expires_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "decided_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "kind": {
+                          "const": "setting"
+                        },
+                        "payload": {
+                          "type": "object",
+                          "properties": {
+                            "key": {
+                              "type": "string"
+                            },
+                            "value": {}
+                          },
+                          "required": [
+                            "key"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "proposal_id",
+                        "session_id",
+                        "profile",
+                        "summary",
+                        "diff",
+                        "fields",
+                        "risk_notes",
+                        "payload_hash",
+                        "actions",
+                        "status",
+                        "outcome",
+                        "created_at",
+                        "updated_at",
+                        "expires_at",
+                        "decided_at",
+                        "kind",
+                        "payload"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "proposal_id": {
+                          "type": "string",
+                          "pattern": "^pr_[0-9a-f]{8}$"
+                        },
+                        "session_id": {
+                          "type": "string"
+                        },
+                        "profile": {
+                          "type": "string"
+                        },
+                        "summary": {
+                          "type": "string"
+                        },
+                        "diff": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "enum": [
+                                  "addition",
+                                  "deletion",
+                                  "context"
+                                ],
+                                "type": "string"
+                              },
+                              "old_line": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "new_line": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "text": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "old_line",
+                              "new_line",
+                              "text"
+                            ]
+                          }
+                        },
+                        "fields": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "label": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "label",
+                              "value"
+                            ]
+                          }
+                        },
+                        "risk_notes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "payload_hash": {
+                          "type": "string"
+                        },
+                        "actions": {
+                          "type": "object",
+                          "properties": {
+                            "can_approve": {
+                              "type": "boolean"
+                            },
+                            "can_reject": {
+                              "type": "boolean"
+                            },
+                            "reason": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "not_owner",
+                                    "closed",
+                                    "expired"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "can_approve",
+                            "can_reject",
+                            "reason"
+                          ]
+                        },
+                        "status": {
+                          "enum": [
+                            "pending",
+                            "approved",
+                            "rejected",
+                            "applied",
+                            "failed",
+                            "expired"
+                          ],
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "type": "object",
+                          "properties": {
+                            "text": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "error": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "text",
+                            "error"
+                          ]
+                        },
+                        "created_at": {
+                          "type": "number"
+                        },
+                        "updated_at": {
+                          "type": "number"
+                        },
+                        "expires_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "decided_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "kind": {
+                          "const": "cron_job"
+                        },
+                        "payload": {
+                          "type": "object",
+                          "properties": {
+                            "title": {
+                              "type": "string"
+                            },
+                            "schedule": {
+                              "type": "string"
+                            },
+                            "prompt": {
+                              "type": "string"
+                            },
+                            "context_sources": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "title",
+                            "schedule",
+                            "prompt",
+                            "context_sources"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "proposal_id",
+                        "session_id",
+                        "profile",
+                        "summary",
+                        "diff",
+                        "fields",
+                        "risk_notes",
+                        "payload_hash",
+                        "actions",
+                        "status",
+                        "outcome",
+                        "created_at",
+                        "updated_at",
+                        "expires_at",
+                        "decided_at",
+                        "kind",
+                        "payload"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/proposals/{proposal_id}/approve": {
+      "post": {
+        "operationId": "proposals.approve",
+        "summary": "Apply the proposal once through the route that owns its kind, then tell its session. A `payload_hash` other than the stored one is 409 `payload_changed`. A refused apply answers 200 with `status: failed` and the route's error in `outcome`.",
+        "tags": [
+          "proposals"
+        ],
+        "parameters": [
+          {
+            "name": "proposal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "payload_hash": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "payload_hash"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "proposal_id": {
+                          "type": "string",
+                          "pattern": "^pr_[0-9a-f]{8}$"
+                        },
+                        "session_id": {
+                          "type": "string"
+                        },
+                        "profile": {
+                          "type": "string"
+                        },
+                        "summary": {
+                          "type": "string"
+                        },
+                        "diff": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "enum": [
+                                  "addition",
+                                  "deletion",
+                                  "context"
+                                ],
+                                "type": "string"
+                              },
+                              "old_line": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "new_line": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "text": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "old_line",
+                              "new_line",
+                              "text"
+                            ]
+                          }
+                        },
+                        "fields": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "label": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "label",
+                              "value"
+                            ]
+                          }
+                        },
+                        "risk_notes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "payload_hash": {
+                          "type": "string"
+                        },
+                        "actions": {
+                          "type": "object",
+                          "properties": {
+                            "can_approve": {
+                              "type": "boolean"
+                            },
+                            "can_reject": {
+                              "type": "boolean"
+                            },
+                            "reason": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "not_owner",
+                                    "closed",
+                                    "expired"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "can_approve",
+                            "can_reject",
+                            "reason"
+                          ]
+                        },
+                        "status": {
+                          "enum": [
+                            "pending",
+                            "approved",
+                            "rejected",
+                            "applied",
+                            "failed",
+                            "expired"
+                          ],
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "type": "object",
+                          "properties": {
+                            "text": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "error": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "text",
+                            "error"
+                          ]
+                        },
+                        "created_at": {
+                          "type": "number"
+                        },
+                        "updated_at": {
+                          "type": "number"
+                        },
+                        "expires_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "decided_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "kind": {
+                          "const": "plugin_install"
+                        },
+                        "payload": {
+                          "type": "object",
+                          "properties": {
+                            "catalog_id": {
+                              "type": "string"
+                            },
+                            "pin": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "catalog_id",
+                            "pin"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "proposal_id",
+                        "session_id",
+                        "profile",
+                        "summary",
+                        "diff",
+                        "fields",
+                        "risk_notes",
+                        "payload_hash",
+                        "actions",
+                        "status",
+                        "outcome",
+                        "created_at",
+                        "updated_at",
+                        "expires_at",
+                        "decided_at",
+                        "kind",
+                        "payload"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "proposal_id": {
+                          "type": "string",
+                          "pattern": "^pr_[0-9a-f]{8}$"
+                        },
+                        "session_id": {
+                          "type": "string"
+                        },
+                        "profile": {
+                          "type": "string"
+                        },
+                        "summary": {
+                          "type": "string"
+                        },
+                        "diff": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "enum": [
+                                  "addition",
+                                  "deletion",
+                                  "context"
+                                ],
+                                "type": "string"
+                              },
+                              "old_line": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "new_line": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "text": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "old_line",
+                              "new_line",
+                              "text"
+                            ]
+                          }
+                        },
+                        "fields": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "label": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "label",
+                              "value"
+                            ]
+                          }
+                        },
+                        "risk_notes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "payload_hash": {
+                          "type": "string"
+                        },
+                        "actions": {
+                          "type": "object",
+                          "properties": {
+                            "can_approve": {
+                              "type": "boolean"
+                            },
+                            "can_reject": {
+                              "type": "boolean"
+                            },
+                            "reason": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "not_owner",
+                                    "closed",
+                                    "expired"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "can_approve",
+                            "can_reject",
+                            "reason"
+                          ]
+                        },
+                        "status": {
+                          "enum": [
+                            "pending",
+                            "approved",
+                            "rejected",
+                            "applied",
+                            "failed",
+                            "expired"
+                          ],
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "type": "object",
+                          "properties": {
+                            "text": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "error": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "text",
+                            "error"
+                          ]
+                        },
+                        "created_at": {
+                          "type": "number"
+                        },
+                        "updated_at": {
+                          "type": "number"
+                        },
+                        "expires_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "decided_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "kind": {
+                          "const": "mcp_server"
+                        },
+                        "payload": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string"
+                            },
+                            "url": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "command": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "args": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "env_names": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "url",
+                            "command",
+                            "args",
+                            "env_names"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "proposal_id",
+                        "session_id",
+                        "profile",
+                        "summary",
+                        "diff",
+                        "fields",
+                        "risk_notes",
+                        "payload_hash",
+                        "actions",
+                        "status",
+                        "outcome",
+                        "created_at",
+                        "updated_at",
+                        "expires_at",
+                        "decided_at",
+                        "kind",
+                        "payload"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "proposal_id": {
+                          "type": "string",
+                          "pattern": "^pr_[0-9a-f]{8}$"
+                        },
+                        "session_id": {
+                          "type": "string"
+                        },
+                        "profile": {
+                          "type": "string"
+                        },
+                        "summary": {
+                          "type": "string"
+                        },
+                        "diff": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "enum": [
+                                  "addition",
+                                  "deletion",
+                                  "context"
+                                ],
+                                "type": "string"
+                              },
+                              "old_line": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "new_line": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "text": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "old_line",
+                              "new_line",
+                              "text"
+                            ]
+                          }
+                        },
+                        "fields": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "label": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "label",
+                              "value"
+                            ]
+                          }
+                        },
+                        "risk_notes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "payload_hash": {
+                          "type": "string"
+                        },
+                        "actions": {
+                          "type": "object",
+                          "properties": {
+                            "can_approve": {
+                              "type": "boolean"
+                            },
+                            "can_reject": {
+                              "type": "boolean"
+                            },
+                            "reason": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "not_owner",
+                                    "closed",
+                                    "expired"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "can_approve",
+                            "can_reject",
+                            "reason"
+                          ]
+                        },
+                        "status": {
+                          "enum": [
+                            "pending",
+                            "approved",
+                            "rejected",
+                            "applied",
+                            "failed",
+                            "expired"
+                          ],
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "type": "object",
+                          "properties": {
+                            "text": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "error": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "text",
+                            "error"
+                          ]
+                        },
+                        "created_at": {
+                          "type": "number"
+                        },
+                        "updated_at": {
+                          "type": "number"
+                        },
+                        "expires_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "decided_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "kind": {
+                          "const": "setting"
+                        },
+                        "payload": {
+                          "type": "object",
+                          "properties": {
+                            "key": {
+                              "type": "string"
+                            },
+                            "value": {}
+                          },
+                          "required": [
+                            "key"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "proposal_id",
+                        "session_id",
+                        "profile",
+                        "summary",
+                        "diff",
+                        "fields",
+                        "risk_notes",
+                        "payload_hash",
+                        "actions",
+                        "status",
+                        "outcome",
+                        "created_at",
+                        "updated_at",
+                        "expires_at",
+                        "decided_at",
+                        "kind",
+                        "payload"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "proposal_id": {
+                          "type": "string",
+                          "pattern": "^pr_[0-9a-f]{8}$"
+                        },
+                        "session_id": {
+                          "type": "string"
+                        },
+                        "profile": {
+                          "type": "string"
+                        },
+                        "summary": {
+                          "type": "string"
+                        },
+                        "diff": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "enum": [
+                                  "addition",
+                                  "deletion",
+                                  "context"
+                                ],
+                                "type": "string"
+                              },
+                              "old_line": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "new_line": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "text": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "old_line",
+                              "new_line",
+                              "text"
+                            ]
+                          }
+                        },
+                        "fields": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "label": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "label",
+                              "value"
+                            ]
+                          }
+                        },
+                        "risk_notes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "payload_hash": {
+                          "type": "string"
+                        },
+                        "actions": {
+                          "type": "object",
+                          "properties": {
+                            "can_approve": {
+                              "type": "boolean"
+                            },
+                            "can_reject": {
+                              "type": "boolean"
+                            },
+                            "reason": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "not_owner",
+                                    "closed",
+                                    "expired"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "can_approve",
+                            "can_reject",
+                            "reason"
+                          ]
+                        },
+                        "status": {
+                          "enum": [
+                            "pending",
+                            "approved",
+                            "rejected",
+                            "applied",
+                            "failed",
+                            "expired"
+                          ],
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "type": "object",
+                          "properties": {
+                            "text": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "error": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "text",
+                            "error"
+                          ]
+                        },
+                        "created_at": {
+                          "type": "number"
+                        },
+                        "updated_at": {
+                          "type": "number"
+                        },
+                        "expires_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "decided_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "kind": {
+                          "const": "cron_job"
+                        },
+                        "payload": {
+                          "type": "object",
+                          "properties": {
+                            "title": {
+                              "type": "string"
+                            },
+                            "schedule": {
+                              "type": "string"
+                            },
+                            "prompt": {
+                              "type": "string"
+                            },
+                            "context_sources": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "title",
+                            "schedule",
+                            "prompt",
+                            "context_sources"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "proposal_id",
+                        "session_id",
+                        "profile",
+                        "summary",
+                        "diff",
+                        "fields",
+                        "risk_notes",
+                        "payload_hash",
+                        "actions",
+                        "status",
+                        "outcome",
+                        "created_at",
+                        "updated_at",
+                        "expires_at",
+                        "decided_at",
+                        "kind",
+                        "payload"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/proposals/{proposal_id}/reject": {
+      "post": {
+        "operationId": "proposals.reject",
+        "summary": "Close the proposal without applying it, then tell its session.",
+        "tags": [
+          "proposals"
+        ],
+        "parameters": [
+          {
+            "name": "proposal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "proposal_id": {
+                          "type": "string",
+                          "pattern": "^pr_[0-9a-f]{8}$"
+                        },
+                        "session_id": {
+                          "type": "string"
+                        },
+                        "profile": {
+                          "type": "string"
+                        },
+                        "summary": {
+                          "type": "string"
+                        },
+                        "diff": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "enum": [
+                                  "addition",
+                                  "deletion",
+                                  "context"
+                                ],
+                                "type": "string"
+                              },
+                              "old_line": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "new_line": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "text": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "old_line",
+                              "new_line",
+                              "text"
+                            ]
+                          }
+                        },
+                        "fields": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "label": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "label",
+                              "value"
+                            ]
+                          }
+                        },
+                        "risk_notes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "payload_hash": {
+                          "type": "string"
+                        },
+                        "actions": {
+                          "type": "object",
+                          "properties": {
+                            "can_approve": {
+                              "type": "boolean"
+                            },
+                            "can_reject": {
+                              "type": "boolean"
+                            },
+                            "reason": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "not_owner",
+                                    "closed",
+                                    "expired"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "can_approve",
+                            "can_reject",
+                            "reason"
+                          ]
+                        },
+                        "status": {
+                          "enum": [
+                            "pending",
+                            "approved",
+                            "rejected",
+                            "applied",
+                            "failed",
+                            "expired"
+                          ],
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "type": "object",
+                          "properties": {
+                            "text": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "error": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "text",
+                            "error"
+                          ]
+                        },
+                        "created_at": {
+                          "type": "number"
+                        },
+                        "updated_at": {
+                          "type": "number"
+                        },
+                        "expires_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "decided_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "kind": {
+                          "const": "plugin_install"
+                        },
+                        "payload": {
+                          "type": "object",
+                          "properties": {
+                            "catalog_id": {
+                              "type": "string"
+                            },
+                            "pin": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "catalog_id",
+                            "pin"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "proposal_id",
+                        "session_id",
+                        "profile",
+                        "summary",
+                        "diff",
+                        "fields",
+                        "risk_notes",
+                        "payload_hash",
+                        "actions",
+                        "status",
+                        "outcome",
+                        "created_at",
+                        "updated_at",
+                        "expires_at",
+                        "decided_at",
+                        "kind",
+                        "payload"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "proposal_id": {
+                          "type": "string",
+                          "pattern": "^pr_[0-9a-f]{8}$"
+                        },
+                        "session_id": {
+                          "type": "string"
+                        },
+                        "profile": {
+                          "type": "string"
+                        },
+                        "summary": {
+                          "type": "string"
+                        },
+                        "diff": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "enum": [
+                                  "addition",
+                                  "deletion",
+                                  "context"
+                                ],
+                                "type": "string"
+                              },
+                              "old_line": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "new_line": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "text": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "old_line",
+                              "new_line",
+                              "text"
+                            ]
+                          }
+                        },
+                        "fields": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "label": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "label",
+                              "value"
+                            ]
+                          }
+                        },
+                        "risk_notes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "payload_hash": {
+                          "type": "string"
+                        },
+                        "actions": {
+                          "type": "object",
+                          "properties": {
+                            "can_approve": {
+                              "type": "boolean"
+                            },
+                            "can_reject": {
+                              "type": "boolean"
+                            },
+                            "reason": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "not_owner",
+                                    "closed",
+                                    "expired"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "can_approve",
+                            "can_reject",
+                            "reason"
+                          ]
+                        },
+                        "status": {
+                          "enum": [
+                            "pending",
+                            "approved",
+                            "rejected",
+                            "applied",
+                            "failed",
+                            "expired"
+                          ],
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "type": "object",
+                          "properties": {
+                            "text": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "error": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "text",
+                            "error"
+                          ]
+                        },
+                        "created_at": {
+                          "type": "number"
+                        },
+                        "updated_at": {
+                          "type": "number"
+                        },
+                        "expires_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "decided_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "kind": {
+                          "const": "mcp_server"
+                        },
+                        "payload": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string"
+                            },
+                            "url": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "command": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "args": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "env_names": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "url",
+                            "command",
+                            "args",
+                            "env_names"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "proposal_id",
+                        "session_id",
+                        "profile",
+                        "summary",
+                        "diff",
+                        "fields",
+                        "risk_notes",
+                        "payload_hash",
+                        "actions",
+                        "status",
+                        "outcome",
+                        "created_at",
+                        "updated_at",
+                        "expires_at",
+                        "decided_at",
+                        "kind",
+                        "payload"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "proposal_id": {
+                          "type": "string",
+                          "pattern": "^pr_[0-9a-f]{8}$"
+                        },
+                        "session_id": {
+                          "type": "string"
+                        },
+                        "profile": {
+                          "type": "string"
+                        },
+                        "summary": {
+                          "type": "string"
+                        },
+                        "diff": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "enum": [
+                                  "addition",
+                                  "deletion",
+                                  "context"
+                                ],
+                                "type": "string"
+                              },
+                              "old_line": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "new_line": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "text": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "old_line",
+                              "new_line",
+                              "text"
+                            ]
+                          }
+                        },
+                        "fields": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "label": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "label",
+                              "value"
+                            ]
+                          }
+                        },
+                        "risk_notes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "payload_hash": {
+                          "type": "string"
+                        },
+                        "actions": {
+                          "type": "object",
+                          "properties": {
+                            "can_approve": {
+                              "type": "boolean"
+                            },
+                            "can_reject": {
+                              "type": "boolean"
+                            },
+                            "reason": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "not_owner",
+                                    "closed",
+                                    "expired"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "can_approve",
+                            "can_reject",
+                            "reason"
+                          ]
+                        },
+                        "status": {
+                          "enum": [
+                            "pending",
+                            "approved",
+                            "rejected",
+                            "applied",
+                            "failed",
+                            "expired"
+                          ],
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "type": "object",
+                          "properties": {
+                            "text": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "error": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "text",
+                            "error"
+                          ]
+                        },
+                        "created_at": {
+                          "type": "number"
+                        },
+                        "updated_at": {
+                          "type": "number"
+                        },
+                        "expires_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "decided_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "kind": {
+                          "const": "setting"
+                        },
+                        "payload": {
+                          "type": "object",
+                          "properties": {
+                            "key": {
+                              "type": "string"
+                            },
+                            "value": {}
+                          },
+                          "required": [
+                            "key"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "proposal_id",
+                        "session_id",
+                        "profile",
+                        "summary",
+                        "diff",
+                        "fields",
+                        "risk_notes",
+                        "payload_hash",
+                        "actions",
+                        "status",
+                        "outcome",
+                        "created_at",
+                        "updated_at",
+                        "expires_at",
+                        "decided_at",
+                        "kind",
+                        "payload"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "proposal_id": {
+                          "type": "string",
+                          "pattern": "^pr_[0-9a-f]{8}$"
+                        },
+                        "session_id": {
+                          "type": "string"
+                        },
+                        "profile": {
+                          "type": "string"
+                        },
+                        "summary": {
+                          "type": "string"
+                        },
+                        "diff": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "enum": [
+                                  "addition",
+                                  "deletion",
+                                  "context"
+                                ],
+                                "type": "string"
+                              },
+                              "old_line": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "new_line": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "text": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "old_line",
+                              "new_line",
+                              "text"
+                            ]
+                          }
+                        },
+                        "fields": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "label": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "label",
+                              "value"
+                            ]
+                          }
+                        },
+                        "risk_notes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "payload_hash": {
+                          "type": "string"
+                        },
+                        "actions": {
+                          "type": "object",
+                          "properties": {
+                            "can_approve": {
+                              "type": "boolean"
+                            },
+                            "can_reject": {
+                              "type": "boolean"
+                            },
+                            "reason": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "not_owner",
+                                    "closed",
+                                    "expired"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "can_approve",
+                            "can_reject",
+                            "reason"
+                          ]
+                        },
+                        "status": {
+                          "enum": [
+                            "pending",
+                            "approved",
+                            "rejected",
+                            "applied",
+                            "failed",
+                            "expired"
+                          ],
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "type": "object",
+                          "properties": {
+                            "text": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "error": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "text",
+                            "error"
+                          ]
+                        },
+                        "created_at": {
+                          "type": "number"
+                        },
+                        "updated_at": {
+                          "type": "number"
+                        },
+                        "expires_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "decided_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "kind": {
+                          "const": "cron_job"
+                        },
+                        "payload": {
+                          "type": "object",
+                          "properties": {
+                            "title": {
+                              "type": "string"
+                            },
+                            "schedule": {
+                              "type": "string"
+                            },
+                            "prompt": {
+                              "type": "string"
+                            },
+                            "context_sources": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "title",
+                            "schedule",
+                            "prompt",
+                            "context_sources"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "proposal_id",
+                        "session_id",
+                        "profile",
+                        "summary",
+                        "diff",
+                        "fields",
+                        "risk_notes",
+                        "payload_hash",
+                        "actions",
+                        "status",
+                        "outcome",
+                        "created_at",
+                        "updated_at",
+                        "expires_at",
+                        "decided_at",
+                        "kind",
+                        "payload"
+                      ]
+                    }
                   ]
                 }
               }

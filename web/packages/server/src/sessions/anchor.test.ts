@@ -35,6 +35,16 @@ it('keeps a draft review visible after its producing turn settles', () => {
   expect(scene?.activity_rows).toMatchObject([{ tool: { result_view: { outbound_draft: { draft_id: 'd_1234abcd', card: 1 } } } }])
 })
 
+it('keeps a proposal visible after its producing turn settles (TAL-1967)', () => {
+  const scene = buildTurnScene([
+    [{ role: 'assistant', content: '', tool_calls: [{ id: 'propose', function: { name: 'propose', arguments: '{}' } }] }, 0],
+    [{ role: 'tool', tool_call_id: 'propose', content: JSON.stringify({ proposal_id: 'pr_0a1b2c3d', status: 'pending', url: '/session/s', kind: 'setting', summary: 'Change setting show_tps' }) }, 1],
+    [{ role: 'assistant', content: 'Approve it on the card.' }, 2],
+  ])
+  expect(scene?.expanded_by_default, 'The owner must see the proposal without opening the worklog').toBe(true)
+  expect(scene?.activity_rows).toMatchObject([{ tool: { result_view: { proposal: { proposal_id: 'pr_0a1b2c3d', kind: 'setting', summary: 'Change setting show_tps' } } } }])
+})
+
 /** A legacy scene as the predecessor browser saved it: every shape the clients used to decode differently. */
 const legacyRows = [
   { row_id: 'steer', order_index: '4', role: 'steering', text: 'Also check b.txt', status: 'pending', payload: { steer_id: 's1', created_at: 3 } },

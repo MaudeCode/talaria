@@ -1,4 +1,4 @@
-import { DecisionReviewResult, OutboundDraftResult } from './OutboundDraftResult'
+import { DecisionReviewResult, OutboundDraftResult, ProposalResult } from './OutboundDraftResult'
 import { useApprovalFlash, useDisclosure } from './Worklog'
 import { ChevronRight } from 'lucide-react'
 import { cn } from '../../../ui/cn'
@@ -96,6 +96,7 @@ export function ToolCard({ call, timestamp, sessionId, arrivalKey }: { call: Too
         {timestamp && <span className="shrink-0 text-[11px] tabular-nums text-muted">{timestamp}</span>}
       </button>
       {call.resultView?.decision_review && <DecisionReviewResult key={call.resultView.decision_review.review_id} reference={call.resultView.decision_review} />}
+      {call.resultView?.proposal && <ProposalResult key={call.resultView.proposal.proposal_id} reference={call.resultView.proposal} />}
       {sessionId && call.resultView?.outbound_draft && <OutboundDraftResult key={JSON.stringify([sessionId, call.id, call.resultView.outbound_draft])} sessionId={sessionId} callId={call.id} reference={call.resultView.outbound_draft} />}
       {open && (
         <div className="tool-card-detail border-t border-border-subtle px-2.5 py-2">

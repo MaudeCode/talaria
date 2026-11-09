@@ -12,6 +12,8 @@ import { McpEventsSchema } from './mcp-events.js'
 import { z } from 'zod'
 import { OutboundDraftRefSchema } from './outbound-drafts.js'
 import { DecisionReviewRefSchema } from './decisions.js'
+import { ProposalRefSchema } from './proposals.js'
+import { DiffLineSchema } from './diff-line.js'
 import { MeshyModelRefSchema } from './meshy.js'
 import { RunStatusSchema } from './run-status.js'
 import { AgentRefreshConfirmationSchema, AgentUpdateOperationSchema } from './sidecar-shared.js'
@@ -41,11 +43,7 @@ export type Attachment = z.infer<typeof AttachmentSchema>
 /** The server's display class for a tool call: clients map it to an icon and localized verb, and never classify names themselves. */
 export const ToolKindSchema = z.enum(['shell', 'read', 'list', 'search', 'web', 'write', 'skill', 'memory', 'delegate', 'unknown'])
 export type ToolKind = z.infer<typeof ToolKindSchema>
-/**
- * TAL-604: one row of a unified diff hunk as the server parsed it. `text` is the raw line, its `+` / `-` / space prefix kept;
- * `old_line` / `new_line` number it on each side (null on the side it is absent from, and on a `\ No newline` marker).
- */
-export const DiffLineSchema = z.object({ kind: z.enum(['addition', 'deletion', 'context']), old_line: z.number().int().nullable(), new_line: z.number().int().nullable(), text: z.string() })
+export { DiffLineSchema } from './diff-line.js'
 /**
  * TAL-604: one hunk of a unified diff: its `@@` `header`, the first old and new line numbers, the last new line it covers
  * (`new_end`, at least `new_start`), its added and removed line counts, and its lines. A diff without `@@` headers yields
@@ -86,7 +84,7 @@ export const ToolDisplayFields = {
  * `text`, in that order, then `approval_note` (TAL-1910: the Agent's note on why a flagged command ran), and never parse
  * result text. Each string is capped server-side; a client without the field shows `preview`.
  */
-export const ToolResultViewSchema = z.object({ outbound_draft: OutboundDraftRefSchema.optional(), /** TAL-1963: the review a `decision_review_put` result made or revised, as it stood then; the card follows `decision_review` events. */ decision_review: DecisionReviewRefSchema.optional(), text: z.string().optional(), stdout: z.string().optional(), stderr: z.string().optional(), error: z.string().optional(), exit_code: z.number().int().optional(), approval_note: z.string().optional() })
+export const ToolResultViewSchema = z.object({ outbound_draft: OutboundDraftRefSchema.optional(), /** TAL-1963: the review a `decision_review_put` result made or revised, as it stood then; the card follows `decision_review` events. */ decision_review: DecisionReviewRefSchema.optional(), /** TAL-1967: the proposal a `propose` result made; the card follows `proposal` events. */ proposal: ProposalRefSchema.optional(), text: z.string().optional(), stdout: z.string().optional(), stderr: z.string().optional(), error: z.string().optional(), exit_code: z.number().int().optional(), approval_note: z.string().optional() })
 export type ToolResultView = z.infer<typeof ToolResultViewSchema>
 
 /**

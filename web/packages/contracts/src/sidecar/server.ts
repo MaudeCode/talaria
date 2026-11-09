@@ -3,6 +3,7 @@ import { ApprovalPendingSchema, ApprovalRespondResponseSchema, BackgroundTasksRe
 import { CompressionSummarySchema, HandoffSummarySchema } from '../routes/sessions.js'
 import { WorkspacesMutation } from '../routes/workspaces.js'
 import { DecisionItemInputSchema, DecisionOutcomeStateSchema, DecisionProgressSchema, DecisionReviewSchema, DecisionReviewStatusSchema } from '../decisions.js'
+import { ProposalKindSchema, ProposalSchema, ProposalStatusSchema } from '../proposals.js'
 
 /**
  * Sidecar-to-server requests (TAL-1164): the sidecar asks the server on the same stdio pipe, in the `server.*`
@@ -231,6 +232,21 @@ export const ServerDecisionReviewRecordParamsSchema = ServerDecisionReviewReadPa
   outcomes: z.array(z.object({ id: z.string().min(1), state: DecisionOutcomeStateSchema, note: z.string().nullable().optional() })).min(1),
 })
 
+/**
+ * TAL-1967: the `harness` toolset's proposals, each of the calling session (another session's is `proposal_unknown`).
+ * `proposal_put` validates `payload` for its `kind` and refuses with the failed condition, writing nothing.
+ * `timeout_seconds` is the session's clarify timeout as the sidecar resolved it; 0 or less never expires.
+ */
+export const ServerProposalPutParamsSchema = z.object({
+  caller_session_id: z.string().min(1),
+  kind: z.string(),
+  payload: z.record(z.string(), z.unknown()),
+  timeout_seconds: z.number().int().optional(),
+})
+/** `url` is the session's page, where the card is; `kind` and `summary` let the transcript card show before the proposal loads. */
+export const ServerProposalPutResultSchema = z.object({ proposal_id: z.string(), status: ProposalStatusSchema, url: z.string(), kind: ProposalKindSchema, summary: z.string() })
+export const ServerProposalReadParamsSchema = z.object({ caller_session_id: z.string().min(1), proposal_id: z.string().min(1) })
+
 /** Every method the server answers for the sidecar; anything else is METHOD_NOT_FOUND. */
 export const SIDECAR_SERVER_METHODS = {
   'server.session_list': { params: ServerSessionListParamsSchema, result: ServerSessionListResultSchema },
@@ -266,6 +282,8 @@ export const SIDECAR_SERVER_METHODS = {
   'server.decision_review_put': { params: ServerDecisionReviewPutParamsSchema, result: ServerDecisionReviewPutResultSchema },
   'server.decision_review_read': { params: ServerDecisionReviewReadParamsSchema, result: DecisionReviewSchema },
   'server.decision_review_record': { params: ServerDecisionReviewRecordParamsSchema, result: DecisionReviewSchema },
+  'server.proposal_put': { params: ServerProposalPutParamsSchema, result: ServerProposalPutResultSchema },
+  'server.proposal_read': { params: ServerProposalReadParamsSchema, result: ProposalSchema },
 } as const
 
 export type SidecarServerMethods = typeof SIDECAR_SERVER_METHODS

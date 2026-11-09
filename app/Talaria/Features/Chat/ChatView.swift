@@ -1937,6 +1937,9 @@ struct ChatView: View {
             .chatEnvironmentAction(\.chatOpenDecisionReview) { reviewID in
                 chat.openedDecisionReviewID = reviewID
             }
+            .chatEnvironmentAction(\.chatProposalModel) { proposalID in
+                ProposalCardModel(proposalID: proposalID, client: viewModel.client)
+            }
             .chatEnvironmentAction(\.voiceNoteAction) { id, action in
                 switch action {
                 case .retry:
@@ -3932,6 +3935,10 @@ private struct ChatLiveSync: ViewModifier {
                         NotificationCenter.default.post(name: .talariaDecisionReviewChanged, object: event)
                         await viewModel.handleDecisionReviewEvent(event, modelContext: modelContext)
                         reportLastError()
+                    },
+                    onProposal: { event in
+                        // The proposal's transcript card rereads it.
+                        NotificationCenter.default.post(name: .talariaProposalChanged, object: event)
                     }
                 )
             }

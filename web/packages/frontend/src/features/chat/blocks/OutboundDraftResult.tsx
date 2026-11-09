@@ -1,7 +1,7 @@
 import { useId, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import type { DecisionReviewRef, OutboundDraft, OutboundDraftAction, OutboundDraftRef } from '@maudecode/talaria-web-contracts'
+import type { DecisionReviewRef, OutboundDraft, OutboundDraftAction, OutboundDraftRef, Proposal, ProposalRef } from '@maudecode/talaria-web-contracts'
 import * as api from '../../../api/endpoints'
 import { keys } from '../../../api/queryKeys'
 import { reviewStatusLabel } from '../../decisions/reviewStatus'
@@ -10,6 +10,8 @@ import { FieldRow, TextInput } from '../../../ui/Field'
 import { m } from '../../../paraglide/messages.js'
 import { useResourceEffects, useResourceMutation, withEffect } from '../../sessions/useResourceMutation'
 import { showErrorToast } from '../../toast/errorToast'
+import { cn } from '../../../ui/cn'
+import { RowContextMenu, type RowAction } from '../../../ui/Menu'
 
 const stateLabel = (state: OutboundDraft['state']) => ({ draft: m.outbound_draft_status_draft, approved: m.outbound_draft_status_approved, sent: m.outbound_draft_status_sent, saved: m.outbound_draft_status_saved, failed: m.outbound_draft_status_failed, discarded: m.outbound_draft_status_discarded, superseded: m.outbound_draft_status_superseded, unavailable: m.outbound_draft_status_unavailable })[state]()
 
@@ -56,7 +58,7 @@ export function OutboundDraftResult({ sessionId, callId, reference }: { sessionI
   </ResultSection>
 }
 
-/** A typed result body under a tool card's header: outbound drafts and decision reviews. */
+/** A typed result body under a tool card's header: outbound drafts, decision reviews and proposals. */
 function ResultSection({ label, children }: { label: string; children: ReactNode }) {
   return <section aria-label={label} className="tool-card-result [&_button]:min-h-11 border-t border-border-subtle px-2.5 py-3 text-[13px]">{children}</section>
 }
@@ -79,6 +81,56 @@ export function DecisionReviewResult({ reference }: { reference: DecisionReviewR
       <ResultHeader title={review?.title ?? reference.title} status={review ? `${reviewStatusLabel(review.status)} · ${answered}` : answered} />
       <Link to="/decisions/$reviewId" params={{ reviewId: reference.review_id }} className="mt-2 inline-flex min-h-11 items-center text-accent-text underline">{m.decision_review_open()}</Link>
     </div>
+  </ResultSection>
+}
+
+const proposalStatus = (status: Proposal['status']) => ({ pending: m.proposal_status_pending, approved: m.proposal_status_approved, rejected: m.proposal_status_rejected, applied: m.proposal_status_applied, failed: m.proposal_status_failed, expired: m.proposal_status_expired })[status]()
+interface ProposalDecision { approve: boolean; shown: Proposal }
+const DIFF_TONE = { addition: 'text-success', deletion: 'text-error', context: 'text-pre-text' } as const
+
+/**
+ * TAL-1967: a change the agent proposed, as the server shows it: summary and status, the diff or field list, the risk
+ * notes, the outcome, and Approve and Reject for the server owner. A decision shows at once and rolls back if the
+ * server refuses it; the session's `proposal` events refresh the rest.
+ */
+export function ProposalResult({ reference }: { reference: ProposalRef }) {
+  const qc = useQueryClient()
+  const queryKey = keys.proposal(reference.proposal_id)
+  const query = useQuery({ queryKey, queryFn: ({ signal }) => api.fetchProposal(reference.proposal_id, signal), retry: false })
+  const resource = `proposal:${reference.proposal_id}`
+  const effect = useResourceEffects()[resource]
+  const proposal = query.data ? withEffect(query.data, effect) : null
+  const decide = useResourceMutation({
+    resource: () => resource, queryKey, exclusive: true,
+    effect: ({ approve }: ProposalDecision) => ({ fields: { status: approve ? 'approved' : 'rejected', actions: { can_approve: false, can_reject: false, reason: 'closed' } } }),
+    // Approval names the version the owner was shown.
+    mutationFn: ({ approve, shown }: ProposalDecision) => approve ? api.approveProposal({ proposal_id: shown.proposal_id, payload_hash: shown.payload_hash }) : api.rejectProposal({ proposal_id: shown.proposal_id }),
+    onSuccess: (result) => qc.setQueryData(queryKey, result), onError: showErrorToast,
+  })
+  // One list for the inline buttons and the right-click and long-press menu, as the server permits them.
+  const actions: (RowAction & { primary?: boolean })[] = !proposal ? [] : [
+    ...(proposal.actions.can_approve ? [{ label: m.proposal_approve(), primary: true, run: () => { decide.mutate({ approve: true, shown: proposal }) } }] : []),
+    ...(proposal.actions.can_reject ? [{ label: m.proposal_reject(), run: () => { decide.mutate({ approve: false, shown: proposal }) } }] : []),
+  ]
+  return <ResultSection label={m.proposal_heading()}>
+    <RowContextMenu label={proposal?.summary ?? reference.summary} actions={actions} trigger={<div data-proposal={reference.proposal_id} data-proposal-status={proposal?.status}>
+      <ResultHeader title={proposal?.summary ?? reference.summary} status={proposal ? proposalStatus(proposal.status) : m.loading()} />
+      {proposal && <>
+        {proposal.diff.length > 0 && <pre aria-label={m.proposal_change()} className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap break-all rounded-md bg-code-bg p-2 font-mono text-[12px]">
+          {proposal.diff.map((line, index) => <div key={index} className={DIFF_TONE[line.kind]}>{line.text}</div>)}
+        </pre>}
+        {proposal.fields.length > 0 && <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+          {proposal.fields.map((field) => <div key={field.label} className="contents"><dt className="text-muted">{field.label}</dt><dd className="min-w-0 whitespace-pre-wrap break-words">{field.value}</dd></div>)}
+        </dl>}
+        {proposal.risk_notes.length > 0 && <ul aria-label={m.proposal_risks()} className="mt-2 list-disc space-y-0.5 pl-5 text-muted">
+          {proposal.risk_notes.map((note, index) => <li key={index} className="break-words">{note}</li>)}
+        </ul>}
+        {(proposal.outcome.text ?? proposal.outcome.error) && <p className={cn('mt-2 break-words', proposal.outcome.error ? 'text-error' : 'text-success')}>{proposal.outcome.error ?? proposal.outcome.text}</p>}
+        {actions.length > 0 && <div className="mt-3 flex flex-wrap gap-2">
+          {actions.map((action) => <Button key={action.label} {...(action.primary ? { variant: 'primary' as const } : {})} onClick={action.run}>{action.label}</Button>)}
+        </div>}
+      </>}
+    </div>} />
   </ResultSection>
 }
 
