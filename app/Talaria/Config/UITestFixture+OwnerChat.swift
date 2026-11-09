@@ -54,8 +54,13 @@ extension UITestFixtureURLProtocol {
     static let ownerWorkStopped = OSAllocatedUnfairLock<Set<String>>(initialState: [])
     /// Every control the fixture owner received, in order: `stop:<task>` or `steer:<task>:<text>`.
     static let ownerWorkControls = OSAllocatedUnfairLock<[String]>(initialState: [])
+    /// The owner can no longer be read: the server lists none of its work and says so.
+    static let ownerWorkUnavailable = OSAllocatedUnfairLock(initialState: false)
 
     static func ownerWorkTasksResponse() -> Data {
+        if ownerWorkUnavailable.withLock({ $0 }) {
+            return json(["session_id": sessionID, "agent_available": true, "agents_working": false, "owner_work": "unavailable", "tasks": []])
+        }
         let stopped = ownerWorkStopped.withLock { $0 }
         func row(_ id: String, kind: String, title: String, stop: Bool, steer: Bool, result: Bool) -> [String: Any] {
             let running = !stopped.contains(id)

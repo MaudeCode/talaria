@@ -52,7 +52,8 @@ struct NoticeChip: View {
 /// TAL-372: the session's background work the server pins (running work, and a finished `/background` result until
 /// dismissed), opened from the composer's background tasks chip (TAL-1001): each task's status, the full result on
 /// request, and the actions the server offers on it. An owner chat's processes and subagents list here too, with Stop and
-/// Steer only where their owner allows them (TAL-1337). The sheet closes once nothing is pinned.
+/// Steer only where their owner allows them (TAL-1337). The sheet closes once nothing is pinned and the owner has
+/// nothing to explain.
 struct BackgroundWorkSheet: View {
     let tasks: [BackgroundWorkTask]
     var ownerWork: BackgroundTasksResponse.OwnerWork?
@@ -120,8 +121,9 @@ struct BackgroundWorkSheet: View {
                 Text(task.title)
             }
         }
-        // Initially too: the work can finish and be dismissed between the chip's tap and the sheet appearing.
-        .onChange(of: tasks.isEmpty, initial: true) { _, isEmpty in
+        // Initially too: the work can finish and be dismissed between the chip's tap and the sheet appearing. An owner
+        // lost while its work is open keeps the sheet, which says why the rows went.
+        .onChange(of: tasks.isEmpty && Self.ownerNotice(ownerWork) == nil, initial: true) { _, isEmpty in
             if isEmpty { close() }
         }
     }

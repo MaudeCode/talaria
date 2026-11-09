@@ -1609,6 +1609,35 @@ final class ChatHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "owner-work-after-stop")
     }
 
+    /// TAL-1337: an owner lost while its work is open keeps the sheet, which says why its rows went; closed, the same
+    /// reason stands above the composer, since no rows remain to open.
+    func testOwnerWorkThatCannotBeReadStillSaysWhy() async throws {
+        let window = try await hostFixtureChat([UITestFixtureURLProtocol.ownerWorkArgument])
+        let containing: (String) -> (NSObject) -> Bool = { text in { $0.accessibilityLabel?.contains(text) == true } }
+        let chip = await awaitElement(in: window, where: containing("Background tasks · 3"))
+        HostedAccessibility.activate(try XCTUnwrap(chip, "The owner's running work has no background tasks chip"))
+        let row = await awaitElement(in: window, where: containing("npm run dev"))
+        let stop = try XCTUnwrap(row?.accessibilityCustomActions?.first { $0.name == "Stop" }, "npm run dev offers no Stop")
+
+        // The owner goes away: the reread after Stop lists none of its work.
+        UITestFixtureURLProtocol.ownerWorkUnavailable.withLock { $0 = true }
+        XCTAssertTrue(stop.actionHandler?(stop) ?? false)
+        let emptied = await awaitNoElement(in: window, where: containing("Read the logs"))
+        XCTAssertTrue(emptied, "The unreadable owner's rows stayed")
+        _ = try await requireElement(in: window, label: "The agent can’t report status right now.")
+        XCTAssertNotNil(window.rootViewController?.presentedViewController, "The sheet closed without saying why")
+        settle(0.3)
+        attachHostedScreenshot(window, name: "owner-work-unavailable-sheet")
+
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Done"))
+        let closed = await awaitCondition { window.rootViewController?.presentedViewController == nil }
+        XCTAssertTrue(closed)
+        let notice = await awaitElement(in: window) { ($0 as? UIView)?.accessibilityIdentifier == "background-work-owner-notice-chip" || ($0.accessibilityLabel == "The agent can’t report status right now.") }
+        XCTAssertNotNil(notice, "Nothing above the composer says the owner's work cannot be read")
+        settle(0.3)
+        attachHostedScreenshot(window, name: "owner-work-unavailable-chip")
+    }
+
     /// TAL-1043: an owner chat lists the owner's inputs with only the server's actions. An input with an unknown
     /// outcome blocks sending until Retry returns its text to the composer; nothing resends on its own.
     func testOwnerChatRecoversAnUnknownInputOnPhone() async throws {

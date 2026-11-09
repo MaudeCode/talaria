@@ -509,6 +509,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
         ownerSettledAdmissions.withLock { $0 = [] }
         ownerWorkStopped.withLock { $0 = [] }
         ownerWorkControls.withLock { $0 = [] }
+        ownerWorkUnavailable.withLock { $0 = false }
         nativeNoticePhase.withLock { $0 = 0 }
         nativeNoticeStreams.withLock { $0.removeAll() }
         sessionCreationFailureLock.withLock {
