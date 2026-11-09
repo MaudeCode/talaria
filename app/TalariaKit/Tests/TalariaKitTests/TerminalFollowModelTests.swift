@@ -67,6 +67,20 @@ final class TerminalFollowModelTests: XCTestCase {
         XCTAssertGreaterThan(stream.stopCount, 0, "Following stops once the shell exited")
     }
 
+    func testLeavingTheViewDuringItsFirstReadNeverOpensTheStream() async throws {
+        let stream = ScriptedSSEStreamingClient()
+        let reads = LockedTestValue<[Int]>([])
+        let pending = LockedTestValue<DeferredMockURLProtocol?>(nil)
+        let model = try model(stream: stream, reads: reads) { _, request in pending.value = request }
+        let start = Task { await model.start() }
+        try await waitUntil { pending.value != nil }
+        model.stop()
+        pending.value?.complete(withJSON: try Self.json(Self.fixture().reads[0].result))
+        await start.value
+        XCTAssertEqual(model.lines.count, 3)
+        XCTAssertTrue(stream.startedURLs.isEmpty, "A view the reader left opens no output stream")
+    }
+
     func testATerminalTheServerNoLongerHasStopsFollowing() async throws {
         let stream = ScriptedSSEStreamingClient()
         let reads = LockedTestValue<[Int]>([])

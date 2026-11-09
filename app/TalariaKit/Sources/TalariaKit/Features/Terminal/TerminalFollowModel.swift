@@ -38,7 +38,8 @@ public final class TerminalFollowModel {
     public func start() async {
         following = true
         await read()
-        if running, !gone { connect() }
+        // The reader may have left while the first read was out.
+        if following, !Task.isCancelled, running, !gone { connect() }
     }
 
     public func stop() {
