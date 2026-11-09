@@ -243,6 +243,13 @@ read, acknowledgement, dismissal, severity, actions, destinations, and clearabil
 visible across the same owner's profiles because the installation being updated is server-wide; records
 for another authenticated owner remain isolated. Automatic Web updates produce server-wide owner notices.
 
+Every completed update check also keeps one server-wide `update_available` record per target while an
+installable release (`release_ready`) or newer commits (`commits_behind`) wait (TAL-2001). It names the
+version, links to `settings.system`, and stays read or dismissed across repeat checks of that version; a
+newer version rewrites it as unread. A failed or undecided check leaves it unchanged. A current target,
+turned-off checks, an ignored Agent, or that target's succeeded update removes it. Web records are skipped
+while automatic updates are on, because the automatic update reports itself.
+
 The notification lifecycle is `applying`, `awaiting_confirmation`, `waiting_for_idle`, `restarting`,
 `verifying`, `recovering`, then `succeeded`, `blocked`, `failed`, or `unknown`. A failed or blocked record, and a succeeded Agent update that kept conflicting local edits in the git stash (`stash_conflict`), keeps the apply's own explanation as `detail` (line breaks kept, bounded, cleared by the next phase); the notification center and the Updating dialog show it under the message. A restarted server marks an interrupted `applying` operation unknown unless it carries a durable Agent transaction association; that operation resumes recovery.
 A `restarting` Web operation becomes succeeded only when the running release identity exactly matches the

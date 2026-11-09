@@ -21,6 +21,8 @@ import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { RESTART_EXIT_CODE, supervise } from '../cli/supervise.js'
 import { writeContinuation } from './update-continuation.js'
+import { UpdateNotificationStore } from './update-notifications.js'
+import { initializeStore, JsonDocuments } from '../test/storage.js'
 import {
   applyAgentUpdate, applyWebUpdate, AUTO_UPDATE_INTERVAL_MS, CACHE_TTL_S, checkAgentUpdate, checkWebUpdate, FETCH_RETRY_MS, forceAgentUpdate, githubJson, inventoryLocks, npmInstallInfo, publishedWebRelease, purgePycache, ReleaseUnavailable,
   REPOSITORY_URL, runGit, sanitizeGitDiagnostic, UpdateService, updatesCheckView, updateTargetView, waitUntilRestartSafe, type BuildRun, type GetJson, type GitOutcome, type GitRun, type PublishedRelease, type ReleaseIdentity, type RestartBlockers, type UpdateServiceDeps,
@@ -705,7 +707,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
   }
 
   /** An UpdateService over a global npm install one Stable release behind, the only kind that updates itself (TAL-379). */
-  function npmService(opts: { stateDir?: string; channel?: () => 'stable' | 'experimental'; agentDir?: string | null; blockers?: () => RestartBlockers; autoApply?: () => boolean; checkEnabled?: () => boolean; autoNotification?: UpdateServiceDeps['autoNotification']; npm?: (inner: BuildRun) => BuildRun } & Pick<UpdateServiceDeps, 'interruptibleRuns' | 'interruptRuns' | 'continuationRuns' | 'continueChat' | 'now'> = {}) {
+  function npmService(opts: { stateDir?: string; channel?: () => 'stable' | 'experimental'; agentDir?: string | null; blockers?: () => RestartBlockers; autoApply?: () => boolean; checkEnabled?: () => boolean; autoNotification?: UpdateServiceDeps['autoNotification']; npm?: (inner: BuildRun) => BuildRun } & Pick<UpdateServiceDeps, 'availableNotification' | 'interruptibleRuns' | 'interruptRuns' | 'continuationRuns' | 'continueChat' | 'now'> = {}) {
     const s = sourceInstall()
     const n = npmPackageInstall(s)
     const restarts: number[] = []
@@ -713,7 +715,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
       stateDir: opts.stateDir ?? tmp(), webRoot: n.packageRoot, git: s.run, npm: opts.npm ? opts.npm(n.npm) : n.npm, getJson: s.getJson, identity: s.identity, webuiVersion: 'web-v1.0.0',
       agentDir: () => opts.agentDir ?? null, channel: opts.channel ?? (() => 'stable'), includeAgent: () => true,
       ...(opts.autoApply ? { autoApply: opts.autoApply } : {}), ...(opts.checkEnabled ? { checkEnabled: opts.checkEnabled } : {}),
-      ...(opts.autoNotification ? { autoNotification: opts.autoNotification } : {}),
+      ...(opts.autoNotification ? { autoNotification: opts.autoNotification } : {}), ...(opts.availableNotification ? { availableNotification: opts.availableNotification } : {}),
       ...(opts.interruptibleRuns ? { interruptibleRuns: opts.interruptibleRuns } : {}), ...(opts.interruptRuns ? { interruptRuns: opts.interruptRuns } : {}), ...(opts.now ? { now: opts.now } : {}),
       ...(opts.continuationRuns ? { continuationRuns: opts.continuationRuns } : {}), ...(opts.continueChat ? { continueChat: opts.continueChat } : {}),
       blockers: opts.blockers ?? (() => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false })),
@@ -723,6 +725,32 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     const version = (): string => (JSON.parse(readFileSync(join(n.packageRoot, 'package.json'), 'utf8')) as { version: string }).version
     return { s, n, svc, restarts, installs, version }
   }
+
+  it('mirrors every completed check in the inbox, except automatic Web updates and turned-off checks (TAL-2001)', async () => {
+    const store = await initializeStore(new UpdateNotificationStore(new JsonDocuments(tmp())))
+    const inbox = async () => (await store.list({ owner: 'oidc:owner', profile: 'work', serverOwner: true })).notifications.map((row) => [row.kind, row.target, row.message])
+    const views: [string, unknown][] = []
+    let auto = false
+    let enabled = true
+    const { svc } = npmService({
+      autoApply: () => auto, checkEnabled: () => enabled,
+      availableNotification: (target, view) => { views.push([target, view?.state ?? null]); return store.updateAvailable(target, view) },
+    })
+    await svc.check(true)
+    expect(await inbox()).toEqual([['update_available', 'webui', 'Talaria Web 2.0.0 is available.']])
+    auto = true
+    views.length = 0
+    await svc.check(true)
+    expect(await inbox()).toEqual([])
+    // The Agent still reports its own view; only the Web notice defers to the automatic update.
+    expect(views).toEqual([['webui', null], ['agent', 'manual']])
+    auto = false
+    await svc.check(true)
+    expect(await inbox()).toHaveLength(1)
+    enabled = false
+    expect(await svc.autoApplyOnce()).toBeNull()
+    expect(await inbox()).toEqual([])
+  })
 
   it('keeps the previous package and writes rollback intent before restarting (TAL-1014)', async () => {
     const stateDir = tmp()

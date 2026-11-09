@@ -1472,6 +1472,8 @@ export interface UpdateServiceDeps {
   autoApply?: () => boolean
   checkEnabled?: () => boolean
   summarizeAutomatically?: () => boolean
+  /** TAL-2001: every completed check reports each target's view; `null` when checks are off or (Web) updates apply automatically. */
+  availableNotification?: (target: 'webui' | 'agent', view: Dict | null) => Promise<void>
   autoNotification?: {
     begin: () => Promise<string>
     transition: (id: string, phase: 'restarting' | 'succeeded' | 'blocked' | 'failed', expectedIdentity?: string | null, verifiedIdentity?: { revision: string | null; version: string | null }, detail?: unknown) => void | Promise<void>
@@ -1708,6 +1710,7 @@ export class UpdateService {
         if (agent.latest_sha) Object.assign(agent, agentWarning(agent, policy))
         if (Array.isArray(agent.versions)) agent.versions = agent.versions.map((v) => ({ ...dict(v), ...supportOf(dict(v).sha, policy) }))
         Object.assign(this.cache, { webui: this.installedWeb ? reanchored(webui, this.installedWeb) : webui, agent, checked_at: this.now(), include_agent: includeAgent, channel, agent_channel: agentChannel })
+        await this.notifyAvailable()
         this.preGenerateSummaries(this.cache)
         return this.statusSnapshot()
       } finally {
@@ -1924,8 +1927,21 @@ export class UpdateService {
     return { ok: false, status: 'already_in_progress', target, message: 'A Talaria Web restart is already scheduled. Wait for the server to restart before updating Hermes Agent.' }
   }
 
+  /** TAL-2001: the inbox's available-update notices follow the cached check; turned-off checks withdraw them. */
+  private async notifyAvailable(off = this.deps.checkEnabled?.() === false): Promise<void> {
+    for (const target of ['webui', 'agent'] as const) {
+      const info = this.cache[target]
+      // Automatic Web updates report themselves through their own update notice.
+      const view = off || !info || (target === 'webui' && this.deps.autoApply?.() === true) ? null : updateTargetView(target, dict(info), false)
+      try { await this.deps.availableNotification?.(target, view) }
+      catch (error) { this.deps.log(`[updates] ${target} available notice failed: ${(error as Error).message}`) }
+    }
+  }
+
   async autoApplyOnce(): Promise<Dict | null> {
-    if (this.autoRunning || this.applying || this.autoRestartScheduled || !(this.deps.checkEnabled?.() ?? this.deps.autoApply?.())) return null
+    if (this.autoRunning || this.applying || this.autoRestartScheduled) return null
+    if (this.deps.checkEnabled?.() === false) { await this.notifyAvailable(true); return null }
+    if (!(this.deps.checkEnabled?.() ?? this.deps.autoApply?.())) return null
     this.autoRunning = true
     const lifecycle = this.lifecycle
     let notificationId: string | null = null

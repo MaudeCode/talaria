@@ -248,6 +248,37 @@
       "steps": [],
       "presents_dialog": false,
       "dialog_close": "close"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000006",
+      "kind": "update_available",
+      "target": "webui",
+      "phase": "available",
+      "severity": "info",
+      "persistent": false,
+      "requires_acknowledgement": false,
+      "actions": [],
+      "destination": {
+        "key": "settings.system",
+        "label": "Open System settings"
+      },
+      "title": "Talaria Web update available",
+      "message": "Talaria Web 1.3.0 is available.",
+      "created_at": "2026-09-26T10:00:00Z",
+      "updated_at": "2026-09-26T10:00:00Z",
+      "read_at": null,
+      "acknowledged_at": null,
+      "acknowledged_action_id": null,
+      "verified_revision": null,
+      "verified_version": null,
+      "detail": null,
+      "unread": true,
+      "active": false,
+      "requires_interaction": false,
+      "can_dismiss": true,
+      "steps": [],
+      "presents_dialog": false,
+      "dialog_close": "close"
     }
   ],
   "tab_update": {
@@ -316,7 +347,7 @@
     }
   },
   "tab_joined_at": "2026-09-26T12:10:00Z",
-  "unread_count": 4,
-  "clearable_count": 2,
+  "unread_count": 5,
+  "clearable_count": 3,
   "can_clear": true
 }

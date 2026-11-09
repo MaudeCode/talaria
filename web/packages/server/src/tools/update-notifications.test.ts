@@ -45,6 +45,69 @@ describe('UpdateNotificationStore', () => {
     for (const scope of [bob, personal]) expect((await restarted.list(scope)).notifications).toHaveLength(1)
   })
 
+  it('keeps one server-wide available notice per target that follows the checked version (TAL-2001)', async () => {
+    const root = temp()
+    let now = new Date('2026-11-09T12:00:00Z')
+    const store = await initializeStore(new UpdateNotificationStore(new JsonDocuments(root), () => now))
+    const web = (version: string) => ({ state: 'release_ready', can_apply: true, target_version: version })
+    const agent = (sha: string) => ({ state: 'commits_behind', can_apply: true, target_version: null, latest_sha: sha })
+    const bob: UpdateNotificationScope = { owner: 'oidc:bob', profile: 'personal', serverOwner: true }
+    const rows = async (scope = alice) => (await store.list(scope)).notifications.sort((a, b) => String(a.target).localeCompare(String(b.target)))
+    await store.updateAvailable('webui', web('web-v2.0.0'))
+    await store.updateAvailable('agent', agent('a'.repeat(40)))
+    const notice = { kind: 'update_available', phase: 'available', severity: 'info', persistent: false, requires_acknowledgement: false, actions: [], destination: { key: 'settings.system', label: 'Open System settings' }, unread: true, can_dismiss: true }
+    const [agentRow, webRow] = await rows()
+    expect([agentRow, webRow]).toMatchObject([
+      { ...notice, target: 'agent', title: 'Hermes Agent update available', message: `Hermes Agent ${'a'.repeat(12)} is available.` },
+      { ...notice, target: 'webui', title: 'Talaria Web update available', message: 'Talaria Web 2.0.0 is available.' },
+    ])
+    expect(await rows(bob)).toEqual([agentRow, webRow])
+    expect((await store.list({ ...alice, serverOwner: false })).notifications).toEqual([])
+
+    await store.read(alice, webRow!.id)
+    await store.dismiss(alice, agentRow!.id)
+    now = new Date('2026-11-09T12:05:00Z')
+    await store.updateAvailable('webui', web('web-v2.0.0'))
+    await store.updateAvailable('agent', agent('a'.repeat(40)))
+    // A failed or undecided check keeps the row as it was.
+    await store.updateAvailable('webui', { state: 'check_failed', can_apply: false, stale_check: true, error: 'offline' })
+    await store.updateAvailable('agent', { state: 'unknown', can_apply: false })
+    expect(await rows()).toEqual([{ ...webRow, read_at: '2026-11-09T12:00:00.000Z', unread: false }])
+    // Dismissed identities survive history pruning, so a repeat check never shows them again.
+    for (let i = 0; i < 55; i++) await store.create({ owner: '*', profile: 'default', serverOwner: true }, { kind: 'system', phase: 'notice', title: 'Synthetic notice', message: String(i), visibility: 'server' })
+    await store.updateAvailable('agent', agent('a'.repeat(40)))
+    expect((await rows()).some((row) => row.id === agentRow!.id)).toBe(false)
+
+    await store.updateAvailable('webui', web('web-v2.1.0'))
+    await store.updateAvailable('agent', agent('b'.repeat(40)))
+    expect((await rows()).filter((row) => row.kind === 'update_available')).toMatchObject([
+      { id: agentRow!.id, unread: true, message: `Hermes Agent ${'b'.repeat(12)} is available.`, updated_at: now.toISOString() },
+      { id: webRow!.id, unread: true, message: 'Talaria Web 2.1.0 is available.', updated_at: now.toISOString() },
+    ])
+
+    await store.updateAvailable('webui', { state: 'up_to_date', can_apply: false })
+    await store.updateAvailable('agent', null)
+    expect((await rows()).filter((row) => row.kind === 'update_available')).toEqual([])
+  })
+
+  it('withdraws an available notice once its target update succeeds (TAL-2001)', async () => {
+    const root = temp()
+    const store = await initializeStore(new UpdateNotificationStore(new JsonDocuments(root)))
+    const available = async () => (await store.list(alice)).notifications.filter((row) => row.kind === 'update_available').map((row) => row.target).sort()
+    await store.updateAvailable('webui', { state: 'release_ready', can_apply: true, target_version: 'web-v2.0.0' })
+    await store.updateAvailable('agent', { state: 'release_ready', can_apply: true, target_version: 'v2.0.0' })
+    const agentUpdate = await store.begin(alice, 'agent')
+    expect(await available()).toEqual(['agent', 'webui'])
+    await store.transition(agentUpdate.id, 'succeeded')
+    expect(await available()).toEqual(['webui'])
+    // A Web update succeeds when the restarted server runs its expected build.
+    const webUpdate = await store.begin(alice, 'webui')
+    await store.transition(webUpdate.id, 'restarting', 'c'.repeat(40))
+    const restarted = await initializeStore(new UpdateNotificationStore(new JsonDocuments(root)))
+    await restarted.reconcileInterruptedUpdates('c'.repeat(40))
+    expect((await restarted.list(alice)).notifications.filter((row) => row.kind === 'update_available')).toEqual([])
+  })
+
   it('keeps a dismissed startup warning identity when ordinary history is pruned', async () => {
     const root = temp()
     const store = await initializeStore(new UpdateNotificationStore(new JsonDocuments(root)))
