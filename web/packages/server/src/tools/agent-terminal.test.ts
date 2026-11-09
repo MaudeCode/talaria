@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { SIDECAR_SERVER_METHODS } from '@maudecode/talaria-web-contracts'
+import { SIDECAR_SERVER_METHODS, type SidecarResultInput } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { Session } from '../sessions/session.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
@@ -82,6 +82,17 @@ describe('terminal_open and terminal_read (TAL-1974)', () => {
     // The rest of a cut event is gone; the cursor after it reads the exit and nothing else.
     expect(await call('server.terminal_read', { terminal_id: id, after_event_id: 4 })).toEqual({ result: { terminal_id: id, output: '', lines: 0, next_event_id: 5, truncated: false, running: false, exit_code: 0 } })
     expect(proc.written, 'The agent types nothing after the command').toEqual(['npm test\r'])
+  })
+
+  it('opens only for a session whose turns have the terminal toolset, so harness adds no shell access', async () => {
+    // The recorded catalog, selecting a session's own toolsets as the sidecar does.
+    const catalog = (JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar/toolsets.json'), 'utf8')) as Record<'toolsets.catalog', { result: SidecarResultInput<'toolsets.catalog'> }[]>)['toolsets.catalog'][0]!.result
+    sidecar.respond('toolsets.catalog', (params) => (params.enabled_toolsets ? { ...catalog, selected_toolsets: params.enabled_toolsets } : catalog))
+    const restricted = '20261109_090000_files'
+    await s.deps.sessionStore.save(new Session({ session_id: restricted, title: restricted, profile: 'default', workspace, enabled_toolsets: ['file', 'harness'], updated_at: 1, messages: [] }, { workspace, model: null }))
+    expect(await call('server.terminal_open', { command: 'npm test' }, restricted)).toMatchObject({ condition: 'terminal_toolset_disabled' })
+    expect(spawned).toHaveLength(0)
+    expect(await call('server.terminal_open', { command: 'npm test' })).toHaveProperty('result')
   })
 
   it('keeps a line a carriage return has not yet written over, and writes later text over it from the start', async () => {

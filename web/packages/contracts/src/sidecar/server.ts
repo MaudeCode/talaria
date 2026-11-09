@@ -275,7 +275,8 @@ export const ServerDeliverResultSchema = z.object({ block_id: ShowBlockIdSchema,
 export const TERMINAL_READ_MAX_LINES = 400
 /**
  * TAL-1974: the `harness` toolset's `terminal_open`. The server starts the Web host PTY of the calling session in its
- * workspace, as `/api/terminal/start` does, and types `command` once, followed by Enter. One live terminal per session: a
+ * workspace, as `/api/terminal/start` does, and types `command` once, followed by Enter. Only a session whose turns
+ * have the `terminal` toolset may (`terminal_toolset_disabled`). One live terminal per session: a
  * running one is `limit_reached`. A command of more than 8192 characters is `command_too_long` and one with a control
  * character (a tab or a second line included) `invalid_command`, starting nothing.
  */

@@ -282,7 +282,7 @@ TERMINAL_OPEN_SCHEMA = {
         "terminal in its workspace, types command once followed by Enter, and returns at once with terminal_id and the url "
         "of this chat; read the output with terminal_read. You cannot type into it again or close it: further commands go "
         "through your own tools, and the user closes it. One live terminal per session: while one runs this is refused "
-        "with limit_reached. A command must be one line without tabs of at most 8192 characters, and it passes the same command approval as your terminal tool: a denied one is "
+        "with limit_reached; a session without the terminal toolset is refused with terminal_toolset_disabled. A command must be one line without tabs of at most 8192 characters, and it passes the same command approval as your terminal tool: a denied one is "
         "refused with approval_denied and nothing starts."
     ),
     "parameters": {
