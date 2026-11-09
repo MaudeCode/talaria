@@ -152,39 +152,48 @@ final class ChatHostedTests: XCTestCase {
         }
     }
 
-    /// TAL-1679: the composer slides in with the chat at its measured size; it does not wait for the push to finish.
-    func testComposerShowsAtItsSettledSizeDuringThePush() async throws {
-        let fixture = try FixtureApp(for: self)
-        let session = try await fixture.session()
-        var readComposer: () -> (opacity: Float, top: CGFloat) = { (0, .nan) }
+    /// Reads the pushed chat's composer, and keeps what it read when the push completed.
+    @MainActor private final class PushProbe {
+        var window: UIWindow?
         var atCompletion: (opacity: Float, top: CGFloat)?
-        // Reads the composer from the same push-completion callback as the chat's own observer, before SwiftUI
-        // renders what the chat's report changes.
-        let chat = fixture.chat(session, asNavigationDestination: false)
-            .background(NavigationAppearanceCompletionObserver { atCompletion = readComposer() })
-        let window = try hostWindow(PushHost(destination: chat), animationsEnabled: true)
-        // The composer's + is a UIKit button in both composer presentations, and the chat's only one at the bottom.
-        // SwiftUI leaves a hidden composer's UIKit views out of the window, so a missing button reads as invisible.
-        func menuButtons(in view: UIView) -> [UIButton] {
-            [view as? UIButton].compactMap { $0 }.filter(\.showsMenuAsPrimaryAction) + view.subviews.flatMap(menuButtons)
-        }
-        readComposer = {
-            let buttons = menuButtons(in: window).map { ($0, $0.convert($0.bounds, to: window)) }
+
+        /// The composer's + is a UIKit button in both composer presentations, and the chat's only one at the bottom.
+        /// SwiftUI leaves a hidden composer's UIKit views out of the window, so a missing button reads as invisible.
+        func composer() -> (opacity: Float, top: CGFloat) {
+            guard let window else { return (0, .nan) }
+            let buttons = Self.menuButtons(in: window).map { ($0, $0.convert($0.bounds, to: window)) }
             guard let bottom = buttons.max(by: { $0.1.maxY < $1.1.maxY }) else { return (0, .nan) }
             let opacity = sequence(first: bottom.0.layer, next: \.superlayer).reduce(Float(1)) { $0 * ($1.isHidden ? 0 : $1.opacity) }
             // The + sits at a fixed offset from the bottom-anchored card's top, so its top tracks the card's height.
             return (opacity, bottom.1.minY)
         }
+
+        private static func menuButtons(in view: UIView) -> [UIButton] {
+            [view as? UIButton].compactMap { $0 }.filter(\.showsMenuAsPrimaryAction) + view.subviews.flatMap(menuButtons)
+        }
+    }
+
+    /// TAL-1679: the composer slides in with the chat at its measured size; it does not wait for the push to finish.
+    func testComposerShowsAtItsSettledSizeDuringThePush() async throws {
+        let fixture = try FixtureApp(for: self)
+        let session = try await fixture.session()
+        let probe = PushProbe()
+        // Reads the composer from the same push-completion callback as the chat's own observer, before SwiftUI
+        // renders what the chat's report changes.
+        let chat = fixture.chat(session, asNavigationDestination: false)
+            .background(NavigationAppearanceCompletionObserver { probe.atCompletion = probe.composer() })
+        probe.window = try hostWindow(PushHost(destination: chat), animationsEnabled: true)
+        let window = try XCTUnwrap(probe.window)
         var shownTops: [CGFloat] = []
         try await sampleCommittedLayouts {
-            let current = readComposer()
-            if atCompletion == nil, current.opacity > 0 { shownTops.append(current.top) }
+            let current = probe.composer()
+            if probe.atCompletion == nil, current.opacity > 0 { shownTops.append(current.top) }
         } during: {
             HostedAccessibility.activate(try await requireElement(in: window, label: "Open fixture chat"))
-            let finished = await awaitCondition { atCompletion != nil }
+            let finished = await awaitCondition { probe.atCompletion != nil }
             XCTAssertTrue(finished, "The chat push must finish")
         }
-        let pushed = try XCTUnwrap(atCompletion)
+        let pushed = try XCTUnwrap(probe.atCompletion)
         XCTAssertEqual(pushed.opacity, 1, "The composer must be visible while the chat slides in")
         // Where the composer stood when it used to appear, once the push had finished.
         XCTAssertTrue(shownTops.allSatisfy { abs($0 - pushed.top) < 0.5 },
