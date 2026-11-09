@@ -219,7 +219,8 @@ struct ChatView: View {
     @State private var clarificationPanelHeight: CGFloat = 320
     @State private var composerAvailableHeight: CGFloat = 0
     @State private var tabletopIsActive = false
-    @State private var composerAccessoriesHeight: CGFloat = 0
+    /// Nil until the accessories above the composer first report; tabletop sizes the composer from them.
+    @State private var composerAccessoriesHeight: CGFloat?
     @State private var keyboardIsVisible = false
     @Environment(\.divisionRegionGeometry) private var divisionGeometry
     @State private var composerIsFocused = false
@@ -597,7 +598,9 @@ struct ChatView: View {
             let frames = layoutInputs.frames(in: geometry, width: targetChatLayoutWidth)
             // Both transcript and composer take their destination width before the column moves.
             let composerFrame = frames.composer
-            let showsComposer = didCompleteInitialAppearance && hasMeasuredComposer && composerFrame.width > 0 && composerFrame.height > 0
+            // The composer slides in with the chat once measured; the push need not finish first (TAL-1679).
+            let showsComposer = hasMeasuredComposer && (!frames.isTabletop || composerAccessoriesHeight != nil)
+                && composerFrame.width > 0 && composerFrame.height > 0
             ZStack(alignment: .bottom) {
                 VStack(spacing: 0) {
                     if viewModel.isViewingCachedData {
@@ -631,12 +634,16 @@ struct ChatView: View {
                         }
                     messageComposer(availableHeight: composerFrame.height)
                 }
-                .environment(\.tabletopComposerHeight, frames.isTabletop ? max(0, composerFrame.height - composerAccessoriesHeight - 8) : nil)
+                // An empty accessory stack never reports; its height is then known to be zero.
+                .onChange(of: composerAccessoryVisibleItemCount, initial: true) { _, count in
+                    if count == 0, composerAccessoriesHeight == nil { composerAccessoriesHeight = 0 }
+                }
+                .environment(\.tabletopComposerHeight, frames.isTabletop ? max(0, composerFrame.height - (composerAccessoriesHeight ?? 0) - 8) : nil)
                 .frame(width: composerFrame.width, height: frames.isTabletop ? composerFrame.height : nil, alignment: .bottom)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                 // Measure the live pane and composer before its first visible layout; never fade in a provisional size.
                 .opacity(showsComposer ? 1 : 0)
-                .animation(nil, value: didCompleteInitialAppearance && hasMeasuredComposer)
+                .animation(nil, value: showsComposer)
                 // A new chat loads nothing: the composer's first visible frame is its root (TAL-1412).
                 .onChange(of: showsComposer, initial: true) { _, shows in
                     if shows, !viewModel.hasSession { traceTranscriptReady(.composer) }
