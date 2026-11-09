@@ -25,6 +25,7 @@ SHOW_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "fix
 SECRET_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "fixtures" / "sidecar" / "secrets.json").read_text())
 NOTIFY_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "fixtures" / "sidecar" / "notify.json").read_text())
 DELIVER_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "fixtures" / "sidecar" / "deliver.json").read_text())
+TERMINAL_FIXTURES = json.loads((HERE.parent.parent / "packages" / "contracts" / "fixtures" / "sidecar" / "terminal.json").read_text())
 
 
 class Peer:
@@ -383,6 +384,8 @@ def test_the_harness_toolset_registers_its_tools_and_the_talaria_one_stays_separ
         ("request_secret", "harness", "request_secret"),
         ("notify", "harness", "notify"),
         ("deliver", "harness", "deliver"),
+        ("terminal_open", "harness", "terminal_open"),
+        ("terminal_read", "harness", "terminal_read"),
     ]
     assert all(r["schema"]["name"] == r["name"] for r in registered)
     # The descriptions tell the agent when a review beats clarify.
@@ -550,3 +553,33 @@ def test_harness_deliver_forwards_its_call_and_returns_the_server_result_unchang
     monkeypatch.setattr(rpc, "call_server", refuse)
     assert json.loads(harness_toolset.deliver(args, session_id="20261109_090000_tip")) == {"error": "../secret.txt is outside this session's workspace", "condition": "outside_workspace"}
     assert json.loads(harness_toolset.deliver({}, session_id="20261109_090000_tip")) == {"error": "path is required", "condition": "invalid_params"}
+
+
+@pytest.mark.parametrize(
+    ("method", "tool", "recorded"),
+    [("server.terminal_open", "terminal_open", r) for r in TERMINAL_FIXTURES["server.terminal_open"]]
+    + [("server.terminal_read", "terminal_read", r) for r in TERMINAL_FIXTURES["server.terminal_read"]],
+    ids=["open_command", "read_from_start", "read_capped_after_exit"],
+)
+def test_harness_terminal_tools_forward_their_call_and_return_the_server_result_unchanged(monkeypatch, method, tool, recorded) -> None:
+    """TAL-1974: ``terminal_open`` and ``terminal_read`` send their arguments to ``server.terminal_*`` and return its JSON as sent."""
+    from types import SimpleNamespace
+
+    from talaria_sidecar.methods import chat
+
+    monkeypatch.setitem(chat._RUNS, "stream-1", SimpleNamespace(session_id=recorded["params"]["caller_session_id"], agent=SimpleNamespace(session_id="20261109_090000_tip")))
+    sent: list[tuple[str, dict]] = []
+    monkeypatch.setattr(rpc, "call_server", lambda m, params, timeout=None: sent.append((m, params)) or recorded["result"])
+    handler = getattr(harness_toolset, tool)
+    args = {key: value for key, value in recorded["params"].items() if key != "caller_session_id"}
+    assert json.loads(handler(args, session_id="20261109_090000_tip")) == recorded["result"]
+    assert sent == [(method, recorded["params"])]
+    assert validate(sent[0][1], SCHEMAS[method]["params"]) == []
+    assert validate(recorded["result"], SCHEMAS[method]["result"]) == []
+
+    def refuse(m, params, timeout=None):
+        raise RpcError("This session already has a live terminal", condition="limit_reached")
+
+    monkeypatch.setattr(rpc, "call_server", refuse)
+    assert json.loads(handler(args, session_id="20261109_090000_tip")) == {"error": "This session already has a live terminal", "condition": "limit_reached"}
+

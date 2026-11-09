@@ -5555,5 +5555,136 @@
       ],
       "additionalProperties": false
     }
+  },
+  "server.terminal_open": {
+    "params": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "caller_session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "command": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "caller_session_id"
+      ]
+    },
+    "result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "terminal_id": {
+          "type": "string",
+          "pattern": "^term_[0-9a-f]{16}$"
+        },
+        "url": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "command": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "terminal_id",
+        "url",
+        "title",
+        "command"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "server.terminal_read": {
+    "params": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "caller_session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "terminal_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "after_event_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "max_lines": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "caller_session_id",
+        "terminal_id"
+      ]
+    },
+    "result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "terminal_id": {
+          "type": "string",
+          "pattern": "^term_[0-9a-f]{16}$"
+        },
+        "output": {
+          "type": "string"
+        },
+        "lines": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "next_event_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "running": {
+          "type": "boolean"
+        },
+        "exit_code": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "terminal_id",
+        "output",
+        "lines",
+        "next_event_id",
+        "truncated",
+        "running",
+        "exit_code"
+      ],
+      "additionalProperties": false
+    }
   }
 }

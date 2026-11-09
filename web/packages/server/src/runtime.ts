@@ -95,6 +95,7 @@ import { agentHealth, dashboardStatus, gatewayRestartBlockers, liveGateways } fr
 import { gatewayLifecycle } from './tools/gateway-lifecycle.js'
 import { GatewayRestartQueue, restartGateway } from './tools/gateway-restart.js'
 import { TerminalRegistry } from './tools/terminal.js'
+import { terminalOpen, terminalRead } from './tools/agent-terminal.js'
 import { personIdentity, personIsolationActive, personIsolationEnabled } from './auth/person.js'
 import { sessionCanManageServer } from './auth/gate.js'
 
@@ -971,6 +972,9 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     'server.notify': ({ caller_session_id, ...params }) => asCaller(caller_session_id, (caller) => notifications.notify(caller, params)),
     // TAL-1971: the `harness` toolset's `deliver`, a workspace file handed to the user as a download on a show block.
     'server.deliver': ({ caller_session_id, ...params }) => asCaller(caller_session_id, (caller) => show.deliver(caller, params)),
+    // TAL-1974: the `harness` toolset's `terminal_open` and `terminal_read`, the calling session's Web host PTY.
+    'server.terminal_open': ({ caller_session_id, ...params }) => asCaller(caller_session_id, (caller) => terminalOpen(deps, caller, params)),
+    'server.terminal_read': ({ caller_session_id, ...params }) => asCaller(caller_session_id, (caller) => Promise.resolve(terminalRead(deps, caller, params))),
   })
   const dashboardPlugins = new DashboardPlugins({ env, hermesHome: config.hermesHome, settings, sidecar: () => sidecar })
   const deps: AppDeps = {

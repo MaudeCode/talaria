@@ -4,7 +4,7 @@
  * redacted args, so the target never shows more than the arguments it came from.
  */
 import type { ToolEditDiff, ToolKind, ToolProgress } from '@maudecode/talaria-web-contracts'
-import { DecisionReviewRefSchema, OutboundDraftRefSchema, ProposalRefSchema, ShowBlockRefSchema, type DecisionReviewRef, type OutboundDraftRef, type ProposalRef, type ShowBlockRef } from '@maudecode/talaria-web-contracts'
+import { DecisionReviewRefSchema, OutboundDraftRefSchema, ProposalRefSchema, ShowBlockRefSchema, TerminalRefSchema, type DecisionReviewRef, type OutboundDraftRef, type ProposalRef, type ShowBlockRef, type TerminalRef } from '@maudecode/talaria-web-contracts'
 import { posix } from 'node:path'
 import { str } from '../util.js'
 import { expandHome } from '../workspace/paths.js'
@@ -38,6 +38,12 @@ export function proposalRef(name: unknown, value: unknown): ProposalRef | undefi
 export function showBlockRef(name: unknown, value: unknown): ShowBlockRef | undefined {
   if ((name !== 'show' && name !== 'deliver') || !isDict(value) || value.error) return undefined
   return ShowBlockRefSchema.safeParse({ block_id: value.block_id, kind: value.kind, title: value.title }).data
+}
+
+/** TAL-1974: the transcript card's reference from a `terminal_open` result (parsed JSON), or nothing; the command shows only when it is not the title. */
+export function terminalRef(name: unknown, value: unknown): TerminalRef | undefined {
+  if (name !== 'terminal_open' || !isDict(value) || value.error) return undefined
+  return TerminalRefSchema.safeParse({ terminal_id: value.terminal_id, title: value.title, command: value.command === value.title ? null : value.command }).data
 }
 
 /** Ordered rules over whole `_`-separated name tokens (a substring match would read `merge` as `rg`). */
@@ -162,7 +168,7 @@ export function toolDisplay(name: unknown, args: unknown, workspace: string | nu
 }
 
 /** TAL-1968: calls whose transcript card the user must see, as a settled turn keeps them open (`buildTurnScene`). */
-const CARD_TOOLS = new Set(['show', 'deliver', 'propose', 'draft_card'])
+const CARD_TOOLS = new Set(['show', 'deliver', 'propose', 'draft_card', 'terminal_open'])
 
 const FOCUS_KEYS = ['path', 'file_path', 'file', 'target']
 
