@@ -1,0 +1,3 @@
+{
+  "skip": "Recognizes the existing XCTest readiness handshake in local test tooling; no shipped App behavior change."
+}

@@ -130,8 +130,9 @@ Agent/MCP flow:
   from the cross-project pool, which erases each device on release. If the test host has not connected within
   `TALARIA_RUNNER_CONNECT_TIMEOUT` seconds (default 30), the runner reboots the simulator and launches once more,
   then stops the run naming the simulator; test failures never retry.
-  Connection is confirmed by Xcode's test-runner acknowledgement in the current result bundle's session log or the
-  first suite event. Bundle warm-up can precede that suite; it retains its own existing bound after connection.
+  Connection is confirmed by Xcode's test-host readiness/capabilities or execution acknowledgement in the current
+  result bundle's session log, or the first suite event. Execution-worker preparation and bundle warm-up can precede
+  that suite; the existing warm-up bound and final test result are retained after connection.
   Prefix `TALARIA_TEST_SCREENSHOTS=1` to keep each hosted test's evidence screenshots in its result bundle; other
   runs render only a failing test's window.
   Tests run in process under the isolated `.xctest` app and app-group identity,
