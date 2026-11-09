@@ -125,8 +125,10 @@ public struct BackgroundTasksResponse: Decodable, Equatable, Sendable {
     public let ownerWork: OwnerWork?
     /// TAL-1531: how many of `tasks` the server pins. Nil from a server older than the field.
     public let pinnedCount: Int?
+    /// TAL-1579: the server's delegation delivery summary. Nil from a server older than the field.
+    public let delegationStatus: DelegationStatus?
 
-    enum CodingKeys: String, CodingKey { case tasks, agentAvailable, activityPhase, ownerWork, pinnedCount }
+    enum CodingKeys: String, CodingKey { case tasks, agentAvailable, activityPhase, ownerWork, pinnedCount, delegationStatus }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -135,6 +137,63 @@ public struct BackgroundTasksResponse: Decodable, Equatable, Sendable {
         agentAvailable = container.decodeLossyBoolIfPresent(forKey: .agentAvailable) ?? true
         ownerWork = container.decodeLossyStringIfPresent(forKey: .ownerWork).flatMap(OwnerWork.init(rawValue:))
         pinnedCount = container.decodeLossyIntIfPresent(forKey: .pinnedCount).flatMap { $0 >= 0 ? $0 : nil }
+        delegationStatus = try? container.decodeIfPresent(DelegationStatus.self, forKey: .delegationStatus)
+    }
+}
+
+/// TAL-1579: the server's advisory summary of a session's delegations, never a promise that nothing arrives later.
+/// Counts are exact only when `availability` is `available`; otherwise they are nil and never read as zero. `visible` and
+/// `refresh` are the server's decisions: show the summary, and keep rereading while it may change.
+public struct DelegationStatus: Decodable, Equatable, Sendable {
+    public enum Availability: Equatable, Sendable {
+        /// The counts are exact, zero included.
+        case available
+        /// The delegation ledger could not be read now.
+        case unknown
+        /// An owner chat, whose owner does not report delivery.
+        case unsupported
+        /// A value from a newer server, kept as sent.
+        case unrecognized(String)
+
+        init(_ value: String) {
+            switch value {
+            case "available": self = .available
+            case "unknown": self = .unknown
+            case "unsupported": self = .unsupported
+            default: self = .unrecognized(value)
+            }
+        }
+    }
+
+    public let availability: Availability
+    /// Delegations still running.
+    public let runningCount: Int?
+    /// Finished delegations whose completion has not reached the session yet.
+    public let awaitingDeliveryCount: Int?
+    /// The Agent's live registry holds running work for the session; nil when it cannot say. Never part of the counts.
+    public let memoryLive: Bool?
+    public let visible: Bool
+    public let refresh: Bool
+
+    public init(availability: Availability, runningCount: Int?, awaitingDeliveryCount: Int?, memoryLive: Bool?, visible: Bool, refresh: Bool) {
+        self.availability = availability
+        self.runningCount = runningCount
+        self.awaitingDeliveryCount = awaitingDeliveryCount
+        self.memoryLive = memoryLive
+        self.visible = visible
+        self.refresh = refresh
+    }
+
+    enum CodingKeys: String, CodingKey { case availability, runningCount, awaitingDeliveryCount, memoryLive, visible, refresh }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        availability = container.decodeLossyStringIfPresent(forKey: .availability).map(Availability.init) ?? .unknown
+        runningCount = container.decodeLossyIntIfPresent(forKey: .runningCount).flatMap { $0 >= 0 ? $0 : nil }
+        awaitingDeliveryCount = container.decodeLossyIntIfPresent(forKey: .awaitingDeliveryCount).flatMap { $0 >= 0 ? $0 : nil }
+        memoryLive = container.decodeLossyBoolIfPresent(forKey: .memoryLive)
+        visible = container.decodeLossyBoolIfPresent(forKey: .visible) ?? false
+        refresh = container.decodeLossyBoolIfPresent(forKey: .refresh) ?? false
     }
 }
 

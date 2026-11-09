@@ -506,6 +506,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
         deletedSessionIDs = []
         cancelledMonitorStreamIDs = []
         backgroundDismissed.withLock { $0 = false }
+        backgroundDelegationStatus.withLock { $0 = nil }
         ownerSettledAdmissions.withLock { $0 = [] }
         ownerWorkStopped.withLock { $0 = [] }
         ownerWorkControls.withLock { $0 = [] }
@@ -767,7 +768,9 @@ final class UITestFixtureURLProtocol: URLProtocol {
             return json(["task_id": "owner-work-resident", "text": "read_file logs/app.log"])
         case "/api/background/tasks" where UITestFixtureEnvironment.hasBackgroundUpdates:
             let tasks = Self.backgroundTasks()
-            return json(["session_id": sessionID, "agent_available": true, "tasks": tasks, "pinned_count": tasks.filter { $0["pinned"] as? Bool == true }.count])
+            var answer: [String: Any] = ["session_id": sessionID, "agent_available": true, "tasks": tasks, "pinned_count": tasks.filter { $0["pinned"] as? Bool == true }.count]
+            answer["delegation_status"] = Self.backgroundDelegationStatus.withLock { $0 }.flatMap { try? JSONSerialization.jsonObject(with: $0) }
+            return json(answer)
         case "/api/background/result" where UITestFixtureEnvironment.hasBackgroundUpdates:
             return json(["task_id": "bg-ui", "text": Self.backgroundResultText])
         case "/api/background/dismiss" where UITestFixtureEnvironment.hasBackgroundUpdates:
@@ -1149,12 +1152,19 @@ final class UITestFixtureURLProtocol: URLProtocol {
     private static let backgroundDismissed = OSAllocatedUnfairLock(initialState: false)
     private static let newSessionID = "ui-fixture-new-session"
 
+    /// TAL-1580: a hosted test's `delegation_status` (JSON) for the background tasks answer. Once set, the delegation has
+    /// finished and the `/background` result is dismissed, so nothing is pinned and only the summary keeps Background Work
+    /// reachable.
+    static let backgroundDelegationStatus = OSAllocatedUnfairLock<Data?>(initialState: nil)
+
     /// TAL-372: a running delegation and a finished `/background` task the server pins, until the task is dismissed.
     private static func backgroundTasks() -> [[String: Any]] {
-        let dismissed = backgroundDismissed.withLock { $0 }
+        let finished = backgroundDelegationStatus.withLock { $0 } != nil
+        let dismissed = finished || backgroundDismissed.withLock { $0 }
         return [
-            ["task_id": "deleg-ui-1", "kind": "delegation", "status": "running", "title": "Fix CI", "started_at": 2_000_000_010, "updated_at": 2_000_000_011, "completed_at": NSNull(),
-             "result_available": false, "child_session_id": NSNull(), "exit_code": NSNull(), "agents": NSNull(), "pinned": true, "dismissible": false, "active": true],
+            ["task_id": "deleg-ui-1", "kind": "delegation", "status": finished ? "completed" : "running", "title": "Fix CI", "started_at": 2_000_000_010, "updated_at": 2_000_000_011,
+             "completed_at": finished ? 2_000_000_011 : NSNull(),
+             "result_available": false, "child_session_id": NSNull(), "exit_code": NSNull(), "agents": NSNull(), "pinned": !finished, "dismissible": false, "active": !finished],
             ["task_id": "bg-ui", "kind": "background_command", "status": "completed", "title": "Summarize the repo", "started_at": 2_000_000_012, "updated_at": 2_000_000_013, "completed_at": 2_000_000_013,
              "result_available": true, "child_session_id": NSNull(), "exit_code": NSNull(), "agents": NSNull(), "pinned": !dismissed, "dismissible": !dismissed, "active": false]
         ]

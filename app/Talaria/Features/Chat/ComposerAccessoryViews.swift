@@ -52,11 +52,13 @@ struct NoticeChip: View {
 /// TAL-372: the session's background work the server pins (running work, and a finished `/background` result until
 /// dismissed), opened from the composer's background tasks chip (TAL-1001): each task's status, the full result on
 /// request, and the actions the server offers on it. An owner chat's processes and subagents list here too, with Stop and
-/// Steer only where their owner allows them (TAL-1337). The sheet closes once nothing is pinned and the owner has
-/// nothing to explain.
+/// Steer only where their owner allows them (TAL-1337). Above the rows, the server's delegation summary says what still
+/// runs and what awaits delivery (TAL-1580). The sheet closes once nothing is pinned and neither the owner nor the
+/// summary has anything to say.
 struct BackgroundWorkSheet: View {
     let tasks: [BackgroundWorkTask]
     var ownerWork: BackgroundTasksResponse.OwnerWork?
+    var delegationSummary: DelegationStatus?
     let loadResult: (String) async -> String?
     let dismiss: (String) async -> Void
     var stop: (String) async -> BackgroundControlOutcome? = { _ in nil }
@@ -88,12 +90,20 @@ struct BackgroundWorkSheet: View {
                             }
                     }
                 } header: {
-                    if let notice = Self.ownerNotice(ownerWork) {
-                        Text(notice)
-                            .font(AppFont.caption())
-                            .textCase(nil)
-                            .accessibilityIdentifier("background-work-owner-notice")
+                    VStack(alignment: .leading, spacing: 4) {
+                        if let notice = Self.ownerNotice(ownerWork) {
+                            Text(notice)
+                                .accessibilityIdentifier("background-work-owner-notice")
+                        }
+                        if let delegationSummary {
+                            let parts = Self.deliverySummary(delegationSummary)
+                            Text(parts.joined(separator: " · "))
+                                .accessibilityLabel(parts.joined(separator: ", "))
+                                .accessibilityIdentifier("background-work-delivery-summary")
+                        }
                     }
+                    .font(AppFont.caption())
+                    .textCase(nil)
                 }
             }
             .navigationTitle(String(localized: "Background tasks"))
@@ -123,7 +133,7 @@ struct BackgroundWorkSheet: View {
         }
         // Initially too: the work can finish and be dismissed between the chip's tap and the sheet appearing. An owner
         // lost while its work is open keeps the sheet, which says why the rows went.
-        .onChange(of: tasks.isEmpty && Self.ownerNotice(ownerWork) == nil, initial: true) { _, isEmpty in
+        .onChange(of: tasks.isEmpty && Self.ownerNotice(ownerWork) == nil && delegationSummary == nil, initial: true) { _, isEmpty in
             if isEmpty { close() }
         }
     }
@@ -240,6 +250,33 @@ struct BackgroundWorkSheet: View {
         case .unavailable: String(localized: "The agent can’t report status right now.")
         case .available, nil: nil
         }
+    }
+
+    /// TAL-1580: the server's delegation summary in words, one part per count. Counts the server could not read are never
+    /// shown as zero, and a completion awaiting delivery is neither a failure nor delivered.
+    static func deliverySummary(_ status: DelegationStatus) -> [String] {
+        switch status.availability {
+        case .unsupported:
+            return [String(localized: "This chat’s owner doesn’t report delivery status")]
+        case .unknown, .unrecognized:
+            return [String(localized: "Delivery status unavailable")]
+        case .available:
+            break
+        }
+        guard let running = status.runningCount, let awaiting = status.awaitingDeliveryCount else {
+            return [String(localized: "Delivery status unavailable")]
+        }
+        var parts: [String] = []
+        if running > 0 {
+            parts.append(String(localized: "\(running) running"))
+        } else if status.memoryLive == true {
+            // A dispatch the Agent holds before its ledger row exists is running, though not counted yet.
+            parts.append(statusLabel(.running))
+        }
+        if awaiting > 0 {
+            parts.append(String(localized: "\(awaiting) awaiting delivery"))
+        }
+        return parts.isEmpty ? [String(localized: "Nothing running or awaiting delivery")] : parts
     }
 
     private static func detail(_ task: BackgroundWorkTask) -> String {
