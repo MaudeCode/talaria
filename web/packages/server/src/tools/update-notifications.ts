@@ -107,6 +107,10 @@ export interface CreateUpdateNotificationInput {
 }
 
 const PHASES = new Set<UpdateNotificationPhase>(UpdateNotificationPhaseSchema.options)
+/** TAL-2001: a server-wide notice that an applicable update waits, one row per target. */
+const UPDATE_AVAILABLE_KIND = 'update_available'
+/** Update check states that say nothing new about the target: an existing available notice stays as it is. */
+const UNDECIDED_STATES = new Set(['check_failed', 'finish', 'unknown'])
 const REVISION = /^[a-f0-9]{40}$/
 const PER_SCOPE_LIMIT = 50
 const GLOBAL_LIMIT = 500
@@ -233,6 +237,41 @@ export class UpdateNotificationStore {
       row.dismissed_at = null
     }
     await this.save()
+  }
+
+  /**
+   * TAL-2001: mirror one target's completed update check (`updateTargetView`) in the inbox. An applicable release or
+   * newer commits keep one server-wide row; a newer version rewrites it and shows it again, while a repeat keeps its
+   * read and dismissed state. A failed or undecided check leaves the row; anything else, or `null`, withdraws it.
+   */
+  async updateAvailable(target: UpdateNotificationTarget, view: Record<string, unknown> | null): Promise<void> {
+    const key = `${UPDATE_AVAILABLE_KIND}:${target}`
+    const row = this.rows.find((entry) => entry.kind === UPDATE_AVAILABLE_KIND && entry.notice_key === key)
+    if (view && UNDECIDED_STATES.has(str(view.state))) return
+    const identity = view?.can_apply !== true ? '' : view.state === 'release_ready' ? str(view.target_version) : view.state === 'commits_behind' ? str(view.latest_sha) : ''
+    if (!identity) {
+      if (!row) return
+      this.rows = this.rows.filter((entry) => entry !== row)
+      return this.save()
+    }
+    const name = target === 'webui' ? 'Talaria Web' : 'Hermes Agent'
+    const message = `${name}${shownVersion(view?.state === 'commits_behind' ? identity.slice(0, 12) : identity)} is available.`
+    const hash = createHash('sha256').update(identity).digest('hex')
+    if (!row) {
+      await this.createRow({ owner: '*', profile: 'default', serverOwner: true }, {
+        kind: UPDATE_AVAILABLE_KIND, target, phase: 'available', title: `${name} update available`, message,
+        destination: { key: 'settings.system', label: 'Open System settings' }, visibility: 'server',
+      }, { notice_key: key, notice_text_hash: hash })
+      return
+    }
+    if (row.notice_text_hash === hash) return
+    Object.assign(row, { message, notice_text_hash: hash, updated_at: this.now().toISOString(), read_at: null, dismissed_at: null })
+    await this.save()
+  }
+
+  /** TAL-2001: an installed update answers its own available notice. */
+  private dropAvailable(target: UpdateNotificationTarget): void {
+    this.rows = this.rows.filter((entry) => !(entry.kind === UPDATE_AVAILABLE_KIND && entry.target === target))
   }
 
   /**
@@ -540,6 +579,7 @@ export class UpdateNotificationStore {
       row.actions = phase === 'waiting_for_idle' ? [GATEWAY_RESTART_NOW_ACTION] : []
       row.performed_action_ids = row.performed_action_ids.filter((action) => action !== GATEWAY_RESTART_NOW)
     }
+    if (row.kind === 'update' && row.target && phase === 'succeeded') this.dropAvailable(row.target)
     if (verifiedIdentity) {
       row.verified_revision = typeof verifiedIdentity.revision === 'string' && REVISION.test(verifiedIdentity.revision) ? verifiedIdentity.revision : null
       row.verified_version = safeText(verifiedIdentity.version, '', 80) || null
@@ -691,6 +731,7 @@ export class UpdateNotificationStore {
       row.updated_at = this.now().toISOString()
       row.read_at = null
       if (phase === 'succeeded') {
+        this.dropAvailable(row.target)
         row.verified_revision = currentWebIdentity
         row.verified_version = safeText(currentWebVersion, '', 80) || null
       }
@@ -881,7 +922,7 @@ const isTabNotice = (row: StoredUpdateNotification): boolean => row.tab_id !== n
 /** A waiting gateway restart carries its Restart now action, so it stays until the restart runs. */
 const isWaitingGatewayRestart = (row: StoredUpdateNotification): boolean => row.kind === 'update' && row.phase === 'waiting_for_idle'
 const isDismissible = (row: StoredUpdateNotification): boolean => (!row.requires_acknowledgement || row.acknowledged_at !== null) && !isWaitingGatewayRestart(row) && !(row.kind === 'update' && row.phase === 'recovering')
-/** Warning identities, including dismissed rows, must survive ordinary history pruning. */
-const isProtected = (row: StoredUpdateNotification): boolean => row.kind === 'agent_warning' || (row.requires_acknowledgement && row.acknowledged_at === null) || (row.kind === 'update' && ['applying', 'awaiting_confirmation', 'waiting_for_idle', 'restarting', 'verifying', 'recovering'].includes(row.phase))
+/** Warning and available-update identities, including dismissed rows, must survive ordinary history pruning. */
+const isProtected = (row: StoredUpdateNotification): boolean => row.kind === 'agent_warning' || row.kind === UPDATE_AVAILABLE_KIND || (row.requires_acknowledgement && row.acknowledged_at === null) || (row.kind === 'update' && ['applying', 'awaiting_confirmation', 'waiting_for_idle', 'restarting', 'verifying', 'recovering'].includes(row.phase))
 const retentionBucket = (row: StoredUpdateNotification): string => `${row.owner}\u0000${row.visibility === 'server' ? '*' : row.profile}`
 export const updateNotificationScopeId = (scope: UpdateNotificationScope): string => createHash('sha256').update(`${scope.owner}\u0000${scope.profile}\u0000${scope.serverOwner === true ? 'owner' : 'member'}`).digest('hex').slice(0, 24)

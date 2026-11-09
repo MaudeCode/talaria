@@ -1250,6 +1250,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     summarizeAutomatically: () => settings.peekValue('check_for_updates') !== false && settings.peekValue('summarize_updates_automatically') !== false,
     autoApply: () => settings.peekValue('check_for_updates') !== false && settings.peekValue('auto_apply_updates') === true,
     checkEnabled: () => !truthy(env.HERMES_WEBUI_TEST_NETWORK_BLOCK) && settings.peekValue('check_for_updates') !== false,
+    availableNotification: (target, view) => updateNotifications.updateAvailable(target, view),
     autoNotification: {
       begin: async () => (await updateNotifications.begin({ owner: '*', profile: 'default', serverOwner: true }, 'webui')).id,
       transition: async (id, phase, expectedIdentity, verifiedIdentity, detail) => { (await updateNotifications.transition(id, phase, expectedIdentity, verifiedIdentity, detail)) },

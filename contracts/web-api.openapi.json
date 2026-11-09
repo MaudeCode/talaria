@@ -111255,7 +111255,8 @@
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 64,
-                            "pattern": "^[a-z0-9][a-z0-9_-]*$"
+                            "pattern": "^[a-z0-9][a-z0-9_-]*$",
+                            "description": "What the record reports: `update` (an update operation), `update_available` (TAL-2001: a newer version of `target` can be installed from System settings; phase `available`, one record per target, rewritten as unread when the version changes), `agent_warning`, `agent_recovery`, `web_refresh`, or another server notice. Clients show an unknown kind as a generic row."
                           },
                           "target": {
                             "anyOf": [
@@ -111665,7 +111666,8 @@
                               "type": "string",
                               "minLength": 1,
                               "maxLength": 64,
-                              "pattern": "^[a-z0-9][a-z0-9_-]*$"
+                              "pattern": "^[a-z0-9][a-z0-9_-]*$",
+                              "description": "What the record reports: `update` (an update operation), `update_available` (TAL-2001: a newer version of `target` can be installed from System settings; phase `available`, one record per target, rewritten as unread when the version changes), `agent_warning`, `agent_recovery`, `web_refresh`, or another server notice. Clients show an unknown kind as a generic row."
                             },
                             "target": {
                               "anyOf": [
@@ -112163,7 +112165,8 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 64,
-                      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+                      "pattern": "^[a-z0-9][a-z0-9_-]*$",
+                      "description": "What the record reports: `update` (an update operation), `update_available` (TAL-2001: a newer version of `target` can be installed from System settings; phase `available`, one record per target, rewritten as unread when the version changes), `agent_warning`, `agent_recovery`, `web_refresh`, or another server notice. Clients show an unknown kind as a generic row."
                     },
                     "target": {
                       "anyOf": [
@@ -112731,7 +112734,8 @@
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 64,
-                            "pattern": "^[a-z0-9][a-z0-9_-]*$"
+                            "pattern": "^[a-z0-9][a-z0-9_-]*$",
+                            "description": "What the record reports: `update` (an update operation), `update_available` (TAL-2001: a newer version of `target` can be installed from System settings; phase `available`, one record per target, rewritten as unread when the version changes), `agent_warning`, `agent_recovery`, `web_refresh`, or another server notice. Clients show an unknown kind as a generic row."
                           },
                           "target": {
                             "anyOf": [
@@ -113141,7 +113145,8 @@
                               "type": "string",
                               "minLength": 1,
                               "maxLength": 64,
-                              "pattern": "^[a-z0-9][a-z0-9_-]*$"
+                              "pattern": "^[a-z0-9][a-z0-9_-]*$",
+                              "description": "What the record reports: `update` (an update operation), `update_available` (TAL-2001: a newer version of `target` can be installed from System settings; phase `available`, one record per target, rewritten as unread when the version changes), `agent_warning`, `agent_recovery`, `web_refresh`, or another server notice. Clients show an unknown kind as a generic row."
                             },
                             "target": {
                               "anyOf": [
@@ -113635,7 +113640,8 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 64,
-                      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+                      "pattern": "^[a-z0-9][a-z0-9_-]*$",
+                      "description": "What the record reports: `update` (an update operation), `update_available` (TAL-2001: a newer version of `target` can be installed from System settings; phase `available`, one record per target, rewritten as unread when the version changes), `agent_warning`, `agent_recovery`, `web_refresh`, or another server notice. Clients show an unknown kind as a generic row."
                     },
                     "target": {
                       "anyOf": [
@@ -114102,7 +114108,8 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 64,
-                      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+                      "pattern": "^[a-z0-9][a-z0-9_-]*$",
+                      "description": "What the record reports: `update` (an update operation), `update_available` (TAL-2001: a newer version of `target` can be installed from System settings; phase `available`, one record per target, rewritten as unread when the version changes), `agent_warning`, `agent_recovery`, `web_refresh`, or another server notice. Clients show an unknown kind as a generic row."
                     },
                     "target": {
                       "anyOf": [

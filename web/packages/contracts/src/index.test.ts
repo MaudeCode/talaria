@@ -338,7 +338,8 @@ describe('contracts package', () => {
   it('parses the shared update notification fixture', () => {
     const fixture = shared('fixtures/update-notifications.json')
     const parsed = UpdateNotificationsSchema.parse(fixture)
-    expect(parsed.notifications.map((row) => row.kind)).toEqual(['update', 'system', 'update', 'update', 'agent_warning'])
+    expect(parsed.notifications.map((row) => row.kind)).toEqual(['update', 'system', 'update', 'update', 'agent_warning', 'update_available'])
+    expect(parsed.notifications[5]).toMatchObject({ kind: 'update_available', target: 'webui', phase: 'available', severity: 'info', persistent: false, can_dismiss: true, actions: [], destination: { key: 'settings.system' }, steps: [] })
     expect(parsed.notifications[4]).toMatchObject({ kind: 'agent_warning', target: 'agent', phase: 'active', severity: 'warning', persistent: true, unread: true, can_dismiss: true, actions: [], destination: null })
     expect(parsed.frontend_build).toMatchObject({ refresh_required: true, notification_id: null })
     expect(parsed.notifications[0]).toMatchObject({ phase: 'recovering', active: true, can_dismiss: false, presents_dialog: true, dialog_close: 'none', steps: [{ state: 'done' }, { id: 'gateway_restart', state: 'failed' }, { id: 'recovery', label: 'Attempting recovery', state: 'active' }, { id: 'agent_ready', state: 'pending' }], recovery: { outcome: 'recovering', operation: { failed_stage: 'gateway_restart' } } })

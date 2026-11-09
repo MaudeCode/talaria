@@ -1,0 +1,18 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "The notification inbox now tells server owners when a new Talaria Web or Hermes Agent version is ready to install.",
+      "highlight": false,
+      "components": [
+        "app",
+        "web"
+      ],
+      "announcement": {
+        "title": "Update alerts",
+        "description": "See in your notifications when a new Talaria Web or Hermes Agent version is ready to install.",
+        "icon": "notifications"
+      }
+    }
+  ]
+}

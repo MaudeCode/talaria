@@ -1203,7 +1203,7 @@ export const AgentUpdateRecoverySchema = z.object({
 })
 export const UpdateNotificationSchema = z.object({
   id: z.uuid(),
-  kind: z.string().min(1).max(64).regex(/^[a-z0-9][a-z0-9_-]*$/),
+  kind: z.string().min(1).max(64).regex(/^[a-z0-9][a-z0-9_-]*$/).describe('What the record reports: `update` (an update operation), `update_available` (TAL-2001: a newer version of `target` can be installed from System settings; phase `available`, one record per target, rewritten as unread when the version changes), `agent_warning`, `agent_recovery`, `web_refresh`, or another server notice. Clients show an unknown kind as a generic row.'),
   target: z.enum(['webui', 'agent']).nullable(),
   phase: z.union([UpdateNotificationPhaseSchema, z.string().min(1).max(64)]),
   severity: z.enum(['info', 'warning', 'critical']),
