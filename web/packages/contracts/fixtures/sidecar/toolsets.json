@@ -198,7 +198,7 @@
           },
           {
             "name": "harness",
-            "description": "Hand the user a decision review to answer on a Talaria page, read their answers, and record what you did with each; propose a plugin install, MCP server, setting or scheduled task for the owner to approve; show a file, table, chart or page in the chat; ask the user for a credential, saved to the profile's .env without entering the chat.",
+            "description": "Hand the user a decision review to answer on a Talaria page, read their answers, and record what you did with each; propose a plugin install, MCP server, setting or scheduled task for the owner to approve; show a file, table, chart or page in the chat; ask the user for a credential, saved to the profile's .env without entering the chat; notify the user's devices that something is ready or needs them.",
             "available": true,
             "selected": true,
             "unavailable_reason": null,

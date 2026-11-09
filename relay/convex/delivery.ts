@@ -9,6 +9,7 @@ import { internalMutation, internalQuery, type MutationCtx } from "./_generated/
 import {
   aggregateFingerprint,
   alertForState,
+  agentNotifyAlerts,
   alertForTransition,
   isAttentionTransition,
   makeAggregate,
@@ -101,6 +102,7 @@ function asSessionState(state: DataModel["sessionStates"]["document"]): SessionS
     approvalHeadId: state.approvalHeadId,
     decisionReviewId: state.decisionReviewId,
     decisionReviewTitle: state.decisionReviewTitle,
+    agentNotices: state.agentNotices,
   };
 }
 
@@ -217,6 +219,7 @@ async function enqueueJob(
     sourceSessionId?: string;
     sourceApprovalHeadId?: string;
     sourceDecisionReviewId?: string;
+    sourceAgentNotifyId?: string;
     kind: "live_activity_update" | "live_activity_end" | "live_activity_start" | "notification";
     request: ApnsRequest;
     aggregate?: ActivityAggregate;
@@ -244,6 +247,7 @@ async function enqueueJob(
     sourceSessionId: input.sourceSessionId,
     sourceApprovalHeadId: input.sourceApprovalHeadId,
     sourceDecisionReviewId: input.sourceDecisionReviewId,
+    sourceAgentNotifyId: input.sourceAgentNotifyId,
     kind: input.kind,
     expectedToken: input.request.token,
     stateFingerprint: input.stateFingerprint,
@@ -305,6 +309,7 @@ export const recompute = internalMutation({
       previousPhase: v.optional(sessionPhaseValidator),
       previousApprovalHeadId: v.optional(v.string()),
       previousDecisionReviewId: v.optional(v.string()),
+      previousAgentNotifyIds: v.optional(v.array(v.string())),
       state: v.optional(storedSessionStateValidator),
     }))),
   },
@@ -366,7 +371,7 @@ export const recompute = internalMutation({
           candidate.publisherId === transition.publisherId &&
           candidate.sessionId === transition.sessionId,
       );
-      return state ? [{ state, previousPhase: transition.previousPhase, previousApprovalHeadId: transition.previousApprovalHeadId, previousDecisionReviewId: transition.previousDecisionReviewId }] : [];
+      return state ? [{ state, previousPhase: transition.previousPhase, previousApprovalHeadId: transition.previousApprovalHeadId, previousDecisionReviewId: transition.previousDecisionReviewId, previousAgentNotifyIds: transition.previousAgentNotifyIds }] : [];
     });
     // The alerts a device's preferences and publisher subscriptions allow for this run's transitions.
     const alertsFor = (device: Doc<"devices">) => changed.flatMap(({ state, previousPhase, previousApprovalHeadId, previousDecisionReviewId }) => {
@@ -374,6 +379,12 @@ export const recompute = internalMutation({
       const alert = alertForTransition(previousPhase ?? null, state, device.preferences, previousApprovalHeadId, previousDecisionReviewId);
       return alert ? [{ alert, state }] : [];
     });
+    // TAL-1970: agent notices a device's publisher subscriptions allow; each is its own notification, never a Live
+    // Activity alert, so it neither replaces nor is replaced by the transition's phase alert.
+    const noticesFor = (device: Doc<"devices">) => changed.flatMap(({ state, previousAgentNotifyIds }) =>
+      exclusionsByDevice.get(device.deviceId)?.has(state.publisherId)
+        ? []
+        : agentNotifyAlerts(state, previousAgentNotifyIds).map((alert) => ({ alert, state })));
     const changedState = changed[0]?.state ?? null;
     const alertedDevices = new Set<string>();
 
@@ -580,6 +591,28 @@ export const recompute = internalMutation({
     if (changedState) {
       for (const device of devices) {
           if (!receivesNotifications(device, now)) continue;
+          for (const { alert, state: noticeState } of noticesFor(device)) {
+            await enqueueJob(ctx, {
+              userId: args.userId,
+              deviceId: device.deviceId,
+              kind: "notification",
+              sourcePublisherId: noticeState.publisherId,
+              sourceSessionId: noticeState.sessionId,
+              sourceAgentNotifyId: alert.agentNotifyId,
+              request: makeNotification({
+                token: device.pushToken,
+                bundleId: device.bundleId,
+                environment: device.apsEnvironment,
+                alert,
+                row: rowForState(noticeState),
+                threadId: await sha256(JSON.stringify(["alert", noticeState.publisherId, noticeState.sessionId])),
+                // Grouped with the chat, but never collapsed into its phase alerts or another notice.
+                collapseId: await sha256(JSON.stringify(["agent", noticeState.publisherId, noticeState.sessionId, alert.agentNotifyId])),
+              }),
+              stateFingerprint: `notification:agent:${JSON.stringify([noticeState.publisherId, noticeState.sessionId, alert.agentNotifyId])}:${device.deviceId}`,
+              now,
+            });
+          }
           const alerts = alertsFor(device);
           // A Time Sensitive alert always arrives as a notification; any other alert already sounded on the activity.
           const changedAlert = alerts.find(({ alert }) => alert.interruptionLevel)
@@ -793,13 +826,15 @@ export const claimJob = internalMutation({
           !grant ||
           !state ||
           state.deleted ||
-          state.alertEligible === false ||
-          (job.sourceDecisionReviewId !== undefined
-            ? state.decisionReviewId !== job.sourceDecisionReviewId || !device.preferences.notifyOnInput
-            : (job.kind === "notification" && !alertForState(state, device.preferences)) ||
-              (job.sourceApprovalHeadId === undefined
-                ? !job.stateFingerprint.includes(`:${state.eventId}:`)
-                : activityPhase(state) !== "waiting_for_approval" || state.approvalHeadId !== job.sourceApprovalHeadId))
+          // TAL-1970: a queued agent notice stays deliverable while its session state exists; the publisher decided muting.
+          (job.sourceAgentNotifyId === undefined && (
+            state.alertEligible === false ||
+            (job.sourceDecisionReviewId !== undefined
+              ? state.decisionReviewId !== job.sourceDecisionReviewId || !device.preferences.notifyOnInput
+              : (job.kind === "notification" && !alertForState(state, device.preferences)) ||
+                (job.sourceApprovalHeadId === undefined
+                  ? !job.stateFingerprint.includes(`:${state.eventId}:`)
+                  : activityPhase(state) !== "waiting_for_approval" || state.approvalHeadId !== job.sourceApprovalHeadId))))
         ) {
           await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
           return { status: "stale" as const };

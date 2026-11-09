@@ -272,6 +272,30 @@ export const ServerSecretRequestParamsSchema = z.object({
 })
 export const ServerSecretRequestResultSchema = z.object({ env_name: z.string(), outcome: z.enum(['saved', 'declined', 'timed_out']), existed_before: z.boolean() })
 
+/**
+ * TAL-1970: the `harness` toolset's `notify`, an alert about the calling session on the user's devices. `info` (the
+ * default) is muted while a Talaria tab is attached to the profile, as run alerts are; `attention` is not. A title over
+ * 80 or a body over 300 characters is refused (`title_too_long`, `body_too_long`) before anything is sent.
+ */
+export const AgentNotifyLevelSchema = z.enum(['info', 'attention'])
+export type AgentNotifyLevel = z.infer<typeof AgentNotifyLevelSchema>
+export const ServerNotifyParamsSchema = z.object({ caller_session_id: z.string().min(1), title: z.string(), body: z.string(), level: AgentNotifyLevelSchema.optional() })
+/**
+ * `rate_limited` (more than 5 in 10 minutes, or a second `attention` within a minute) sends nothing and says when the next
+ * call goes through. Otherwise `channels` maps each notification channel (`web-push`, `relay`) to `sent` (handed to its
+ * subscribed devices), `muted` (a Talaria tab is open) or `unavailable` (no device of the session's owner subscribes, or
+ * the session has no live or recently finished run to alert about). A child run's notice opens its parent chat (`url`).
+ */
+export const ServerNotifyResultSchema = z.object({
+  status: z.enum(['sent', 'rate_limited']),
+  notice_id: z.string().nullable(),
+  level: AgentNotifyLevelSchema,
+  url: z.string(),
+  channels: z.record(z.string(), z.enum(['sent', 'muted', 'unavailable'])),
+  retry_after_seconds: z.number().int().positive().nullable(),
+})
+export type ServerNotifyResult = z.infer<typeof ServerNotifyResultSchema>
+
 /** Every method the server answers for the sidecar; anything else is METHOD_NOT_FOUND. */
 export const SIDECAR_SERVER_METHODS = {
   'server.session_list': { params: ServerSessionListParamsSchema, result: ServerSessionListResultSchema },
@@ -311,6 +335,7 @@ export const SIDECAR_SERVER_METHODS = {
   'server.proposal_read': { params: ServerProposalReadParamsSchema, result: ProposalSchema },
   'server.show_put': { params: ServerShowPutParamsSchema, result: ServerShowPutResultSchema },
   'server.secret_request': { params: ServerSecretRequestParamsSchema, result: ServerSecretRequestResultSchema },
+  'server.notify': { params: ServerNotifyParamsSchema, result: ServerNotifyResultSchema },
 } as const
 
 export type SidecarServerMethods = typeof SIDECAR_SERVER_METHODS

@@ -5359,5 +5359,99 @@
       ],
       "additionalProperties": false
     }
+  },
+  "server.notify": {
+    "params": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "caller_session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "level": {
+          "type": "string",
+          "enum": [
+            "info",
+            "attention"
+          ]
+        }
+      },
+      "required": [
+        "caller_session_id",
+        "title",
+        "body"
+      ]
+    },
+    "result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "sent",
+            "rate_limited"
+          ]
+        },
+        "notice_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "level": {
+          "type": "string",
+          "enum": [
+            "info",
+            "attention"
+          ]
+        },
+        "url": {
+          "type": "string"
+        },
+        "channels": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "enum": [
+              "sent",
+              "muted",
+              "unavailable"
+            ]
+          }
+        },
+        "retry_after_seconds": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "notice_id",
+        "level",
+        "url",
+        "channels",
+        "retry_after_seconds"
+      ],
+      "additionalProperties": false
+    }
   }
 }

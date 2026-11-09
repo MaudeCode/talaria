@@ -8,6 +8,8 @@ TAL-1968 adds ``show``: a workspace file, table, chart or HTML page the server s
 TAL-1969 adds ``request_secret``: the user types a credential into a secure field, the server saves it to the profile
 ``.env``, and the agent learns only whether it was saved.
 
+TAL-1970 adds ``notify``: an alert about this session on the user's devices, through Web Push and the Relay.
+
 Unlike the opt-in ``talaria`` toolset, these tools only write Talaria state for the session that calls them, so every
 Web turn gets the toolset unless the profile's ``agent.disabled_toolsets`` names it. Each handler forwards its call to
 the server with ``talaria_toolset._tool`` and returns the server's result unchanged.
@@ -26,7 +28,8 @@ TOOLSET = "harness"
 TOOLSET_DESCRIPTION = (
     "Hand the user a decision review to answer on a Talaria page, read their answers, and record what you did with each; "
     "propose a plugin install, MCP server, setting or scheduled task for the owner to approve; show a file, table, chart or "
-    "page in the chat; ask the user for a credential, saved to the profile's .env without entering the chat."
+    "page in the chat; ask the user for a credential, saved to the profile's .env without entering the chat; notify the user's "
+    "devices that something is ready or needs them."
 )
 
 _WHEN = (
@@ -223,6 +226,28 @@ REQUEST_SECRET_SCHEMA = {
 }
 
 
+NOTIFY_SCHEMA = {
+    "name": "notify",
+    "description": (
+        "Send the user a push notification on their phone and browsers that opens this chat, when something is ready or "
+        "needs them and they may not be looking. Returns at once with status sent and, per channel (web-push, relay), "
+        "sent, muted or unavailable. level info (the default) is muted while the user has Talaria open; attention is "
+        "delivered anyway, so use it only when you are blocked on them. At most 5 per 10 minutes and one attention per "
+        "minute: past that the result is status rate_limited with retry_after_seconds and nothing is sent. A title over "
+        "80 or a body over 300 characters is refused; nothing is cut."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string", "description": "At most 80 characters, such as \"Weekly report ready\"."},
+            "body": {"type": "string", "description": "At most 300 characters: what is ready or what you need."},
+            "level": {"type": "string", "enum": ["info", "attention"]},
+        },
+        "required": ["title", "body"],
+    },
+}
+
+
 def _payload(args: dict, params: dict) -> None:
     """The agent's payload as given; the server names each missing field of an absent or malformed one."""
     payload = args.get("payload")
@@ -248,6 +273,9 @@ decision_review_record = _tool("server.decision_review_record", "decision_review
 propose = _tool("server.proposal_put", "propose", ("kind",), _proposal)
 proposal_read = _tool("server.proposal_read", "proposal_read", ("proposal_id",))
 show = _tool("server.show_put", "show", ("kind",), _payload)
+
+
+notify = _tool("server.notify", "notify", ("title", "body"), _passed("level"))
 
 
 def _secret(args: dict, params: dict) -> float:
@@ -298,6 +326,7 @@ _TOOLS = (
     (PROPOSAL_READ_SCHEMA, proposal_read, "📨"),
     (SHOW_SCHEMA, show, "🖼️"),
     (REQUEST_SECRET_SCHEMA, request_secret, "🔑"),
+    (NOTIFY_SCHEMA, notify, "🔔"),
 )
 
 

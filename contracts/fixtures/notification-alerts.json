@@ -434,5 +434,151 @@
       },
       "expected": "completion"
     }
+  ],
+  "agentNotify": [
+    {
+      "name": "a new info notice alerts",
+      "previousAgentNotifyIds": [],
+      "agentNotices": [
+        {
+          "id": "an_0000000000000001",
+          "title": "Report ready",
+          "body": "reports/week-45.md is done.",
+          "level": "info"
+        }
+      ],
+      "alertEligible": true,
+      "expected": [
+        "an_0000000000000001"
+      ]
+    },
+    {
+      "name": "a new attention notice alerts",
+      "previousAgentNotifyIds": [],
+      "agentNotices": [
+        {
+          "id": "an_0000000000000002",
+          "title": "Need your login",
+          "body": "The import stopped at the bank's sign-in.",
+          "level": "attention"
+        }
+      ],
+      "alertEligible": true,
+      "expected": [
+        "an_0000000000000002"
+      ]
+    },
+    {
+      "name": "a notice the publisher let through alerts while a tab mutes run alerts",
+      "previousAgentNotifyIds": [],
+      "agentNotices": [
+        {
+          "id": "an_0000000000000002",
+          "title": "Need your login",
+          "body": "The import stopped at the bank's sign-in.",
+          "level": "attention"
+        }
+      ],
+      "alertEligible": false,
+      "expected": [
+        "an_0000000000000002"
+      ]
+    },
+    {
+      "name": "two notices published together both alert, oldest first",
+      "previousAgentNotifyIds": [],
+      "agentNotices": [
+        {
+          "id": "an_0000000000000001",
+          "title": "Report ready",
+          "body": "reports/week-45.md is done.",
+          "level": "info"
+        },
+        {
+          "id": "an_0000000000000002",
+          "title": "Need your login",
+          "body": "The import stopped at the bank's sign-in.",
+          "level": "attention"
+        }
+      ],
+      "alertEligible": true,
+      "expected": [
+        "an_0000000000000001",
+        "an_0000000000000002"
+      ]
+    },
+    {
+      "name": "only the notice not held before alerts",
+      "previousAgentNotifyIds": [
+        "an_0000000000000001"
+      ],
+      "agentNotices": [
+        {
+          "id": "an_0000000000000001",
+          "title": "Report ready",
+          "body": "reports/week-45.md is done.",
+          "level": "info"
+        },
+        {
+          "id": "an_0000000000000002",
+          "title": "Need your login",
+          "body": "The import stopped at the bank's sign-in.",
+          "level": "attention"
+        }
+      ],
+      "alertEligible": true,
+      "expected": [
+        "an_0000000000000002"
+      ]
+    },
+    {
+      "name": "held notices never alert again",
+      "previousAgentNotifyIds": [
+        "an_0000000000000001",
+        "an_0000000000000002"
+      ],
+      "agentNotices": [
+        {
+          "id": "an_0000000000000001",
+          "title": "Report ready",
+          "body": "reports/week-45.md is done.",
+          "level": "info"
+        },
+        {
+          "id": "an_0000000000000002",
+          "title": "Need your login",
+          "body": "The import stopped at the bank's sign-in.",
+          "level": "attention"
+        }
+      ],
+      "alertEligible": true,
+      "expected": []
+    },
+    {
+      "name": "an expired notice leaving the state alerts nothing",
+      "previousAgentNotifyIds": [
+        "an_0000000000000001",
+        "an_0000000000000002"
+      ],
+      "agentNotices": [
+        {
+          "id": "an_0000000000000002",
+          "title": "Need your login",
+          "body": "The import stopped at the bank's sign-in.",
+          "level": "attention"
+        }
+      ],
+      "alertEligible": true,
+      "expected": []
+    },
+    {
+      "name": "no notices never alert",
+      "previousAgentNotifyIds": [
+        "an_0000000000000001"
+      ],
+      "agentNotices": [],
+      "alertEligible": true,
+      "expected": []
+    }
   ]
 }

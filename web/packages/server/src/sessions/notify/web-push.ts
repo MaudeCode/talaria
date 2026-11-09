@@ -12,8 +12,8 @@ import { isNonGlobalAddress } from '../../http/addresses.js'
 import { vettedAddresses, type DnsLookup, type PinnedFetch } from '../../http/pinned.js'
 import type { DocumentBackend } from '../storage/backend.js'
 import { readDocument, updateDocument } from '../storage/document.js'
-import type { ActivityState, ActivityStates } from './activity.js'
-import { alertForTransition, DEFAULT_ALERT_PREFERENCES, type AlertKind, type AlertPreferences } from './alerts.js'
+import type { ActivityState, ActivityStates, AgentNotice } from './activity.js'
+import { agentNotifyAlerts, alertForTransition, DEFAULT_ALERT_PREFERENCES, type AlertKind, type AlertPreferences } from './alerts.js'
 import type { NotificationChannel } from './channel.js'
 import { personMaySee, type PersonAccess } from '../../auth/person.js'
 
@@ -79,8 +79,8 @@ function decodedLength(value: string): number { return /^[A-Za-z0-9_-]+={0,2}$/.
 
 export class WebPushChannel implements NotificationChannel {
   readonly id = 'web-push'
-  /** profile → session → effective phase and open decision review last seen. */
-  private readonly lastPhase = new Map<string, Map<string, { phase: string; decision: string | null }>>()
+  /** profile → session → effective phase, decision review and agent notice last seen. */
+  private readonly lastPhase = new Map<string, Map<string, { phase: string; decision: string | null; notices: string[] }>>()
   private readonly inFlight = new Set<Promise<void>>()
   private dirty = false
   private running: Promise<void> | null = null
@@ -170,6 +170,16 @@ export class WebPushChannel implements NotificationChannel {
     })
   }
 
+  /** TAL-1970: a live subscription of the session's profile whose login may open the session. */
+  async noticeReach(profile: string | null, owner: string | null): Promise<boolean> {
+    const live = await this.deps.liveLogins()
+    for (const sub of await this.subscriptions()) {
+      if (!this.deps.activity.profileMatches(profile, sub.profile) || (sub.login !== null && !live.has(sub.login)) || !this.deps.profileExists(sub.profile)) continue
+      if (personMaySee(await this.deps.personAccessFor?.(sub.login), owner)) return true
+    }
+    return false
+  }
+
   /** Logout ends the subscriptions that login created. */
   async forgetLogin(login: string): Promise<void> {
     await this.mutate((subs) => { for (let i = subs.length - 1; i >= 0; i--) if (subs[i]!.login === login) subs.splice(i, 1) })
@@ -198,16 +208,17 @@ export class WebPushChannel implements NotificationChannel {
     for (const profile of profiles) {
       const rows = await this.deps.activity.states(profile, () => { this.changed() })
       const previous = this.lastPhase.get(profile)
-      const next = new Map<string, { phase: string; decision: string | null }>()
+      const next = new Map<string, { phase: string; decision: string | null; notices: string[] }>()
       for (const row of rows) {
         const phase = row.activityPhase ?? row.phase
-        next.set(row.sessionId, { phase, decision: row.decisionReviewId ?? null })
+        next.set(row.sessionId, { phase, decision: row.decisionReviewId ?? null, notices: (row.agentNotices ?? []).map((notice) => notice.id) })
         if (!previous) continue
         const seen = previous.get(row.sessionId)
         for (const sub of subs) {
           if (sub.profile !== profile || !personMaySee(access.get(sub), row.ownerPersonId)) continue
           const kind = alertForTransition(seen?.phase ?? null, { phase, alertEligible: row.alertEligible, decisionReviewId: row.decisionReviewId }, sub.preferences, seen?.decision)
           if (kind) this.track(this.deliver(sub, row, kind))
+          for (const notice of agentNotifyAlerts(seen?.notices, row.agentNotices)) this.track(this.deliver(sub, row, notice))
         }
       }
       this.lastPhase.set(profile, next)
@@ -231,16 +242,21 @@ export class WebPushChannel implements NotificationChannel {
     return (await this.subscriptions()).some((s) => s.endpoint === sub.endpoint && s.profile === sub.profile && s.login === sub.login)
   }
 
-  private async deliver(sub: Subscription, row: ActivityState, kind: AlertKind): Promise<void> {
+  private async deliver(sub: Subscription, row: ActivityState, alert: AlertKind | AgentNotice): Promise<void> {
     const vapid = VapidSchema.parse((await this.deps.documents.get('web-push', 'vapid'))?.value)
+    const session = `/session/${encodeURIComponent(row.sessionId)}`
     // The Relay deep link is the app's route; the browser opens the Web chat, resolved against the worker's mount scope.
     // TAL-1966: a decision review alert opens the review and keeps its own tag, so the run's later alert never replaces it.
-    const payload = JSON.stringify(kind === 'decision' && row.decisionReviewId
-      ? { title: BODY.decision, body: row.decisionReviewTitle ?? '', tag: `decision:${row.decisionReviewId}`, url: `/decisions/${encodeURIComponent(row.decisionReviewId)}` }
-      : { title: row.title, body: BODY[kind], tag: row.sessionId, url: `/session/${encodeURIComponent(row.sessionId)}` })
+    // TAL-1970: an agent notice opens the session under its own tag, so the run's later alert never replaces it either.
+    const payload = JSON.stringify(typeof alert === 'object'
+      ? { title: alert.title, body: alert.body, tag: `notify:${alert.id}`, url: session }
+      : alert === 'decision' && row.decisionReviewId
+        ? { title: BODY.decision, body: row.decisionReviewTitle ?? '', tag: `decision:${row.decisionReviewId}`, url: `/decisions/${encodeURIComponent(row.decisionReviewId)}` }
+        : { title: row.title, body: BODY[alert], tag: row.sessionId, url: session })
+    const urgent = typeof alert === 'object' ? alert.level === 'attention' : alert === 'approval' || alert === 'input'
     const details = webpush.generateRequestDetails({ endpoint: sub.endpoint, keys: sub.keys }, payload, {
       vapidDetails: { subject: this.subject(sub), publicKey: vapid.publicKey, privateKey: vapid.privateKey },
-      TTL: 3600, urgency: kind === 'approval' || kind === 'input' ? 'high' : 'normal', contentEncoding: 'aes128gcm',
+      TTL: 3600, urgency: urgent ? 'high' : 'normal', contentEncoding: 'aes128gcm',
     })
     const headers = Object.fromEntries(Object.entries(details.headers).map(([k, v]) => [k, String(v)]))
     const sleep = this.deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => { setTimeout(resolve, ms).unref() }))

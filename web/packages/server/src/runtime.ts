@@ -967,6 +967,8 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     'server.show_put': ({ caller_session_id, ...params }) => asCaller(caller_session_id, (caller) => show.put(caller, params)),
     // TAL-1969: the `harness` toolset's `request_secret`, a vault prompt on the calling session.
     'server.secret_request': ({ caller_session_id, ...params }) => asCaller(caller_session_id, (caller) => secrets.request(caller, params)),
+    // TAL-1970: the `harness` toolset's `notify`, an alert about the calling session on every notification channel.
+    'server.notify': ({ caller_session_id, ...params }) => asCaller(caller_session_id, (caller) => notifications.notify(caller, params)),
   })
   const dashboardPlugins = new DashboardPlugins({ env, hermesHome: config.hermesHome, settings, sidecar: () => sidecar })
   const deps: AppDeps = {

@@ -1,44 +1,16 @@
-import { createDecipheriv, createECDH, createPublicKey, hkdfSync, randomBytes, verify } from 'node:crypto'
+import { createPublicKey, verify } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import type { PinnedInit } from '../../http/pinned.js'
 import { bootTestServer, cookieHeader, type TestServer } from '../../test/harness.js'
+import { browserKeys, PUBLIC, stubPushService, type Push } from '../../test/notifications.js'
 import { liveLoginHashes, loginHash } from './web-push.js'
 
 type Json = Record<string, unknown>
 const ENDPOINT = 'https://push.example/send/subscription-1'
-const PUBLIC = '93.184.216.34'
 const PUSH_PATH = '/api/notifications/web-push/subscriptions'
 
 const send = (s: TestServer, method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<Response> =>
   s.get(path, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }), headers: { 'content-type': 'application/json', ...headers } })
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
-
-/** A synthetic browser subscription whose private key stays in the test, so it can open every push. */
-function browserKeys(): { p256dh: string; auth: string; decrypt: (body: Buffer) => Json } {
-  const ecdh = createECDH('prime256v1')
-  ecdh.generateKeys()
-  const auth = randomBytes(16)
-  return {
-    p256dh: ecdh.getPublicKey().toString('base64url'),
-    auth: auth.toString('base64url'),
-    // RFC 8291 / RFC 8188 aes128gcm, one record.
-    decrypt: (body) => {
-      const salt = body.subarray(0, 16)
-      const idlen = body[20]!
-      const serverKey = body.subarray(21, 21 + idlen)
-      const record = body.subarray(21 + idlen)
-      const keyInfo = Buffer.concat([Buffer.from('WebPush: info\0'), ecdh.getPublicKey(), serverKey])
-      const ikm = Buffer.from(hkdfSync('sha256', ecdh.computeSecret(serverKey), auth, keyInfo, 32))
-      const cek = Buffer.from(hkdfSync('sha256', ikm, salt, Buffer.from('Content-Encoding: aes128gcm\0'), 16))
-      const nonce = Buffer.from(hkdfSync('sha256', ikm, salt, Buffer.from('Content-Encoding: nonce\0'), 12))
-      const decipher = createDecipheriv('aes-128-gcm', cek, nonce)
-      decipher.setAuthTag(record.subarray(record.length - 16))
-      const padded = Buffer.concat([decipher.update(record.subarray(0, record.length - 16)), decipher.final()])
-      const end = padded.lastIndexOf(2)
-      return JSON.parse(padded.subarray(0, end).toString('utf8')) as Json
-    },
-  }
-}
 
 /** `Authorization: vapid t=<ES256 JWT>, k=<public key>` signed by the key the server advertised. */
 function verifyVapid(header: string, publicKey: string): Json {
@@ -49,16 +21,6 @@ function verifyVapid(header: string, publicKey: string): Json {
   const key = createPublicKey({ key: { kty: 'EC', crv: 'P-256', x: raw.subarray(1, 33).toString('base64url'), y: raw.subarray(33).toString('base64url') }, format: 'jwk' })
   expect(verify('sha256', Buffer.from(`${head}.${claims}`), { key, dsaEncoding: 'ieee-p1363' }, Buffer.from(signature, 'base64url'))).toBe(true)
   return JSON.parse(Buffer.from(claims, 'base64url').toString('utf8')) as Json
-}
-
-interface Push { url: string; init: PinnedInit; addresses: string[] }
-
-function stubPushService(s: TestServer): { pushes: Push[]; statuses: number[] } {
-  const pushes: Push[] = []
-  const statuses: number[] = []
-  s.deps.dnsLookup = (host) => Promise.resolve(host === 'push.example' ? [{ address: PUBLIC, family: 4 }] : host === 'private.example' ? [{ address: '10.0.0.5', family: 4 }] : [])
-  s.deps.pinnedFetch = (url, init, addresses) => { pushes.push({ url, init, addresses }); return Promise.resolve(new Response(null, { status: statuses.shift() ?? 201 })) }
-  return { pushes, statuses }
 }
 
 describe('Web Push channel', () => {

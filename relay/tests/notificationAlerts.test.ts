@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 
-import { alertForTransition, approvalAlertBodyKey } from "../convex/lib/aggregate";
-import { defaultNotificationPreferences, type SessionPhase, type SessionState } from "../convex/lib/model";
+import { agentNotifyAlerts, alertForTransition, approvalAlertBodyKey } from "../convex/lib/aggregate";
+import { defaultNotificationPreferences, type AgentNotify, type SessionPhase, type SessionState } from "../convex/lib/model";
 
 // Talaria Web's server applies the same vectors (web/packages/server/src/sessions/notify/alerts.test.ts).
 interface Vector {
@@ -16,7 +16,9 @@ interface Vector {
   expected: "approval" | "input" | "completion" | "failure" | "decision" | null;
 }
 
-const { vectors } = JSON.parse(readFileSync(new URL("../../contracts/fixtures/notification-alerts.json", import.meta.url), "utf8")) as { vectors: Vector[] };
+interface NoticeVector { name: string; previousAgentNotifyIds: string[]; agentNotices: AgentNotify[]; alertEligible: boolean; expected: string[] }
+
+const { vectors, agentNotify } = JSON.parse(readFileSync(new URL("../../contracts/fixtures/notification-alerts.json", import.meta.url), "utf8")) as { vectors: Vector[]; agentNotify: NoticeVector[] };
 const bodyPrefix = { input: "Input needed", completion: "Completed", failure: "Failed" } as const;
 const now = 1_800_000_000_000;
 
@@ -39,4 +41,21 @@ it.each(vectors)("shared alert rule: $name", (vector) => {
   else if (vector.expected === "decision") expect(alert).toMatchObject({ title: "Decision review ready", body: "Release choices", deepLink: `/decisions/${String(vector.decisionReviewId)}` });
   else if (vector.expected === "approval") expect(alert?.body).toBe(approvalAlertBodyKey);
   else expect(alert?.body.startsWith(`${bodyPrefix[vector.expected]} on `)).toBe(true);
+});
+
+// TAL-1970: each notice the state did not hold alerts with the agent's words, whatever alertEligible says.
+it.each(agentNotify)("shared agent notice rule: $name", (vector) => {
+  const next: SessionState = {
+    publisherId: "publisher-1", publisherLabel: "Home", sessionId: "s1", streamId: "stream-1", eventId: "event-1", revision: 1,
+    title: "Session", phase: "running", updatedAt: now, deepLink: "/sessions/s1", expiresAt: now + 60_000,
+    ...(vector.alertEligible ? {} : { alertEligible: false }),
+    agentNotices: vector.agentNotices,
+  };
+  const byId = new Map(vector.agentNotices.map((notice) => [notice.id, notice]));
+  expect(agentNotifyAlerts(next, vector.previousAgentNotifyIds)).toEqual(vector.expected.map((id) => ({
+    title: byId.get(id)!.title,
+    body: byId.get(id)!.body,
+    interruptionLevel: byId.get(id)!.level === "attention" ? "time-sensitive" : "active",
+    agentNotifyId: id,
+  })));
 });

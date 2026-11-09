@@ -23,6 +23,7 @@ import {
   type ActivityMode,
   type ApsEnvironment,
   type NotificationPreferences,
+  type AgentNotify,
   type PublishedSessionState,
 } from "./lib/model";
 
@@ -296,6 +297,25 @@ async function authenticatePublisher(
 const approvalHeadPattern = /^[A-Za-z0-9_-]{1,64}$/;
 // TAL-1966: a Talaria Web decision review id; its title is the review's own, at most 200 characters.
 const decisionReviewPattern = /^dr_[0-9a-f]{8}$/;
+// TAL-1970: a Talaria Web agent notice: its id, a title of 1 to 80 and a body of 1 to 300 characters, and its level. A
+// state carries at most 10, each id once.
+const agentNotifyPattern = /^an_[0-9a-f]{16}$/;
+
+function parseAgentNotices(value: unknown): AgentNotify[] | null {
+  if (!Array.isArray(value) || value.length > 10) return null;
+  const notices = value.map(parseAgentNotify);
+  if (notices.some((notice) => notice === null)) return null;
+  const parsed = notices as AgentNotify[];
+  return new Set(parsed.map((notice) => notice.id)).size === parsed.length ? parsed : null;
+}
+
+function parseAgentNotify(value: unknown): AgentNotify | null {
+  if (!isRecord(value)) return null;
+  const { id, title, body, level } = value;
+  const text = (field: unknown, max: number): field is string => typeof field === "string" && field.length > 0 && field.length <= max;
+  if (typeof id !== "string" || !agentNotifyPattern.test(id) || !text(title, 80) || !text(body, 300) || (level !== "info" && level !== "attention")) return null;
+  return { id, title, body, level };
+}
 
 function parseState(
   value: unknown,
@@ -316,7 +336,9 @@ function parseState(
   const approvalHeadId = value.approvalHeadId;
   const decisionReviewId = value.decisionReviewId;
   const decisionReviewTitle = value.decisionReviewTitle;
+  const agentNotices = value.agentNotices === undefined ? undefined : parseAgentNotices(value.agentNotices);
   if (
+    agentNotices === null ||
     (alertEligible !== undefined && typeof alertEligible !== "boolean") ||
     (approvalHeadId !== undefined && (typeof approvalHeadId !== "string" || !approvalHeadPattern.test(approvalHeadId))) ||
     (decisionReviewId !== undefined && (typeof decisionReviewId !== "string" || !decisionReviewPattern.test(decisionReviewId))) ||
@@ -351,6 +373,7 @@ function parseState(
     alertEligible,
     ...(approvalHeadId === undefined ? {} : { approvalHeadId }),
     ...(decisionReviewId === undefined ? {} : { decisionReviewId, decisionReviewTitle: decisionReviewTitle ?? "" }),
+    ...(agentNotices === undefined ? {} : { agentNotices }),
   };
 }
 
@@ -565,6 +588,7 @@ http.route({
               approvalHeadId: state.approvalHeadId,
               decisionReviewId: state.decisionReviewId,
               decisionReviewTitle: state.decisionReviewTitle,
+              agentNotices: state.agentNotices,
             }
           : null,
       });

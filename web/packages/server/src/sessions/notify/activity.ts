@@ -3,8 +3,8 @@
  * recently finished run, its phase, and whether a browser tab for the profile mutes alerts. Channels add their
  * own transport fields (the Relay adds revisions and event IDs) on top of these rows.
  */
-import { createHash } from 'node:crypto'
-import type { DecisionReviewRef, SessionActivityPhase } from '@maudecode/talaria-web-contracts'
+import { createHash, randomBytes } from 'node:crypto'
+import type { AgentNotifyLevel, DecisionReviewRef, SessionActivityPhase } from '@maudecode/talaria-web-contracts'
 import { settledActivityPhase, type BackgroundActivity } from '../background-tasks.js'
 import type { PendingPrompts } from '../pending.js'
 import type { SessionPrefixIndex } from '../prefix-index.js'
@@ -18,6 +18,15 @@ const TERMINAL_RETENTION_S = 15 * 60
 // ponytail: bounds the terminal ledger when no channel ever reads it; the oldest finished run goes first.
 const TERMINAL_MAX = 1024
 export const TERMINAL_PHASES = ['completed', 'failed', 'cancelled'] as const
+// TAL-1970: per session, at most NOTICE_LIMIT notices per NOTICE_WINDOW_S and one `attention` notice per ATTENTION_GAP_S.
+const NOTICE_LIMIT = 5
+const NOTICE_WINDOW_S = 10 * 60
+const ATTENTION_GAP_S = 60
+// The rate limit allows at most 10 notices in a finished run's retention; a row never carries more.
+const NOTICES_SHOWN = 10
+
+/** TAL-1970: what the agent's `notify` asked to tell the user; a row carries the session's recent unmuted ones. */
+export interface AgentNotice { id: string; title: string; body: string; level: AgentNotifyLevel }
 
 export interface ActivityDeps {
   registry: StreamRegistry
@@ -47,6 +56,8 @@ export interface ActivityState {
   /** TAL-1966: the session's newest decision review by creation and its title; its alert opens the review. */
   decisionReviewId?: string
   decisionReviewTitle?: string
+  /** TAL-1970: the session's unmuted agent notices, oldest first, until they expire; each one a channel has not seen alerts once. */
+  agentNotices?: AgentNotice[]
   /** TAL-48: the session's person under person isolation; channels never send it, they filter by it. */
   ownerPersonId: string | null
 }
@@ -67,8 +78,60 @@ export function approvalHeadId(sid: string, approvalId: string): string {
 /** Python `build_states` without the Relay's revision numbering. */
 export class ActivityStates {
   private readonly terminal = new Map<string, ActiveRun & { relay_phase: string; terminal_at: number }>()
+  /** TAL-1970: per session, when each notice of the window was accepted, and the unmuted ones the rows carry, with their time. */
+  private readonly notices = new Map<string, { sent: { at: number; level: AgentNotifyLevel }[]; shown: { notice: AgentNotice; at: number }[] }>()
 
   constructor(private readonly deps: ActivityDeps) {}
+
+  /** Whether a session of profile `row` shows under the `active` profile, as the rows decide it. */
+  profileMatches(row: string | null | undefined, active: string): boolean { return this.deps.profilesMatch(row, active) }
+
+  /** Whether a Talaria tab attached to the profile mutes alerts now (the rows' `alertEligible`). */
+  muted(profile: string): boolean { return this.deps.presence.has(profile) }
+
+  /**
+   * TAL-1970: count an agent notice against the session's limits. A refusal records nothing and says how many seconds
+   * until the next call can go through; an accepted muted notice counts but never reaches a row.
+   */
+  noteAgentNotice(sid: string, input: Omit<AgentNotice, 'id'>, muted: boolean): { notice: AgentNotice } | { retryAfter: number } {
+    const now = this.deps.now()
+    this.pruneNotices(now)
+    const entry = this.notices.get(sid) ?? { sent: [], shown: [] }
+    let retryAt = entry.sent.length >= NOTICE_LIMIT ? entry.sent[entry.sent.length - NOTICE_LIMIT]!.at + NOTICE_WINDOW_S : 0
+    const attention = entry.sent.findLast((sent) => sent.level === 'attention')
+    if (input.level === 'attention' && attention) retryAt = Math.max(retryAt, attention.at + ATTENTION_GAP_S)
+    if (retryAt > now) return { retryAfter: Math.max(1, Math.ceil(retryAt - now)) }
+    const notice: AgentNotice = { id: `an_${randomBytes(8).toString('hex')}`, ...input }
+    entry.sent.push({ at: now, level: input.level })
+    if (!muted) entry.shown = [...entry.shown, { notice, at: now }].slice(-NOTICES_SHOWN)
+    this.notices.delete(sid)
+    if (this.notices.size >= TERMINAL_MAX) this.notices.delete(this.notices.keys().next().value!)
+    this.notices.set(sid, entry)
+    return { notice }
+  }
+
+  /**
+   * TAL-1970: the session whose activity row carries a notice from `sid`: its own, or the parent's for a child run shown on
+   * its parent (which then opens), or null while no row shows it, so nothing could alert.
+   */
+  async noticeRow(sid: string): Promise<string | null> {
+    const runs = [...this.deps.registry.activeRuns.values()].filter((run) => run.session_id.trim() === sid && !(run as { health_only?: boolean }).health_only)
+    const run = runs[0] ?? this.terminal.get(sid)
+    if (run) return run.activity_parent_session_id || sid
+    return (await this.deps.background?.sessionIds())?.includes(sid) ? sid : null
+  }
+
+  /**
+   * A notice stays on its row as long as a finished run's row lasts, beside the later ones, so a channel that passes or
+   * publishes late still sees every notice it has not alerted for.
+   */
+  private pruneNotices(now: number): void {
+    for (const [sid, entry] of this.notices) {
+      entry.sent = entry.sent.filter((sent) => sent.at > now - NOTICE_WINDOW_S)
+      entry.shown = entry.shown.filter((shown) => shown.at >= now - TERMINAL_RETENTION_S)
+      if (!entry.sent.length && !entry.shown.length) this.notices.delete(sid)
+    }
+  }
 
   /** Record a finished run before its registry entry is torn down; false when the stream is unknown. */
   noteTerminal(streamId: string, phase: string): boolean {
@@ -95,6 +158,7 @@ export class ActivityStates {
       if ((await this.deps.background!.receipts(sid)).some((receipt) => ['running', 'attention', 'unknown'].includes(receipt.status) || (receipt.completed_at ?? 0) >= cutoff)) backgroundIds.add(sid)
     }
     for (const [sid, run] of this.terminal) if (run.terminal_at < cutoff && !backgroundIds.has(sid)) this.terminal.delete(sid)
+    this.pruneNotices(this.deps.now())
     const bySession = new Map<string, TrackedRun>()
     for (const run of this.deps.registry.activeRuns.values()) {
       if ((run as { health_only?: boolean }).health_only) continue
@@ -135,7 +199,8 @@ export class ActivityStates {
       const updatedAt = Math.floor((run.terminal_at ?? this.deps.now()) * 1000)
       const approvalId = phase === 'waiting_for_approval' ? str(approval?.approval_id) : ''
       const review = this.deps.decisionReview?.(sid)
-      states.push({ sessionId: sid, streamId: run.stream_id || null, ...(snapshot ? { activityPhase: snapshot.activity_phase } : {}), title: (session.title || 'Untitled').slice(0, 120), phase, startedAt: Math.floor((run.started_at || this.deps.now()) * 1000), updatedAt, deepLink: `/sessions/${encodeURIComponent(sid)}`, alertEligible, ...(approvalId ? { approvalHeadId: approvalHeadId(sid, approvalId) } : {}), ...(review ? { decisionReviewId: review.review_id, decisionReviewTitle: review.title } : {}), ownerPersonId: session.owner_person_id })
+      const notices = this.notices.get(sid)?.shown.map((shown) => shown.notice) ?? []
+      states.push({ sessionId: sid, streamId: run.stream_id || null, ...(snapshot ? { activityPhase: snapshot.activity_phase } : {}), title: (session.title || 'Untitled').slice(0, 120), phase, startedAt: Math.floor((run.started_at || this.deps.now()) * 1000), updatedAt, deepLink: `/sessions/${encodeURIComponent(sid)}`, alertEligible, ...(approvalId ? { approvalHeadId: approvalHeadId(sid, approvalId) } : {}), ...(review ? { decisionReviewId: review.review_id, decisionReviewTitle: review.title } : {}), ...(notices.length ? { agentNotices: notices } : {}), ownerPersonId: session.owner_person_id })
     }
     return states
   }
