@@ -1,3 +1,4 @@
+import { pendingRequest } from '../../lib/pendingRequest'
 import { setSidePanelOpen } from '../../shell/useShellState'
 
 /**
@@ -6,26 +7,13 @@ import { setSidePanelOpen } from '../../shell/useShellState'
  * after the request still shows the file.
  */
 export interface OpenFileRequest { sessionId: string; path: string }
-const requests = new EventTarget()
-let pending: OpenFileRequest | null = null
+const channel = pendingRequest<OpenFileRequest>()
 
 export function requestOpenFile(request: OpenFileRequest): void {
-  pending = request
   setSidePanelOpen(true)
-  requests.dispatchEvent(new Event('open'))
+  channel.request(request)
 }
 
-/** The waiting request for `sessionId`, without taking it. */
-export const peekOpenFileRequest = (sessionId: string): OpenFileRequest | null => (pending?.sessionId === sessionId ? pending : null)
-
-/** Takes the waiting request for `sessionId`, once. */
-export function takeOpenFileRequest(sessionId: string): OpenFileRequest | null {
-  const request = peekOpenFileRequest(sessionId)
-  if (request) pending = null
-  return request
-}
-
-export function onOpenFileRequest(fn: () => void): () => void {
-  requests.addEventListener('open', fn)
-  return () => requests.removeEventListener('open', fn)
-}
+export const peekOpenFileRequest = channel.peek
+export const takeOpenFileRequest = channel.take
+export const onOpenFileRequest = channel.on

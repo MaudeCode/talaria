@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "The agent can run a long command, such as a build or a test run, in the chat's terminal on the web: you watch the output live from the card's Open terminal while the agent reads it.",
+      "highlight": true,
+      "components": [
+        "web"
+      ],
+      "announcement": {
+        "title": "Watch the agent's commands",
+        "description": "Builds and test runs play live in the chat's terminal while the agent follows the output.",
+        "icon": "automation"
+      }
+    }
+  ]
+}

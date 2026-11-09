@@ -1,4 +1,4 @@
-import { DecisionReviewResult, OutboundDraftResult, ProposalResult } from './OutboundDraftResult'
+import { DecisionReviewResult, OutboundDraftResult, ProposalResult, TerminalResult } from './OutboundDraftResult'
 import { ShowBlockResult } from './ShowBlockResult'
 import { useApprovalFlash, useDisclosure } from './Worklog'
 import { ChevronRight } from 'lucide-react'
@@ -101,6 +101,7 @@ export function ToolCard({ call, timestamp, sessionId, arrivalKey }: { call: Too
       {call.resultView?.decision_review && <DecisionReviewResult key={call.resultView.decision_review.review_id} reference={call.resultView.decision_review} />}
       {call.resultView?.proposal && <ProposalResult key={call.resultView.proposal.proposal_id} reference={call.resultView.proposal} />}
       {call.resultView?.block && <ShowBlockResult key={call.resultView.block.block_id} reference={call.resultView.block} />}
+      {sessionId && call.resultView?.terminal && <TerminalResult key={call.resultView.terminal.terminal_id} sessionId={sessionId} reference={call.resultView.terminal} />}
       {sessionId && call.resultView?.outbound_draft && <OutboundDraftResult key={JSON.stringify([sessionId, call.id, call.resultView.outbound_draft])} sessionId={sessionId} callId={call.id} reference={call.resultView.outbound_draft} />}
       {open && (
         <div className="tool-card-detail border-t border-border-subtle px-2.5 py-2">

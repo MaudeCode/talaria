@@ -13,6 +13,7 @@ import { Button } from '../../ui/Button'
 import { showErrorToast } from '../toast/errorToast'
 import { isDefiniteRefusal } from '../../contracts/common'
 import { TerminalPanelFrame } from './TerminalPanelFrame'
+import { onOpenTerminalRequest, takeOpenTerminalRequest } from './openTerminalRequest'
 import { useSetting } from '../../app/settings'
 
 const OkSchema = z.looseObject({ ok: z.boolean().optional(), closed: z.boolean().optional(), error: z.string().optional() })
@@ -41,6 +42,14 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
   const screenReader = useSetting('screen_reader_mode') === true
   const screenReaderPref = useRef(screenReader)
   const applyScreenReader = () => { if (term.current) term.current.options.screenReaderMode = mode.current === 'owner_command' || screenReaderPref.current }
+
+  // TAL-1974: a `terminal_open` card's request focuses the terminal once it is attached; focus scrolls it into view.
+  useEffect(() => {
+    if (status !== 'running') return
+    const take = () => { if (takeOpenTerminalRequest(sessionId)) term.current?.focus() }
+    take()
+    return onOpenTerminalRequest(take)
+  }, [status, sessionId])
 
   useEffect(() => {
     mode.current = null
