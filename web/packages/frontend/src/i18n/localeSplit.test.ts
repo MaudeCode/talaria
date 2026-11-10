@@ -97,7 +97,7 @@ describe('locale dictionaries at runtime', () => {
     expect(settings_section_tools_title()).toBe('Werkzeuge')
     expect(settings_label_chat_activity_display_mode()).toBe('Aktivitätsanzeige')
     expect(settings_section_models_title()).toBe('Modelle')
-    expect(settings_label_ignore_agent_updates()).toBe('Agent-Updates ignorieren')
+    expect(settings_label_ignore_agent_updates()).toBe('Agent-Updates überspringen')
   })
 
   it('renders the Russian profiles help and Transparent Stream timestamp setting instead of English (TAL-1127)', async () => {

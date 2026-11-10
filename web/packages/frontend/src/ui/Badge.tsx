@@ -17,7 +17,8 @@ export function Mark({ title, children }: { title?: string | undefined; children
 }
 
 export type DotState = 'ok' | 'warning' | 'error' | 'idle'
-const DOT: Record<DotState, string> = { ok: 'bg-success', warning: 'bg-warning', error: 'bg-error', idle: 'bg-muted' }
+/** A state's dot fill; the System update path's nodes (TAL-2140) use it too. */
+export const DOT_FILL: Record<DotState, string> = { ok: 'bg-success', warning: 'bg-warning', error: 'bg-error', idle: 'bg-muted' }
 
 /**
  * TAL-2131: a state as a 7px dot and its words (§7); the words stay muted, the dot alone takes the server's state colour.
@@ -26,7 +27,7 @@ const DOT: Record<DotState, string> = { ok: 'bg-success', warning: 'bg-warning',
 export function StatusDot({ state, title, wrap, children }: { state: DotState; title?: string | undefined; wrap?: boolean; children: ReactNode }) {
   return (
     <span title={title} data-status={state} className={cn('inline-flex min-w-0 gap-1.5 text-xs text-muted', wrap ? 'items-baseline' : 'items-center')}>
-      <span aria-hidden="true" className={cn('size-[7px] shrink-0 rounded-full', wrap && 'translate-y-[-1px]', DOT[state])} />
+      <span aria-hidden="true" className={cn('size-[7px] shrink-0 rounded-full', wrap && 'translate-y-[-1px]', DOT_FILL[state])} />
       <span className={cn('min-w-0', wrap ? '[overflow-wrap:anywhere]' : 'truncate')}>{children}</span>
     </span>
   )

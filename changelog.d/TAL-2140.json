@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Settings › System in Talaria Web shows both installed versions and disk use at the top, keeps the update paths, and puts the update switches, health and server actions in their own rows.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

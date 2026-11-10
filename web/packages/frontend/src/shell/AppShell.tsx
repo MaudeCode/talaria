@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, type ReactNode } from 'react'
-import { HubHeadSlotsContext } from './hubHeadSlots'
+import { HubHeadActions, HubHeadSlotsContext } from './hubHeadSlots'
 import { createPortal } from 'react-dom'
 import { useLocation, useParams, useSearch } from '@tanstack/react-router'
 import { Titlebar, usePanelTitle } from './Titlebar'
@@ -72,7 +72,6 @@ export function AppShell({ children }: { children: ReactNode }) {
 /** Legacy `.main-view` column: the panel that fills `.main`. */
 export const MAIN_VIEW = 'main-view flex flex-1 min-h-0 min-w-0 flex-col bg-bg'
 
-
 /** TAL-2089: the titlebar's `usePanelTitle`, provided once by the shell so hub pages need no router of their own. */
 export const TitlebarTitleContext = createContext<string | null>(null)
 
@@ -86,7 +85,7 @@ export function HubPage({ title, help, actions, toolbar, children, id, toolbarCl
   if (slots) return (
     <>
       {help && slots.help && createPortal(<HelpTip label={m.field_help_about({ label: title })} className="shrink-0">{help}</HelpTip>, slots.help)}
-      {actions && slots.actions && createPortal(actions, slots.actions)}
+      {actions && <HubHeadActions>{actions}</HubHeadActions>}
       {toolbar && <div className={cn('hub-toolbar flex flex-wrap items-center gap-x-3.5 gap-y-2 mb-4', toolbarClassName)}>{toolbar}</div>}
       {children}
     </>

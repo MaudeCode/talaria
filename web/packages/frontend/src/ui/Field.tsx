@@ -15,11 +15,16 @@ export function FieldRow({ label, hint, htmlFor, children, inline, icon: Icon }:
   return (
     <div className={cn('flex gap-3 py-2', inline ? 'items-center justify-between' : 'flex-col')}>
       {Icon
-        ? <div className="flex min-w-0 items-center gap-2.5"><Icon size={18} strokeWidth={1.75} aria-hidden="true" data-row-icon="" className="shrink-0 text-muted" /><div className="min-w-0">{text}</div></div>
+        ? <div className="flex min-w-0 items-center gap-2.5"><RowIcon icon={Icon} /><div className="min-w-0">{text}</div></div>
         : <div className="min-w-0">{text}</div>}
       <div className={cn(inline ? 'shrink-0' : '')}>{children}</div>
     </div>
   )
+}
+
+/** TAL-2131: the 18px muted icon before a Settings row's name. */
+export function RowIcon({ icon: Icon }: { icon: LucideIcon }) {
+  return <Icon size={18} strokeWidth={1.75} aria-hidden="true" data-row-icon="" className="shrink-0 text-muted" />
 }
 
 /** A "?" beside a label: the explanation opens on click or tap instead of sitting under every setting. The 20px icon keeps a 44px touch target. */
