@@ -42,6 +42,7 @@ describe('memory.get', () => {
 
     expect(first).toEqual({
       memory: 'remember\n', user: 'user\n', soul: 'soul\n', project_context: 'repo context\n',
+      memory_entries: ['remember\n'], user_entries: ['user\n'], memory_name: 'MEMORY.md', user_name: 'USER.md', soul_name: 'SOUL.md',
       memory_revision: memoryRevision(key, Buffer.from('remember\n')), user_revision: memoryRevision(key, Buffer.from('user\n')), soul_revision: memoryRevision(key, Buffer.from('soul\n')),
       memory_path: memory, user_path: user, soul_path: soul, project_context_path: hermes, project_context_name: 'HERMES.md', project_context_workspace: workspace,
       memory_mtime: memoryMtime, user_mtime: userMtime, soul_mtime: soulMtime, project_context_mtime: hermesMtime,
@@ -53,6 +54,17 @@ describe('memory.get', () => {
 
     expect(await readMemory(join(root, 'profile'), {}, workspace, {}, false, key, git)).toEqual(first)
     expect(toplevel).toHaveBeenCalledTimes(1)
+  })
+
+  it('names each file and splits MEMORY.md and USER.md into their masked § entries (TAL-2126)', async () => {
+    write('profile/memories/MEMORY.md', 'Uses TypeScript.\n§\na token ghp_AbCDEFGHIJKLMNOP6789\n§\n- one\n- two\n')
+    write('profile/SOUL.md', 'soul\n§\nnot an entry store\n')
+    const body = await readMemory(join(root, 'profile'), {}, null, {}, true, key, new GitRunner({ env: process.env }))
+    expect(body).toMatchObject({ memory_name: 'MEMORY.md', user_name: 'USER.md', soul_name: 'SOUL.md', user_entries: [] })
+    expect(body.memory_entries).toEqual(['Uses TypeScript.', 'a token ghp_Ab...6789', '- one\n- two\n'])
+    expect(body).not.toHaveProperty('soul_entries')
+    const disabled = await readMemory(join(root, 'profile'), { memory: { memory_enabled: false } }, null, {}, true, key, new GitRunner({ env: process.env }))
+    expect(disabled).toMatchObject({ memory_name: '', memory_entries: [] })
   })
 
   it('sees a workspace that became a repository after it was first read', async () => {

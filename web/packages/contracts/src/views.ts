@@ -1029,6 +1029,9 @@ export const MemorySchema = z.looseObject({
   project_context_shadowed: z.array(Json).optional(), external_notes_enabled: z.boolean().optional(),
   /** TAL-784: the revision of each file as this read found it. A save sends the revision its edit started from. */
   memory_revision: z.string(), user_revision: z.string(), soul_revision: z.string(),
+  /** TAL-2126: each file's name as the server opened it (`''` for a disabled store), and the MEMORY.md / USER.md entries of the shown (masked) text. */
+  memory_name: z.string().optional(), user_name: z.string().optional(), soul_name: z.string().optional(),
+  memory_entries: z.array(z.string()).optional(), user_entries: z.array(z.string()).optional(),
 })
 export type Memory = z.infer<typeof MemorySchema>
 export const PromptSchema = z.looseObject({ id: z.string().optional(), name: z.string().optional(), title: z.string().optional(), label: z.string().optional(), text: z.string().optional(), content: z.string().optional(), created_at: z.number().optional() })

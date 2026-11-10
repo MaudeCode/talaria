@@ -8,7 +8,7 @@ import { keys } from '../../api/queryKeys'
 import { HubPage } from '../../shell/AppShell'
 import { Button } from '../../ui/Button'
 import { EmptyState, ErrorState, LoadingState, formatDate } from '../../ui/States'
-import { SectionHeader } from '../../ui/List'
+import { Row, RowList, SectionHeader } from '../../ui/List'
 import { RowContextMenu } from '../../ui/Menu'
 import { copyWithToast } from '../../lib/clipboard'
 import { Markdown } from '../chat/render/Markdown'
@@ -58,7 +58,8 @@ export function MemoryPage() {
   useEffect(() => { if (preview && !reviewHidden) reviewRef.current?.scrollIntoView?.({ block: 'start' }) }, [preview, reviewHidden])
   const apply = useResourceMutation({
     resource: () => 'memory-compaction', queryKey: keys.memory, exclusive: true,
-    effect: (p: MemoryCompactionPreview) => ({ fields: { [p.section]: p.proposed }, remove: true }),
+    // The server's entries describe the text it replaces; the proposed text shows as written until the server's read arrives.
+    effect: (p: MemoryCompactionPreview) => ({ fields: { [p.section]: p.proposed, [`${p.section}_entries`]: undefined }, remove: true }),
     mutationFn: async (p) => {
       try { return await api.applyMemoryCompaction(p.receipt) } catch (error) {
         if (!isDefiniteRefusal(error)) {
@@ -92,7 +93,7 @@ export function MemoryPage() {
         setDraft((d) => { const now = d[vars.target]; return now && revision ? { ...d, [vars.target]: { ...now, revision } } : d })
       } else {
         // Without a fresh read the saved text still shows, on its old revision; the next save meets a conflict and its reload.
-        qc.setQueryData<MemoryData>(keys.memory, (old) => old && { ...old, [vars.target]: vars.draft.text })
+        qc.setQueryData<MemoryData>(keys.memory, (old) => old && { ...old, [vars.target]: vars.draft.text, [`${vars.target}_entries`]: undefined })
       }
     },
     // A refused save rolls the read view back and reopens the editor with the user's text.
@@ -118,9 +119,10 @@ export function MemoryPage() {
   const editing = draft[section] !== undefined
   const text = draft[section]?.text ?? shown
   const path = data ? (section === 'memory' ? data.memory_path : section === 'user' ? data.user_path : section === 'soul' ? data.soul_path : data.project_context_path) : ''
-  // The file name is the last segment of the path as the server sent it. TAL-2126 ships a name field for every file and
-  // deletes this client derivation.
-  const name = (section === 'project_context' ? data?.project_context_name : undefined) || path?.split(/[\\/]/).pop() || current?.label()
+  const name = data?.[`${section}_name`] || current?.label()
+  // TAL-2126: MEMORY.md and USER.md read as the server's entries. A save or compaction shown before the server's read, and
+  // the other files, read as written; so does an old server without the field (drop that case once Stable sends it).
+  const entries = (section === 'memory' || section === 'user') && saving[section] === undefined ? data?.[`${section}_entries`] : undefined
   const disabled = (section === 'memory' && !data?.memory_path) || (section === 'user' && !data?.user_path)
   const mtime = data ? (section === 'memory' ? data.memory_mtime : section === 'user' ? data.user_mtime : section === 'soul' ? data.soul_mtime : data.project_context_mtime) : null
   return (
@@ -168,7 +170,11 @@ export function MemoryPage() {
               className="w-full rounded-md border border-border bg-code-bg p-3 font-mono text-[12.5px] text-pre-text"
             />
           ) : shown.trim() ? (
-            <div data-memory-view={section}><Markdown text={shown} /></div>
+            <div data-memory-view={section}>
+              {entries?.length ? (
+                <RowList>{entries.map((entry, i) => <Row key={i} data-memory-entry="" className="border-border-subtle"><Markdown text={entry} /></Row>)}</RowList>
+              ) : <Markdown text={shown} />}
+            </div>
           ) : (
             <EmptyState>{disabled ? m.memory_disabled_hint() : m.context_file_empty()}</EmptyState>
           )}
