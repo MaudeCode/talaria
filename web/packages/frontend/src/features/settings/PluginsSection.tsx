@@ -23,7 +23,7 @@ import { OAuthSignIn } from '../onboarding/OAuthSignIn'
 import { useResourceEffects, useResourceMutation, type ResourceEffect } from '../sessions/useResourceMutation'
 import { ResourceSwitch } from '../sessions/ResourceSwitch'
 import { getStreamContext, useStreamContext } from '../../stream/connection'
-import { usePluginInstall } from './usePluginInstall'
+import { BlockedFindings, usePluginInstall } from './usePluginInstall'
 import { useDebounced } from '../../lib/useDebounced'
 import { sameRowProps } from '../../lib/sameRowProps'
 
@@ -102,7 +102,7 @@ export function PluginsSection() {
   const addButton = <>
     {head?.actions ? createPortal(add, head.actions) : <div className="flex justify-end">{add}</div>}
     <Dialog open={adding} onOpenChange={setAdding} title={m.plugins_add()} finalFocus={addRef} maxWidth={600} className="max-[641px]:w-[calc(100%-16px)]">
-      <PluginCatalogList updating={updateBusy} updatingKey={update.isPending ? update.variables.key : null} onUpdate={requestUpdate} />
+      <PluginCatalogList updating={updateBusy} updatingKey={update.isPending ? update.variables.key : null} onUpdate={requestUpdate} blockedUpdate={scan?.status === 'blocked' ? scan : null} />
     </Dialog>
   </>
   // One page element in every state keeps "Add plugin" and its open dialog mounted while the list loads.
@@ -252,7 +252,7 @@ const InstalledPluginRow = memo(function InstalledPluginRow({ plugin: p, editabl
       ]}>
       {p.disabled_reason && <div className="mt-1 flex min-w-0"><StatusDot state="warning" title={m.plugins_disabled_by_update({ reason: p.disabled_reason.reason })}>{m.plugins_disabled_by_update({ reason: p.disabled_reason.reason })}</StatusDot></div>}
       {p.oauth_clients?.length ? <ul className="mt-2 flex flex-col gap-2">{p.oauth_clients.map((c) => <PluginOAuthClientRow key={c.id} pluginKey={p.key} client={c} editable={editable} />)}</ul> : null}
-      {blockedFindings !== null && <div role="alert" className="mt-2 whitespace-pre-line text-xs text-error [overflow-wrap:anywhere]">{blockedFindings}</div>}
+      {blockedFindings !== null && <BlockedFindings>{blockedFindings}</BlockedFindings>}
       {editable && open && p.settings ? <PluginSettingsForm pluginKey={p.key} fields={p.settings} onSaved={() => onOpen(null)} /> : null}
     </PluginRow>
   )
@@ -327,11 +327,12 @@ function PluginUpdateAllResults({ rows }: { rows: PluginUpdateAllRow[] }) {
  * TAL-2134: the catalog inside the "Add plugin" dialog: a search that queries as the user types, then one row per entry ending in its one
  * action (Install or Update) or the word Installed. The row opens its details in place; the list scrolls under the search.
  */
-function PluginCatalogList({ updating, updatingKey, onUpdate }: { updating: boolean; updatingKey: string | null; onUpdate: (key: string) => void }) {
+function PluginCatalogList({ updating, updatingKey, onUpdate, blockedUpdate }: { updating: boolean; updatingKey: string | null; onUpdate: (key: string) => void; blockedUpdate: { key: string; findings: string } | null }) {
   const [search, setSearch] = useState('')
   const query = useDebounced(search.trim(), 250)
-  // A new query starts at its first page.
+  // A new query starts at its first page, and so does the next one: clearing a search never brings back an earlier page.
   const [page, setPage] = useState({ query: '', offset: 0 })
+  if (page.query !== query) setPage({ query, offset: 0 })
   const offset = page.query === query ? page.offset : 0
   const [details, setDetails] = useState<string | null>(null)
   const detailsId = useId()
@@ -359,6 +360,7 @@ function PluginCatalogList({ updating, updatingKey, onUpdate }: { updating: bool
             <p>{m.plugins_catalog_desktop()}</p>{entry.refusal && <p role="alert" className="text-warning">{entry.refusal}</p>}
           </div>}
           {install.blocked(entry.name)}
+          {blockedUpdate && blockedUpdate.key === entry.installed_key && <BlockedFindings>{blockedUpdate.findings}</BlockedFindings>}
         </PluginRow>
       })}</ul>
     </div>}

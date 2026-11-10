@@ -115,3 +115,20 @@ it('ends each row in one action or the word Installed, and opens details from th
   expect(within(dialog).getByText('verified · tools')).toBeVisible()
   expect(within(dialog).getByText('b'.repeat(40))).toBeVisible()
 })
+
+it('returns to the first page when a search is cleared after paging', async () => {
+  vi.mocked(api.fetchPluginCatalog).mockImplementation((query, offset) => Promise.resolve(query === 'syn'
+    ? { supported: true, read_only: false, entries: [{ ...entry, name: 'synth', title: 'Synth' }], total: 1, next_offset: null }
+    : offset === 0
+      ? { supported: true, read_only: false, entries: [entry], total: 2, next_offset: 1 }
+      : { supported: true, read_only: false, entries: [{ ...entry, name: 'later', title: 'Later' }], total: 2, next_offset: null }))
+  await setup()
+  fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
+  expect(await screen.findByText('Later')).toBeVisible()
+  const search = screen.getByRole('searchbox', { name: 'Search plugins' })
+  fireEvent.change(search, { target: { value: 'syn' } })
+  expect(await screen.findByText('Synth')).toBeVisible()
+  fireEvent.change(search, { target: { value: '' } })
+  expect(await screen.findByText('Probe')).toBeVisible()
+  expect(screen.queryByText('Later')).not.toBeInTheDocument()
+})

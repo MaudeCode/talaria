@@ -50,6 +50,11 @@ export function usePluginInstall() {
     request,
     consent,
     isInstalling: (name: string) => install.isPending && install.variables.name === name,
-    blocked: (name: string) => (current?.name === name && current.status === 'blocked' ? <p role="alert" className="mt-2 whitespace-pre-line text-xs text-error [overflow-wrap:anywhere]">{current.findings}</p> : null),
+    blocked: (name: string) => (current?.name === name && current.status === 'blocked' ? <BlockedFindings>{current.findings}</BlockedFindings> : null),
   }
+}
+
+/** The scan's refusal of an install or update, under the row it refused. */
+export function BlockedFindings({ children }: { children: string }) {
+  return <p role="alert" className="mt-2 whitespace-pre-line text-xs text-error [overflow-wrap:anywhere]">{children}</p>
 }
