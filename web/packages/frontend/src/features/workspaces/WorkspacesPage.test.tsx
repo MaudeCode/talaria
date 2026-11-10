@@ -155,7 +155,14 @@ describe('space writes show their result while the server is held (TAL-1179)', (
 describe('Add space folder list (TAL-2141)', () => {
   beforeEach(() => {
     vi.mocked(api.fetchWorkspaces).mockResolvedValue(spaces)
-    vi.mocked(api.suggestWorkspaces).mockImplementation((prefix) => Promise.resolve({ prefix, suggestions: prefix === '' ? ['/home/me'] : prefix === '/home/me/' ? ['/home/me/git', '/home/me/notes'] : [] }))
+    const folder = (path: string) => ({ path, name: path.split('/').pop()!, target: `${path}/` })
+    const views: Record<string, { folders: ReturnType<typeof folder>[]; parent: string | null; default_name: string | null }> = {
+      '': { folders: [folder('/home/me')], parent: null, default_name: null },
+      '/home/me/': { folders: [folder('/home/me/git'), folder('/home/me/notes')], parent: '/home/', default_name: 'me' },
+      '/home/me/git/': { folders: [], parent: '/home/me/', default_name: 'git' },
+      '/home/me/git': { folders: [], parent: '/home/me/', default_name: 'git' },
+    }
+    vi.mocked(api.suggestWorkspaces).mockImplementation((prefix) => Promise.resolve({ prefix, suggestions: [], ...(views[prefix] ?? { folders: [], parent: null, default_name: null }) }))
   })
 
   it('descends from home with the arrow keys and Enter, and submits with Enter when no folder is active', async () => {
@@ -176,18 +183,18 @@ describe('Add space folder list (TAL-2141)', () => {
     expect(input).toHaveAttribute('aria-activedescendant', within(list).getByRole('option', { name: 'git' }).id)
     await userEvent.keyboard('{Enter}')
     expect(input).toHaveValue('/home/me/git/')
-    expect(screen.getByRole('textbox', { name: 'Optional friendly name' })).toHaveAttribute('placeholder', 'git')
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Optional friendly name' })).toHaveAttribute('placeholder', 'git'))
     await userEvent.keyboard('{Enter}')
     expect(api.addWorkspace).toHaveBeenCalledWith('/home/me/git/', undefined)
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
-  it('goes up one level from the ".." row', async () => {
+  it('goes up to the server\'s parent from the ".." row, for a path typed without a trailing separator', async () => {
     renderPage()
     await screen.findByText('Alpha')
     await userEvent.click(screen.getByRole('button', { name: 'Add space' }))
-    await userEvent.type(screen.getByRole('combobox'), '/home/me/git/')
-    await userEvent.click(within(screen.getByRole('listbox')).getByRole('option', { name: '..' }))
+    await userEvent.type(screen.getByRole('combobox'), '/home/me/git')
+    await userEvent.click(await within(screen.getByRole('listbox')).findByRole('option', { name: '..' }))
     expect(screen.getByRole('combobox')).toHaveValue('/home/me/')
   })
 })

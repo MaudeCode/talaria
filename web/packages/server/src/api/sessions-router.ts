@@ -17,7 +17,7 @@ import { compressionStatusPayload } from '../sessions/compress.js'
 import { titleFailureReason } from '../sessions/titles.js'
 import { SessionNotFound } from '../sessions/store.js'
 import { type Session } from '../sessions/session.js'
-import { isBlockedSystemPath, isDir, REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE, stripSurroundingQuotes, type WorkspaceEntry } from '../workspace/workspaces.js'
+import { folderBrowse, isBlockedSystemPath, isDir, REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE, stripSurroundingQuotes, type WorkspaceEntry } from '../workspace/workspaces.js'
 import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
 import { fileSourceSession, managedBuffers } from '../workspace/managed-buffers.js'
 import { previewUrl, readFilePreview } from '../workspace/preview.js'
@@ -673,7 +673,11 @@ export const sessionsRouter = os.router({
   },
   workspaces: {
     list: os.workspaces.list.handler(({ context: { ctx } }) => run(() => workspaceList(ctx.deps))),
-    suggest: os.workspaces.suggest.handler(({ input, context: { ctx } }) => run(async () => ({ suggestions: (await ctx.deps.workspaces.suggest(input.prefix ?? '', 12, ctx.deps.activeProfile())), prefix: input.prefix ?? '' }))),
+    suggest: os.workspaces.suggest.handler(({ input, context: { ctx } }) => run(async () => {
+      const prefix = input.prefix ?? ''
+      const suggestions = await ctx.deps.workspaces.suggest(prefix, 12, ctx.deps.activeProfile())
+      return { suggestions, prefix, ...folderBrowse(prefix, suggestions, ctx.deps.workspaces.home) }
+    })),
     add: os.workspaces.add.handler(({ input, context: { ctx } }) => run(() => workspaceAdd(ctx.deps, input))),
     remove: os.workspaces.remove.handler(({ input, context: { ctx } }) => run(async () => {
       const pathStr = input.path.trim()

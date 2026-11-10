@@ -37,7 +37,9 @@ test('TAL-2141: a space is added with taps only, descending from the home direct
   await page.route(/\/api\/workspaces(\?|$)/, (route) => route.fulfill({ json: { workspaces, last: null } }))
   await page.route('**/api/workspaces/suggest?*', (route) => {
     const prefix = new URL(route.request().url()).searchParams.get('prefix') ?? ''
-    return route.fulfill({ json: { prefix, suggestions: tree[prefix] ?? [] } })
+    const suggestions = tree[prefix] ?? []
+    const folders = suggestions.map((path) => ({ path, name: path.split('/').pop()!, target: `${path}/` }))
+    return route.fulfill({ json: { prefix, suggestions, folders, parent: prefix ? prefix.replace(/[^/]+\/$/, '') : null, default_name: null } })
   })
   await page.route('**/api/workspaces/add', async (route) => {
     const body = route.request().postDataJSON() as { path: string }

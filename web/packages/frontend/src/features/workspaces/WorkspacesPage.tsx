@@ -102,16 +102,6 @@ export function WorkspacesPage() {
 /** A space's place in a pending order; spaces the order does not name keep their place after it. */
 const rank = (order: string[], path: string) => { const i = order.indexOf(path); return i < 0 ? order.length : i }
 
-/** The last folder of a typed or suggested path, without its trailing separator. */
-const lastSegment = (path: string) => path.replace(/\/+$/, '').split('/').pop() || path
-
-/** The typed path one folder up, ending in a separator so the list shows that folder's children; empty above the top. */
-const parentOf = (path: string) => {
-  const parts = path.split('/')
-  parts.splice(-2)
-  return parts.length ? `${parts.join('/')}/` : ''
-}
-
 /** Closes on submit, before the server resolves the write. */
 function RenameWorkspaceDialog({ workspace, onClose, onSubmit }: { workspace: { path: string; name: string }; onClose: () => void; onSubmit: (name: string) => void }) {
   const [name, setName] = useState(workspace.name)
@@ -127,23 +117,25 @@ function RenameWorkspaceDialog({ workspace, onClose, onSubmit }: { workspace: { 
 
 /**
  * TAL-2141: the path input browses the server's folders from `GET /api/workspaces/suggest`: a listbox under it, reachable
- * with the arrow keys, where choosing a folder descends into it and ".." goes up. Closes on submit, before the server answers.
+ * with the arrow keys, where choosing a folder descends into it and ".." goes up. The server names each row and the value it
+ * puts in the input. Closes on submit, before the server answers.
  */
 function AddWorkspaceDialog({ draft, onClose, onSubmit }: { draft: AddDraft; onClose: () => void; onSubmit: (draft: AddDraft) => void }) {
   const [path, setPath] = useState(draft.path)
   const [name, setName] = useState(draft.name)
   const [error, setError] = useState(draft.error)
-  const [folders, setFolders] = useState<string[]>([])
+  const [browse, setBrowse] = useState<Awaited<ReturnType<typeof api.suggestWorkspaces>> | null>(null)
   const [active, setActive] = useState(-1)
   useEffect(() => {
+    let live = true
     const t = setTimeout(() => {
-      api.suggestWorkspaces(path).then((r) => setFolders(r.suggestions.slice(0, 8))).catch(() => setFolders([]))
+      api.suggestWorkspaces(path).then((r) => { if (live) setBrowse(r) }).catch(() => { if (live) setBrowse(null) })
     }, 200)
-    return () => clearTimeout(t)
+    return () => { live = false; clearTimeout(t) }
   }, [path])
   const options = [
-    ...(path ? [{ label: '..', title: m.workspace_parent_directory(), target: parentOf(path) }] : []),
-    ...folders.map((f) => ({ label: lastSegment(f), title: f, target: f.endsWith('/') ? f : `${f}/` })),
+    ...(browse?.parent != null ? [{ label: '..', title: m.workspace_parent_directory(), target: browse.parent }] : []),
+    ...(browse?.folders ?? []).slice(0, 8).map((f) => ({ label: f.name, title: f.path, target: f.target })),
   ]
   const edit = (next: string) => { setPath(next); setActive(-1); setError(undefined) }
   const trimmed = path.trim()
@@ -170,7 +162,7 @@ function AddWorkspaceDialog({ draft, onClose, onSubmit }: { draft: AddDraft; onC
             </li>
           ))}
         </ul>
-        <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder={trimmed ? lastSegment(trimmed) : m.workspace_name_placeholder()} aria-label={m.workspace_name_placeholder()} />
+        <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder={browse?.default_name || m.workspace_name_placeholder()} aria-label={m.workspace_name_placeholder()} />
         <DialogFooter><Button onClick={onClose}>{m.cancel()}</Button><Button type="submit" variant="primary" disabled={!trimmed}>{m.add()}</Button></DialogFooter>
       </form>
     </Dialog>

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ConfigUnavailable } from '../config/agent-config.js'
 import { JsonDocuments } from '../sessions/storage/json-documents.js'
 import { bootTestServer } from '../test/harness.js'
-import { isBlockedSystemPath, isBlockedWorkspacePath, WorkspaceRegistry, type WorkspaceDeps } from './workspaces.js'
+import { folderBrowse, isBlockedSystemPath, isBlockedWorkspacePath, WorkspaceRegistry, type WorkspaceDeps } from './workspaces.js'
 
 const realpathProbes = vi.hoisted(() => [] as string[])
 
@@ -195,10 +195,35 @@ describe('workspace list row fields (TAL-2141)', () => {
         { path: real, is_default: true, exists: true, display_path: '~/real', chat_count: 2 },
         { path: gone, is_default: false, exists: false, display_path: '~/projects/gone', chat_count: 0 },
       ])
+      const browsed = await (await s.get(`/api/workspaces/suggest?prefix=${encodeURIComponent(`${home}/`)}`)).json() as ReturnType<typeof folderBrowse>
+      expect(browsed.folders).toContainEqual({ path: join(home, 'projects'), name: 'projects', target: `${join(home, 'projects')}/` })
+      expect(browsed.parent).toBe(`${join(home, '..')}/`)
     } finally {
       await s.close()
       vi.unstubAllEnvs()
       rmSync(home, { recursive: true, force: true })
     }
+  })
+})
+
+describe('Add space folder browser (TAL-2141)', () => {
+  it('goes up exactly one folder whether or not the prefix ends in a separator', () => {
+    expect(folderBrowse('/home/me/git', [], '/home/me').parent).toBe('/home/me/')
+    expect(folderBrowse('/home/me/git/', [], '/home/me').parent).toBe('/home/me/')
+    expect(folderBrowse('/home', [], '/home/me').parent).toBe('/')
+    expect(folderBrowse('~/git', [], '/home/me').parent).toBe('~/')
+    expect(folderBrowse('~', [], '/home/me').parent).toBe('')
+    expect(folderBrowse('/', [], '/home/me').parent).toBeNull()
+    expect(folderBrowse('', [], '/home/me').parent).toBeNull()
+  })
+
+  it('names each folder by its last segment and the space by the prefix\'s last folder', () => {
+    expect(folderBrowse('~/', ['~', '/srv/work/', '/'], '/home/me')).toEqual({
+      folders: [{ path: '~', name: '~', target: '~/' }, { path: '/srv/work/', name: 'work', target: '/srv/work/' }, { path: '/', name: '/', target: '/' }],
+      parent: '',
+      default_name: 'me',
+    })
+    expect(folderBrowse('/srv/work/', [], '/home/me').default_name).toBe('work')
+    expect(folderBrowse('', [], '/home/me').default_name).toBeNull()
   })
 })
