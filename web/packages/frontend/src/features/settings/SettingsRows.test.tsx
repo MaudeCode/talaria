@@ -8,11 +8,11 @@ import { deferred } from '../../test/fixtures'
 import * as api from '../../api/endpoints'
 import { ApiError } from '../../contracts/common'
 import { showToast } from '../toast/toast'
-import { SettingNumber, SettingSelect, SettingText } from './SettingsRows'
+import { SettingNumber, SettingSelect, SettingText, SettingToggle } from './SettingsRows'
 
 vi.mock('../../api/endpoints', () => ({ fetchSettings: vi.fn(), saveSettings: vi.fn() }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
-const initial = { mode: 'a', limit: 3, name: 'Hermes', hosts: ['one.example'] }
+const initial = { mode: 'a', limit: 3, name: 'Hermes', hosts: ['one.example'], hide_thing: false }
 const options = [{ value: 'a', label: 'Alpha' }, { value: 'b', label: 'Beta' }]
 const user = userEvent.setup({ delay: null })
 
@@ -33,6 +33,15 @@ it('SettingSelect writes the picked option', async () => {
   await user.click(screen.getByRole('combobox', { name: 'Mode' }))
   await user.click(await screen.findByRole('option', { name: 'Beta' }))
   await waitFor(() => expect(api.saveSettings).toHaveBeenCalledExactlyOnceWith({ mode: 'b' }))
+})
+
+it('SettingToggle with inverted shows on while the stored key is false and writes the inverse (TAL-2076)', async () => {
+  vi.mocked(api.saveSettings).mockResolvedValue({ ...initial, hide_thing: true })
+  setup(<SettingToggle label="Thing" settingKey="hide_thing" inverted />)
+  const toggle = screen.getByRole('switch', { name: 'Thing' })
+  expect(toggle).toBeChecked()
+  await user.click(toggle)
+  await waitFor(() => expect(api.saveSettings).toHaveBeenCalledExactlyOnceWith({ hide_thing: true }))
 })
 
 it.each([
@@ -77,6 +86,9 @@ it('SettingText enables Save only while the draft differs, and writes the parsed
 })
 
 it.each([
+  ['SettingToggle with inverted', <SettingToggle label="Row" settingKey="hide_thing" inverted />, async () => {
+    await user.click(screen.getByRole('switch', { name: 'Row' }))
+  }, () => expect(screen.getByRole('switch', { name: 'Row' })).not.toBeChecked(), () => expect(screen.getByRole('switch', { name: 'Row' })).toBeChecked()],
   ['SettingSelect', <SettingSelect label="Row" settingKey="mode" fallback="a" options={options} />, async () => {
     await user.click(screen.getByRole('combobox', { name: 'Row' }))
     await user.click(await screen.findByRole('option', { name: 'Beta' }))

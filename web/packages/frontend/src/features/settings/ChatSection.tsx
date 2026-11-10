@@ -4,7 +4,7 @@ import { LoadingState, ErrorState } from '../../ui/States'
 import { GatewayRestart } from './GatewayRestart'
 import { SettingAction, SettingNumber, SettingSelect, SettingToggle as Toggle, SettingsGroup } from './SettingsRows'
 
-/** TAL-1691, TAL-2075: Settings > Chat, the composer's defaults, how the transcript renders and scrolls, and the model's limits. */
+/** TAL-1691, TAL-2075, TAL-2076: Settings > Chat, the composer's defaults and which of its controls show, how the transcript renders and scrolls, and the model's limits. */
 export function ChatSection() {
   const { settings } = useSettingField(['compression_prepare_ahead', 'group_discussion_max_rounds', 'group_discussion_restart_required'])
   if (settings.isPending) return <LoadingState />
@@ -25,7 +25,20 @@ export function ChatSection() {
         <Toggle label={m.settings_label_busy_placeholder_hint()} hint={m.settings_desc_busy_placeholder_hint()} settingKey="show_busy_placeholder_hint" fallback />
         <Toggle label={m.settings_label_quota_chip()} settingKey="show_quota_chip" fallback />
       </SettingsGroup>
-      <SettingsGroup id="transcript" title={m.settings_group_transcript()}>
+      <SettingsGroup id="composer-chips" title={m.settings_group_composer_chips()}>
+        <Toggle label={m.settings_label_composer_model()} settingKey="hide_composer_model" inverted />
+        <Toggle label={m.settings_label_composer_reasoning()} settingKey="hide_composer_reasoning" inverted />
+        <Toggle label={m.settings_label_composer_profile()} settingKey="hide_composer_profile" inverted />
+        <Toggle label={m.settings_label_composer_workspace()} settingKey="hide_composer_workspace" inverted />
+        <Toggle label={m.settings_label_composer_toolsets()} settingKey="hide_composer_toolsets" inverted />
+      </SettingsGroup>
+      <SettingsGroup id="composer-controls" title={m.settings_group_composer_controls()}>
+        <Toggle label={m.settings_label_composer_attach()} settingKey="hide_composer_attach" inverted />
+        <Toggle label={m.settings_label_composer_mic()} settingKey="hide_composer_mic" inverted />
+        <Toggle label={m.settings_label_composer_context()} settingKey="hide_composer_context" inverted />
+        <Toggle label={m.settings_label_composer_yolo()} settingKey="hide_composer_yolo" inverted />
+      </SettingsGroup>
+      <SettingsGroup id="transcript"title={m.settings_group_transcript()}>
         <SettingSelect label={m.settings_label_chat_activity_display_mode()} id="settingsChatActivityDisplayMode" settingKey="chat_activity_display_mode" fallback="compact_worklog" options={[
           { value: 'compact_worklog', label: m.settings_option_compact_worklog() },
           { value: 'transparent_stream', label: m.settings_option_transparent_stream() },
