@@ -85,3 +85,11 @@ export function readerAnchorRow(count: number, top: number, bottom: number, box:
   }
   return first
 }
+
+/**
+ * The scroll a jump to a question makes: its top at the pane's top. The reply's "jump to question" action glides there;
+ * a far jump (an outline entry) lands at once, since rows measured on the way correct the reader's anchor and stop a glide.
+ */
+export function revealQuestion(row: Element, smooth = false): void {
+  row.scrollIntoView({ block: 'start', behavior: smooth ? 'smooth' : 'auto' })
+}

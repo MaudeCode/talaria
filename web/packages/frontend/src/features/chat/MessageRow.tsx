@@ -28,6 +28,7 @@ import { usageDetailLines } from '../composer/chips'
 import { useLocale } from '../../i18n/useLocale'
 import { formatCompact } from '../../i18n/units'
 import { landSent } from './sendMotion'
+import { revealQuestion } from './viewportAnchor'
 
 export interface RowActions {
   onReply?: (row: VisibleMessage) => void
@@ -297,7 +298,7 @@ export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name
   const jumpToQuestion = () => {
     let prev = ref.current?.previousElementSibling
     while (prev && !(prev instanceof HTMLElement && prev.dataset.role === 'user')) prev = prev.previousElementSibling
-    prev?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    if (prev) revealQuestion(prev, true)
   }
   const items: MessageAction[] = [
     ...replyActions(row, actions),

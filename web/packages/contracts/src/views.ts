@@ -1055,6 +1055,15 @@ export type SessionSkill = z.infer<typeof SessionSkillSchema>
 /** Ordered by the server (most used first, then by name). A session with no recorded loads, legacy or read-only, is `[]`. */
 export const SessionSkillsSchema = z.object({ session_id: z.string(), skills: z.array(SessionSkillSchema) })
 export type SessionSkills = z.infer<typeof SessionSkillsSchema>
+/**
+ * TAL-2152: the conversation outline, one entry per user message of the visible lineage (steers included), oldest first.
+ * `index` is the message's absolute position, the `msg_before` coordinate its page loads from; `message_id` is its row key.
+ * `excerpt` is its first line without Markdown, redacted like the transcript, at most 120 characters.
+ */
+export const SessionOutlineEntrySchema = z.object({ message_id: z.string(), index: z.number().int(), excerpt: z.string(), created_at: z.number().nullable() })
+export type SessionOutlineEntry = z.infer<typeof SessionOutlineEntrySchema>
+export const SessionOutlineSchema = z.object({ session_id: z.string(), entries: z.array(SessionOutlineEntrySchema) })
+export type SessionOutline = z.infer<typeof SessionOutlineSchema>
 export const SkillsUsageSchema = z.looseObject({ usage: z.record(z.string(), z.looseObject({ use_count: z.number().optional(), view_count: z.number().optional(), patch_count: z.number().optional() })), skill_names: z.array(z.string()).optional(), total_invocations: z.number().optional(), unique_skills_used: z.number().optional() })
 export const MemorySchema = z.looseObject({
   memory: z.string(), user: z.string(), soul: z.string(), project_context: z.string().optional(), memory_path: z.string().optional(), user_path: z.string().optional(), soul_path: z.string().optional(), project_context_path: z.string().optional(),

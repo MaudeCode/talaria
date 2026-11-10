@@ -14,7 +14,7 @@ import type { RunJournal } from './journal.js'
 import { str } from '../util.js'
 import { createHmac, randomUUID } from 'node:crypto'
 import { buildActiveTurnToken, copyJson, redactSessionData, redactValue, sessionFocusPath, stripPublicInternalFields, withSceneToolDisplay } from '../redact.js'
-import type { ContextWindowSource, DecisionReviewRef, OutboundDraft, OutboundDraftAction, OutboundDraftRef, SessionSkills } from '@maudecode/talaria-web-contracts'
+import type { ContextWindowSource, DecisionReviewRef, OutboundDraft, OutboundDraftAction, OutboundDraftRef, SessionOutline, SessionSkills } from '@maudecode/talaria-web-contracts'
 import { addSkillUses, inheritedSkillUses, orderedSkillCounts, resetSkillUses, skillGeneration } from './skill-provenance.js'
 import type { DraftStore } from './drafts.js'
 import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
@@ -28,6 +28,7 @@ import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-co
 import { auditSessionRecovery, repairSafeSessionRecovery, type RecoveryDeps } from './recovery.js'
 import { stateDbWebDiagnosticIdsAsync, agentSessionRowsExistingAsync, CANONICAL_READ_ONLY_REASON, OWNERSHIP_UNAVAILABLE_REASON, CONVERSATION_ROUND_THRESHOLD, emptyLineageReport, stateDbSessionReadAsync, stateDbSessionSourcesAsync, stateDbTimestampSeconds, withStateDbListingReads, type stateDbSessionRow, type StateDbMessageSummary, type StateDbRead, type StateDbSessionSource, type StateDbSettlementRead } from './state-db.js'
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
+import { outlineEntries } from './outline.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, insertCompactionRow, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { chatReadiness, runtimeFailureDetails, SidecarError, type SidecarLike } from '../sidecar/client.js'
 import { agentSteerText, ApiMessageSummary, isConversationalAssistant, messageText, splitDisplayText, appendStateDbIdentityRows, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isCompactionRow, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, normalizeUserDisplay, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, withDataUseRequirements, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withheldPromptText, withheldRowForModel, newestSettledReply, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, isDict as isMessageDict, type ToolResultView } from './merge.js'
@@ -1831,6 +1832,30 @@ export class SessionService {
     if (used.length) { try { catalog = await library() } catch { catalog = [] } }
     const find = (name: string) => catalog.find((skill) => skill.name === name) ?? catalog.find((skill) => skill.load_name === name)
     return { session_id: s.session_id, skills: used.map(({ name, count }) => { const skill = find(name); return { name, count, description: skill?.description || null, detail_available: Boolean(skill) } }) }
+  }
+
+  /**
+   * TAL-2152: the conversation outline. Built from the transcript the detail's pages index (stored rows, the state.db
+   * continuation, a running turn's prompt) with only the cheap row marks, never tool results or scenes; only user rows are
+   * projected, at their positions. A chat on a canonical owner answers from the owner's rows, which its pages index instead.
+   */
+  async outline(sid: string): Promise<SessionOutline> {
+    if (!sid) throw new HttpFailure(400, 'session_id is required')
+    sid = await this.resolveSessionId(sid)
+    if (this.owner && await this.owner.owns(sid)) {
+      const detail = await this.detail(sid, { messages: '1' })
+      const messages = Array.isArray(detail.messages) ? detail.messages as unknown[] : []
+      return { session_id: str(detail.session_id) || sid, entries: outlineEntries(messages.map((message, index) => ({ message, index }))) }
+    }
+    const { session: s, transcript } = await this.fullTranscript(sid)
+    const pending = this.pendingTurn(s)
+    const journaled = await this.journaledActiveTurn(s)
+    let rows = pending ? withPendingUserTurn(transcript, pending) : transcript
+    if (journaled) rows = withoutRunningTurnOutput(rows, { ...journaled, localCount: s.messages.length })
+    const marked = await this.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(rows)), s))
+    const users = marked.flatMap((message, index) => (isMessageDict(message) && message.role === 'user' ? [{ message, index }] : []))
+    const projected = redactSessionData({ messages: users.map(({ message }) => message) }, this.deps.redactEnabled()).messages as unknown[]
+    return { session_id: s.session_id, entries: outlineEntries(users.map(({ index }, k) => ({ message: projected[k], index }))) }
   }
 
   /**

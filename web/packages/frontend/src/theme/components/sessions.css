@@ -42,6 +42,14 @@
 .session-jump-btn{position:absolute;right:var(--chat-col-inset);height:32px;border-radius:999px;border:1px solid var(--border2);background:var(--float-btn-bg);color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;padding:0 11px;box-shadow:var(--float-shadow);z-index:11;transition:color .12s,border-color .12s,background .12s,opacity .12s,transform .12s}
 .session-jump-btn:hover{color:var(--text);border-color:var(--border);background:var(--hover-bg);transform:translateY(-1px)}
 .session-jump-btn--start{top:16px}
+/* TAL-2152: the outline's button opens its list below 900px, at the top right with Jump to beginning beside it; from 900px
+   the outline is a column, and the floating buttons keep to the transcript beside it. */
+.session-jump-btn--outline{top:16px;width:32px;padding:0}
+.session-jump-btn--outline::before{content:'';position:absolute;inset:-6px}
+@media (max-width:899px){.session-jump-btn--outline~.session-jump-btn--start{right:calc(var(--chat-col-inset) + 40px)}}
+/* A jump lands a row below the floating buttons. */
+#messages .msg-row{scroll-margin-top:56px}
+@media (min-width:900px){.session-jump-btn--outline{display:none}.chat-stage:has(.outline-column) .composer-dock{right:14rem}.outline-column~.session-jump-btn--start{right:calc(14rem + max(20px, calc((100% - 14rem - var(--msg-max)) / 2 + 20px)))}.outline-column~.scroll-to-bottom-btn{left:calc(50% - 7rem)}}
 @media (max-width:640px){.session-item{min-height:44px;padding:10px 64px 10px 12px;line-height:var(--session-line-height)}}
 @media (max-width:640px){.session-actions{opacity:1;pointer-events:auto}}
 @media (hover:none) and (pointer:coarse){.session-actions{display:none}}

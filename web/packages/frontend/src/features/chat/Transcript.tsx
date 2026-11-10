@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ArrowDown, ArrowUp, CircleArrowUp } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
+import type { SessionOutlineEntry } from '@maudecode/talaria-web-contracts'
 import type { Attachment } from '../../contracts'
 import { m } from '../../paraglide/messages.js'
 import type { LiveTurn } from '../../stream/reducer'
@@ -18,7 +19,8 @@ import { QuoteSelection } from './QuoteSelection'
 import { useAutoRead } from './useAutoRead'
 import { useLiveTurn } from '../../stream/store'
 import { VirtualHistory, type HistoryVirtualizer } from './VirtualHistory'
-import { firstRowPast, nextBoxed, readerAnchorRow, rowBoxes } from './viewportAnchor'
+import { firstRowPast, nextBoxed, readerAnchorRow, revealQuestion, rowBoxes } from './viewportAnchor'
+import { Outline } from './Outline'
 
 const VIRTUALIZE_AT = 200
 const NO_ACTIONS: RowActions = {}
@@ -68,6 +70,8 @@ export interface TranscriptProps {
   eventTimestamps?: boolean
   /** `session_endless_scroll` setting (TAL-2148): older pages load on scroll; off, only the load button loads them. */
   endlessScroll?: boolean
+  /** `show_conversation_outline` setting (TAL-2152): the outline, read again whenever `revision` changes; absent, it is off. */
+  outline?: { revision: string } | undefined
 }
 
 /**
@@ -260,7 +264,13 @@ export function Transcript(props: TranscriptProps) {
   }
 
   // Entry is keyed by the session scope (and a `?msg=` link), never by row keys: sessions can share them, and older rows change the first.
-  const entryRef = useRef<{ focus: string | undefined; pagedAt?: number } | null>(null)
+  // TAL-2152: an outline jump is an entry too, with the target's position so its page loads and a steer finds its turn.
+  const entryRef = useRef<{ focus: string | undefined; pagedAt?: number; index?: number; jump?: boolean } | null>(null)
+  const [jumps, setJumps] = useState(0)
+  const jumpTo = (entry: SessionOutlineEntry) => {
+    entryRef.current = { focus: entry.message_id, index: entry.index, jump: true }
+    setJumps((n) => n + 1)
+  }
   const requestOlder = (retry = false) => {
     const pane = scrollRef.current
     if (!pane || loadingOlder || (olderError && !retry)) return
@@ -335,7 +345,9 @@ export function Transcript(props: TranscriptProps) {
     const entry = entryRef.current
     if (!entry || rows.length === 0) return
     // A grouped turn is keyed by its first assistant message but answers for every message it holds.
-    const index = entry.focus ? rows.findIndex((row) => row.key === entry.focus || !!row.assistantRows?.some((part) => part.key === entry.focus)) : -1
+    const byKey = entry.focus ? rows.findIndex((row) => row.key === entry.focus || !!row.assistantRows?.some((part) => part.key === entry.focus)) : -1
+    // A jump's position also finds a row the transcript shows inside another (a steer in its turn) once its page is loaded.
+    const index = byKey >= 0 || entry.index === undefined || loadedFrom > entry.index ? byKey : rows.findLastIndex((row) => row.index <= (entry.index ?? -1))
     // A linked message pages until it appears; an error keeps its target for explicit retry.
     // Progress follows the loaded offset: a page can join an existing grouped row or hold no visible rows at all.
     if (index < 0 && entry.focus && truncated && !olderError && (entry.pagedAt !== loadedFrom || loadingOlder)) {
@@ -345,17 +357,27 @@ export function Transcript(props: TranscriptProps) {
     if (index < 0 && entry.focus && olderError) return
     entryRef.current = null
     readerAnchor.current = null
-    const target = index < 0 || virtualize ? null : scrollRef.current?.querySelector(`[data-message-key="${CSS.escape(rows[index]?.key ?? '')}"]`)
-    if (index < 0 || (!virtualize && !target)) { scrollToBottom(false); return }
+    const key = rows[index]?.key ?? ''
+    const find = () => scrollRef.current?.querySelector<HTMLElement>(`[data-message-key="${CSS.escape(key)}"]`)
+    const target = index < 0 || virtualize ? null : find()
+    // A jump whose message is gone leaves the reader where they are.
+    if (index < 0 || (!virtualize && !target)) { if (!entry.jump) scrollToBottom(false); return }
     pin(false)
     settlingRef.current = false
-    focusAnchor.current = rows[index]?.key ?? null
+    focusAnchor.current = key || null
     if (target) {
-      target.scrollIntoView({ block: 'center' })
+      if (entry.jump) revealQuestion(target)
+      else target.scrollIntoView({ block: 'center' })
       lastTopRef.current = scrollRef.current?.scrollTop ?? 0
-    } else virtualizerRef.current?.scrollToIndex(index, { align: 'center' })
+    } else virtualizerRef.current?.scrollToIndex(index, { align: entry.jump ? 'start' : 'center' })
+    if (entry.jump) {
+      // Focus follows the jump; a virtualized row mounts on the next frame.
+      const focusTarget = (row: HTMLElement | null | undefined) => { if (!row) return; row.tabIndex = -1; row.focus({ preventScroll: true }) }
+      if (target) focusTarget(target)
+      else requestAnimationFrame(() => focusTarget(find()))
+    }
     rememberReaderAnchor()
-  }, [rows, loadedFrom, virtualize, truncated, loadingOlder, olderError, requestOlder, pin, scrollToBottom, rememberReaderAnchor])
+  }, [rows, loadedFrom, virtualize, truncated, loadingOlder, olderError, jumps, requestOlder, pin, scrollToBottom, rememberReaderAnchor])
 
   const sentinelRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -388,9 +410,9 @@ export function Transcript(props: TranscriptProps) {
 
   return (
     <WorklogDisclosureProvider key={scope} scope={scope ?? ""} showReasoning={props.showReasoning} fadeText={props.fadeText} eventTimestamps={props.eventTimestamps}>
-    <div className="messages-shell relative flex flex-1 min-h-0 flex-col">
+    <div className="messages-shell relative flex flex-1 min-h-0">
       {sessionId && actions.onQuoteSelection && <QuoteSelection key={`${scope ?? ''}:${sessionId}`} transcript={scrollRef} onQuote={actions.onQuoteSelection} />}
-      <div ref={scrollRef} onScroll={onScroll} onWheel={(e) => { if (e.deltaY !== 0) onReaderScroll() }} onTouchMove={onReaderScroll} onPointerDown={onReaderInput} onKeyDown={onReaderInput} className={cn('messages relative z-0 flex flex-1 flex-col min-h-0 px-5 overflow-y-auto overflow-x-hidden [-webkit-overflow-scrolling:touch] touch-pan-y overscroll-y-contain [overflow-anchor:none] max-[641px]:pl-[max(10px,env(safe-area-inset-left,0))] max-[641px]:pr-[max(10px,env(safe-area-inset-right,0))]', empty && 'messages-empty')} id="messages" role="log" aria-live="off" aria-relevant="additions">
+      <div ref={scrollRef} onScroll={onScroll} onWheel={(e) => { if (e.deltaY !== 0) onReaderScroll() }} onTouchMove={onReaderScroll} onPointerDown={onReaderInput} onKeyDown={onReaderInput} className={cn('messages relative z-0 flex flex-1 flex-col min-h-0 min-w-0 px-5 overflow-y-auto overflow-x-hidden [-webkit-overflow-scrolling:touch] touch-pan-y overscroll-y-contain [overflow-anchor:none] max-[641px]:pl-[max(10px,env(safe-area-inset-left,0))] max-[641px]:pr-[max(10px,env(safe-area-inset-right,0))]', empty && 'messages-empty')} id="messages" role="log" aria-live="off" aria-relevant="additions">
         {empty ? emptyState : (
           <div ref={innerRef} className="messages-inner mx-auto w-full max-w-(--msg-max) pt-5 pb-[calc(var(--composer-h,0px)+2rem)] max-[641px]:pt-3 max-[641px]:max-w-full max-[641px]:overflow-x-clip max-[641px]:[word-break:break-word] max-[641px]:min-w-0" id="msgInner">
             {truncated && (
@@ -408,6 +430,7 @@ export function Transcript(props: TranscriptProps) {
           </div>
         )}
       </div>
+      {props.outline && sessionId && <Outline key={sessionId} sessionId={sessionId} revision={props.outline.revision} live={live} pane={scrollRef} onJump={jumpTo} />}
       {showJumpButtons && !atTop && rows.length > 3 && (
         <button type="button" className="session-jump-btn session-jump-btn--start" onClick={() => scrollRef.current?.scrollTo({ top: 0 })} aria-label={m.jump_to_start()}>
           <ArrowUp size={12} aria-hidden="true" /> <span className="max-[640px]:hidden">{m.jump_to_start()}</span>

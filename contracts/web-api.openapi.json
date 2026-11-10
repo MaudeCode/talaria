@@ -11816,6 +11816,83 @@
         }
       }
     },
+    "/api/session/outline": {
+      "get": {
+        "operationId": "session.outline",
+        "summary": "TAL-2152: every user message of the chat, oldest first, as a one-line excerpt with the position its transcript page loads from. Built from the stored messages without tool results.",
+        "tags": [
+          "sessions"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "session_id": {
+                      "type": "string"
+                    },
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "message_id": {
+                            "type": "string"
+                          },
+                          "index": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "excerpt": {
+                            "type": "string"
+                          },
+                          "created_at": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "message_id",
+                          "index",
+                          "excerpt",
+                          "created_at"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "session_id",
+                    "entries"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/session/new": {
       "post": {
         "operationId": "session.new",

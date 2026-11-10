@@ -69,6 +69,8 @@ export const keys = {
   decisionReview: (id: string) => ['decision-review', id] as const,
   /** TAL-1967: one proposal; its session's `proposal` events refresh it. */
   proposal: (id: string) => ['proposal', id] as const,
+  /** TAL-2152: outside the `sessions` family, so a stream event or a settled turn never rereads it; `revision` does. */
+  sessionOutline: (id: string, revision: string) => ['session-outline', id, revision] as const,
   /** TAL-1968: one `show` block; it never changes, but an HTML block's frame grant is minted per read. */
   showBlock: (id: string) => ['show-block', id] as const,
   logs: (file: string, tail: number, q = '', level?: string) => ['logs', file, tail, q, level ?? 'all'] as const,

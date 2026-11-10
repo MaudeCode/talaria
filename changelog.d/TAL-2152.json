@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Talaria Web can show a conversation outline: with Settings › Chat › Show conversation outline on, a chat with four or more questions lists them beside the transcript (from a menu on narrow screens), and choosing one jumps to it, loading earlier messages when needed.",
+      "highlight": true,
+      "components": [
+        "web"
+      ],
+      "announcement": {
+        "title": "Conversation outline",
+        "description": "Jump to any question in a long chat from a list beside the transcript.",
+        "icon": "chat"
+      }
+    }
+  ]
+}
