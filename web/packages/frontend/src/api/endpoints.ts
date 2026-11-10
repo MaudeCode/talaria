@@ -154,7 +154,7 @@ export const modelCommand = (body: { session_id?: SessionId; args: string; curre
 export const updateSession = (session_id: SessionId, body: { model?: string; model_provider?: string | null; workspace?: string; confirm_token?: string }) => orpc().session.update({ session_id, ...body })
 export const setSessionYolo = (session_id: SessionId, enabled: boolean) => orpc().session.yoloSet({ session_id, enabled })
 export const fetchSessionYolo = (session_id: SessionId) => orpc().session.yoloGet({ session_id })
-export const fetchToolsetsCatalog = (toolsets: string[] | null, session_id?: string) => orpc().toolsetsCatalog({ toolsets, ...(session_id ? { session_id } : {}) })
+export const fetchToolsetsCatalog = (toolsets: string[] | null, session_id?: string, q = '') => orpc().toolsetsCatalog({ toolsets, ...(session_id ? { session_id } : {}), ...(q ? { q } : {}) })
 export const setSessionToolsets = (session_id: SessionId, toolsets: string[] | null) => orpc().session.toolsets({ session_id, toolsets })
 export const compressSession = (session_id: SessionId) => orpc().session.compressStart({ session_id })
 export const compressStatus = (session_id: SessionId) => orpc().session.compressStatus({ session_id })

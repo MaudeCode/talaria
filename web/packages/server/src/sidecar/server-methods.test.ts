@@ -192,7 +192,7 @@ describe('server.session_new, server.session_send, server.session_wait, server.s
       const callerRow = await s.deps.sessionStore.get(caller)
       callerRow.enabled_toolsets = ['file', 'web']
       await s.deps.sessionStore.save(callerRow)
-      sidecar.respond('toolsets.catalog', (params) => ({ toolsets: [], selected_toolsets: (params as { enabled_toolsets: string[] | null }).enabled_toolsets ?? ['file'], using_defaults: (params as { enabled_toolsets: string[] | null }).enabled_toolsets === null }))
+      sidecar.respond('toolsets.catalog', (params) => ({ toolsets: [], selected_toolsets: (params as { enabled_toolsets: string[] | null }).enabled_toolsets ?? ['file'], using_defaults: (params as { enabled_toolsets: string[] | null }).enabled_toolsets === null, default_toolsets: ['file'] }))
       const ask = async (method: 'server.session_new' | 'server.session_send' | 'server.session_wait' | 'server.session_interrupt', params: Record<string, unknown>, callerId = caller) => {
         const answer = await sidecar.serverRequest(method, { caller_session_id: callerId, ...params })
         return 'error' in answer ? answer : { result: SIDECAR_SERVER_METHODS[method].result.parse(answer.result) }
@@ -509,7 +509,7 @@ describe('server.pending_list, server.clarify_respond (TAL-1168)', () => {
       wider.enabled_toolsets = ['file', 'terminal']
       await s.deps.sessionStore.save(wider)
       s.deps.pending.submitClarify('agentwider', { clarify_id: 'clarify-wider', question: 'Run it?', timeout_seconds: 600, requested_at: 1_792_500_000 })
-      sidecar.respond('toolsets.catalog', (params) => ({ toolsets: [], selected_toolsets: (params as { enabled_toolsets: string[] | null }).enabled_toolsets ?? ['file'], using_defaults: (params as { enabled_toolsets: string[] | null }).enabled_toolsets === null }))
+      sidecar.respond('toolsets.catalog', (params) => ({ toolsets: [], selected_toolsets: (params as { enabled_toolsets: string[] | null }).enabled_toolsets ?? ['file'], using_defaults: (params as { enabled_toolsets: string[] | null }).enabled_toolsets === null, default_toolsets: ['file'] }))
       const narrow = await s.deps.sessionStore.get('agentcaller')
       narrow.enabled_toolsets = ['file']
       await s.deps.sessionStore.save(narrow)

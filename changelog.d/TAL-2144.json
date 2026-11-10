@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "The Talaria Web server now searches the composer's Toolsets menu, orders unavailable toolsets after the rest, and reports the profile defaults with every catalog read, so a reset shows them at once.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

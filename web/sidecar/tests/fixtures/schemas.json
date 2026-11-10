@@ -5522,6 +5522,13 @@
               "items": {
                 "type": "string"
               }
+            },
+            "group": {
+              "type": "string",
+              "enum": [
+                "available",
+                "not_available"
+              ]
             }
           },
           "required": [
@@ -5529,7 +5536,8 @@
             "description",
             "available",
             "selected",
-            "unavailable_reason"
+            "unavailable_reason",
+            "group"
           ],
           "additionalProperties": false
         }
@@ -5542,12 +5550,19 @@
       },
       "using_defaults": {
         "type": "boolean"
+      },
+      "default_toolsets": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
       }
     },
     "required": [
       "toolsets",
       "selected_toolsets",
-      "using_defaults"
+      "using_defaults",
+      "default_toolsets"
     ],
     "additionalProperties": false
   },

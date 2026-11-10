@@ -7,7 +7,8 @@
       "selected": true,
       "unavailable_reason": null,
       "stripped_tools": [],
-      "stripped_by": []
+      "stripped_by": [],
+      "group": "available"
     },
     {
       "name": "todo",
@@ -16,7 +17,8 @@
       "selected": false,
       "unavailable_reason": "disabled",
       "stripped_tools": [],
-      "stripped_by": []
+      "stripped_by": [],
+      "group": "not_available"
     },
     {
       "name": "web",
@@ -25,11 +27,15 @@
       "selected": false,
       "unavailable_reason": null,
       "stripped_tools": ["web_search"],
-      "stripped_by": ["search"]
+      "stripped_by": ["search"],
+      "group": "available"
     }
   ],
   "selected_toolsets": [
     "file"
   ],
-  "using_defaults": true
+  "using_defaults": true,
+  "default_toolsets": [
+    "file"
+  ]
 }

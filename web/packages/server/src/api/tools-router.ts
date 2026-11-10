@@ -486,9 +486,13 @@ function memoryWriteDeps(ctx: RequestContext, profileHome: string): MemoryWriteD
 }
 
 export const toolsRouter = os.router({
-  toolsetsCatalog: os.toolsetsCatalog.handler(({ input, context: { ctx } }) => run(() =>
-    runningSidecar(ctx).call('toolsets.catalog', { profile_home: home(ctx), enabled_toolsets: input.toolsets }),
-  )),
+  // TAL-2144: the menu's search and its Not available section, decided here so the client renders the rows as sent.
+  toolsetsCatalog: os.toolsetsCatalog.handler(({ input, context: { ctx } }) => run(async () => {
+    const catalog = await runningSidecar(ctx).call('toolsets.catalog', { profile_home: home(ctx), enabled_toolsets: input.toolsets })
+    const needle = input.q?.trim().toLowerCase() ?? ''
+    const shown = needle ? catalog.toolsets.filter((row) => row.name.toLowerCase().includes(needle) || row.description.toLowerCase().includes(needle)) : catalog.toolsets
+    return { ...catalog, toolsets: [...shown.filter((row) => row.group === 'available'), ...shown.filter((row) => row.group !== 'available')] }
+  })),
   skills: {
     revisions: os.skills.revisions.handler(({ input, context: { ctx } }) => run(async () => {
       const history = await ctx.deps.skills.revisions(home(ctx), input)

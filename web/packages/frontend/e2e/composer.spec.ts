@@ -814,9 +814,9 @@ test('an empty phone composer keeps its strip while each chip opens and applies,
   test.skip(testInfo.project.name !== 'mobile', 'Only phones fold the strip under an empty draft.')
   const shot = (name: string) => page.screenshot({ path: process.env.TAL698_SHOTS ? `${process.env.TAL698_SHOTS}/${name}.png` : testInfo.outputPath(`${name}.png`) })
   await page.route('**/api/workspaces', (route) => route.fulfill({ json: { workspaces: [{ name: 'alpha', path: '/tmp/tal698-alpha' }, { name: 'beta', path: '/tmp/tal698-beta' }] } }))
-  await page.route('**/api/toolsets', (route) => route.fulfill({ json: { selected_toolsets: ['web'], using_defaults: true, toolsets: [
-    { name: 'web', description: '', available: true, selected: true, unavailable_reason: null },
-    { name: 'terminal', description: '', available: true, selected: false, unavailable_reason: null },
+  await page.route('**/api/toolsets', (route) => route.fulfill({ json: { selected_toolsets: ['web'], using_defaults: true, default_toolsets: ['web'], toolsets: [
+    { name: 'web', description: '', available: true, selected: true, unavailable_reason: null, group: 'available' },
+    { name: 'terminal', description: '', available: true, selected: false, unavailable_reason: null, group: 'available' },
   ] } }))
   await page.route('**/api/session/execution-modes', (route) => route.fulfill({ json: { modes: [
     { mode: 'normal', available: true, reason: null, can_attach: true, can_reference: true },

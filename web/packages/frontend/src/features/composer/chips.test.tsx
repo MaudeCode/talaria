@@ -51,21 +51,23 @@ let catalog: unknown = PLUGIN_CATALOG
 // The server's registry: every entry named, the default one `Home` (TAL-303).
 const WORKSPACES = { workspaces: [{ path: '/src/talaria-main', name: 'Talaria' }, { path: '/src/scratch', name: 'scratch' }], last: '/src/talaria-main' }
 
-// TAL-2096: the sidecar's catalog in its server order, with `file` the profile default, for the choice it is read with.
+// TAL-2144: the server's catalog for the choice it is read with, searched by `q` and in its order (available rows first);
+// `file` is the profile default.
 const TOOLSETS = [
-  { name: 'file', description: 'Read and write files', available: true, unavailable_reason: null },
-  { name: 'todo', description: 'Task lists', available: false, unavailable_reason: 'disabled' },
-  { name: 'web', description: 'Search the web', available: true, unavailable_reason: null },
-  { name: 'browser', description: 'Drive a browser', available: false, unavailable_reason: 'unavailable' },
-  { name: 'terminal', description: 'Run commands', available: true, unavailable_reason: null },
+  { name: 'file', description: 'Read and write files', available: true, unavailable_reason: null, group: 'available' },
+  { name: 'web', description: 'Search the web', available: true, unavailable_reason: null, group: 'available' },
+  { name: 'terminal', description: 'Run commands', available: true, unavailable_reason: null, group: 'available' },
+  { name: 'todo', description: 'Task lists', available: false, unavailable_reason: 'disabled', group: 'not_available' },
+  { name: 'browser', description: 'Drive a browser', available: false, unavailable_reason: 'unavailable', group: 'not_available' },
 ] as const
-function toolsetsCatalog(choice: string[] | null) {
+function toolsetsCatalog(choice: string[] | null, q = '') {
   const selected = choice ?? ['file']
-  return { toolsets: TOOLSETS.map((row) => ({ ...row, selected: selected.includes(row.name) })), selected_toolsets: selected, using_defaults: choice === null }
+  const rows = TOOLSETS.filter((row) => `${row.name} ${row.description}`.toLowerCase().includes(q.toLowerCase()))
+  return { toolsets: rows.map((row) => ({ ...row, selected: selected.includes(row.name) })), selected_toolsets: selected, using_defaults: choice === null, default_toolsets: ['file'] }
 }
 
 let modes: unknown = { modes: [{ mode: 'normal', available: true, reason: null }, { mode: 'ignore_config', available: true, reason: null }, { mode: 'safe', available: true, reason: null }] }
-vi.mock('../../api/endpoints', () => ({ fetchExecutionModes: vi.fn(() => Promise.resolve(modes)), fetchToolsetsCatalog: vi.fn((choice: string[] | null) => Promise.resolve(toolsetsCatalog(choice))), fetchModels: vi.fn(() => Promise.resolve(catalog)), fetchWorkspaces: vi.fn(() => Promise.resolve(WORKSPACES)), setModelFavorite: vi.fn() }))
+vi.mock('../../api/endpoints', () => ({ fetchExecutionModes: vi.fn(() => Promise.resolve(modes)), fetchToolsetsCatalog: vi.fn((choice: string[] | null, _session?: string, q?: string) => Promise.resolve(toolsetsCatalog(choice, q))), fetchModels: vi.fn(() => Promise.resolve(catalog)), fetchWorkspaces: vi.fn(() => Promise.resolve(WORKSPACES)), setModelFavorite: vi.fn() }))
 vi.mock('../toast/errorToast', () => ({ showErrorToast: vi.fn() }))
 import { ExecutionModeChip, ModelChip, ToolsetsChip, WorkspaceChip } from './chips'
 import { Dialog } from '../../ui/Dialog'
@@ -458,7 +460,7 @@ describe('ToolsetsChip (TAL-2096)', () => {
   const row = (name: RegExp | string) => screen.findByRole('menuitemcheckbox', { name })
   // A later catalog read never answers, so what the rows show then is the choice itself, not the server's reply.
   const holdLaterReads = () => { vi.mocked(fetchToolsetsCatalog).mockReturnValue(new Promise(() => undefined)) }
-  afterEach(() => { vi.mocked(fetchToolsetsCatalog).mockImplementation((choice) => Promise.resolve(toolsetsCatalog(choice))) })
+  afterEach(() => { vi.mocked(fetchToolsetsCatalog).mockImplementation((choice, _session, q) => Promise.resolve(toolsetsCatalog(choice, q))) })
 
   it('applies a toggle at once, keeps the menu open and names the choice on the chip', async () => {
     const { onChange, rerender } = renderToolsets(null)
@@ -497,9 +499,12 @@ describe('ToolsetsChip (TAL-2096)', () => {
   })
 
   it('shows the profile defaults at once after a reset, and a next toggle builds on them', async () => {
+    vi.mocked(fetchToolsetsCatalog).mockClear()
     const { onChange, rerender } = renderToolsets(['web'])
     await userEvent.click(screen.getByRole('button'))
     await userEvent.click(await row('Use profile defaults'))
+    // The catalog read for the explicit choice carries the defaults: no second read for them.
+    expect(vi.mocked(fetchToolsetsCatalog).mock.calls.map(([choice]) => choice)).toEqual([['web']])
     expect(onChange).toHaveBeenLastCalledWith(null)
     // The reset's own read never answers: the rows still show the defaults the server resolved.
     holdLaterReads()
@@ -521,7 +526,7 @@ describe('ToolsetsChip (TAL-2096)', () => {
     expect(onChange).toHaveBeenCalledWith(null)
   })
 
-  it('lists available toolsets first and the rest under Not available, each group in server order', async () => {
+  it('renders the rows in server order with Not available before the first not_available row', async () => {
     renderToolsets(null)
     await userEvent.click(screen.getByRole('button'))
     await row(/^file/)
@@ -533,18 +538,19 @@ describe('ToolsetsChip (TAL-2096)', () => {
     expect(unavailable.map((item) => item.getAttribute('aria-disabled'))).toEqual(['true', 'true'])
   })
 
-  it('filters by name and description from its search field, which hands ArrowDown and Escape to the menu', async () => {
+  it('sends its search field to the server as q and renders the rows that come back; the field hands ArrowDown and Escape to the menu', async () => {
     renderToolsets(null)
     await userEvent.click(screen.getByRole('button'))
     await row(/^file/)
     const search = screen.getByRole('searchbox', { name: 'Search toolsets' })
-    await userEvent.type(search, 'COMMANDS')
-    expect(screen.getAllByRole('menuitemcheckbox').map((item) => item.textContent)).toEqual(['Use profile defaults', 'terminalRun commands'])
+    await userEvent.type(search, ' COMMANDS ')
+    await waitFor(() => { expect(screen.getAllByRole('menuitemcheckbox').map((item) => item.textContent)).toEqual(['Use profile defaults', 'terminalRun commands']) })
+    expect(fetchToolsetsCatalog).toHaveBeenLastCalledWith(null, undefined, 'COMMANDS')
     await userEvent.clear(search)
     await userEvent.type(search, 'tod')
-    expect(within(screen.getByRole('group', { name: 'Not available' })).getByRole('menuitemcheckbox')).toHaveTextContent(/^todo/)
+    await waitFor(() => { expect(within(screen.getByRole('group', { name: 'Not available' })).getByRole('menuitemcheckbox')).toHaveTextContent(/^todo/) })
     await userEvent.type(search, 'x')
-    expect(screen.getByText('No toolsets found')).toBeInTheDocument()
+    expect(await screen.findByText('No toolsets found')).toBeInTheDocument()
     await userEvent.clear(search)
     await userEvent.keyboard('{ArrowDown}')
     expect(await row('Use profile defaults')).toHaveFocus()

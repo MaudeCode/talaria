@@ -668,8 +668,11 @@ composer withdraws an answered question the same way.
 Agent toolsets, availability, and draft selection. Chat and catalog requests share MCP discovery,
 including retirement of pre-multiplex launch connections.
 `POST /api/toolsets` exposes that read-only catalog for Web and App with optional `session_id`
-visibility checking. The `toolsets` body is the current draft or null for profile defaults. Clients
-render `available`, `selected`, `unavailable_reason`, `selected_toolsets`, and `using_defaults`.
+visibility checking. The `toolsets` body is the current draft or null for profile defaults. An
+optional `q` keeps the rows whose name or description contains it, ignoring case, and the server
+lists every `available` row before the `not_available` ones, each in sidecar order (TAL-2144).
+Clients render `available`, `selected`, `unavailable_reason`, `group`, `selected_toolsets`,
+`using_defaults`, and `default_toolsets`, the profile defaults a reset shows at once.
 Unknown saved names remain visible as unavailable; an empty checklist cannot implicitly restore
 broader defaults. Restoring defaults is an explicit action. The native app retains its previous
 free-text editor only when an older Web server returns endpoint-not-found for the catalog.
