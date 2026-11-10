@@ -302,12 +302,15 @@ export const chatRouter = os.router({
     start: os.background.start.handler(({ input, context: { ctx } }) => run(async () => {
       const body = input as Record<string, unknown>
       requireField(body, 'session_id', 'prompt')
-      // A subagent child's profile/workspace/context must never seed a runnable background session.
-      if ((await ctx.deps.sessions.isSubagentViewOnly(str(body.session_id)))) throw new HttpError(400, 'Subagent sessions are view-only and cannot run background tasks from WebUI')
-      const parent = (await getSession(ctx.deps, str(body.session_id)))
-      if ((await ctx.deps.sessions.isReadOnly(parent)) || parent.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
       const prompt = str(body.prompt).trim()
       if (!prompt) throw new HttpError(400, 'prompt is required')
+      // A subagent child's profile/workspace/context must never seed runnable side work.
+      if ((await ctx.deps.sessions.isSubagentViewOnly(str(body.session_id)))) throw new HttpError(400, 'Subagent sessions are view-only and cannot run background tasks from WebUI')
+      await visibleSession(ctx, str(body.session_id))
+      const native = await ctx.deps.sessions.owner?.launch(str(body.session_id), 'background', prompt)
+      if (native) return { ok: true as const, ...native }
+      const parent = (await getSession(ctx.deps, str(body.session_id)))
+      if ((await ctx.deps.sessions.isReadOnly(parent)) || parent.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
       const [model, modelProvider] = ctx.deps.sessions.turnModel(parent, {})
       const bg = (await ctx.deps.sessionStore.newSession({ workspace: parent.workspace, model, modelProvider, profile: parent.profile, reasoningEffort: parent.reasoning_effort }))
       bg.title = `bg: ${prompt.slice(0, 60)}`
@@ -340,9 +343,9 @@ export const chatRouter = os.router({
     })),
     result: os.background.result.handler(({ input, context: { ctx } }) => run(async () => {
       const s = (await visibleSession(ctx, input.session_id))
-      const text = await ctx.deps.background.result(s.session_id, s.profile, input.task_id)
-      if (text === null) throw new HttpError(404, 'No result for this background task')
-      return { task_id: input.task_id, text }
+      const result = await ctx.deps.background.result(s.session_id, s.profile, input.task_id)
+      if (result === null) throw new HttpError(404, 'No result for this background task')
+      return result
     })),
     stop: os.background.stop.handler(({ input, context: { ctx } }) => run(async () => {
       const s = await visibleSession(ctx, input.session_id)
@@ -358,7 +361,7 @@ export const chatRouter = os.router({
     })),
     dismiss: os.background.dismiss.handler(({ input, context: { ctx } }) => run(async () => {
       const s = (await visibleSession(ctx, input.session_id))
-      const task = (await ctx.deps.background.dismiss(s.session_id, input.task_id))
+      const task = (await ctx.deps.background.dismiss(s.session_id, input.task_id, s.profile))
       if (!task) throw new HttpError(404, 'Background task not found')
       return { ok: true as const, task }
     })),
@@ -377,12 +380,14 @@ export const chatRouter = os.router({
     requireField(body, 'session_id', 'question')
     const sid = str(body.session_id)
     if (!isSafeSessionId(sid)) throw new HttpError(404, 'Session not found')
-    // Python: a subagent child's context must not be cloned into a runnable ephemeral session.
-    if ((await ctx.deps.sessions.isSubagentViewOnly(sid))) throw new HttpError(400, 'Subagent sessions are view-only and cannot be used for /btw from WebUI')
-    const s = (await getSession(ctx.deps, sid))
-    if ((await ctx.deps.sessions.isReadOnly(s)) || s.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
     const question = str(body.question).trim()
     if (!question) throw new HttpError(400, 'question is required')
+    if ((await ctx.deps.sessions.isSubagentViewOnly(sid))) throw new HttpError(400, 'Subagent sessions are view-only and cannot be used for /btw from WebUI')
+    await visibleSession(ctx, sid)
+    const native = await ctx.deps.sessions.owner?.launch(sid, 'btw', question)
+    if (native) return { ...native, parent_session_id: sid }
+    const s = (await getSession(ctx.deps, sid))
+    if ((await ctx.deps.sessions.isReadOnly(s)) || s.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
     // TAL-518: a side question runs in its own hidden session, so the chat's running turn does not block it.
     const [model, modelProvider] = ctx.deps.sessions.turnModel(s, {})
     const ephemeral = (await ctx.deps.sessionStore.newSession({ workspace: s.workspace, model, modelProvider, profile: s.profile, reasoningEffort: s.reasoning_effort }))

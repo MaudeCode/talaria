@@ -85862,6 +85862,36 @@
                     },
                     "session_id": {
                       "type": "string"
+                    },
+                    "launch": {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "enum": [
+                            "pending",
+                            "accepted",
+                            "failed",
+                            "unsupported",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        },
+                        "task_id": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "task_id"
+                      ]
                     }
                   },
                   "required": [
@@ -85940,6 +85970,17 @@
                       "items": {
                         "type": "object",
                         "properties": {
+                          "launch_state": {
+                            "enum": [
+                              "pending",
+                              "accepted",
+                              "failed",
+                              "unsupported",
+                              "unknown"
+                            ],
+                            "type": "string",
+                            "description": "Native launch receipt state. Unknown work must never be resent automatically."
+                          },
                           "task_id": {
                             "type": "string"
                           },
@@ -86230,6 +86271,16 @@
                     },
                     "text": {
                       "type": "string"
+                    },
+                    "launch_state": {
+                      "enum": [
+                        "pending",
+                        "accepted",
+                        "failed",
+                        "unsupported",
+                        "unknown"
+                      ],
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -86408,6 +86459,17 @@
                     "task": {
                       "type": "object",
                       "properties": {
+                        "launch_state": {
+                          "enum": [
+                            "pending",
+                            "accepted",
+                            "failed",
+                            "unsupported",
+                            "unknown"
+                          ],
+                          "type": "string",
+                          "description": "Native launch receipt state. Unknown work must never be resent automatically."
+                        },
                         "task_id": {
                           "type": "string"
                         },
@@ -86638,7 +86700,7 @@
     "/api/btw": {
       "post": {
         "operationId": "btw",
-        "summary": "Ephemeral side question answered in a hidden session that inherits the transcript.",
+        "summary": "Side question outside the parent transcript, on its native owner or in a hidden Web session.",
         "tags": [
           "chat"
         ],
@@ -86677,6 +86739,39 @@
                     },
                     "parent_session_id": {
                       "type": "string"
+                    },
+                    "task_id": {
+                      "type": "string"
+                    },
+                    "launch": {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "enum": [
+                            "pending",
+                            "accepted",
+                            "failed",
+                            "unsupported",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        },
+                        "task_id": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "task_id"
+                      ]
                     }
                   },
                   "required": [

@@ -70,6 +70,10 @@ export const OwnerWorkSchema = z.object({
 export type OwnerWork = z.infer<typeof OwnerWorkSchema>
 /** TAL-1336: the owner's verdict on one work control. `found: false` and an exited process are distinct from a refusal. */
 export const OwnerWorkOutcomeSchema = z.enum(['stopped', 'not_running', 'not_found', 'queued', 'rejected'])
+/** A detached native launch has no idempotency key. Unknown never permits an automatic resend. */
+export const SideLaunchStateSchema = z.enum(['pending', 'accepted', 'failed', 'unsupported', 'unknown'])
+export const SideLaunchSchema = z.object({ state: SideLaunchStateSchema, task_id: z.string().min(1).nullable() })
+export type SideLaunch = z.infer<typeof SideLaunchSchema>
 export const GatewaySessionResultSchema = z.object({
   state: z.enum(['attached', 'stopped', 'unavailable', 'incompatible', 'refused']), reason: z.string().nullable(),
   replay_gap: z.boolean().optional(), snapshot: GatewaySnapshotSchema.nullable(), receipt: z.union([
@@ -79,6 +83,7 @@ export const GatewaySessionResultSchema = z.object({
     z.strictObject({ voice_stopped: z.literal(true) }),
   ]).nullable(),
   model_change: ModelChangeSchema.optional(),
+  launch: SideLaunchSchema.optional(),
   context_detail: ContextDetailSchema.optional(),
   export: OwnerExportSchema.optional(),
   checkpoint_diff: CheckpointReadSchema.optional(),
@@ -106,7 +111,7 @@ export const ConnectionAnswerSchema = z.union([
 export type ConnectionAnswer = z.infer<typeof ConnectionAnswerSchema>
 export const GatewaySessionParamsSchema = z.object({
   profile_home: z.string().min(1), session_id: z.string().min(1),
-  action: z.enum(['snapshot', 'watch', 'context_detail', 'submit', 'receipt', 'cancel', 'steer', 'steer_queued', 'replace_queued', 'interrupt', 'approval', 'clarify', 'clarify_lock', 'discard', 'mutate', 'export', 'checkpoint_diff', 'terminal_info', 'shell_exec', 'react', 'connection_status', 'connection_wake', 'connection_respond', 'connection_retry', 'work_list', 'work_tail', 'work_stop', 'work_steer']),
+  action: z.enum(['snapshot', 'watch', 'context_detail', 'submit', 'receipt', 'cancel', 'steer', 'steer_queued', 'replace_queued', 'interrupt', 'approval', 'clarify', 'clarify_lock', 'discard', 'mutate', 'export', 'checkpoint_diff', 'terminal_info', 'shell_exec', 'react', 'connection_status', 'connection_wake', 'connection_respond', 'connection_retry', 'work_list', 'work_tail', 'work_stop', 'work_steer', 'launch_background', 'launch_btw']),
   row_id: z.number().int().positive().optional(), emoji: ReactionEmojiSchema.nullable().optional(),
   format: OwnerExportFormatSchema.optional(), redact: z.boolean().optional(),
   command: CapturedCommandSchema.optional(),

@@ -31,7 +31,7 @@ describe('background task records (TAL-372)', () => {
     writeFileSync(join(dir, '_background', 'sess-1.json'), JSON.stringify({ version: 1, tasks: [{ task_id: 'bg1', kind: 'background_command', status: 'completed', title: 'summarize', started_at: 90, updated_at: 100, completed_at: 100, exit_code: null, agents: null, result: 'the answer', agent_result: false, stream_id: null, dismissed_at: null, legacy_reported: true }] }))
     const activity = new BackgroundActivity({ store: new BackgroundTaskStore(testSessionDocuments(dir), () => 200), sidecar: () => null, profileHome: () => dir, liveStream: () => false, now: () => 200, log: () => undefined })
     expect((await activity.snapshot('sess-1', null)).tasks).toEqual([expect.objectContaining({ task_id: 'bg1', status: 'completed', result_available: true, pinned: true, dismissible: true })])
-    expect(await activity.result('sess-1', null, 'bg1')).toBe('the answer')
+    expect(await activity.result('sess-1', null, 'bg1')).toEqual({ task_id: 'bg1', text: 'the answer' })
     expect((await activity.dismiss('sess-1', 'bg1'))).toMatchObject({ task_id: 'bg1', pinned: false, dismissible: false })
     expect((await activity.snapshot('sess-1', null)).tasks).toEqual([expect.objectContaining({ task_id: 'bg1', pinned: false })])
   })

@@ -58,22 +58,29 @@ describe('legacy chat and test-hook endpoints', () => {
 
   it('answers partial with the streamed text when the turn is cancelled or fails after producing text', async () => {
     const sid = await newSession()
+    let emitted!: () => void
+    const streaming = new Promise<void>((resolve) => { emitted = resolve })
     sidecar.respond('chat.interrupt', () => ({ ok: true }))
     sidecar.respond('chat.start', (params, emit, opts) => new Promise((resolve) => {
       emit({ event: 'token', data: { text: 'half an answer' } })
+      emitted()
       opts.signal?.addEventListener('abort', () => { resolve({ ...completed([{ role: 'user', content: str(params.user_message) }]), status: 'cancelled' }) })
     }))
     const pending = post(s, '/api/chat', { session_id: sid, message: 'long task' })
     let streamId: string | null = null
-    for (let i = 0; i < 100 && !streamId; i += 1) {
+    try {
+      await Promise.race([streaming, pending.then(async (response) => { throw new Error(`Chat ended before streaming: ${response.status} ${await response.clone().text()}`) })])
       streamId = (await s.deps.sessionStore.get(sid)).active_stream_id
-      if (!streamId) await new Promise((r) => setTimeout(r, 10))
+      expect(streamId).not.toBeNull()
+      await s.sse(`/api/chat/stream?stream_id=${String(streamId)}`, (f) => f.event === 'token')
+      expect(await json(await s.get(`/api/chat/cancel?stream_id=${String(streamId)}`))).toMatchObject({ cancelled: true })
+      const cancelled = await pending
+      expect(cancelled.status).toBe(200)
+      expect(await json(cancelled)).toMatchObject({ answer: 'half an answer', status: 'partial', result: { final_response: 'half an answer', completed: false, interrupted: true } })
+    } finally {
+      if (streamId && s.deps.registry.activeRuns.has(streamId)) await s.deps.turns.cancel(streamId)
+      await pending.catch(() => undefined)
     }
-    await s.sse(`/api/chat/stream?stream_id=${String(streamId)}`, (f) => f.event === 'token')
-    expect(await json(await s.get(`/api/chat/cancel?stream_id=${String(streamId)}`))).toMatchObject({ cancelled: true })
-    const cancelled = await pending
-    expect(cancelled.status).toBe(200)
-    expect(await json(cancelled)).toMatchObject({ answer: 'half an answer', status: 'partial', result: { final_response: 'half an answer', completed: false, interrupted: true } })
 
     sidecar.respond('chat.start', (_params, emit) => {
       emit({ event: 'token', data: { text: 'started to say' } })

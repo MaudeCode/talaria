@@ -12,6 +12,8 @@ import { ConnectorOperationSnapshotSchema, OWNER_EXPORT_MAX_BYTES, SessionNotice
 import type { SidecarLike, StreamFrame } from '../sidecar/client.js'
 import { redactNestedMessageContainers, publicToolFrame, redactString } from '../redact.js'
 import { str } from '../util.js'
+import { taskView, taskTitle, isTerminal, type BackgroundTaskStore, type Receipt } from './background-tasks.js'
+import type { BackgroundTask, BackgroundTaskResult, SideLaunch } from '@maudecode/talaria-web-contracts'
 import { PendingPrompts } from './pending.js'
 import { wrapExportHtml, renderSessionHtml, renderSessionMarkdown } from './export.js'
 import { approvalAllows, clarifyReply } from './pending.js'
@@ -22,7 +24,7 @@ import { SessionNotices } from './notices.js'
 import type { RunJournal, RunJournalWriter } from './journal.js'
 import { SessionEventBus } from './events.js'
 import { messageWindowForDisplay, messagesForLimitedPayload } from './window.js'
-import { pendingUserRow } from './merge.js'
+import { pendingUserRow, stripToolCallXml } from './merge.js'
 import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles.js'
 import { CANONICAL_READ_ONLY_REASON, WEB_DIAGNOSTIC_REQUEST_PREFIX } from './state-db.js'
 import { toolProgress } from './tool-display.js'
@@ -35,7 +37,7 @@ interface Target { sid: string; profile: string; home: string; key: string }
 type Batch = GatewayClarifyBatch & { remaining: string[] }
 interface Watch { stream: string; controller: AbortController; snapshot: GatewaySnapshot; batch: Batch | null; restarting: boolean; reconcile?: () => void }
 /** The attach-only transport outlives individual run projections while a viewer holds it. */
-interface Observation { controller: AbortController; snapshot: GatewaySnapshot; todoSequence: number; connectionSequence: number; replaying: boolean; completion: StreamFrame | null; listeners: Set<(frame: StreamFrame) => void>; leases: number; ended: Promise<GatewaySessionResult> }
+interface Observation { controller: AbortController; snapshot: GatewaySnapshot; todoSequence: number; connectionSequence: number; replaying: boolean; completion: StreamFrame | null; listeners: Set<(frame: StreamFrame) => void>; leases: number; ended: Promise<GatewaySessionResult>; ready: Promise<boolean>; sideResults: Map<string, { sequence: number; text: string }> }
 
 const ownerStreamPrefix = (home: string): string => `owner-${createHash('sha256').update(home).digest('hex').slice(0, 16)}-`
 const ownerStateId = (identity: string): string => `owner-${createHash('sha256').update(identity).digest('hex')}`
@@ -142,6 +144,7 @@ export class GatewaySessions {
   private readonly watches = new Map<string, Watch>()
   private readonly runWorkers = new Set<Promise<void>>()
   private readonly observations = new Map<string, Observation>()
+  private readonly launchSettlers = new Map<string, { observation: Observation; settle: (state: SideLaunch['state'], text?: string) => Promise<void> }>()
   private readonly noticeEpochs = new Map<string, { identity: string; sequence: number }>()
   private readonly notices: SessionNotices
   private readonly modelMutations = new Map<string, number>()
@@ -163,6 +166,7 @@ export class GatewaySessions {
   constructor(private readonly deps: {
     onWebCompletion?: (profile: string, sessionId: string, identity: string) => void;
     service: SessionService; sidecar: () => SidecarLike | null; registry: StreamRegistry;
+    launchStore?: BackgroundTaskStore;
     journal: RunJournal; events: SessionEventBus; channels: SessionChannels; profileHome: (profile: string) => string;
     activeProfile: () => string; showReasoning: (home: string) => Promise<boolean>; redactEnabled: () => boolean; now: () => number; log: (line: string) => void;
   }) { this.notices = new SessionNotices(deps.now) }
@@ -210,7 +214,9 @@ export class GatewaySessions {
   private transport(target: Target, base: Row, snapshot: GatewaySnapshot): Observation {
     const prior = this.observations.get(target.key)
     if (prior && !prior.controller.signal.aborted) return prior
-    const observation: Observation = { controller: new AbortController(), snapshot, todoSequence: 0, connectionSequence: snapshot.last_sequence, replaying: true, completion: null, listeners: new Set(), leases: 0, ended: Promise.resolve({ state: 'unavailable', reason: 'owner_connection_lost', snapshot: null, receipt: null }) }
+    let readyResolve!: (ready: boolean) => void
+    const ready = new Promise<boolean>((resolve) => { readyResolve = resolve })
+    const observation: Observation = { controller: new AbortController(), snapshot, todoSequence: 0, connectionSequence: snapshot.last_sequence, replaying: true, completion: null, listeners: new Set(), leases: 0, ready, sideResults: new Map(), ended: Promise.resolve({ state: 'unavailable', reason: 'owner_connection_lost', snapshot: null, receipt: null }) }
     this.observations.set(target.key, observation)
     this.noticeState(target, snapshot)
     observation.ended = (async () => {
@@ -223,17 +229,20 @@ export class GatewaySessions {
           if (observation.controller.signal.aborted || this.observations.get(target.key) !== observation) return
           if (frame.event === 'snapshot') {
             const result = GatewaySessionResultSchema.parse(frame.data)
-            if (result.snapshot?.session_id !== target.sid) return
+            if (result.snapshot?.session_id !== target.sid) { readyResolve(false); observation.controller.abort(); return }
             // Reaction readback invalidates display data only. Queued native turn events still own settlement.
             if ((frame.data as Row).reaction_only === true) { this.changed(target); return }
             const completed = observation.completion?.data as Row | undefined
             if (result.replay_gap || completed && (completed.authority_epoch !== result.snapshot.authority_epoch || completed.replay_epoch !== result.snapshot.replay_epoch)) observation.completion = null
             const prior = observation.snapshot
+            if (prior.authority_epoch !== result.snapshot.authority_epoch || prior.replay_epoch !== result.snapshot.replay_epoch) observation.sideResults.clear()
             if (!sameExecution(prior, result.snapshot)) observation.todoSequence = 0
             // The snapshot's open operation already holds every event up to its sequence.
             observation.connectionSequence = result.snapshot.last_sequence
             observation.snapshot = newerTodo(prior, result.snapshot) ? { ...result.snapshot, todo_state: prior.todo_state, last_sequence: prior.last_sequence } : result.snapshot
             observation.replaying = (frame.data as Row).replaying === true
+            readyResolve(true)
+            void this.completeSideLaunch(target, observation, undefined, undefined, result.replay_gap === true).catch(() => { observation.controller.abort() })
             this.noticeState(target, result.snapshot, result.replay_gap === true)
             if ((result.snapshot.running || result.snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started')) && !this.watches.has(target.key)) this.watch(target, base, result.snapshot)
             this.changed(target)
@@ -242,7 +251,22 @@ export class GatewaySessions {
           } else if (frame.event === 'event') {
             const event = frame.data as Row
             const data = (event.payload ?? {}) as Row
-            if (event.type === 'todo.updated') {
+            // Preserve roster invalidation even when the completed side work was launched by another client.
+            if (event.session_id === target.sid && OWNER_WORK_EVENTS.has(str(event.type))) this.deps.events.publish('background_task', { profile: target.profile, sessionId: target.sid })
+            if (event.type === 'background.complete' || event.type === 'btw.complete') {
+              const snap = observation.snapshot
+              if (event.session_id !== target.sid || event.replay_epoch !== snap.replay_epoch
+                  || event.authority_epoch !== undefined && event.authority_epoch !== snap.authority_epoch
+                  || !Number.isSafeInteger(event.seq) || typeof data.task_id !== 'string' || !data.task_id || typeof data.text !== 'string') return
+              const key = `${str(event.type).split('.')[0]}:${data.task_id}`
+              if (observation.sideResults.has(key)) return
+              // Completion events have no turn stamp. They belong to the owner's replay epoch, not a parent turn.
+              const text = redactString(stripToolCallXml(data.text.slice(0, 64_000)), this.deps.redactEnabled()).slice(0, 64_000)
+              const result = { sequence: Number(event.seq), text }
+              observation.sideResults.set(key, result)
+              if (observation.sideResults.size > 200) observation.sideResults.delete(observation.sideResults.keys().next().value!)
+              void this.completeSideLaunch(target, observation, key, result).catch(() => { observation.controller.abort() })
+            } else if (event.type === 'todo.updated') {
               const snap = observation.snapshot
               if (event.session_id !== target.sid || event.replay_epoch !== snap.replay_epoch
                   || event.authority_epoch !== snap.authority_epoch || event.execution_generation !== snap.execution_generation
@@ -294,14 +318,15 @@ export class GatewaySessions {
                 && Number.isSafeInteger(event.execution_generation) && Number(event.execution_generation) >= observation.snapshot.execution_generation) {
               observation.completion = frame
             } else if (event.type === 'session.updated') this.changed(target)
-            // TAL-1336: the owner's work changed; Background Work rereads it from the owner.
-            else if (event.session_id === target.sid && OWNER_WORK_EVENTS.has(str(event.type))) this.deps.events.publish('background_task', { profile: target.profile, sessionId: target.sid })
           }
           for (const listener of observation.listeners) listener(frame)
         },
       })
     })().catch(() => ({ state: 'unavailable' as const, reason: 'owner_connection_lost', snapshot: null, receipt: null })).finally(() => {
+      readyResolve(false)
       observation.controller.abort()
+      // Completed launches leave no closure on a long-lived observation. Only its still-active work loses certainty.
+      for (const launch of this.launchSettlers.values()) if (launch.observation === observation) void launch.settle('unknown').catch(() => { this.deps.log('[webui] native side result could not be persisted') })
       if (this.observations.get(target.key) === observation) this.observations.delete(target.key)
       this.changed(target)
     })
@@ -312,6 +337,129 @@ export class GatewaySessions {
     observation.leases++
     let held = true
     return () => { if (!held) return; held = false; if (--observation.leases === 0) observation.controller.abort() }
+  }
+
+  private launchChanged(target: Target): void {
+    this.changed(target)
+    this.deps.events.publish('background_task', { profile: target.profile, sessionId: target.sid })
+  }
+
+  private async completeSideLaunch(target: Target, observation: Observation, key?: string, result?: { sequence: number; text: string }, gap = false): Promise<void> {
+    const store = this.deps.launchStore
+    if (!store) return
+    const scope = ownerStateId(target.key)
+    for (const receipt of await store.list(scope)) {
+      const native = receipt.native
+      if (!native || native.scope !== scope || isTerminal(receipt.status)) continue
+      const changedOwner = gap || native.authority_epoch !== observation.snapshot.authority_epoch || native.replay_epoch !== observation.snapshot.replay_epoch
+      if (!changedOwner && (!result || `${native.kind}:${native.task_id}` !== key || result.sequence <= native.sequence)) continue
+      const answer = changedOwner ? undefined : result?.text
+      const state = changedOwner ? 'unknown' : answer?.startsWith('error:') ? 'failed' : 'accepted'
+      const settle = this.launchSettlers.get(receipt.task_id)?.settle
+      if (settle) await settle(state, answer)
+      else {
+        const changed = await store.update(scope, [{ task_id: receipt.task_id, kind: receipt.kind, status: changedOwner ? 'unknown' : state === 'failed' ? 'failed' : 'completed', launch_state: state, ...(answer === undefined ? {} : { result: answer || '(no answer produced)' }) }], { notify: false })
+        if (changed) this.launchChanged(target)
+      }
+    }
+  }
+
+  /** Native side work shares the viewed parent's observation, never its turn or a Web-owned Agent. */
+  async launch(sid: string, kind: 'background' | 'btw', text: string): Promise<{ task_id: string; stream_id: string; session_id: string; launch: SideLaunch } | null> {
+    const target = await this.target(sid, this.deps.activeProfile(), true)
+    if (!target) return null
+    const store = this.deps.launchStore
+    if (!store) throw new HttpFailure(503, 'Native launch storage is unavailable')
+    const current = await this.call(target, { action: 'snapshot' })
+    if (current.state !== 'attached' || current.snapshot?.session_id !== sid || !this.attachment(current).can_submit) throw new HttpFailure(409, 'The owning Agent cannot launch side work')
+    const base = await this.deps.service.detail(sid, { messages: '0' })
+    const observation = this.transport(target, base, current.snapshot)
+    const release = this.lease(observation)
+    if (!await observation.ready) { release(); throw new HttpFailure(503, 'The owning Agent could not be observed; nothing was launched') }
+    const snap = observation.snapshot
+    const scope = ownerStateId(target.key)
+    const taskId = `owner-launch-${randomUUID()}`
+    const streamId = `${ownerStreamPrefix(target.home)}side-${randomUUID()}`
+    const native: NonNullable<Receipt['native']> = { scope, kind, task_id: null, authority_epoch: snap.authority_epoch, replay_epoch: snap.replay_epoch, sequence: snap.last_sequence }
+    const channel = this.deps.registry.create(streamId, sid)
+    const writer = await this.deps.journal.writer(scope, streamId).catch((error: unknown) => {
+      release(); this.deps.registry.retire(streamId); throw error
+    })
+    try {
+      await store.update(scope, [{ task_id: taskId, kind: 'background_command', title: taskTitle(redactString(text, this.deps.redactEnabled())), started_at: this.deps.now(), status: 'running', launch_state: 'pending', stream_id: streamId, native }], { notify: false })
+    } catch (error) { release(); this.deps.registry.retire(streamId); await writer.close(); throw error }
+    this.launchChanged(target)
+    let finished = false
+    let finishWorker!: () => void
+    const ended = new Promise<void>((resolve) => { finishWorker = resolve })
+    const worker = ended.finally(() => { this.runWorkers.delete(worker) })
+    this.runWorkers.add(worker)
+    const settle = async (state: SideLaunch['state'], answer?: string): Promise<void> => {
+      if (finished) return
+      finished = true
+      this.launchSettlers.delete(taskId)
+      try {
+        const completed = answer !== undefined
+        const status = completed ? state === 'failed' ? 'failed' : 'completed' : state === 'unknown' ? 'unknown' : 'failed'
+        if (!completed && (state === 'failed' || state === 'unsupported')) await store.forget(scope, taskId)
+        else await store.update(scope, [{ task_id: taskId, kind: 'background_command', launch_state: state, status, ...(completed ? { result: answer || '(no answer produced)' } : {}) }], { notify: false })
+        const event = completed && state !== 'failed' ? 'done' : 'apperror'
+        const data: Row = event === 'done' ? { answer: answer ?? '', ephemeral: true, terminal_state: answer ? 'completed' : 'no_response' }
+          : { message: state === 'unknown' ? 'Check the Agent for the result before sending again.' : state === 'unsupported' ? 'The owning Agent does not support this launch.' : answer ?? 'The owning Agent refused the launch.', terminal_state: 'error', launch_state: state }
+        const record = await writer.appendSseEvent(event, data)
+        channel.put([event, data, record.event_id])
+        const end = await writer.appendSseEvent('stream_end', {})
+        channel.put(['stream_end', {}, end.event_id])
+      } finally {
+        release()
+        try { await writer.close() } finally {
+          this.deps.registry.retire(streamId)
+          this.launchChanged(target)
+          finishWorker()
+        }
+      }
+    }
+    this.launchSettlers.set(taskId, { observation, settle })
+    const result = observation.controller.signal.aborted ? { state: 'unavailable' as const, reason: 'owner_connection_lost', snapshot: null, receipt: null } : await this.call(target, { action: kind === 'background' ? 'launch_background' : 'launch_btw', text, authority_epoch: native.authority_epoch, replay_epoch: native.replay_epoch })
+    const launch: SideLaunch = result.launch ?? { state: result.state === 'incompatible' ? 'unsupported' : result.state === 'unavailable' ? 'unknown' : 'failed', task_id: null }
+    if (launch.state === 'accepted' && launch.task_id) {
+      native.task_id = launch.task_id
+      await store.update(scope, [{ task_id: taskId, kind: 'background_command', native, launch_state: finished ? 'unknown' : 'accepted' }], { notify: false })
+      const key = `${kind}:${native.task_id}`
+      const completed = observation.sideResults.get(key)
+      if (completed) await this.completeSideLaunch(target, observation, key, completed)
+    } else await settle(launch.state === 'accepted' || launch.state === 'pending' ? 'unknown' : launch.state)
+    const saved = await store.get(scope, taskId)
+    return { task_id: taskId, stream_id: streamId, session_id: sid, launch: { state: saved?.launch_state ?? (launch.state === 'accepted' || launch.state === 'pending' ? 'unknown' : launch.state), task_id: native.task_id ? taskId : null } }
+  }
+
+  async launchTasks(sid: string, profile?: string): Promise<BackgroundTask[]> {
+    const target = await this.target(sid, profile)
+    const store = this.deps.launchStore
+    if (!target || !store) return []
+    const scope = ownerStateId(target.key)
+    const receipts = (await store.list(scope)).filter((r) => r.native?.scope === scope && r.native.kind === 'background')
+    const stale = receipts.filter((r) => r.status === 'running' && (!r.stream_id || !this.deps.registry.liveIds.has(r.stream_id)))
+    if (stale.length) await store.update(scope, stale.map((r) => ({ task_id: r.task_id, kind: r.kind, status: 'unknown' as const, launch_state: 'unknown' as const })), { notify: false })
+    return (await store.list(scope)).filter((r) => r.native?.scope === scope && r.native.kind === 'background').map((r) => taskView(r, { redact: this.deps.redactEnabled() }))
+  }
+
+  async launchResult(sid: string, profile: string | undefined, taskId: string): Promise<BackgroundTaskResult | null> {
+    const target = await this.target(sid, profile)
+    const receipt = target ? await this.deps.launchStore?.get(ownerStateId(target.key), taskId) : undefined
+    return target && receipt?.native?.scope === ownerStateId(target.key) && receipt.result !== null ? { task_id: taskId, text: redactString(receipt.result, this.deps.redactEnabled()), launch_state: receipt.launch_state ?? 'unknown' } : null
+  }
+
+  async dismissLaunch(sid: string, profile: string | undefined, taskId: string): Promise<BackgroundTask | null> {
+    const target = await this.target(sid, profile)
+    const store = this.deps.launchStore
+    if (!target || !store) return null
+    const scope = ownerStateId(target.key)
+    const receipt = await store.get(scope, taskId)
+    if (receipt?.native?.scope !== scope || !taskView(receipt).dismissible) return null
+    const marked = await store.mark(scope, taskId, { dismissed_at: this.deps.now() }, { notify: false })
+    this.launchChanged(target)
+    return marked ? taskView(marked, { redact: this.deps.redactEnabled() }) : null
   }
 
   /** Called only after the existing HTTP owner has authorized and claimed a viewer's stream slot. */

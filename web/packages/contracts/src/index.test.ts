@@ -4,7 +4,7 @@ import { SessionStreamEventSchema } from './sse.js'
 import { RpcRequestSchema } from './sidecar/rpc.js'
 import { ModelConfirmationRequiredSchema, sessionsContract } from './routes/sessions.js'
 import { BackgroundTasksResponseSchema, ConnectorsPageSchema, ChatStartResponseSchema, DelegationStatusSchema, MessageSchema, SessionSchema, ToolCallSchema } from './views.js'
-import { ExecutionModesSchema, GatewaySessionParamsSchema, ModelChangeSchema, OwnerAttachmentSchema, OwnerActionRequestSchema, GatewaySessionResultSchema } from './gateway-session.js'
+import { ExecutionModesSchema, GatewaySessionParamsSchema, ModelChangeSchema, OwnerAttachmentSchema, OwnerActionRequestSchema, GatewaySessionResultSchema, SideLaunchSchema } from './gateway-session.js'
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -212,6 +212,14 @@ describe('contracts package', () => {
     for (const name of ['unknown', 'unsupported']) expect(states[name]).toMatchObject({ running_count: null, awaiting_delivery_count: null, memory_live: null })
     expect(DelegationStatusSchema.safeParse({ ...states.available_zero, running_count: -1 }).success).toBe(false)
     expect(BackgroundTasksResponseSchema.parse({ session_id: 's', tasks: [], pinned_count: 0, agent_available: true }).delegation_status).toBeUndefined()
+  })
+
+  it('carries native launch verdicts without making an older background row depend on them (TAL-1340)', () => {
+    const fixture = shared('fixtures/web-native-launches.json') as Record<string, unknown>
+    for (const [state, value] of Object.entries(fixture)) expect(SideLaunchSchema.parse(value).state).toBe(state)
+    expect(SideLaunchSchema.safeParse({ state: 'completed', task_id: 'unconfirmed' }).success).toBe(false)
+    const work = (shared('fixtures/web-native-work.json') as { background_tasks: { available: { tasks: unknown[] } } }).background_tasks.available.tasks[0]
+    expect(BackgroundTasksResponseSchema.parse({ session_id: 's', tasks: [work], pinned_count: 1, agent_available: true }).tasks[0]?.launch_state).toBeUndefined()
   })
 
   it('carries the server-counted pinned work and queued owner inputs in every shared fixture (TAL-1531)', () => {

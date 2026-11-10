@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Ask side questions and launch background work in chats owned by the Agent.",
+      "highlight": false,
+      "components": ["web"],
+      "announcement": {
+        "title": "Side work in Agent chats",
+        "description": "Ask side questions and run background tasks with the model and workspace already used by the chat.",
+        "icon": "automation"
+      }
+    }
+  ]
+}

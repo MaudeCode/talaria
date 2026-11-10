@@ -24,6 +24,8 @@ const formats: Record<string, Format> = {
   profiles: { files: { deleted: 'deleted-profiles.json' } },
   extensions: { files: { overrides: 'extension-overrides.json', 'install-manifest': 'extension-install-manifest.json' }, indent: 2 },
   background: { directory: 'sessions/_background' },
+  // Owner/profile-qualified receipts must stay out of the legacy sid-only ledger, including after a rollback.
+  'owner-side-work': { directory: 'owner-side-work', secret: true },
   'prompt-queues': { directory: 'prompt-queues', secret: true },
   'connector-offers': { directory: 'connector-offers', secret: true },
   // TAL-1963: one decision review per file, keyed by its review id; it holds the user's answers.

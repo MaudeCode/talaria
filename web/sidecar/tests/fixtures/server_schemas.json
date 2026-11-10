@@ -1686,6 +1686,17 @@
           "items": {
             "type": "object",
             "properties": {
+              "launch_state": {
+                "description": "Native launch receipt state. Unknown work must never be resent automatically.",
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "accepted",
+                  "failed",
+                  "unsupported",
+                  "unknown"
+                ]
+              },
               "task_id": {
                 "type": "string"
               },
