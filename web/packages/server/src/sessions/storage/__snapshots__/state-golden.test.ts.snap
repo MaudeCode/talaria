@@ -60,6 +60,7 @@ exports[`preserves main JSON bytes for every document namespace and run-journal 
   "fade_text_effect": false,
   "show_cli_sessions": true,
   "show_claude_code_sessions": true,
+  "show_messaging_sessions": true,
   "show_cron_sessions": false,
   "show_webhook_sessions": false,
   "show_kanban_sessions": false,

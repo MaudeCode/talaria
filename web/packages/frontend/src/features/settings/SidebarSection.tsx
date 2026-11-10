@@ -1,3 +1,4 @@
+import { Fragment } from 'react'
 import { Clock, Code, Columns3, FolderPlus, MessageCircle, MessageSquareWarning, Pin, Rows3, Search, SquarePen, Terminal, UserRound, Webhook, type LucideIcon } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import { cn } from '../../ui/cn'
@@ -17,11 +18,11 @@ const BUTTONS = [
   { key: 'show_titlebar_profile', name: m.settings_label_profile_switcher, icon: UserRound },
 ] as const
 
-/** TAL-2145: the chats from outside Talaria the chats list shows; TAL-2159 changes what each hides and its label. */
+/** TAL-2145, TAL-2159: the switches for chats from outside Talaria, one per source; each hides exactly the chats it names. */
 const OUTSIDE_CHATS = [
   { key: 'show_cli_sessions', label: m.settings_label_external_sessions, icon: Terminal },
   { key: 'show_claude_code_sessions', label: m.settings_label_claude_code_sessions, icon: Code },
-  { key: 'show_previous_messaging_sessions', label: m.settings_label_previous_messaging_sessions, icon: MessageCircle },
+  { key: 'show_messaging_sessions', label: m.settings_label_messaging_sessions, icon: MessageCircle },
   { key: 'show_cron_sessions', label: m.settings_label_cron_sessions, icon: Clock },
   { key: 'show_webhook_sessions', label: m.settings_label_webhook_sessions, icon: Webhook },
   { key: 'show_kanban_sessions', label: m.settings_label_kanban_sessions, icon: Columns3 },
@@ -63,7 +64,10 @@ export function SidebarSection() {
         </div>
       </SettingsGroup>
       <SettingsGroup id="outside-chats" title={m.settings_group_outside_chats()} detail={outsideCount && m.settings_items_shown(outsideCount)}>
-        {OUTSIDE_CHATS.map((o) => <SettingToggle key={o.key} label={o.label()} settingKey={o.key} icon={o.icon} />)}
+        {OUTSIDE_CHATS.map((o) => <Fragment key={o.key}>
+          <SettingToggle label={o.label()} settingKey={o.key} icon={o.icon} />
+          {o.key === 'show_messaging_sessions' && <SettingToggle label={m.settings_label_latest_messaging_only()} settingKey="show_previous_messaging_sessions" inverted indent disabled={!bool(o.key)} />}
+        </Fragment>)}
       </SettingsGroup>
     </div>
   )

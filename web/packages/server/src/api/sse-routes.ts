@@ -19,6 +19,7 @@ import type { GatewayWatcher } from '../sessions/gateway-watcher.js'
 import type { SessionsChangedEvent } from '../sessions/events.js'
 import type { WebAudioCompletion } from '@maudecode/talaria-web-contracts'
 import { filterAsync, str } from '../util.js'
+import { outsideSourcesShown } from '../settings.js'
 import { resolveStreamOwner, streamRunSummary, streamVisibleToRequest } from './session-visibility.js'
 import { completedToolIndex, publicToolFrame, withToolId } from '../redact.js'
 
@@ -498,7 +499,7 @@ export async function handleSessionStream(ctx: RequestContext): Promise<void> {
 
 /** Python `_gateway_sse_probe_payload`: status of the optional gateway stream only, never of `/api/session/stream`. */
 export async function gatewayProbePayload(ctx: RequestContext, watcher: GatewayWatcher | null): Promise<[Record<string, unknown>, number]> {
-  const enabled = Boolean((await ctx.deps.settings.load()).show_cli_sessions)
+  const enabled = outsideSourcesShown(await ctx.deps.settings.load())
   const alive = watcher?.isAlive() ?? false
   const payload: Record<string, unknown> = { enabled, fallback_poll_ms: 30000, ok: enabled && alive, watcher_running: alive, scope: 'gateway_sessions', session_stream_available: true, session_stream_path: '/api/session/stream' }
   if (!enabled) { payload.error = 'agent sessions not enabled'; return [payload, 404] }

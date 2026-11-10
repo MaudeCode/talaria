@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Settings › Navigation has one switch per source of outside chats: terminal and desktop apps, Claude Code, messaging apps, scheduled tasks, webhooks and Kanban. Each hides only the chats it names, and the chat list updates as soon as you flip one.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announcement": {
+        "title": "Choose which outside chats appear",
+        "description": "Show or hide terminal, Claude Code, messaging, scheduled, webhook and Kanban chats one source at a time.",
+        "icon": "settings"
+      }
+    }
+  ]
+}

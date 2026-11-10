@@ -182,12 +182,31 @@ describe('load', () => {
     expect(s).not.toHaveProperty('assistant_language')
     expect(s.simplified_tool_calling).toBe(true)
     expect(s.virtualize_transcript).toBe(false)
-    // Established install without the CLI-sessions key is grandfathered off.
-    expect(s.show_cli_sessions).toBe(false)
     write({ virtualize_transcript: true, virtualize_transcript_optin: true })
     expect((await store().load()).virtualize_transcript).toBe(true)
-    write({ onboarding_completed: false })
-    expect((await store().load()).show_cli_sessions).toBe(true)
+  })
+
+  it('shows terminal, desktop, messaging and Claude Code chats by default, and a stored value wins (TAL-2159)', async () => {
+    const shown = (s: Record<string, unknown>) => [s.show_cli_sessions, s.show_messaging_sessions, s.show_claude_code_sessions]
+    expect(shown(await store().load())).toEqual([true, true, true])
+    write({ onboarding_completed: true, send_key: 'enter' })
+    expect(shown(await store().load())).toEqual([true, true, true])
+    write({ show_cli_sessions: true, show_messaging_sessions: false, show_claude_code_sessions: false })
+    expect(shown(await store().load())).toEqual([true, false, false])
+  })
+
+  it('keeps messaging and Claude Code chats hidden for a store saved with show_cli_sessions off before the split (TAL-2159)', async () => {
+    write({ show_cli_sessions: false, show_claude_code_sessions: true, onboarding_completed: true })
+    const s = store()
+    expect([(await s.load()).show_messaging_sessions, (await s.load()).show_claude_code_sessions]).toEqual([false, false])
+    // The next save stores the split, so turning one of them on afterwards sticks.
+    await s.save({ send_key: 'ctrl+enter' })
+    expect(onDisk()).toMatchObject({ show_cli_sessions: false, show_messaging_sessions: false, show_claude_code_sessions: false })
+    await s.save({ show_messaging_sessions: true })
+    expect((await s.load()).show_messaging_sessions).toBe(true)
+    // A store saved after the split keeps its own choice.
+    write({ show_cli_sessions: false, show_messaging_sessions: true, show_claude_code_sessions: true })
+    expect([(await store().load()).show_messaging_sessions, (await store().load()).show_claude_code_sessions]).toEqual([true, true])
   })
 
   it('shows the busy hint and loads older messages on scroll by default, and fades nothing (TAL-2148)', async () => {

@@ -11,7 +11,7 @@ import { InvalidDocument, RevisionConflict, type DocumentBackend } from './sessi
 import { withDocumentQueue } from './sessions/storage/document.js'
 import { resolveDefaultWorkspace, type Env } from './config.js'
 import { normalizeTrustedLinkHosts } from './links.js'
-import { KanbanPinnedBoardsSchema, MODEL_FAVORITES_MAX, ModelFavoritesSchema, WebUpdateChannelSchema, type ModelFavorite } from '@maudecode/talaria-web-contracts'
+import { KanbanPinnedBoardsSchema, MODEL_FAVORITES_MAX, ModelFavoritesSchema, OUTSIDE_SOURCE_SETTING_KEYS, WebUpdateChannelSchema, type ModelFavorite } from '@maudecode/talaria-web-contracts'
 
 export type Settings = Record<string, unknown>
 
@@ -41,6 +41,11 @@ const LEGACY_THEME_MAP: Record<string, [string, string]> = {
   slate: ['dark', 'slate'], solarized: ['dark', 'poseidon'], monokai: ['dark', 'sisyphus'], nord: ['dark', 'slate'], oled: ['dark', 'default'],
 }
 
+/** TAL-2159: whether any outside source is listed; the gateway live stream runs only then. */
+export function outsideSourcesShown(settings: Settings): boolean {
+  return OUTSIDE_SOURCE_SETTING_KEYS.some((key) => Boolean(settings[key]))
+}
+
 /** The `bot_name` setting as clients show it: trimmed, "Hermes" when unset or blank. */
 export function displayBotName(value: unknown): string {
   return (typeof value === 'string' ? value.trim() : '') || 'Hermes'
@@ -64,6 +69,7 @@ export function settingsDefaults(opts: { defaultWorkspace: string; botName: stri
     fade_text_effect: false,
     show_cli_sessions: true,
     show_claude_code_sessions: true,
+    show_messaging_sessions: true,
     show_cron_sessions: false,
     show_webhook_sessions: false,
     show_kanban_sessions: false,
@@ -211,8 +217,6 @@ export function composerControlCount(settings: Record<string, unknown>): { compo
 const SIDEBAR_HIDEABLE_DESTINATIONS: ReadonlySet<string> = new Set(['tasks', 'kanban', 'skills', 'memory', 'insights', 'groups', 'todos', 'decisions'])
 /** TAL-2175: the sidebar's buttons a setting shows while true (TAL-1588 Feedback, TAL-2099 profile switcher). */
 const SIDEBAR_BUTTON_KEYS = ['show_sidebar_feedback', 'show_titlebar_profile'] as const
-/** TAL-2175: the chats from outside Talaria the chats list shows while each key is true. */
-const OUTSIDE_CHAT_KEYS = ['show_cli_sessions', 'show_claude_code_sessions', 'show_cron_sessions', 'show_webhook_sessions', 'show_kanban_sessions', 'show_previous_messaging_sessions'] as const
 
 /** TAL-2175: how many sidebar items and outside chats are shown, for Settings › Navigation's Sidebar and Chats from outside Talaria headers. */
 export function navigationCounts(settings: Record<string, unknown>): { sidebar_items_shown: number; sidebar_items_total: number; outside_chats_shown: number; outside_chats_total: number } {
@@ -221,8 +225,8 @@ export function navigationCounts(settings: Record<string, unknown>): { sidebar_i
   return {
     sidebar_items_shown: SIDEBAR_HIDEABLE_DESTINATIONS.size - hidden.size + buttonsShown,
     sidebar_items_total: SIDEBAR_HIDEABLE_DESTINATIONS.size + SIDEBAR_BUTTON_KEYS.length,
-    outside_chats_shown: OUTSIDE_CHAT_KEYS.filter((key) => settings[key] === true).length,
-    outside_chats_total: OUTSIDE_CHAT_KEYS.length,
+    outside_chats_shown: OUTSIDE_SOURCE_SETTING_KEYS.filter((key) => settings[key] === true).length,
+    outside_chats_total: OUTSIDE_SOURCE_SETTING_KEYS.length,
   }
 }
 
@@ -460,8 +464,12 @@ export class SettingsStore {
     }
     if (!('default_message_mode' in stored) && 'busy_input_mode' in stored) settings.default_message_mode = stored.busy_input_mode
     delete settings.busy_input_mode
-    const establishedKeys = Object.keys(stored).filter((k) => k !== 'show_cli_sessions' && k !== 'onboarding_completed')
-    if (!('show_cli_sessions' in stored) && (pyBool(stored.onboarding_completed) || establishedKeys.length > 0)) settings.show_cli_sessions = false
+    // TAL-2159: `show_cli_sessions` once also listed messaging and Claude Code chats. A store saved before
+    // `show_messaging_sessions` existed with it off keeps both hidden; the next save stores the split.
+    if ('show_cli_sessions' in stored && !pyBool(stored.show_cli_sessions) && !('show_messaging_sessions' in stored)) {
+      settings.show_messaging_sessions = false
+      settings.show_claude_code_sessions = false
+    }
     if (!pyBool(stored.virtualize_transcript_optin)) settings.virtualize_transcript = false
     if (stored[CHAT_SWITCHES_MARKER] !== true) for (const key of CHAT_SWITCHES) settings[key] = true
     settings.trusted_link_hosts = normalizeTrustedLinkHosts(settings.trusted_link_hosts)

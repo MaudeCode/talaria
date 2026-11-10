@@ -255,6 +255,9 @@ Logs keeps the wider column its lines need.
   `detail`, the one-line second line, led by a `StatusDot` (§7).
 - A row may take an `icon` (a lucide component), drawn 18px in `text-muted`
   before its label; every kit row accepts it.
+- A sub-option that applies only while the row above is on is a `SettingToggle`
+  with `indent` directly under that row: no icon, its label under the row's
+  label, disabled while the row above is off (TAL-2159).
 - Every write is optimistic with rollback through `useSettingField`; no page
   has a page-level Save.
 - A row the server did not send a field for is not rendered.

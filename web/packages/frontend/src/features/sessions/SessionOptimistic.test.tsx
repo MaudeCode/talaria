@@ -7,9 +7,10 @@ import type { SessionRow } from '../../contracts'
 import { ApiError } from '../../contracts/common'
 
 vi.mock('../../api/endpoints', () => ({
-  fetchSettings: () => Promise.resolve({}), fetchSessions: vi.fn(), searchSessions: vi.fn(), fetchProjects: vi.fn(), archiveSession: vi.fn(), createProject: vi.fn(), importSession: vi.fn(),
+  fetchSessions: vi.fn(), searchSessions: vi.fn(), fetchProjects: vi.fn(), archiveSession: vi.fn(), createProject: vi.fn(), importSession: vi.fn(),
   renameSession: vi.fn(), pinSession: vi.fn(), deleteSession: vi.fn(), moveSession: vi.fn(), revokeShare: vi.fn(), removeWorktree: vi.fn(), fetchWorktreeStatus: vi.fn(),
   renameProject: vi.fn(), deleteProject: vi.fn(), bindProject: vi.fn(), fetchModels: vi.fn(() => Promise.resolve({ groups: [] })),
+  fetchSettings: vi.fn(), saveSettings: vi.fn(),
   fetchWorkspaces: vi.fn(() => Promise.resolve({ workspaces: [{ path: '/w/alpha', name: 'Alpha space' }, { path: '/w/beta', name: 'Beta space' }], last: '/w/alpha' })), duplicateSession: vi.fn(), regenerateTitle: vi.fn(), createShare: vi.fn(), exportSessionUrl: vi.fn(() => ''),
 }))
 vi.mock('../../api/sse', () => ({ SSE_OPEN: 1, openSessionListStream: () => ({ close: () => undefined, readyState: () => 1 }) }))
@@ -27,6 +28,7 @@ import * as api from '../../api/endpoints'
 import { SessionListPanel } from './SessionListPanel'
 import { keys } from '../../api/queryKeys'
 import { teardownAll } from '../../stream/connection'
+import { useSaveSettings } from '../../app/settings'
 
 const now = Date.now() / 1000
 const row = (session_id: string, title: string, extra: Partial<SessionRow> = {}): SessionRow => ({
@@ -57,6 +59,8 @@ beforeEach(() => {
   vi.mocked(api.fetchSessions).mockReset().mockResolvedValue({ sessions: [alpha, beta] } as never)
   vi.mocked(api.fetchProjects).mockReset().mockResolvedValue({ projects: [{ project_id: 'p1', name: 'Proj', color: '#7cb9ff' }, { project_id: 'p2', name: 'Other' }] } as never)
   vi.mocked(api.pinSession).mockReset()
+  vi.mocked(api.fetchSettings).mockReset().mockResolvedValue({ show_messaging_sessions: true })
+  vi.mocked(api.saveSettings).mockReset()
   vi.mocked(api.fetchWorktreeStatus).mockResolvedValue({ status: { path: '/wt', exists: true, removable: true, force_required: false, dirty: false, untracked_count: 0, ahead_behind: { ahead: 0, behind: 0 }, locked_by_stream: false } } as never)
 })
 
@@ -388,5 +392,44 @@ describe('project writes show their result while the server is held (TAL-1179)',
     refuse(refusal('Project in use'))
     await within(menu).findByRole('menuitemradio', { name: 'Proj' })
     expect(toast).toHaveBeenCalledWith('Project in use', 4000, 'error')
+  })
+})
+
+describe('an outside-chats switch hides its chats while its save is held (TAL-2159)', () => {
+  const telegram = row('tg', 'Telegram chat', { source_kind: 'messaging', is_messaging_session: true, visibility_setting: 'show_messaging_sessions' })
+  function Switcher() {
+    const save = useSaveSettings()
+    return <button type="button" onClick={() => { save.mutate({ show_messaging_sessions: false }) }}>Hide messaging</button>
+  }
+  async function switched() {
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [alpha, telegram] } as never)
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    render(<QueryClientProvider client={qc}><SessionListPanel /><Switcher /></QueryClientProvider>)
+    await screen.findByText('Telegram chat')
+    await waitFor(() => expect(api.fetchSettings).toHaveBeenCalled())
+    return qc
+  }
+
+  it('drops the messaging chat at once and keeps it gone once the server confirms', async () => {
+    let confirm!: (value: unknown) => void
+    vi.mocked(api.saveSettings).mockReturnValue(new Promise((resolve) => { confirm = resolve }) as never)
+    await switched()
+    await userEvent.click(screen.getByRole('button', { name: 'Hide messaging' }))
+    await waitFor(() => expect(shown()).toEqual(['alpha']))
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [alpha] } as never)
+    vi.mocked(api.fetchSettings).mockResolvedValue({ show_messaging_sessions: false })
+    act(() => { confirm({ show_messaging_sessions: false }) })
+    await waitFor(() => expect(api.fetchSessions).toHaveBeenCalledTimes(2))
+    expect(shown()).toEqual(['alpha'])
+  })
+
+  it('shows the messaging chat again when the server refuses', async () => {
+    let refuse!: (error: unknown) => void
+    vi.mocked(api.saveSettings).mockReturnValue(new Promise((_, reject) => { refuse = reject }) as never)
+    await switched()
+    await userEvent.click(screen.getByRole('button', { name: 'Hide messaging' }))
+    await waitFor(() => expect(shown()).toEqual(['alpha']))
+    act(() => { refuse(refusal('Settings are read-only')) })
+    await waitFor(() => expect(shown()).toEqual(['alpha', 'tg']))
   })
 })

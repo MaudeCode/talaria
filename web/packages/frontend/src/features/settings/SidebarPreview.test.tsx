@@ -1,7 +1,7 @@
 import { expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 
 // Every endpoint but the settings read and write stays pending.
 vi.mock('../../api/endpoints', async (importOriginal) => {
@@ -9,7 +9,7 @@ vi.mock('../../api/endpoints', async (importOriginal) => {
   return { ...Object.fromEntries(Object.entries(real).map(([name, value]) => [name, typeof value === 'function' ? vi.fn(() => new Promise(() => undefined)) : value])), saveSettings: vi.fn(), fetchSettings: vi.fn() }
 })
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
-import { fetchSettings, saveSettings } from '../../api/endpoints'
+import { fetchSessions, fetchSettings, saveSettings, searchSessions } from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { BootstrapContext } from '../../app/bootstrap'
 import { useSetting } from '../../app/queries'
@@ -33,6 +33,16 @@ function RealSidebar() {
   return <output aria-label="sidebar destinations">{orderedNav(null, hidden ?? null).visible.map((n) => n.id).join(' ')}</output>
 }
 
+/** The open chat list and a sidebar search, read through the queries the sidebar uses. */
+function ChatList() {
+  const list = useQuery({ queryKey: keys.sessions.list({}), queryFn: () => fetchSessions() })
+  const search = useQuery({ queryKey: keys.sessions.search('chat', {}), queryFn: () => searchSessions('chat', { project_id: undefined, sidebar_source: undefined, include_archived: false }) })
+  return <>
+    <output aria-label="chat list">{list.data?.sessions.map((r) => r.session_id).join(' ')}</output>
+    <output aria-label="chat search">{search.data?.sessions.map((r) => r.session_id).join(' ')}</output>
+  </>
+}
+
 async function renderNavigation(settings: Record<string, unknown>) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   qc.setQueryData(keys.settings, settings)
@@ -40,7 +50,7 @@ async function renderNavigation(settings: Record<string, unknown>) {
   let stored = { ...settings }
   vi.mocked(fetchSettings).mockImplementation(() => Promise.resolve(stored))
   vi.mocked(saveSettings).mockImplementation((patch) => { stored = { ...stored, ...patch }; return Promise.resolve(stored) })
-  await renderRouted(<QueryClientProvider client={qc}><BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><SettingsSection section="navigation" /><RealSidebar /></BootstrapContext.Provider></QueryClientProvider>)
+  await renderRouted(<QueryClientProvider client={qc}><BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><SettingsSection section="navigation" /><RealSidebar /><ChatList /></BootstrapContext.Provider></QueryClientProvider>)
   return { sidebar: within(await screen.findByRole('region', { name: 'Sidebar' })), outside: within(screen.getByRole('region', { name: 'Chats from outside Talaria' })) }
 }
 /** The server's counts of the sidebar items and outside chats shown, as every settings read and save carries them (TAL-2175). */
@@ -55,7 +65,7 @@ it('draws every sidebar item nav.ts places, in order, as a toggle, counted in th
   expect(toggles(sidebar).filter((b) => b.getAttribute('aria-pressed') === 'false').map((b) => b.getAttribute('aria-label'))).toEqual(['Show Todos', 'Show Profile switcher'])
   expect(sidebar.getByText('8 of 10 shown')).toBeInTheDocument()
   expect(outside.getByText('2 of 6 shown')).toBeInTheDocument()
-  const switches = ['New-chat button per project', 'Show CLI and other external sessions', 'Show Claude Code sessions', 'Show previous messaging sessions', 'Show cron sessions', 'Show webhook sessions', 'Show kanban sessions']
+  const switches = ['New-chat button per project', 'Terminal and desktop apps', 'Claude Code', 'Messaging apps', 'Only the latest chat per contact', 'Scheduled tasks', 'Webhooks', 'Kanban']
   expect(screen.getAllByRole('switch')).toEqual(switches.map((name) => screen.getByRole('switch', { name })))
 })
 
@@ -124,20 +134,47 @@ it('counts an outside chat switch at once, keeps the server\'s count once it con
   expect(outside.getByText('1 of 6 shown')).toBeInTheDocument()
   const confirmed = deferred<Record<string, unknown>>()
   vi.mocked(saveSettings).mockReturnValue(confirmed.promise)
-  await userEvent.click(outside.getByRole('switch', { name: 'Show webhook sessions' }))
+  await userEvent.click(outside.getByRole('switch', { name: 'Webhooks' }))
   expect(outside.getByText('2 of 6 shown')).toBeInTheDocument()
   expect(saveSettings).toHaveBeenLastCalledWith({ show_webhook_sessions: true })
   const stored = { show_kanban_sessions: true, show_webhook_sessions: true, ...counted(8, 2) }
   vi.mocked(fetchSettings).mockResolvedValue(stored)
   confirmed.resolve(stored)
-  await waitFor(() => expect(outside.getByRole('switch', { name: 'Show webhook sessions' })).toBeChecked())
+  await waitFor(() => expect(outside.getByRole('switch', { name: 'Webhooks' })).toBeChecked())
   expect(outside.getByText('2 of 6 shown')).toBeInTheDocument()
   const refused = deferred<Record<string, unknown>>()
   vi.mocked(saveSettings).mockReturnValue(refused.promise)
-  await userEvent.click(outside.getByRole('switch', { name: 'Show cron sessions' }))
+  await userEvent.click(outside.getByRole('switch', { name: 'Scheduled tasks' }))
   expect(outside.getByText('3 of 6 shown')).toBeInTheDocument()
   const message = 'config.yaml is package-managed. Update the declarative configuration instead.'
   refused.reject(new ApiError({ kind: 'http', status: 409, path: 'api/settings', message, body: { error: message, condition: 'config_write_refused' } }))
   expect(await outside.findByText('2 of 6 shown')).toBeInTheDocument()
   await waitFor(() => expect(showToast).toHaveBeenCalledWith(message, 4000, 'error'))
+})
+
+it('shows "Only the latest chat per contact" as the inverse of show_previous_messaging_sessions, disabled while Messaging apps is off (TAL-2159)', async () => {
+  const { outside } = await renderNavigation({ show_messaging_sessions: false, show_previous_messaging_sessions: false, ...counted(8, 0) })
+  const latest = outside.getByRole('switch', { name: 'Only the latest chat per contact' })
+  expect(latest).toBeChecked()
+  expect(latest).toHaveAttribute('aria-disabled', 'true')
+  expect(outside.getByText('0 of 6 shown')).toBeInTheDocument()
+  await userEvent.click(outside.getByRole('switch', { name: 'Messaging apps' }))
+  expect(saveSettings).toHaveBeenLastCalledWith({ show_messaging_sessions: true })
+  await waitFor(() => expect(latest).not.toHaveAttribute('aria-disabled'))
+  await userEvent.click(latest)
+  expect(saveSettings).toHaveBeenLastCalledWith({ show_previous_messaging_sessions: true })
+  expect(latest).not.toBeChecked()
+})
+
+it('re-reads the open chat list and sidebar searches when an outside-chats switch changes, without a reload (TAL-2159)', async () => {
+  const reads = () => { const answers = [['web', 'tg'], ['web']]; return () => Promise.resolve({ sessions: (answers.shift() ?? []).map((session_id) => ({ session_id })) } as never) }
+  vi.mocked(fetchSessions).mockImplementation(reads())
+  vi.mocked(searchSessions).mockImplementation(reads())
+  const { outside } = await renderNavigation({ show_messaging_sessions: true })
+  const list = screen.getByRole('status', { name: 'chat list' })
+  const search = screen.getByRole('status', { name: 'chat search' })
+  await waitFor(() => { expect(list).toHaveTextContent('web tg'); expect(search).toHaveTextContent('web tg') })
+  await userEvent.click(outside.getByRole('switch', { name: 'Messaging apps' }))
+  await waitFor(() => { expect(list).toHaveTextContent(/^web$/); expect(search).toHaveTextContent(/^web$/) })
+  expect([vi.mocked(fetchSessions).mock.calls.length, vi.mocked(searchSessions).mock.calls.length]).toEqual([2, 2])
 })

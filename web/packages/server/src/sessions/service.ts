@@ -1591,11 +1591,12 @@ export class SessionService {
   async list(params: Omit<ListParams, 'activeProfile' | 'isolatedProfileMode' | 'profilesMatch' | 'rowVisible' | 'cliRows' | 'gatewayIdentity' | 'stateDbSources' | 'truncatedSources' | 'agentStorage' | 'pruneOrphanedImports' | 'webuiRows' | 'webDiagnosticIds'>): Promise<{ body: ListResponse; etag: string }> {
     const activeProfile = this.deps.activeProfile()
     const webuiRows = (await allSessions(this.store, { sidebarMetadataOnly: true }))
-    const wantState = params.showCliSessions || params.showCronSessions || params.showWebhookSessions || params.showKanbanSessions
+    // TAL-2159: the Agent's database holds every outside source but Claude Code; it is read while any of them is shown.
+    const wantState = params.showCliSessions || params.showMessagingSessions || params.showCronSessions || params.showWebhookSessions || params.showKanbanSessions
     // Python reads every profile's state.db under all_profiles; this port projects the active profile only.
     const cliRead = wantState ? await this.deps.cliSessions(activeProfile, { sourceFilter: params.sourceFilter ?? null }) : undefined
-    const claudeCodeRows = params.showCliSessions && params.showClaudeCodeSessions ? (await this.claudeCodeRows()) : []
-    let cliRows = cliRead ? [...cliRead.rows, ...claudeCodeRows] : undefined
+    const claudeCodeRows = params.showClaudeCodeSessions ? (await this.claudeCodeRows()) : []
+    let cliRows = cliRead || claudeCodeRows.length ? [...cliRead?.rows ?? [], ...claudeCodeRows] : undefined
     let agentStorage = cliRead?.storage
     // TAL-1040: diagnostic chats Web started are Web chats, read even when external Agent sessions are hidden.
     const webDiagnosticIds = new Set(params.sourceFilter ? [] : await stateDbWebDiagnosticIdsAsync(join(this.deps.profileHome(activeProfile), 'state.db')))
