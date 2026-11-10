@@ -1,17 +1,20 @@
 import { expect, test } from './fixtures'
 
-test('toolset rows apply at once, group by availability and search by description (TAL-2096)', async ({ page }, testInfo) => {
-  // The sidecar's answer for the choice it is read with: `file` is the profile default.
+test('toolset rows apply at once, group by availability and search by description (TAL-2096, TAL-2144)', async ({ page }, testInfo) => {
+  // The server's answer for the choice and search it is read with, available rows first: `file` is the profile default.
   const toolsets = [
-    { name: 'file', description: 'Read and write files', available: true, unavailable_reason: null },
-    { name: 'web', description: 'Search the web', available: true, unavailable_reason: null },
-    { name: 'research', description: 'Search and read', available: true, unavailable_reason: null, stripped_tools: ['web_search', 'web_extract'], stripped_by: ['search', 'web_tools'] },
-    { name: 'todo', description: 'Task lists', available: false, unavailable_reason: 'disabled' },
+    { name: 'file', description: 'Read and write files', available: true, unavailable_reason: null, group: 'available' },
+    { name: 'web', description: 'Search the web', available: true, unavailable_reason: null, group: 'available' },
+    { name: 'research', description: 'Search and read', available: true, unavailable_reason: null, stripped_tools: ['web_search', 'web_extract'], stripped_by: ['search', 'web_tools'], group: 'available' },
+    { name: 'todo', description: 'Task lists', available: false, unavailable_reason: 'disabled', group: 'not_available' },
   ]
+  const searches: string[] = []
   await page.route('**/api/toolsets', (route) => {
-    const choice = (route.request().postDataJSON() as { toolsets: string[] | null }).toolsets
+    const { toolsets: choice, q = '' } = route.request().postDataJSON() as { toolsets: string[] | null; q?: string }
+    searches.push(q)
     const selected = choice ?? ['file']
-    return route.fulfill({ json: { toolsets: toolsets.map((row) => ({ ...row, selected: selected.includes(row.name) })), selected_toolsets: selected, using_defaults: choice === null } })
+    const rows = toolsets.filter((row) => `${row.name} ${row.description}`.toLowerCase().includes(q.toLowerCase()))
+    return route.fulfill({ json: { toolsets: rows.map((row) => ({ ...row, selected: selected.includes(row.name) })), selected_toolsets: selected, using_defaults: choice === null, default_toolsets: ['file'] } })
   })
   await page.goto('/')
   await page.locator('#msg').fill('Plan a small project')
@@ -37,6 +40,7 @@ test('toolset rows apply at once, group by availability and search by descriptio
   await page.screenshot({ path: process.env.TAL2096_SHOTS ? `${process.env.TAL2096_SHOTS}/toolsets-${testInfo.project.name}.png` : testInfo.outputPath(`toolsets-${testInfo.project.name}.png`) })
   await menu.getByRole('searchbox', { name: 'Search toolsets' }).fill('TASK')
   await expect(menu.getByRole('menuitemcheckbox')).toHaveText(['Use profile defaults', /^todo/])
+  expect(searches).toContain('TASK')
   await settled()
   await page.screenshot({ path: process.env.TAL2096_SHOTS ? `${process.env.TAL2096_SHOTS}/toolsets-search-${testInfo.project.name}.png` : testInfo.outputPath(`toolsets-search-${testInfo.project.name}.png`) })
   await page.keyboard.press('Escape')

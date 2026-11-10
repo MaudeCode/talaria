@@ -141,9 +141,9 @@ export function useSwitchProfile() {
   })
 }
 
-export function useToolsetsCatalogQuery(value: string[] | null, sessionId?: string) {
-  // A toggle reads the catalog for the new choice; the open menu keeps its rows meanwhile (TAL-2096).
-  return useQuery({ queryKey: keys.toolsets(sessionId, value), queryFn: () => api.fetchToolsetsCatalog(value, sessionId), gcTime: 0, retry: false, placeholderData: keepPreviousData })
+export function useToolsetsCatalogQuery(value: string[] | null, sessionId: string | undefined, q: string) {
+  // A toggle or a search reads the catalog again; the open menu keeps its rows meanwhile (TAL-2096, TAL-2144).
+  return useQuery({ queryKey: keys.toolsets(sessionId, value, q), queryFn: () => api.fetchToolsetsCatalog(value, sessionId, q), gcTime: 0, retry: false, placeholderData: keepPreviousData })
 }
 
 /** TAL-1040: read when the fresh-chat mode menu opens, so a stopped or older owner is current. */

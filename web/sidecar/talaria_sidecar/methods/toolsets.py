@@ -32,7 +32,8 @@ def catalog(override) -> dict:
     disabled = disabled_toolsets()
     platform_policy = getattr(toolsets, "session_disabled_toolsets", None)
     effective_disabled = platform_policy(disabled, "webui") if platform_policy else disabled
-    selected = _profile_toolsets() if override is None else list(dict.fromkeys(override))
+    defaults = _profile_toolsets()
+    selected = defaults if override is None else list(dict.fromkeys(override))
     # Resolve once through the same Agent filter used at execution, before deferred-tool assembly.
     tools = {item['function']['name'] for item in get_tool_definitions(
         enabled_toolsets=list(definitions), disabled_toolsets=effective_disabled,
@@ -54,8 +55,9 @@ def catalog(override) -> dict:
             'unavailable_reason': None if available else 'disabled' if wholly_disabled else 'unavailable',
             'stripped_tools': [] if wholly_disabled else list(stripped_tools),
             'stripped_by': [] if wholly_disabled else list(stripped_by),
+            'group': 'available' if available else 'not_available',
         })
-    return {'toolsets': rows, 'selected_toolsets': selected, 'using_defaults': override is None}
+    return {'toolsets': rows, 'selected_toolsets': selected, 'using_defaults': override is None, 'default_toolsets': list(defaults)}
 
 
 def register(registry) -> None:

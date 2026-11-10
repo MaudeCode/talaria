@@ -155,10 +155,13 @@ def test_catalog_reports_profile_policy_and_preserves_unknown_selection(handshak
     assert rows['todo']['selected'] is True
     assert rows['file']['available'] is True
     assert rows['missing-toolset']['available'] is False
+    assert [rows[name]['group'] for name in ('todo', 'file', 'missing-toolset')] == ['not_available', 'available', 'not_available']
     assert result['selected_toolsets'] == params['enabled_toolsets']
     defaults = handshaken.result('toolsets.catalog', {**params, 'enabled_toolsets': None})
     assert defaults['using_defaults'] is True
     assert 'todo' not in defaults['selected_toolsets']
+    # TAL-2144: an explicit selection still reports the profile's defaults, so a reset shows them at once.
+    assert result['default_toolsets'] == defaults['default_toolsets'] == defaults['selected_toolsets']
     named = hermes_home / 'profiles' / 'clean'
     named.mkdir(parents=True)
     (named / 'config.yaml').write_text('platform_toolsets:\n  cli: [todo]\n')
@@ -227,7 +230,7 @@ def test_own_toolsets_are_registered_and_listed_with_talaria_off_and_harness_on_
     assert next(r for r in picked['toolsets'] if r['name'] == 'talaria')['selected'] is True
     harness = lambda result: next(r for r in result['toolsets'] if r['name'] == 'harness')  # noqa: E731
     assert harness(defaults) == {'name': 'harness', 'description': harness_toolset.TOOLSET_DESCRIPTION,
-                                 'available': True, 'selected': True, 'unavailable_reason': None, 'stripped_tools': [], 'stripped_by': []}
+                                 'available': True, 'selected': True, 'unavailable_reason': None, 'stripped_tools': [], 'stripped_by': [], 'group': 'available'}
     assert 'harness' in defaults['selected_toolsets']
     (hermes_home / 'config.yaml').write_text('agent:\n  disabled_toolsets: [harness]\n')
     disabled = handshaken.result('toolsets.catalog', {'profile_home': str(hermes_home), 'enabled_toolsets': None})

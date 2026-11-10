@@ -1,5 +1,9 @@
 # Sidecar RPC (TAL-245)
 
+RPC v98 adds `default_toolsets` to `toolsets.catalog`, the profile's default selection whatever
+`enabled_toolsets` it is read with, and a `group` (`available` or `not_available`) to each row
+(TAL-2144). See "Toolset policy" in `agent-api-contract.md`.
+
 RPC v97 removes `api_key` from `models.context_length` (TAL-1991). Inside the
 profile's credential scope, the sidecar resolves the lookup's URL and key together
 with the Agent's chat runtime resolver. The server's `base_url` is only a keyless

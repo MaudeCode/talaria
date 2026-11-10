@@ -97903,7 +97903,7 @@
     "/api/toolsets": {
       "post": {
         "operationId": "toolsetsCatalog",
-        "summary": "Read the current profile catalog with a draft selection. Null uses profile defaults.",
+        "summary": "Read the current profile catalog with a draft selection. Null uses profile defaults. `q` keeps the rows whose name or description contains it, ignoring case; available rows come first.",
         "tags": [
           "tools"
         ],
@@ -97929,6 +97929,10 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "q": {
+                    "type": "string",
+                    "maxLength": 200
                   }
                 },
                 "required": [
@@ -97988,6 +97992,13 @@
                             "items": {
                               "type": "string"
                             }
+                          },
+                          "group": {
+                            "enum": [
+                              "available",
+                              "not_available"
+                            ],
+                            "type": "string"
                           }
                         },
                         "required": [
@@ -97995,7 +98006,8 @@
                           "description",
                           "available",
                           "selected",
-                          "unavailable_reason"
+                          "unavailable_reason",
+                          "group"
                         ]
                       }
                     },
@@ -98007,12 +98019,19 @@
                     },
                     "using_defaults": {
                       "type": "boolean"
+                    },
+                    "default_toolsets": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     }
                   },
                   "required": [
                     "toolsets",
                     "selected_toolsets",
-                    "using_defaults"
+                    "using_defaults",
+                    "default_toolsets"
                   ]
                 }
               }

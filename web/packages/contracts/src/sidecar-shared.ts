@@ -14,8 +14,12 @@ export const ToolsetsCatalogSchema = z.object({
     unavailable_reason: z.enum(['disabled', 'unavailable']).nullable(),
     /** TAL-1813: the tools `agent.disabled_toolsets` cuts from a toolset it leaves standing, and the entries that do it; empty on Agents before v0.22.6. */
     stripped_tools: z.array(z.string()).optional(), stripped_by: z.array(z.string()).optional(),
+    /** TAL-2144: the menu section the row shows in; the server lists every `available` row before the `not_available` ones. */
+    group: z.enum(['available', 'not_available']),
   })),
   selected_toolsets: z.array(z.string()), using_defaults: z.boolean(),
+  /** TAL-2144: the profile's default selection whatever `toolsets` the catalog was read with, so a reset shows it at once. */
+  default_toolsets: z.array(z.string()),
 })
 /**
  * TAL-806: one field of a plugin manifest's `config_schema` (Agent `plugin_settings_fields`) with its current value from

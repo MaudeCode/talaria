@@ -11,6 +11,7 @@ import { formatUsd } from '../../ui/States'
 import { catalogEntryById } from '../../lib/modelEntry'
 import { ProviderIcon } from '../../lib/providerIcon'
 import { lockBackgroundScroll, ModelPickerContent } from './ModelPicker'
+import { useDebounced } from '../../lib/useDebounced'
 import type { ContextWindowSource, ExecutionMode, ExecutionModes } from '@maudecode/talaria-web-contracts'
 
 /**
@@ -143,25 +144,22 @@ export function ToolsetsChip({ value, onChange, row, sessionId }: { value: strin
 }
 
 function ToolsetsPicker({ value, sessionId, search, onChange }: { value: string[] | null; sessionId?: string | undefined; search: string; onChange: (names: string[] | null) => void }) {
-  const query = useToolsetsCatalogQuery(value, sessionId)
-  // The profile defaults, read beside an explicit choice, so a reset shows the defaults the server resolved at once.
-  useToolsetsCatalogQuery(null, sessionId)
+  // TAL-2144: the server searches and orders the rows; the menu renders them as they arrive.
+  const query = useToolsetsCatalogQuery(value, sessionId, useDebounced(search.trim(), 250))
   if (query.isPending) return <div role="status" className="p-3">{m.loading()}</div>
   if (query.isError) return <div className="p-3"><p role="alert">{m.toolsets_load_error()}</p><button type="button" onClick={() => { void query.refetch() }}>{m.retry()}</button></div>
-  // Until the catalog for a new choice arrives, the previous catalog's rows show that choice. A reset before the defaults
-  // were read has nothing to show yet, so its rows wait for them rather than build on the old choice.
+  // Until the catalog for a new choice arrives, the previous catalog's rows show that choice, and a reset the profile
+  // defaults that catalog reported.
   const choosing = query.isPlaceholderData
-  const resetting = choosing && value === null
   const defaults = choosing ? value === null : query.data.using_defaults
-  const selected = choosing ? value ?? [] : query.data.selected_toolsets
-  const needle = search.trim().toLowerCase()
-  const shown = query.data.toolsets.filter((item) => !needle || item.name.toLowerCase().includes(needle) || item.description.toLowerCase().includes(needle))
-  const unavailable = shown.filter((item) => !item.available)
-  const toolsetRow = (item: (typeof shown)[number]) => {
+  const selected = choosing ? value ?? query.data.default_toolsets : query.data.selected_toolsets
+  const rows = query.data.toolsets
+  const split = rows.findIndex((item) => item.group === 'not_available')
+  const toolsetRow = (item: (typeof rows)[number]) => {
     const on = selected.includes(item.name)
     return (
       // The last selected toolset stays: a session runs with at least one.
-      <MenuChoiceCheckbox key={item.name} checked={on} disabled={resetting || !item.available || (on && selected.length === 1)}
+      <MenuChoiceCheckbox key={item.name} checked={on} disabled={!item.available || (on && selected.length === 1)}
         onCheckedChange={(next) => onChange(next ? [...selected, item.name] : selected.filter((name) => name !== item.name))}>
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate">{item.name}</span>
@@ -174,9 +172,9 @@ function ToolsetsPicker({ value, sessionId, search, onChange }: { value: string[
   }
   return <>
     <MenuChoiceCheckbox checked={defaults} onCheckedChange={() => { if (!defaults) onChange(null) }}>{m.toolsets_defaults()}</MenuChoiceCheckbox>
-    {shown.filter((item) => item.available).map(toolsetRow)}
-    {unavailable.length > 0 && <MenuGroup><MenuGroupLabel>{m.toolsets_not_available()}</MenuGroupLabel>{unavailable.map(toolsetRow)}</MenuGroup>}
-    {shown.length === 0 && <p className="px-2.5 py-1.5 text-sm text-muted">{m.toolsets_no_matches()}</p>}
+    {(split < 0 ? rows : rows.slice(0, split)).map(toolsetRow)}
+    {split >= 0 && <MenuGroup><MenuGroupLabel>{m.toolsets_not_available()}</MenuGroupLabel>{rows.slice(split).map(toolsetRow)}</MenuGroup>}
+    {rows.length === 0 && <p className="px-2.5 py-1.5 text-sm text-muted">{m.toolsets_no_matches()}</p>}
   </>
 }
 

@@ -14,7 +14,8 @@
             "selected": false,
             "unavailable_reason": "unavailable",
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "not_available"
           },
           {
             "name": "bot_room",
@@ -23,7 +24,8 @@
             "selected": false,
             "unavailable_reason": "unavailable",
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "not_available"
           },
           {
             "name": "browser",
@@ -32,7 +34,8 @@
             "selected": true,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "browser-cdp",
@@ -41,7 +44,8 @@
             "selected": false,
             "unavailable_reason": "unavailable",
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "not_available"
           },
           {
             "name": "browser-use",
@@ -50,7 +54,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "catalog",
@@ -59,7 +64,8 @@
             "selected": false,
             "unavailable_reason": "unavailable",
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "not_available"
           },
           {
             "name": "clarify",
@@ -68,7 +74,8 @@
             "selected": true,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "code_execution",
@@ -77,7 +84,8 @@
             "selected": true,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "coding",
@@ -86,7 +94,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "computer_use",
@@ -95,7 +104,8 @@
             "selected": true,
             "unavailable_reason": "unavailable",
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "not_available"
           },
           {
             "name": "connections",
@@ -104,7 +114,8 @@
             "selected": true,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "context_engine",
@@ -113,7 +124,8 @@
             "selected": false,
             "unavailable_reason": "unavailable",
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "not_available"
           },
           {
             "name": "cronjob",
@@ -122,7 +134,8 @@
             "selected": true,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "debugging",
@@ -131,7 +144,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "delegation",
@@ -140,7 +154,8 @@
             "selected": true,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "desktop_ui",
@@ -149,7 +164,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "discord",
@@ -158,7 +174,8 @@
             "selected": false,
             "unavailable_reason": "unavailable",
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "not_available"
           },
           {
             "name": "discord_admin",
@@ -167,7 +184,8 @@
             "selected": false,
             "unavailable_reason": "unavailable",
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "not_available"
           },
           {
             "name": "feishu_doc",
@@ -176,7 +194,8 @@
             "selected": false,
             "unavailable_reason": "unavailable",
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "not_available"
           },
           {
             "name": "feishu_drive",
@@ -185,7 +204,8 @@
             "selected": false,
             "unavailable_reason": "unavailable",
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "not_available"
           },
           {
             "name": "file",
@@ -194,7 +214,8 @@
             "selected": true,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "harness",
@@ -203,7 +224,8 @@
             "selected": true,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "hermes-acp",
@@ -212,7 +234,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "hermes-api-server",
@@ -221,7 +244,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "hermes-bluebubbles",
@@ -230,7 +254,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "hermes-cli",
@@ -239,7 +264,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "hermes-cron",
@@ -248,7 +274,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "hermes-dingtalk",
@@ -257,7 +284,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "hermes-discord",
@@ -266,7 +294,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "hermes-email",
@@ -275,7 +304,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "hermes-feishu",
@@ -284,7 +314,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "hermes-gateway",
@@ -293,7 +324,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "hermes-matrix",
@@ -302,7 +334,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "hermes-mattermost",
@@ -311,7 +344,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "hermes-qqbot",
@@ -320,7 +354,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "hermes-signal",
@@ -329,7 +364,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "hermes-slack",
@@ -338,7 +374,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "hermes-sms",
@@ -347,7 +384,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "hermes-telegram",
@@ -356,7 +394,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "hermes-webhook",
@@ -365,7 +404,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "hermes-wecom",
@@ -374,7 +414,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "hermes-wecom-callback",
@@ -383,7 +424,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "hermes-weixin",
@@ -392,7 +434,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "hermes-whatsapp",
@@ -401,7 +444,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "hermes-yuanbao",
@@ -410,7 +454,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "image_gen",
@@ -419,7 +464,8 @@
             "selected": true,
             "unavailable_reason": "unavailable",
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "not_available"
           },
           {
             "name": "kanban",
@@ -428,7 +474,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "memory",
@@ -437,7 +484,8 @@
             "selected": true,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "onboarding",
@@ -446,7 +494,8 @@
             "selected": false,
             "unavailable_reason": "unavailable",
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "not_available"
           },
           {
             "name": "project",
@@ -455,7 +504,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "safe",
@@ -464,7 +514,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "search",
@@ -473,7 +524,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "session_search",
@@ -482,7 +534,8 @@
             "selected": true,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "skills",
@@ -491,7 +544,8 @@
             "selected": true,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "talaria",
@@ -500,7 +554,8 @@
             "selected": false,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "terminal",
@@ -509,7 +564,8 @@
             "selected": true,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "todo",
@@ -518,7 +574,8 @@
             "selected": true,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "tts",
@@ -527,7 +584,8 @@
             "selected": true,
             "unavailable_reason": "unavailable",
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "not_available"
           },
           {
             "name": "video",
@@ -536,7 +594,8 @@
             "selected": false,
             "unavailable_reason": "unavailable",
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "not_available"
           },
           {
             "name": "video_gen",
@@ -545,7 +604,8 @@
             "selected": false,
             "unavailable_reason": "unavailable",
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "not_available"
           },
           {
             "name": "vision",
@@ -554,7 +614,8 @@
             "selected": true,
             "unavailable_reason": "unavailable",
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "not_available"
           },
           {
             "name": "web",
@@ -563,7 +624,8 @@
             "selected": true,
             "unavailable_reason": null,
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "available"
           },
           {
             "name": "x_search",
@@ -572,7 +634,8 @@
             "selected": false,
             "unavailable_reason": "unavailable",
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "not_available"
           },
           {
             "name": "yuanbao",
@@ -581,7 +644,8 @@
             "selected": false,
             "unavailable_reason": "unavailable",
             "stripped_tools": [],
-            "stripped_by": []
+            "stripped_by": [],
+            "group": "not_available"
           }
         ],
         "selected_toolsets": [
@@ -604,7 +668,27 @@
           "web",
           "harness"
         ],
-        "using_defaults": true
+        "using_defaults": true,
+        "default_toolsets": [
+          "browser",
+          "clarify",
+          "code_execution",
+          "computer_use",
+          "connections",
+          "cronjob",
+          "delegation",
+          "file",
+          "image_gen",
+          "memory",
+          "session_search",
+          "skills",
+          "terminal",
+          "todo",
+          "tts",
+          "vision",
+          "web",
+          "harness"
+        ]
       }
     }
   ]

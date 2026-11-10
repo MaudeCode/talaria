@@ -69,7 +69,7 @@ const PendingWritesReviewInput = z.object({ kind: z.enum(['skills', 'memory']), 
 const PendingWritesReviewSchema = z.object({ results: z.array(z.object({ id: z.string(), done: z.boolean(), message: z.string() })) })
 
 export const toolsContract = {
-  toolsetsCatalog: oc.route({ method: 'POST', path: '/api/toolsets', tags, summary: 'Read the current profile catalog with a draft selection. Null uses profile defaults.' }).input(z.object({ session_id: z.string().optional(), toolsets: z.array(z.string()).nullable() })).output(ToolsetsCatalogSchema),
+  toolsetsCatalog: oc.route({ method: 'POST', path: '/api/toolsets', tags, summary: 'Read the current profile catalog with a draft selection. Null uses profile defaults. `q` keeps the rows whose name or description contains it, ignoring case; available rows come first.' }).input(z.object({ session_id: z.string().optional(), toolsets: z.array(z.string()).nullable(), q: z.string().max(200).optional() })).output(ToolsetsCatalogSchema),
   skills: {
     revisions: oc.route({ method: 'GET', path: '/api/skills/revisions', tags, summary: 'Inspect actual saved skill history from the consented reviewed backend. Profile/skill-bound IDs refuse stale or foreign selections. No history is fabricated; inspection cannot execute checks, call providers, run a judge or change skills.' }).input(SkillRevisionsInputSchema).output(SkillRevisionsSchema),
     replayPlan: oc.route({ method: 'GET', path: '/api/skills/replays/plan', tags, summary: 'The consent summary for replaying the skill\'s saved cases against two exact revisions: case fixtures, the verified provider route and the reserved budget. Reads only.' }).input(SkillReplayPlanQuerySchema).output(SkillReplayPlanSchema),
