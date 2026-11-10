@@ -306,7 +306,8 @@ action not in it gets a row here in the same change:
 | Continue | `arrow-right` | Skip | `skip-forward` |
 | Summarize | `sparkles` | Attach | `paperclip` |
 | Show more | `chevron-down` | Show less | `chevron-up` |
-| Stop playing | `square` | | |
+| Stop playing | `square` | Close a docked panel | `x` |
+| Collapse a docked panel to its header | `chevron-down` | Expand a collapsed panel | `chevron-up` |
 
 ## 13. Menus
 

@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "The Talaria Web terminal can collapse to its header bar and keep running; a dot marks new output, and \"Auto-expand terminal on output\" now opens it when a command prints.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

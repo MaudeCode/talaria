@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, test } from './fixtures'
+import { expect, expectNoOverflow, test } from './fixtures'
 import terminalFixture from '../../../../contracts/fixtures/native-captured-command.json' with { type: 'json' }
 
 test.use({ serviceWorkers: 'block', video: 'on' })
@@ -93,6 +93,39 @@ test('terminal opens, accepts input, resizes, and closes', async ({ page }, test
   await expect(panel).toHaveCount(0)
   await expect.poll(() => closes).toBe(1)
   await page.screenshot({ path: testInfo.outputPath('terminal-closed.png') })
+})
+
+/** TAL-2156: collapsing keeps the shell behind a header bar whose dot marks output printed meanwhile; neither state scrolls sideways. */
+test('terminal collapses to its header, marks new output, and expands with its scrollback', async ({ page }, testInfo) => {
+  const sid = 'terminal-collapse'
+  let streams = 0
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Terminal', model: 'm1', workspace: '/tmp/term', messages: [] } } }))
+  await page.route('**/api/terminal/**', async (route) => {
+    const path = new URL(route.request().url()).pathname
+    // Each reconnect prints one more line, standing in for a command that keeps printing.
+    if (path.endsWith('/output')) return route.fulfill({ headers: { 'content-type': 'text/event-stream' }, body: `retry: 300\n\nevent: output\ndata: {"text":"build step ${++streams}\\r\\n"}\n\n` })
+    return route.fulfill({ json: path.endsWith('/start') ? terminalStart(sid) : { ok: true } })
+  })
+  await page.goto(`/session/${sid}`)
+  await page.locator('#msg').fill('/terminal')
+  await page.locator('#btnSend').click()
+  const panel = page.locator('#composerTerminalPanel')
+  const surface = panel.getByRole('application', { name: 'Workspace terminal' })
+  await expect(panel.locator('.xterm-rows')).toContainText('build step 1')
+  const shot = async (name: string) => { await page.screenshot({ path: testInfo.outputPath(`${name}.png`) }) }
+  await shot(`terminal-open-${testInfo.project.name}`)
+  if (testInfo.project.name === 'desktop') await expectNoOverflow(page, 'terminal-open', shot)
+  await panel.getByRole('button', { name: 'Collapse', exact: true }).click()
+  await expect(surface).toBeHidden()
+  await expect(panel.getByRole('button', { name: 'Expand', exact: true })).toBeFocused()
+  await expect(panel.getByRole('status')).toContainText('New output')
+  await expect(panel.locator('.composer-terminal-header [data-status]')).toHaveAttribute('data-status', 'warning')
+  await shot(`terminal-collapsed-${testInfo.project.name}`)
+  if (testInfo.project.name === 'desktop') await expectNoOverflow(page, 'terminal-collapsed', shot)
+  const printed = streams
+  await panel.getByRole('button', { name: 'Expand', exact: true }).click()
+  await expect(surface).toBeVisible()
+  await expect(panel.locator('.xterm-rows')).toContainText(`build step ${printed}`)
 })
 
 /** TAL-555: closing the terminal while its start request is pending must not open an output stream afterwards. */
