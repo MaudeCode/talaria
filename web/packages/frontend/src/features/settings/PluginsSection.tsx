@@ -114,7 +114,7 @@ export function PluginsSection() {
         { id: 'installed', label: m.plugins_group_installed(), value: String(summary.installed) },
         { id: 'bundled', label: m.plugins_builtin(), value: String(summary.bundled) },
         { id: 'enabled', label: m.plugins_stat_enabled(), value: String(summary.enabled), mode: m.plugins_stat_of({ total: summary.total }) },
-        { id: 'updates', label: m.plugins_stat_updates(), value: String(summary.updates), tone: summary.updates > 0 ? 'warning' : undefined },
+        { id: 'updates', label: m.plugins_stat_updates(), value: String(summary.updates), tone: summary.updates_tone ?? undefined },
       ]} />}
       {plugins.data.read_only && <div className="flex min-w-0"><StatusDot state="warning" title={m.plugins_read_only()}>{m.plugins_read_only()}</StatusDot></div>}
       {plugins.data.plugin_isolation_advisory && <div className="flex min-w-0" data-advisory="plugin-isolation"><StatusDot state="warning" title={m.plugins_isolation_advisory()}>{m.plugins_isolation_advisory()}</StatusDot></div>}
@@ -196,7 +196,7 @@ function PluginGroupRow({ group, open, onToggle }: { group: PluginGroup; open: b
     className="flex min-h-11 w-full items-center gap-2.5 py-2 text-left text-sm text-text transition-colors hover:text-accent-text focus-visible:outline-2 focus-visible:outline-accent">
     <Icon size={18} strokeWidth={1.75} aria-hidden="true" data-row-icon="" className="shrink-0 text-muted" />
     <span className="min-w-0 flex-1 truncate font-medium">{label()}</span>
-    <QuotaMeter thin level="healthy" percent={group.total_count ? 100 * group.enabled_count / group.total_count : 0} marker={null} label={`${label()}, ${on}`} />
+    <QuotaMeter thin level="healthy" percent={group.enabled_percent} marker={null} label={`${label()}, ${on}`} />
     <span className="shrink-0 text-xs font-medium tabular-nums">{on}</span>
     <Chevron size={14} aria-hidden="true" className="shrink-0 text-muted" />
   </button>

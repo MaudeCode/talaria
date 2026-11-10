@@ -108403,13 +108403,19 @@
                             "type": "integer",
                             "minimum": -9007199254740991,
                             "maximum": 9007199254740991
+                          },
+                          "enabled_percent": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 100
                           }
                         },
                         "required": [
                           "id",
                           "plugin_keys",
                           "enabled_count",
-                          "total_count"
+                          "total_count",
+                          "enabled_percent"
                         ]
                       }
                     },
@@ -108440,6 +108446,19 @@
                           "type": "integer",
                           "minimum": -9007199254740991,
                           "maximum": 9007199254740991
+                        },
+                        "updates_tone": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "warning"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -108447,7 +108466,8 @@
                         "bundled",
                         "enabled",
                         "total",
-                        "updates"
+                        "updates",
+                        "updates_tone"
                       ]
                     }
                   },

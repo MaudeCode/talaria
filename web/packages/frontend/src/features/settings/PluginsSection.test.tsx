@@ -135,8 +135,8 @@ it('TAL-2132: shows the server figures and groups; a group opens and closes, and
     image: { key: 'image_gen/fal', name: 'fal', enabled: true, kind: 'exclusive', activation: 'exclusive', is_active_provider: true, description: 'flux-2-pro', source: 'bundled' as const, category: 'image_gen' },
     video: { key: 'video_gen/fal', name: 'fal', enabled: true, description: 'Veo', source: 'bundled' as const, category: 'video_gen' },
   }
-  const group = (id: 'installed' | 'platforms' | 'image_gen' | 'video_gen', plugin_keys: string[], enabled_count: number, total_count: number) => ({ id, plugin_keys, enabled_count, total_count })
-  const summary = { installed: 2, bundled: 3, enabled: 4, total: 5, updates: 1 }
+  const group = (id: 'installed' | 'platforms' | 'image_gen' | 'video_gen', plugin_keys: string[], enabled_count: number, total_count: number) => ({ id, plugin_keys, enabled_count, total_count, enabled_percent: 100 * enabled_count / total_count })
+  const summary = { installed: 2, bundled: 3, enabled: 4, total: 5, updates: 1, updates_tone: 'warning' as const }
   // The server's answers per `q`: with a filter only `plugins` and `plugin_keys` narrow.
   vi.mocked(api.fetchPlugins).mockImplementation((q = '') => Promise.resolve(q === 'fal'
     ? { read_only: false, total: 5, summary, plugins: [rows.image, rows.video], groups: [group('installed', [], 1, 2), group('platforms', [], 1, 1), group('image_gen', ['image_gen/fal'], 1, 1), group('video_gen', ['video_gen/fal'], 1, 1)] }

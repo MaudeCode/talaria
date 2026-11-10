@@ -1329,11 +1329,11 @@ export type PluginGroupId = z.infer<typeof PluginGroupIdSchema>
 /**
  * TAL-2132: `installed` holds every `source: installed` row, comes first and is always present; a bundled row joins the group its
  * `category` names (`-` read as `_`), else `other`. Rows sort by name; other empty groups are left out. With `q`, `plugin_keys`
- * holds only matches while both counts describe the whole group.
+ * holds only matches while both counts describe the whole group. `enabled_percent` is the share turned on, 0 for an empty group.
  */
-export const PluginGroupSchema = z.object({ id: PluginGroupIdSchema, plugin_keys: z.array(z.string()), enabled_count: z.number().int(), total_count: z.number().int() })
-/** TAL-2132: the install's figures, regardless of `q`. */
-export const PluginsSummarySchema = z.object({ installed: z.number().int(), bundled: z.number().int(), enabled: z.number().int(), total: z.number().int(), updates: z.number().int() })
+export const PluginGroupSchema = z.object({ id: PluginGroupIdSchema, plugin_keys: z.array(z.string()), enabled_count: z.number().int(), total_count: z.number().int(), enabled_percent: z.number().min(0).max(100) })
+/** TAL-2132: the install's figures, regardless of `q`; `updates_tone` is `warning` while a plugin has an update waiting. */
+export const PluginsSummarySchema = z.object({ installed: z.number().int(), bundled: z.number().int(), enabled: z.number().int(), total: z.number().int(), updates: z.number().int(), updates_tone: z.enum(['warning']).nullable() })
 export const PluginsSchema = z.looseObject({ plugins: z.array(PluginSchema), total: z.number().int().optional().describe('Installed plugins before the `q` filter (TAL-2129).'), empty: z.boolean().optional(), read_only: z.boolean().optional(), supported_hooks: z.array(z.string()).optional(), unavailable: z.boolean().optional(), plugin_isolation_advisory: z.boolean().optional(), auto_update: PluginAutoUpdateViewSchema.optional(), groups: z.array(PluginGroupSchema).optional(), summary: PluginsSummarySchema.optional() })
 /** `active`: the Agent holds the server connected. `failed` (TAL-1845): it reports a failed connect or a parked connection. */
 export const McpServerStatusSchema = z.enum(['active', 'configured', 'disabled', 'failed', 'invalid_config'])

@@ -29,9 +29,11 @@ export function pluginListing<T extends ListedPlugin>(rows: T[], q = '') {
   for (const row of rows) members.get(groupOf(row))?.push(row)
   const groups = GROUP_IDS.flatMap((id) => {
     const all = (members.get(id) ?? []).sort(byName)
-    return id === 'installed' || all.length ? [{ id, plugin_keys: all.filter(matches).map((row) => row.key), enabled_count: all.filter(on).length, total_count: all.length }] : []
+    const enabled = all.filter(on).length
+    return id === 'installed' || all.length ? [{ id, plugin_keys: all.filter(matches).map((row) => row.key), enabled_count: enabled, total_count: all.length, enabled_percent: all.length ? 100 * enabled / all.length : 0 }] : []
   })
   const installed = members.get('installed')?.length ?? 0
-  const summary = { installed, bundled: rows.length - installed, enabled: rows.filter(on).length, total: rows.length, updates: rows.filter((row) => row.update?.available === true).length }
+  const updates = rows.filter((row) => row.update?.available === true).length
+  const summary = { installed, bundled: rows.length - installed, enabled: rows.filter(on).length, total: rows.length, updates, updates_tone: updates > 0 ? 'warning' as const : null }
   return { plugins, total: rows.length, empty: rows.length === 0, groups, summary }
 }
