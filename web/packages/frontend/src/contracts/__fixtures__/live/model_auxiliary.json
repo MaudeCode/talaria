@@ -39,7 +39,8 @@
           "default_source": "provider",
           "options": [],
           "unavailable": "model"
-        }
+        },
+        "changed": false
       },
       {
         "api_key_set": false,
@@ -67,7 +68,8 @@
           "default_source": "provider",
           "options": [],
           "unavailable": "model"
-        }
+        },
+        "changed": false
       },
       {
         "api_key_set": false,
@@ -95,7 +97,8 @@
           "default_source": "provider",
           "options": [],
           "unavailable": "model"
-        }
+        },
+        "changed": false
       },
       {
         "api_key_set": false,
@@ -123,7 +126,8 @@
           "default_source": "provider",
           "options": [],
           "unavailable": "model"
-        }
+        },
+        "changed": false
       },
       {
         "api_key_set": false,
@@ -151,7 +155,8 @@
           "default_source": "provider",
           "options": [],
           "unavailable": "model"
-        }
+        },
+        "changed": false
       },
       {
         "api_key_set": false,
@@ -179,7 +184,8 @@
           "default_source": "provider",
           "options": [],
           "unavailable": "slot"
-        }
+        },
+        "changed": false
       },
       {
         "api_key_set": false,
@@ -207,7 +213,8 @@
           "default_source": "provider",
           "options": [],
           "unavailable": "slot"
-        }
+        },
+        "changed": false
       },
       {
         "api_key_set": false,
@@ -235,7 +242,8 @@
           "default_source": "provider",
           "options": [],
           "unavailable": "model"
-        }
+        },
+        "changed": false
       },
       {
         "api_key_set": false,
@@ -263,7 +271,8 @@
           "default_source": "provider",
           "options": [],
           "unavailable": "model"
-        }
+        },
+        "changed": false
       },
       {
         "api_key_set": false,
@@ -291,7 +300,8 @@
           "default_source": "provider",
           "options": [],
           "unavailable": "model"
-        }
+        },
+        "changed": false
       },
       {
         "api_key_set": false,
@@ -319,7 +329,8 @@
           "default_source": "provider",
           "options": [],
           "unavailable": "model"
-        }
+        },
+        "changed": false
       },
       {
         "api_key_set": false,
@@ -347,7 +358,8 @@
           "default_source": "provider",
           "options": [],
           "unavailable": "model"
-        }
+        },
+        "changed": false
       },
       {
         "api_key_set": false,
@@ -375,7 +387,8 @@
           "default_source": "provider",
           "options": [],
           "unavailable": "model"
-        }
+        },
+        "changed": false
       },
       {
         "api_key_set": false,
@@ -403,7 +416,8 @@
           "default_source": "provider",
           "options": [],
           "unavailable": "model"
-        }
+        },
+        "changed": false
       }
     ]
   },
