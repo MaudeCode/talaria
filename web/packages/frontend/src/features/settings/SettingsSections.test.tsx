@@ -4,7 +4,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
-const titleTask = { task: 'title_generation', label: 'Title generation', description: 'session titles', provider: 'auto', model: '', is_auto: true, value_label: 'Claude Sonnet 4.6', provider_label: 'Anthropic', selected_option_id: null, in_catalog: true, inherit_from: null, reasoning_effort: '' }
+const titleTask = { task: 'title_generation', label: 'Title generation', description: 'session titles', provider: 'auto', model: '', is_auto: true, value_label: 'Claude Sonnet 4.6', provider_label: 'Anthropic', selected_option_id: null, in_catalog: true, inherit_from: null, reasoning_effort: '', reasoning: { saved: null, effective: '', inherited: true, default_source: 'provider', options: ['low', 'medium', 'high'], unavailable: null } }
 // Every other endpoint stays pending, so a page's other lists sit in their loading state.
 vi.mock('../../api/endpoints', async (importOriginal) => {
   const real = await importOriginal<Record<string, unknown>>()
@@ -107,7 +107,8 @@ it('edits every retired Preferences, Conversation, System and Models & Providers
   }
   vi.unstubAllGlobals()
   expect(found).toEqual(Object.fromEntries(Object.entries(PLACEMENT).map(([key, section]) => [key, [section]])))
-})
+  // Every page renders in turn, as in the index placement test (TAL-2086).
+}, 30_000)
 
 /** TAL-2075, TAL-2076, TAL-2138: every Chat, Chat sub-page and Navigation row by its label, in page order, with the `data-group` it sits in. */
 const GROUPS: Record<string, [string, string][]> = {
