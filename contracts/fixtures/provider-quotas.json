@@ -125,5 +125,16 @@
   ],
   "retained_display_level": null,
   "sidebar_source_ids": [],
-  "sidebar_can_pin": true
+  "sidebar_can_pin": true,
+  "summary": {
+    "connected": 1,
+    "lowest": {
+      "source_id": "qsrc_69e3029fba20a8b0ea82fff362e093f5",
+      "percent_remaining": 68,
+      "level": "warning"
+    },
+    "spend_month": null,
+    "spend_currency": null,
+    "default_provider_name": "Anthropic"
+  }
 }

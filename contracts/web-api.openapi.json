@@ -95316,6 +95316,93 @@
                     "sidebar_can_pin": {
                       "type": "boolean",
                       "description": "TAL-1870: whether another source can be pinned; a pin this read does not list does not count."
+                    },
+                    "summary": {
+                      "type": "object",
+                      "properties": {
+                        "connected": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991,
+                          "description": "Configured providers."
+                        },
+                        "lowest": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "source_id": {
+                                  "type": "string"
+                                },
+                                "percent_remaining": {
+                                  "type": "number"
+                                },
+                                "level": {
+                                  "enum": [
+                                    "healthy",
+                                    "warning",
+                                    "critical",
+                                    "stale",
+                                    "unavailable"
+                                  ],
+                                  "type": "string",
+                                  "description": "The window's `display_level`."
+                                }
+                              },
+                              "required": [
+                                "source_id",
+                                "percent_remaining",
+                                "level"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "The quota window with the least remaining across every source; null without a remaining percent."
+                        },
+                        "spend_month": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "OpenRouter spend this UTC month, the sum of the cost history's daily deltas; null without an OpenRouter key or a known delta."
+                        },
+                        "spend_currency": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "ISO 4217 code of `spend_month`; null with it."
+                        },
+                        "default_provider_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Display name of the provider serving the default model."
+                        }
+                      },
+                      "required": [
+                        "connected",
+                        "lowest",
+                        "spend_month",
+                        "spend_currency",
+                        "default_provider_name"
+                      ],
+                      "description": "TAL-2135: Settings › Providers' figures; absent on a `?source=` read."
                     }
                   },
                   "required": [

@@ -937,6 +937,13 @@ export const ProviderQuotasSchema = z.looseObject({ availability: CatalogAvailab
   retained_display_level: QuotaLevelSchema.nullable().optional().describe('TAL-1870: the level of a cached row this read does not carry, shown with `availability.unavailable_reason`; null when `availability.authoritative`.'),
   sidebar_source_ids: z.array(z.string()).optional().describe('TAL-1870: the `sidebar_quota_sources` pins this read lists, in pinned order; the rows the expanded Web sidebar shows. Every pin while `availability.authoritative` is false.'),
   sidebar_can_pin: z.boolean().optional().describe('TAL-1870: whether another source can be pinned; a pin this read does not list does not count.'),
+  summary: z.object({
+    connected: z.number().int().describe('Configured providers.'),
+    lowest: z.object({ source_id: z.string(), percent_remaining: z.number(), level: QuotaLevelSchema.describe('The window\'s `display_level`.') }).nullable().describe('The quota window with the least remaining across every source; null without a remaining percent.'),
+    spend_month: z.number().nullable().describe('OpenRouter spend this UTC month, the sum of the cost history\'s daily deltas; null without an OpenRouter key or a known delta.'),
+    spend_currency: z.string().nullable().describe('ISO 4217 code of `spend_month`; null with it.'),
+    default_provider_name: z.string().nullable().describe('Display name of the provider serving the default model.'),
+  }).optional().describe('TAL-2135: Settings › Providers\' figures; absent on a `?source=` read.'),
 })
 /** One day of OpenRouter spend on `/api/provider/cost-history` (TAL-412). */
 export const CostSnapshotSchema = z.looseObject({

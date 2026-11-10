@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { AgentConfig, parseProviderQualifiedModel } from '../config/agent-config.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, WEB_ROOT, type TestServer } from '../test/harness.js'
-import { ProviderCatalog, repairSessionModel, type ModelEntry, type ModelGroup, type ModelsCatalog } from './catalog.js'
+import { ProviderCatalog, quotaSummary, repairSessionModel, type ModelEntry, type ModelGroup, type ModelsCatalog } from './catalog.js'
 import { OAUTH_PROVIDERS, PROVIDER_MODELS } from './tables.js'
 import { writeEnvFile } from '../test/env-file.js'
 import { SIDECAR_METHODS, type SidecarResult } from '@maudecode/talaria-web-contracts'
@@ -373,6 +373,10 @@ describe.each([
       expect((await catalog.models(home)).groups.some((g) => g.provider_id === provider)).toBe(true)
       const quotas = await catalog.quotas(home, 'synthetic')
       expect((quotas.sources as Json[]).find((s) => s.provider_id === provider)).toMatchObject({ status: 'available' })
+      // TAL-2135: the card list's configured count; one day of OpenRouter usage has no delta yet, so no month's spend.
+      const configured = (await catalog.providers(home)).providers.filter((p) => p.configured === true).length
+      expect(quotas.summary).toMatchObject({ connected: configured, spend_month: null, spend_currency: null, default_provider_name: 'Anthropic' })
+      expect((await catalog.quotas(home, 'synthetic', { sourceId: 'qsrc_none' })).summary).toBeUndefined()
       const calls = sidecar.calls.filter((c) => (c.method === 'usage.balance' || c.method === 'usage.pool') && (c.params as Json).provider === provider)
       expect(calls.some((c) => c.method === 'usage.pool')).toBe(true)
       const expected = key.startsWith('sk-') ? { api_key: key } : { env_vars: [envVar, ...aliases] }
@@ -906,6 +910,50 @@ describe('OpenRouter cost history arithmetic (TAL-1655)', () => {
       const rows = history.snapshots as Json[]
       expect(rows.map((r) => r.delta)).toEqual([null, 1e308, 1e307, 1e308])
       for (const row of rows) expect(Number.isFinite(row.bar_percent)).toBe(true)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('Settings › Providers figures (TAL-2135)', () => {
+  const window = (remaining: number | null, level: string) => ({ label: 'Weekly', remaining_percent: remaining, display_level: level, urgency: { remaining: level, pace: level } })
+  const source = (id: string, windows: Json[]) => ({ source_id: id, provider_id: id, account_label: id, windows })
+  const providers = [{ id: 'anthropic', display_name: 'Anthropic', configured: true }, { id: 'openrouter', display_name: 'OpenRouter', configured: true }, { id: 'xai', configured: false }]
+
+  it('counts configured providers and names the default with no quota and no spend', () => {
+    expect(quotaSummary(providers, 'anthropic', [], null)).toEqual({ connected: 2, lowest: null, spend_month: null, spend_currency: null, default_provider_name: 'Anthropic' })
+    expect(quotaSummary(providers, null, [source('openrouter', [])], null)).toMatchObject({ lowest: null, default_provider_name: null })
+  })
+
+  it('reports a lone window, and the least remaining of several with that window\'s level', () => {
+    expect(quotaSummary(providers, 'anthropic', [source('anthropic', [window(62, 'healthy')])], null).lowest).toEqual({ source_id: 'anthropic', percent_remaining: 62, level: 'healthy' })
+    const several = [source('anthropic', [window(62, 'healthy'), window(21, 'warning')]), source('codex', [window(null, 'unavailable'), window(40, 'healthy')])]
+    expect(quotaSummary(providers, 'anthropic', several, null).lowest).toEqual({ source_id: 'anthropic', percent_remaining: 21, level: 'warning' })
+  })
+
+  it('carries the month\'s OpenRouter spend with its currency', () => {
+    expect(quotaSummary(providers, 'openrouter', [], 12.4)).toMatchObject({ spend_month: 12.4, spend_currency: 'USD', default_provider_name: 'OpenRouter' })
+  })
+
+  it('sums only this month\'s daily deltas from the cost snapshots', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'talaria-spend-'))
+    try {
+      writeFileSync(join(home, 'config.yaml'), '# synthetic configuration\n')
+      writeEnvFile(join(home, '.env'), { OPENROUTER_API_KEY: 'sk-synthetic-plain' })
+      mkdirSync(join(home, 'cost-snapshots'))
+      // 2027-01-15: Dec 31 → Jan 1 spent 2, then 1.5 and 0.9 more; the December day before stays out.
+      writeFileSync(join(home, 'cost-snapshots', 'openrouter.json'), JSON.stringify({ snapshots: [
+        { date: '2026-12-30', used: 5, limit: 100 }, { date: '2026-12-31', used: 8, limit: 100 }, { date: '2027-01-01', used: 10, limit: 100 }, { date: '2027-01-02', used: 11.5, limit: 100 }, { date: '2027-01-15', used: 12.4, limit: 100 },
+      ] }))
+      const sidecar = new FakeSidecar()
+      sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config: { model: { provider: 'openrouter' } } }))
+      sidecar.respond('usage.pool_providers', () => ({ providers: [], keys: {} }))
+      sidecar.respond('usage.pool', () => ({ entries: [], has_api_key: true }))
+      sidecar.respond('usage.balance', () => ({ status: 'http_error', http_status: 503, label: null, quota: null, is_available: null, balances: [], windows: [] }))
+      sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: [] }))
+      const catalog = new ProviderCatalog({ sidecar: () => sidecar, config: new AgentConfig({ sidecar: () => sidecar, env: {} }), env: {}, now: () => Date.UTC(2027, 0, 15, 12) / 1000, log: () => undefined, costBudget: () => null, isRootProfileHome: () => true })
+      expect((await catalog.quotas(home, 'synthetic')).summary).toMatchObject({ spend_month: 4.4, spend_currency: 'USD', default_provider_name: 'OpenRouter' })
     } finally {
       rmSync(home, { recursive: true, force: true })
     }
