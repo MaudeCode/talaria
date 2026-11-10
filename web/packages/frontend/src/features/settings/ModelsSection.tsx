@@ -1,12 +1,14 @@
 import { m } from '../../paraglide/messages.js'
-import { FieldRow } from '../../ui/Field'
+import { FieldRow, Switch } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { LoadingState, ErrorState } from '../../ui/States'
 import { useModelsQuery, useSetDefaultModel, useAuxiliaryModelsQuery, useDefaultModelChoice } from '../../app/queries'
+import { PROFILE_REASONING, reasoningResource, useReasoningDisplayChoice, useReasoningQuery, useSetReasoningDisplay, useSetReasoningEffort } from '../composer/reasoning'
+import { useResourceEffects } from '../sessions/useResourceMutation'
 import { catalogEntryById, catalogGroupLabel, ModelOptionContent, catalogModelSections } from '../../lib/modelEntry'
 import { useSettingField } from './useSettingField'
 import { AuxiliaryModelsSection } from './AuxiliaryModels'
-import { SettingsGroup } from './SettingsRows'
+import { SettingRow, SettingsGroup } from './SettingsRows'
 
 /** The main model and, when its catalog entry offers them, its speed tiers. */
 function MainModelRows() {
@@ -44,6 +46,38 @@ function MainModelRows() {
             {speedTiers.map((tier) => <option key={tier.id} value={tier.service_tier}>{tier.id === 'standard' ? m.settings_model_speed_standard() : tier.id === 'ultrafast' ? m.settings_model_speed_ultrafast() : m.settings_model_speed_fast()}</option>)}
           </Select>
         </FieldRow>
+      )}
+      <ReasoningRows />
+    </>
+  )
+}
+
+/**
+ * TAL-2078: the profile's default effort and whether thinking shows, through the composer chip's query and write owners.
+ * Each row shows only when the server says the main model supports it; `''` is the provider default.
+ */
+function ReasoningRows() {
+  const status = useReasoningQuery().data
+  const effortWrite = useSetReasoningEffort()
+  const displayWrite = useSetReasoningDisplay()
+  const effect = useResourceEffects<string | null>()[reasoningResource(PROFILE_REASONING)]
+  const display = useReasoningDisplayChoice()
+  if (!status) return null
+  const effort = effect && 'value' in effect ? effect.value ?? '' : status.reasoning_effort ?? ''
+  return (
+    <>
+      {status.supports_reasoning_effort && (
+        <SettingRow label={m.settings_reasoning_effort()} hint={m.settings_default_model_hint()} htmlFor="settingsReasoningEffort">
+          <Select id="settingsReasoningEffort" value={effort} onValueChange={(level) => { effortWrite.mutate({ key: PROFILE_REASONING, level: level || null }) }}>
+            <option value="">{m.reasoning_default()}</option>
+            {(status.supported_efforts ?? []).map((level) => <option key={level} value={level}>{level}</option>)}
+          </Select>
+        </SettingRow>
+      )}
+      {status.supports_thinking_toggle && (
+        <SettingRow label={m.settings_show_thinking()} htmlFor="settingsShowThinking">
+          <Switch id="settingsShowThinking" checked={display ? display === 'show' : status.show_reasoning !== false} onCheckedChange={(checked) => { displayWrite.mutate(checked ? 'show' : 'hide') }} />
+        </SettingRow>
       )}
     </>
   )

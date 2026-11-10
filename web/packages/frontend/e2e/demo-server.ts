@@ -51,6 +51,8 @@ async function seed(server: Awaited<ReturnType<typeof discussionServer>>['server
   writeFileSync(join(server.state, 'config.yaml'), '# demo\n')
   sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: { model: { default: 'claude-sonnet-4-6', provider: 'anthropic' } } }))
   writeEnvFile(join(server.state, '.env'), { ANTHROPIC_API_KEY: 'sk-ant-demo-0000', OPENROUTER_API_KEY: 'sk-or-demo-0000' })
+  // The main model's reasoning levels, so Settings › Models shows its effort and Show thinking rows (TAL-2078).
+  sidecar.respond('models.reasoning_efforts', () => ({ efforts: ['low', 'medium', 'high'], supports_reasoning: true }))
   server.deps.agentConfig.invalidate()
   server.deps.catalog.invalidate()
   const workspace = join(server.state, 'workspace')

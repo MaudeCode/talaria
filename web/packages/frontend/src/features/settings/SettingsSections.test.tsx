@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactElement } from 'react'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -33,7 +33,9 @@ vi.mock('../../app/settings', async (importOriginal) => {
   }
 })
 import { SettingsSectionSchema, type SettingsSectionId } from '@maudecode/talaria-web-contracts'
-import { saveSettings, fetchAuxiliaryModels, fetchModels, fetchSettings, setDefaultModel, fetchConnectorsAvailable } from '../../api/endpoints'
+import { saveSettings, fetchAuxiliaryModels, fetchModels, fetchSettings, setDefaultModel, fetchConnectorsAvailable, fetchReasoning, setReasoningEffort, setReasoningDisplay } from '../../api/endpoints'
+import { ApiError } from '../../contracts/common'
+import { showToast } from '../toast/toast'
 import { keys } from '../../api/queryKeys'
 import { BootstrapContext } from '../../app/bootstrap'
 import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
@@ -185,6 +187,70 @@ it('offers the chosen model\'s own speed tiers before the server answers (TAL-13
   await userEvent.click(await screen.findByRole('option', { name: 'GPT-5.6 Sol' }))
   await userEvent.click(screen.getByRole('combobox', { name: 'Speed' }))
   expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['Standard', 'Fast'])
+})
+
+describe('the profile reasoning defaults (TAL-2078)', () => {
+  const status = { show_reasoning: true, reasoning_effort: 'medium', supported_efforts: ['low', 'medium', 'high'], supports_reasoning_effort: true, supports_thinking_toggle: true }
+  const refusal = () => new ApiError({ kind: 'http', status: 409, path: '/api/reasoning', message: 'config.yaml is package-managed.' })
+  const held = () => { let reject!: (e: unknown) => void; const promise = new Promise<never>((_, r) => { reject = r }); return { promise, reject } }
+  const effortRow = () => screen.queryByRole('combobox', { name: 'Default reasoning effort' })
+  const thinkingRow = () => screen.queryByRole('switch', { name: 'Show thinking' })
+  beforeEach(() => { vi.mocked(fetchAuxiliaryModels).mockResolvedValue({ main: {}, tasks: [] }) })
+
+  it.each([[true, true], [true, false], [false, true], [false, false]])('shows the effort row when effort is supported (%s) and the thinking row when the toggle is (%s)', async (effort, toggle) => {
+    vi.mocked(fetchReasoning).mockResolvedValue({ ...status, supports_reasoning_effort: effort, supports_thinking_toggle: toggle })
+    renderSection(<ModelsSection />)
+    await waitFor(() => expect(fetchReasoning).toHaveBeenCalledWith(undefined, undefined, undefined))
+    await waitFor(() => expect(!!effortRow() || !!thinkingRow() || (!effort && !toggle)).toBe(true))
+    expect(!!effortRow()).toBe(effort)
+    expect(!!thinkingRow()).toBe(toggle)
+  })
+
+  it('offers exactly the server\'s efforts with the provider default and saves the profile default without a chat', async () => {
+    vi.mocked(fetchReasoning).mockResolvedValue(status)
+    vi.mocked(setReasoningEffort).mockImplementation((effort) => {
+      vi.mocked(fetchReasoning).mockResolvedValue({ ...status, reasoning_effort: effort })
+      return Promise.resolve({ ...status, reasoning_effort: effort })
+    })
+    renderSection(<ModelsSection />)
+    const select = await screen.findByRole('combobox', { name: 'Default reasoning effort' })
+    expect(select).toHaveTextContent('medium')
+    await userEvent.click(select)
+    expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['Default', 'low', 'medium', 'high'])
+    await userEvent.click(screen.getByRole('option', { name: 'high' }))
+    expect(setReasoningEffort).toHaveBeenCalledWith('high', null, null, undefined)
+    await waitFor(() => expect(select).toHaveTextContent('high'))
+  })
+
+  it('moves the effort at once and rolls it back with the error toast when the server refuses', async () => {
+    vi.mocked(fetchReasoning).mockResolvedValue(status)
+    const write = held()
+    vi.mocked(setReasoningEffort).mockReturnValue(write.promise)
+    renderSection(<ModelsSection />)
+    const select = await screen.findByRole('combobox', { name: 'Default reasoning effort' })
+    await userEvent.click(select)
+    await userEvent.click(await screen.findByRole('option', { name: 'Default' }))
+    expect(setReasoningEffort).toHaveBeenLastCalledWith('', null, null, undefined)
+    expect(select).toHaveTextContent('Default')
+    write.reject(refusal())
+    await waitFor(() => expect(select).toHaveTextContent('medium'))
+    expect(showToast).toHaveBeenCalledWith('config.yaml is package-managed.', 4000, 'error')
+  })
+
+  it('moves Show thinking at once and rolls it back with the error toast when the server refuses', async () => {
+    vi.mocked(fetchReasoning).mockResolvedValue(status)
+    const write = held()
+    vi.mocked(setReasoningDisplay).mockReturnValue(write.promise)
+    renderSection(<ModelsSection />)
+    const toggle = await screen.findByRole('switch', { name: 'Show thinking' })
+    expect(toggle).toBeChecked()
+    await userEvent.click(toggle)
+    expect(setReasoningDisplay).toHaveBeenLastCalledWith('hide')
+    expect(toggle).not.toBeChecked()
+    write.reject(refusal())
+    await waitFor(() => expect(toggle).toBeChecked())
+    expect(showToast).toHaveBeenCalledWith('config.yaml is package-managed.', 4000, 'error')
+  })
 })
 
 it('offers device-local completion sound presets and explicit preview', async () => {
