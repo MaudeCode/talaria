@@ -119,11 +119,9 @@ export const DUO_VIEWPORTS = [
 /**
  * Sizes the page to each Duo viewport and asserts the document has no sideways scroll there, then restores the original
  * size. `pane`, for a page whose content scrolls inside its own element (Settings), is held to the same rule, since its
- * overflow never widens the document; `pane.known` names the ticket for a viewport where it overflows today, and the
- * check then expects the overflow so a fix forces the entry's removal. `shot`, when given, is called with
- * `<name>-<viewport>` at each viewport.
+ * overflow never widens the document. `shot`, when given, is called with `<name>-<viewport>` at each viewport.
  */
-export async function expectNoOverflow(page: Page, name: string, shot?: (name: string) => Promise<void>, pane?: { locator: Locator; known?: (viewport: string) => string | undefined }): Promise<void> {
+export async function expectNoOverflow(page: Page, name: string, shot?: (name: string) => Promise<void>, pane?: Locator): Promise<void> {
   const original = page.viewportSize()
   try {
     for (const { name: viewport, width, height } of DUO_VIEWPORTS) {
@@ -131,10 +129,7 @@ export async function expectNoOverflow(page: Page, name: string, shot?: (name: s
       // Two frames: media-query listeners re-render after the resize before the width is read.
       await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
       await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${name} has no horizontal scroll at ${viewport}`).toBe(true)
-      if (pane) {
-        const known = pane.known?.(viewport)
-        await expect.poll(() => pane.locator.evaluate((el) => el.scrollWidth <= el.clientWidth), known ? `${name} still overflows its pane at ${viewport} (${known}); remove its known entry` : `${name} has no horizontal scroll in its pane at ${viewport}`).toBe(!known)
-      }
+      if (pane) await expect.poll(() => pane.evaluate((el) => el.scrollWidth <= el.clientWidth), `${name} has no horizontal scroll in its pane at ${viewport}`).toBe(true)
       await shot?.(`${name}-${viewport}`)
     }
   } finally {
