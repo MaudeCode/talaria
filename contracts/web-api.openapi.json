@@ -125389,8 +125389,20 @@
     "/api/extensions/registry": {
       "get": {
         "operationId": "extensions.registry",
+        "summary": "`q` keeps entries whose name or description contains it, case-insensitively; `total` counts the whole gallery.",
         "tags": [
           "automation"
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
         ],
         "responses": {
           "200": {
@@ -125403,23 +125415,79 @@
                     "entries": {
                       "type": "array",
                       "items": {
-                        "anyOf": [
-                          {},
-                          {
-                            "type": "null"
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "version": {
+                            "type": "string"
+                          },
+                          "installed": {
+                            "type": "boolean"
+                          },
+                          "capabilities": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "permissions": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "homepage": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "download_url": {
+                            "type": "string"
+                          },
+                          "sha256": {
+                            "type": "string"
                           }
-                        ]
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "description",
+                          "version",
+                          "installed",
+                          "capabilities",
+                          "permissions",
+                          "homepage",
+                          "download_url",
+                          "sha256"
+                        ],
+                        "additionalProperties": {}
                       }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
                     },
                     "error": {
                       "type": "string"
-                    },
-                    "unavailable": {
-                      "type": "boolean"
                     }
                   },
                   "required": [
-                    "entries"
+                    "entries",
+                    "total"
                   ],
                   "additionalProperties": {}
                 }
@@ -125432,8 +125500,20 @@
     "/api/extensions/manifests": {
       "get": {
         "operationId": "extensions.manifests",
+        "summary": "`q` keeps rows whose name, id or description contains it, case-insensitively; `total` and `enabled_count` count every row.",
         "tags": [
           "automation"
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
         ],
         "responses": {
           "200": {
@@ -125445,6 +125525,16 @@
                   "properties": {
                     "protocol_version": {
                       "const": 1
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "enabled_count": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
                     },
                     "manifests": {
                       "type": "array",
@@ -125473,6 +125563,8 @@
                   },
                   "required": [
                     "protocol_version",
+                    "total",
+                    "enabled_count",
                     "manifests"
                   ]
                 }

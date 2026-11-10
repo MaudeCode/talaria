@@ -23,4 +23,10 @@ describe('StatusDot (TAL-2131)', () => {
     const dot = status.querySelector('[aria-hidden="true"]')!
     expect(dot).toHaveClass('size-[7px]', 'rounded-full', fill)
   })
+
+  it('truncates its words to one line unless they wrap (TAL-2142)', () => {
+    render(<><StatusDot state="warning">One line</StatusDot><StatusDot state="warning" wrap>Read whole</StatusDot></>)
+    expect(screen.getByText('One line')).toHaveClass('truncate')
+    expect(screen.getByText('Read whole')).not.toHaveClass('truncate')
+  })
 })

@@ -6,12 +6,15 @@ import { useSyncExternalStore } from 'react'
 import * as api from '../api/endpoints'
 import { keys } from '../api/queryKeys'
 import { useQuery } from '@tanstack/react-query'
-import { ExtensionManifestsSchema, type ExtensionManifest, type LifecyclePayload, type ThemeDeclaration, SKIN_TOKEN_ALIASES } from '../contracts/extension'
+import { ExtensionManifestListSchema, ExtensionManifestsSchema, type ExtensionManifest, type LifecyclePayload, type ThemeDeclaration, SKIN_TOKEN_ALIASES } from '../contracts/extension'
 import { get } from '../api/client'
 import { subscribe as subscribeStream, getStreamState } from '../stream/store'
 import type { LiveTurn } from '../stream/reducer'
 
 export const fetchExtensionManifests = (signal?: AbortSignal) => get('api/extensions/manifests', ExtensionManifestsSchema, { retries: 1, ...(signal ? { signal } : {}) })
+
+/** TAL-2142: Settings › Extensions' rows matching `q` (name, id or description), with the server's counts of every row. */
+export const fetchExtensionManifestList = (q: string, signal?: AbortSignal) => get(`api/extensions/manifests${q ? `?q=${encodeURIComponent(q)}` : ''}`, ExtensionManifestListSchema, { retries: 1, ...(signal ? { signal } : {}) })
 
 export function useExtensionManifests(enabled = true) {
   return useQuery({ queryKey: keys.extensions.manifests, queryFn: ({ signal }) => fetchExtensionManifests(signal), staleTime: 30_000, enabled })

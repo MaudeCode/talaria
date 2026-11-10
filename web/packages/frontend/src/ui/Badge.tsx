@@ -19,12 +19,15 @@ export function Mark({ title, children }: { title?: string | undefined; children
 export type DotState = 'ok' | 'warning' | 'error' | 'idle'
 const DOT: Record<DotState, string> = { ok: 'bg-success', warning: 'bg-warning', error: 'bg-error', idle: 'bg-muted' }
 
-/** TAL-2131: a state as a 7px dot and its words (§7); the words stay muted, the dot alone takes the server's state colour. */
-export function StatusDot({ state, title, children }: { state: DotState; title?: string | undefined; children: ReactNode }) {
+/**
+ * TAL-2131: a state as a 7px dot and its words (§7); the words stay muted, the dot alone takes the server's state colour.
+ * TAL-2142: `wrap` lets words that must be read whole (what an extension can access) run onto more lines, the dot on the first.
+ */
+export function StatusDot({ state, title, wrap, children }: { state: DotState; title?: string | undefined; wrap?: boolean; children: ReactNode }) {
   return (
-    <span title={title} data-status={state} className="inline-flex min-w-0 items-center gap-1.5 text-xs text-muted">
-      <span aria-hidden="true" className={cn('size-[7px] shrink-0 rounded-full', DOT[state])} />
-      <span className="min-w-0 truncate">{children}</span>
+    <span title={title} data-status={state} className={cn('inline-flex min-w-0 gap-1.5 text-xs text-muted', wrap ? 'items-baseline' : 'items-center')}>
+      <span aria-hidden="true" className={cn('size-[7px] shrink-0 rounded-full', wrap && 'translate-y-[-1px]', DOT[state])} />
+      <span className={cn('min-w-0', wrap ? '[overflow-wrap:anywhere]' : 'truncate')}>{children}</span>
     </span>
   )
 }

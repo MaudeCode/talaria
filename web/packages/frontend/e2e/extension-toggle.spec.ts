@@ -9,7 +9,7 @@ const row = (over: Record<string, unknown>) => ({
 test('a dashboard plugin row toggles through the extensions toggle; a row the server locks shows no switch', async ({ page }) => {
   let boardEnabled = false
   const toggles: unknown[] = []
-  await page.route('**/api/extensions/manifests', (route) => route.fulfill({ json: { protocol_version: 1, manifests: [
+  await page.route('**/api/extensions/manifests', (route) => route.fulfill({ json: { protocol_version: 1, total: 2, enabled_count: boardEnabled ? 1 : 0, manifests: [
     row({ id: 'board', name: 'Board', source: 'plugin', enabled: boardEnabled, panel: 'dashboard-plugins/board/index.html', nav: { label: 'Board' } }),
     row({ id: 'locked', name: 'Locked', can_toggle: false }),
   ] } }))

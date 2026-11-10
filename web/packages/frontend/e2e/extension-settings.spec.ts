@@ -14,10 +14,12 @@ const tuner = {
 const KEY = 'hermes.ext.settings.tuner'
 
 test('an extension settings schema renders all four input types and saves values', async ({ page }) => {
-  await page.route('**/api/extensions/manifests', (route) => route.fulfill({ json: { protocol_version: 1, manifests: [tuner] } }))
+  await page.route('**/api/extensions/manifests', (route) => route.fulfill({ json: { protocol_version: 1, total: 1, enabled_count: 1, manifests: [tuner] } }))
   await page.goto('/settings/extensions')
   await settle(page)
   const row = page.locator('[data-extension-id="tuner"]')
+  // TAL-2142: the settings form sits in the row's details.
+  await row.getByRole('button', { name: 'Show details' }).click()
   const badge = row.getByRole('switch', { name: 'Show badge' })
   const refresh = row.getByRole('spinbutton', { name: 'Refresh seconds' })
   const mode = row.getByRole('combobox', { name: 'Mode' })
@@ -46,6 +48,7 @@ test('an extension settings schema renders all four input types and saves values
 
   await page.reload()
   await settle(page)
+  await row.getByRole('button', { name: 'Show details' }).click()
   await expect(badge).toBeChecked()
   await expect(refresh).toHaveValue('45')
   await expect(mode).toHaveText(/Thorough/)

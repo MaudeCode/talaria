@@ -1501,6 +1501,17 @@ export const KanbanBoardsViewSchema = z.looseObject({ boards: z.array(z.looseObj
   pinned: KanbanPinnedBoardsSchema.describe('TAL-1851: ordered pinned board slugs for this profile, excluding missing and archived boards.') })
 /** Board-wide task counts (TAL-567): `status_counts` in board-column order, unknown statuses after; `total` excludes archived tasks. */
 export const KanbanStatsViewSchema = z.looseObject({ by_status: z.record(z.string(), z.number()), total: z.number().int(), status_counts: z.array(z.object({ status: z.string(), count: z.number().int() })) })
+/**
+ * TAL-2142: one gallery entry as Settings shows it. The server drops entries without an id, decides `installed`, and
+ * reduces the registry's permission declaration to the keys that grant something (the same reduction installed rows use).
+ */
+export const ExtensionRegistryEntrySchema = z.looseObject({
+  id: z.string(), name: z.string(), description: z.string(), version: z.string(), installed: z.boolean(),
+  capabilities: z.array(z.string()), permissions: z.array(z.string()), homepage: z.string().nullable(), download_url: z.string(), sha256: z.string(),
+})
+export type ExtensionRegistryEntry = z.infer<typeof ExtensionRegistryEntrySchema>
+/** `entries` honour `q`; `total` counts the whole gallery. `error` is set when the registry could not be read. */
+export const ExtensionRegistrySchema = z.looseObject({ entries: z.array(ExtensionRegistryEntrySchema), total: z.number().int(), error: z.string().optional() })
 export const ExtensionStatusSchema = z.looseObject({
   enabled: z.boolean(), extension_dir_configured: z.boolean().optional(), extension_dir_valid: z.boolean().optional(), script_urls: z.array(z.string()).optional(), stylesheet_urls: z.array(z.string()).optional(), sidecars: z.array(Json).optional(),
   extensions: z.array(z.looseObject({ id: z.string(), enabled: z.boolean().optional(), name: z.string().optional(), version: z.string().optional() })).optional(), warnings: z.array(Json).optional(),

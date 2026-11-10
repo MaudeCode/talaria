@@ -17,6 +17,12 @@ export function singleFlightRead<K, T>(cache: { get: (key: K) => SingleFlightEnt
   return entry.read
 }
 
+/** A Settings list filter: whether any of `texts` contains `q`, case-insensitively; a blank `q` keeps every row. */
+export function containsQuery(q: string | undefined, texts: readonly unknown[]): boolean {
+  const needle = (q ?? '').trim().toLowerCase()
+  return !needle || texts.some((text) => typeof text === 'string' && text.toLowerCase().includes(needle))
+}
+
 /** `str(v)` for scalars; `null`/`undefined` become `''`, objects go through JSON (never `[object Object]`). */
 export function str(v: unknown): string {
   if (v === null || v === undefined) return ''
