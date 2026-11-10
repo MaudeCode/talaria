@@ -56,7 +56,7 @@ const PLACEMENT: Record<string, SettingsSectionId> = {
   sidebar_density: 'appearance',
   send_key: 'chat', default_message_mode: 'chat', large_text_paste_as_attachment: 'chat', chat_activity_display_mode: 'chat', transparent_stream_event_timestamps: 'chat',
   worklog_details_expanded_default: 'chat', auto_scroll_follow: 'chat', render_user_markdown: 'chat', fade_text_effect: 'chat', virtualize_transcript: 'chat',
-  show_busy_placeholder_hint: 'chat', show_token_usage: 'chat', show_tps: 'chat', structured_code_default_view: 'chat', structured_code_auto_tree_lines: 'chat',
+  show_busy_placeholder_hint: 'chat', show_token_usage: 'chat', show_tps: 'chat',
   max_tokens: 'chat', compression_prepare_ahead: 'chat', group_discussion_max_rounds: 'chat', group_discussion_max_messages: 'chat', auto_title_refresh_every: 'chat',
   pinned_sessions_limit: 'sidebar', session_endless_scroll: 'sidebar', session_jump_buttons: 'sidebar', show_conversation_outline: 'sidebar', project_quick_create_buttons: 'sidebar',
   show_cli_sessions: 'sidebar', show_claude_code_sessions: 'sidebar', show_cron_sessions: 'sidebar', show_webhook_sessions: 'sidebar', show_kanban_sessions: 'sidebar',

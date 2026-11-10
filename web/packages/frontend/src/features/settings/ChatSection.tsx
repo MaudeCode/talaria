@@ -18,7 +18,7 @@ function GroupDiscussionLimit({ label, settingKey }: { label: string; settingKey
 
 /** TAL-1691: Settings > Chat, the composer's defaults and how the transcript renders. */
 export function ChatSection() {
-  const { settings, str, set, setAsync, num } = useSettingField(['send_key', 'chat_activity_display_mode', 'default_message_mode', 'structured_code_default_view', 'structured_code_auto_tree_lines', 'max_tokens', 'compression_prepare_ahead', 'auto_title_refresh_every', 'group_discussion_max_rounds', 'group_discussion_restart_required'])
+  const { settings, str, set, setAsync, num } = useSettingField(['send_key', 'chat_activity_display_mode', 'default_message_mode', 'max_tokens', 'compression_prepare_ahead', 'auto_title_refresh_every', 'group_discussion_max_rounds', 'group_discussion_restart_required'])
   if (settings.isPending) return <LoadingState />
   if (settings.isError) return <ErrorState error={settings.error} onRetry={() => { void settings.refetch() }} />
   return (
@@ -56,16 +56,6 @@ export function ChatSection() {
         <Toggle label={m.settings_label_busy_placeholder_hint()} hint={m.settings_desc_busy_placeholder_hint()} settingKey="show_busy_placeholder_hint" fallback />
         <Toggle label={m.settings_label_token_usage()} settingKey="show_token_usage" fallback />
         <Toggle label={m.settings_label_token_speed()} settingKey="show_tps" />
-        <FieldRow label={m.settings_label_structured_code()} htmlFor="settingsStructuredCodeMode" inline>
-          <Select id="settingsStructuredCodeMode" value={str('structured_code_default_view', 'auto')} onValueChange={(v) => set({ structured_code_default_view: v })}>
-            <option value="auto">{m.settings_option_structured_code_auto()}</option>
-            <option value="tree">{m.settings_option_structured_code_tree()}</option>
-            <option value="raw">{m.settings_option_structured_code_raw()}</option>
-          </Select>
-        </FieldRow>
-        <FieldRow label={m.settings_label_structured_code_auto_lines()} htmlFor="settingsStructuredCodeAutoLines" inline>
-          <TextInput id="settingsStructuredCodeAutoLines" type="number" retainDraft min={1} max={500} className="w-20" value={num('structured_code_auto_tree_lines', 40)} onChange={(e) => { const n = Number(e.target.value); if (Number.isInteger(n) && n > 0) return setAsync({ structured_code_auto_tree_lines: n }) }} />
-        </FieldRow>
         <FieldRow label={m.settings_label_max_tokens()} htmlFor="settingsMaxTokens" inline>
           <TextInput id="settingsMaxTokens" type="number" retainDraft min={1} className="w-28" placeholder={m.settings_placeholder_max_tokens_none()} value={num('max_tokens', 0) || ''} onChange={(e) => { const raw = e.target.value.trim(); if (raw === '') return setAsync({ max_tokens: null }); else { const n = Number(raw); if (Number.isInteger(n) && n > 0) return setAsync({ max_tokens: n }) } }} />
         </FieldRow>
