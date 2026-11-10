@@ -75,6 +75,7 @@ PYTHON
 
 prepare_step keyboard xcrun simctl spawn "$simulator_id" defaults write com.apple.keyboard.preferences DidShowContinuousPathIntroduction -bool true
 [[ "$keyboard_only" == true ]] && exit 0
-prepare_step notifications "$scripts/ready-simulator-notifications" "$simulator_id"
+# The successful keyboard spawn just verified this simulator is running; do not repeat its boot wait.
+prepare_step notifications "$scripts/ready-simulator-notifications" --already-booted "$simulator_id"
 prepare_step photo "$scripts/seed-simulator-photo" "$simulator_id"
 prepare_step documents "$scripts/ready-simulator-documents" "$simulator_id"
