@@ -1,5 +1,5 @@
 {
-  "sections": ["appearance", "chat", "navigation", "notifications", "speech", "models", "providers", "tools", "extensions", "access", "system", "about"],
+  "sections": ["appearance", "chat", "navigation", "notifications", "speech", "models", "providers", "tools", "profiles", "workspaces", "extensions", "access", "system", "logs", "about"],
   "groups": {
     "appearance": "interface",
     "chat": "interface",
@@ -9,9 +9,12 @@
     "models": "profile",
     "providers": "profile",
     "tools": "profile",
+    "profiles": "server",
+    "workspaces": "server",
     "extensions": "server",
     "access": "server",
     "system": "server",
+    "logs": "server",
     "about": "server"
   }
 }

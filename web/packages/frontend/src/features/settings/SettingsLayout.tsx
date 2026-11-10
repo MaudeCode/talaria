@@ -9,12 +9,12 @@ import { useLocale } from '../../i18n/useLocale'
 import { closeMobileSidebar } from '../../shell/useShellState'
 import { useActiveProfileName } from '../../shell/ProfileMenu'
 import { SectionHeader } from '../../ui/List'
-import { MessageSquare, AudioLines, Bell, SunMedium, PanelLeft, Cpu, KeyRound, Wrench, Puzzle, Lock, Server, Info, type LucideIcon } from 'lucide-react'
+import { MessageSquare, AudioLines, Bell, SunMedium, PanelLeft, Cpu, KeyRound, Wrench, Puzzle, Lock, Server, Info, UserRound, FolderOpen, FileText, type LucideIcon } from 'lucide-react'
 
 const SECTION_ICON: Record<Section, LucideIcon> = {
   appearance: SunMedium, chat: MessageSquare, navigation: PanelLeft, notifications: Bell, speech: AudioLines,
   models: Cpu, providers: KeyRound, tools: Wrench,
-  extensions: Puzzle, access: Lock, system: Server, about: Info,
+  profiles: UserRound, workspaces: FolderOpen, extensions: Puzzle, access: Lock, system: Server, logs: FileText, about: Info,
 }
 
 export const SECTION_LABEL: Record<Section, () => string> = {
@@ -26,9 +26,12 @@ export const SECTION_LABEL: Record<Section, () => string> = {
   models: () => m.settings_section_models_title(),
   providers: () => m.settings_section_providers_title(),
   tools: () => m.settings_section_tools_title(),
+  profiles: () => m.tab_profiles(),
+  workspaces: () => m.tab_workspaces(),
   extensions: () => m.settings_section_extensions_title(),
   access: () => m.settings_section_access_title(),
   system: () => m.settings_section_system_title(),
+  logs: () => m.tab_logs(),
   about: () => m.settings_section_about_title(),
 }
 

@@ -2,8 +2,8 @@ import { expect, settle, test } from './fixtures'
 
 // Page explanations open from a "?" beside the hub title instead of sitting under it.
 const PAGES = [
-  { path: '/workspaces', name: 'About Spaces', text: 'Add and switch workspaces for your sessions.' },
-  { path: '/profiles', name: 'About Profiles', text: 'Use profiles for how the agent works' },
+  { path: '/settings/workspaces', name: 'About Spaces', text: 'Add and switch workspaces for your sessions.' },
+  { path: '/settings/profiles', name: 'About Profiles', text: 'Use profiles for how the agent works' },
 ]
 
 for (const width of [1280, 760, 390]) {
@@ -24,7 +24,7 @@ for (const width of [1280, 760, 390]) {
 }
 
 test('the hub title help button keeps a 44px touch target', async ({ page }) => {
-  await page.goto('/workspaces')
+  await page.goto('/settings/workspaces')
   await settle(page)
   const help = page.getByRole('button', { name: 'About Spaces', exact: true })
   const box = await help.boundingBox()

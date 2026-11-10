@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react'
+import { createContext, useContext, useEffect, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { useLocation, useParams, useSearch } from '@tanstack/react-router'
 import { Titlebar } from './Titlebar'
 import { Sidebar } from './Sidebar'
@@ -8,7 +9,6 @@ import { Toaster } from '../features/toast/Toaster'
 import { TooltipProvider } from '../ui/Tooltip'
 import { HelpTip } from '../ui/Field'
 import { m } from '../paraglide/messages.js'
-import { useEffect } from 'react'
 import { registerExtensionSkins, useExtensionManifests } from '../extensions/registry'
 import { reapplyExtensionSkin } from '../app/appearance'
 import { rememberOutsideSettings, useIsSidebarRail } from './useShellState'
@@ -68,8 +68,21 @@ export function AppShell({ children }: { children: ReactNode }) {
 /** Legacy `.main-view` column: the panel that fills `.main`. */
 export const MAIN_VIEW = 'main-view flex flex-1 min-h-0 min-w-0 flex-col bg-bg'
 
-/** Hub page frame (skills, memory, spaces, profiles, tasks, insights, logs). */
+/** TAL-2101: a Settings section's heading, where a hub page shown as that section puts its help and actions. */
+export interface HubHeadSlots { help: HTMLElement | null; actions: HTMLElement | null }
+export const HubHeadSlotsContext = createContext<HubHeadSlots | null>(null)
+
+/** Hub page frame (skills, memory, tasks, insights). Inside a Settings section (profiles, spaces, logs) that section's heading is the header. */
 export function HubPage({ title, help, actions, toolbar, children, id, toolbarClassName }: { title: string; help?: ReactNode; actions?: ReactNode; toolbar?: ReactNode; children: ReactNode; id?: string; toolbarClassName?: string }) {
+  const slots = useContext(HubHeadSlotsContext)
+  if (slots) return (
+    <>
+      {help && slots.help && createPortal(<HelpTip label={m.field_help_about({ label: title })} className="shrink-0">{help}</HelpTip>, slots.help)}
+      {actions && slots.actions && createPortal(actions, slots.actions)}
+      {toolbar && <div className={cn('hub-toolbar flex flex-wrap items-center gap-x-3.5 gap-y-2 mb-4', toolbarClassName)}>{toolbar}</div>}
+      {children}
+    </>
+  )
   return (
     <div className={MAIN_VIEW + ' hub-page active'} id={id}>
       <header className="main-view-header relative z-10 flex items-center justify-start gap-3 min-h-14 px-8 py-3 border-b border-border shrink-0 bg-bg max-[769px]:px-3.5 max-[769px]:py-2.5 max-[769px]:min-h-12">

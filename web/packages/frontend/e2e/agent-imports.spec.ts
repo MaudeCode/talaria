@@ -13,7 +13,7 @@ test('profile import previews, cancels, confirms and reconciles using keyboard a
     calls.push(route.request().postDataJSON())
     return route.fulfill({ json: { ...preview, status: 'applied', receipt: null, can_apply: false } })
   })
-  await page.goto('/profiles')
+  await page.goto('/settings/profiles')
   await settle(page)
   if (process.env.TALARIA_IMPORT_BEFORE === '1') {
     await page.screenshot({ path: `/tmp/TAL-1493-evidence/before-${testInfo.project.name}.png` })
@@ -50,7 +50,7 @@ test('unknown import outcomes offer readback without replaying the write', async
   await page.route('**/api/profile/import/preview', (route) => route.fulfill({ json: { ...base, status: 'preview', receipt: 'unknown-fixture', can_apply: true } }))
   await page.route('**/api/profile/import/apply', (route) => { applies++; return route.fulfill({ json: { ...base, status: 'unknown', message: 'Import outcome is unknown. Check the profile before starting a new preview.' } }) })
   await page.route('**/api/profile/import/result?*', (route) => { reads++; return route.fulfill({ json: { ...base, status: 'applied' } }) })
-  await page.goto('/profiles')
+  await page.goto('/settings/profiles')
   await settle(page)
   await page.getByRole('button', { name: 'Import agent setup' }).click()
   const dialog = page.getByRole('dialog')
@@ -69,7 +69,7 @@ test('unknown import outcomes offer readback without replaying the write', async
 
 test('configuration refusals keep the profile unchanged and offer no unrelated install action', async ({ page }, testInfo) => {
   await page.route('**/api/profile/import', (route) => route.fulfill({ json: { status: 'unavailable', sources: [], items: [], stripped_secrets: [], receipt: null, can_apply: false, catalog_required: false, message: 'Profile configuration is managed or its write policy cannot be verified. Import is unavailable.' } }))
-  await page.goto('/profiles')
+  await page.goto('/settings/profiles')
   await settle(page)
   await page.getByRole('button', { name: 'Import agent setup' }).click()
   const dialog = page.getByRole('dialog')
@@ -99,7 +99,7 @@ test('TAL-1826: a Grok Bot export previews through the file input and an unavail
     calls.push(route.request().postDataJSON())
     return route.fulfill({ json: preview })
   })
-  await page.goto('/profiles')
+  await page.goto('/settings/profiles')
   await settle(page)
   await page.getByRole('button', { name: 'Import agent setup' }).click()
   const dialog = page.getByRole('dialog')

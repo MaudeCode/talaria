@@ -1,10 +1,10 @@
 import { z } from 'zod'
 
 /**
- * TAL-1691, TAL-2100: the Settings sections both clients show, in menu order. Web routes them as `/settings/<id>`; the
+ * TAL-1691, TAL-2100, TAL-2101: the Settings sections both clients show, in menu order. Web routes them as `/settings/<id>`; the
  * App keys its categories and the update notification's `settings.<id>` destination by the same ids.
  */
-export const SettingsSectionSchema = z.enum(['appearance', 'chat', 'navigation', 'notifications', 'speech', 'models', 'providers', 'tools', 'extensions', 'access', 'system', 'about'])
+export const SettingsSectionSchema = z.enum(['appearance', 'chat', 'navigation', 'notifications', 'speech', 'models', 'providers', 'tools', 'profiles', 'workspaces', 'extensions', 'access', 'system', 'logs', 'about'])
 export type SettingsSectionId = z.infer<typeof SettingsSectionSchema>
 
 /** TAL-2100: what a section's settings apply to: this interface, the active profile, or the whole server. */
@@ -15,5 +15,5 @@ export type SettingsSectionGroup = z.infer<typeof SettingsSectionGroupSchema>
 export const SETTINGS_SECTION_GROUPS: Readonly<Record<SettingsSectionId, SettingsSectionGroup>> = {
   appearance: 'interface', chat: 'interface', navigation: 'interface', notifications: 'interface', speech: 'interface',
   models: 'profile', providers: 'profile', tools: 'profile',
-  extensions: 'server', access: 'server', system: 'server', about: 'server',
+  profiles: 'server', workspaces: 'server', extensions: 'server', access: 'server', system: 'server', logs: 'server', about: 'server',
 }

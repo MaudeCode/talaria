@@ -53,17 +53,33 @@ test('the Settings menu groups its sections by scope, naming the active profile 
   expect(menu).toEqual([
     ['Interface', ['appearance', 'chat', 'navigation', 'notifications', 'speech']],
     ['Profile', ['models', 'providers', 'tools']],
-    ['Server', ['extensions', 'access', 'system', 'about']],
+    ['Server', ['profiles', 'workspaces', 'extensions', 'access', 'system', 'logs', 'about']],
   ])
   const profile = page.locator('#settingsMenu [data-settings-group="profile"]')
   await expect(profile).toContainText('default')
   // Switching profile on the Profiles page reloads; the header then names the new profile.
   await page.route('**/api/profile/switch', (route) => { active = 'research'; return route.fulfill({ json: { ...listed(), is_default: false, default_model: null, default_model_provider: null, default_workspace: null } }) })
-  await page.goto('/profiles')
+  await page.goto('/settings/profiles')
   await settle(page)
   await page.locator('[data-profile="research"]').getByRole('button', { name: 'Use' }).click()
   await page.waitForEvent('load')
   await page.goto('/settings/appearance')
   await settle(page)
   await expect(profile).toContainText('research')
+})
+
+test('Profiles, Spaces and Logs live in Settings under Server, and their old URLs redirect there (TAL-2101)', async ({ page }) => {
+  for (const [section, heading, action] of [['profiles', 'Profiles', 'Create profile'], ['workspaces', 'Spaces', 'Add workspace'], ['logs', 'Logs', 'Refresh']] as const) {
+    await page.goto('/')
+    await settle(page)
+    await page.goto(`/${section}?from=bookmark`)
+    await expect(page, section).toHaveURL(new RegExp(`/settings/${section}\\?from=bookmark$`))
+    await expect(page.locator('#settingsMenu [aria-current="page"]'), section).toHaveAttribute('data-settings-section', section)
+    // One heading, from Settings, with the page's own action beside it.
+    await expect(page.locator('#main h1'), section).toHaveText([heading])
+    await expect(page.locator('#main .settings-section-head').getByRole('button', { name: action }), section).toBeVisible()
+    // The redirect replaces the old entry, so Back returns to the page before it.
+    await page.goBack()
+    await expect(page, section).toHaveURL(/\/$/)
+  }
 })
