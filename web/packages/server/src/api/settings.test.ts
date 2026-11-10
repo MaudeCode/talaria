@@ -12,7 +12,7 @@ import { AccountUsageSnapshotSchema, ProviderQuotaSchema, type SidecarResult } f
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { loadEnvFile } from '../providers/env-file.js'
 import { writeEnvFile } from '../test/env-file.js'
-import { applyProviderPrefix, deduplicateModelIds, formatOllamaLabel, labelForModel, uniqueQuotaSources } from '../providers/catalog.js'
+import { applyProviderPrefix, deduplicateModelIds, formatOllamaLabel, labelForModel, providerListing, uniqueQuotaSources } from '../providers/catalog.js'
 import { coerceReasoningEffort, parseProviderQualifiedModel, customProviderSlug, type SpeedTier } from '../config/agent-config.js'
 import { splitProviderModel } from '../profiles/profiles.js'
 
@@ -672,6 +672,42 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     res = await s.get('/api/providers')
     body = await json(res)
     expect((body.providers as { id: string; has_key: boolean }[]).find((p) => p.id === 'deepseek')?.has_key).toBe(false)
+  })
+
+  it('GET /api/providers filters rows by name and groups configured rows before available ones (TAL-2127)', async () => {
+    interface Row { id: string; display_name?: string; configured?: boolean }
+    const all = await json(await s.get('/api/providers'))
+    const rows = all.providers as Row[]
+    const res = await s.get('/api/providers?q=OPEN')
+    expect(res.status).toBe(200)
+    const body = await json(res)
+    const shown = (body.providers as Row[]).map((p) => p.id)
+    expect(shown).toContain('openai')
+    expect(shown).toEqual(rows.filter((p) => (p.display_name ?? p.id).toLowerCase().includes('open')).map((p) => p.id))
+    expect(shown.length).toBeLessThan(rows.length)
+    // Every kept row sits in exactly one group, configured first, in server order.
+    const groups = body.groups as { id: string; provider_ids: string[] }[]
+    expect(groups.map((g) => g.id)).toEqual(['configured', 'available'].filter((id) => groups.some((g) => g.id === id)))
+    expect(groups.flatMap((g) => g.provider_ids).sort()).toEqual([...shown].sort())
+    for (const g of groups) expect(g.provider_ids).toEqual(shown.filter((id) => (body.providers as Row[]).find((p) => p.id === id)?.configured === (g.id === 'configured')))
+    expect((all.groups as { provider_ids: string[] }[]).flatMap((g) => g.provider_ids)).toHaveLength(rows.length)
+  })
+
+  it('providerListing matches the id when a row has no display name and groups a keyed but unconfigured row as available (TAL-2127)', () => {
+    const payload = { active_provider: 'zai', providers: [
+      { id: 'openai', display_name: 'OpenAI', has_key: false, configured: false },
+      { id: 'zai', display_name: 'Z.AI', has_key: true, configured: true },
+      { id: 'openrouter', display_name: 'OpenRouter', has_key: true, configured: false },
+      { id: 'my-openllm', has_key: true, configured: true },
+      { id: 'anthropic', display_name: 'Anthropic', has_key: true, configured: true },
+    ] }
+    expect(providerListing(payload)).toMatchObject({ active_provider: 'zai', groups: [{ id: 'configured', provider_ids: ['zai', 'my-openllm', 'anthropic'] }, { id: 'available', provider_ids: ['openai', 'openrouter'] }] })
+    expect(providerListing(payload, '  ').providers).toHaveLength(5)
+    const open = providerListing(payload, 'Open')
+    expect(open.providers.map((p) => p.id)).toEqual(['openai', 'openrouter', 'my-openllm'])
+    expect(open.groups).toEqual([{ id: 'configured', provider_ids: ['my-openllm'] }, { id: 'available', provider_ids: ['openai', 'openrouter'] }])
+    expect(providerListing(payload, 'z.a').groups).toEqual([{ id: 'configured', provider_ids: ['zai'] }])
+    expect(providerListing(payload, 'zzz')).toMatchObject({ providers: [], groups: [] })
   })
 
   it('POST /api/providers refuses a key the Agent writer would rewrite and leaves no runtime copy (TAL-797)', async () => {
