@@ -189,8 +189,8 @@ function ConfiguredProvider({ p, catalogUnavailable, sources, cost, spend, onRef
   const left = w?.remaining_percent ?? null
   const budget = cost?.monthly_budget ?? null
   const snapshots = cost?.snapshots ?? []
-  // The newest day the server recorded, named by its own UTC date.
-  const latest = snapshots.at(-1)
+  // The day the server captions (`latest_day`), named by its own UTC date.
+  const latest = cost?.latest_day
   const actions = [{ label: m.providers_refresh_models(), run: () => onRefresh(p.id), busy: refreshBusy, icon: RefreshCw }] satisfies RowAction[]
   const figure = w && left !== null
     ? <Figure value={formatPercent(locale, left)} mode={m.providers_figure_left_in({ window: w.label })} tone={LEVEL_TONE[w.display_level ?? 'healthy']} />
@@ -216,7 +216,7 @@ function ConfiguredProvider({ p, catalogUnavailable, sources, cost, spend, onRef
             rows={snapshots.map((s) => ({ label: s.date.slice(5), title: s.date, value: s.delta ?? 0, display: s.delta === null ? m.provider_cost_no_baseline() : formatUsd(s.delta, locale, 2) }))} />
           <div className="flex items-baseline justify-between gap-3 text-xs text-muted">
             <span>{m.providers_daily_spend({ n: cost.window_days ?? snapshots.length })}</span>
-            {latest?.delta != null && <span className="tabular-nums">{m.providers_day_spend({ day: new Date(`${latest.date}T00:00:00Z`).toLocaleDateString(locale, { month: 'short', day: 'numeric', timeZone: 'UTC' }), amount: formatUsd(latest.delta, locale, 2) })}</span>}
+            {latest && <span className="tabular-nums">{m.providers_day_spend({ day: new Date(`${latest.date}T00:00:00Z`).toLocaleDateString(locale, { month: 'short', day: 'numeric', timeZone: 'UTC' }), amount: formatUsd(latest.spend, locale, 2) })}</span>}
           </div>
         </div>
       )}

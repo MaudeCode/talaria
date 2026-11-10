@@ -216,7 +216,9 @@ function costHistoryView(rows: CostSnapshot[], days: number, budget: number | nu
   const maxDelta = Math.max(...deltas.map((d) => d ?? 0), 1e-9)
   const pace = known.length ? finite((known.reduce((a, b) => a + b, 0) / known.length) * 30) : null
   const budgetPercent = pace !== null && pace > 0 && budget !== null && budget > 0 ? finite(Math.round((pace / budget) * 100)) : null
+  const latest = window.map((e, i) => ({ date: e.date, spend: deltas[i] ?? null })).findLast((d): d is { date: string; spend: number } => d.spend !== null) ?? null
   return {
+    latest_day: latest,
     snapshots: window.map((e, i) => {
       const delta = deltas[i] ?? null
       return { date: e.date, used: e.used, delta, bar_percent: delta === null ? 0 : Number(Math.max((delta / maxDelta) * 100, delta > 0 ? 2 : 0).toFixed(1)) }

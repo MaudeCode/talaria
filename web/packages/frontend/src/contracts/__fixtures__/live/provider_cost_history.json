@@ -57,7 +57,11 @@
     "limit": 100,
     "label": "synthetic",
     "monthly_budget": 42.37,
-    "message": "OpenRouter cost history loaded."
+    "message": "OpenRouter cost history loaded.",
+    "latest_day": {
+      "date": "2026-09-28",
+      "spend": 2
+    }
   },
   "method": "GET",
   "path": "/api/provider/cost-history?provider=openrouter",

@@ -93,7 +93,7 @@ function ProviderFigures({ p, sources }: { p: Provider; sources: QuotaSource[] }
   const models = p.models_total ?? p.models?.length
   const stats: SettingsStat[] = [
     ...windows,
-    ...(paced?.pace ? [{ id: 'pace', label: m.provider_quota_pace_label(), value: quotaPaceWord(paced.pace, locale), tone: LEVEL_TONE[paced.urgency?.pace ?? 'healthy'] }] : []),
+    ...(paced?.pace ? [{ id: 'pace', label: m.provider_quota_pace_label(), value: quotaPaceWord(paced.pace, locale), tone: LEVEL_TONE[paced.display_level ?? 'healthy'] }] : []),
     ...(models !== undefined ? [{ id: 'models', label: m.settings_section_models_title(), value: String(models) }] : []),
   ]
   return stats.length > 0 ? <SettingsStats label={p.display_name ?? p.id} stats={stats} /> : null

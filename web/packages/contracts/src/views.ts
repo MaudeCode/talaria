@@ -961,6 +961,7 @@ export const ProviderCostHistorySchema = z.looseObject({
   has_enough_data: z.boolean().optional().describe('At least one non-null delta (two daily snapshots).'),
   budget_percent: NullableNumber.optional().describe('round(pace / budget × 100); null without a positive pace and a budget.'),
   budget_level: z.enum(['ok', 'warn', 'over']).nullable().optional().describe('`warn` from 80%, `over` from 100%; null without `budget_percent`.'),
+  latest_day: z.object({ date: z.string(), spend: z.number() }).nullable().optional().describe('TAL-2135: the newest UTC day with a known spend (`delta`), the one a provider row captions; null without one.'),
 })
 export type ProviderCostHistory = z.infer<typeof ProviderCostHistorySchema>
 export const PersonalitiesSchema = z.looseObject({ personalities: z.array(z.looseObject({ name: z.string(), description: z.string().optional() })) })

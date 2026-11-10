@@ -28,7 +28,7 @@ const providersResponse = vi.hoisted(() => {
 })
 vi.mock('../../api/endpoints', async (original) => ({
   ...await original<typeof import('../../api/endpoints')>(),
-  fetchOpenRouterCostHistory: vi.fn(() => Promise.resolve(costHistory)), saveSettings: vi.fn(), fetchSettings: vi.fn(() => Promise.resolve({})), setDefaultModel: vi.fn(),
+  fetchOpenRouterCostHistory: vi.fn(() => Promise.resolve({ ...(costHistory as object), latest_day: { date: '2026-09-27', spend: 0.02 } })), saveSettings: vi.fn(), fetchSettings: vi.fn(() => Promise.resolve({})), setDefaultModel: vi.fn(),
   onboardingOauthStart: vi.fn(), onboardingOauthPoll: vi.fn(), onboardingOauthCancel: vi.fn(),
   saveSelfHostedProvider: vi.fn(), refreshModels: vi.fn(), installPlugin: vi.fn(),
   fetchModels: vi.fn(() => Promise.resolve({ groups: [] })), fetchAuxiliaryModels: vi.fn(() => Promise.resolve({ main: {}, tasks: [] })),
@@ -121,7 +121,8 @@ describe('ProvidersSection', () => {
     const o = await waitFor(() => { const el = block('openrouter'); expect(within(el).getByRole('img')).toBeInTheDocument(); return el })
     expect(within(o).getByText('$12.40')).toBeInTheDocument()
     expect(within(o).getByText(/^of \$\d+ budget$/)).toBeInTheDocument()
-    expect(within(o).getByText(/^\w+ \d+: \$2\.00$/)).toBeInTheDocument()
+    // The day the server headlines, not the client's pick of the last bar.
+    expect(within(o).getByText(/^Sep 27: \$0\.02$/)).toBeInTheDocument()
     expect(within(o).getByRole('img')).toHaveAccessibleName(/^Daily spend, last 7 days: /)
     expect(within(o).getByRole('table', { hidden: true })).toHaveTextContent('$0.50')
     await userEvent.click(within(a).getByRole('link', { name: 'Anthropic' }))
@@ -442,6 +443,19 @@ describe('ProviderDetail (TAL-2135)', () => {
     await renderAt('/settings/providers/zai')
     expect((await screen.findByText('Remaining: Warning', {}, { timeout: 2000 })).closest('[data-status]')).toHaveAttribute('data-status', 'warning')
     expect(screen.getByText('Pace: Critical').closest('[data-status]')).toHaveAttribute('data-status', 'error')
+  })
+
+  it("tones the pace figure by the window's display level, so a stale source's old warning stays stale", async () => {
+    const stale = structuredClone(quotas) as unknown as { sources: ({ status: string; windows: Record<string, unknown>[] } & Record<string, unknown>)[] }
+    Object.assign(stale.sources[0]!, { status: 'stale', display_level: 'stale' })
+    for (const w of stale.sources[0]!.windows) w.display_level = 'stale'
+    providersResponse.current = { active_provider: 'anthropic', providers: [anthropic] }
+    quotaResponse.current = stale
+    await renderAt('/settings/providers/anthropic')
+    const pace = await found('[data-stat="pace"]')
+    expect(pace).toHaveTextContent(/^Pace3\.4% over$/)
+    // An untoned figure carries no tone attribute; the stale window's old warning would set one.
+    expect(pace.querySelector('[data-figure-tone]')).toBeNull()
   })
 
   it('words the pace figure by the server status', async () => {

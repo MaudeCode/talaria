@@ -95609,6 +95609,29 @@
                         }
                       ],
                       "description": "`warn` from 80%, `over` from 100%; null without `budget_percent`."
+                    },
+                    "latest_day": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "date": {
+                              "type": "string"
+                            },
+                            "spend": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "date",
+                            "spend"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "TAL-2135: the newest UTC day with a known spend (`delta`), the one a provider row captions; null without one."
                     }
                   },
                   "required": [
