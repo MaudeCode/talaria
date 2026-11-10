@@ -122,7 +122,7 @@ function allProfilesEnabled(ctx: RequestContext, value: string | undefined): boo
 }
 
 /** Search inputs that select the sidebar rows rather than every stored session (TAL-308). */
-const SIDEBAR_SEARCH_KEYS = ['project_id', 'sidebar_source', 'include_archived', 'exclude_hidden', 'show_cli_sessions', 'show_claude_code_sessions', 'show_cron_sessions', 'show_webhook_sessions', 'show_kanban_sessions'] as const
+const SIDEBAR_SEARCH_KEYS = ['project_id', 'sidebar_source', 'include_archived', 'show_cli_sessions', 'show_claude_code_sessions', 'show_messaging_sessions', 'show_cron_sessions', 'show_webhook_sessions', 'show_kanban_sessions'] as const
 
 /** The `/api/sessions` row selection for a list or sidebar-search query (TAL-308 shares it). */
 async function sidebarListParams(ctx: RequestContext, input: SessionsListQuery): Promise<Parameters<RequestContext['deps']['sessions']['list']>[0]> {
@@ -131,20 +131,18 @@ async function sidebarListParams(ctx: RequestContext, input: SessionsListQuery):
 
 /** The row selection `/api/sessions` makes for `input` under `settings`; the agent's `session_list` uses it with no input (TAL-1164). */
 export function sidebarListSelection(settings: Settings, input: SessionsListQuery, allProfiles: boolean): Parameters<RequestContext['deps']['sessions']['list']>[0] {
-  const overrideKeys = ['show_cli_sessions', 'show_claude_code_sessions', 'show_cron_sessions', 'show_webhook_sessions', 'show_kanban_sessions'] as const
   const sidebarSourceRaw = (input.sidebar_source ?? '').trim().toLowerCase()
   return {
     allProfiles,
     includeArchived: queryFlag(input.include_archived),
-    excludeHidden: queryFlag(input.exclude_hidden),
     visibleOnly: true,
     showCliSessions: queryBool(input.show_cli_sessions, Boolean(settings.show_cli_sessions)),
     showClaudeCodeSessions: queryBool(input.show_claude_code_sessions, Boolean(settings.show_claude_code_sessions)),
+    showMessagingSessions: queryBool(input.show_messaging_sessions, Boolean(settings.show_messaging_sessions)),
     showPreviousMessagingSessions: Boolean(settings.show_previous_messaging_sessions),
     showCronSessions: queryBool(input.show_cron_sessions, Boolean(settings.show_cron_sessions)),
     showWebhookSessions: queryBool(input.show_webhook_sessions, Boolean(settings.show_webhook_sessions)),
     showKanbanSessions: queryBool(input.show_kanban_sessions, Boolean(settings.show_kanban_sessions)),
-    requestVisibilityOverrides: overrideKeys.some((k) => input[k] !== undefined),
     sidebarSource: sidebarSourceRaw === 'webui' || sidebarSourceRaw === 'cli' ? sidebarSourceRaw : null,
     archivedLimit: queryPositiveInt(input.archived_limit, null, 2000),
     archivedOffset: queryPositiveInt(input.archived_offset, 0, 200000) ?? 0,

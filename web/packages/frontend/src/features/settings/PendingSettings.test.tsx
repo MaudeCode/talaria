@@ -46,7 +46,7 @@ it('renders actual preference and conversation controls before their writes fini
   const ctrlEnter = within(screen.getByRole('radiogroup', { name: 'Send with' })).getByRole('radio', { name: 'Ctrl Enter' })
   await user.click(ctrlEnter)
   expect(ctrlEnter).toBeChecked()
-  for (const name of ['Show CLI and other external sessions', 'Notification sound', 'Browser notifications', 'Format Markdown in my messages', 'Terminal screen reader mode']) {
+  for (const name of ['Terminal and desktop apps', 'Notification sound', 'Browser notifications', 'Format Markdown in my messages', 'Terminal screen reader mode']) {
     const control = screen.getByRole('switch', { name })
     await user.click(control)
     expect(control).toBeChecked()

@@ -19,15 +19,15 @@ test('Settings search finds a row on another section and focuses its control', a
   await expect(field).toHaveValue('')
   await expect(menu.getByRole('link', { name: 'Chat', exact: true })).toBeVisible()
 
-  await field.fill('cron')
+  await field.fill('scheduled')
   const results = menu.getByRole('listbox')
-  const cron = results.getByRole('option', { name: /Show cron sessions/ })
+  const cron = results.getByRole('option', { name: /Scheduled tasks/ })
   await expect(cron).toContainText('Navigation · Chats from outside Talaria')
   await expect(status).toHaveText('1 setting')
   await page.screenshot({ path: testInfo.outputPath('settings-search.png') })
   await field.press('Enter')
   await expect(page).toHaveURL(/\/settings\/navigation#settings-show_cron_sessions$/)
-  await expect(page.getByRole('switch', { name: 'Show cron sessions' })).toBeFocused()
+  await expect(page.getByRole('switch', { name: 'Scheduled tasks' })).toBeFocused()
   await expect(page.locator('.sidebar.mobile-open')).toHaveCount(0)
   await page.screenshot({ path: testInfo.outputPath('settings-search-jump.png') })
 

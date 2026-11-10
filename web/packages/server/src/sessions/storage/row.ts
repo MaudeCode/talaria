@@ -35,7 +35,7 @@ export function sanitizeSessionRow(value: unknown, store: SessionStore, file?: s
     else Reflect.deleteProperty(result, key)
   }
   // These persisted flags affect list filtering before the wire flags are computed.
-  for (const key of ['pre_compression_snapshot', 'default_hidden', 'has_pending_user_message']) {
+  for (const key of ['pre_compression_snapshot', 'has_pending_user_message']) {
     if (result[key] === 'true' || result[key] === 'false') result[key] = result[key] === 'true'
   }
   return result

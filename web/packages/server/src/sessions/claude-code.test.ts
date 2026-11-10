@@ -55,9 +55,9 @@ describe('Claude Code sessions (TAL-551)', () => {
     await s.deps.settings.save({ show_claude_code_sessions: false })
     expect(await listed()).toEqual([])
     expect(await listed('?show_claude_code_sessions=1')).toHaveLength(2)
-    // The Claude Code toggle sits under the CLI one.
+    // TAL-2159: the Claude Code switch stands on its own, whatever Terminal and desktop apps says.
     await s.deps.settings.save({ show_cli_sessions: false, show_claude_code_sessions: true })
-    expect(await listed()).toEqual([])
+    expect(await listed()).toHaveLength(2)
   })
 
   it('opens a listed transcript read-only and refuses changes', async () => {

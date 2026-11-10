@@ -28,9 +28,10 @@ export const TruncateConfirmRequiredSchema = z.object({ ok: z.literal(false), co
 
 
 export const SessionsListQuerySchema = z.object({
-  include_archived: z.string().optional(), all_profiles: z.string().optional(), exclude_hidden: z.string().optional(), sidebar_source: z.string().optional(),
+  include_archived: z.string().optional(), all_profiles: z.string().optional(), sidebar_source: z.string().optional(),
   archived_limit: z.string().optional(), archived_offset: z.string().optional(),
   show_cli_sessions: z.string().optional(), show_claude_code_sessions: z.string().optional(), show_cron_sessions: z.string().optional(),
+  show_messaging_sessions: z.string().optional().describe('TAL-2159: overrides the `show_messaging_sessions` setting for this request.'),
   show_webhook_sessions: z.string().optional(), show_kanban_sessions: z.string().optional(),
 })
 export type SessionsListQuery = z.infer<typeof SessionsListQuerySchema>

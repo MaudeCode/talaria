@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, readdirSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { allSessions, buildSessionListPayload, dedupeCliSidebarSessions, sessionListResponse, type ListParams, type ListPayload, type Row, type RuntimeOverlay } from './list.js'
+import { allSessions, buildSessionListPayload, sessionListResponse, type ListParams, type ListPayload, type Row, type RuntimeOverlay } from './list.js'
 import * as sessionRows from './storage/row.js'
 import { bootTestServer } from '../test/harness.js'
 import { sessionDirectory, sessionIndexPath, sessionPath, useJsonStorage } from '../test/storage.js'
@@ -126,8 +126,8 @@ describe('sidebar_source per profile (TAL-1863)', () => {
     const server = await bootTestServer()
     try {
       const params: ListParams = {
-        webuiRows: rows, cliRows: [], activeProfile, allProfiles, includeArchived: false, excludeHidden: false, visibleOnly: false, showCliSessions: true, showClaudeCodeSessions: false,
-        showPreviousMessagingSessions: false, showCronSessions: false, showWebhookSessions: false, showKanbanSessions: false, requestVisibilityOverrides: false, sidebarSource: null,
+        webuiRows: rows, cliRows: [], activeProfile, allProfiles, includeArchived: false, visibleOnly: false, showCliSessions: true, showClaudeCodeSessions: false, showMessagingSessions: false,
+        showPreviousMessagingSessions: false, showCronSessions: false, showWebhookSessions: false, showKanbanSessions: false, sidebarSource: null,
         archivedLimit: null, archivedOffset: 0, isolatedProfileMode: false, profilesMatch: (a, b) => (a ?? 'default') === (b ?? 'default'),
       }
       const { sessions } = await buildSessionListPayload(server.deps.sessionStore, params)
@@ -151,6 +151,77 @@ describe('detailed row meta (TAL-2153)', () => {
     expect(meta(cli, true)).toEqual(['GPT 5.4', 7, 'CLI', 'work'])
     expect(meta(cli, false)).toEqual(['GPT 5.4', 7, 'CLI'])
     expect(meta({ model: null, message_count: 0, session_source: 'webui', source_label: 'WebUI', profile: 'default' }, true)).toEqual(['default'])
+  })
+})
+
+describe('one switch per outside source (TAL-2159)', () => {
+  const at = (n: number) => ({ created_at: n, updated_at: n, last_message_at: n, profile: 'default' })
+  /** A state.db row as the Agent reads it: `source` and its normalized fields. */
+  const agent = (session_id: string, source: string, n: number, extra: Row = {}): Row => ({ session_id, title: `Chat ${session_id}`, source, raw_source: source, session_source: source, message_count: 2, actual_message_count: 2, user_message_count: 1, ...at(n), ...extra })
+  const WEB: Row[] = [{ session_id: 'web', title: 'Web chat', source_tag: 'webui', raw_source: 'webui', session_source: 'webui', message_count: 2, ...at(1) }]
+  const AGENT: Row[] = [
+    agent('term', 'cli', 2), agent('desk', 'desktop', 3), agent('api', 'api_server', 4),
+    { session_id: 'cc', title: 'Claude chat', source_tag: 'claude_code', raw_source: 'claude_code', session_source: 'external_agent', source_label: 'Claude Code', message_count: 2, ...at(5) },
+    agent('tg', 'telegram', 6, { session_source: 'messaging', chat_id: 'c1' }),
+    agent('cron_job1_20261101_120000', 'cron', 7), agent('hook', 'webhook', 8), agent('kan', 'kanban', 9),
+    agent('sub-web', 'subagent', 10, { parent_session_id: 'web' }), agent('sub-tg', 'subagent', 11, { parent_session_id: 'tg' }),
+  ]
+  const ALL_ON = { showCliSessions: true, showClaudeCodeSessions: true, showMessagingSessions: true, showCronSessions: true, showWebhookSessions: true, showKanbanSessions: true }
+  const listed = async (switches: Partial<typeof ALL_ON>, rows: { web?: Row[]; agent?: Row[]; showPrevious?: boolean } = {}) => {
+    const server = await bootTestServer()
+    try {
+      const params: ListParams = {
+        webuiRows: rows.web ?? WEB, cliRows: rows.agent ?? AGENT, activeProfile: 'default', allProfiles: false, includeArchived: false, visibleOnly: false,
+        ...ALL_ON, ...switches, showPreviousMessagingSessions: rows.showPrevious ?? true, sidebarSource: null,
+        archivedLimit: null, archivedOffset: 0, isolatedProfileMode: false, profilesMatch: (a, b) => (a ?? 'default') === (b ?? 'default'),
+      }
+      const { sessions } = await buildSessionListPayload(server.deps.sessionStore, params)
+      return sessions.map((r) => str(r.session_id)).sort()
+    } finally { await server.close() }
+  }
+  const everything = ['web', ...AGENT.map((r) => str(r.session_id))].sort()
+
+  it.each([
+    { name: 'Terminal and desktop apps', key: 'showCliSessions', rows: ['api', 'desk', 'term'] },
+    { name: 'Claude Code', key: 'showClaudeCodeSessions', rows: ['cc'] },
+    { name: 'Messaging apps', key: 'showMessagingSessions', rows: ['sub-tg', 'tg'] },
+    { name: 'Scheduled tasks', key: 'showCronSessions', rows: ['cron_job1_20261101_120000'] },
+    { name: 'Webhooks', key: 'showWebhookSessions', rows: ['hook'] },
+    { name: 'Kanban', key: 'showKanbanSessions', rows: ['kan'] },
+  ] as const)('$name off removes exactly its own chats, and on adds exactly those', async ({ key, rows }) => {
+    expect(await listed({})).toEqual(everything)
+    expect(await listed({ [key]: false })).toEqual(everything.filter((id) => !(rows as readonly string[]).includes(id)))
+    const none = { showCliSessions: false, showClaudeCodeSessions: false, showMessagingSessions: false, showCronSessions: false, showWebhookSessions: false, showKanbanSessions: false }
+    expect(await listed({ ...none, [key]: true })).toEqual(['sub-web', 'web', ...rows].sort())
+  })
+
+  it('names on each row the switch that lists it, a subagent its parent\'s and a Talaria chat none', async () => {
+    const server = await bootTestServer()
+    try {
+      const params: ListParams = {
+        webuiRows: WEB, cliRows: AGENT, activeProfile: 'default', allProfiles: false, includeArchived: false, visibleOnly: false, ...ALL_ON,
+        showPreviousMessagingSessions: true, sidebarSource: null, archivedLimit: null, archivedOffset: 0, isolatedProfileMode: false, profilesMatch: () => true,
+      }
+      const { sessions } = await buildSessionListPayload(server.deps.sessionStore, params)
+      expect(Object.fromEntries(sessions.map((r) => [str(r.session_id), r.visibility_setting]))).toEqual({
+        web: null, 'sub-web': null, term: 'show_cli_sessions', desk: 'show_cli_sessions', api: 'show_cli_sessions', cc: 'show_claude_code_sessions',
+        tg: 'show_messaging_sessions', 'sub-tg': 'show_messaging_sessions', cron_job1_20261101_120000: 'show_cron_sessions', hook: 'show_webhook_sessions', kan: 'show_kanban_sessions',
+      })
+    } finally { await server.close() }
+  })
+
+  it('hides a scheduled-task chat filed in a project with messages while Scheduled tasks is off', async () => {
+    const projectCron = [agent('cron_job2_20261101_130000', 'cron', 12, { project_id: 'p1' })]
+    const sidecar = [...WEB, { ...agent('cron_job3_20261101_140000', 'cron', 13, { project_id: 'p1' }), source_tag: 'cron' }]
+    expect(await listed({ showCronSessions: false }, { web: sidecar, agent: projectCron })).toEqual(['web'])
+    expect(await listed({ showCronSessions: true }, { web: sidecar, agent: projectCron })).toEqual(['cron_job2_20261101_130000', 'cron_job3_20261101_140000', 'web'])
+  })
+
+  it('keeps one chat per messaging contact under "Only the latest chat per contact", all of them without it, and nothing while Messaging apps is off', async () => {
+    const chats = [agent('tg-old', 'telegram', 20, { session_source: 'messaging', chat_id: 'c1' }), agent('tg-new', 'telegram', 21, { session_source: 'messaging', chat_id: 'c1' }), agent('tg-other', 'telegram', 22, { session_source: 'messaging', chat_id: 'c2' })]
+    expect(await listed({}, { agent: chats, showPrevious: false })).toEqual(['tg-new', 'tg-other', 'web'])
+    expect(await listed({}, { agent: chats, showPrevious: true })).toEqual(['tg-new', 'tg-old', 'tg-other', 'web'])
+    for (const showPrevious of [false, true]) expect(await listed({ showMessagingSessions: false }, { agent: chats, showPrevious })).toEqual(['web'])
   })
 })
 
@@ -195,11 +266,18 @@ describe('sidebar groups (TAL-1534)', () => {
 })
 
 describe('Web-created diagnostic chats (TAL-1040)', () => {
-  const opts = { showCli: false, showCron: false, showWebhook: false, showKanban: false, sourceFilter: null, requestVisibilityOverrides: true }
-  it('keeps a compressed chat whose receipt names its lineage root while external sessions are hidden', () => {
+  it('keeps a compressed chat whose receipt names its lineage root while external sessions are hidden', async () => {
     const tip = { session_id: 'tip', _lineage_root_id: 'root', _lineage_tip_id: 'tip', source: 'cli', source_tag: 'cli', message_count: 4, actual_message_count: 4 }
     const other = { session_id: 'other', _lineage_root_id: 'other-root', _lineage_tip_id: 'other', source: 'cli', source_tag: 'cli', message_count: 4, actual_message_count: 4 }
-    expect(dedupeCliSidebarSessions([tip, other], new Set(), { ...opts, webCreated: new Set(['root']) }).map((r) => r.session_id)).toEqual(['tip'])
+    const server = await bootTestServer()
+    try {
+      const params: ListParams = {
+        webuiRows: [], cliRows: [tip, other], webDiagnosticIds: new Set(['root']), activeProfile: 'default', allProfiles: false, includeArchived: false, visibleOnly: false,
+        showCliSessions: false, showClaudeCodeSessions: false, showMessagingSessions: false, showPreviousMessagingSessions: false, showCronSessions: false, showWebhookSessions: false, showKanbanSessions: false,
+        sidebarSource: null, archivedLimit: null, archivedOffset: 0, isolatedProfileMode: false, profilesMatch: () => true,
+      }
+      expect((await buildSessionListPayload(server.deps.sessionStore, params)).sessions.map((r) => r.session_id)).toEqual(['tip'])
+    } finally { await server.close() }
   })
 })
 
@@ -236,12 +314,12 @@ describe('parent snapshot lookup (TAL-1219)', () => {
       if (!indexed && snapshot !== undefined) load.mockResolvedValue(new Session({ session_id: 'missing_parent', pre_compression_snapshot: snapshot }, { workspace: '/synthetic', model: 'synthetic' }))
       const params: ListParams = {
         webuiRows: rows, activeProfile: 'default', allProfiles: false, includeArchived: false,
-        excludeHidden: false, visibleOnly: false, showCliSessions: false, showClaudeCodeSessions: false,
+        visibleOnly: false, showCliSessions: false, showClaudeCodeSessions: false, showMessagingSessions: true,
         showPreviousMessagingSessions: false, showCronSessions: false, showWebhookSessions: false,
-        showKanbanSessions: false, requestVisibilityOverrides: true, sidebarSource: null,
+        showKanbanSessions: false, sidebarSource: null,
         archivedLimit: null, archivedOffset: 0, isolatedProfileMode: false, profilesMatch: () => true,
       }
-      const expected = (snapshot ? [...rows].reverse() : [rows[49]!]).map((row) => ({ ...row, is_cli_session: false, sidebar_parent_session_id: null, sidebar_source: 'webui' }))
+      const expected = (snapshot ? [...rows].reverse() : [rows[49]!]).map((row) => ({ ...row, is_cli_session: false, sidebar_parent_session_id: null, sidebar_source: 'webui', visibility_setting: 'show_messaging_sessions' }))
       expect((await buildSessionListPayload(store, params)).sessions).toEqual(expected)
       expect(load).toHaveBeenCalledTimes(indexed && !legacy ? 0 : 1)
       if (!indexed || legacy) expect(load).toHaveBeenCalledWith(legacy ? 'legacy_parent' : 'missing_parent')

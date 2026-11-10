@@ -692,7 +692,7 @@ describe('session lifecycle over HTTP', () => {
     stored.model = 'anthropic/claude-opus-5-5'
     stored.messages = [{ role: 'user', content: 'meta line' }, { role: 'assistant', content: 'ok' }]
     await s.deps.sessionStore.save(stored)
-    const rows = async () => Promise.all(['/api/sessions', '/api/sessions/search?q=meta&exclude_hidden=1'].map(async (path) => ((await json(await s.get(path))).sessions as Json[]).find((r) => r.session_id === sid)))
+    const rows = async () => Promise.all(['/api/sessions', '/api/sessions/search?q=meta&include_archived=0'].map(async (path) => ((await json(await s.get(path))).sessions as Json[]).find((r) => r.session_id === sid)))
     for (const row of await rows()) expect(row).not.toHaveProperty('meta')
     await s.deps.settings.save({ sidebar_density: 'detailed' })
     try {

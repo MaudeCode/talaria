@@ -75,7 +75,8 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
   ]),
   ...rows('navigation', m.settings_group_outside_chats, 'interface', [
     [key('show_cli_sessions'), m.settings_label_external_sessions], [key('show_claude_code_sessions'), m.settings_label_claude_code_sessions],
-    [key('show_previous_messaging_sessions'), m.settings_label_previous_messaging_sessions], [key('show_cron_sessions'), m.settings_label_cron_sessions],
+    [key('show_messaging_sessions'), m.settings_label_messaging_sessions], [key('show_previous_messaging_sessions'), m.settings_label_latest_messaging_only],
+    [key('show_cron_sessions'), m.settings_label_cron_sessions],
     [key('show_webhook_sessions'), m.settings_label_webhook_sessions], [key('show_kanban_sessions'), m.settings_label_kanban_sessions],
   ]),
   ...rows('notifications', m.settings_group_while_open, 'interface', [

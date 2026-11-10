@@ -2600,6 +2600,25 @@
                             },
                             "description": "TAL-2153: the detailed row's second line, in display order: the model's name, the message count (the one number part, which clients format as a localized plural), the source when the chat did not start in Talaria, and the profile when the list spans profiles. `GET /api/sessions` and its sidebar search send it only while `sidebar_density` is `detailed`; clients join the parts as one line."
                           },
+                          "visibility_setting": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "show_cli_sessions",
+                                  "show_claude_code_sessions",
+                                  "show_messaging_sessions",
+                                  "show_cron_sessions",
+                                  "show_webhook_sessions",
+                                  "show_kanban_sessions"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "TAL-2159: the Settings › Navigation switch that lists this row (its source, or for a subagent its parent's); null for a Talaria chat, which no switch hides. Clients hide the row at once while the user turns that switch off, and converge on the next list. `GET /api/sessions` and its sidebar search set it; other routes omit it."
+                          },
                           "sidebar_source": {
                             "enum": [
                               "webui",
@@ -2764,15 +2783,6 @@
             "allowReserved": true
           },
           {
-            "name": "exclude_hidden",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "allowEmptyValue": true,
-            "allowReserved": true
-          },
-          {
             "name": "sidebar_source",
             "in": "query",
             "schema": {
@@ -2822,6 +2832,16 @@
             "in": "query",
             "schema": {
               "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "show_messaging_sessions",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "TAL-2159: overrides the `show_messaging_sessions` setting for this request."
             },
             "allowEmptyValue": true,
             "allowReserved": true
@@ -3747,6 +3767,25 @@
                               ]
                             },
                             "description": "TAL-2153: the detailed row's second line, in display order: the model's name, the message count (the one number part, which clients format as a localized plural), the source when the chat did not start in Talaria, and the profile when the list spans profiles. `GET /api/sessions` and its sidebar search send it only while `sidebar_density` is `detailed`; clients join the parts as one line."
+                          },
+                          "visibility_setting": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "show_cli_sessions",
+                                  "show_claude_code_sessions",
+                                  "show_messaging_sessions",
+                                  "show_cron_sessions",
+                                  "show_webhook_sessions",
+                                  "show_kanban_sessions"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "TAL-2159: the Settings › Navigation switch that lists this row (its source, or for a subagent its parent's); null for a Talaria chat, which no switch hides. Clients hide the row at once while the user turns that switch off, and converge on the next list. `GET /api/sessions` and its sidebar search set it; other routes omit it."
                           },
                           "sidebar_source": {
                             "enum": [
@@ -4735,6 +4774,25 @@
                             },
                             "description": "TAL-2153: the detailed row's second line, in display order: the model's name, the message count (the one number part, which clients format as a localized plural), the source when the chat did not start in Talaria, and the profile when the list spans profiles. `GET /api/sessions` and its sidebar search send it only while `sidebar_density` is `detailed`; clients join the parts as one line."
                           },
+                          "visibility_setting": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "show_cli_sessions",
+                                  "show_claude_code_sessions",
+                                  "show_messaging_sessions",
+                                  "show_cron_sessions",
+                                  "show_webhook_sessions",
+                                  "show_kanban_sessions"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "TAL-2159: the Settings › Navigation switch that lists this row (its source, or for a subagent its parent's); null for a Talaria chat, which no switch hides. Clients hide the row at once while the user turns that switch off, and converge on the next list. `GET /api/sessions` and its sidebar search set it; other routes omit it."
+                          },
                           "sidebar_source": {
                             "enum": [
                               "webui",
@@ -5021,15 +5079,6 @@
             "allowReserved": true
           },
           {
-            "name": "exclude_hidden",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "allowEmptyValue": true,
-            "allowReserved": true
-          },
-          {
             "name": "sidebar_source",
             "in": "query",
             "schema": {
@@ -5061,6 +5110,16 @@
             "in": "query",
             "schema": {
               "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "show_messaging_sessions",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "TAL-2159: overrides the `show_messaging_sessions` setting for this request."
             },
             "allowEmptyValue": true,
             "allowReserved": true
@@ -6022,6 +6081,25 @@
                               ]
                             },
                             "description": "TAL-2153: the detailed row's second line, in display order: the model's name, the message count (the one number part, which clients format as a localized plural), the source when the chat did not start in Talaria, and the profile when the list spans profiles. `GET /api/sessions` and its sidebar search send it only while `sidebar_density` is `detailed`; clients join the parts as one line."
+                          },
+                          "visibility_setting": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "show_cli_sessions",
+                                  "show_claude_code_sessions",
+                                  "show_messaging_sessions",
+                                  "show_cron_sessions",
+                                  "show_webhook_sessions",
+                                  "show_kanban_sessions"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "TAL-2159: the Settings › Navigation switch that lists this row (its source, or for a subagent its parent's); null for a Talaria chat, which no switch hides. Clients hide the row at once while the user turns that switch off, and converge on the next list. `GET /api/sessions` and its sidebar search set it; other routes omit it."
                           },
                           "sidebar_source": {
                             "enum": [
@@ -21713,6 +21791,25 @@
                           },
                           "description": "TAL-2153: the detailed row's second line, in display order: the model's name, the message count (the one number part, which clients format as a localized plural), the source when the chat did not start in Talaria, and the profile when the list spans profiles. `GET /api/sessions` and its sidebar search send it only while `sidebar_density` is `detailed`; clients join the parts as one line."
                         },
+                        "visibility_setting": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "show_cli_sessions",
+                                "show_claude_code_sessions",
+                                "show_messaging_sessions",
+                                "show_cron_sessions",
+                                "show_webhook_sessions",
+                                "show_kanban_sessions"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-2159: the Settings › Navigation switch that lists this row (its source, or for a subagent its parent's); null for a Talaria chat, which no switch hides. Clients hide the row at once while the user turns that switch off, and converge on the next list. `GET /api/sessions` and its sidebar search set it; other routes omit it."
+                        },
                         "sidebar_source": {
                           "enum": [
                             "webui",
@@ -22747,6 +22844,25 @@
                             ]
                           },
                           "description": "TAL-2153: the detailed row's second line, in display order: the model's name, the message count (the one number part, which clients format as a localized plural), the source when the chat did not start in Talaria, and the profile when the list spans profiles. `GET /api/sessions` and its sidebar search send it only while `sidebar_density` is `detailed`; clients join the parts as one line."
+                        },
+                        "visibility_setting": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "show_cli_sessions",
+                                "show_claude_code_sessions",
+                                "show_messaging_sessions",
+                                "show_cron_sessions",
+                                "show_webhook_sessions",
+                                "show_kanban_sessions"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-2159: the Settings › Navigation switch that lists this row (its source, or for a subagent its parent's); null for a Talaria chat, which no switch hides. Clients hide the row at once while the user turns that switch off, and converge on the next list. `GET /api/sessions` and its sidebar search set it; other routes omit it."
                         },
                         "sidebar_source": {
                           "enum": [
@@ -23789,6 +23905,25 @@
                             ]
                           },
                           "description": "TAL-2153: the detailed row's second line, in display order: the model's name, the message count (the one number part, which clients format as a localized plural), the source when the chat did not start in Talaria, and the profile when the list spans profiles. `GET /api/sessions` and its sidebar search send it only while `sidebar_density` is `detailed`; clients join the parts as one line."
+                        },
+                        "visibility_setting": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "show_cli_sessions",
+                                "show_claude_code_sessions",
+                                "show_messaging_sessions",
+                                "show_cron_sessions",
+                                "show_webhook_sessions",
+                                "show_kanban_sessions"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-2159: the Settings › Navigation switch that lists this row (its source, or for a subagent its parent's); null for a Talaria chat, which no switch hides. Clients hide the row at once while the user turns that switch off, and converge on the next list. `GET /api/sessions` and its sidebar search set it; other routes omit it."
                         },
                         "sidebar_source": {
                           "enum": [
@@ -29192,6 +29327,25 @@
                               },
                               "description": "TAL-2153: the detailed row's second line, in display order: the model's name, the message count (the one number part, which clients format as a localized plural), the source when the chat did not start in Talaria, and the profile when the list spans profiles. `GET /api/sessions` and its sidebar search send it only while `sidebar_density` is `detailed`; clients join the parts as one line."
                             },
+                            "visibility_setting": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "show_cli_sessions",
+                                    "show_claude_code_sessions",
+                                    "show_messaging_sessions",
+                                    "show_cron_sessions",
+                                    "show_webhook_sessions",
+                                    "show_kanban_sessions"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "TAL-2159: the Settings › Navigation switch that lists this row (its source, or for a subagent its parent's); null for a Talaria chat, which no switch hides. Clients hide the row at once while the user turns that switch off, and converge on the next list. `GET /api/sessions` and its sidebar search set it; other routes omit it."
+                            },
                             "sidebar_source": {
                               "enum": [
                                 "webui",
@@ -30256,6 +30410,25 @@
                             ]
                           },
                           "description": "TAL-2153: the detailed row's second line, in display order: the model's name, the message count (the one number part, which clients format as a localized plural), the source when the chat did not start in Talaria, and the profile when the list spans profiles. `GET /api/sessions` and its sidebar search send it only while `sidebar_density` is `detailed`; clients join the parts as one line."
+                        },
+                        "visibility_setting": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "show_cli_sessions",
+                                "show_claude_code_sessions",
+                                "show_messaging_sessions",
+                                "show_cron_sessions",
+                                "show_webhook_sessions",
+                                "show_kanban_sessions"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-2159: the Settings › Navigation switch that lists this row (its source, or for a subagent its parent's); null for a Talaria chat, which no switch hides. Clients hide the row at once while the user turns that switch off, and converge on the next list. `GET /api/sessions` and its sidebar search set it; other routes omit it."
                         },
                         "sidebar_source": {
                           "enum": [
@@ -36150,6 +36323,25 @@
                           },
                           "description": "TAL-2153: the detailed row's second line, in display order: the model's name, the message count (the one number part, which clients format as a localized plural), the source when the chat did not start in Talaria, and the profile when the list spans profiles. `GET /api/sessions` and its sidebar search send it only while `sidebar_density` is `detailed`; clients join the parts as one line."
                         },
+                        "visibility_setting": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "show_cli_sessions",
+                                "show_claude_code_sessions",
+                                "show_messaging_sessions",
+                                "show_cron_sessions",
+                                "show_webhook_sessions",
+                                "show_kanban_sessions"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-2159: the Settings › Navigation switch that lists this row (its source, or for a subagent its parent's); null for a Talaria chat, which no switch hides. Clients hide the row at once while the user turns that switch off, and converge on the next list. `GET /api/sessions` and its sidebar search set it; other routes omit it."
+                        },
                         "sidebar_source": {
                           "enum": [
                             "webui",
@@ -37182,6 +37374,25 @@
                             ]
                           },
                           "description": "TAL-2153: the detailed row's second line, in display order: the model's name, the message count (the one number part, which clients format as a localized plural), the source when the chat did not start in Talaria, and the profile when the list spans profiles. `GET /api/sessions` and its sidebar search send it only while `sidebar_density` is `detailed`; clients join the parts as one line."
+                        },
+                        "visibility_setting": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "show_cli_sessions",
+                                "show_claude_code_sessions",
+                                "show_messaging_sessions",
+                                "show_cron_sessions",
+                                "show_webhook_sessions",
+                                "show_kanban_sessions"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-2159: the Settings › Navigation switch that lists this row (its source, or for a subagent its parent's); null for a Talaria chat, which no switch hides. Clients hide the row at once while the user turns that switch off, and converge on the next list. `GET /api/sessions` and its sidebar search set it; other routes omit it."
                         },
                         "sidebar_source": {
                           "enum": [
@@ -58954,6 +59165,25 @@
                           },
                           "description": "TAL-2153: the detailed row's second line, in display order: the model's name, the message count (the one number part, which clients format as a localized plural), the source when the chat did not start in Talaria, and the profile when the list spans profiles. `GET /api/sessions` and its sidebar search send it only while `sidebar_density` is `detailed`; clients join the parts as one line."
                         },
+                        "visibility_setting": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "show_cli_sessions",
+                                "show_claude_code_sessions",
+                                "show_messaging_sessions",
+                                "show_cron_sessions",
+                                "show_webhook_sessions",
+                                "show_kanban_sessions"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-2159: the Settings › Navigation switch that lists this row (its source, or for a subagent its parent's); null for a Talaria chat, which no switch hides. Clients hide the row at once while the user turns that switch off, and converge on the next list. `GET /api/sessions` and its sidebar search set it; other routes omit it."
+                        },
                         "sidebar_source": {
                           "enum": [
                             "webui",
@@ -59985,6 +60215,25 @@
                             ]
                           },
                           "description": "TAL-2153: the detailed row's second line, in display order: the model's name, the message count (the one number part, which clients format as a localized plural), the source when the chat did not start in Talaria, and the profile when the list spans profiles. `GET /api/sessions` and its sidebar search send it only while `sidebar_density` is `detailed`; clients join the parts as one line."
+                        },
+                        "visibility_setting": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "show_cli_sessions",
+                                "show_claude_code_sessions",
+                                "show_messaging_sessions",
+                                "show_cron_sessions",
+                                "show_webhook_sessions",
+                                "show_kanban_sessions"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-2159: the Settings › Navigation switch that lists this row (its source, or for a subagent its parent's); null for a Talaria chat, which no switch hides. Clients hide the row at once while the user turns that switch off, and converge on the next list. `GET /api/sessions` and its sidebar search set it; other routes omit it."
                         },
                         "sidebar_source": {
                           "enum": [
@@ -87838,6 +88087,10 @@
                     "show_claude_code_sessions": {
                       "type": "boolean"
                     },
+                    "show_messaging_sessions": {
+                      "type": "boolean",
+                      "description": "TAL-2159: list chats from messaging apps (default true); `show_cli_sessions` lists terminal, desktop, API and other Agent chats only."
+                    },
                     "show_cron_sessions": {
                       "type": "boolean"
                     },
@@ -88278,6 +88531,10 @@
                     },
                     "show_claude_code_sessions": {
                       "type": "boolean"
+                    },
+                    "show_messaging_sessions": {
+                      "type": "boolean",
+                      "description": "TAL-2159: list chats from messaging apps (default true); `show_cli_sessions` lists terminal, desktop, API and other Agent chats only."
                     },
                     "show_cron_sessions": {
                       "type": "boolean"

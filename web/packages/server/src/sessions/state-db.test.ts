@@ -1,3 +1,4 @@
+import { OUTSIDE_SOURCE_SETTING_KEYS } from '@maudecode/talaria-web-contracts'
 import { sessionPath, useJsonStorage } from '../test/storage.js'
 import { spawn } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
@@ -416,7 +417,12 @@ describe('state.db projection', () => {
     expect([tg?.can_duplicate, cli?.can_duplicate]).toEqual([false, false])
     expect(rows.map((r) => r.session_id)).not.toContain('cron_job1_1')
     expect(body.cli_session_count).toBeGreaterThan(0)
+    // TAL-2159: Terminal and desktop apps off hides the CLI chat and leaves the messaging one to its own switch.
     await s.deps.settings.save({ show_cli_sessions: false })
+    body = await json(await s.get('/api/sessions'))
+    expect((body.sessions as Json[]).map((r) => r.session_id)).toEqual(expect.arrayContaining(['tg-1']))
+    expect((body.sessions as Json[]).map((r) => r.session_id)).not.toContain('cli-titled')
+    await s.deps.settings.save({ show_messaging_sessions: false })
     body = await json(await s.get('/api/sessions'))
     expect((body.sessions as Json[]).map((r) => r.session_id)).not.toContain('tg-1')
     // Cron rows surface only when requested.
@@ -628,7 +634,13 @@ describe('state.db projection', () => {
         expect(await res.text()).toContain(path === '/api/sessions/gateway/stream' ? 'event: sessions_changed' : 'event: gateway_status')
       }
     } finally { dropped.mockRestore() }
-    await s.deps.settings.save({ show_cli_sessions: false })
+    // TAL-2159: the stream runs while any outside source is shown, and stops only when all six are off.
+    const ALL_OFF = { show_cli_sessions: false, show_claude_code_sessions: false, show_messaging_sessions: false, show_cron_sessions: false, show_webhook_sessions: false, show_kanban_sessions: false }
+    for (const key of Object.keys(ALL_OFF)) {
+      await s.deps.settings.save({ ...ALL_OFF, [key]: true })
+      expect((await s.get('/api/sessions/gateway/stream?probe=1')).status).toBe(200)
+    }
+    await s.deps.settings.save(ALL_OFF)
     const off = await s.get('/api/sessions/gateway/stream?probe=1')
     expect(off.status).toBe(404)
     expect(await json(off)).toMatchObject({ enabled: false, ok: false, error: 'agent sessions not enabled' })
@@ -794,7 +806,7 @@ describe('state.db projection', () => {
     }
     // With and without the state.db sidebar rows loaded: the lock does not depend on which rows the sidebar shows.
     for (const show of [false, true]) {
-      await s.deps.settings.save({ show_cli_sessions: show })
+      await s.deps.settings.save(Object.fromEntries(OUTSIDE_SOURCE_SETTING_KEYS.map((key) => [key, show])))
       s.deps.cliSessions.invalidate()
       for (const sid of [...locked, ...writable]) {
         for (const [name, payload] of await payloads(sid)) expect(payload?.read_only, `${sid} ${name} show_cli=${String(show)}`).toBe(locked.includes(sid))

@@ -7,6 +7,7 @@ import { isDefiniteRefusal } from '../contracts/common'
 import { settleOnNextRead } from '../features/sessions/useResourceMutation'
 import { m } from '../paraglide/messages.js'
 import type { Settings } from '../contracts'
+import { OUTSIDE_SOURCE_SETTING_KEYS } from '@maudecode/talaria-web-contracts'
 
 // Every setting shows the user's value at once; `_`-prefixed credential commands (passwords) are write-only.
 const shown = (key: string) => !key.startsWith('_')
@@ -98,6 +99,9 @@ export function useSaveSettings() {
   })
 }
 
+/** The settings the server's chat list reads: one switch per outside source and the messaging sub-option (TAL-2159), and the density that decides whether rows carry `meta` (TAL-2153). */
+const SESSION_LIST_SETTINGS = new Set<string>([...OUTSIDE_SOURCE_SETTING_KEYS, 'show_previous_messaging_sessions', 'sidebar_density'])
+
 // Module scope: React Compiler cannot lower its try/finally, so it stays outside the hook.
 async function writeSettings(qc: QueryClient, patch: Record<string, unknown>) {
   const currentQuery = () => qc.getQueryCache().find({ queryKey: intentKey, exact: true })
@@ -134,10 +138,10 @@ async function writeSettings(qc: QueryClient, patch: Record<string, unknown>) {
   publish()
   // Settings the server reads into other payloads: once one is stored (or a reread settles an unknown outcome) those
   // queries re-read, even after the page that wrote it has closed. TAL-2149: the server opens every Worklog by
-  // `worklog_details_expanded_default`; TAL-2153: `sidebar_density` decides whether list rows carry `meta`.
+  // `worklog_details_expanded_default`; the chat list and sidebar searches read `SESSION_LIST_SETTINGS`.
   const refreshDependents = () => {
     if ('worklog_details_expanded_default' in patch) void qc.invalidateQueries({ queryKey: [...keys.sessions.all, 'detail'] })
-    if ('sidebar_density' in patch) void invalidateSessionQueries(qc)
+    if (fields.some((key) => SESSION_LIST_SETTINGS.has(key))) void invalidateSessionQueries(qc)
   }
   let unknown = false
   try {

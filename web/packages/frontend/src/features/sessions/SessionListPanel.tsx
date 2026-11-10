@@ -14,6 +14,8 @@ import { SectionHeader } from '../../ui/List'
 import { Dialog } from '../../ui/Dialog'
 import { Button } from '../../ui/Button'
 import { useProjectsQuery } from '../../app/queries'
+import { useSettingsQuery } from '../../app/settings'
+import { OUTSIDE_SOURCE_SETTING_KEYS } from '@maudecode/talaria-web-contracts'
 import { SessionActions, SessionContextMenu, SessionMenuItems } from './SessionContextMenu'
 import { ContextMenu } from '../../ui/Menu'
 import { NO_PROJECT, SessionFilterMenu, type SessionSource } from './SessionFilterMenu'
@@ -28,6 +30,16 @@ import { getStreamContext, useStreamContext } from '../../stream/connection'
 import { randomHex } from '../../lib/randomHex'
 
 const SESSION_DRAG_TYPE = 'application/x-talaria-session-pin'
+
+/**
+ * Session rows as the user's pending writes show them: resource effects applied, and (TAL-2159) a row whose
+ * `visibility_setting` switch shows off hidden at once, before the server's next list drops it.
+ */
+function useShownSessionRows() {
+  const effects = useResourceEffects()
+  const switches = useSettingsQuery(OUTSIDE_SOURCE_SETTING_KEYS).data
+  return (rows: readonly SessionRow[]) => withEffects(rows, (r) => `session:${r.session_id}`, effects).filter((r) => !r.visibility_setting || switches?.[r.visibility_setting] !== false)
+}
 
 export function useSessionListQuery(params: api.SessionListParams = {}) {
   return useQuery({ queryKey: keys.sessions.list(params as Record<string, string | boolean | number | undefined>), queryFn: ({ signal }) => api.fetchSessions(params, signal), staleTime: 10_000 })
@@ -210,7 +222,8 @@ export function SessionListPanel() {
   const projects = useProjectsQuery()
   const data = list.data
   const effects = useResourceEffects()
-  const rows = withEffects(data?.sessions ?? [], (r) => `session:${r.session_id}`, effects).filter((r) => showArchived || !r.archived)
+  const shown = useShownSessionRows()
+  const rows = shown(data?.sessions ?? []).filter((r) => showArchived || !r.archived)
   const tree = nestSessionRows(rows)
   // The server counts each tab (a nested row in its parent's); an optimistic write that hides a row takes it and its nested rows off at once.
   const shownIds = new Set(rows.map((r) => r.session_id))
@@ -246,7 +259,7 @@ export function SessionListPanel() {
     if (cliCount > 0) visible = visible.filter((r) => (r.sidebar_source === 'cli') === (source === 'cli'))
     if (project === NO_PROJECT) visible = visible.filter((r) => !r.project_id)
     else if (project) visible = visible.filter((r) => r.project_id === project)
-    if (term && q.length >= 2 && search.data) return nestSessionRows(withEffects(search.data.sessions, (r) => `session:${r.session_id}`, effects).filter((r) => showArchived || !r.archived))
+    if (term && q.length >= 2 && search.data) return nestSessionRows(shown(search.data.sessions).filter((r) => showArchived || !r.archived))
     return { roots: term ? visible.filter((r) => r.title.toLowerCase().includes(term)) : visible, children: tree.children }
   })()
   const previews = new Map((q.length >= 2 ? search.data?.sessions ?? [] : []).flatMap((r) => (r.match_preview ? [[r.session_id, r.match_preview] as const] : [])))
@@ -454,9 +467,9 @@ function SessionGroupDialog({ title, kind, rows, nested, filters, activeId, proj
 }) {
   const [filter, setFilter] = useState('')
   const q = useDebounced(filter.trim(), 200)
-  const effects = useResourceEffects()
+  const shown = useShownSessionRows()
   const search = useQuery({ queryKey: keys.sessions.search(q, filters), queryFn: ({ signal }) => api.searchSessions(q, filters, 5, signal), enabled: q.length >= 2, staleTime: 15_000, placeholderData: keepPreviousData })
-  const found = search.data ? nestSessionRows(withEffects(search.data.sessions, (r) => `session:${r.session_id}`, effects).filter((r) => filters.include_archived || !r.archived)) : null
+  const found = search.data ? nestSessionRows(shown(search.data.sessions).filter((r) => filters.include_archived || !r.archived)) : null
   const matches = q.length < 2 ? rows : found ? found.roots.filter((r) => r.sidebar_group === kind) : null
   const children = q.length < 2 ? nested : found?.children ?? nested
   const previews = new Map((q.length >= 2 ? search.data?.sessions ?? [] : []).flatMap((r) => (r.match_preview ? [[r.session_id, r.match_preview] as const] : [])))

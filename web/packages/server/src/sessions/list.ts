@@ -12,8 +12,8 @@ import { CONTEXT_USAGE_FIELDS, Session, contextUsage, sharePath, stripSidebarHea
 import type { SessionStore } from './store.js'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { AGENT_STORAGE_OK, CANONICAL_READ_ONLY_REASON, OWNERSHIP_UNAVAILABLE_REASON, isCliSessionRow as isStateDbCliRow, isCliSessionRowVisible, normalizeAgentSessionSource, type StateDbSessionSource } from './state-db.js'
-import { INTERACTIVE_SOURCES, MESSAGING_SOURCES, sourceKind } from './source-kind.js'
-import { type AgentStorage, type SidebarGroup, type SidebarGroupKind } from '@maudecode/talaria-web-contracts'
+import { INTERACTIVE_SOURCES, MESSAGING_SOURCES, sourceKind, type SourceKind } from './source-kind.js'
+import { OUTSIDE_SOURCE_SETTING_KEYS, type AgentStorage, type SidebarGroup, type SidebarGroupKind } from '@maudecode/talaria-web-contracts'
 import { labelForModel } from '../providers/catalog.js'
 
 export type Row = Record<string, unknown>
@@ -42,24 +42,16 @@ export function sidebarMessageCount(row: Row): number {
   return 0
 }
 
-
-function sourceOf(row: Row): string {
-  return str(row.source_tag || row.source || row.raw_source || row.session_source)
+export function isIntentionallyBackground(row: Row): boolean {
+  const kind = sourceKind(row)
+  return kind === 'cron' || kind === 'webhook' || kind === 'kanban'
 }
 
-export function hideFromDefaultSidebar(row: Row, opts: { showCron?: boolean; showWebhook?: boolean; showKanban?: boolean } = {}): boolean {
-  const sid = str(row.session_id)
-  const source = sourceOf(row)
-  if (!opts.showCron && (source === 'cron' || sid.startsWith('cron_'))) return true
-  if (!opts.showWebhook && source === 'webhook') return true
-  if (!opts.showKanban && source === 'kanban') return true
+/** The rows `allSessions` leaves out: background runs (the list adds them back by their switch) and superseded snapshots. */
+export function hideFromDefaultSidebar(row: Row): boolean {
+  if (isIntentionallyBackground(row)) return true
   if (row.pre_compression_snapshot) return !row._show_pre_compression_snapshot
   return false
-}
-
-export function isIntentionallyBackground(row: Row): boolean {
-  const source = sourceOf(row)
-  return ['cron', 'webhook', 'kanban'].includes(source) || str(row.session_id).startsWith('cron_')
 }
 
 function hasLiveState(row: Row): boolean {
@@ -83,13 +75,14 @@ export function lineageRootId(row: Row, byId: Map<string, Row>): string {
   return root
 }
 
-function includeProjectHiddenBackground(candidates: Row[], visible: Row[]): Row[] {
+/** Background runs filed in a project with messages; the list shows them while their source's switch is on (TAL-2159). */
+function includeProjectBackground(candidates: Row[], visible: Row[]): Row[] {
   const visibleIds = new Set(visible.map((r) => str(r.session_id)).filter(Boolean))
   const out = [...visible]
   for (const row of candidates) {
     const sid = str(row.session_id)
     if (!sid || visibleIds.has(sid) || !isIntentionallyBackground(row) || !row.project_id || sidebarMessageCount(row) <= 0) continue
-    out.push({ ...row, default_hidden: true })
+    out.push(row)
   }
   return out
 }
@@ -116,9 +109,7 @@ function preferFullerSnapshots(rows: Row[]): Row[] {
   const byId = new Map(rows.filter((r) => r.session_id).map((r) => [str(r.session_id), r]))
   const groups = new Map<string, Row[]>()
   for (const row of rows) {
-    const sid = str(row.session_id)
-    const source = str(row.source_tag || row.source)
-    if (source === 'cron' || sid.startsWith('cron_')) continue
+    if (sourceKind(row) === 'cron') continue
     const root = lineageRootId(row, byId)
     const group = groups.get(root) ?? []
     group.push(row)
@@ -172,7 +163,7 @@ export async function allSessions(store: SessionStore, opts: AllSessionsOptions 
     const candidates = result
     const visible = candidates.filter((r) => !hideFromDefaultSidebar(r))
     let rows = preserveMessagefulDiscoverability(candidates, visible)
-    rows = includeProjectHiddenBackground(candidates, rows)
+    rows = includeProjectBackground(candidates, rows)
     for (const r of rows) {
       Reflect.deleteProperty(r, '_show_pre_compression_snapshot')
       if (!r.profile) r.profile = 'default'
@@ -265,9 +256,7 @@ async function staleSnapshotRefreshIds(store: SessionStore, rows: Row[]): Promis
   const byId = new Map(rows.filter((r) => r.session_id).map((r) => [str(r.session_id), r]))
   const groups = new Map<string, Row[]>()
   for (const row of rows) {
-    const sid = str(row.session_id)
-    const source = str(row.source_tag || row.source)
-    if (source === 'cron' || sid.startsWith('cron_')) continue
+    if (sourceKind(row) === 'cron') continue
     const root = lineageRootId(row, byId)
     groups.set(root, [...(groups.get(root) ?? []), row])
   }
@@ -316,11 +305,11 @@ export const SIDEBAR_SESSION_RESPONSE_FIELDS = new Set([
   'session_id', 'title', 'display_title', '_state_db_title', 'workspace', 'model', 'model_provider', 'message_count', 'user_message_count', 'created_at', 'updated_at',
   'last_message_at', 'pinned', 'archived', 'project_id', 'profile', 'input_tokens', 'output_tokens', 'estimated_cost', 'cache_read_tokens', 'cache_write_tokens',
   'cache_hit_percent', 'personality', 'context_length', 'config_context_length', ...CONTEXT_USAGE_FIELDS, 'source_tag', 'raw_source', 'session_source', 'source_label',
-  'is_cli_session', 'is_messaging_session', 'is_streaming', 'cron_running', 'active_stream_id', 'has_pending_user_message', 'pending_started_at', 'default_hidden',
+  'is_cli_session', 'is_messaging_session', 'is_streaming', 'cron_running', 'active_stream_id', 'has_pending_user_message', 'pending_started_at',
   'worktree_path', 'worktree_branch', 'parent_session_id', 'parent_title', 'parent_source', 'relationship_type', 'pre_compression_snapshot', '_lineage_root_id',
   '_lineage_tip_id', '_compression_segment_count', '_lineage_collapsed_count', '_parent_lineage_root_id', '_parent_lineage_tip_id', '_cross_surface_child_session',
   'match_type', 'match_preview', 'read_only', 'read_only_reason', 'can_branch', 'can_pin', 'can_archive', 'can_delete', 'can_duplicate', 'can_share', 'gateway_routing', 'share_url',
-  'execution_mode', 'sidebar_parent_session_id', 'sidebar_source',
+  'execution_mode', 'sidebar_parent_session_id', 'sidebar_source', 'visibility_setting',
 ])
 
 /** TAL-1151: keeps each row's `sidebar_parent_session_id` only while that parent row is in `rows` too. */
@@ -361,15 +350,14 @@ export interface ListParams {
   activeProfile: string
   allProfiles: boolean
   includeArchived: boolean
-  excludeHidden: boolean
   visibleOnly: boolean
   showCliSessions: boolean
   showClaudeCodeSessions: boolean
+  showMessagingSessions: boolean
   showPreviousMessagingSessions: boolean
   showCronSessions: boolean
   showWebhookSessions: boolean
   showKanbanSessions: boolean
-  requestVisibilityOverrides: boolean
   sidebarSource: 'webui' | 'cli' | null
   archivedLimit: number | null
   archivedOffset: number
@@ -536,17 +524,42 @@ export function sidebarHosts(rows: Row[], profilesMatch: ListParams['profilesMat
   return hosts
 }
 
+type OutsideSourceSetting = (typeof OUTSIDE_SOURCE_SETTING_KEYS)[number]
+
+/** TAL-2159: the setting whose switch lists `kind`, each switch exactly its own kinds. A Talaria chat has none; a subagent with no known parent files under Terminal and desktop apps. */
+function outsideSourceSetting(kind: SourceKind): OutsideSourceSetting | null {
+  switch (kind) {
+    case 'webui': return null
+    case 'claude_code': return 'show_claude_code_sessions'
+    case 'messaging': return 'show_messaging_sessions'
+    case 'cron': return 'show_cron_sessions'
+    case 'webhook': return 'show_webhook_sessions'
+    case 'kanban': return 'show_kanban_sessions'
+    case 'cli': case 'api': case 'other': case 'subagent': return 'show_cli_sessions'
+  }
+}
+
+const switchOn = (setting: OutsideSourceSetting, p: ListParams): boolean => ({
+  show_cli_sessions: p.showCliSessions, show_claude_code_sessions: p.showClaudeCodeSessions, show_messaging_sessions: p.showMessagingSessions,
+  show_cron_sessions: p.showCronSessions, show_webhook_sessions: p.showWebhookSessions, show_kanban_sessions: p.showKanbanSessions,
+})[setting]
+
 /**
  * TAL-1863: stamps every row's `sidebar_source`, the one verdict the counts, the request filter and the client's tabs
  * read. `rows` is the whole set before the archive filter and cap, so a subagent files with an archived or capped parent;
  * a parent outside it answers through the chain end's `parent_source`, and with neither the subagent keeps its own tab.
+ * TAL-2159: the same chain end decides whether the row is listed at all: its source's switch, so a subagent follows its
+ * parent. A chat Web created through the owner is listed whatever its source (TAL-1040). `visibility_setting` names that
+ * switch, so a client hides the row at once while the user turns it off.
  */
-function withSidebarSources(rows: Row[], profilesMatch: ListParams['profilesMatch']): Row[] {
-  const ends = sidebarChainEnds(rows, profilesMatch)
-  return rows.map((row) => {
+function withSidebarSources(rows: Row[], params: ListParams): Row[] {
+  const ends = sidebarChainEnds(rows, params.profilesMatch)
+  return rows.flatMap((row) => {
     const end = ends.get(row) ?? row
     const decider = isSubagentListRow(end) && end.parent_source ? normalizeAgentSessionSource(end.parent_source) : end
-    return { ...row, sidebar_source: isCliSessionForSettings(decider) ? 'cli' : 'webui' }
+    const setting = isWebDiagnosticRow(row, params.webDiagnosticIds) ? null : outsideSourceSetting(sourceKind(decider))
+    if (setting && !switchOn(setting, params)) return []
+    return [{ ...row, sidebar_source: isCliSessionForSettings(decider) ? 'cli' : 'webui', visibility_setting: setting }]
   })
 }
 
@@ -658,17 +671,9 @@ export function reconcileLocalSessionRows(rows: Row[], cli: Row[], profilesMatch
   return other
 }
 
-/** Python `_dedupe_cli_sidebar_sessions_for_api`: additive state rows, keeping project-hidden background rows addressable. */
-export function dedupeCliSidebarSessions(cli: Row[], represented: Set<string>, opts: { showCli: boolean; showCron: boolean; showWebhook: boolean; showKanban: boolean; sourceFilter: string | null; requestVisibilityOverrides: boolean; webCreated?: ReadonlySet<string> | undefined }): Row[] {
-  const webCreated = (r: Row): boolean => isWebDiagnosticRow(r, opts.webCreated)
-  const sf = str(opts.sourceFilter).trim().toLowerCase()
-  const showCron = opts.showCron || sf === 'cron'
-  const showWebhook = opts.showWebhook || sf === 'webhook'
-  const showKanban = opts.showKanban || sf === 'kanban'
-  const candidates = cli.filter((r) => !represented.has(str(r.session_id)) && !(sessionSourceIsWebui(r) && [...sessionLineageIds(r)].some((id) => represented.has(id))) && (isCliSessionRowVisible(r) || webCreated(r)))
-  const visible = candidates.filter((r) => (!isIntentionallyBackground(r) && (opts.showCli || webCreated(r))) || (isIntentionallyBackground(r) && !hideFromDefaultSidebar(r, { showCron, showWebhook, showKanban })))
-  if (opts.requestVisibilityOverrides) return visible
-  return includeProjectHiddenBackground(candidates, visible)
+/** Python `_dedupe_cli_sidebar_sessions_for_api`: the state rows no listed row represents; their switches gate them later (TAL-2159). */
+export function dedupeCliSidebarSessions(cli: Row[], represented: Set<string>, webCreated?: ReadonlySet<string>): Row[] {
+  return cli.filter((r) => !represented.has(str(r.session_id)) && !(sessionSourceIsWebui(r) && [...sessionLineageIds(r)].some((id) => represented.has(id))) && (isCliSessionRowVisible(r) || isWebDiagnosticRow(r, webCreated)))
 }
 
 function messagingSessionIdentity(row: Row, raw: string, identity: Map<string, GatewayIdentity>, isPreCompressionContinuation: (row: Row) => boolean): string {
@@ -713,7 +718,7 @@ export function keepLatestMessagingSessionPerSource(rows: Row[], opts: { showPre
   const bestBySource = new Map<string, Row>()
   for (const row of rows) {
     const raw = sessionMessagingRawSource(row)
-    const key = isKnownMessagingSource(raw) ? messagingSessionIdentity(row, raw, opts.identity, isPreCompressionContinuation) : null
+    const key = sourceKind(row) === 'messaging' && isKnownMessagingSource(raw) ? messagingSessionIdentity(row, raw, opts.identity, isPreCompressionContinuation) : null
     if (!key) { kept.push(row); continue }
     if (shouldHideStale(row)) continue
     const current = bestBySource.get(key)
@@ -726,11 +731,17 @@ export function keepLatestMessagingSessionPerSource(rows: Row[], opts: { showPre
 
 export const CLI_VISIBLE_SESSION_CAP = 20
 
-/** Python `_cap_recent_cli_sessions`. */
+/** Python `_cap_recent_cli_sessions`, per kind (TAL-2159): the newest `cap` terminal and desktop rows, and as many Claude Code rows. */
 export function capRecentCliSessions(rows: Row[], cap = CLI_VISIBLE_SESSION_CAP): Row[] {
   if (cap <= 0) return rows
-  let seen = 0
-  return rows.filter((r) => { if (!isCliSessionForSettings(r)) return true; seen += 1; return seen <= cap })
+  const seen = new Map<SourceKind, number>()
+  return rows.filter((r) => {
+    const kind = sourceKind(r)
+    if (kind !== 'cli' && kind !== 'claude_code') return true
+    const n = (seen.get(kind) ?? 0) + 1
+    seen.set(kind, n)
+    return n <= cap
+  })
 }
 
 function sessionHasServerVisibleMessages(row: Row): boolean {
@@ -808,7 +819,6 @@ export async function buildSessionListPayload(store: SessionStore, params: ListP
       return s
     })
     webuiSessions = webuiSessions.map((r) => ({ ...r, is_cli_session: isCliSessionRow(r) }))
-    if (!params.showCliSessions) webuiSessions = webuiSessions.filter((r) => !isCliSessionForSettings(r))
     // A copy with messages is never judged stricter than its own state.db row: dropping a legacy Desktop history's copy,
     // which counts no user turns, would let the bare row stand in without its project.
     const ownRowVisible = (s: Row): boolean => {
@@ -818,20 +828,15 @@ export async function buildSessionListPayload(store: SessionStore, params: ListP
     webuiSessions = webuiSessions.filter((s) => isCliSessionRowVisible(s) || ownRowVisible(s))
     const represented = new Set<string>()
     for (const s of webuiSessions) for (const id of sessionLineageIds(s)) represented.add(id)
-    dedupedCli = dedupeCliSidebarSessions(cliRows, represented, { showCli: params.showCliSessions, showCron: params.showCronSessions, showWebhook: params.showWebhookSessions, showKanban: params.showKanbanSessions, sourceFilter: params.sourceFilter ?? null, requestVisibilityOverrides: params.requestVisibilityOverrides, webCreated: params.webDiagnosticIds })
+    dedupedCli = dedupeCliSidebarSessions(cliRows, represented, params.webDiagnosticIds)
     const owners = params.stateDbSources ? params.stateDbSources(dedupedCli.map((r) => str(r.session_id))) : new Map<string, string>()
     // A sidecar-less foreign row whose owner refuses claiming is read-only, as its detail and mutations are; an
     // unreadable owner read (null) locks every row, as it locks sidecars.
     dedupedCli = withOwnerLocks(dedupedCli.map((r) => ({ ...r, read_only: !owners || !isClaimableCliSource(r, owners.get(str(r.session_id)) || str(r.source)), can_duplicate: false })), () => owners)
-  } else {
-    webuiSessions = webuiSessions.filter((r) => !isCliSessionForSettings(r))
-  }
-  if (params.requestVisibilityOverrides) {
-    webuiSessions = webuiSessions.filter((r) => !hideFromDefaultSidebar(r, { showCron: params.showCronSessions, showWebhook: params.showWebhookSessions, showKanban: params.showKanbanSessions }))
   }
   // TAL-48: person isolation drops other people's rows (and, for non-owners, unowned ones) before any count.
   const rowVisible = params.rowVisible ?? (() => true)
-  const merged = withSidebarSources([...webuiSessions, ...dedupedCli].filter(rowVisible).sort((a, b) => sessionSortTimestamp(b) - sessionSortTimestamp(a)), params.profilesMatch)
+  const merged = withSidebarSources([...webuiSessions, ...dedupedCli].filter(rowVisible).sort((a, b) => sessionSortTimestamp(b) - sessionSortTimestamp(a)), params)
   let scoped: Row[]
   let otherProfileCount = 0
   if (params.allProfiles) scoped = merged
@@ -855,19 +860,13 @@ export async function buildSessionListPayload(store: SessionStore, params: ListP
   const dedupeOpts = { showPrevious: params.showPreviousMessagingSessions, identity, isPreCompressionSnapshotId }
   let archivedScoped = keepLatestMessagingSessionPerSource([...scoped], dedupeOpts)
   let visibleScoped = keepLatestMessagingSessionPerSource(scoped.filter((r) => !r.archived), dedupeOpts)
-  if (params.showCliSessions) {
-    archivedScoped = capRecentCliSessions(archivedScoped)
-    visibleScoped = capRecentCliSessions(visibleScoped)
-  }
+  archivedScoped = capRecentCliSessions(archivedScoped)
+  visibleScoped = capRecentCliSessions(visibleScoped)
   if (params.visibleOnly) {
     // A Web-created diagnostic chat exists from creation, like a worktree chat, even before its first turn ran.
     const visible = (r: Row): boolean => sessionHasServerVisibleMessages(r) || isWebDiagnosticRow(r, params.webDiagnosticIds)
     archivedScoped = archivedScoped.filter(visible)
     visibleScoped = visibleScoped.filter(visible)
-  }
-  if (params.excludeHidden) {
-    archivedScoped = archivedScoped.filter((r) => !r.default_hidden)
-    visibleScoped = visibleScoped.filter((r) => !r.default_hidden)
   }
   const inCliTab = (r: Row): boolean => r.sidebar_source === 'cli'
   const archivedWebuiCount = archivedScoped.filter((r) => r.archived && !inCliTab(r)).length
@@ -910,9 +909,10 @@ export async function buildSessionListPayload(store: SessionStore, params: ListP
     other_profile_count: otherProfileCount,
     settings: {
       show_cli_sessions: params.showCliSessions,
+      show_messaging_sessions: params.showMessagingSessions,
       show_previous_messaging_sessions: params.showPreviousMessagingSessions,
       show_cron_sessions: params.showCronSessions,
-      show_claude_code_sessions: params.showCliSessions ? params.showClaudeCodeSessions : false,
+      show_claude_code_sessions: params.showClaudeCodeSessions,
       show_webhook_sessions: params.showWebhookSessions,
       show_kanban_sessions: params.showKanbanSessions,
     },

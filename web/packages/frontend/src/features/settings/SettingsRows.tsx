@@ -18,7 +18,7 @@ const trimmed = (draft: string) => draft.trim()
  * One boolean server setting as a switch row; `onSaved` runs once the server confirms a write. `inverted` shows the switch on
  * while the stored value is false, for a `hide_*` key labelled as the thing shown; `fallback` stays the stored value's default.
  */
-export function SettingToggle({ label, hint, settingKey, id: givenId, fallback = false, inverted = false, disabled, onSaved, confirmOn, icon, detail }: SettingProps & { fallback?: boolean; inverted?: boolean; onSaved?: () => void; confirmOn?: () => Promise<boolean>; detail?: ReactNode }) {
+export function SettingToggle({ label, hint, settingKey, id: givenId, fallback = false, inverted = false, disabled, onSaved, confirmOn, icon, indent, detail }: SettingProps & { fallback?: boolean; inverted?: boolean; onSaved?: () => void; confirmOn?: () => Promise<boolean>; indent?: boolean; detail?: ReactNode }) {
   const id = rowId(givenId, settingKey)
   const { bool, set } = useSettingField([settingKey])
   // `confirmOn` (a permission prompt) holds the switch on while it asks; a refusal leaves the setting off.
@@ -30,7 +30,7 @@ export function SettingToggle({ label, hint, settingKey, id: givenId, fallback =
     void confirmOn().then((ok) => { if (ok) save() }, () => undefined).finally(() => { setAsking(false) })
   }
   return (
-    <FieldRow label={label} htmlFor={id} hint={hint} icon={icon} detail={detail} inline>
+    <FieldRow label={label} htmlFor={id} hint={hint} icon={icon} indent={indent} detail={detail} inline>
       <Switch id={id} disabled={disabled} checked={asking || bool(settingKey, fallback) !== inverted} onCheckedChange={change} />
     </FieldRow>
   )

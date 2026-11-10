@@ -1,3 +1,4 @@
+import { OUTSIDE_SOURCE_SETTING_KEYS } from '@maudecode/talaria-web-contracts'
 import { useJsonStorage } from '../test/storage.js'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -978,16 +979,16 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
 
   it('counts the sidebar items and outside chats shown on every settings read and save (TAL-2175)', async () => {
     const count = (body: Json) => [body.sidebar_items_shown, body.sidebar_items_total, body.outside_chats_shown, body.outside_chats_total]
-    const outside = ['show_cli_sessions', 'show_claude_code_sessions', 'show_cron_sessions', 'show_webhook_sessions', 'show_kanban_sessions', 'show_previous_messaging_sessions']
+    const outside = OUTSIDE_SOURCE_SETTING_KEYS
     const all = (on: boolean) => Object.fromEntries(outside.map((key) => [key, on]))
     const before = await json(await s.get('/api/settings'))
     try {
-      // By default every destination shows, the Feedback button and profile switcher do not; CLI and Claude Code chats show.
-      expect(count(before)).toEqual([8, 10, 2, 6])
+      // By default every destination shows, the Feedback button and profile switcher do not; terminal, Claude Code and messaging chats show (TAL-2159).
+      expect(count(before)).toEqual([8, 10, 3, 6])
       // Legacy ids and the fixed Chat hide nothing; Settings drops `chat` and the server ignores `logs` and `profiles`.
-      expect(count(await json(await post(s, '/api/settings', { hidden_tabs: ['logs', 'profiles', 'workspaces', 'chat'] })))).toEqual([8, 10, 2, 6])
-      expect(count(await json(await post(s, '/api/settings', { hidden_tabs: ['kanban', 'insights', 'logs'], show_titlebar_profile: true, show_cron_sessions: true, show_cli_sessions: false })))).toEqual([7, 10, 2, 6])
-      expect(count(await json(await s.get('/api/settings')))).toEqual([7, 10, 2, 6])
+      expect(count(await json(await post(s, '/api/settings', { hidden_tabs: ['logs', 'profiles', 'workspaces', 'chat'] })))).toEqual([8, 10, 3, 6])
+      expect(count(await json(await post(s, '/api/settings', { hidden_tabs: ['kanban', 'insights', 'logs'], show_titlebar_profile: true, show_cron_sessions: true, show_cli_sessions: false })))).toEqual([7, 10, 3, 6])
+      expect(count(await json(await s.get('/api/settings')))).toEqual([7, 10, 3, 6])
       const allHidden = { hidden_tabs: ['tasks', 'kanban', 'skills', 'memory', 'insights', 'groups', 'todos', 'decisions'], show_sidebar_feedback: false, show_titlebar_profile: false, ...all(false) }
       expect(count(await json(await post(s, '/api/settings', allHidden)))).toEqual([0, 10, 0, 6])
       expect(count(await json(await post(s, '/api/settings', { hidden_tabs: [], show_sidebar_feedback: true, show_titlebar_profile: true, ...all(true) })))).toEqual([10, 10, 6, 6])

@@ -1453,6 +1453,25 @@
                 ]
               }
             },
+            "visibility_setting": {
+              "description": "TAL-2159: the Settings › Navigation switch that lists this row (its source, or for a subagent its parent's); null for a Talaria chat, which no switch hides. Clients hide the row at once while the user turns that switch off, and converge on the next list. `GET /api/sessions` and its sidebar search set it; other routes omit it.",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "show_cli_sessions",
+                    "show_claude_code_sessions",
+                    "show_messaging_sessions",
+                    "show_cron_sessions",
+                    "show_webhook_sessions",
+                    "show_kanban_sessions"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "sidebar_source": {
               "description": "TAL-1863: the source tab the row files in, the one verdict `webui_session_count`, `cli_session_count` and the `sidebar_source` request filter read. A subagent row takes its parent's tab, listed or not, in its own profile; with no resolvable parent it keeps its own (`webui`). `is_cli_session` stays false for a subagent. `GET /api/sessions` and its sidebar search set it; other routes omit it.",
               "type": "string",
