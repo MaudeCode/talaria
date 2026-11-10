@@ -86,6 +86,20 @@ async function seed(server: Awaited<ReturnType<typeof discussionServer>>['server
   // The Agent's MemoryStore separates entries with a `§` line; the Memory page shows each as its own block.
   mkdirSync(join(server.state, 'memories'), { recursive: true })
   writeFileSync(join(server.state, 'memories', 'MEMORY.md'), 'Uses **TypeScript** for Web projects.\n§\nDeploys go through the `staging` host first.\n§\nRelease checklist:\n- Run the full suite\n- Tag `vX.Y.Z`\n')
+  // TAL-2139: an Agent log with info, warning and error lines and a traceback, in the Agent's own format.
+  mkdirSync(join(server.state, 'logs'), { recursive: true })
+  writeFileSync(join(server.state, 'logs', 'agent.log'), [
+    '2026-11-08 12:01:03,101 INFO gateway.run: connected to telegram',
+    '2026-11-08 12:01:07,202 WARNING agent.providers: provider quota read took 4.2s',
+    '2026-11-08 12:02:11,303 INFO agent.turn: session 20261108_120000 turn finished in 18.4s',
+    '2026-11-08 12:03:40,404 ERROR tools.mcp: server "linear" failed to connect: 401',
+    'Traceback (most recent call last):',
+    '  File "tools/mcp/client.py", line 88, in connect',
+    'ConnectionError: 401 Unauthorized',
+    '2026-11-08 12:04:02,505 INFO cron.scheduler: job "Dependency audit" queued',
+    '2026-11-08 12:04:19,606 WARNING plugins.loader: plugin web-exa missing EXA_API_KEY',
+    '',
+  ].join('\n'))
   const now = Math.floor(Date.now() / 1000)
   const saveSession = (data: Record<string, unknown>) => server.deps.sessionStore.save(new Session({ profile: 'default', workspace, ...data }, { workspace, model: null }))
 

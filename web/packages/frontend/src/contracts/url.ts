@@ -53,10 +53,6 @@ export const LEGACY_SETTINGS_SECTIONS: Readonly<Record<string, { section: Settin
   plugins: { section: 'tools', tab: 'plugins' }, connectors: { section: 'tools', tab: 'connectors' }, help: { section: 'about' },
 }
 
-export const LogsSearchSchema = z.object({
-  file: z.enum(['agent', 'webui', 'gateway', 'bootstrap']).optional().catch(undefined),
-  tail: z.number().int().min(50).max(5000).optional().catch(undefined),
-})
 export const InsightsTabSchema = z.enum(['quotas', 'usage'])
 export type InsightsTab = z.infer<typeof InsightsTabSchema>
 /** TAL-1750: `tab` picks Quotas (default) or Usage; `days` is the Usage period. */

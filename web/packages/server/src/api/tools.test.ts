@@ -1199,6 +1199,23 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     res = await s.get('/api/logs?file=errors&tail=7')
     body = await json(res)
     expect(body).toMatchObject({ tail: 200, lines: ['a', 'b', 'c'], total_bytes: 6, hint: '' })
+    // TAL-2139: classified entries, the listed files, counts over the tail and the filters' match count.
+    writeFileSync(join(s.state, 'logs', 'gateway.log'), '2026-11-08 12:00:01,000 INFO gateway: up\n2026-11-08 12:00:02,000 ERROR gateway: mcp down\nTraceback (most recent call last):\n2026-11-08 12:00:03,000 WARNING gateway: slow mcp\n')
+    res = await s.get('/api/logs?file=gateway&tail=2000')
+    body = await json(res)
+    expect(body).toMatchObject({ tail: 2000, counts: { error: 2, warning: 1, lines: 4 }, matched: 4 })
+    expect(body.lines).toHaveLength(4)
+    expect((body.files as Json[]).map((f) => [f.id, f.exists])).toEqual([['agent', false], ['webui', false], ['gateway', true]])
+    res = await s.get('/api/logs?file=gateway&level=error&q=MCP')
+    body = await json(res)
+    expect(body).toMatchObject({ lines: (body.lines as string[]).slice(0, 4), counts: { error: 2, warning: 1, lines: 4 }, matched: 1, entries: [{ time: '2026-11-08 12:00:02,000', level: 'error', text: 'gateway: mcp down', matches: [[9, 12]] }] })
+    expect((await s.get('/api/logs?file=gateway&level=info')).status).toBe(400)
+    expect((await s.get('/api/logs?file=constructor')).status).toBe(400)
+    // The server owner reads this server's own log.
+    writeFileSync(join(s.deps.config.stateDir, `bootstrap-${String(s.deps.config.port)}.log`), '[bootstrap] ERROR: port in use\n')
+    body = await json(await s.get('/api/logs?file=webui'))
+    expect(body).toMatchObject({ file: 'webui', entries: [{ level: 'error', text: '[bootstrap] port in use', time: null }] })
+    expect((body.files as Json[]).find((f) => f.id === 'webui')).toMatchObject({ exists: true, total_bytes: 31 })
     res = await s.get('/api/logs?file=../etc/passwd')
     expect(res.status).toBe(400)
     // A log symlinked outside the logs directory is refused rather than followed.
@@ -1500,6 +1517,9 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
         expect([res.status, await json(res)]).toEqual([403, { error: 'Owner session required' }])
       }
       expect(await json(await t.get('/api/gateway/status', { headers }))).not.toEqual({ error: 'Owner session required' })
+      // TAL-2139: this server's own logs are the owner's; a profile-bound person lists and reads only the profile's.
+      expect(((await json(await t.get('/api/logs', { headers }))).files as Json[]).map((f) => f.id)).toEqual(['agent', 'gateway'])
+      expect((await t.get('/api/logs?file=webui', { headers })).status).toBe(400)
     } finally {
       await t.close()
     }

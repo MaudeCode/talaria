@@ -4,7 +4,7 @@ import { oc, type OpenAPI } from '@orpc/contract'
 import { SkillRevisionsInputSchema, SkillRevisionsSchema } from '../sidecar-shared.js'
 import { SkillReplayJobSchema, SkillReplayJobsSchema, SkillReplayPlanQuerySchema, SkillReplayPlanSchema, SkillReplayStartSchema } from '../skill-replay.js'
 import { z } from 'zod'
-import { ConnectorSignInOfferSchema, SkillsSchema, SkillContentSchema, SkillsUsageSchema, MemorySchema, PromptSchema, PromptsSchema, CommandsSchema, LogsSchema, InsightsSchema, AgentHealthSchema, SystemHealthSchema, McpServerSchema, McpServersSchema, McpToolsSchema, ConnectorsPageSchema, ConnectorToolsViewSchema, PluginsSchema, UpdatesCheckSchema, UpdatesSummarySchema, UpdateApplySchema, UpdateNotificationsSchema, UpdateNotificationSchema, TabIdSchema, FrontendBuildIdSchema, NotesSourcesSchema, NotesSearchSchema, NoteItemSchema, WikiStatusSchema, WikiBrowseSchema, WikiPageSchema, DashboardStatusSchema, DashboardConfigSchema, GatewayStatusSchema, GatewayActionSchema, ProjectOsDashboardSchema, TranscribeCapabilitySchema, SpeechPrepareSchema, PluginSettingViewSchema, PluginAutoUpdateViewSchema, OnboardingOAuthSchema } from '../views.js'
+import { ConnectorSignInOfferSchema, SkillsSchema, SkillContentSchema, SkillsUsageSchema, MemorySchema, PromptSchema, PromptsSchema, CommandsSchema, LogLevelFilterSchema, LogsSchema, InsightsSchema, AgentHealthSchema, SystemHealthSchema, McpServerSchema, McpServersSchema, McpToolsSchema, ConnectorsPageSchema, ConnectorToolsViewSchema, PluginsSchema, UpdatesCheckSchema, UpdatesSummarySchema, UpdateApplySchema, UpdateNotificationsSchema, UpdateNotificationSchema, TabIdSchema, FrontendBuildIdSchema, NotesSourcesSchema, NotesSearchSchema, NoteItemSchema, WikiStatusSchema, WikiBrowseSchema, WikiPageSchema, DashboardStatusSchema, DashboardConfigSchema, GatewayStatusSchema, GatewayActionSchema, ProjectOsDashboardSchema, TranscribeCapabilitySchema, SpeechPrepareSchema, PluginSettingViewSchema, PluginAutoUpdateViewSchema, OnboardingOAuthSchema } from '../views.js'
 import { ConnectorOperationViewSchema } from '../connector-operation.js'
 import { PluginCatalogQuerySchema, PluginCatalogSchema, PluginInstallInputSchema, PluginInstallResultSchema, PluginRuntimeApplicationSchema, PluginUpdateResultSchema, PluginUpdateAllResultSchema, ToolsetsCatalogSchema, CommandBundleInvocationSchema, CommandBundleSchema, PendingWriteSchema, PendingWriteRefSchema } from '../sidecar-shared.js'
 
@@ -121,7 +121,7 @@ export const toolsContract = {
     page: oc.route({ method: 'GET', path: '/api/wiki/page', tags, summary: 'One allowlisted page, cut at 2 MiB. 400 for a missing or non-canonical path; 404 for anything not listed.' }).input(z.object({ path: z.string().optional() })).output(WikiPageSchema),
   },
   insights: oc.route({ method: 'GET', path: '/api/insights', tags }).input(z.object({ days: z.string().optional() })).output(InsightsSchema),
-  logs: oc.route({ method: 'GET', path: '/api/logs', tags }).input(z.object({ file: z.string().optional(), tail: z.string().optional() })).output(LogsSchema),
+  logs: oc.route({ method: 'GET', path: '/api/logs', tags }).input(z.object({ file: z.string().optional(), tail: z.string().optional(), q: z.string().optional(), level: LogLevelFilterSchema.optional() })).output(LogsSchema),
   ops: {
     agent: oc.route({ method: 'GET', path: '/api/health/agent', tags }).output(AgentHealthSchema),
     system: oc.route({ method: 'GET', path: '/api/system/health', tags }).output(SystemHealthSchema),

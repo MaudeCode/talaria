@@ -110,7 +110,6 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
     ['settingsCheckUpdates', m.settings_label_check_updates], ['settingsAutoApplyUpdates', m.settings_label_auto_apply_updates],
     ['settingsIgnoreAgentUpdates', m.settings_label_ignore_agent_updates], ['settingsSummarizeUpdatesAutomatically', m.settings_label_summarize_updates_automatically],
   ]),
-  ...rows('logs', m.view, 'server', [['logs-file', m.logs_file_label], ['logs-tail', m.logs_tail_label]]),
 ]
 
 /** Case-insensitive substring match on each row's localized label and group title, in page order. */

@@ -317,7 +317,7 @@ export const createKanbanBoard = (name: string) => orpc().kanban.createBoard({ n
 /** Archives the board (the server's default); `?delete=1` would remove it. */
 export const archiveKanbanBoard = (slug: string) => orpc().kanban.deleteBoard({ slug })
 export const fetchInsights = (days: number) => orpc().insights({ days: String(days) })
-export const fetchLogs = (file: string, tail: number) => orpc().logs({ file, tail: String(tail) })
+export const fetchLogs = (file: string, tail: number, q?: string, level?: 'warning' | 'error') => orpc().logs({ file, tail: String(tail), ...(q ? { q } : {}), ...(level ? { level } : {}) })
 export const fetchOnboarding = () => orpc().onboarding.status(undefined, { signal: timeout(45_000) })
 export const onboardingSetup = (body: Record<string, unknown>) => orpc().onboarding.setup(body, { signal: timeout(60_000) })
 export const onboardingProbe = (body: Record<string, unknown>) => orpc().onboarding.probe(body, { signal: timeout(60_000) })
