@@ -72,6 +72,7 @@ export function ProvidersSection() {
   const q = filter.trim().toLowerCase()
   const shown = q ? providers.data.providers.filter((p) => (p.display_name ?? p.id).toLowerCase().includes(q)) : providers.data.providers
   // TAL-2077: the server's `configured` field alone places a row; each group keeps the server order.
+  // TAL-2127 moves this filter and grouping into the `/api/providers` response; delete both here once it ships.
   const groups = [{ name: 'configured', title: m.providers_group_configured(), rows: shown.filter((p) => p.configured === true) }, { name: 'available', title: m.providers_group_available(), rows: shown.filter((p) => p.configured !== true) }]
   const catalogUnavailable = providers.data.availability?.authoritative === false
   return (
