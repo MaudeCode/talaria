@@ -44,7 +44,7 @@ export function ProviderQuotaPace({ source, showAccount = false, plan, planStale
     {m.plan_used({ label: gauge.label, percent: new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 0 }).format(gauge.used_bp / 10000) })}
     {gauge.resets_at_ms !== null && <span> · {m.provider_quota_resets({ time: resetTime(locale, gauge.resets_at_ms) })}</span>}
   </span>
-  if (allowance) return <div className={compact ? 'px-2.5 py-1 text-xs text-muted' : 'mt-2 border-t border-border pt-2 text-xs text-muted'} data-testid="provider-plan-usage">
+  if (allowance) return <div className={compact ? 'px-2.5 py-1 text-xs text-muted' : 'text-xs text-muted'} data-testid="provider-plan-usage">
     <div className="flex flex-wrap gap-x-2"><span className="font-medium text-text">{allowance.plan}</span>{stale && <span>{m.catalog_last_confirmed()}</span>}{allowance.paused_reason && <span>{m.plan_paused()}</span>}</div>
     {allowance.gauges.map((g) => <div key={`${g.scope}:${g.label}`} className="flex flex-wrap gap-x-2 tabular-nums"><span>{g.title || g.label}</span><span>{m.plan_remaining({ percent: new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 1 }).format(g.left_fraction) })}</span>{g.resets_at_ms !== null && <span>{m.provider_quota_resets({ time: resetTime(locale, g.resets_at_ms) })}</span>}</div>)}
     {allowance.credits_pay === true && !stale && !allowance.paused_reason && <span>{m.plan_credits_cover()}</span>}
@@ -54,14 +54,14 @@ export function ProviderQuotaPace({ source, showAccount = false, plan, planStale
   if (!w) {
     if (!source.urgency) return null
     return (
-      <div className="mt-2 flex flex-col gap-0.5 border-t border-border pt-2 text-[11px] text-muted">
+      <div className="flex flex-col gap-0.5 text-[11px] text-muted">
         {showAccount && source.account_label && <span className="font-medium text-text">{source.account_label}</span>}
         <QuotaUrgency urgency={source.urgency} />
       </div>
     )
   }
   return (
-    <div className="mt-2 flex flex-col gap-0.5 border-t border-border pt-2 text-[11px] text-muted" data-testid="provider-quota-pace">
+    <div className="flex flex-col gap-0.5 text-[11px] text-muted" data-testid="provider-quota-pace">
       <QuotaUrgency urgency={source.urgency} />
       <div className="flex flex-wrap gap-x-3">
         <span className="font-medium text-text">{showAccount && source.account_label ? `${source.account_label} · ${w.label}` : w.label}</span>

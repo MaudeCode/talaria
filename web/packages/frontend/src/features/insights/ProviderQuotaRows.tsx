@@ -9,7 +9,7 @@ import { Button } from '../../ui/Button'
 import { MetricCell, Row, RowList, SectionHeader } from '../../ui/List'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { cn } from '../../ui/cn'
-import { QuotaMeter, quotaCreditsText, quotaSourceName, quotaStatusText, quotaWindowFigures, type QuotaPercentMode, type QuotaSource, type QuotaWindow } from './QuotaMeter'
+import { QuotaMeter, quotaCreditsText, quotaSourceName, quotaSourcePlan, quotaStatusText, quotaWindowFigures, type QuotaPercentMode, type QuotaSource, type QuotaWindow } from './QuotaMeter'
 
 /**
  * Every `/api/provider/quotas` source with every window laid out like the App's Insights rows (TAL-1750, TAL-1782):
@@ -60,7 +60,7 @@ export function ProviderQuotaRows({ quotas, mode, onRefresh }: { quotas: UseQuer
 function QuotaSourceRow({ source: s, mode, locale }: { source: QuotaSource; mode: QuotaPercentMode; locale: string }) {
   const name = quotaSourceName(s)
   const account = s.account_label && s.account_label !== name ? s.account_label : null
-  const plan = typeof s.plan === 'string' && s.plan ? s.plan : null
+  const plan = quotaSourcePlan(s)
   const status = s.status ?? 'unavailable'
   const stale = status === 'stale' || status === 'unavailable'
   const credits = quotaCreditsText(s, locale)

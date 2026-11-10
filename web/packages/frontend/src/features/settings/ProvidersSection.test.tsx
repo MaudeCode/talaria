@@ -130,10 +130,10 @@ describe('ProvidersSection', () => {
     ] }
     renderSection()
     const row = async (id: string, name: string) => (await screen.findByText(name)).closest<HTMLElement>(`[data-provider="${id}"]`)!
-    expect((await row('zai', 'Z.AI')).className).toContain('border-accent-bg-strong')
+    expect(within(await row('zai', 'Z.AI')).getByText('Active provider')).toBeInTheDocument()
     expect(within(await row('zai', 'Z.AI')).getByText('Configured · env')).toBeInTheDocument()
     expect(within(await row('vault', 'Vault')).getByText('Configured · keychain')).toBeInTheDocument()
-    expect((await row('openai', 'OpenAI')).className).not.toContain('border-accent-bg-strong')
+    expect(within(await row('openai', 'OpenAI')).queryByText('Active provider')).toBeNull()
     expect(within(await row('openai', 'OpenAI')).getByText('Not configured')).toBeInTheDocument()
   })
 
@@ -169,6 +169,7 @@ describe('ProvidersSection', () => {
     renderSection()
     const pace = await screen.findByTestId('provider-quota-pace', {}, { timeout: 2000 })
     expect(pace.closest('[data-provider]')).toHaveAttribute('data-provider', 'anthropic')
+    expect(within(pace.closest<HTMLElement>('[data-provider]')!).getByText('max')).toBeInTheDocument()
     expect(within(pace).getByText('Weekly')).toBeInTheDocument()
     expect(within(pace).getByText('68% remaining')).toBeInTheDocument()
     expect(within(pace).getByText(`Resets ${new Date('2026-10-03T08:00:00Z').toLocaleString('en', { dateStyle: 'medium', timeStyle: 'short' })}`)).toBeInTheDocument()
