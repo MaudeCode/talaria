@@ -170,10 +170,9 @@ const ENUM_VALUES: Record<string, Set<string>> = {
 }
 /**
  * TAL-2160: how many pinned chats the sidebar may show; the settings read ships the maximum as `pinned_sessions_limit_max`.
- * A save outside it stores the nearest end, for every client.
+ * A save outside it is refused for every client, like any out-of-range integer.
  */
 export const PINNED_SESSIONS_LIMIT_RANGE: [number, number] = [1, 99]
-const CLAMPED_INT_KEYS: ReadonlySet<string> = new Set(['pinned_sessions_limit'])
 const INT_RANGES: Record<string, [number, number]> = {
   pinned_sessions_limit: PINNED_SESSIONS_LIMIT_RANGE,
   inflight_state_max_sessions: [1, 25],
@@ -608,10 +607,8 @@ export class SettingsStore {
         const intRange = INT_RANGES[k]
         if (intRange) {
           const n = pyInt(v)
-          if (n === null) continue
-          if (CLAMPED_INT_KEYS.has(k)) v = Math.min(intRange[1], Math.max(intRange[0], n))
-          else if (n < intRange[0] || n > intRange[1]) continue
-          else v = n
+          if (n === null || n < intRange[0] || n > intRange[1]) continue
+          v = n
         }
         const floatRange = FLOAT_RANGES[k]
         if (floatRange) {
