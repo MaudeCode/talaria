@@ -233,10 +233,13 @@ const InstalledPluginRow = memo(function InstalledPluginRow({ plugin: p, editabl
   const control = p.can_toggle
     ? <ResourceSwitch effect={enabledEffect} checked={p.enabled === true} onCheckedChange={(enabled) => onSetEnabled({ key: p.key, enabled })} aria-label={name} stateLabel={(on) => on ? m.plugins_enabled() : m.plugins_disabled()} />
     : undefined
+  // The row's right-click and long-press menu offers the switch's move too, through the same optimistic write.
+  const on = enabledEffect?.value ?? p.enabled === true
+  const toggle: RowAction[] = p.can_toggle ? [{ label: on ? m.disable() : m.plugins_enable_toggle(), run: () => onSetEnabled({ key: p.key, enabled: !on }) }] : []
   return (
     <PluginRow id={p.key} icon={nested ? undefined : Box} nested={nested} title={<>{name}{p.version ? <span className="ml-1 text-xs font-normal tabular-nums text-muted">{p.version}</span> : null}{p.is_active_provider && <span className="ml-2"><Mark>{m.plugins_in_use()}</Mark></span>}</>}
       description={p.description ?? ''} note={p.update?.available ? <StatusDot state="warning">{m.plugins_update_available()}</StatusDot> : undefined}
-      status={!control && p.enabled === false ? <span className="text-xs text-muted">{m.plugins_off()}</span> : null} control={control} actions={[
+      status={!control && p.enabled === false ? <span className="text-xs text-muted">{m.plugins_off()}</span> : null} control={control} menuOnly={toggle} actions={[
         ...(editable && p.update?.available ? [{ label: m.plugins_update(), run: () => onUpdate(p.key), disabled: updateBusy, busy: updating, icon: CircleArrowUp }] : []),
         ...(editable && p.settings?.length ? [{ label: m.settings_title(), run: () => onOpen(open ? null : p.key), expanded: open, icon: Settings2 }] : []),
       ]}>
@@ -254,9 +257,10 @@ type PluginRowAction = RowAction & { icon: NonNullable<RowAction['icon']> }
  * Installed and catalog entries share the existing Plugins row and disclosure layout; its actions show inline and in its right-click and long-press menu.
  * TAL-2082: the description keeps to one truncated line, with the full text in its `title` and the DOM for screen readers.
  * TAL-2132: `note` takes the description's line (an update waiting); `icon` leads the row, and a `nested` row is indented under its group.
- * TAL-2133: `control` (the on/off switch) ends the row after its actions; on a narrow row both wrap together to the right.
+ * TAL-2133: `control` (the on/off switch) ends the row after its actions; on a narrow row both wrap together to the right. `menuOnly` adds
+ * the control's move to the row menu, which has no inline button for it.
  */
-function PluginRow({ id, icon: Icon, nested, title, description, note, status, actions, control, children }: { id?: string; icon?: LucideIcon | undefined; nested?: boolean | undefined; title: ReactNode; description: string; note?: ReactNode; status: ReactNode; actions: PluginRowAction[]; control?: ReactNode; children?: ReactNode }) {
+function PluginRow({ id, icon: Icon, nested, title, description, note, status, actions, control, menuOnly = [], children }: { id?: string; icon?: LucideIcon | undefined; nested?: boolean | undefined; title: ReactNode; description: string; note?: ReactNode; status: ReactNode; actions: PluginRowAction[]; control?: ReactNode; menuOnly?: RowAction[]; children?: ReactNode }) {
   const row = <li className={cn('list-none py-2', nested && 'pl-7')} data-plugin={id}><div className="flex flex-wrap items-center gap-3">
     {Icon && <Icon size={18} strokeWidth={1.75} aria-hidden="true" data-row-icon="" className="shrink-0 text-muted" />}
     <div className="min-w-0 flex-1 basis-40"><div className="flex min-w-0 items-baseline text-sm font-medium text-text">{title}</div>
@@ -264,7 +268,7 @@ function PluginRow({ id, icon: Icon, nested, title, description, note, status, a
     {status}
     {control ? <div className="ml-auto flex shrink-0 items-center gap-3"><RowActionButtons actions={actions} />{control}</div> : <RowActionButtons actions={actions} />}
   </div>{children}</li>
-  return <RowContextMenu label={m.plugins_row_menu()} actions={actions} trigger={row} />
+  return <RowContextMenu label={m.plugins_row_menu()} actions={[...actions, ...menuOnly]} trigger={row} />
 }
 
 const AUTO_UPDATE_RESOURCE = 'plugin-auto-update'

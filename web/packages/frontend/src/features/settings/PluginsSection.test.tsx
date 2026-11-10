@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -233,9 +233,18 @@ it('TAL-2133: a row switch moves at once, the figures follow the reread, and a r
   await waitFor(() => expect(showToast).toHaveBeenCalledWith('Admission refused: synthetic conflict', 5000, 'error'))
   await waitFor(() => expect(meshy).toBeChecked())
   expect(turnedOn()).toBe('Turned on2of 3')
-  // The exclusive backend has no switch.
+  // The row menu offers the same move, through the same write.
+  fireEvent.contextMenu(meshy.closest('li')!)
+  await userEvent.click(within(await screen.findByRole('menu', { name: 'Plugin actions' })).getByRole('menuitem', { name: 'Disable' }))
+  expect(meshy).not.toBeChecked()
+  expect(api.setPluginEnabled).toHaveBeenLastCalledWith('meshy', false)
+  finish!()
+  await waitFor(() => expect(turnedOn()).toBe('Turned on1of 3'))
+  // The exclusive backend has no switch and no menu.
   await userEvent.click(screen.getByRole('button', { name: /Image generation/ }))
-  expect(screen.getByText('fal').closest('li')?.querySelector('[role="switch"]')).toBeNull()
+  const fal = screen.getByText('fal').closest('li')!
+  expect(fal.querySelector('[role="switch"]')).toBeNull()
+  expect(fal).not.toHaveAttribute('data-context-menu')
   vi.mocked(api.fetchPlugins).mockReset()
 })
 
