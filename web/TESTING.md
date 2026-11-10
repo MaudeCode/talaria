@@ -178,6 +178,12 @@ sidecar command it uses the fixture replay sidecar). See
 `docs/architecture/frontend-migration.md` for the layout. An occupied e2e port (`HERMES_E2E_PORT`, default 8797, or
 the next port) fails the run; set `HERMES_E2E_PORT` to a free port. The run never reuses a running server.
 
+The replay servers leave Tasks, Decisions, Discussions, Insights usage and chat transcripts empty. For a page review
+that needs data, `e2e/demo-server.ts` boots a server seeded with synthetic chats, jobs, a decision review and a
+discussion, and `e2e/demo-tour.spec.ts` checks it. From `packages/frontend`,
+`TOUR_SHOTS=<dir> npx playwright test e2e/demo-tour.spec.ts` also saves a full-height screenshot of each of those
+pages for the desktop and mobile projects.
+
 `src/reactCompilerCoverage.test.ts` compiles every shipped frontend source with React Compiler and fails on any
 function the compiler skips; a skipped function still builds, unmemoized. Lint misses some skips, notably `try` with
 `finally` and `throw` inside `try`: settle async work with `.catch`/`.finally` or move it to module scope.
