@@ -59,7 +59,7 @@ import { configureClient, post, resetClientForTests, type Transport } from '../.
 import { ApiError } from '../../contracts/common'
 import { WorkspacesPage } from '../workspaces/WorkspacesPage'
 import { ProvidersSection } from './ProvidersSection'
-import { SystemSection } from './SystemSection'
+import { AccessSection } from './AccessSection'
 import { SkillsPage } from '../skills/SkillsPage'
 import { McpSection } from './McpSection'
 
@@ -105,7 +105,7 @@ describe('input render isolation (TAL-1405)', () => {
   })
 
   it('typing ten characters in each password renders no passkey rows', async () => {
-    mount(<SystemSection />)
+    mount(<AccessSection />)
     await screen.findByText('Laptop')
     reset(renders.passkey)
     for (const label of ['Enter current password…', 'Access Password']) {
@@ -132,7 +132,7 @@ describe('input render isolation (TAL-1405)', () => {
 
   it('keeps both password drafts on refusal and submits them on retry', async () => {
     vi.mocked(api.saveSettings).mockRejectedValueOnce(new ApiError({ kind: 'http', status: 403, path: '/api/settings', message: 'Wrong current password' })).mockResolvedValue({ ok: true })
-    mount(<SystemSection />)
+    mount(<AccessSection />)
     const current = await screen.findByLabelText('Enter current password…')
     const next = screen.getByLabelText('Access Password')
     await userEvent.type(current, ' current-password ')

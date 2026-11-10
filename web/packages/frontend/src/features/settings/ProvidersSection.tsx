@@ -24,9 +24,20 @@ import { OpenRouterCost } from './OpenRouterCost'
 import { ProviderQuotaPace } from './ProviderQuotaPace'
 import { OAuthSignIn } from '../onboarding/OAuthSignIn'
 import { usePluginInstall } from './usePluginInstall'
+import { QuotaThresholdsForm } from './QuotaThresholds'
 
 const setProviderKey = (provider: string, api_key: string | null) => post('api/providers', { provider, api_key }, OkSchema, { retries: 0 })
 
+
+/** TAL-2100: Settings > Providers, one row per provider the Agent knows, then the quota thresholds. */
+export function ProvidersPage() {
+  return (
+    <div className="flex flex-col gap-7" data-section="providers">
+      <ProvidersSection />
+      <QuotaThresholdsForm />
+    </div>
+  )
+}
 
 export function ProvidersSection() {
   const qc = useQueryClient()
@@ -57,7 +68,7 @@ export function ProvidersSection() {
   const defaultModel = chosenModel ?? str('default_model')
   const quotaNotice = quotas.data?.availability?.unavailable_reason ?? providers.data.availability?.unavailable_reason
   return (
-    <div className="flex flex-col gap-3" data-section="providers">
+    <div className="flex flex-col gap-3" data-group="providers">
       <div className="flex items-center justify-between text-xs text-muted">
         <span>{m.providers_active()}: <strong className="text-text">{active ?? '—'}</strong></span>
         <Button onClick={() => { void refreshQuotas() }}>{m.providers_quota_refresh()}</Button>

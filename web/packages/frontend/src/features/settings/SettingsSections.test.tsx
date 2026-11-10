@@ -41,7 +41,7 @@ import { SettingsSection } from './SettingsSection'
 import { ModelsSection } from './ModelsSection'
 import { NotificationsSection } from './NotificationsSection'
 import { PrivacySettings } from './PrivacySettings'
-import { AgentSection } from './AgentSection'
+import { ToolsSection } from './ToolsSection'
 
 const renderSection = (ui: ReactElement, canManage = true, qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })) => {
   const bootstrap = { ...DEFAULT_BOOTSTRAP, auth: { ...DEFAULT_BOOTSTRAP.auth, can_manage_server: canManage } }
@@ -49,8 +49,8 @@ const renderSection = (ui: ReactElement, canManage = true, qc = new QueryClient(
 }
 
 /**
- * TAL-1691: every field the retired Preferences, Conversation and System pages edited, and the one section that now
- * edits it. A key is a settings field; a selector is a control with no settings field of its own.
+ * TAL-1691, TAL-2100: every field the retired Preferences, Conversation, System and Models & Providers pages edited, and
+ * the one section that now edits it. A key is a settings field; a selector is a control with no settings field of its own.
  */
 const PLACEMENT: Record<string, SettingsSectionId> = {
   sidebar_density: 'appearance',
@@ -58,26 +58,26 @@ const PLACEMENT: Record<string, SettingsSectionId> = {
   worklog_details_expanded_default: 'chat', auto_scroll_follow: 'chat', render_user_markdown: 'chat', fade_text_effect: 'chat', virtualize_transcript: 'chat',
   show_busy_placeholder_hint: 'chat', show_token_usage: 'chat', show_tps: 'chat',
   max_tokens: 'chat', compression_prepare_ahead: 'chat', group_discussion_max_rounds: 'chat', group_discussion_max_messages: 'chat', auto_title_refresh_every: 'chat',
-  pinned_sessions_limit: 'sidebar', session_endless_scroll: 'sidebar', session_jump_buttons: 'sidebar', show_conversation_outline: 'sidebar', project_quick_create_buttons: 'sidebar',
-  show_cli_sessions: 'sidebar', show_claude_code_sessions: 'sidebar', show_cron_sessions: 'sidebar', show_webhook_sessions: 'sidebar', show_kanban_sessions: 'sidebar',
-  show_previous_messaging_sessions: 'sidebar', hidden_tabs: 'sidebar', show_titlebar_profile: 'sidebar', show_sidebar_feedback: 'sidebar', show_quota_chip: 'sidebar',
-  '#settingsSidebarQuotas': 'sidebar', workspace_panel_open: 'sidebar', workspace_todos_tab: 'sidebar', new_chat_on_workspace_switch: 'sidebar',
-  terminal_auto_expand_on_output: 'sidebar', screen_reader_mode: 'sidebar',
-  default_model: 'models', '#settingsModel': 'models', '[data-group="auxiliary"]': 'models',
+  pinned_sessions_limit: 'navigation', session_endless_scroll: 'navigation', session_jump_buttons: 'navigation', show_conversation_outline: 'navigation', project_quick_create_buttons: 'navigation',
+  show_cli_sessions: 'navigation', show_claude_code_sessions: 'navigation', show_cron_sessions: 'navigation', show_webhook_sessions: 'navigation', show_kanban_sessions: 'navigation',
+  show_previous_messaging_sessions: 'navigation', hidden_tabs: 'navigation', show_titlebar_profile: 'navigation', show_sidebar_feedback: 'navigation', show_quota_chip: 'navigation',
+  '#settingsSidebarQuotas': 'navigation', workspace_panel_open: 'navigation', workspace_todos_tab: 'navigation', new_chat_on_workspace_switch: 'navigation',
+  terminal_auto_expand_on_output: 'navigation', screen_reader_mode: 'navigation',
+  default_model: 'models', '#settingsModel': 'models', '[data-group="auxiliary"]': 'models', '[data-group="quota-thresholds"]': 'providers',
   notifications_enabled: 'notifications', sound_enabled: 'notifications', '#completionSound': 'notifications',
-  agent_approvals: 'agent',
-  sync_to_insights: 'system', api_redact_enabled: 'system', confirm_external_links: 'system', trusted_link_hosts: 'system', bot_name: 'system',
+  agent_approvals: 'tools',
+  sync_to_insights: 'access', api_redact_enabled: 'access', confirm_external_links: 'access', trusted_link_hosts: 'access', bot_name: 'access', auth_disabled_acknowledged: 'access',
   update_channel: 'system', agent_update_channel: 'system', ignore_agent_updates: 'system', check_for_updates: 'system', auto_apply_updates: 'system',
-  summarize_updates_automatically: 'system', auth_disabled_acknowledged: 'system',
+  summarize_updates_automatically: 'system', '#systemHealthHeading': 'system', '#systemStopHeading': 'system',
 }
 const isControl = (key: string) => key.startsWith('#') || key.startsWith('[')
 const CONTROLS = Object.keys(PLACEMENT).filter(isControl)
 
-it('edits every retired Preferences, Conversation and System field on exactly its one new section (TAL-1691)', async () => {
+it('edits every retired Preferences, Conversation, System and Models & Providers field on exactly its one new section (TAL-1691, TAL-2100)', async () => {
   // jsdom has no matchMedia; Appearance reads the colour scheme.
   vi.stubGlobal('matchMedia', (query: string) => ({ matches: false, media: query, addEventListener: () => undefined, removeEventListener: () => undefined }))
   const settings = Object.fromEntries(Object.keys(PLACEMENT).filter((key) => !isControl(key)).map((key) => [key, false]))
-  Object.assign(settings, { hidden_tabs: [], trusted_link_hosts: [], group_discussion_max_rounds: 3, group_discussion_max_messages: 10, auth_enabled: false })
+  Object.assign(settings, { provider_quota_thresholds: {}, hidden_tabs: [], trusted_link_hosts: [], group_discussion_max_rounds: 3, group_discussion_max_messages: 10, auth_enabled: false })
   const found: Record<string, SettingsSectionId[]> = {}
   for (const section of SettingsSectionSchema.options) {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -109,7 +109,7 @@ describe('settings pages', () => {
 
   it('shows the profile\'s agent approvals setting as the server reports it and writes it (TAL-1169)', async () => {
     vi.mocked(fetchSettings).mockResolvedValueOnce({ default_model: 'claude-sonnet-4-6', agent_approvals: true })
-    renderSection(<AgentSection />)
+    renderSection(<ToolsSection />)
     const toggle = await screen.findByRole('switch', { name: 'Let agents approve or deny other chats\' commands' })
     expect(toggle).toBeChecked()
     await userEvent.click(toggle)
@@ -195,7 +195,7 @@ it('offers device-local completion sound presets and explicit preview', async ()
 
 it('shows a failed connectors gate with a retry on the Connectors tab instead of loading forever (TAL-1691)', async () => {
   vi.mocked(fetchConnectorsAvailable).mockRejectedValueOnce(new Error('gate down'))
-  renderSection(<AgentSection tab="connectors" />)
+  renderSection(<ToolsSection tab="connectors" />)
   expect(await screen.findByRole('button', { name: 'Retry' })).toBeInTheDocument()
   expect(screen.getByRole('tab', { name: 'Plugins' })).toHaveAttribute('aria-selected', 'true')
   expect(screen.queryByRole('tab', { name: 'Connectors' })).toBeNull()

@@ -21,7 +21,7 @@ test('recovery holds label cached quotas and the configured model truthfully', a
   await page.getByRole('combobox', { name: 'Default Model', exact: true }).click()
   await expect(page.getByRole('option', { name: 'GPT-6.1 Sol' })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('models-before.png'), fullPage: true })
-  await page.goto('/settings/models')
+  await page.goto('/settings/providers')
   await settle(page)
   await expect(page.locator('[data-provider="anthropic"]')).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('quota-before.png'), fullPage: true })

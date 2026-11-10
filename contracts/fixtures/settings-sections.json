@@ -1,3 +1,17 @@
 {
-  "sections": ["appearance", "chat", "sidebar", "models", "notifications", "speech", "agent", "system", "about"]
+  "sections": ["appearance", "chat", "navigation", "notifications", "speech", "models", "providers", "tools", "extensions", "access", "system", "about"],
+  "groups": {
+    "appearance": "interface",
+    "chat": "interface",
+    "navigation": "interface",
+    "notifications": "interface",
+    "speech": "interface",
+    "models": "profile",
+    "providers": "profile",
+    "tools": "profile",
+    "extensions": "server",
+    "access": "server",
+    "system": "server",
+    "about": "server"
+  }
 }

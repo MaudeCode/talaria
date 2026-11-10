@@ -467,7 +467,7 @@ test('Sidebar settings pin from the server projection, shows a choice at once an
     const response = await route.fetch()
     await route.fulfill({ response, json: { ...await response.json(), ...projection } })
   })
-  await page.goto('/settings/sidebar')
+  await page.goto('/settings/navigation')
   await settle(page)
   const picker = page.locator('#settingsSidebarQuotas')
   const source = (name: string) => picker.getByRole('switch', { name })
@@ -512,7 +512,7 @@ test('Sidebar settings pin from the server projection, shows a choice at once an
     // Leaving the section unmounts the picker while the write is still held.
     await sidebar(page).getByRole('link', { name: 'Appearance' }).click()
     await expect(picker).toHaveCount(0)
-    await sidebar(page).getByRole('link', { name: 'Sidebar', exact: true }).click()
+    await sidebar(page).getByRole('link', { name: 'Navigation', exact: true }).click()
     await source('OpenRouter').click()
     await expect(source('OpenRouter')).not.toBeChecked()
     refuse()
@@ -565,7 +565,7 @@ test('a confirmed first pin stays in the sidebar when a later choice is refused 
     await held
     return ++posts === 1 ? route.fulfill({ json: { sidebar_quota_sources: ['qsrc_weekly'], sidebar_source_ids: ['qsrc_weekly'], sidebar_can_pin: true } }) : route.fulfill({ status: 400, json: { error: 'Refused' } })
   })
-  await page.goto('/settings/sidebar')
+  await page.goto('/settings/navigation')
   await settle(page)
   const source = (name: string) => page.locator('#settingsSidebarQuotas').getByRole('switch', { name })
   await source('Claude').click()

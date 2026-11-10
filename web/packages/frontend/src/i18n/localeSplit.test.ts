@@ -23,7 +23,7 @@ import { mcp_tools_inactive_configured_servers } from '../paraglide/messages/mcp
 import { mcp_enabled_toast } from '../paraglide/messages/mcp_enabled_toast.js'
 import { settings_section_appearance_title } from '../paraglide/messages/settings_section_appearance_title.js'
 import { settings_label_font_size } from '../paraglide/messages/settings_label_font_size.js'
-import { settings_section_sidebar_title } from '../paraglide/messages/settings_section_sidebar_title.js'
+import { settings_section_tools_title } from '../paraglide/messages/settings_section_tools_title.js'
 import { settings_label_chat_activity_display_mode } from '../paraglide/messages/settings_label_chat_activity_display_mode.js'
 import { settings_section_models_title } from '../paraglide/messages/settings_section_models_title.js'
 import { settings_label_ignore_agent_updates } from '../paraglide/messages/settings_label_ignore_agent_updates.js'
@@ -94,9 +94,9 @@ describe('locale dictionaries at runtime', () => {
     expect(mcp_tools_inactive_configured_servers({ servers: 'github, slack' })).toBe('Konfiguriert, aber in dieser WebUI-Laufzeit inaktiv: github, slack.')
     expect(settings_section_appearance_title()).toBe('Darstellung')
     expect(settings_label_font_size()).toBe('Schriftgröße')
-    expect(settings_section_sidebar_title()).toBe('Seitenleiste')
+    expect(settings_section_tools_title()).toBe('Werkzeuge')
     expect(settings_label_chat_activity_display_mode()).toBe('Aktivitätsanzeige')
-    expect(settings_section_models_title()).toBe('Modelle & Anbieter')
+    expect(settings_section_models_title()).toBe('Modelle')
     expect(settings_label_ignore_agent_updates()).toBe('Agent-Updates ignorieren')
   })
 

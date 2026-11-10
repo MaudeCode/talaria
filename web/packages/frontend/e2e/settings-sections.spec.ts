@@ -1,29 +1,69 @@
 import { expect, settle, test } from './fixtures'
 
-/** TAL-1691: a retired section URL lands on the section (and Agent tab) that took its settings, replacing the old entry. */
-const MOVED = [['preferences', 'sidebar'], ['conversation', 'chat'], ['providers', 'models'], ['auxiliary', 'models'], ['plugins', 'agent?tab=plugins'], ['extensions', 'agent?tab=extensions'], ['connectors', 'agent?tab=connectors'], ['help', 'about']] as const
+/**
+ * TAL-1691, TAL-2100: a retired section URL lands on the section (and Tools tab) that took its settings, replacing the
+ * old entry. Covers every retired id, including the pre-TAL-1691 ones.
+ */
+const MOVED = [
+  ['sidebar', 'navigation'], ['preferences', 'navigation'], ['conversation', 'chat'], ['auxiliary', 'models'], ['help', 'about'],
+  ['agent', 'tools'], ['agent?tab=plugins', 'tools?tab=plugins'], ['agent?tab=connectors', 'tools?tab=connectors'], ['agent?tab=mcp', 'tools?tab=mcp'],
+  ['agent?tab=extensions', 'extensions'], ['plugins', 'tools?tab=plugins'], ['connectors', 'tools?tab=connectors'],
+] as const
 
 for (const [old, target] of MOVED) {
   test(`/settings/${old} redirects to /settings/${target}`, async ({ page }) => {
     await page.route('**/api/connectors/available', (route) => route.fulfill({ json: { available: true } }))
+    await page.goto('/settings/appearance')
+    await settle(page)
     await page.goto(`/settings/${old}`)
     await expect(page).toHaveURL((url) => `${url.pathname}${url.search}` === `/settings/${target}`)
     await expect(page.locator(`[data-section="${target.split('?')[0]}"]`)).toBeVisible()
-    if (target.includes('?tab=')) await expect(page.getByRole('tab', { selected: true })).toHaveAttribute('aria-controls', `agent-${target.split('=')[1]}`)
+    if (target.includes('?tab=')) await expect(page.getByRole('tab', { selected: true })).toHaveAttribute('aria-controls', `tools-${target.split('=')[1]}`)
+    // `replace`: Back skips the retired URL and returns to the page before it.
+    await page.goBack()
+    await expect(page).toHaveURL(/\/settings\/appearance$/)
     await settle(page)
   })
 }
 
-test('/settings/system still opens System, the App\'s settings.system destination', async ({ page }) => {
+test('/settings/system still opens Updates, the update notification\'s settings.system destination', async ({ page }) => {
   await page.goto('/settings/system')
   await expect(page).toHaveURL(/\/settings\/system$/)
   await expect(page.locator('[data-section="system"]')).toBeVisible()
+  await expect(page.locator('#systemUpdatesHeading')).toBeVisible()
 })
 
-test('an Agent tab keeps its list in the URL', async ({ page }) => {
-  await page.goto('/settings/agent')
+test('a Tools tab keeps its list in the URL', async ({ page }) => {
+  await page.goto('/settings/tools')
   await settle(page)
-  await page.getByRole('tablist', { name: 'Agent' }).getByRole('tab', { name: 'MCP Servers' }).click()
-  await expect(page).toHaveURL(/\/settings\/agent\?tab=mcp$/)
+  await page.getByRole('tablist', { name: 'Tools' }).getByRole('tab', { name: 'MCP Servers' }).click()
+  await expect(page).toHaveURL(/\/settings\/tools\?tab=mcp$/)
   await expect(page.locator('[data-section="mcp-servers"]')).toBeVisible()
+})
+
+test('the Settings menu groups its sections by scope, naming the active profile (TAL-2100)', async ({ page }) => {
+  let active = 'default'
+  const listed = () => ({ active, profiles: [{ name: 'default', is_default: true }, { name: 'research' }] })
+  await page.route('**/api/profiles', (route) => route.fulfill({ json: listed() }))
+  await page.goto('/settings/appearance')
+  await settle(page)
+  const groups = page.locator('#settingsMenu [data-settings-group]')
+  await expect(groups).toHaveCount(3)
+  const menu = await groups.evaluateAll((nodes) => nodes.map((group) => [group.querySelector('h3')?.textContent, [...group.querySelectorAll('[data-settings-section]')].map((link) => link.getAttribute('data-settings-section'))]))
+  expect(menu).toEqual([
+    ['Interface', ['appearance', 'chat', 'navigation', 'notifications', 'speech']],
+    ['Profile', ['models', 'providers', 'tools']],
+    ['Server', ['extensions', 'access', 'system', 'about']],
+  ])
+  const profile = page.locator('#settingsMenu [data-settings-group="profile"]')
+  await expect(profile).toContainText('default')
+  // Switching profile on the Profiles page reloads; the header then names the new profile.
+  await page.route('**/api/profile/switch', (route) => { active = 'research'; return route.fulfill({ json: { ...listed(), is_default: false, default_model: null, default_model_provider: null, default_workspace: null } }) })
+  await page.goto('/profiles')
+  await settle(page)
+  await page.locator('[data-profile="research"]').getByRole('button', { name: 'Use' }).click()
+  await page.waitForEvent('load')
+  await page.goto('/settings/appearance')
+  await settle(page)
+  await expect(profile).toContainText('research')
 })

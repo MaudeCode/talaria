@@ -216,7 +216,7 @@ test('the discussion list is the page, a primary nav entry, and a room opens wit
       await page.locator('aside.sidebar').getByRole('button', { name: 'More', exact: true }).click()
       await rail.click()
       await expect(page).toHaveURL(/\/groups$/)
-      await page.goto(`${server.base}/settings/sidebar`)
+      await page.goto(`${server.base}/settings/navigation`)
       await page.locator('#settingsHiddenTabs label', { hasText: 'Discussions' }).getByRole('switch').click()
       await expect(rail).toHaveCount(0)
     } else {

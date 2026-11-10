@@ -32,13 +32,13 @@ function SidebarQuotaSources() {
   )
 }
 
-/** TAL-1691: Settings > Sidebar, what the chats list, the tabs and the workspace panel show. */
+/** TAL-1691, TAL-2100: Settings > Navigation, what the chats list, the tabs and the workspace panel show. */
 export function SidebarSection() {
   const { settings, set, setAsync, bool, num } = useSettingField(['pinned_sessions_limit', 'show_cli_sessions', 'hidden_tabs'])
   if (settings.isPending) return <LoadingState />
   if (settings.isError) return <ErrorState error={settings.error} onRetry={() => { void settings.refetch() }} />
   return (
-    <div className="flex flex-col gap-7" data-section="sidebar">
+    <div className="flex flex-col gap-7" data-section="navigation">
       <SettingsGroup id="chats" title={m.settings_group_chats_list()}>
         <FieldRow label={m.settings_label_pinned_limit()} hint={m.settings_desc_pinned_limit()} htmlFor="settingsPinnedLimit" inline>
           <TextInput id="settingsPinnedLimit" type="number" retainDraft min={1} max={50} className="w-20" value={num('pinned_sessions_limit', 3)} onChange={(e) => { const n = Number(e.target.value); if (Number.isInteger(n) && n > 0) return setAsync({ pinned_sessions_limit: n }) }} />

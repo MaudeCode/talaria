@@ -55,7 +55,7 @@ for (const width of [1280, 390]) {
     })
     await page.goto('/settings/models')
     await settle(page)
-    await expect(page.getByRole('heading', { level: 1, name: 'Models & Providers' })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1, name: 'Models' })).toBeVisible()
     const list = page.getByRole('list', { name: 'Auxiliary Models' })
     await expect(list.getByRole('button')).toHaveCount(15)
     await expect(list.getByRole('button', { name: /Voice chat/ })).toBeVisible()
@@ -92,7 +92,7 @@ for (const width of [1280, 390]) {
 }
 
 for (const width of [1280, 390]) {
-  test(`auxiliary models sit on the Models & Providers Settings page, at ${width}px`, async ({ page }, testInfo) => {
+  test(`auxiliary models sit on the Models Settings page, at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: width > 600 ? 900 : 844 })
     await page.route('**/api/model/auxiliary', (route) => route.fulfill({ json: auxiliary }))
     await page.route('**/api/models', (route) => route.fulfill({ json: models }))
@@ -100,14 +100,14 @@ for (const width of [1280, 390]) {
     await settle(page)
     const hamburger = page.locator('#btnHamburger')
     if (await hamburger.isVisible()) await hamburger.click()
-    const entry = page.getByRole('navigation', { name: 'Settings' }).getByRole('link', { name: 'Models & Providers' })
+    const entry = page.getByRole('navigation', { name: 'Settings' }).getByRole('link', { name: 'Models', exact: true })
     await expect(entry).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath(`auxiliary-sidebar-${String(width)}.png`) })
     await entry.click()
     await expect(page).toHaveURL(/\/settings\/models$/)
     await expect(page.getByRole('list', { name: 'Auxiliary Models' })).toBeVisible()
     if (await hamburger.isVisible()) await hamburger.click()
-    await expect(page.getByRole('navigation', { name: 'Settings' }).getByRole('link', { name: 'Models & Providers' })).toHaveAttribute('aria-current', 'page')
+    await expect(page.getByRole('navigation', { name: 'Settings' }).getByRole('link', { name: 'Models', exact: true })).toHaveAttribute('aria-current', 'page')
     await page.goBack()
     await expect(page).toHaveURL(/\/settings\/appearance$/)
   })

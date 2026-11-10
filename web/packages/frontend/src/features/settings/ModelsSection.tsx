@@ -5,9 +5,7 @@ import { LoadingState, ErrorState } from '../../ui/States'
 import { useModelsQuery, useSetDefaultModel, useAuxiliaryModelsQuery, useDefaultModelChoice } from '../../app/queries'
 import { catalogEntryById, catalogGroupLabel, ModelOptionContent, catalogModelSections } from '../../lib/modelEntry'
 import { useSettingField } from './useSettingField'
-import { ProvidersSection } from './ProvidersSection'
 import { AuxiliaryModelsSection } from './AuxiliaryModels'
-import { QuotaThresholdsForm } from './QuotaThresholds'
 import { SettingsGroup } from './SettingsRows'
 
 /** The main model and, when its catalog entry offers them, its speed tiers. */
@@ -51,17 +49,12 @@ function MainModelRows() {
   )
 }
 
-/**
- * TAL-1691: Settings > Models & Providers. The main and auxiliary models come first, as the choices made most often; the
- * provider list, one row per provider the Agent knows, follows with its quota thresholds.
- */
+/** TAL-1691, TAL-2100: Settings > Models, the active profile's main and auxiliary models. */
 export function ModelsSection() {
   return (
     <div className="flex flex-col gap-7" data-section="models">
       <SettingsGroup id="main-model" title={m.settings_group_main_model()}><MainModelRows /></SettingsGroup>
       <SettingsGroup id="auxiliary" title={m.settings_label_auxiliary_models()}><AuxiliaryModelsSection /></SettingsGroup>
-      <SettingsGroup id="providers" title={m.settings_section_providers_title()}><ProvidersSection /></SettingsGroup>
-      <QuotaThresholdsForm />
     </div>
   )
 }

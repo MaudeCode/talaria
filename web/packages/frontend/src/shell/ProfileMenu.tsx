@@ -7,13 +7,19 @@ import { MENU_ROW, Menu, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator 
 import { showToast } from '../features/toast/toast'
 import { Link } from '@tanstack/react-router'
 
+/** The active profile's name, from the profile list once it loads and from bootstrap until then. */
+export function useActiveProfileName(): string | undefined {
+  const bootstrap = useBootstrap()
+  return useProfilesQuery().data?.active ?? bootstrap.profile?.name
+}
+
 /** Titlebar profile switcher (Base UI Menu). Hidden in single-profile mode or when only one profile exists. */
 export function ProfileMenu({ row }: { row?: boolean } = {}) {
   const bootstrap = useBootstrap()
   const profiles = useProfilesQuery()
   const switchProfile = useSwitchProfile()
   const list = profiles.data?.profiles ?? []
-  const active = profiles.data?.active ?? bootstrap.profile?.name ?? 'default'
+  const active = useActiveProfileName() ?? 'default'
   if (!row && (bootstrap.features.single_profile_mode || list.length < 2)) return null
   return (
     <Menu

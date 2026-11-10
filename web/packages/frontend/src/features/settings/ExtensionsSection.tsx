@@ -64,7 +64,7 @@ export function ExtensionsSection() {
   const installed = new Set(list.map((e) => e.id))
   const canManage = bootstrap.auth.can_manage_server
   return (
-    <div className="flex flex-col gap-5" data-section="extensions">
+    <div className="flex flex-col gap-5">
       <section>
         <h2 className="mb-2 text-sm font-semibold text-text">{m.extensions_installed()}</h2>
         {list.length === 0 && <EmptyState>{m.extensions_none()}</EmptyState>}

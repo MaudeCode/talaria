@@ -34,19 +34,22 @@ export type IndexSearch = z.infer<typeof IndexSearchSchema>
 
 export const TasksSearchSchema = z.object({ job: z.string().optional().catch(undefined) })
 
-/** TAL-1691: the section ids are shared with the App through the contracts package. */
-export { SettingsSectionSchema } from '@maudecode/talaria-web-contracts'
-export type { SettingsSectionId as SettingsSection } from '@maudecode/talaria-web-contracts'
+/** TAL-1691: the section ids, and since TAL-2100 their groups, are shared with the App through the contracts package. */
+export { SettingsSectionSchema, SettingsSectionGroupSchema, SETTINGS_SECTION_GROUPS } from '@maudecode/talaria-web-contracts'
+export type { SettingsSectionId as SettingsSection, SettingsSectionGroup } from '@maudecode/talaria-web-contracts'
 
-/** TAL-1691: Settings > Agent keeps each of its lists on a `?tab=`. */
-export const AgentTabSchema = z.enum(['plugins', 'extensions', 'connectors', 'mcp'])
-export type AgentTab = z.infer<typeof AgentTabSchema>
-export const SettingsSearchSchema = z.object({ tab: AgentTabSchema.optional().catch(undefined) })
+/** TAL-1691, TAL-2100: Settings > Tools keeps each of its lists on a `?tab=`. */
+export const ToolsTabSchema = z.enum(['plugins', 'connectors', 'mcp'])
+export type ToolsTab = z.infer<typeof ToolsTabSchema>
+export const SettingsSearchSchema = z.object({ tab: ToolsTabSchema.optional().catch(undefined) })
 
-/** TAL-1691: where each retired `/settings/<id>` now lives, so bookmarks and older deep links keep working. */
-export const LEGACY_SETTINGS_SECTIONS: Readonly<Record<string, { section: SettingsSectionId; tab?: AgentTab }>> = {
-  preferences: { section: 'sidebar' }, conversation: { section: 'chat' }, providers: { section: 'models' }, auxiliary: { section: 'models' },
-  plugins: { section: 'agent', tab: 'plugins' }, extensions: { section: 'agent', tab: 'extensions' }, connectors: { section: 'agent', tab: 'connectors' }, help: { section: 'about' },
+/**
+ * TAL-1691, TAL-2100: where each retired `/settings/<id>` now lives, so bookmarks and older deep links keep working.
+ * `/settings/agent` keeps its `?tab=` and has its own redirect route (`_app.settings.agent.tsx`).
+ */
+export const LEGACY_SETTINGS_SECTIONS: Readonly<Record<string, { section: SettingsSectionId; tab?: ToolsTab }>> = {
+  sidebar: { section: 'navigation' }, preferences: { section: 'navigation' }, conversation: { section: 'chat' }, auxiliary: { section: 'models' },
+  plugins: { section: 'tools', tab: 'plugins' }, connectors: { section: 'tools', tab: 'connectors' }, help: { section: 'about' },
 }
 
 export const LogsSearchSchema = z.object({

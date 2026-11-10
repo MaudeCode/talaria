@@ -1,5 +1,5 @@
 import { lazy, Suspense, type ReactNode } from 'react'
-import type { AgentTab, SettingsSection as Section } from '../../contracts/url'
+import type { ToolsTab, SettingsSection as Section } from '../../contracts/url'
 import { SECTION_LABEL } from './SettingsLayout'
 import { LoadingState } from '../../ui/States'
 import { useLocale } from '../../i18n/useLocale'
@@ -8,23 +8,29 @@ const AppearanceSection = lazy(() => import('./AppearanceSection').then((module)
 const ChatSection = lazy(() => import('./ChatSection').then((module) => ({ default: module.ChatSection })))
 const SidebarSection = lazy(() => import('./SidebarSection').then((module) => ({ default: module.SidebarSection })))
 const ModelsSection = lazy(() => import('./ModelsSection').then((module) => ({ default: module.ModelsSection })))
+const ProvidersPage = lazy(() => import('./ProvidersSection').then((module) => ({ default: module.ProvidersPage })))
 const NotificationsSection = lazy(() => import('./NotificationsSection').then((module) => ({ default: module.NotificationsSection })))
 const SpeechSection = lazy(() => import('./SpeechSection').then((module) => ({ default: module.SpeechSection })))
-const AgentSection = lazy(() => import('./AgentSection').then((module) => ({ default: module.AgentSection })))
+const ToolsSection = lazy(() => import('./ToolsSection').then((module) => ({ default: module.ToolsSection })))
+const ExtensionsSection = lazy(() => import('./ExtensionsSection').then((module) => ({ default: module.ExtensionsSection })))
+const AccessSection = lazy(() => import('./AccessSection').then((module) => ({ default: module.AccessSection })))
 const SystemSection = lazy(() => import('./SystemSection').then((module) => ({ default: module.SystemSection })))
 const AboutSection = lazy(() => import('./AboutSection').then((module) => ({ default: module.AboutSection })))
 
-/** `tab` and `onTabChange` reach the one section with tabs, Agent. */
-interface SectionProps { tab?: AgentTab | undefined; onTabChange?: ((tab: AgentTab) => void) | undefined }
+/** `tab` and `onTabChange` reach the one section with tabs, Tools. */
+interface SectionProps { tab?: ToolsTab | undefined; onTabChange?: ((tab: ToolsTab) => void) | undefined }
 
 const SECTIONS: Partial<Record<Section, (props: SectionProps) => ReactNode>> = {
   appearance: () => <AppearanceSection />,
   chat: () => <ChatSection />,
-  sidebar: () => <SidebarSection />,
-  models: () => <ModelsSection />,
+  navigation: () => <SidebarSection />,
   notifications: () => <NotificationsSection />,
   speech: () => <SpeechSection />,
-  agent: (props) => <AgentSection {...props} />,
+  models: () => <ModelsSection />,
+  providers: () => <ProvidersPage />,
+  tools: (props) => <ToolsSection {...props} />,
+  extensions: () => <div data-section="extensions"><ExtensionsSection /></div>,
+  access: () => <AccessSection />,
   system: () => <SystemSection />,
   about: () => <AboutSection />,
 }

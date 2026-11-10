@@ -6,26 +6,19 @@ import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { useBootstrap } from '../../app/bootstrap'
-import { useSaveSettings } from '../../app/queries'
 import { Button } from '../../ui/Button'
 import { cn } from '../../ui/cn'
-import { Switch, FieldRow, TextInput, HelpTip } from '../../ui/Field'
+import { Switch, FieldRow, HelpTip } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { ConfirmDialog, Dialog } from '../../ui/Dialog'
 import { ErrorState, LoadingState, formatDate } from '../../ui/States'
-import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
 import { useSettingField } from './useSettingField'
-import { useLogout } from '../auth/useLogout'
-import { decodeCreationOptions, encodeAttestation, passkeysSupported } from '../auth/passkeys'
-import { loadBootstrap } from '../../app/bootstrap'
 import type { z } from 'zod'
 import type { UpdateApplySchema, UpdateTargetSchema, UpdateVersionSchema } from '../../contracts'
 import { useUpdateProgress } from '../notifications/UpdateNotificationCenter'
-import { PrivacySettings } from './PrivacySettings'
 import { GatewayRestart } from './GatewayRestart'
 import { WhatsNewReplay } from '../whats-new/WhatsNew'
-import { useResourceEffects, useResourceMutation, withEffects } from '../sessions/useResourceMutation'
 import { markServerStopped } from '../notices/useRuntimeNotices'
 
 const CHANNEL_LABELS: Record<WebUpdateChannel, () => string> = { stable: m.settings_update_channel_stable, nightly: m.settings_update_channel_nightly, experimental: m.settings_update_channel_experimental }
@@ -33,12 +26,10 @@ const CHANNEL_LABELS: Record<WebUpdateChannel, () => string> = { stable: m.setti
 export function SystemSection() {
   const bootstrap = useBootstrap()
   const qc = useQueryClient()
-  const { settings, save, str, bool, set } = useSettingField(['update_channel', 'update_channels', 'agent_update_channel', 'password_env_var', 'ignore_agent_updates', 'webui_version', 'check_for_updates', 'auto_apply_updates', 'agent_version', 'summarize_updates_automatically', 'password_auth_enabled', 'auth_enabled', 'auth_disabled_acknowledged'])
+  const { settings, save, str, bool, set } = useSettingField(['update_channel', 'update_channels', 'agent_update_channel', 'ignore_agent_updates', 'webui_version', 'check_for_updates', 'auto_apply_updates', 'agent_version', 'summarize_updates_automatically'])
   const health = useQuery({ queryKey: keys.health.system, queryFn: api.fetchSystemHealth, staleTime: 30_000 })
   const agent = useQuery({ queryKey: keys.health.agent, queryFn: api.fetchAgentHealth, staleTime: 15_000 })
   const updates = useQuery({ queryKey: keys.updates.check, queryFn: () => api.fetchUpdatesCheck(), staleTime: 30_000, refetchInterval: 30_000 })
-  const passkeys = useQuery({ queryKey: ['auth', 'passkeys'], queryFn: api.passkeysList, staleTime: 30_000, enabled: bootstrap.auth.passkey_feature_flag })
-  const logout = useLogout()
   const [confirmShutdown, setConfirmShutdown] = useState(false)
   const fail = (e: unknown) => showErrorToast(e)
   const shutdown = useMutation({ mutationFn: api.shutdownServer, onSuccess: () => markServerStopped(qc), onError: fail })
@@ -99,22 +90,9 @@ export function SystemSection() {
   const install = (apply: typeof applyWeb) => (v: UpdateVersion) => (
     <Button onClick={() => apply.mutate({ version: v.ref })} disabled={apply.isPending} aria-label={m.system_install_version({ version: v.version })}>{apply.isPending && apply.variables.version === v.ref ? m.update_updating() : m.system_install()}</Button>
   )
-  const registerPasskey = useMutation({
-    mutationFn: async () => {
-      const opt = await api.passkeyRegisterOptions()
-      const cred = await navigator.credentials.create({ publicKey: decodeCreationOptions(opt.publicKey as unknown as Parameters<typeof decodeCreationOptions>[0]) })
-      if (!cred) throw new Error('Passkey cancelled')
-      return api.passkeyRegister(encodeAttestation(cred as PublicKeyCredential))
-    },
-    onSuccess: () => { showToast(m.system_passkey_registered()); void qc.invalidateQueries({ queryKey: ['auth', 'passkeys'] }); void loadBootstrap() },
-    onError: fail,
-  })
-  const effects = useResourceEffects()
-  const deletePasskey = useResourceMutation({ resource: (id: string) => `passkey:${id}`, effect: () => ({ remove: true }), queryKey: ['auth', 'passkeys'], mutationFn: (id) => api.passkeyDelete(id), onError: fail })
   if (settings.isPending) return <LoadingState />
   if (settings.isError) return <ErrorState error={settings.error} onRetry={() => { void settings.refetch() }} />
   const canManage = bootstrap.auth.can_manage_server
-  const passwordLocked = bool('password_env_var')
   const webUpdate = updates.data?.webui
   const agentUpdate = updates.data?.agent
   // One failed poll is a transport blip, not a failed check: keep rendering the last server payload
@@ -171,38 +149,6 @@ export function SystemSection() {
           <dd>{canManage && <GatewayRestart />}</dd>
         </dl>
       </section>
-      {(canManage || bootstrap.auth.passkey_feature_flag || bootstrap.auth.auth_enabled) && <section aria-labelledby="systemAccessHeading" className="flex flex-col gap-4">
-        <h2 id="systemAccessHeading" className={heading}>{m.system_access()}</h2>
-      {canManage && (
-        <div>
-          <h3 className="mb-1.5 text-sm font-medium text-text">{m.settings_label_password()}</h3>
-          {passwordLocked ? (
-            <p className="text-xs text-muted">{m.password_env_var_locked()}</p>
-          ) : (
-            <PasswordForm passwordAuthEnabled={bool('password_auth_enabled')} />
-          )}
-          {!bool('auth_enabled') && (
-            <FieldRow label={m.auth_acknowledged_label()} htmlFor="settingsAuthAck" inline><Switch id="settingsAuthAck" checked={bool('auth_disabled_acknowledged')} onCheckedChange={(checked) => set({ auth_disabled_acknowledged: checked })} /></FieldRow>
-          )}
-        </div>
-      )}
-      {bootstrap.auth.passkey_feature_flag && (
-        <div>
-          <h3 className="mb-1.5 text-sm font-medium text-text">{m.system_passkeys()}</h3>
-          <ul className="text-sm">
-            {withEffects(passkeys.data?.credentials ?? [], (k) => `passkey:${k.id}`, effects).map((k) => (
-              <li key={k.id} className="flex items-center justify-between gap-2 py-1"><span>{k.label || k.id}</span><Button variant="ghost-danger" onClick={() => deletePasskey.mutate(k.id)}>{m.delete()}</Button></li>
-            ))}
-          </ul>
-          {passkeysSupported() && <Button onClick={() => registerPasskey.mutate()} disabled={registerPasskey.isPending}>{m.system_passkey_register()}</Button>}
-        </div>
-      )}
-        {bootstrap.auth.auth_enabled && <div><Button onClick={() => { void logout() }}>{m.system_logout()}</Button></div>}
-      </section>}
-      <section aria-labelledby="systemPrivacyHeading" className="flex flex-col" data-group="privacy">
-        <h2 id="systemPrivacyHeading" className={heading}>{m.settings_group_privacy()}</h2>
-        <PrivacySettings />
-      </section>
       {canManage && (
         <section aria-labelledby="systemStopHeading" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-error/40 px-4 py-3">
           <h2 id="systemStopHeading" className="text-sm font-semibold text-error">{m.system_shutdown()}<HelpTip label={m.field_help_about({ label: m.system_shutdown() })}>{m.system_shutdown_hint()}</HelpTip></h2>
@@ -214,25 +160,6 @@ export function SystemSection() {
       <ConfirmDialog open={webInterrupt !== null} onOpenChange={(open) => { if (!open) setWebInterrupt(null) }} title={m.system_web_interrupt_title()} description={webInterrupt ? m.system_web_interrupt_warning({ n: webInterrupt.runs }) : ''} confirmLabel={m.system_agent_update_anyway()} cancelLabel={m.cancel()} danger onConfirm={() => { if (webInterrupt) applyWeb.mutate({ ...webInterrupt.request, interruptToken: webInterrupt.token }) }} />
       <ConfirmDialog open={agentConfirmation !== null} onOpenChange={(open) => { if (!open && agentConfirmation) { const pending = agentConfirmation; setAgentConfirmation(null); if (acceptedAgentConfirmation.current) { acceptedAgentConfirmation.current = false; return } if (pending.result.notification_id) void api.cancelUpdateNotification(pending.result.notification_id).catch(fail).finally(() => { void qc.invalidateQueries({ queryKey: keys.updateNotifications }) }) } }} title={agentConfirmation?.result.refresh_confirmation ? m.system_agent_refresh_title() : m.system_agent_unsupported_title()} description={agentConfirmation ? agentConfirmation.result.refresh_confirmation ? m.system_agent_refresh_warning({ services: agentConfirmation.result.refresh_confirmation.services.join(', '), revision: agentConfirmation.result.candidate_revision?.slice(0, 12) ?? '' }) : `${m.system_agent_unsupported_warning()} ${m.system_agent_unsupported_identity({ version: agentConfirmation.result.supported_version ?? '—', supported: (agentConfirmation.result.supported_revision ?? '—').slice(0, 12), candidate: (agentConfirmation.result.candidate_revision ?? '').slice(0, 12) })}` : ''} confirmLabel={agentConfirmation?.result.refresh_confirmation ? m.system_agent_refresh_confirm() : m.system_agent_update_anyway()} cancelLabel={m.cancel()} danger onConfirm={() => { if (agentConfirmation) { const pending = agentConfirmation; acceptedAgentConfirmation.current = true; setAgentConfirmation(null); applyAgent.mutate({ ...pending.request, ...(pending.result.refresh_confirmation ? { refreshToken: pending.result.refresh_confirmation.token } : pending.result.candidate_revision ? { confirmedRevision: pending.result.candidate_revision } : {}) }) } }} />
     </div>
-  )
-}
-
-// Credential drafts stay inside the form, as in the provider setup forms.
-function PasswordForm({ passwordAuthEnabled }: { passwordAuthEnabled: boolean }) {
-  const [pw, setPw] = useState('')
-  const [currentPw, setCurrentPw] = useState('')
-  const qc = useQueryClient()
-  const saveSettings = useSaveSettings()
-  const setPassword = useMutation({ mutationFn: (body: Record<string, unknown>) => saveSettings.mutateAsync(body), onSuccess: async () => { showToast(m.system_password_updated()); setPw(''); setCurrentPw(''); await loadBootstrap(); void qc.invalidateQueries() }, onError: (e) => showErrorToast(e) })
-  return (
-    <form autoComplete="off" onSubmit={(e) => { e.preventDefault(); if (pw.trim()) setPassword.mutate({ _set_password: pw.trim(), ...(currentPw ? { _current_password: currentPw } : {}) }) }} className="flex flex-col gap-2">
-      {passwordAuthEnabled && <TextInput type="password" autoComplete="current-password" value={currentPw} onChange={(e) => setCurrentPw(e.target.value)} placeholder={m.current_password_placeholder()} aria-label={m.current_password_placeholder()} />}
-      <TextInput type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder={m.password_placeholder()} aria-label={m.settings_label_password()} />
-      <div className="flex gap-2">
-        <Button type="submit" variant="primary" disabled={!pw.trim() || setPassword.isPending}>{m.system_password_set()}</Button>
-        {passwordAuthEnabled && <Button variant="ghost-danger" onClick={() => setPassword.mutate({ _clear_password: true, ...(currentPw ? { _current_password: currentPw } : {}) })}>{m.system_password_clear()}</Button>}
-      </div>
-    </form>
   )
 }
 
