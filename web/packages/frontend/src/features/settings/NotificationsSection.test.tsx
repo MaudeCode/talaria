@@ -49,6 +49,7 @@ it('subscribes this browser with the server key, then shows the four alert kinds
   vi.mocked(api.subscribeWebPush).mockResolvedValue({ ok: true, preferences: ALL })
   render(<WebPushSection />)
   expect(await screen.findByRole('switch', { name: 'Notify this browser' })).not.toBeChecked()
+  expect(main().closest('[data-group="web-push"]')).toHaveAccessibleName('Push to this browser')
   expect(screen.queryByRole('switch', { name: 'Approval requests' })).toBeNull()
   await userEvent.click(main())
   expect(main()).toBeChecked()

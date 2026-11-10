@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { m } from '../../paraglide/messages.js'
 import { Button } from '../../ui/Button'
-import { FieldRow, Switch, TextInput } from '../../ui/Field'
+import { FieldRow, Slider, Switch, TextInput } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { audioPreferences, saveAudioPreferences, previewSound, readLocalAudio, SOUND_CHOICES, type AudioPreferences } from '../voice/completionAudio'
 
@@ -29,7 +29,7 @@ export function CompletionAudioSettings() {
       </div>
     </FieldRow>
     <FieldRow label={m.settings_audio_volume()} htmlFor="completionVolume" inline>
-      <input id="completionVolume" className="w-32 accent-accent" type="range" min="0" max="1" step="0.05" value={preferences.volume} onChange={(e) => change({ volume: Number(e.target.value) })} />
+      <Slider id="completionVolume" value={String(preferences.volume)} min={0} max={1} step={0.05} format={(n) => `${Math.round(n * 100)}%`} onChange={(volume) => change({ volume: Number(volume) })} />
     </FieldRow>
     {(preferences.sound === 'custom' || preferences.quietSound === 'custom') && <FieldRow label={m.settings_audio_file()} hint={m.settings_audio_file_hint()} htmlFor="completionFile">
       <div className="flex flex-wrap items-center gap-2">

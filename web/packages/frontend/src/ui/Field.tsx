@@ -58,13 +58,13 @@ export function Switch({ className, ...props }: Omit<BaseSwitch.Root.Props, 'cla
   )
 }
 
-/** A range control with its value beside it in tabular digits and an optional unit. */
-export function Slider({ id, value, min, max, onChange, unit = '' }: { id: string; value: string; min: number; max: number; onChange: (value: string) => void; unit?: string }) {
+/** A range control with its value beside it in tabular digits; `format` adds a unit or scale. */
+export function Slider({ id, value, min, max, step = 0.1, onChange, format = (n) => n.toFixed(1) }: { id: string; value: string; min: number; max: number; step?: number; onChange: (value: string) => void; format?: (value: number) => string }) {
   const n = Number.parseFloat(value)
   return (
     <span className="flex items-center gap-3">
-      <input id={id} type="range" min={min} max={max} step={0.1} value={Number.isNaN(n) ? 1 : n} onChange={(e) => onChange(e.target.value)} className="w-40" />
-      <output htmlFor={id} className="w-10 text-right text-xs tabular-nums text-muted">{(Number.isNaN(n) ? 1 : n).toFixed(1)}{unit}</output>
+      <input id={id} type="range" min={min} max={max} step={step} value={Number.isNaN(n) ? 1 : n} onChange={(e) => onChange(e.target.value)} className="w-40" />
+      <output htmlFor={id} className="w-10 text-right text-xs tabular-nums text-muted">{format(Number.isNaN(n) ? 1 : n)}</output>
     </span>
   )
 }

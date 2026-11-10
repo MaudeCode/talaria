@@ -7,6 +7,7 @@ import { readPersisted, writePersisted } from '../../lib/persisted'
 import { useTtsEngines } from '../../extensions/registry'
 import { TTS_PREF } from '../voice/tts'
 import { useSettingField } from './useSettingField'
+import { SettingsGroup } from './SettingsRows'
 
 /** A device-local speech preference: `features/voice/tts.ts` reads it at speak time. */
 function useDevicePref(key: string, fallback: string): [string, (value: string) => void] {
@@ -39,34 +40,38 @@ export function SpeechSection() {
   // An engine saved here whose extension has not registered yet stays selectable under its id.
   const missing = engine !== 'browser' && !engines.some((e) => e.id === engine)
   return (
-    <div className="flex flex-col divide-y divide-border-subtle" data-section="speech">
-      <FieldRow label={m.settings_label_tts()} htmlFor="settings-tts_enabled" hint={m.settings_desc_tts()} inline>
-        <Switch id="settings-tts_enabled" checked={bool('tts_enabled')} onCheckedChange={(checked) => set({ tts_enabled: checked })} />
-      </FieldRow>
-      <FieldRow label={m.settings_label_tts_auto_read()} htmlFor="settings-tts_auto_read" hint={m.settings_desc_tts_auto_read()} inline>
-        <Switch id="settings-tts_auto_read" checked={bool('tts_auto_read')} onCheckedChange={(checked) => set({ tts_auto_read: checked })} />
-      </FieldRow>
-      <FieldRow label={m.settings_label_tts_engine()} htmlFor="settingsTtsEngine" inline>
-        <Select id="settingsTtsEngine" value={engine} onValueChange={setEngine}>
-          <option value="browser">{m.settings_tts_engine_browser()}</option>
-          {engines.map((e) => <option key={e.id} value={e.id}>{e.label}</option>)}
-          {missing && <option value={engine}>{engine}</option>}
-        </Select>
-      </FieldRow>
-      {engine === 'browser' && (
-        <FieldRow label={m.settings_label_tts_voice()} htmlFor="settingsTtsVoice" hint={m.settings_desc_tts_voice()} inline>
-          <Select id="settingsTtsVoice" className="max-w-56" value={voice} onValueChange={setVoice}>
-            <option value="">{m.settings_tts_voice_default()}</option>
-            {voices.map((v) => <option key={v.voiceURI} value={v.name}>{v.name}</option>)}
+    <div className="flex flex-col gap-7" data-section="speech">
+      <SettingsGroup id="read-aloud" title={m.settings_group_read_aloud()}>
+        <FieldRow label={m.settings_label_tts()} htmlFor="settings-tts_enabled" hint={m.settings_desc_tts()} inline>
+          <Switch id="settings-tts_enabled" checked={bool('tts_enabled')} onCheckedChange={(checked) => set({ tts_enabled: checked })} />
+        </FieldRow>
+        <FieldRow label={m.settings_label_tts_auto_read()} htmlFor="settings-tts_auto_read" hint={m.settings_desc_tts_auto_read()} inline>
+          <Switch id="settings-tts_auto_read" checked={bool('tts_auto_read')} onCheckedChange={(checked) => set({ tts_auto_read: checked })} />
+        </FieldRow>
+      </SettingsGroup>
+      <SettingsGroup id="this-device" title={m.settings_group_this_device()}>
+        <FieldRow label={m.settings_label_tts_engine()} htmlFor="settingsTtsEngine" inline>
+          <Select id="settingsTtsEngine" value={engine} onValueChange={setEngine}>
+            <option value="browser">{m.settings_tts_engine_browser()}</option>
+            {engines.map((e) => <option key={e.id} value={e.id}>{e.label}</option>)}
+            {missing && <option value={engine}>{engine}</option>}
           </Select>
         </FieldRow>
-      )}
-      <FieldRow label={m.settings_label_tts_rate()} htmlFor="settingsTtsRate" inline>
-        <Slider id="settingsTtsRate" value={rate} min={0.5} max={2} onChange={setRate} unit="×" />
-      </FieldRow>
-      <FieldRow label={m.settings_label_tts_pitch()} htmlFor="settingsTtsPitch" inline>
-        <Slider id="settingsTtsPitch" value={pitch} min={0} max={2} onChange={setPitch} />
-      </FieldRow>
+        {engine === 'browser' && (
+          <FieldRow label={m.settings_label_tts_voice()} htmlFor="settingsTtsVoice" hint={m.settings_desc_tts_voice()} inline>
+            <Select id="settingsTtsVoice" className="max-w-56" value={voice} onValueChange={setVoice}>
+              <option value="">{m.settings_tts_voice_default()}</option>
+              {voices.map((v) => <option key={v.voiceURI} value={v.name}>{v.name}</option>)}
+            </Select>
+          </FieldRow>
+        )}
+        <FieldRow label={m.settings_label_tts_rate()} htmlFor="settingsTtsRate" inline>
+          <Slider id="settingsTtsRate" value={rate} min={0.5} max={2} onChange={setRate} format={(n) => `${n.toFixed(1)}×`} />
+        </FieldRow>
+        <FieldRow label={m.settings_label_tts_pitch()} htmlFor="settingsTtsPitch" inline>
+          <Slider id="settingsTtsPitch" value={pitch} min={0} max={2} onChange={setPitch} />
+        </FieldRow>
+      </SettingsGroup>
     </div>
   )
 }
