@@ -9,7 +9,6 @@
       "src/features/terminal/TerminalPanelFrame.tsx": 1
     },
     "raw-control": {
-      "src/features/composer/chips.tsx": 1,
       "src/features/decisions/DecisionReviewPage.tsx": 1,
       "src/features/groups/GroupsPage.tsx": 2,
       "src/features/kanban/KanbanPage.tsx": 1,

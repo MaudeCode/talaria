@@ -4,7 +4,7 @@ import { Popover } from '@base-ui/react/popover'
 import { ChevronDown, Cpu, Brain, Wrench, FolderOpen, GitBranch, Shield } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import { useContextDetailQuery, useExecutionModesQuery, useModelsQuery, useWorkspacesQuery, useToolsetsCatalogQuery } from '../../app/queries'
-import { Menu, MenuChoiceItem, MenuGroup, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuSeparator, type MenuProps } from '../../ui/Menu'
+import { Menu, MenuChoiceCheckbox, MenuChoiceItem, MenuGroup, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuSeparator, type MenuProps } from '../../ui/Menu'
 import { cn } from '../../ui/cn'
 import { POPUP_MOTION } from '../../ui/popupMotion'
 import { formatUsd } from '../../ui/States'
@@ -114,37 +114,59 @@ export function ReasoningChip({ value, levels, onChange, row, defaultLabel = m.r
   )
 }
 
+/** Keys a menu's search field hands to the menu: ArrowDown and ArrowUp reach the rows, Escape closes it. */
+const SEARCH_LIST_KEYS = new Set(['ArrowDown', 'ArrowUp', 'Escape'])
+
+/**
+ * TAL-2096: checkbox rows that apply at once and keep the menu open. `value` is the session's (or a new chat's pending)
+ * toolsets as its owner shows them: the choice at once, the previous one again when the server refuses it.
+ */
 export function ToolsetsChip({ value, onChange, row, sessionId }: { value: string[] | null; onChange: (toolsets: string[] | null) => void; row?: boolean | undefined; sessionId?: string | undefined }) {
-  const [open, setOpen] = useState(false)
+  const searchInput = useRef<HTMLInputElement>(null)
+  const [search, setSearch] = useState('')
+  const title = m.composer_control_toolsets()
+  const label = value === null ? m.toolsets_profile_defaults() : (value.length === 1 && value[0]) || m.toolsets_count({ n: value.length })
+  const header = <div className="p-1"><input ref={searchInput} type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={m.toolsets_search()} aria-label={m.toolsets_search()} className="h-8 w-full rounded-md border border-border bg-input px-2 text-sm text-text" onKeyDown={(event) => { if (!SEARCH_LIST_KEYS.has(event.key)) event.stopPropagation() }} /></div>
   return (
-    <ComposerMenu open={open} onOpenChange={setOpen} label={m.composer_control_toolsets()} trigger={<Chip icon={<Wrench size={13} aria-hidden="true" />} label={value?.length ? value.join(', ') : m.toolsets_global()} title={m.composer_control_toolsets()} row={row} size="xs" className="composer-toolsets-chip" />}>
-      <ToolsetsPicker value={value} sessionId={sessionId} onChange={(names) => { onChange(names); setOpen(false) }} />
+    <ComposerMenu label={title} search={searchInput} header={header} onOpenChange={(open) => { if (!open) setSearch('') }}
+      trigger={<Chip icon={<Wrench size={13} aria-hidden="true" />} label={label} title={title} tooltip={`${title}: ${value?.length ? value.join(', ') : label}`} row={row} size="xs" className="composer-toolsets-chip" />}>
+      <ToolsetsPicker value={value} sessionId={sessionId} search={search} onChange={onChange} />
     </ComposerMenu>
   )
 }
 
-function ToolsetsPicker({ value, sessionId, onChange }: { value: string[] | null; sessionId?: string | undefined; onChange: (names: string[] | null) => void }) {
+function ToolsetsPicker({ value, sessionId, search, onChange }: { value: string[] | null; sessionId?: string | undefined; search: string; onChange: (names: string[] | null) => void }) {
   const query = useToolsetsCatalogQuery(value, sessionId)
-  const [draft, setDraft] = useState<string[] | null>(null)
   if (query.isPending) return <div role="status" className="p-3">{m.loading()}</div>
   if (query.isError) return <div className="p-3"><p role="alert">{m.toolsets_load_error()}</p><button type="button" onClick={() => { void query.refetch() }}>{m.retry()}</button></div>
-  const selected = draft ?? query.data.selected_toolsets
-  return <form className="flex flex-col gap-2 p-2" onSubmit={(event) => { event.preventDefault(); onChange(draft === null && query.data.using_defaults ? null : selected) }}>
-    <div className="max-h-64 overflow-y-auto">
-      {query.data.toolsets.map((item) => <label key={item.name} title={item.description} className="flex min-h-11 items-center gap-2 text-sm">
-        <input type="checkbox" className="shrink-0" disabled={!item.available} checked={draft === null ? item.selected : draft.includes(item.name)} onChange={(event) => setDraft(event.target.checked ? [...selected, item.name] : selected.filter((name) => name !== item.name))} />
-        <span className="min-w-0">
-          <span className="block">{item.name}</span>
-          {item.stripped_tools?.length ? <span className="block text-xs text-muted">{m.toolsets_stripped({ tools: item.stripped_tools.join(', '), entries: item.stripped_by?.join(', ') ?? '' })}</span> : null}
+  // Until the catalog for a new choice arrives, the previous catalog's rows show that choice.
+  const choosing = query.isPlaceholderData
+  const defaults = choosing ? value === null : query.data.using_defaults
+  const selected = choosing && value !== null ? value : query.data.selected_toolsets
+  const needle = search.trim().toLowerCase()
+  const shown = query.data.toolsets.filter((item) => !needle || item.name.toLowerCase().includes(needle) || item.description.toLowerCase().includes(needle))
+  const unavailable = shown.filter((item) => !item.available)
+  const toolsetRow = (item: (typeof shown)[number]) => {
+    const on = selected.includes(item.name)
+    return (
+      // The last selected toolset stays: a session runs with at least one.
+      <MenuChoiceCheckbox key={item.name} checked={on} disabled={!item.available || (on && selected.length === 1)}
+        onCheckedChange={(next) => onChange(next ? [...selected, item.name] : selected.filter((name) => name !== item.name))}>
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate">{item.name}</span>
+          {item.description && <span className="truncate text-xs text-muted">{item.description}</span>}
+          {item.stripped_tools?.length ? <span className="text-xs text-muted">{m.toolsets_stripped({ tools: item.stripped_tools.join(', '), entries: item.stripped_by?.join(', ') ?? '' })}</span> : null}
         </span>
-        {!item.available && <span className="ml-auto text-xs text-muted">{item.unavailable_reason === 'disabled' ? m.toolsets_disabled() : m.toolsets_unavailable()}</span>}
-      </label>)}
-    </div>
-    <div className="flex items-center justify-between gap-3 border-t border-border pt-2">
-      <button type="button" onClick={() => onChange(null)} className="min-h-11 text-xs text-muted">{m.toolsets_defaults()}</button>
-      <button type="submit" disabled={selected.length === 0} className="min-h-11 min-w-11 rounded-md bg-accent px-3 py-1.5 text-sm text-accent-fg disabled:opacity-50">{m.save()}</button>
-    </div>
-  </form>
+        {!item.available && <span className="shrink-0 text-xs text-muted">{item.unavailable_reason === 'disabled' ? m.toolsets_disabled() : m.toolsets_unavailable()}</span>}
+      </MenuChoiceCheckbox>
+    )
+  }
+  return <>
+    <MenuChoiceCheckbox checked={defaults} onCheckedChange={() => { if (!defaults) onChange(null) }}>{m.toolsets_defaults()}</MenuChoiceCheckbox>
+    {shown.filter((item) => item.available).map(toolsetRow)}
+    {unavailable.length > 0 && <MenuGroup><MenuGroupLabel>{m.toolsets_not_available()}</MenuGroupLabel>{unavailable.map(toolsetRow)}</MenuGroup>}
+    {shown.length === 0 && <p className="px-2.5 py-1.5 text-sm text-muted">{m.toolsets_no_matches()}</p>}
+  </>
 }
 
 const EXECUTION_MODE_LABEL: Record<ExecutionMode, () => string> = {

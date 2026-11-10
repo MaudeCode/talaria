@@ -3113,11 +3113,28 @@
 	"tool_result_label": "Result",
 	"tool_show_full_output": "Show full output",
 	"tool_target_skill_suffix": "skill",
+	"toolsets_count": [
+		{
+			"declarations": [
+				"input n"
+			],
+			"selectors": [
+				"n"
+			],
+			"match": {
+				"n=1": "{n} toolset",
+				"n=*": "{n} toolsets"
+			}
+		}
+	],
 	"toolsets_defaults": "Use profile defaults",
 	"toolsets_disabled": "Disabled by operator",
-	"toolsets_global": "Global",
 	"toolsets_hint": "Comma-separated toolset names; empty restores the profile default",
 	"toolsets_load_error": "Could not load toolsets.",
+	"toolsets_no_matches": "No toolsets found",
+	"toolsets_not_available": "Not available",
+	"toolsets_profile_defaults": "Profile defaults",
+	"toolsets_search": "Search toolsets",
 	"toolsets_stripped": "Missing {tools} (disabled by {entries})",
 	"toolsets_unavailable": "Unavailable",
 	"transcript": "Transcript",

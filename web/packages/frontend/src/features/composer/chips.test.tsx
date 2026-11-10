@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -51,12 +51,25 @@ let catalog: unknown = PLUGIN_CATALOG
 // The server's registry: every entry named, the default one `Home` (TAL-303).
 const WORKSPACES = { workspaces: [{ path: '/src/talaria-main', name: 'Talaria' }, { path: '/src/scratch', name: 'scratch' }], last: '/src/talaria-main' }
 
+// TAL-2096: the sidecar's catalog in its server order, with `file` the profile default, for the choice it is read with.
+const TOOLSETS = [
+  { name: 'file', description: 'Read and write files', available: true, unavailable_reason: null },
+  { name: 'todo', description: 'Task lists', available: false, unavailable_reason: 'disabled' },
+  { name: 'web', description: 'Search the web', available: true, unavailable_reason: null },
+  { name: 'browser', description: 'Drive a browser', available: false, unavailable_reason: 'unavailable' },
+  { name: 'terminal', description: 'Run commands', available: true, unavailable_reason: null },
+] as const
+function toolsetsCatalog(choice: string[] | null) {
+  const selected = choice ?? ['file']
+  return { toolsets: TOOLSETS.map((row) => ({ ...row, selected: selected.includes(row.name) })), selected_toolsets: selected, using_defaults: choice === null }
+}
+
 let modes: unknown = { modes: [{ mode: 'normal', available: true, reason: null }, { mode: 'ignore_config', available: true, reason: null }, { mode: 'safe', available: true, reason: null }] }
-vi.mock('../../api/endpoints', () => ({ fetchExecutionModes: vi.fn(() => Promise.resolve(modes)), fetchToolsetsCatalog: vi.fn(() => Promise.resolve({ toolsets: [{ name: 'file', description: 'Files', available: true, selected: true, unavailable_reason: null }, { name: 'todo', description: 'Tasks', available: false, selected: false, unavailable_reason: 'disabled' }], selected_toolsets: ['file'], using_defaults: true })), fetchModels: vi.fn(() => Promise.resolve(catalog)), fetchWorkspaces: vi.fn(() => Promise.resolve(WORKSPACES)), setModelFavorite: vi.fn() }))
+vi.mock('../../api/endpoints', () => ({ fetchExecutionModes: vi.fn(() => Promise.resolve(modes)), fetchToolsetsCatalog: vi.fn((choice: string[] | null) => Promise.resolve(toolsetsCatalog(choice))), fetchModels: vi.fn(() => Promise.resolve(catalog)), fetchWorkspaces: vi.fn(() => Promise.resolve(WORKSPACES)), setModelFavorite: vi.fn() }))
 vi.mock('../toast/errorToast', () => ({ showErrorToast: vi.fn() }))
 import { ExecutionModeChip, ModelChip, ToolsetsChip, WorkspaceChip } from './chips'
 import { Dialog } from '../../ui/Dialog'
-import { fetchModels, setModelFavorite } from '../../api/endpoints'
+import { fetchModels, fetchToolsetsCatalog, setModelFavorite } from '../../api/endpoints'
 import { showErrorToast } from '../toast/errorToast'
 import { ApiError } from '../../contracts/common'
 
@@ -436,16 +449,93 @@ describe('ModelChip', () => {
   })
 })
 
-describe('ToolsetsChip', () => {
-  it('renders server selection and refuses unavailable choices', async () => {
-    const onChange = vi.fn()
+describe('ToolsetsChip (TAL-2096)', () => {
+  const renderToolsets = (value: string[] | null, onChange = vi.fn()) => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(<QueryClientProvider client={qc}><ToolsetsChip value={null} onChange={onChange} /></QueryClientProvider>)
+    const view = render(<QueryClientProvider client={qc}><ToolsetsChip value={value} onChange={onChange} /></QueryClientProvider>)
+    return { onChange, rerender: (next: string[] | null) => view.rerender(<QueryClientProvider client={qc}><ToolsetsChip value={next} onChange={onChange} /></QueryClientProvider>) }
+  }
+  const row = (name: RegExp | string) => screen.findByRole('menuitemcheckbox', { name })
+  // A later catalog read never answers, so what the rows show then is the choice itself, not the server's reply.
+  const holdLaterReads = () => { vi.mocked(fetchToolsetsCatalog).mockReturnValue(new Promise(() => undefined)) }
+  afterEach(() => { vi.mocked(fetchToolsetsCatalog).mockImplementation((choice) => Promise.resolve(toolsetsCatalog(choice))) })
+
+  it('applies a toggle at once, keeps the menu open and names the choice on the chip', async () => {
+    const { onChange, rerender } = renderToolsets(null)
+    await userEvent.click(screen.getByRole('button', { name: 'Session toolsets: Profile defaults' }))
+    expect(await row('Use profile defaults')).toHaveAttribute('aria-checked', 'true')
+    expect(await row(/^file/)).toHaveAttribute('aria-checked', 'true')
+    expect(document.querySelector('input[type=checkbox], form')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
+    holdLaterReads()
+    await userEvent.click(await row(/^web/))
+    expect(onChange).toHaveBeenCalledWith(['file', 'web'])
+    rerender(['file', 'web'])
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+    expect(await row(/^web/)).toHaveAttribute('aria-checked', 'true')
+    expect(await row('Use profile defaults')).toHaveAttribute('aria-checked', 'false')
+    const chip = screen.getByRole('button', { name: 'Session toolsets: 2 toolsets' })
+    expect(chip).toHaveAttribute('title', 'Session toolsets: file, web')
+    rerender(['web'])
+    expect(screen.getByRole('button', { name: 'Session toolsets: web' })).toBeInTheDocument()
+    expect(document.body).not.toHaveTextContent('Global')
+  })
+
+  it('shows the previous selection again when its owner restores it after a refused save', async () => {
+    const { onChange, rerender } = renderToolsets(['file', 'web'])
     await userEvent.click(screen.getByRole('button'))
-    expect(await screen.findByRole('checkbox', { name: 'file' })).toBeChecked()
-    expect(screen.getByRole('checkbox', { name: /todo/ })).toBeDisabled()
-    await userEvent.click(screen.getByRole('button', { name: 'Use profile defaults' }))
+    const web = await row(/^web/)
+    holdLaterReads()
+    await userEvent.click(web)
+    expect(onChange).toHaveBeenCalledWith(['file'])
+    rerender(['file'])
+    expect(await row(/^web/)).toHaveAttribute('aria-checked', 'false')
+    // The session write is refused: the owner restores the confirmed value with its error.
+    rerender(['file', 'web'])
+    expect(await row(/^web/)).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('button', { name: 'Session toolsets: 2 toolsets' })).toBeInTheDocument()
+  })
+
+  it('keeps the last selected toolset and sends null for the profile defaults', async () => {
+    const { onChange } = renderToolsets(['web'])
+    await userEvent.click(screen.getByRole('button'))
+    expect(await row(/^web/)).toHaveAttribute('aria-disabled', 'true')
+    expect(await row(/^file/)).not.toHaveAttribute('aria-disabled', 'true')
+    expect(await row('Use profile defaults')).toHaveAttribute('aria-checked', 'false')
+    await userEvent.click(await row('Use profile defaults'))
     expect(onChange).toHaveBeenCalledWith(null)
+  })
+
+  it('lists available toolsets first and the rest under Not available, each group in server order', async () => {
+    renderToolsets(null)
+    await userEvent.click(screen.getByRole('button'))
+    await row(/^file/)
+    expect(screen.getAllByRole('menuitemcheckbox').map((item) => item.textContent)).toEqual([
+      'Use profile defaults', 'fileRead and write files', 'webSearch the web', 'terminalRun commands',
+      'todoTask listsDisabled by operator', 'browserDrive a browserUnavailable',
+    ])
+    const unavailable = within(screen.getByRole('group', { name: 'Not available' })).getAllByRole('menuitemcheckbox')
+    expect(unavailable.map((item) => item.getAttribute('aria-disabled'))).toEqual(['true', 'true'])
+  })
+
+  it('filters by name and description from its search field, which hands ArrowDown and Escape to the menu', async () => {
+    renderToolsets(null)
+    await userEvent.click(screen.getByRole('button'))
+    await row(/^file/)
+    const search = screen.getByRole('searchbox', { name: 'Search toolsets' })
+    await userEvent.type(search, 'COMMANDS')
+    expect(screen.getAllByRole('menuitemcheckbox').map((item) => item.textContent)).toEqual(['Use profile defaults', 'terminalRun commands'])
+    await userEvent.clear(search)
+    await userEvent.type(search, 'tod')
+    expect(within(screen.getByRole('group', { name: 'Not available' })).getByRole('menuitemcheckbox')).toHaveTextContent(/^todo/)
+    await userEvent.type(search, 'x')
+    expect(screen.getByText('No toolsets found')).toBeInTheDocument()
+    await userEvent.clear(search)
+    await userEvent.keyboard('{ArrowDown}')
+    expect(await row('Use profile defaults')).toHaveFocus()
+    await userEvent.click(search)
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => { expect(screen.queryByRole('menu')).not.toBeInTheDocument() })
   })
 })
 
@@ -481,7 +571,7 @@ it('does not offer saves when the toolset catalog fails', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent('Could not load toolsets.')
   expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
   await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
-  expect(await screen.findByRole('checkbox', { name: 'file' })).toBeEnabled()
+  expect(await screen.findByRole('menuitemcheckbox', { name: /^file/ })).toBeInTheDocument()
 })
 
 describe('ExecutionModeChip (TAL-1040)', () => {

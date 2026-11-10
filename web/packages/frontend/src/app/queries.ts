@@ -1,6 +1,6 @@
 import type { DelegationSettings, DelegationWrite } from '@maudecode/talaria-web-contracts'
 /** Query hooks for shared server resources. Keys live in api/queryKeys.ts. */
-import { useMutation, useQuery, useQueryClient, type UseQueryOptions } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient, type UseQueryOptions } from '@tanstack/react-query'
 import { teardownAll } from '../stream/connection'
 import { keys } from '../api/queryKeys'
 import * as api from '../api/endpoints'
@@ -142,7 +142,8 @@ export function useSwitchProfile() {
 }
 
 export function useToolsetsCatalogQuery(value: string[] | null, sessionId?: string) {
-  return useQuery({ queryKey: keys.toolsets(sessionId, value), queryFn: () => api.fetchToolsetsCatalog(value, sessionId), gcTime: 0, retry: false })
+  // A toggle reads the catalog for the new choice; the open menu keeps its rows meanwhile (TAL-2096).
+  return useQuery({ queryKey: keys.toolsets(sessionId, value), queryFn: () => api.fetchToolsetsCatalog(value, sessionId), gcTime: 0, retry: false, placeholderData: keepPreviousData })
 }
 
 /** TAL-1040: read when the fresh-chat mode menu opens, so a stopped or older owner is current. */
