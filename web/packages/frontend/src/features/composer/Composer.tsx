@@ -38,6 +38,8 @@ import { composerStateId, type QueuedTurn } from './queue'
 import { stopSpeaking } from '../voice/tts'
 
 export type BusyMode = 'steer' | 'queue' | 'interrupt'
+/** TAL-2155: moves this chat's draft text and staged files to the composer of another chat, which adopts them. */
+export interface DraftHandover { handTo: (sessionId: string) => void }
 
 export interface ComposerProps {
   room?: RoomComposerProps['room']
@@ -50,12 +52,11 @@ export interface ComposerProps {
   settings: Settings | undefined
   /** Creates the unsaved chat's session; `onCreated` hears its id before the route changes to it. */
   onEnsureSession: (onCreated?: (sessionId: string) => void) => Promise<Session>
-  onLocalCommand: (name: string, args: string) => Promise<boolean | 'refused'>
+  onLocalCommand: (name: string, args: string, draft?: DraftHandover) => Promise<boolean | 'refused'>
   terminalOpen: boolean
   onToggleTerminal: () => void
   onModelChange: (model: string, provider: string | null) => void
-  /** `draft.take` hands over and clears this chat's draft when the change starts a new chat (TAL-2155). */
-  onWorkspaceChange: (path: string, draft?: { take: () => string }) => void
+  onWorkspaceChange: (path: string, draft?: DraftHandover) => void
   onNewWorktreeChat?: ((workspace: string | undefined) => void) | undefined
   onRemoveWorktree?: (() => void) | undefined
   onToolsetsChange: (toolsets: string[] | null) => void
@@ -367,6 +368,8 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
 
   const draft = useRef(text)
   useLayoutEffect(() => { draft.current = text })
+  const staged = useRef(files)
+  useLayoutEffect(() => { staged.current = files })
   const maxBytes = room?.maxUploadBytes ?? bootstrap.max_upload_bytes
   const upload = (key: string, file: File) => {
     // The result lands on the tray that holds the chip now, shown or not; a chat chip that is gone rolls its receipt back.
@@ -462,6 +465,18 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
     setFiles((current) => [...current, ...restored.filter((file) => !current.some((f) => f.key === file.key))])
   }, [intent.send, sessionId, files, setFiles])
 
+  // TAL-2155: read when the answer arrives, so text typed meanwhile moves too; the new chat's composer re-uploads the
+  // files (see the hand-off adoption below), so this chat's receipts are rolled back.
+  const handover: DraftHandover = { handTo: (next) => {
+    const moved = staged.current.map((f) => f.file)
+    if (!draft.current && !moved.length) return
+    handoff = { draft: { current: draft.current }, files: moved, sessionId: next }
+    const receipts = staged.current.flatMap((f) => f.upload?.rollback_token ? [f.upload.rollback_token] : [])
+    if (sessionId && receipts.length) void api.rollbackUpload(sessionId, receipts).catch(() => undefined)
+    setText('')
+    setFiles([])
+    if (localStateId) clearDraft(localStateId, !session?.owner_attachment)
+  } }
   const removeFile = (key: string) => {
     const f = files.find((p) => p.key === key)
     setFiles((prev) => prev.filter((p) => p.key !== key))
@@ -601,7 +616,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
         if (consumed) setText('')
         const restore = () => { if (consumed && commandScope === getStreamContext()) setText((current) => current.trim() ? `${current}\n\n${text}` : text) }
         let handled: boolean | 'refused'
-        try { handled = await onLocalCommand(cmd.name, cmd.args) } catch (e) { if (commandScope !== getStreamContext()) return; restore(); showToast(e instanceof Error ? e.message : String(e), 5000, 'error'); return }
+        try { handled = await onLocalCommand(cmd.name, cmd.args, handover) } catch (e) { if (commandScope !== getStreamContext()) return; restore(); showToast(e instanceof Error ? e.message : String(e), 5000, 'error'); return }
         if (commandScope !== getStreamContext()) return
         if (handled === 'refused') { restore(); return }
         if (handled) { if (!consumed) setText((current) => current === text ? '' : current); return }
@@ -830,15 +845,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
   // The server marks sessions Web may not continue (TAL-312); it would refuse every send, so none is offered.
   if (readOnly) return <div className="composer-wrap" id="composerWrap"><div className="mx-auto max-w-(--msg-max) px-3 py-2 text-center text-xs text-muted" role="note">{session?.owner_attachment?.reason === 'native_clarify_batch_unavailable' ? m.owner_batch_unavailable() : session?.owner_attachment?.reason === 'served_profile_sessions_unavailable' ? m.owner_profile_unverified() : m.session_read_only_notice()}</div></div>
 
-  // TAL-2155: read when the answer arrives, so text typed while the change is decided moves too.
-  const takeDraft = () => {
-    const taken = draft.current
-    if (!taken) return taken
-    setText('')
-    if (localStateId) clearDraft(localStateId, !session?.owner_attachment)
-    return taken
-  }
-  const changeWorkspace = (path: string) => onWorkspaceChange(path, { take: takeDraft })
+  const changeWorkspace = (path: string) => onWorkspaceChange(path, handover)
   const controls = { sessionId, session, settings, pendingChoices, onExecutionModeChange, onModelChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported, onWorkspaceChange: changeWorkspace, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, terminalOpen, onToggleTerminal, answering, stage, phone, collapsed, configOpen, setConfigOpen, context }
 
   return (

@@ -23,7 +23,7 @@ import { chosenFields, useSessionUpdate, useSessionWrite } from './useSessionUpd
 import { transcriptCut, useEditMessage } from './useEditMessage'
 import { Transcript } from './Transcript'
 import { TranscriptSkeleton } from './TranscriptSkeleton'
-import { Composer, turnRequest } from '../composer/Composer'
+import { Composer, turnRequest, type DraftHandover } from '../composer/Composer'
 import { reasoningLevelLabel } from '../composer/chips'
 import { composerStateId, useQueuedTurns, type QueuedTurn } from '../composer/queue'
 import { returnToComposer } from '../composer/composerReturn'
@@ -245,11 +245,10 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
 
   const onModelChange = (model: string, provider: string | null, ownerPayload?: Parameters<typeof updateSession>[1]) => { if (!sessionId) { setPending((p) => ({ ...p, model, model_provider: provider })); return } updateSession({ model, model_provider: provider }, ownerPayload) }
   // TAL-2155: when the server starts a new chat for the chosen workspace instead, the composer's draft moves there with the user.
-  const onWorkspaceChange = (path: string, draft?: { take: () => string }) => {
+  const onWorkspaceChange = (path: string, draft?: DraftHandover) => {
     if (!sessionId) { setPending((p) => ({ ...p, workspace: path })); return }
     updateSession({ workspace: path }, undefined, undefined, (next) => {
-      const text = draft?.take() ?? ''
-      if (text.trim()) returnToComposer(next, text)
+      draft?.handTo(next)
       void invalidateSessionQueries(qc, next)
       void navigate({ to: '/session/$sessionId', params: { sessionId: next } })
     })
@@ -337,7 +336,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     void followCompression(sessionId, () => Promise.resolve(runningJob))
   }, [sessionId, runningJob, compressingSince, followCompression])
 
-  const onLocalCommand = async (name: string, args: string): Promise<boolean | 'refused'> => {
+  const onLocalCommand = async (name: string, args: string, draft?: DraftHandover): Promise<boolean | 'refused'> => {
     switch (name) {
       case 'stop': if (sessionId) await cancelTurn(sessionId); return true
       case 'new': removePersisted('hermes-webui-session'); await navigate({ to: '/', search: { action: 'new-chat' } }); return true
@@ -364,7 +363,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
         if (scope === getStreamContext()) onModelChange(model, model_provider, owner_payload)
         return true
       }
-      case 'workspace': if (args) onWorkspaceChange(args); return true
+      case 'workspace': if (args) onWorkspaceChange(args, draft); return true
       case 'personality': {
         // TAL-612: alone it lists the personalities and changes nothing.
         if (args) { if (sessionId) sendSessionWrite({ sid: sessionId, fields: { personality: args }, run: () => api.setPersonality(sessionId, args) }); return true }

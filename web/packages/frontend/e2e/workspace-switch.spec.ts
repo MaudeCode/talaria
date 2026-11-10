@@ -23,8 +23,11 @@ test('with the setting on, a workspace switch starts a new chat there and carrie
     await expect(page.locator('#messages').getByText('Earlier answer')).toBeVisible()
     const msg = page.locator('#msg')
     const chip = page.locator('#composerWorkspaceChip')
+    const tray = page.locator('#composerBox .attach-tray li')
     await msg.click()
     await msg.fill('carry this draft')
+    await page.locator('#fileInput').setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('notes') })
+    await expect(page.locator('.attach-tray [data-status=done]')).toHaveCount(1)
     await shot(page, 'before', suffix)
     await chip.click()
     await page.getByRole('menuitemradio', { name: new RegExp(other.name) }).click()
@@ -32,6 +35,9 @@ test('with the setting on, a workspace switch starts a new chat there and carrie
     await page.keyboard.press('Escape')
     const created = page.url().split('/session/')[1]!
     await expect(msg).toHaveValue('carry this draft')
+    // Staged files move too, uploaded again for the new chat.
+    await expect(tray).toHaveText(/notes\.txt/)
+    await expect(page.locator('.attach-tray [data-status=done]')).toHaveCount(1)
     await msg.click()
     await expect(chip).toContainText(other.name)
     await expect(page.locator('#messages').getByText('Earlier answer')).toHaveCount(0)
@@ -46,12 +52,20 @@ test('with the setting on, a workspace switch starts a new chat there and carrie
     await msg.click()
     await expect(chip).toContainText(home.name)
     await expect(msg).toHaveValue('')
+    await expect(tray).toHaveCount(0)
     await shot(page, 'original', suffix)
 
-    // `/workspace` goes through the same change as the chip.
+    // `/workspace` goes through the same change as the chip, and text typed while it is decided moves too.
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    await page.route('**/api/session/update', async (route) => { await held; await route.continue() })
     await msg.fill(`/workspace ${third.path}`)
     await page.locator('#btnSend').click()
+    await expect(msg).toHaveValue('')
+    await msg.fill('typed while switching')
+    release()
     await expect(page).not.toHaveURL(new RegExp(sid))
+    await expect(msg).toHaveValue('typed while switching')
     await msg.click()
     await expect(chip).toContainText(third.name)
     expect((await workspaceOf(sid)).workspace).toBe(home.path)
