@@ -68,7 +68,8 @@ export function WorkspacesPage() {
           const isDefault = pendingDefault === undefined ? w.is_default === true : w.path === pendingDefault
           // A space still being added has no server entry to move, rename or remove yet.
           const actions: RowAction[] = confirmed.has(w.path) ? [
-            ...(isDefault ? [] : [{ label: m.workspace_make_default(), run: () => makeDefault.mutate(w.path) }]),
+            // The default is a server-wide setting resolved on the server's own disk, so a remote terminal profile's target paths cannot be it.
+            ...(isDefault || ws.data?.terminal_remote_backend ? [] : [{ label: m.workspace_make_default(), run: () => makeDefault.mutate(w.path) }]),
             { label: m.workspace_move_up(), run: () => move(i, -1), disabled: i === 0 },
             { label: m.workspace_move_down(), run: () => move(i, 1), disabled: i === list.length - 1 },
             { label: m.rename(), run: () => setRenaming({ path: w.path, name: w.name }) },

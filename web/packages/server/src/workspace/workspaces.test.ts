@@ -206,6 +206,22 @@ describe('workspace list row fields (TAL-2141)', () => {
   })
 })
 
+describe('workspace list row fields for a remote terminal profile (TAL-2141)', () => {
+  it('leaves folder existence unknown when the backend is remote, even without a terminal cwd', async () => {
+    const s = await bootTestServer()
+    const config = vi.spyOn(s.deps.agentConfig, 'peekResolved').mockReturnValue({ terminal: { backend: 'ssh' } })
+    try {
+      const listed = await (await s.get('/api/workspaces')).json() as { workspaces: Record<string, unknown>[]; terminal_remote_backend: boolean }
+      expect(listed.terminal_remote_backend).toBe(true)
+      expect(listed.workspaces.length).toBeGreaterThan(0)
+      expect(listed.workspaces.filter((w) => 'exists' in w)).toEqual([])
+    } finally {
+      config.mockRestore()
+      await s.close()
+    }
+  })
+})
+
 describe('Add space folder browser (TAL-2141)', () => {
   it('goes up exactly one folder whether or not the prefix ends in a separator', () => {
     expect(folderBrowse('/home/me/git', [], '/home/me').parent).toBe('/home/me/')

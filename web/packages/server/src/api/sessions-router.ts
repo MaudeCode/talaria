@@ -204,8 +204,8 @@ async function workspaceRows(deps: AppDeps, entries: WorkspaceEntry[], profile: 
   const setting = (await deps.settings.load()).default_workspace
   // TAL-2098: the setting is stored in the list's canonical spelling; resolving again covers a value written before it.
   const defaultPath = typeof setting === 'string' && setting ? resolvePathLikePython(setting, ws.home) : null
-  // A remote terminal backend's paths live on its target, so this server cannot say whether they exist.
-  const local = ws.remoteTerminalCwd(profile) === null
+  // A remote terminal backend's paths live on its target, and an unresolved config is not known to be local: existence stays unknown.
+  const local = ws.profileSupportsLocalIo(profile)
   const home = ws.homePath()
   let counts: Map<string, number> | null = new Map()
   try {

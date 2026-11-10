@@ -53,6 +53,15 @@ describe('WorkspacesPage', () => {
     expect(screen.queryByRole('menuitem', { name: 'Make default' })).toBeNull()
   })
 
+  it('TAL-2141: offers no Make default on a remote terminal profile, whose paths the server cannot resolve locally', async () => {
+    vi.mocked(api.fetchWorkspaces).mockResolvedValue({ ...spaces, terminal_remote_backend: true })
+    renderPage()
+    await screen.findByText('Alpha')
+    await userEvent.click(within(row('Alpha')).getByRole('button', { name: 'Workspace actions' }))
+    const menu = await screen.findByRole('menu', { name: 'Workspace actions' })
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Move up', 'Move down', 'Rename', 'Remove'])
+  })
+
   it('TAL-2141: flags a space whose folder is gone and shows the path from home', async () => {
     vi.mocked(api.fetchWorkspaces).mockResolvedValue({ workspaces: [{ path: '/home/me/gone', name: 'Gone', exists: false, display_path: '~/gone' }, { path: '/home/me/here', name: 'Here', exists: true, display_path: '~/here', chat_count: 3 }], last: null })
     renderPage()
