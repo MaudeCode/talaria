@@ -1029,7 +1029,10 @@ export const MemorySchema = z.looseObject({
   project_context_shadowed: z.array(Json).optional(), external_notes_enabled: z.boolean().optional(),
   /** TAL-784: the revision of each file as this read found it. A save sends the revision its edit started from. */
   memory_revision: z.string(), user_revision: z.string(), soul_revision: z.string(),
-  /** TAL-2126: each file's name as the server opened it (`''` for a disabled store), and the MEMORY.md / USER.md entries of the shown (masked) text. */
+  /**
+   * TAL-2126: each file's name as the server opened it (`''` for a disabled store), and the MEMORY.md / USER.md entries as the
+   * Agent holds them (stripped, each once), masked as shown. Entries are absent past the server's cap; the page then shows the text.
+   */
   memory_name: z.string().optional(), user_name: z.string().optional(), soul_name: z.string().optional(),
   memory_entries: z.array(z.string()).optional(), user_entries: z.array(z.string()).optional(),
 })

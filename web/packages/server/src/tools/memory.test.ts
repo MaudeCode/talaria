@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { syncFsCalls } from '../test/sync-fs.js'
 import { GitRunner } from '../workspace/git.js'
-import { memoryRevision, readMemory, readProjectContext } from './memory.js'
+import { MAX_SHOWN_ENTRIES, memoryRevision, readMemory, readProjectContext } from './memory.js'
 
 vi.mock('node:fs', { spy: true })
 vi.mock('node:child_process', { spy: true })
@@ -42,7 +42,7 @@ describe('memory.get', () => {
 
     expect(first).toEqual({
       memory: 'remember\n', user: 'user\n', soul: 'soul\n', project_context: 'repo context\n',
-      memory_entries: ['remember\n'], user_entries: ['user\n'], memory_name: 'MEMORY.md', user_name: 'USER.md', soul_name: 'SOUL.md',
+      memory_entries: ['remember'], user_entries: ['user'], memory_name: 'MEMORY.md', user_name: 'USER.md', soul_name: 'SOUL.md',
       memory_revision: memoryRevision(key, Buffer.from('remember\n')), user_revision: memoryRevision(key, Buffer.from('user\n')), soul_revision: memoryRevision(key, Buffer.from('soul\n')),
       memory_path: memory, user_path: user, soul_path: soul, project_context_path: hermes, project_context_name: 'HERMES.md', project_context_workspace: workspace,
       memory_mtime: memoryMtime, user_mtime: userMtime, soul_mtime: soulMtime, project_context_mtime: hermesMtime,
@@ -61,8 +61,13 @@ describe('memory.get', () => {
     write('profile/SOUL.md', 'soul\n§\nnot an entry store\n')
     const body = await readMemory(join(root, 'profile'), {}, null, {}, true, key, new GitRunner({ env: process.env }))
     expect(body).toMatchObject({ memory_name: 'MEMORY.md', user_name: 'USER.md', soul_name: 'SOUL.md', user_entries: [] })
-    expect(body.memory_entries).toEqual(['Uses TypeScript.', 'a token ghp_Ab...6789', '- one\n- two\n'])
+    expect(body.memory_entries).toEqual(['Uses TypeScript.', 'a token ghp_Ab...6789', '- one\n- two'])
     expect(body).not.toHaveProperty('soul_entries')
+    // Entries as the Agent holds them: a repeated entry once, and none past the cap, where the page shows the text as written.
+    write('profile/memories/USER.md', 'a\n§\n a \n§\nb\n§\na')
+    expect((await readMemory(join(root, 'profile'), {}, null, {}, true, key, new GitRunner({ env: process.env }))).user_entries).toEqual(['a', 'b'])
+    write('profile/memories/USER.md', Array.from({ length: MAX_SHOWN_ENTRIES + 1 }, (_, i) => `e${String(i)}`).join('\n§\n'))
+    expect(await readMemory(join(root, 'profile'), {}, null, {}, true, key, new GitRunner({ env: process.env }))).toHaveProperty('user_entries', undefined)
     const disabled = await readMemory(join(root, 'profile'), { memory: { memory_enabled: false } }, null, {}, true, key, new GitRunner({ env: process.env }))
     expect(disabled).toMatchObject({ memory_name: '', memory_entries: [] })
   })

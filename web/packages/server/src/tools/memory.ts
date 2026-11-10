@@ -128,6 +128,16 @@ export const memoryRevision = (key: Buffer, raw: Buffer): string => createHmac('
 
 /** The Agent's MemoryStore entries of a MEMORY.md / USER.md body, split on its `\n§\n` delimiter line. */
 const entriesOf = (raw: string): string[] => raw.split(/\n§\n/).filter((entry) => entry.trim())
+/** More entries than a page renders as blocks; past it the read sends no entries and the page shows the text as written. */
+export const MAX_SHOWN_ENTRIES = 1000
+/**
+ * TAL-2126: the entries the Agent holds for a body (stripped, first occurrence of each kept, as MemoryStore loads them),
+ * each masked as the page shows it. A save is checked on these unique entries, so a file of repeated entries stays one block each.
+ */
+function shownEntries(raw: string, mask: (text: string) => string): string[] | undefined {
+  const unique = [...new Set(entriesOf(raw).map((entry) => entry.trim()))]
+  return unique.length > MAX_SHOWN_ENTRIES ? undefined : unique.map(mask)
+}
 export async function readMemory(profileHome: string, config: Config, workspace: string | null, env: Record<string, string | undefined>, redact: boolean, key: Buffer, git: GitRunner): Promise<Dict> {
   const mem = dict(config.memory)
   const memoryEnabled = mem.memory_enabled === undefined ? true : truthy(mem.memory_enabled)
@@ -138,10 +148,9 @@ export async function readMemory(profileHome: string, config: Config, workspace:
   const soulFile = join(profileHome, 'SOUL.md')
   const [[memory, memoryMtime], [user, userMtime], [soul, soulMtime], context] = await Promise.all([readText(memFile), readText(userFile), readText(soulFile), readProjectContext(workspace, git)])
   const r = (t: Buffer | string): string => redactString(t.toString(), redact)
-  const [shownMemory, shownUser] = [r(memory), r(user)]
   return {
-    memory: shownMemory, user: shownUser, soul: r(soul), project_context: r(str(context.content)),
-    memory_entries: entriesOf(shownMemory), user_entries: entriesOf(shownUser),
+    memory: r(memory), user: r(user), soul: r(soul), project_context: r(str(context.content)),
+    memory_entries: shownEntries(memory.toString(), r), user_entries: shownEntries(user.toString(), r),
     memory_name: memFile ? basename(memFile) : '', user_name: userFile ? basename(userFile) : '', soul_name: basename(soulFile),
     memory_revision: memoryRevision(key, memory), user_revision: memoryRevision(key, user), soul_revision: memoryRevision(key, soul),
     memory_path: memFile ?? '', user_path: userFile ?? '', soul_path: soulFile, project_context_path: str(context.path), project_context_name: str(context.name), project_context_workspace: str(context.workspace),
