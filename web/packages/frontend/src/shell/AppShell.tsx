@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, type ReactNode } from 'react'
+import { HubHeadSlotsContext } from './hubHeadSlots'
 import { createPortal } from 'react-dom'
 import { useLocation, useParams, useSearch } from '@tanstack/react-router'
 import { Titlebar, usePanelTitle } from './Titlebar'
@@ -71,9 +72,6 @@ export function AppShell({ children }: { children: ReactNode }) {
 /** Legacy `.main-view` column: the panel that fills `.main`. */
 export const MAIN_VIEW = 'main-view flex flex-1 min-h-0 min-w-0 flex-col bg-bg'
 
-/** TAL-2101: a Settings section's heading, where a hub page shown as that section puts its help and actions. */
-export interface HubHeadSlots { help: HTMLElement | null; actions: HTMLElement | null }
-export const HubHeadSlotsContext = createContext<HubHeadSlots | null>(null)
 
 /** TAL-2089: the titlebar's `usePanelTitle`, provided once by the shell so hub pages need no router of their own. */
 export const TitlebarTitleContext = createContext<string | null>(null)

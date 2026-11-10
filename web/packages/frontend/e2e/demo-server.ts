@@ -17,6 +17,28 @@ export const decisionItem = (id: string, topic: string) => ({ id, title: `${topi
 // Persisted shape from the Agent's cron store, as `packages/server/src/tools/crons.test.ts` uses it; synthetic ids only.
 const job = (id: string, name: string, extra: object) => ({ id, name, prompt: `${name}: synthetic prompt`, schedule: { kind: 'cron', expr: '0 9 * * *', display: '0 9 * * *' }, repeat: { times: null, completed: 12 }, enabled: true, state: 'scheduled', next_run_at: '2026-11-10T09:00:00+00:00', last_status: 'ok', profile: null, toast_notifications: true, monitor: '', continuity: false, ...extra })
 
+const BUNDLED_PLUGINS: Record<string, string> = {
+  browser: 'browser_use browserbase firecrawl',
+  dashboard_auth: 'basic drain nous self_hosted session_token',
+  delegation: 'default',
+  image_gen: 'deepinfra fal krea meta-ai openai openai-codex openrouter xai',
+  platforms: 'a2a bluebubbles buzz dingtalk discord email feishu google_chat irc line matrix mattermost ntfy photon qqbot raft signal simplex slack sms teams telegram wecom weixin whatsapp whatsapp_cloud',
+  video_gen: 'deepinfra fal openrouter xai',
+  web: 'brave_free ddgs exa firecrawl keenable openai_native parallel perplexity searxng tavily xai',
+  '': 'disk-cleanup google_meet security-guidance teams_pipeline',
+}
+const plugin = (key: string, name: string, extra: object) => ({ key, name, version: '1.0.0', description: `${name}: synthetic description`, enabled: true, kind: 'backend', activation: 'enabled', hooks: [], ...extra })
+/** `plugins.list` rows: the Agent's own plugins (its four standalone ones off, as shipped) and the profile's `meshy` and `team-notes`. */
+const DEMO_PLUGINS = [
+  plugin('meshy', 'meshy', { version: '1.2.0', category: '', source: 'installed', kind: 'standalone', update_available: true, latest_revision: '1.3.0' }),
+  plugin('team-notes', 'team-notes', { version: '0.3.1', description: 'Shared notes the agent can read and append to', category: '', source: 'installed', kind: 'standalone', enabled: false, activation: 'disabled' }),
+  ...Object.entries(BUNDLED_PLUGINS).flatMap(([category, names]) => names.split(' ').map((name) => plugin(category ? `${category}/${name}` : name, name, {
+    category, source: 'bundled',
+    ...(category ? {} : { kind: 'standalone', enabled: false, activation: 'disabled' }),
+    ...(category === 'image_gen' && name === 'fal' ? { kind: 'exclusive', activation: 'exclusive', is_active_provider: true, description: 'flux-2-klein, flux-2-pro, nano-banana-2' } : {}),
+  }))),
+]
+
 /** A server whose fake sidecar answers `gateway.groups` from the group fixture: one discussion, "Design review", between two profiles. */
 export async function discussionServer() {
   const sidecar = new FakeSidecar(), fixture = groupFixture(sidecar)
@@ -53,6 +75,10 @@ async function seed(server: Awaited<ReturnType<typeof discussionServer>>['server
   writeEnvFile(join(server.state, '.env'), { ANTHROPIC_API_KEY: 'sk-ant-demo-0000', OPENROUTER_API_KEY: 'sk-or-demo-0000' })
   // The main model's reasoning levels, so Settings › Models shows its effort and Show thinking rows (TAL-2078).
   sidecar.respond('models.reasoning_efforts', () => ({ efforts: ['low', 'medium', 'high'], supports_reasoning: true }))
+  // TAL-2132: a stock Agent's plugins (v0.23.1's 62, by key) and two the profile installed, one with an update waiting.
+  sidecar.respond('plugins.list', () => ({ plugins: DEMO_PLUGINS, supported_hooks: [] }))
+  sidecar.respond('plugins.settings', () => ({ supported: true, plugins: [{ key: 'meshy', fields: [{ key: 'quality', type: 'enum', label: 'Quality', description: '', required: false, choices: ['draft', 'final'], value: 'draft' }] }, { key: 'image_gen/fal', fields: [{ key: 'model', type: 'string', label: 'Model', description: '', required: false, value: 'flux-2-pro' }] }] }))
+  sidecar.respond('plugins.auto_update', () => ({ supported: true, auto_apply: true, check_hours: 6 }))
   server.deps.agentConfig.invalidate()
   server.deps.catalog.invalidate()
   const workspace = join(server.state, 'workspace')

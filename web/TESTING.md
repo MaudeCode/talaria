@@ -184,8 +184,8 @@ sidecar command it uses the fixture replay sidecar). See
 the next port) fails the run; set `HERMES_E2E_PORT` to a free port. The run never reuses a running server.
 
 The replay servers leave Tasks, Decisions, Discussions, Insights usage and chat transcripts empty. For a page review
-that needs data, `e2e/demo-server.ts` boots a server seeded with synthetic chats, jobs, a decision review and a
-discussion, and `e2e/demo-tour.spec.ts` checks it. The tour visits those pages, the model menu (desktop), every
+that needs data, `e2e/demo-server.ts` boots a server seeded with synthetic chats, jobs, a stock set of plugins, a
+decision review and a discussion, and `e2e/demo-tour.spec.ts` checks it. The tour visits those pages, the model menu (desktop), every
 Settings section (`SettingsSectionSchema`) and each Tools tab, checks each page's seeded value or heading and that
 Settings has no sideways scroll, in three passes:
 

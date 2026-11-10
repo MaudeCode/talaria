@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Settings › Tools › Plugins in Talaria Web lists the plugins you installed first, shows how many are installed, built in, turned on and waiting for an update, and folds the built-in plugins into groups by what they do.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

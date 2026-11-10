@@ -1,16 +1,21 @@
-import { memo, useRef, useState, type ReactNode } from 'react'
+import { memo, useContext, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { PluginAutoUpdateView, PluginOAuthClientView, PluginSettingView, PluginUpdateAllRow, PluginUpdateResult } from '@maudecode/talaria-web-contracts'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
-import { Check, ChevronRight, ChevronsLeft, CircleArrowUp, Download, Info, LogOut, Search, Settings2, Store } from 'lucide-react'
+import { Box, Brain, Check, ChevronDown, ChevronRight, ChevronsLeft, CircleArrowUp, Clock, Cpu, Download, Ellipsis, Globe, Image, Info, Lock, LogOut, MessageSquare, Plus, Search, Settings2, Video, type LucideIcon } from 'lucide-react'
 import { IconButton } from '../../ui/Button'
 import { Mark, StatusDot, type DotState } from '../../ui/Badge'
 import { RowContextMenu, type RowAction } from '../../ui/Menu'
 import { RowActionButtons } from '../../ui/RowActionsMenu'
 import { ConfirmDialog } from '../../ui/Dialog'
 import { FieldRow, Switch, TextInput } from '../../ui/Field'
+import { cn } from '../../ui/cn'
+import { HubHeadSlotsContext } from '../../shell/hubHeadSlots'
+import { QuotaMeter } from '../insights/QuotaMeter'
+import { SETTINGS_PAGE, SettingRow, SettingsGroup, SettingsStats } from './SettingsGroup'
 import { Select } from '../../ui/Select'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
@@ -79,8 +84,12 @@ export function PluginsSection() {
   const effects = useResourceEffects<Record<string, unknown>>()
   const [open, setOpen] = useState<string | null>(null)
   const [browsing, setBrowsing] = useState(false)
-  if (plugins.isPending) return <LoadingState />
-  if (plugins.isError) return <ErrorState error={plugins.error} onRetry={() => { void plugins.refetch() }} />
+  const head = useContext(HubHeadSlotsContext)
+  // TAL-2132: "Add plugin" opens the catalog; it is the section heading's primary action.
+  const add = <IconButton variant="primary" label={m.plugins_add()} active={browsing} aria-expanded={browsing} onClick={() => setBrowsing(!browsing)}><Plus aria-hidden="true" /></IconButton>
+  const addButton = head?.actions ? createPortal(add, head.actions) : <div className="flex justify-end">{add}</div>
+  if (plugins.isPending) return <>{addButton}<LoadingState /></>
+  if (plugins.isError) return <>{addButton}<ErrorState error={plugins.error} onRetry={() => { void plugins.refetch() }} /></>
   // Saved non-secret values show at once until the reread; secrets never show.
   const list = plugins.data.plugins.map((p) => {
     const saved = effects[`plugin:${p.key}`]?.value
@@ -91,24 +100,35 @@ export function PluginsSection() {
   const updateBusy = update.isPending || updateAll.isPending
   // TAL-2129: `plugins` is the server's filter answer; `total` counts the whole install.
   const installed = (plugins.data.total ?? 0) > 0
+  const { groups, summary } = plugins.data
+  const rowProps = (p: InstalledPlugin) => ({ plugin: p, editable, open: open === p.key, onOpen: setOpen, updateBusy, updating: update.isPending && update.variables.key === p.key,
+    blockedFindings: scan?.key === p.key && scan.status === 'blocked' ? scan.findings : null, onUpdate: requestUpdate })
+  // TAL-2132: with the server's groups, Update all shows only while a plugin has an update; an older server keeps the install-wide button.
+  const updateAllButton = autoUpdate && (summary ? summary.updates > 0 : installed)
+    ? <IconButton variant="ghost" label={m.plugins_update_all()} disabled={updateBusy} aria-busy={updateAll.isPending} onClick={requestUpdateAll}><CircleArrowUp aria-hidden="true" /></IconButton> : null
   return (
-    <div className="flex flex-col gap-2" data-section="plugins">
-      <div className="flex justify-end gap-2">
-        {autoUpdate && installed && <IconButton variant="ghost" label={m.plugins_update_all()} disabled={updateBusy} aria-busy={updateAll.isPending} onClick={requestUpdateAll}><CircleArrowUp aria-hidden="true" /></IconButton>}
-        <IconButton variant="ghost" label={m.plugins_catalog()} active={browsing} aria-expanded={browsing} onClick={() => setBrowsing(!browsing)}><Store aria-hidden="true" /></IconButton>
-      </div>
-      {autoUpdate && <PluginAutoUpdateRow state={autoUpdate} />}
-      {updatedAll?.context === streamContext && updatedAll.rows.length > 0 && <PluginUpdateAllResults rows={updatedAll.rows} />}
+    <div className={SETTINGS_PAGE} data-section="plugins">
+      {addButton}
       {browsing && <PluginCatalogList updating={updateBusy} updatingKey={update.isPending ? update.variables.key : null} onUpdate={requestUpdate} />}
+      {groups && summary && <SettingsStats label={m.settings_section_plugins_title()} stats={[
+        { id: 'installed', label: m.plugins_group_installed(), value: String(summary.installed) },
+        { id: 'bundled', label: m.plugins_builtin(), value: String(summary.bundled) },
+        { id: 'enabled', label: m.plugins_stat_enabled(), value: String(summary.enabled), mode: m.plugins_stat_of({ total: summary.total }) },
+        { id: 'updates', label: m.plugins_stat_updates(), value: String(summary.updates), tone: summary.updates > 0 ? 'warning' : undefined },
+      ]} />}
       {plugins.data.read_only && <div className="flex min-w-0"><StatusDot state="warning" title={m.plugins_read_only()}>{m.plugins_read_only()}</StatusDot></div>}
       {plugins.data.plugin_isolation_advisory && <div className="flex min-w-0" data-advisory="plugin-isolation"><StatusDot state="warning" title={m.plugins_isolation_advisory()}>{m.plugins_isolation_advisory()}</StatusDot></div>}
-      {!installed && <EmptyState compact>{browsing ? m.plugins_catalog_no_installed() : m.plugins_empty()}</EmptyState>}
+      {updatedAll?.context === streamContext && updatedAll.rows.length > 0 && <PluginUpdateAllResults rows={updatedAll.rows} />}
       {installed && <TextInput type="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={m.plugins_filter()} aria-label={m.plugins_filter()} />}
       {installed && list.length === 0 && <EmptyState compact>{m.plugins_filter_empty()}</EmptyState>}
-      <ul className="flex flex-col divide-y divide-border-subtle">
-        {list.map((p) => <InstalledPluginRow key={p.key} plugin={p} editable={editable} open={open === p.key} onOpen={setOpen} updateBusy={updateBusy}
-          updating={update.isPending && update.variables.key === p.key} blockedFindings={scan?.key === p.key && scan.status === 'blocked' ? scan.findings : null} onUpdate={requestUpdate} />)}
-      </ul>
+      {groups && summary
+        ? <PluginGroups groups={groups} bundled={summary.bundled} plugins={list} filtering={q !== ''} browsing={browsing} rowProps={rowProps} updateAll={updateAllButton} autoUpdate={autoUpdate} />
+        : <div className="flex flex-col gap-2">
+          {updateAllButton && <div className="flex justify-end">{updateAllButton}</div>}
+          {autoUpdate && <PluginAutoUpdateRow state={autoUpdate} />}
+          {!installed && <EmptyState compact>{browsing ? m.plugins_catalog_no_installed() : m.plugins_empty()}</EmptyState>}
+          <ul className="flex flex-col divide-y divide-border-subtle">{list.map((p) => <InstalledPluginRow key={p.key} {...rowProps(p)} />)}</ul>
+        </div>}
       <ConfirmDialog open={scan?.status === 'needs_consent'} onOpenChange={(isOpen) => { if (!isOpen) setScan((current) => current === scan && current?.status === 'needs_consent' ? null : current) }}
         title={m.plugins_update_consent()} description={scan?.findings} confirmLabel={m.plugins_update()} cancelLabel={m.cancel()} danger
         onConfirm={() => { if (scan?.status === 'needs_consent') requestUpdate(scan.key, true, scan.consent_token) }} />
@@ -116,7 +136,72 @@ export function PluginsSection() {
   )
 }
 
-type InstalledPlugin = Awaited<ReturnType<typeof api.fetchPlugins>>['plugins'][number]
+type PluginsView = Awaited<ReturnType<typeof api.fetchPlugins>>
+type InstalledPlugin = PluginsView['plugins'][number]
+type PluginGroup = NonNullable<PluginsView['groups']>[number]
+type RowProps = Omit<InstalledPluginRowProps, 'nested'>
+
+/** TAL-2132: each group's symbol and name (layout only; the server decides the groups). */
+const GROUP: Record<PluginGroup['id'], { icon: LucideIcon; label: () => string }> = {
+  installed: { icon: Box, label: m.plugins_group_installed },
+  platforms: { icon: MessageSquare, label: m.plugins_group_platforms },
+  web: { icon: Search, label: m.plugins_group_web },
+  image_gen: { icon: Image, label: m.plugins_group_image_gen },
+  video_gen: { icon: Video, label: m.plugins_group_video_gen },
+  browser: { icon: Globe, label: m.plugins_group_browser },
+  dashboard_auth: { icon: Lock, label: m.plugins_group_dashboard_auth },
+  memory: { icon: Brain, label: m.plugins_group_memory },
+  model_providers: { icon: Cpu, label: m.plugins_group_model_providers },
+  other: { icon: Ellipsis, label: m.plugins_group_other },
+}
+
+/**
+ * TAL-2132: the profile's own plugins, then the Agent's in one collapsible row per group. Groups open on a click and start
+ * closed; while the filter has text every group with a match is open and the rest are hidden.
+ */
+function PluginGroups({ groups, bundled, plugins, filtering, browsing, rowProps, updateAll, autoUpdate }: { groups: PluginGroup[]; bundled: number; plugins: InstalledPlugin[]; filtering: boolean; browsing: boolean; rowProps: (p: InstalledPlugin) => RowProps; updateAll: ReactNode; autoUpdate: PluginAutoUpdateView | undefined }) {
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
+  const byKey = new Map(plugins.map((p) => [p.key, p]))
+  const rows = (group: PluginGroup) => group.plugin_keys.flatMap((key) => byKey.get(key) ?? [])
+  const mine = groups.find((g) => g.id === 'installed')
+  const installedRows = mine ? rows(mine) : []
+  const shown = groups.filter((g) => g.id !== 'installed' && (!filtering || g.plugin_keys.length > 0))
+  const toggle = (id: string) => setExpanded((cur) => { const next = new Set(cur); if (!next.delete(id)) next.add(id); return next })
+  return <>
+    {mine && (!filtering || installedRows.length > 0) && <SettingsGroup id="installed" title={m.plugins_group_installed()} detail={mine.total_count} action={updateAll}>
+      {!filtering && mine.total_count === 0 && <EmptyState compact>{browsing ? m.plugins_catalog_no_installed() : m.plugins_empty()}</EmptyState>}
+      {installedRows.map((p) => <InstalledPluginRow key={p.key} {...rowProps(p)} />)}
+      {autoUpdate && !filtering && <PluginAutoUpdateRow state={autoUpdate} />}
+    </SettingsGroup>}
+    {shown.length > 0 && <SettingsGroup id="bundled" title={m.plugins_builtin()} detail={bundled}>
+      {shown.map((group) => {
+        const isOpen = filtering || expanded.has(group.id)
+        return <div key={group.id} data-plugin-group={group.id}>
+          <PluginGroupRow group={group} open={isOpen} onToggle={() => toggle(group.id)} />
+          {isOpen && <ul id={`plugin-group-${group.id}`} className="flex flex-col divide-y divide-border-subtle border-t border-border-subtle">
+            {rows(group).map((p) => <InstalledPluginRow key={p.key} {...rowProps(p)} nested />)}
+          </ul>}
+        </div>
+      })}
+    </SettingsGroup>}
+  </>
+}
+
+/** One built-in group's disclosure: its symbol, name, the share turned on as a thin meter and a count, and a chevron. */
+function PluginGroupRow({ group, open, onToggle }: { group: PluginGroup; open: boolean; onToggle: () => void }) {
+  const { icon: Icon, label } = GROUP[group.id]
+  const on = group.enabled_count === group.total_count ? m.plugins_group_on({ count: group.enabled_count }) : m.plugins_group_on_of({ enabled: group.enabled_count, total: group.total_count })
+  const Chevron = open ? ChevronDown : ChevronRight
+  return <button type="button" aria-expanded={open} aria-controls={`plugin-group-${group.id}`} onClick={onToggle}
+    className="flex min-h-11 w-full items-center gap-2.5 py-2 text-left text-sm text-text transition-colors hover:text-accent-text focus-visible:outline-2 focus-visible:outline-accent">
+    <Icon size={18} strokeWidth={1.75} aria-hidden="true" data-row-icon="" className="shrink-0 text-muted" />
+    <span className="min-w-0 flex-1 truncate font-medium">{label()}</span>
+    <QuotaMeter thin level="healthy" percent={group.total_count ? 100 * group.enabled_count / group.total_count : 0} marker={null} label={`${label()}, ${on}`} />
+    <span className="shrink-0 text-xs font-medium tabular-nums">{on}</span>
+    <Chevron size={14} aria-hidden="true" className="shrink-0 text-muted" />
+  </button>
+}
+
 interface InstalledPluginRowProps {
   plugin: InstalledPlugin
   editable: boolean
@@ -126,16 +211,16 @@ interface InstalledPluginRowProps {
   updating: boolean
   blockedFindings: string | null
   onUpdate: (key: string) => void
+  /** Inside a built-in group: indented, without the row symbol. */
+  nested?: boolean
 }
 
 // Memoized so typing in the filter renders only the rows entering the list (TAL-1405); each filter answer is a new response.
-const InstalledPluginRow = memo(function InstalledPluginRow({ plugin: p, editable, open, onOpen, updateBusy, updating, blockedFindings, onUpdate }: InstalledPluginRowProps) {
+const InstalledPluginRow = memo(function InstalledPluginRow({ plugin: p, editable, open, onOpen, updateBusy, updating, blockedFindings, onUpdate, nested }: InstalledPluginRowProps) {
   return (
-    <PluginRow id={p.key} title={<>{p.name ?? p.key}{p.version ? <span className="ml-1 text-xs font-normal tabular-nums text-muted">v{p.version}</span> : null}</>} description={`${p.kind ? `${p.kind} · ` : ''}${p.description ?? ''}`} status={<>
-        {p.update?.available && <StatusDot state="warning">{m.plugins_update_available()}</StatusDot>}
-        {p.is_active_provider && <Mark>{m.providers_active()}</Mark>}
-        <StatusDot state={p.enabled !== false ? 'ok' : 'idle'}>{p.enabled !== false ? m.plugins_enabled() : m.plugins_disabled()}{p.activation ? ` · ${p.activation}` : ''}</StatusDot>
-      </>} actions={[
+    <PluginRow id={p.key} icon={nested ? undefined : Box} nested={nested} title={<>{p.name ?? p.key}{p.version ? <span className="ml-1 text-xs font-normal tabular-nums text-muted">{p.version}</span> : null}{p.is_active_provider && <span className="ml-2"><Mark>{m.plugins_in_use()}</Mark></span>}</>}
+      description={p.description ?? ''} note={p.update?.available ? <StatusDot state="warning">{m.plugins_update_available()}</StatusDot> : undefined}
+      status={p.enabled === false ? <span className="text-xs text-muted">{m.plugins_off()}</span> : null} actions={[
         ...(editable && p.update?.available ? [{ label: m.plugins_update(), run: () => onUpdate(p.key), disabled: updateBusy, busy: updating, icon: CircleArrowUp }] : []),
         ...(editable && p.settings?.length ? [{ label: m.settings_title(), run: () => onOpen(open ? null : p.key), expanded: open, icon: Settings2 }] : []),
       ]}>
@@ -152,10 +237,13 @@ type PluginRowAction = RowAction & { icon: NonNullable<RowAction['icon']> }
 /**
  * Installed and catalog entries share the existing Plugins row and disclosure layout; its actions show inline and in its right-click and long-press menu.
  * TAL-2082: the description keeps to one truncated line, with the full text in its `title` and the DOM for screen readers.
+ * TAL-2132: `note` takes the description's line (an update waiting); `icon` leads the row, and a `nested` row is indented under its group.
  */
-function PluginRow({ id, title, description, status, actions, children }: { id?: string; title: ReactNode; description: string; status: ReactNode; actions: PluginRowAction[]; children?: ReactNode }) {
-  const row = <li className="py-2" data-plugin={id}><div className="flex flex-wrap items-center gap-3">
-    <div className="min-w-0 flex-1 basis-40"><div className="text-sm font-medium text-text">{title}</div><div className="truncate text-xs text-muted" title={description || undefined}>{description}</div></div>
+function PluginRow({ id, icon: Icon, nested, title, description, note, status, actions, children }: { id?: string; icon?: LucideIcon | undefined; nested?: boolean | undefined; title: ReactNode; description: string; note?: ReactNode; status: ReactNode; actions: PluginRowAction[]; children?: ReactNode }) {
+  const row = <li className={cn('list-none py-2', nested && 'pl-7')} data-plugin={id}><div className="flex flex-wrap items-center gap-3">
+    {Icon && <Icon size={18} strokeWidth={1.75} aria-hidden="true" data-row-icon="" className="shrink-0 text-muted" />}
+    <div className="min-w-0 flex-1 basis-40"><div className="flex min-w-0 items-baseline text-sm font-medium text-text">{title}</div>
+      {note ? <div className="flex min-w-0">{note}</div> : <div className="truncate text-xs text-muted" title={description || undefined}>{description}</div>}</div>
     {status}
     <RowActionButtons actions={actions} />
   </div>{children}</li>
@@ -174,12 +262,12 @@ function PluginAutoUpdateRow({ state }: { state: PluginAutoUpdateView }) {
   })
   const enabled = effects[AUTO_UPDATE_RESOURCE]?.value ?? state.auto_apply
   const status = state.inactive_reason === 'no_gateway' ? m.gateway_not_running() : state.inactive_reason === 'checks_off' ? m.plugins_auto_update_checks_off() : enabled ? m.plugins_auto_update_every({ hours: state.check_hours }) : null
-  return <div className="border-b border-border-subtle"><FieldRow label={m.plugins_auto_update()} htmlFor="plugins-auto-update" inline>
+  return <SettingRow label={m.plugins_auto_update()} htmlFor="plugins-auto-update" icon={Clock}>
     <div className="flex items-center gap-3">
       {status && (state.inactive_reason ? <StatusDot state="warning">{status}</StatusDot> : <span className="text-xs tabular-nums text-muted">{status}</span>)}
       <Switch id="plugins-auto-update" checked={enabled} onCheckedChange={(checked) => save.mutate(checked)} />
     </div>
-  </FieldRow></div>
+  </SettingRow>
 }
 
 const UPDATE_ALL_STATUS: Record<PluginUpdateAllRow['status'], { label: () => string; state: DotState }> = {
