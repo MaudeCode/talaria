@@ -56,28 +56,38 @@ export function Chip({ icon, label, title, tooltip = title, className, disabled,
  */
 export function ModelChip({ model, optionId, servedModel = null, onChange, row }: { model: string | null; optionId: string | null; servedModel?: string | null; onChange: (model: string, provider: string | null) => void; row?: boolean }) {
   const models = useModelsQuery()
-  const [open, setOpen] = useState(false)
-  const searchInput = useRef<HTMLInputElement>(null)
-  const popup = useRef<HTMLDivElement | null>(null)
   const selected = catalogEntryById(models.data, model ? optionId : models.data?.default_option_id)
   const configured = selected ? selected.label ?? selected.id : (model ?? models.data?.default_model) || '—'
   const label = servedModel ?? configured
   const title = servedModel && !row ? m.composer_model_served({ configured, served: servedModel }) : m.composer_control_model()
   const group = selected && models.data?.groups.find((g) => g.models.includes(selected))
   const icon = group ? <ProviderIcon icon={group.icon} className={row ? 'size-5' : undefined} /> : <Cpu size={16} aria-hidden="true" />
-  const pick = (id: string, provider: string | null) => { setOpen(false); onChange(id, provider) }
+  return <ModelPickerPopover selectedId={selected?.id ?? ''} onPick={onChange}
+    trigger={<Chip id={row ? undefined : 'composerModelChip'} icon={icon} label={label} title={title} tooltip={servedModel && !row ? title : `${title}: ${label}`} row={row} className="composer-model-chip" />} />
+}
+
+/**
+ * TAL-1858's model picker in a popover on `trigger`, shared by the composer's model chip and Settings › Models' Change
+ * button (TAL-2137). `onPick` gets the entry's `provider_id`, or null for a typed custom id.
+ */
+export function ModelPickerPopover({ trigger, selectedId, onPick, label = m.composer_control_model(), side = 'top', align = 'start' }: { trigger: React.ReactElement; selectedId: string; onPick: (model: string, provider: string | null) => void; label?: string; side?: 'top' | 'bottom'; align?: 'start' | 'end' }) {
+  const models = useModelsQuery()
+  const [open, setOpen] = useState(false)
+  const searchInput = useRef<HTMLInputElement>(null)
+  const popup = useRef<HTMLDivElement | null>(null)
+  const pick = (id: string, provider: string | null) => { setOpen(false); onPick(id, provider) }
   return (
     // TAL-807: opening the picker reads the catalog again, so a rate limit or quota level reflects the server now.
     <Popover.Root open={open} onOpenChange={(next) => { setOpen(next); if (next) void models.refetch() }}>
-      <Popover.Trigger render={<Chip id={row ? undefined : 'composerModelChip'} icon={icon} label={label} title={title} tooltip={servedModel && !row ? title : `${title}: ${label}`} row={row} className="composer-model-chip" />} />
+      <Popover.Trigger render={trigger} />
       <Popover.Portal>
-        <Popover.Positioner side="top" align="start" sideOffset={6} sticky className="z-[1400] outline-none">
+        <Popover.Positioner side={side} align={align} sideOffset={6} sticky className="z-[1400] outline-none">
           {/* TAL-1625: a touch or pen opening focuses the popup, so no software keyboard covers the list; a printable key then goes to search. */}
-          <Popover.Popup aria-label={m.composer_control_model()} initialFocus={(type) => type === 'touch' || type === 'pen' ? popup.current : searchInput.current}
+          <Popover.Popup aria-label={label} initialFocus={(type) => type === 'touch' || type === 'pen' ? popup.current : searchInput.current}
             ref={(node: HTMLDivElement | null) => { popup.current = node; return node ? lockBackgroundScroll(node) : undefined }}
             onKeyDown={(event) => { if (event.target !== searchInput.current && event.key.length === 1 && event.key !== ' ' && !event.ctrlKey && !event.metaKey && !event.altKey) searchInput.current?.focus() }}
             className={cn('rounded-lg border border-border bg-surface text-sm text-text shadow-md outline-none', POPUP_MOTION)}>
-            <ModelPickerContent selectedId={selected?.id ?? ''} searchInput={searchInput} onClose={() => setOpen(false)}
+            <ModelPickerContent selectedId={selectedId} searchInput={searchInput} onClose={() => setOpen(false)}
               onSelect={(id) => pick(id, catalogEntryById(models.data, id)?.provider_id ?? null)} onCustom={(id) => pick(id, null)} />
           </Popover.Popup>
         </Popover.Positioner>

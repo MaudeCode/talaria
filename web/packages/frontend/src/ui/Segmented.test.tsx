@@ -41,6 +41,17 @@ describe('Segmented (TAL-2131)', () => {
     expect(onChange.mock.calls.map(([v]) => v)).toEqual(['b', 'c', 'a', 'c', 'a'])
   })
 
+  it('checks no option for a value it does not offer, keeps one Tab stop, and lets any option be picked (TAL-2137)', async () => {
+    const onChange = vi.fn()
+    render(<><button type="button">Before</button><Segmented label="Mode" options={OPTIONS} value="z" onChange={onChange} /></>)
+    expect(screen.getAllByRole('radio').map((r) => r.getAttribute('aria-checked'))).toEqual(['false', 'false', 'false'])
+    await userEvent.click(screen.getByRole('button', { name: 'Before' }))
+    await userEvent.tab()
+    expect(screen.getByRole('radio', { name: 'Alpha' })).toHaveFocus()
+    await userEvent.click(screen.getByRole('radio', { name: 'Alpha' }))
+    expect(onChange).toHaveBeenCalledExactlyOnceWith('a')
+  })
+
   it('selects a clicked option and ignores input while disabled', async () => {
     const onChange = vi.fn()
     const { rerender } = render(<Segmented label="Mode" options={OPTIONS} value="a" onChange={onChange} />)

@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Settings › Models in Talaria Web leads with the main model's name and a Change button, offers reasoning effort side by side, and lists task models in a one-line table where changed tasks carry a dot and Reset all appears only when something is changed.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

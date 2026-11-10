@@ -1640,7 +1640,6 @@
 	"settings_label_api_redact": "Redakce citlivých dat v odpovědích API",
 	"settings_label_auto_scroll_follow": "Automatické sledování nového obsahu",
 	"settings_label_auto_title_refresh": "Adaptivní obnovení názvu",
-	"settings_label_auxiliary_models": "Pomocné modely",
 	"settings_label_busy_placeholder_hint": "Zobrazit nápovědu zaneprázdněného zástupného symbolu",
 	"settings_label_chat_activity_display_mode": "Zobrazení aktivity",
 	"settings_label_check_updates": "Kontrolovat aktualizace",

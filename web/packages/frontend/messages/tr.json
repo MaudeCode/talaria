@@ -1608,7 +1608,6 @@
 	"settings_label_api_redact": "API yanıtlarında hassas verileri gizle",
 	"settings_label_auto_scroll_follow": "Yeni içeriği otomatik takip et",
 	"settings_label_auto_title_refresh": "Uyarlanabilir başlık yenileme",
-	"settings_label_auxiliary_models": "Yardımcı Modeller",
 	"settings_label_busy_placeholder_hint": "Show busy placeholder hint",
 	"settings_label_chat_activity_display_mode": "Activity display",
 	"settings_label_check_updates": "Güncellemeleri kontrol edin",

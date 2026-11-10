@@ -1,6 +1,6 @@
 import { catalogGroupLabel, catalogModelSections, ModelOptionContent } from '../../lib/modelEntry'
-import { useState, type ReactNode } from 'react'
-import { Check, ChevronDown, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-react'
+import { Fragment, useState, type ReactNode } from 'react'
+import { Check, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { fetchAuxiliaryModels } from '../../api/endpoints'
 import { auxResource, useAuxiliaryModelsQuery, useModelsQuery, useSetAuxiliaryModel, useSetDelegation } from '../../app/queries'
@@ -12,7 +12,8 @@ import { RowActionButtons } from '../../ui/RowActionsMenu'
 import { ConfirmDialog } from '../../ui/Dialog'
 import { ReasoningChip, reasoningLevelLabel } from '../composer/chips'
 import { Switch, TextInput } from '../../ui/Field'
-import { Row, RowList, SectionHeader } from '../../ui/List'
+import { SectionHeader } from '../../ui/List'
+import { Dot } from '../../ui/Badge'
 import { SettingLink, SettingRow, SettingsGroup } from './SettingsRows'
 import { Select } from '../../ui/Select'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
@@ -28,7 +29,9 @@ const RESET = { ...AUTO, reasoning_reset: true }
 
 /**
  * Settings > Auxiliary Models (TAL-1285): the server-owned task slots (TAL-388), each edited inline. The task list and
- * the catalog load together and independently; a refresh or a failed refresh keeps what was already shown.
+ * the catalog load together and independently; a refresh or a failed refresh keeps what was already shown. TAL-2137: the
+ * tasks are a Task/Model table, one line each, with the changed ones counted in the header and marked by an accent dot;
+ * a row opens its editor in the table row under it.
  */
 export function AuxiliaryModelsSection() {
   const aux = useAuxiliaryModelsQuery()
@@ -39,37 +42,58 @@ export function AuxiliaryModelsSection() {
   const effects = useResourceEffects<DelegationSettings>()
   const tasks = withEffects(aux.data?.tasks ?? [], (t) => auxResource(t.task), effects).map((t) => 'reasoning_reset' in t ? { ...t, reasoning: { ...t.reasoning, saved: null, inherited: true } } : t)
   const delegation = effects[auxResource('delegation')]?.value ?? aux.data?.delegation
-  if (!aux.data) return aux.isError ? <ErrorState error={aux.error} onRetry={() => { void aux.refetch() }} /> : <LoadingState />
+  // Counted from the shown slots, so a pick or Reset All moves the count at once (TAL-2161 moves it to a server `changed` field).
+  const changed = (t: AuxTask) => !t.is_auto || !t.reasoning.inherited || (t.task === 'delegation' && !!delegation && delegation.configured !== 'default')
+  const count = tasks.filter(changed).length
+  // Reset All also clears a removed plugin's leftover override, which no listed task shows; a pending reset hides it at once.
+  const resettable = count > 0 || (aux.data?.unlisted_overrides === true && !tasks.some((t) => 'reasoning_reset' in t))
+  const title = m.settings_group_task_models()
   return (
-    <div className="flex flex-col gap-3">
+    <SettingsGroup id="auxiliary" title={title} detail={aux.data && m.settings_task_models_changed({ n: count, total: tasks.length })}
+      action={resettable ? <IconButton variant="ghost" label={m.settings_btn_reset_aux_models()} disabled={delegation?.can_edit === false} onClick={() => setConfirmReset(true)}><RotateCcw aria-hidden="true" /></IconButton> : null}>
       {aux.isError && <ErrorState error={aux.error} onRetry={() => { void aux.refetch() }} />}
-      <RowList aria-label={m.settings_label_auxiliary_models()}>
-        {tasks.map((t) => {
-          const open = editing === t.task
-          return (
-            <Row key={t.task}>
-              <button type="button" aria-expanded={open} className="flex w-full items-center gap-3 rounded-md px-2 py-1 text-left hover:bg-hover" onClick={() => setEditing(open ? null : t.task)}>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm text-text">{t.label}</span>
-                  {t.task !== 'delegation' && <span className="block text-xs text-muted">{t.description}</span>}
-                  {t.task === 'delegation' && delegation ? <span className="block text-xs text-text">{delegation.configured}</span> : <TaskValue task={t} />}
-                </span>
-                <ChevronDown size={16} className={cn('shrink-0 text-muted transition-transform', open && 'rotate-180')} aria-hidden="true" />
-              </button>
-              {open && (
-                <div className="px-2">
-                  {t.task === 'delegation' && delegation
-                    ? <DelegationEditor key={delegation.configured} task={t} state={delegation} models={models} onDone={() => setEditing(null)} />
-                    : <div className="flex flex-col gap-3"><ReasoningControl task={t} /><AuxiliaryModelPicker task={t} models={models} /></div>}
-                </div>
-              )}
-            </Row>
-          )
-        })}
-      </RowList>
-      <div className="flex justify-end">
-        <IconButton variant="default" label={m.settings_btn_reset_aux_models()} disabled={delegation?.can_edit === false} onClick={() => setConfirmReset(true)}><RotateCcw aria-hidden="true" /></IconButton>
-      </div>
+      {!aux.data ? !aux.isError && <LoadingState /> : (
+        <table aria-label={title} className="w-full table-fixed text-sm">
+          <thead>
+            <tr className="text-left text-xs text-muted">
+              <th scope="col" className="w-1/2 py-1.5 font-normal">{m.settings_task_models_task()}</th>
+              <th scope="col" className="py-1.5 text-right font-normal">{m.settings_task_models_model()}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tasks.map((t) => {
+              const open = editing === t.task
+              const toggle = () => setEditing(open ? null : t.task)
+              return (
+                <Fragment key={t.task}>
+                  {/* The row takes the click; the Task cell's button is its keyboard stop and names it, and its click bubbles here. */}
+                  <tr title={t.description} data-task={t.task} className="cursor-pointer border-t border-border-subtle hover:bg-hover" onClick={toggle}>
+                    <td className="py-0">
+                      <button type="button" aria-expanded={open} aria-controls={`aux-editor-${t.task}`} className="flex min-h-10 w-full min-w-0 items-center gap-2 text-left text-text outline-none focus-visible:outline-2 focus-visible:outline-accent">
+                        <Dot state={changed(t) ? 'changed' : 'idle'} />
+                        <span className="truncate">{t.label}</span>
+                      </button>
+                    </td>
+                    <td className="py-0 pl-3 text-right">
+                      {t.task === 'delegation' && delegation ? <DelegationValue state={delegation} /> : <TaskValue task={t} changed={changed(t)} />}
+                    </td>
+                  </tr>
+                  {open && (
+                    <tr id={`aux-editor-${t.task}`} data-task-editor={t.task}>
+                      <td colSpan={2} className="pb-4">
+                        <p className="pb-2 text-xs text-muted">{t.description}</p>
+                        {t.task === 'delegation' && delegation
+                          ? <DelegationEditor key={delegation.configured} task={t} state={delegation} models={models} onDone={() => setEditing(null)} />
+                          : <div className="flex flex-col gap-3"><ReasoningControl task={t} /><AuxiliaryModelPicker task={t} models={models} /></div>}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              )
+            })}
+          </tbody>
+        </table>
+      )}
       <ConfirmDialog
         open={confirmReset}
         onOpenChange={setConfirmReset}
@@ -80,21 +104,30 @@ export function AuxiliaryModelsSection() {
         danger
         onConfirm={() => reset.mutate({ task: '__reset__', model: '', tasks: tasks.map((t) => t.task), shown: RESET, delegation: delegation ? { ...delegation, configured: 'default', fixed_model_active: true } : undefined })}
       />
-    </div>
+    </SettingsGroup>
   )
 }
 
-/** "Auto · main model" or the pinned provider/model, then a saved effort; the server flags a pinned model missing from the catalog. */
-function TaskValue({ task }: { task: AuxTask }) {
-  const model = [task.provider_label, task.value_label].filter(Boolean).join(' · ')
-  const effort = task.reasoning.inherited ? '' : ` · ${task.reasoning.saved === null ? '' : reasoningLevelLabel(task.reasoning.saved)}`
+/**
+ * The Model cell: a changed slot's model in the text colour, else "Auto · model" muted; then a saved effort. The provider
+ * moves to `title`; the server flags a pinned model missing from the catalog.
+ */
+function TaskValue({ task, changed }: { task: AuxTask; changed: boolean }) {
+  const effort = task.reasoning.inherited || task.reasoning.saved === null ? null : reasoningLevelLabel(task.reasoning.saved)
+  const value = [task.is_auto ? m.auxiliary_models_auto() : null, task.value_label, effort].filter(Boolean).join(' · ')
   return (
-    <span className="mt-0.5 flex min-w-0 items-center gap-2 text-xs text-text">
-      <span className="truncate">{task.is_auto ? <><span className="font-medium text-accent-text">{m.auxiliary_models_auto()}</span>{model && ` · ${model}`}</> : model}{effort}</span>
-      {!task.in_catalog && <span className="shrink-0 text-muted">{m.auxiliary_models_not_in_catalog()}</span>}
-
+    <span className={cn('flex min-w-0 items-center justify-end gap-2', changed ? 'text-text' : 'text-muted')} title={task.provider_label || undefined}>
+      <span className="truncate">{value}</span>
+      {!task.in_catalog && <span className="shrink-0 text-xs text-muted">{m.auxiliary_models_not_in_catalog()}</span>}
     </span>
   )
+}
+
+/** The Delegation row's Model cell: how many routes its route mode holds, else the mode's name ("Default"); TAL-2161 moves it to the server. */
+function DelegationValue({ state }: { state: DelegationSettings }) {
+  const routes = state.configured === 'model_map' ? state.model_map.options ?? [] : state.configured === 'profile_routes' ? state.profile_routes.profiles ?? [] : null
+  const label = routes ? m.delegation_routes_count({ count: routes.length }) : state.backends.find((b) => b.name === state.configured)?.label ?? state.configured
+  return <span className="block truncate text-muted">{label}</span>
 }
 
 /** The slot's effort through the shared reasoning control, offering only the server's options for the slot's route. */

@@ -662,6 +662,20 @@
 	"delegation_route_provider": "Provider",
 	"delegation_route_tier": "Service tier",
 	"delegation_routes": "Model routes",
+	"delegation_routes_count": [
+		{
+			"declarations": [
+				"input count"
+			],
+			"selectors": [
+				"count"
+			],
+			"match": {
+				"count=1": "{count} route",
+				"count=*": "{count} routes"
+			}
+		}
+	],
 	"delegation_ultrafast": "Ultrafast",
 	"delete": "Delete",
 	"delete_confirm": "Delete {name}?",
@@ -2637,6 +2651,7 @@
 	"settings_group_sessions_shown": "Sessions shown",
 	"settings_group_sign_in": "Sign-in",
 	"settings_group_skins_from_extensions": "From extensions",
+	"settings_group_task_models": "Task models",
 	"settings_group_text_layout": "Text and layout",
 	"settings_group_transcript": "Transcript",
 	"settings_group_versions": "Versions",
@@ -2660,7 +2675,6 @@
 	"settings_label_auto_apply_updates": "Install Web updates automatically",
 	"settings_label_auto_scroll_follow": "Auto-follow new content",
 	"settings_label_auto_title_refresh": "Adaptive title refresh",
-	"settings_label_auxiliary_models": "Auxiliary Models",
 	"settings_label_busy_placeholder_hint": "Show busy placeholder hint",
 	"settings_label_chat_activity_display_mode": "Activity display",
 	"settings_label_chat_width": "Chat width",
@@ -2756,6 +2770,7 @@
 	"settings_menu_group_interface": "Interface",
 	"settings_menu_group_profile": "Profile",
 	"settings_menu_group_server": "Server",
+	"settings_model_change": "Change model",
 	"settings_model_speed": "Speed",
 	"settings_model_speed_fast": "Fast",
 	"settings_model_speed_hint": "Faster tiers may cost more. Applies to chats using the default model.",
@@ -2775,7 +2790,7 @@
 	"settings_plugins_meta": "View installed Hermes plugins and the lifecycle hooks they register. This panel is read-only.",
 	"settings_plugins_title": "Plugins",
 	"settings_preferences_saved": "Preferences saved",
-	"settings_reasoning_effort": "Default reasoning effort",
+	"settings_reasoning_effort": "Reasoning effort",
 	"settings_save_btn": "Save Settings",
 	"settings_save_failed": "Save failed: ",
 	"settings_saved": "Settings saved",
@@ -2829,6 +2844,9 @@
 	"settings_tab_plugins": "Plugins",
 	"settings_tab_preferences": "Preferences",
 	"settings_tab_system": "System",
+	"settings_task_models_changed": "{n} of {total} changed",
+	"settings_task_models_model": "Model",
+	"settings_task_models_task": "Task",
 	"settings_title": "Settings",
 	"settings_tts_engine_browser": "Browser",
 	"settings_tts_sample_play": "Play a sample",

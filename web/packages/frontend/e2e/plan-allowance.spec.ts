@@ -42,10 +42,11 @@ for (const legacy of [true, false]) test(`${legacy ? 'legacy' : 'native'} model 
   await page.route('**/api/models', (route) => route.fulfill({ json: { default_model: 'saved', default_option_id: 'saved', groups: [group] } }))
   await page.route('**/api/model/auxiliary', (route) => route.fulfill({ json: { main: { model: 'saved', provider: 'nous' }, tasks: [] } }))
   await page.goto('/settings/models'); await settle(page)
-  await page.getByRole('combobox', { name: 'Default Model', exact: true }).click()
+  // TAL-2137: the main model's Change button opens the model picker on the saved model's provider, its sections labelled.
+  await page.getByRole('button', { name: 'Change model', exact: true }).click()
   await expect(page.getByRole('option')).toHaveCount(4)
   if (!legacy) {
-    await expect(page.getByText('Nous · Recommended', { exact: true })).toBeVisible()
+    await expect(page.getByRole('dialog', { name: 'Default Model' }).getByText('Recommended', { exact: true })).toBeVisible()
     await expect(page.getByRole('option', { name: 'Large model with a long catalog name (via Nous) · Large · Allowance exhausted', exact: true })).toBeVisible()
     await expect(page.getByRole('option', { name: 'Saved model · Allowance unknown', exact: true })).toBeVisible()
   }

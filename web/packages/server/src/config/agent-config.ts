@@ -977,6 +977,16 @@ export function auxiliaryModels(config: Config, tiers: SpeedTier[], slots: AuxSl
   }
 }
 
+/** Route blocks the Agent neither lists nor owns: disabled or removed plugins' tasks. Unknown ownership (no listing) names none. */
+const auxiliaryOrphans = (aux: Dict, slots: string[], reserved: string[] | null): string[] =>
+  reserved ? Object.keys(aux).filter((key) => isDict(aux[key]) && !slots.includes(key) && !reserved.includes(key)) : []
+
+/** TAL-2137: whether such an orphan still holds a pin or a saved effort, which Reset All clears though no listed task shows it. */
+export function unlistedAuxiliaryOverrides(config: Config, slots: AuxSlot[], reserved: string[] | null): boolean {
+  const aux = dict(config.auxiliary)
+  return auxiliaryOrphans(aux, slots.map((slot) => slot.key), reserved).some((key) => { const route = dict(aux[key]); return !isAutoRoute(route) || !!str(route.reasoning_effort).trim() })
+}
+
 /** A picked `/api/models` id (`@provider:model`) splits into its provider and bare model; a qualified id must agree with an explicit provider. */
 function auxiliarySelection(providerRaw: string, modelRaw: string): [string, string] {
   const provider = providerRaw.trim() || 'auto'
@@ -1042,8 +1052,7 @@ export async function setAuxiliaryModel(store: AgentConfig, home: string, task: 
       for (const retired of RETIRED_AUX_TASK_SLOTS) Reflect.deleteProperty(aux, retired)
       // A route block the Agent neither lists nor owns is a disabled or removed plugin's task: Reset All clears it too, so
       // re-enabling the plugin does not bring back a pin the user reset. Unknown ownership (no listing) leaves it alone.
-      const { reserved } = listing
-      const orphans = reserved ? Object.keys(aux).filter((key) => isDict(aux[key]) && !slots.includes(key) && !reserved.includes(key)) : []
+      const orphans = auxiliaryOrphans(aux, slots, listing.reserved)
       const reset = (entry: Dict): Dict => { Reflect.deleteProperty(entry, 'reasoning_effort'); return entry }
       for (const key of [...slots, ...orphans]) if (key !== DELEGATION_TASK) aux[key] = reset(autoSlot(aux[key]))
       config.auxiliary = aux

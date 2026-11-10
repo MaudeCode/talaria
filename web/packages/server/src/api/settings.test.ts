@@ -1290,9 +1290,16 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       expect(((dictOf((await json(res)).auxiliary).tasks ?? []) as Task[]).find((t) => t.task === 'side_task')).toMatchObject({ is_auto: false, model: 'claude-sonnet-4-6' })
       // Reset All also clears a disabled plugin's leftover pin, never the Agent's own unlisted routes or settings.
       const pinned = { provider: 'anthropic', model: 'claude-opus-4-7' }
-      reset({ ...configs.get(s.state), auxiliary: { ...dictOf(configs.get(s.state)?.auxiliary), gone_task: pinned, goal_judge: pinned, free_only: true } })
+      // TAL-2137: the Agent's own unlisted route (goal_judge) is not a leftover; only the plugin's pin keeps Reset All offered.
+      reset({ ...configs.get(s.state), auxiliary: { ...dictOf(configs.get(s.state)?.auxiliary), goal_judge: pinned, free_only: true } })
+      expect((await json(await s.get('/api/model/auxiliary'))).unlisted_overrides).toBe(false)
+      reset({ ...configs.get(s.state), auxiliary: { ...dictOf(configs.get(s.state)?.auxiliary), gone_task: { provider: 'auto', model: '', reasoning_effort: 'high' } } })
+      expect((await json(await s.get('/api/model/auxiliary'))).unlisted_overrides).toBe(true)
+      reset({ ...configs.get(s.state), auxiliary: { ...dictOf(configs.get(s.state)?.auxiliary), gone_task: pinned } })
+      expect((await json(await s.get('/api/model/auxiliary'))).unlisted_overrides).toBe(true)
       res = await post(s, '/api/model/set', { scope: 'auxiliary', task: '__reset__', provider: 'auto', model: '' })
       expect(configs.get(s.state)?.auxiliary).toMatchObject({ side_task: { provider: 'auto', model: '' }, gone_task: { provider: 'auto', model: '' }, goal_judge: pinned, free_only: true })
+      expect((await json(await s.get('/api/model/auxiliary'))).unlisted_overrides).toBe(false)
       expect(await task('side_task')).toMatchObject({ is_auto: true, value_label: opusLabel })
 
       mkdirSync(profileHome, { recursive: true })

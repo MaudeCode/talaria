@@ -1605,7 +1605,6 @@
 	"settings_label_api_redact": "Ocultar datos sensibles en las respuestas de la API",
 	"settings_label_auto_scroll_follow": "Seguir automáticamente el contenido nuevo",
 	"settings_label_auto_title_refresh": "Actualización adaptativa del título",
-	"settings_label_auxiliary_models": "Modelos auxiliares",
 	"settings_label_busy_placeholder_hint": "Show busy placeholder hint",
 	"settings_label_chat_activity_display_mode": "Activity display",
 	"settings_label_check_updates": "Buscar actualizaciones",

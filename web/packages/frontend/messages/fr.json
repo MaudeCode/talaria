@@ -1634,7 +1634,6 @@
 	"settings_label_api_redact": "Masquer les données sensibles dans les réponses API",
 	"settings_label_auto_scroll_follow": "Suivre automatiquement le nouveau contenu",
 	"settings_label_auto_title_refresh": "Rafraîchissement adaptatif du titre",
-	"settings_label_auxiliary_models": "Modèles auxiliaires",
 	"settings_label_busy_placeholder_hint": "Show busy placeholder hint",
 	"settings_label_chat_activity_display_mode": "Affichage des activités",
 	"settings_label_check_updates": "Vérifier les mises à jour",
