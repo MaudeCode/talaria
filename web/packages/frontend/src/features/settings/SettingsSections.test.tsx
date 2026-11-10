@@ -49,26 +49,35 @@ import { SpeechSection } from './SpeechSection'
 import { AUDIO_KEY, DEFAULT_AUDIO, previewSound } from '../voice/completionAudio'
 import { speak, stopSpeaking } from '../voice/tts'
 import { ToolsSection } from './ToolsSection'
+import { ChatPageSchema, type ChatPage } from '../../contracts/url'
+import { renderRouted } from '../../test/router'
 
-const renderSection = (ui: ReactElement, canManage = true, qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })) => {
+const withProviders = (ui: ReactElement, canManage: boolean, qc: QueryClient) => {
   const bootstrap = { ...DEFAULT_BOOTSTRAP, auth: { ...DEFAULT_BOOTSTRAP.auth, can_manage_server: canManage } }
-  return render(<QueryClientProvider client={qc}><BootstrapContext.Provider value={bootstrap}>{ui}</BootstrapContext.Provider></QueryClientProvider>)
+  return <QueryClientProvider client={qc}><BootstrapContext.Provider value={bootstrap}>{ui}</BootstrapContext.Provider></QueryClientProvider>
 }
+const renderSection = (ui: ReactElement, canManage = true, qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })) => render(withProviders(ui, canManage, qc))
+/** Every Settings page, Chat's sub-pages (TAL-2138) included, under a router for their links. */
+const PAGES = SettingsSectionSchema.options.flatMap((section) => [{ section, id: section }, ...(section === 'chat' ? ChatPageSchema.options.map((page) => ({ section, page, id: `chat/${page}` })) : [])])
+const renderPage = ({ section, page }: { section: SettingsSectionId; page?: ChatPage }, qc: QueryClient) => renderRouted(withProviders(<SettingsSection section={section} page={page} />, true, qc))
 
 /**
- * TAL-1691, TAL-2100, TAL-2075: every field the retired Preferences, Conversation, System and Models & Providers pages edited, and
- * the one section that now edits it. A key is a settings field; a selector is a control with no settings field of its own.
+ * TAL-1691, TAL-2100, TAL-2075, TAL-2138: every field the retired Preferences, Conversation, System and Models & Providers pages
+ * edited, and the one page that now edits it (`chat/<page>` for a Chat sub-page). A key is a settings field; a selector is a
+ * control with no settings field of its own.
  */
-const PLACEMENT: Record<string, SettingsSectionId> = {
-  send_key: 'chat', default_message_mode: 'chat', large_text_paste_as_attachment: 'chat', chat_activity_display_mode: 'chat', transparent_stream_event_timestamps: 'chat',
-  worklog_details_expanded_default: 'chat', auto_scroll_follow: 'chat', render_user_markdown: 'chat', fade_text_effect: 'chat', virtualize_transcript: 'chat',
-  show_busy_placeholder_hint: 'chat', show_token_usage: 'chat', show_tps: 'chat',
-  max_tokens: 'chat', compression_prepare_ahead: 'chat', group_discussion_max_rounds: 'chat', group_discussion_max_messages: 'chat', auto_title_refresh_every: 'chat',
-  sidebar_density: 'navigation', pinned_sessions_limit: 'navigation', session_endless_scroll: 'chat', session_jump_buttons: 'chat', show_conversation_outline: 'chat', project_quick_create_buttons: 'navigation',
+const PLACEMENT: Record<string, string> = {
+  send_key: 'chat', default_message_mode: 'chat', large_text_paste_as_attachment: 'chat', chat_activity_display_mode: 'chat', transparent_stream_event_timestamps: 'chat/advanced',
+  worklog_details_expanded_default: 'chat', auto_scroll_follow: 'chat', render_user_markdown: 'chat', fade_text_effect: 'chat/advanced', virtualize_transcript: 'chat/advanced',
+  show_busy_placeholder_hint: 'chat/advanced', show_token_usage: 'chat', show_tps: 'chat/advanced',
+  max_tokens: 'chat/advanced', compression_prepare_ahead: 'chat/advanced', group_discussion_max_rounds: 'chat', group_discussion_max_messages: 'chat', auto_title_refresh_every: 'chat/advanced',
+  sidebar_density: 'navigation', pinned_sessions_limit: 'navigation', session_endless_scroll: 'chat/advanced', session_jump_buttons: 'chat', show_conversation_outline: 'chat', project_quick_create_buttons: 'navigation',
   show_cli_sessions: 'navigation', show_claude_code_sessions: 'navigation', show_cron_sessions: 'navigation', show_webhook_sessions: 'navigation', show_kanban_sessions: 'navigation',
   show_previous_messaging_sessions: 'navigation', hidden_tabs: 'navigation', show_titlebar_profile: 'navigation', show_sidebar_feedback: 'navigation', show_quota_chip: 'chat',
-  workspace_panel_open: 'navigation', workspace_todos_tab: 'navigation', new_chat_on_workspace_switch: 'navigation',
-  terminal_auto_expand_on_output: 'navigation', screen_reader_mode: 'navigation',
+  hide_composer_model: 'chat', hide_composer_reasoning: 'chat', hide_composer_profile: 'chat', hide_composer_workspace: 'chat', hide_composer_toolsets: 'chat',
+  hide_composer_attach: 'chat', hide_composer_mic: 'chat', hide_composer_context: 'chat', hide_composer_yolo: 'chat',
+  workspace_panel_open: 'chat/workspace-panel', workspace_todos_tab: 'chat/workspace-panel', new_chat_on_workspace_switch: 'chat/workspace-panel',
+  terminal_auto_expand_on_output: 'chat/workspace-panel', screen_reader_mode: 'chat/workspace-panel',
   default_model: 'models', '#settingsModel': 'models', '[data-group="auxiliary"]': 'models', '[data-group="quota-thresholds"]': 'providers',
   notifications_enabled: 'notifications', sound_enabled: 'notifications', '#completionSound': 'notifications',
   agent_approvals: 'tools',
@@ -79,39 +88,43 @@ const PLACEMENT: Record<string, SettingsSectionId> = {
 const isControl = (key: string) => key.startsWith('#') || key.startsWith('[')
 const CONTROLS = Object.keys(PLACEMENT).filter(isControl)
 
-it('edits every retired Preferences, Conversation, System and Models & Providers field on exactly its one new section (TAL-1691, TAL-2100)', async () => {
+it('edits every retired Preferences, Conversation, System and Models & Providers field on exactly its one new page (TAL-1691, TAL-2100, TAL-2138)', async () => {
   // jsdom has no matchMedia; Appearance reads the colour scheme.
   vi.stubGlobal('matchMedia', (query: string) => ({ matches: false, media: query, addEventListener: () => undefined, removeEventListener: () => undefined }))
   const settings = Object.fromEntries(Object.keys(PLACEMENT).filter((key) => !isControl(key)).map((key) => [key, false]))
   Object.assign(settings, { provider_quota_thresholds: {}, hidden_tabs: [], trusted_link_hosts: [], group_discussion_max_rounds: 3, group_discussion_max_messages: 10, auth_enabled: false })
-  const found: Record<string, SettingsSectionId[]> = {}
-  for (const section of SettingsSectionSchema.options) {
+  const found: Record<string, string[]> = {}
+  for (const page of PAGES) {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     qc.setQueryData(keys.settings, settings)
     reads.clear()
-    const view = renderSection(<SettingsSection section={section} />, true, qc)
-    await waitFor(() => expect(view.container.querySelector(`[data-section="${section}"]`)).not.toBeNull())
+    const view = await renderPage(page, qc)
+    await waitFor(() => expect(view.container.querySelector(`[data-section="${page.section}"]`)).not.toBeNull())
     for (const control of CONTROLS) if (view.container.querySelector(control)) reads.add(control)
-    for (const key of reads) if (key in PLACEMENT) (found[key] ??= []).push(section)
+    // Chat reads whether the Agent offers prepared compaction to count Advanced's rows; only Advanced edits it.
+    for (const key of reads) if (key in PLACEMENT && !(page.id === 'chat' && key === 'compression_prepare_ahead')) (found[key] ??= []).push(page.id)
     view.unmount()
   }
   vi.unstubAllGlobals()
   expect(found).toEqual(Object.fromEntries(Object.entries(PLACEMENT).map(([key, section]) => [key, [section]])))
 })
 
-/** TAL-2075, TAL-2076: every Chat and Navigation row by its label, in page order, with the `data-group` it sits in. */
-const GROUPS: Record<'chat' | 'navigation', [string, string][]> = {
+/** TAL-2075, TAL-2076, TAL-2138: every Chat, Chat sub-page and Navigation row by its label, in page order, with the `data-group` it sits in. */
+const GROUPS: Record<string, [string, string][]> = {
   chat: [
-    ['Send Key', 'composer'], ['Default message mode', 'composer'], ['Attach large pasted text as file', 'composer'], ['Show busy placeholder hint', 'composer'],
-    ['Show provider quota chip in composer', 'composer'],
-    ['Model', 'composer-chips'], ['Reasoning', 'composer-chips'], ['Profile', 'composer-chips'], ['Workspace', 'composer-chips'], ['Toolsets', 'composer-chips'],
-    ['Attach button', 'composer-controls'], ['Microphone', 'composer-controls'], ['Context ring', 'composer-controls'], ['YOLO mode notice', 'composer-controls'],
-    ['Activity display', 'transcript'], ['Show Transparent Stream event timestamps', 'transcript'], ['Open Worklog details automatically', 'transcript'],
-    ['Render markdown in user messages', 'transcript'], ['Fade text effect', 'transcript'], ['Show token usage', 'transcript'], ['Show token speed (TPS)', 'transcript'],
-    ['Auto-follow new content', 'scrolling'], ['Virtualize long transcripts (experimental)', 'scrolling'], ['Load older messages while scrolling up', 'scrolling'],
-    ['Show session jump buttons', 'scrolling'], ['Show conversation outline', 'scrolling'],
-    ['Max output tokens', 'limits'], ['Prepare compaction in the background', 'limits'], ['Adaptive title refresh', 'limits'],
-    ['Group Chat rounds', 'group-discussions'], ['Group Chat replies', 'group-discussions'],
+    ['Send with', 'composer'], ['While the agent is working', 'composer'], ['Attach long pasted text as a file', 'composer'],
+    ['Activity display', 'transcript'], ['Open worklog details automatically', 'transcript'], ['Format Markdown in my messages', 'transcript'], ['Show token usage', 'transcript'],
+    ['Follow new content', 'transcript'], ['Conversation outline', 'transcript'], ['Jump buttons', 'transcript'],
+    ['Rounds per discussion', 'group-discussions'], ['Messages per discussion', 'group-discussions'],
+  ],
+  'chat/workspace-panel': [
+    ['Keep workspace panel open by default', 'panel'], ['Show Todos tab in workspace panel', 'panel'], ['Start a new chat when switching workspace', 'panel'],
+    ['Auto-expand terminal on output', 'terminal'], ['Terminal screen reader mode', 'terminal'],
+  ],
+  'chat/advanced': [
+    ['Name the busy action in the composer', 'transcript-advanced'], ['Event timestamps', 'transcript-advanced'], ['Fade in streamed text', 'transcript-advanced'],
+    ['Show tokens per second', 'transcript-advanced'], ['Render only visible messages (experimental)', 'transcript-advanced'], ['Load earlier messages while scrolling', 'transcript-advanced'],
+    ['Max output tokens', 'limits'], ['Prepare compaction in the background', 'limits'], ['Refresh chat titles', 'limits'],
   ],
   navigation: [
     ['Pinned conversations limit', 'chats'], ['Sidebar density', 'chats'], ['Show per-project new-conversation buttons', 'chats'],
@@ -120,24 +133,38 @@ const GROUPS: Record<'chat' | 'navigation', [string, string][]> = {
     ['Tasks', 'destinations'], ['Kanban', 'destinations'], ['Skills', 'destinations'], ['Memory', 'destinations'], ['Discussions', 'destinations'], ['Todos', 'destinations'],
     ['Decisions', 'destinations'], ['Insights', 'destinations'],
     ['Sidebar feedback button', 'buttons'], ['Show profile switcher in titlebar', 'buttons'],
-    ['Keep workspace panel open by default', 'workspace'], ['Show Todos tab in workspace panel', 'workspace'], ['Start a new chat when switching workspace', 'workspace'],
-    ['Auto-expand terminal on output', 'workspace'], ['Terminal screen reader mode', 'workspace'],
   ],
 }
 
-it('puts each Chat and Navigation row in the group where it applies, each once with its own labelled control (TAL-2075)', async () => {
+it('puts each Chat and Navigation row in the group where it applies, each once with its own labelled control (TAL-2075, TAL-2138)', async () => {
   const settings = { hidden_tabs: ['kanban'], compression_prepare_ahead: true, group_discussion_max_rounds: 3, group_discussion_max_messages: 10 }
-  for (const section of ['chat', 'navigation'] as const) {
+  for (const page of PAGES.filter((p) => p.id in GROUPS)) {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     qc.setQueryData(keys.settings, settings)
-    const view = renderSection(<SettingsSection section={section} />, true, qc)
-    await waitFor(() => expect(view.container.querySelector(`[data-section="${section}"]`)).not.toBeNull())
-    const labels = [...view.container.querySelectorAll<HTMLLabelElement>(`[data-section="${section}"] label`)]
-    expect(labels.map((label) => [label.textContent, label.closest('[data-group]')?.getAttribute('data-group')]), section).toEqual(GROUPS[section])
+    const view = await renderPage(page, qc)
+    await waitFor(() => expect(view.container.querySelector(`[data-section="${page.section}"]`)).not.toBeNull())
+    const labels = [...view.container.querySelectorAll<HTMLLabelElement>(`[data-section="${page.section}"] label`)]
+    expect(labels.map((label) => [label.textContent, label.closest('[data-group]')?.getAttribute('data-group')]), page.id).toEqual(GROUPS[page.id])
     for (const label of labels) expect(document.getElementById(label.htmlFor), label.textContent ?? '').not.toBeNull()
-    for (const [name, group] of GROUPS[section]) if (group === 'destinations') expect(screen.getByRole('switch', { name })).toBeInTheDocument()
+    for (const [name, group] of GROUPS[page.id]!) if (group === 'destinations') expect(screen.getByRole('switch', { name })).toBeInTheDocument()
     view.unmount()
   }
+})
+
+it('keeps Chat to the composer drawing and at most 14 rows, with links that count their sub-pages\' rows (TAL-2138)', async () => {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  qc.setQueryData(keys.settings, { compression_prepare_ahead: null, group_discussion_max_rounds: 3, group_discussion_max_messages: 10 })
+  const view = await renderPage({ section: 'chat' }, qc)
+  const page = await waitFor(() => view.container.querySelector<HTMLElement>('[data-section="chat"]')!)
+  expect([...page.querySelectorAll('section[data-group]')].map((g) => g.getAttribute('data-group'))).toEqual(['composer', 'transcript', 'group-discussions', 'more'])
+  expect(page.querySelector('[data-group="composer"] [data-composer-preview]')).not.toBeNull()
+  expect(page.querySelectorAll('[data-group] label').length + page.querySelectorAll('[data-group="more"] a').length).toBeLessThanOrEqual(14)
+  // The Agent without a prepared-compaction choice leaves Advanced one row short.
+  expect(within(page).getByRole('link', { name: /Workspace panel/ })).toHaveTextContent('5 settings')
+  expect(within(page).getByRole('link', { name: /Advanced/ })).toHaveTextContent('8 settings')
+  for (const name of ['Send with', 'While the agent is working', 'Activity display']) expect(within(page).getByRole('radiogroup', { name })).toBeInTheDocument()
+  expect(within(page).getAllByRole('radio').map((r) => r.textContent)).toEqual(['Enter', 'Ctrl Enter', 'Steer', 'Queue', 'Interrupt', 'Compact', 'Every step', 'Final answer only'])
+  expect(page.querySelector('[role="switch"][id^="settings-hide_composer_"]')).toBeNull()
 })
 
 describe('settings pages', () => {
@@ -154,15 +181,19 @@ describe('settings pages', () => {
     expect(saveSettings).toHaveBeenLastCalledWith({ trusted_link_hosts: ['docs.example.com', 'API.Example.com'] })
   })
 
-  it('shows the profile\'s agent approvals setting as the server reports it and writes it (TAL-1169)', async () => {
+  it('shows the profile\'s agent approvals setting below the tabs as the server reports it and writes it (TAL-1169, TAL-2138)', async () => {
     vi.mocked(fetchSettings).mockResolvedValueOnce({ default_model: 'claude-sonnet-4-6', agent_approvals: true })
     renderSection(<ToolsSection />)
     const toggle = await screen.findByRole('switch', { name: 'Let agents approve or deny other chats\' commands' })
     expect(toggle).toBeChecked()
-    const approvals = screen.getByRole('region', { name: 'Approvals' })
-    expect(within(approvals).getByRole('heading', { name: 'Approvals' })).toBeVisible()
+    const approvals = screen.getByRole('region', { name: 'Agent permissions' })
+    expect(within(approvals).getByRole('heading', { name: 'Agent permissions' })).toBeVisible()
     expect(approvals).toContainElement(toggle)
     expect(approvals.querySelector('#settings-agent_approvals')).not.toBeNull()
+    // TAL-2138: the tab strip comes first, the approvals group after the tab panel.
+    const tools = document.querySelector('[data-section="tools"]')!
+    expect(tools.firstElementChild).toContainElement(screen.getByRole('tablist'))
+    expect(screen.getByRole('tabpanel').compareDocumentPosition(approvals) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     await userEvent.click(toggle)
     expect(saveSettings).toHaveBeenLastCalledWith({ agent_approvals: false })
   })

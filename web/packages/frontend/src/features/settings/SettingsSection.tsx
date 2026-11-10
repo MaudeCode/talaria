@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
-import type { ToolsTab, SettingsSection as Section } from '../../contracts/url'
+import type { ChatPage, ToolsTab, SettingsSection as Section } from '../../contracts/url'
 import { SECTION_LABEL } from './SettingsLayout'
 import { SETTINGS_INDEX } from './settingsIndex'
 import { LoadingState } from '../../ui/States'
@@ -10,6 +10,7 @@ import { SETTINGS_TITLE } from './SettingsGroup'
 
 const AppearanceSection = lazy(() => import('./AppearanceSection').then((module) => ({ default: module.AppearanceSection })))
 const ChatSection = lazy(() => import('./ChatSection').then((module) => ({ default: module.ChatSection })))
+const ChatSubPage = lazy(() => import('./ChatSection').then((module) => ({ default: module.ChatSubPage })))
 const SidebarSection = lazy(() => import('./SidebarSection').then((module) => ({ default: module.SidebarSection })))
 const ModelsSection = lazy(() => import('./ModelsSection').then((module) => ({ default: module.ModelsSection })))
 const ProvidersPage = lazy(() => import('./ProvidersSection').then((module) => ({ default: module.ProvidersPage })))
@@ -25,14 +26,17 @@ const WorkspacesPage = lazy(() => import('../workspaces/WorkspacesPage').then((m
 const LogsPage = lazy(() => import('../logs/LogsPage').then((module) => ({ default: module.LogsPage })))
 const AboutSection = lazy(() => import('./AboutSection').then((module) => ({ default: module.AboutSection })))
 
-/** `tab` and `onTabChange` reach the one section with tabs, Tools; `name` the profile Profiles shows in detail; `providerId` the provider Providers shows on its own page (TAL-2135). */
-interface SectionProps { tab?: ToolsTab | undefined; onTabChange?: ((tab: ToolsTab) => void) | undefined; name?: string | undefined; providerId?: string | undefined }
+/**
+ * `tab` and `onTabChange` reach the one section with tabs, Tools; `name` the profile Profiles shows in detail; `providerId` the
+ * provider Providers shows on its own page (TAL-2135); `page` the Chat sub-page shown (TAL-2138).
+ */
+interface SectionProps { tab?: ToolsTab | undefined; onTabChange?: ((tab: ToolsTab) => void) | undefined; name?: string | undefined; providerId?: string | undefined; page?: ChatPage | undefined }
 /** `row` is the URL's `#<row id>` and `visit` the navigation that set it. */
 interface RevealProps { row?: string | undefined; visit?: string | undefined }
 
 const SECTIONS: Partial<Record<Section, (props: SectionProps) => ReactNode>> = {
   appearance: () => <AppearanceSection />,
-  chat: () => <ChatSection />,
+  chat: ({ page }) => page === undefined ? <ChatSection /> : <ChatSubPage page={page} />,
   navigation: () => <SidebarSection />,
   notifications: () => <NotificationsSection />,
   speech: () => <SpeechSection />,
@@ -110,8 +114,8 @@ export function SettingsSection({ section, row, visit, ...props }: { section: Se
     <div ref={page} className="flex-1 min-h-0 overflow-y-auto" data-scroll-restoration-id="settings-main">
       {/* TAL-2131: the content column is 640px at most; Logs keeps the wide column its lines need. */}
       <div className={cn('settings-main w-full mx-auto min-w-0 pt-6 px-7 pb-12 max-[769px]:pt-4 max-[769px]:px-3.5 max-[769px]:pb-10', section === 'logs' ? 'max-w-[820px]' : 'max-w-[696px] max-[769px]:max-w-[668px]')}>
-        {/* A provider's own page (TAL-2135) puts its back link and name where the section title sits. */}
-        {props.providerId === undefined && <div className="settings-section-head flex items-center justify-between gap-4 mb-5 pb-3.5 border-b border-border">
+        {/* A provider's own page (TAL-2135) and a Chat sub-page (TAL-2138) put their back link and name where the section title sits. */}
+        {props.providerId === undefined && props.page === undefined && <div className="settings-section-head flex items-center justify-between gap-4 mb-5 pb-3.5 border-b border-border">
           <div ref={setHelp} className="flex min-w-0 items-center">
             <h1 className={SETTINGS_TITLE}>{SECTION_LABEL[section]()}</h1>
           </div>

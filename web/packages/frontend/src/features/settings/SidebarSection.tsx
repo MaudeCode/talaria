@@ -5,7 +5,7 @@ import { LoadingState, ErrorState } from '../../ui/States'
 import { NAV_ITEMS, FIXED_TABS } from '../../shell/nav'
 import { SettingNumber, SettingRow, SettingSelect, SettingToggle as Toggle, SettingsGroup, SETTINGS_PAGE } from './SettingsRows'
 
-/** TAL-1691, TAL-2100: Settings > Navigation, what the chats list, the sidebar and the workspace panel show. TAL-2135: quota pins live on each provider's page. */
+/** TAL-1691, TAL-2100: Settings > Navigation, what the chats list and the sidebar show. TAL-2135: quota pins live on each provider's page; TAL-2138: the workspace panel's rows on Chat. */
 export function SidebarSection() {
   const { settings, set } = useSettingField(['hidden_tabs'])
   if (settings.isPending) return <LoadingState />
@@ -42,13 +42,6 @@ export function SidebarSection() {
       <SettingsGroup id="buttons" title={m.settings_group_buttons()}>
         <Toggle label={m.settings_label_sidebar_feedback()} settingKey="show_sidebar_feedback" />
         <Toggle label={m.settings_label_show_titlebar_profile()} settingKey="show_titlebar_profile" />
-      </SettingsGroup>
-      <SettingsGroup id="workspace" title={m.settings_group_workspace_panel()}>
-        <Toggle label={m.settings_label_workspace_panel_open()} settingKey="workspace_panel_open" />
-        <Toggle label={m.settings_label_workspace_todos_tab()} settingKey="workspace_todos_tab" />
-        <Toggle label={m.settings_label_new_chat_on_workspace_switch()} settingKey="new_chat_on_workspace_switch" />
-        <Toggle label={m.settings_label_terminal_auto_expand()} settingKey="terminal_auto_expand_on_output" />
-        <Toggle label={m.settings_label_terminal_screen_reader()} hint={m.settings_desc_terminal_screen_reader()} settingKey="screen_reader_mode" />
       </SettingsGroup>
     </div>
   )

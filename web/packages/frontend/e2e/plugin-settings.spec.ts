@@ -49,7 +49,7 @@ test('plugin filter narrows the installed list and each description keeps to one
   const section = page.locator('[data-section="plugins"]')
   const rows = section.locator('[data-plugin]')
   await expect(rows).toHaveCount(12)
-  await expect(page.getByRole('region', { name: 'Approvals' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Agent permissions' })).toBeVisible()
   const description = rows.first().getByText(long, { exact: true })
   await expect(description).toHaveAttribute('title', long)
   const lineHeight = await description.evaluate((el) => parseFloat(getComputedStyle(el).lineHeight))
