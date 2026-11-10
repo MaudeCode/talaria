@@ -87,8 +87,8 @@ function ProviderFigures({ p, sources }: { p: Provider; sources: QuotaSource[] }
     id: `${s.source_id}-${String(i)}`, label: several ? `${s.account_label ?? s.source_id} · ${w.label}` : w.label,
     value: formatPercent(locale, w.remaining_percent), mode: m.providers_figure_left(), tone: LEVEL_TONE[w.display_level ?? 'healthy'],
   }]))
-  const first = sources[0]
-  const paced = first?.pace_window_index == null ? undefined : first.windows?.[first.pace_window_index]
+  const headline = sources.find((s) => s.provider_headline)
+  const paced = headline?.pace_window_index == null ? undefined : headline.windows?.[headline.pace_window_index]
   const models = p.models_total ?? p.models?.length
   const stats: SettingsStat[] = [
     ...windows,
@@ -108,7 +108,10 @@ function ProviderQuota({ sources, pins, onRefresh }: { sources: QuotaSource[]; p
     <SettingsGroup id="quota" title={m.providers_group_quota()} action={<IconButton variant="ghost" label={m.providers_quota_refresh()} onClick={onRefresh}><RefreshCw aria-hidden="true" /></IconButton>}>
       {sources.map((s) => (s.windows?.length ?? 0) === 0
         ? <div key={s.source_id} className="py-3"><ProviderQuotaPace source={s} showAccount={several} /></div>
-        : s.windows?.map((w, i) => (
+        : [
+          // A plan's name, paused and credits status stay beside the windows its gauges became.
+          s.plan_usage && <div key={`${s.source_id}-plan`} className="py-3"><ProviderQuotaPace source={s} showAccount={several} gauges={false} /></div>,
+          ...(s.windows ?? []).map((w, i) => (
           <div key={`${s.source_id}-${String(i)}`} className="flex flex-col gap-1.5 py-3" data-quota-window={w.label} data-level={w.display_level}>
             <div className="flex items-baseline justify-between gap-3">
               <span className="min-w-0 truncate text-sm font-medium text-text">{several ? `${s.account_label ?? s.source_id} · ${w.label}` : w.label}</span>
@@ -116,7 +119,7 @@ function ProviderQuota({ sources, pins, onRefresh }: { sources: QuotaSource[]; p
             </div>
             <QuotaWindowMeter window={w} source={s} mode="remaining" locale={locale} />
           </div>
-        )))}
+        ))])}
       {sources.map((s) => {
         const on = pinned.includes(s.source_id)
         const id = `providerSidebarQuota-${s.source_id}`

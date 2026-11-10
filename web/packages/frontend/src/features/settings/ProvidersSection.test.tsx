@@ -133,6 +133,19 @@ describe('ProvidersSection', () => {
     expect(router.state.location.state.__TSR_index).toBe(0)
   })
 
+  it("headlines the source the server picks for a provider with several accounts, not the first listed (TAL-2135)", async () => {
+    providersResponse.current = { active_provider: 'anthropic', providers: [anthropic] }
+    const [first] = quotas.sources as Record<string, unknown>[]
+    const work = structuredClone(first!) as { source_id: string; account_label: string; windows: Record<string, unknown>[] } & Record<string, unknown>
+    Object.assign(work, { source_id: 'qsrc_work', account_label: 'Work', provider_headline: true })
+    Object.assign(work.windows[1]!, { remaining_percent: 12, used_percent: 88 })
+    quotaResponse.current = { ...quotas, sources: [{ ...first, provider_headline: false }, work] }
+    await renderAt()
+    const a = await waitFor(() => { const el = block('anthropic'); expect(within(el).getByRole('meter')).toBeInTheDocument(); return el })
+    expect(within(a).getByText('12%')).toBeInTheDocument()
+    expect(within(a).getByRole('meter')).toHaveAttribute('aria-valuenow', '12')
+  })
+
   it('keeps Your providers while the filter narrows the providers to add, in server order (TAL-2077, TAL-2127, TAL-2135)', async () => {
     const openai = { id: 'openai', display_name: 'OpenAI', has_key: false, configured: false }
     const zai = { id: 'zai', display_name: 'Z.AI', has_key: true, configured: true }
@@ -449,6 +462,17 @@ describe('ProviderDetail (TAL-2135)', () => {
     const signIn = await found('[data-group="sign-in"]')
     expect(within(signIn).getByText('Not configured').closest('[data-status]')).toHaveAttribute('data-status', 'idle')
     expect(within(signIn).queryByText('Configured')).toBeNull()
+  })
+
+  it("keeps a plan's paused and credits status beside the windows its gauges became (TAL-2135)", async () => {
+    providersResponse.current = { active_provider: 'nous', providers: [{ id: 'nous', display_name: 'Nous', has_key: true, configured: true, is_oauth: true }] }
+    const plan = { kind: 'usage_window', plan: 'Pro', gauges: [{ label: 'week', title: 'Weekly', scope: 'all', left_fraction: 0.4, resets_at_ms: null, style: 'red' }], top_tier_model_ids: [], subscription_model_ids: [], featured_model_ids: [], paused_reason: 'allowance', credits_pay: true }
+    quotaResponse.current = quotasWith([{ source_id: 'q-nous', provider_id: 'nous', status: 'available', plan_usage: plan, plan_stale: false, provider_headline: true, headline_window_index: 0, windows: [{ label: 'Weekly', used_percent: 60, remaining_percent: 40, reset_at: null, detail: null, window_seconds: 604800, pace: null, forecast: null, display_level: 'healthy' }] }])
+    await renderAt('/settings/providers/nous')
+    const quota = await found('[data-group="quota"]')
+    await waitFor(() => expect(within(quota).getByText('Included usage paused')).toBeInTheDocument())
+    expect(within(quota).getByText('Pro')).toBeInTheDocument()
+    expect(within(quota).getByRole('meter')).toHaveAttribute('aria-valuenow', '40')
   })
 
   it('shows an unknown provider as an error with the way back', async () => {

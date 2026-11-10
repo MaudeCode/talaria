@@ -909,6 +909,7 @@ export const QuotaSourceSchema = z.looseObject({
   is_active_provider: z.boolean().optional(), quota: Json.optional(), windows: z.array(QuotaWindowSchema).optional(), balances: Json.optional(), plan: Json.optional(), details: Json.optional(), unavailable_reason: Json.optional(), retry_after: Json.optional(), fetched_at: Json.optional(),
   pace_window_index: QuotaWindowIndex.describe('The window a pace-coloured widget shows: the weekly one, else the first 5h/session window.'),
   headline_window_index: QuotaWindowIndex.describe('TAL-1870: the window a one-figure row shows: the pace window, else the first; null without windows.'),
+  provider_headline: z.boolean().optional().describe('TAL-2135: the source a provider\'s one-figure row shows among its accounts in this read: the one whose headline window has the least remaining, else its first.'),
   display_name: z.string().optional().describe('TAL-1870: the provider, with its account when that tells two sources of one provider apart.'),
   status_message: z.string().nullable().optional().describe('TAL-1870: the server text a source status shows: its unavailable reason, else its message; null leaves the status word.'),
   display_level: QuotaLevelSchema.optional().describe('TAL-1870: the effective level of a source with no window to show; the source status outranks its urgency.'),

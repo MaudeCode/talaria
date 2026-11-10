@@ -183,7 +183,8 @@ type CostHistory = ReturnType<typeof useOpenRouterCostHistory>['data']
 function ConfiguredProvider({ p, catalogUnavailable, sources, cost, spend, onRefresh, refreshBusy }: { p: Provider; catalogUnavailable: boolean; sources: QuotaSource[]; cost: CostHistory; spend: number | null; onRefresh: (id: string) => void; refreshBusy: boolean }) {
   const locale = useLocale()
   const name = p.display_name ?? p.id
-  const source = sources[0]
+  // The account the server headlines for this provider (`provider_headline`).
+  const source = sources.find((s) => s.provider_headline)
   const w = source?.headline_window_index == null ? undefined : source.windows?.[source.headline_window_index]
   const left = w?.remaining_percent ?? null
   const budget = cost?.monthly_budget ?? null

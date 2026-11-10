@@ -254,6 +254,20 @@ export function quotaSummary(providers: Dict[], active: string | null, sources: 
   }
 }
 
+/** TAL-2135: marks each provider's `provider_headline` source: the one whose headline window has the least remaining, else its first. */
+export function withProviderHeadlines<T extends QuotaSourceRow>(rows: T[]): (T & { provider_headline: boolean })[] {
+  const left = (s: T) => {
+    const i = s.headline_window_index as number | null | undefined
+    return finite((i == null ? undefined : (s.windows as { remaining_percent?: unknown }[] | undefined)?.[i])?.remaining_percent) ?? Infinity
+  }
+  const best = new Map<string, T>()
+  for (const s of rows) {
+    const current = best.get(s.provider_id)
+    if (!current || left(s) < left(current)) best.set(s.provider_id, s)
+  }
+  return rows.map((s) => ({ ...s, provider_headline: best.get(s.provider_id) === s }))
+}
+
 const FIVE_HOUR_WINDOW_S = 18_000
 const WEEK_WINDOW_S = 604_800
 
@@ -1869,7 +1883,7 @@ export class ProviderCatalog {
     if (currentSource !== source) { poolUnknown = true; sources = [] }
     const latestMembership = this.lastQuotaSources.get(cacheKey)?.membership
     const availability = this.availability(currentSource, !poolUnknown, sources.length > 0)
-    const rows = sources.map(withQuotaDisplay)
+    const rows = withProviderHeadlines(sources.map(withQuotaDisplay))
     // A `?source=` read answers one row, so only a full read carries the page's figures.
     const openRouter = status.providers.some((p) => p.id === 'openrouter' && p.configured === true)
     const summary = requested ? undefined : quotaSummary(status.providers, active, rows, openRouter ? monthSpend(this.readCostSnapshots(profileHome), isoAt(at).slice(0, 7)) : null)

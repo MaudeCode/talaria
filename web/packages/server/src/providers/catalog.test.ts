@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { AgentConfig, parseProviderQualifiedModel } from '../config/agent-config.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, WEB_ROOT, type TestServer } from '../test/harness.js'
-import { ProviderCatalog, quotaSummary, repairSessionModel, type ModelEntry, type ModelGroup, type ModelsCatalog } from './catalog.js'
+import { ProviderCatalog, quotaSummary, repairSessionModel, withProviderHeadlines, type ModelEntry, type ModelGroup, type ModelsCatalog } from './catalog.js'
 import { OAUTH_PROVIDERS, PROVIDER_MODELS } from './tables.js'
 import { writeEnvFile } from '../test/env-file.js'
 import { SIDECAR_METHODS, type SidecarResult } from '@maudecode/talaria-web-contracts'
@@ -930,6 +930,12 @@ describe('Settings › Providers figures (TAL-2135)', () => {
     expect(quotaSummary(providers, 'anthropic', [source('anthropic', [window(62, 'healthy')])], null).lowest).toEqual({ source_id: 'anthropic', percent_remaining: 62, level: 'healthy' })
     const several = [source('anthropic', [window(62, 'healthy'), window(21, 'warning')]), source('codex', [window(null, 'unavailable'), window(40, 'healthy')])]
     expect(quotaSummary(providers, 'anthropic', several, null).lowest).toEqual({ source_id: 'anthropic', percent_remaining: 21, level: 'warning' })
+  })
+
+  it('headlines, per provider, the account whose headline window has the least left, else its first', () => {
+    const account = (id: string, provider: string, remaining: number | null, headline: number | null = 0) => ({ ...source(id, [window(remaining, 'healthy')]), provider_id: provider, headline_window_index: headline })
+    const rows = withProviderHeadlines([account('a-personal', 'anthropic', 62), account('a-work', 'anthropic', 21), account('codex', 'codex', null), account('codex-2', 'codex', 50, null), account('zai', 'zai', 80)])
+    expect(Object.fromEntries(rows.map((r) => [r.source_id, r.provider_headline]))).toEqual({ 'a-personal': false, 'a-work': true, codex: true, 'codex-2': false, zai: true })
   })
 
   it('carries the month\'s OpenRouter spend with its currency', () => {

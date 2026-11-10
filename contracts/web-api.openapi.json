@@ -95196,6 +95196,10 @@
                             ],
                             "description": "TAL-1870: the window a one-figure row shows: the pace window, else the first; null without windows."
                           },
+                          "provider_headline": {
+                            "type": "boolean",
+                            "description": "TAL-2135: the source a provider's one-figure row shows among its accounts in this read: the one whose headline window has the least remaining, else its first."
+                          },
                           "display_name": {
                             "type": "string",
                             "description": "TAL-1870: the provider, with its account when that tells two sources of one provider apart."

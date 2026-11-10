@@ -112,6 +112,7 @@
       "fetched_at": "2026-09-28T07:59:30Z",
       "pace_window_index": 1,
       "headline_window_index": 1,
+      "provider_headline": true,
       "display_name": "Anthropic",
       "status_message": "Anthropic account limits loaded.",
       "display_level": "warning",
