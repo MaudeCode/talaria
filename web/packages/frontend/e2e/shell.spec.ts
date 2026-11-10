@@ -41,12 +41,14 @@ test.describe('shell', () => {
   })
 
   // TAL-2088: a hub page's header, toolbar and body share one left and right edge, so the toolbar lines up with the list.
-  test('hub header, toolbar and body share one gutter', async ({ page }) => {
+  test('hub header, toolbar and body share one gutter', async ({ page }, testInfo) => {
     for (const path of ['/skills', '/memory', '/kanban', '/insights']) {
       await page.goto(path)
       await settle(page)
+      // A phone drops a header that only repeats the titlebar (TAL-2089); the parts still drawn share the gutter.
       const pads = await page.locator('#main .hub-page').evaluate((hub) => ['.main-view-header', '.hub-toolbar', '.main-view-body']
-        .map((part) => { const style = getComputedStyle(hub.querySelector(part)!); return `${style.paddingLeft} ${style.paddingRight}` }))
+        .map((part) => hub.querySelector(part)!).filter((part) => part.getBoundingClientRect().width > 1)
+        .map((part) => { const style = getComputedStyle(part); return `${style.paddingLeft} ${style.paddingRight}` }))
       expect(new Set(pads).size, `${path} header / toolbar / body padding: ${pads.join(' / ')}`).toBe(1)
     }
     // Skills: the heading, the search field and the first row start at one edge.
@@ -54,11 +56,41 @@ test.describe('shell', () => {
     await page.goto('/skills')
     await settle(page)
     const left = async (selector: string) => Math.round((await page.locator(selector).first().boundingBox())!.x)
-    expect([await left('#main .main-view-title'), await left('#skillsSearch'), await left('#skillsList > li')]).toEqual(Array(3).fill(await left('#main .main-view-title')))
+    const edges = [await left('#skillsSearch'), await left('#skillsList > li')]
+    if (testInfo.project.name !== 'mobile') edges.push(await left('#main .main-view-title'))
+    expect(edges).toEqual(Array(edges.length).fill(edges[0]))
     // Logs sits in a Settings section, whose heading is its header: the toolbar starts at that heading's edge.
     await page.goto('/settings/logs')
     await settle(page)
     expect(await left('#main .hub-toolbar')).toBe(await left('#main .settings-section-title'))
+  })
+
+  // TAL-2089: on a phone the titlebar already names the hub, so the page keeps its h1 for assistive technology only.
+  test('a hub names itself once on a phone', async ({ page }, testInfo) => {
+    const phone = testInfo.project.name === 'mobile'
+    const shown = async (selector: string) => ((await page.locator(selector).boundingBox())?.width ?? 0) > 1
+    await page.route('**/api/skills', (route) => route.fulfill({ json: { skills: [{ name: 'demo', description: 'Example', category: 'apple', disabled: false }] } }))
+    await page.route('**/api/skills/usage', (route) => route.fulfill({ json: { usage: {} } }))
+    await page.route('**/api/skills/content?**', (route) => route.fulfill({ json: { success: true, name: 'demo', content: 'Skill body.', path: 'apple/demo/SKILL.md' } }))
+    // Kanban has actions, Skills has neither help nor actions.
+    for (const [path, title, actions] of [['/kanban', 'Kanban', true], ['/skills', 'Skills', false]] as const) {
+      await page.goto(path)
+      await settle(page)
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText([title])
+      expect(await shown('#main .main-view-title'), `${path} title`).toBe(!phone)
+      expect(await shown('#main .main-view-header'), `${path} header row`).toBe(!phone || actions)
+      for (const button of actions && phone ? await page.locator('#main .main-view-actions button').all() : []) {
+        const box = (await button.boundingBox())!
+        expect(Math.min(box.width, box.height), `${path} ${await button.getAttribute('aria-label')}`).toBeGreaterThanOrEqual(44)
+      }
+      await page.screenshot({ path: testInfo.outputPath(`hub-title${path.replace('/', '-')}.png`) })
+    }
+    // A skill's detail is titled with its own name, so that title and the way back stay visible.
+    await page.getByRole('button', { name: /demo/ }).click()
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(['demo'])
+    expect(await shown('#main .main-view-title'), 'detail title').toBe(true)
+    await expect(page.getByRole('button', { name: 'Back' })).toBeVisible()
+    await page.screenshot({ path: testInfo.outputPath('hub-title-skill-detail.png') })
   })
 
   test('settings route renders and navigates between sections', async ({ page }) => {
