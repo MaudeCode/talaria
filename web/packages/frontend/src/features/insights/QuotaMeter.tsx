@@ -22,6 +22,9 @@ const STATUS_LABEL: Record<string, () => string> = {
 
 export const quotaSourceName = (s: QuotaSource): string => s.provider_label ?? s.provider_id ?? s.source_id
 
+/** The server's plan name for a source's plan chip (§7), when it sends one as text. */
+export const quotaSourcePlan = (s: QuotaSource | undefined): string | null => typeof s?.plan === 'string' && s.plan ? s.plan : null
+
 /** The server's text for a source's status, else the localized status word. */
 export function quotaStatusText(s: QuotaSource): string {
   const status = s.status ?? 'unavailable'

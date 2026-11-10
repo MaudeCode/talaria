@@ -51,7 +51,7 @@ export function OpenRouterCost() {
   }
   const value = draft ?? (budget === null ? '' : budget.toFixed(2))
   return (
-    <div className="mt-2 flex flex-col gap-2 border-t border-border pt-2" data-provider-cost="openrouter">
+    <div className="flex flex-col gap-2" data-provider-cost="openrouter">
       <div className="flex flex-wrap items-baseline gap-x-2 text-xs">
         <span className="font-medium text-text">{m.provider_cost_chart_title({ n: h.window_days ?? snapshots.length })}</span>
         {h.monthly_pace !== null && h.monthly_pace !== undefined && (

@@ -16,6 +16,9 @@ import { ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
 import { cn } from '../../ui/cn'
+import { Badge } from '../../ui/Badge'
+import { Row, RowList } from '../../ui/List'
+import { quotaSourcePlan } from '../insights/QuotaMeter'
 import { useSettingField } from './useSettingField'
 import { OpenRouterCost } from './OpenRouterCost'
 import { ProviderQuotaPace } from './ProviderQuotaPace'
@@ -61,10 +64,11 @@ export function ProvidersSection() {
       </div>
       {providers.isError && <p role="alert" className="text-warning">{m.oauth_result_unavailable()}</p>}
       {quotaNotice && <p role="status" className="text-xs text-muted">{quotaNotice}</p>}
-      <ul className="flex flex-col">
+      <RowList>
         {providers.data.providers.map((p) => {
           const sources = quotas.data?.sources.filter((s) => s.provider_id === p.id) ?? []
           const quota = sources[0]
+          const plan = quotaSourcePlan(quota)
           const isEditing = editing === p.id
           const hint = p.install_hint
           // One list for the visible controls and the right-click and long-press menu.
@@ -76,10 +80,14 @@ export function ProvidersSection() {
             ...(p.removable === true ? [{ label: m.providers_key_remove(), run: () => saveKey.mutate({ id: p.id, key: null }), danger: true }] : []),
           ]
           return (
-            <RowContextMenu key={p.id} label={m.providers_row_menu()} actions={[refresh, ...actions]} trigger={<li className={cn('border-t border-border py-4 first:border-t-0', p.is_active && 'border-accent-bg-strong')} data-provider={p.id}>
+            <RowContextMenu key={p.id} label={m.providers_row_menu()} actions={[refresh, ...actions]} trigger={<Row data-provider={p.id}>
               <div className="flex flex-wrap items-center gap-2">
                 <div className="min-w-0 flex-1 basis-48">
-                  <div className="text-sm font-medium text-text">{p.display_name ?? p.id}</div>
+                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                    <span className="text-sm font-semibold text-text">{p.display_name ?? p.id}</span>
+                    {plan && <Badge tone="border-border text-muted">{plan}</Badge>}
+                    {p.is_active && <Badge tone="border-accent text-accent-text">{m.provider_quota_active_provider()}</Badge>}
+                  </div>
                   <div className="text-[11px] text-muted">
                     {providers.data.availability?.authoritative === false ? m.catalog_unavailable() : (p.configured ?? p.has_key) ? m.providers_configured() : m.providers_not_configured()}{p.key_source_kind ? ` · ${p.key_source_kind === 'other' ? p.key_source : p.key_source_kind}` : ''}{p.base_url ? ` · ${p.base_url}` : ''}{p.models_total !== undefined ? ` · ${m.providers_models_count({ n: p.models_total })}` : ''}
                     {!quotaNotice && quota?.message ? ` · ${quota.message}` : ''}
@@ -101,7 +109,7 @@ export function ProvidersSection() {
               {sources.map((s) => <ProviderQuotaPace key={s.source_id} source={s} showAccount={sources.length > 1} />)}
               {p.id === 'openrouter' && p.has_key && <OpenRouterCost />}
               {p.models && p.models.length > 0 && (
-                <details className="mt-2">
+                <details>
                   <summary className="cursor-pointer text-xs text-muted">{m.providers_models_count({ n: p.models.length })}</summary>
                   <ul className="mt-1 flex flex-wrap gap-1">
                     {p.models.map((mm) => (
@@ -112,10 +120,10 @@ export function ProvidersSection() {
                   </ul>
                 </details>
               )}
-            </li>} />
+            </Row>} />
           )
         })}
-      </ul>
+      </RowList>
       {install.consent}
     </div>
   )
@@ -124,7 +132,7 @@ export function ProvidersSection() {
 function ProviderKeyForm({ label, hasKey, saving, onSubmit }: { label: string; hasKey: boolean; saving: boolean; onSubmit: (key: string) => void }) {
   const [value, setValue] = useState('')
   return (
-    <form onSubmit={(e) => { e.preventDefault(); if (value.trim()) onSubmit(value.trim()) }} className="mt-2 flex gap-2">
+    <form onSubmit={(e) => { e.preventDefault(); if (value.trim()) onSubmit(value.trim()) }} className="flex gap-2">
       <TextInput type="password" autoComplete="off" autoFocus value={value} onChange={(e) => setValue(e.target.value)} placeholder={hasKey ? m.providers_key_placeholder_replace() : m.providers_key_placeholder_new()} aria-label={label} />
       <Button type="submit" variant="primary" disabled={saving}>{m.save()}</Button>
     </form>
@@ -135,7 +143,7 @@ function ProviderKeyForm({ label, hasKey, saving, onSubmit }: { label: string; h
 function SelfHostedForm({ id, baseUrl, saving, onSubmit }: { id: string; baseUrl: string; saving: boolean; onSubmit: (body: { base_url: string; model: string; api_key?: string }) => void }) {
   const [hosted, setHosted] = useState({ base_url: baseUrl, api_key: '', model: '' })
   return (
-    <form onSubmit={(e) => { e.preventDefault(); onSubmit({ base_url: hosted.base_url.trim(), model: hosted.model.trim(), ...(hosted.api_key.trim() ? { api_key: hosted.api_key.trim() } : {}) }) }} className="mt-2 flex flex-col">
+    <form onSubmit={(e) => { e.preventDefault(); onSubmit({ base_url: hosted.base_url.trim(), model: hosted.model.trim(), ...(hosted.api_key.trim() ? { api_key: hosted.api_key.trim() } : {}) }) }} className="flex flex-col">
       <FieldRow label={m.onboarding_base_url_label()} hint={m.onboarding_base_url_help()} htmlFor={`${id}-base-url`}>
         <TextInput id={`${id}-base-url`} type="url" required autoComplete="off" autoFocus value={hosted.base_url} onChange={(e) => setHosted({ ...hosted, base_url: e.target.value })} placeholder={m.onboarding_base_url_placeholder()} />
       </FieldRow>

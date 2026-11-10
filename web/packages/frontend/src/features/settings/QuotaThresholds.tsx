@@ -5,7 +5,8 @@ import { keys } from '../../api/queryKeys'
 import { useSaveSettings, useSetting } from '../../app/queries'
 import type { QuotaLevel, QuotaThresholds } from '../../contracts'
 import { Button } from '../../ui/Button'
-import { HelpTip, TextInput } from '../../ui/Field'
+import { FieldRow, TextInput } from '../../ui/Field'
+import { SettingsGroup } from './SettingsRows'
 import { showToast } from '../toast/toast'
 import { cn } from '../../ui/cn'
 
@@ -34,19 +35,14 @@ export function QuotaThresholdsForm() {
     })
   }
   return (
-    <form className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3" data-quota-thresholds onSubmit={(e) => { e.preventDefault(); submit() }}>
-      <div className="text-sm font-medium text-text">
-        {m.providers_quota_thresholds_title()}
-        <HelpTip label={m.field_help_about({ label: m.providers_quota_thresholds_title() })}>{m.providers_quota_thresholds_help()}</HelpTip>
-      </div>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+    <form className="flex flex-col gap-2" data-quota-thresholds onSubmit={(e) => { e.preventDefault(); submit() }}>
+      <SettingsGroup id="quota-thresholds" title={m.providers_quota_thresholds_title()} hint={m.providers_quota_thresholds_help()}>
         {FIELDS.map(([key, label, min, max, step]) => (
-          <label key={key} className="flex items-center justify-between gap-2 text-xs text-muted">
-            <span>{label()}</span>
-            <div className="w-20 shrink-0"><TextInput type="number" inputMode="numeric" min={min} max={max} step={step} value={value(key)} onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))} /></div>
-          </label>
+          <FieldRow key={key} label={label()} htmlFor={`quotaThreshold-${key}`} inline>
+            <div className="w-20"><TextInput id={`quotaThreshold-${key}`} type="number" inputMode="numeric" min={min} max={max} step={step} value={value(key)} onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))} /></div>
+          </FieldRow>
         ))}
-      </div>
+      </SettingsGroup>
       <div><Button type="submit">{m.providers_quota_thresholds_save()}</Button></div>
     </form>
   )

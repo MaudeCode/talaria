@@ -28,7 +28,7 @@ test('adds a self-hosted provider, refreshes its models, and picks its model', a
   const row = page.locator('[data-provider="lmstudio"]')
   // TAL-603: the rows render the server's key-source kind and active flag.
   await expect(page.locator('[data-provider="anthropic"]')).toContainText('Configured · env · 0 models')
-  await expect(page.locator('[data-provider="anthropic"]')).toHaveClass(/border-accent-bg-strong/)
+  await expect(page.locator('[data-provider="anthropic"]').getByText('Active provider', { exact: true })).toBeVisible()
   await expect(row).toContainText('Not configured · 0 models')
   await page.locator('[data-section="providers"]').screenshot({ path: testInfo.outputPath('providers-badges.png') })
   await row.getByRole('button', { name: 'Set up' }).click()
@@ -40,7 +40,7 @@ test('adds a self-hosted provider, refreshes its models, and picks its model', a
   await row.getByRole('button', { name: 'Save' }).click()
   expect((await saved).postDataJSON()).toEqual({ provider: 'lmstudio', base_url: URL, model: entry.id })
   await expect(page.locator('[data-section="providers"] strong').first()).toHaveText('lmstudio')
-  await expect(row).toHaveClass(/border-accent-bg-strong/)
+  await expect(row.getByText('Active provider', { exact: true })).toBeVisible()
   await expect(row).toContainText(`Configured · ${URL} · 1 models`)
   await expect(row.getByRole('textbox', { name: 'Base URL' })).toHaveCount(0)
   await row.screenshot({ path: testInfo.outputPath('self-hosted-saved.png') })

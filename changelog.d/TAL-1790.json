@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Settings shows providers, quota thresholds and appearance controls as plain rows instead of boxed cards, and marks the active provider and its plan with chips.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

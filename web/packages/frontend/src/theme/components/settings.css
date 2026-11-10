@@ -19,31 +19,20 @@
 .onboarding-summary strong{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
 .onboarding-summary span{font-size:13px;color:var(--text);word-break:break-word}
 #mainSettings{overflow-y:auto}
-#mainSettings .settings-field{margin-bottom:12px;padding:16px;border:1px solid var(--border);border-radius:12px;background:var(--sidebar)}
-#mainSettings .settings-field:last-of-type{margin-bottom:16px}
-#mainSettings .settings-field > label{display:block;font-size:12px;font-weight:500;letter-spacing:.01em;color:var(--muted);margin-bottom:6px}
-#mainSettings .settings-field > label[style*="display:flex"]{color:var(--text);font-size:13px;font-weight:500;margin-bottom:0}
-#mainSettings .settings-field > div[style*="color:var(--muted)"],#mainSettings .settings-field > div[style*="color: var(--muted)"]{font-size:12px;color:var(--muted);line-height:1.5}
 #mainSettings select,#mainSettings input[type="text"],#mainSettings input[type="password"]{background:var(--bg) !important;color:var(--text) !important;border:1px solid var(--border) !important;border-radius:8px !important;padding:8px 12px !important;font-size:13px !important;width:100%;transition:border-color .15s,box-shadow .15s}
 #mainSettings select:focus,#mainSettings input[type="text"]:focus,#mainSettings input[type="password"]:focus{border-color:var(--accent) !important;box-shadow:0 0 0 3px var(--accent-bg);outline:none}
 #mainSettings input:disabled,#mainSettings select:disabled{opacity:.6;cursor:not-allowed}
 #mainSettings .theme-pick-btn,#mainSettings .skin-pick-btn,#mainSettings .font-size-pick-btn,#mainSettings .chat-width-pick-btn{background:var(--bg) !important;border-color:var(--border) !important}
 #mainSettings .theme-pick-btn:hover,#mainSettings .skin-pick-btn:hover,#mainSettings .font-size-pick-btn:hover,#mainSettings .chat-width-pick-btn:hover{border-color:var(--accent-bg-strong) !important;background:var(--surface) !important}
 #mainSettings .theme-pick-btn.active,#mainSettings .skin-pick-btn.active,#mainSettings .font-size-pick-btn.active,#mainSettings .chat-width-pick-btn.active{border-color:var(--accent) !important;box-shadow:0 0 0 1px var(--accent-bg-strong) !important;background:var(--surface) !important}
-@media (max-width: 768px){#mainSettings .settings-field{padding:14px}}
-#mainSettings select,.settings-field select{background:var(--input-bg);border:1px solid var(--border);border-radius:var(--input-radius);color:var(--text);transition:border-color var(--dur) var(--ease),box-shadow var(--dur) var(--ease)}
+#mainSettings select{background:var(--input-bg);border:1px solid var(--border);border-radius:var(--input-radius);color:var(--text);transition:border-color var(--dur) var(--ease),box-shadow var(--dur) var(--ease)}
 #mainSettings select:focus{border-color:var(--accent);box-shadow:0 0 0 2px var(--focus-ring);outline:none}
-#mainSettings select,.settings-field select{padding:8px 28px 8px 10px;font-size:13px}
-#mainSettings .settings-field{padding:14px 16px;border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface)}
-#mainSettings .settings-field > label{font-size:13px;font-weight:600;letter-spacing:0;text-transform:none;color:var(--text);margin-bottom:6px}
-#mainSettings .settings-field > label[style*="display:flex"]{font-weight:500}
+#mainSettings select{padding:8px 28px 8px 10px;font-size:13px}
 #mainSettings .theme-pick-btn,#mainSettings .skin-pick-btn,#mainSettings .font-size-pick-btn,#mainSettings .chat-width-pick-btn{background:var(--surface) !important;border:1px solid var(--border) !important;border-radius:var(--r-md) !important;transition:background var(--dur) var(--ease),border-color var(--dur) var(--ease) !important}
 #mainSettings .theme-pick-btn:hover,#mainSettings .skin-pick-btn:hover,#mainSettings .font-size-pick-btn:hover,#mainSettings .chat-width-pick-btn:hover{background:var(--hover-bg) !important;border-color:var(--border2) !important;transform:none}
 #mainSettings .theme-pick-btn.active,#mainSettings .skin-pick-btn.active,#mainSettings .font-size-pick-btn.active,#mainSettings .chat-width-pick-btn.active{background:var(--accent-bg) !important;border-color:var(--accent) !important;box-shadow:none !important}
-#mainSettings .settings-field{padding:12px 14px;background:var(--surface-subtle);border-color:var(--border-subtle)}
-#mainSettings .settings-field > label{font-size:12.5px;font-weight:550}
-#mainSettings select,.settings-field select{padding:6px 26px 6px 10px;font-size:13px;height:32px}
-#mainSettings select,.settings-field select{background:var(--input-bg);border-color:transparent}
+#mainSettings select{padding:6px 26px 6px 10px;font-size:13px;height:32px}
+#mainSettings select{background:var(--input-bg);border-color:transparent}
 #mainSettings select:hover{border-color:var(--border)}
 #mainSettings select:focus{background:var(--surface);border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
 .settings-section{background:var(--settings-section-bg)}
