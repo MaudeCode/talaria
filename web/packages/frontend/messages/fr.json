@@ -832,7 +832,6 @@
 	"mic_no_speech": "Aucune parole détectée. Réessayez.",
 	"model_badge_selected": "Sélectionné",
 	"model_custom_label": "ID de modèle personnalisé",
-	"model_custom_placeholder": "ex. openai/gpt-5.4",
 	"model_did_you_mean": " — vouliez-vous dire \"{m}\" ?",
 	"model_favorite_add": "Ajouter aux favoris",
 	"model_favorite_remove": "Retirer des favoris",

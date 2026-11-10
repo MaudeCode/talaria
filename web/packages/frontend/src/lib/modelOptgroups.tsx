@@ -1,6 +1,6 @@
 import type { Models } from '@maudecode/talaria-web-contracts'
 import { catalogGroupLabel, catalogModelSections, ModelOptionContent } from './modelEntry'
-// Its own module: only lazily loaded pickers (cron job form, project defaults) use it, so it stays out of the layout bundle.
+// Its own module: only lazily loaded pickers (cron job form, project defaults, Settings › Models, new profile) use it, so it stays out of the layout bundle.
 /** The catalog as `<Select>` option groups; a plain list, since `Select` reads `<optgroup>`/`<option>` children directly. */
 export function catalogModelOptgroups(catalog: Models | undefined) {
   return (catalog?.groups ?? []).flatMap((g) => catalogModelSections(g).map((section) => (

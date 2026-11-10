@@ -1454,7 +1454,6 @@
 	"model_badge_selected": "Selected",
 	"model_change_deferred": "Applies after this turn",
 	"model_custom_label": "Custom model ID",
-	"model_custom_placeholder": "e.g. openai/gpt-5.4",
 	"model_did_you_mean": " — did you mean \"{m}\"?",
 	"model_favorite_add": "Add to favorites",
 	"model_favorite_remove": "Remove from favorites",
@@ -1857,6 +1856,7 @@
 	"profile_name_rule": "Lowercase letters, numbers, hyphens, underscores only",
 	"profile_no_clone": "Start empty",
 	"profile_no_configuration": "No configuration",
+	"profile_no_default_model": "No default model",
 	"profile_open_bot_chat": "Open Bot Chat",
 	"profile_row_menu": "Profile actions",
 	"profile_skill_count": [

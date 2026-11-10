@@ -793,7 +793,6 @@
 	"mic_no_speech": "音声が検出されませんでした。もう一度お試しください。",
 	"model_badge_selected": "選択中",
 	"model_custom_label": "カスタムモデルID",
-	"model_custom_placeholder": "例: openai/gpt-5.4",
 	"model_did_you_mean": "（もしかして \"{m}\"？）",
 	"model_favorite_add": "お気に入りに追加",
 	"model_favorite_remove": "お気に入りから削除",

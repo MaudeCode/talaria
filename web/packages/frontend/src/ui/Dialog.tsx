@@ -32,7 +32,7 @@ export function Dialog({ open, onOpenChange, title, description, children, class
     <BaseDialog.Root open={open} onOpenChange={onOpenChange}>
       <BaseDialog.Portal>
         <BaseDialog.Backdrop ref={playExitOnUnmount} className={BACKDROP} />
-        <BaseDialog.Popup ref={playExitOnUnmount} finalFocus={finalFocus} style={{ '--dialog-max': `${maxWidth}px` } as CSSProperties} className={cn('fixed left-1/2 top-1/2 z-[1301] w-[min(92%,var(--dialog-max))] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-surface p-5 text-text shadow-md outline-none', DIALOG_MOTION, className)}>
+        <BaseDialog.Popup ref={playExitOnUnmount} finalFocus={finalFocus} style={{ '--dialog-max': `${maxWidth}px` } as CSSProperties} className={cn('fixed left-1/2 top-1/2 z-[1301] max-h-[90dvh] overflow-y-auto w-[min(92%,var(--dialog-max))] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-surface p-5 text-text shadow-md outline-none', DIALOG_MOTION, className)}>
           <HeldWhileClosing open={open}>
             <BaseDialog.Title className={cn('text-strong [overflow-wrap:anywhere]', titleClassName ?? 'text-base font-semibold')}>{title}</BaseDialog.Title>
             {description && <BaseDialog.Description className="mt-1 text-sm text-muted [overflow-wrap:anywhere]">{description}</BaseDialog.Description>}

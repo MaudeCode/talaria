@@ -458,7 +458,7 @@ function SessionGroupDialog({ title, kind, rows, nested, filters, activeId, proj
   const children = q.length < 2 ? nested : found?.children ?? nested
   const previews = new Map((q.length >= 2 ? search.data?.sessions ?? [] : []).flatMap((r) => (r.match_preview ? [[r.session_id, r.match_preview] as const] : [])))
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose() }} title={title} className="max-h-[85dvh]">
+    <Dialog open onOpenChange={(open) => { if (!open) onClose() }} title={title} className="max-h-[85dvh]!">
       <div className="session-search sidebar-search">
         <div className="session-search-field">
           <Search size={14} className="sidebar-search-icon" aria-hidden="true" />

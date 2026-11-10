@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web's Create profile dialog picks the default model from the model catalog and takes an optional API key and base URL; Import agent setup sits beside Create profile in the Profiles header.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

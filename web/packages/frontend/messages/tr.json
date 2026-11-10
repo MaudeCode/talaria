@@ -806,7 +806,6 @@
 	"mic_no_speech": "Konuşma algılanmadı. Tekrar deneyin.",
 	"model_badge_selected": "Seçili",
 	"model_custom_label": "Özel model kimliği",
-	"model_custom_placeholder": "örneğin openai/gpt-5.4",
 	"model_did_you_mean": " — şunu mu demek istediniz: \"{m}\"?",
 	"model_favorite_add": "Favorilere ekle",
 	"model_favorite_remove": "Favorilerden kaldır",
