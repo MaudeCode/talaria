@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Browser notifications in Talaria Web now show a notification with the chat's title and the start of the reply when a reply finishes while Talaria is in the background.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announcement": {
+        "title": "Notifications when a reply finishes",
+        "description": "Turn on Browser notifications to see the start of a reply that finishes while Talaria is in the background.",
+        "icon": "notifications"
+      }
+    }
+  ]
+}

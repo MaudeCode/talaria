@@ -182,3 +182,10 @@ export function renderMarkdown(text: string): string {
   flushParagraph()
   return out.join('\n')
 }
+
+const ENTITIES: Record<string, string> = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#x27;': "'" }
+
+/** TAL-2157: Markdown as the plain text a reader sees, on one line: rendered, then stripped of tags. */
+export function markdownPlainText(text: string): string {
+  return renderMarkdown(text).replace(/<[^>]*>/g, ' ').replace(/&(?:amp|lt|gt|quot|#x27);/g, (entity) => ENTITIES[entity] ?? entity).replace(/\s+/g, ' ').trim()
+}

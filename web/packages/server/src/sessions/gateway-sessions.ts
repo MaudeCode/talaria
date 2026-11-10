@@ -164,7 +164,7 @@ export class GatewaySessions {
     return undefined
   }
   constructor(private readonly deps: {
-    onWebCompletion?: (profile: string, sessionId: string, identity: string) => void;
+    onWebCompletion?: (profile: string, sessionId: string, identity: string, session: Row | null) => void;
     service: SessionService; sidecar: () => SidecarLike | null; registry: StreamRegistry;
     launchStore?: BackgroundTaskStore;
     journal: RunJournal; events: SessionEventBus; channels: SessionChannels; profileHome: (profile: string) => string;
@@ -1198,7 +1198,7 @@ export class GatewaySessions {
           ...(session ? { session } : {}) })
         if (liveRunning && !cancelled && !failed && receipt?.admission_id === activeAdmission && receipt?.authority_epoch === watch.snapshot.authority_epoch
             && receipt.execution_generation === watch.snapshot.execution_generation) {
-          this.deps.onWebCompletion?.(target.profile, target.sid, JSON.stringify(['owner', target.sid, watch.snapshot.authority_epoch, watch.snapshot.replay_epoch, watch.snapshot.execution_generation, receipt.admission_id]))
+          this.deps.onWebCompletion?.(target.profile, target.sid, JSON.stringify(['owner', target.sid, watch.snapshot.authority_epoch, watch.snapshot.replay_epoch, watch.snapshot.execution_generation, receipt.admission_id]), session ?? null)
         }
         await put('stream_end', { session_id: target.sid })
         watch.controller.abort()

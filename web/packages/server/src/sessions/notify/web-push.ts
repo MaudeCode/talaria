@@ -13,7 +13,7 @@ import { vettedAddresses, type DnsLookup, type PinnedFetch } from '../../http/pi
 import type { DocumentBackend } from '../storage/backend.js'
 import { readDocument, updateDocument } from '../storage/document.js'
 import type { ActivityState, ActivityStates, AgentNotice } from './activity.js'
-import { agentNotifyAlerts, alertForTransition, DEFAULT_ALERT_PREFERENCES, type AlertKind, type AlertPreferences } from './alerts.js'
+import { agentNotifyAlerts, ALERT_BODY, alertForTransition, completionNotification, DEFAULT_ALERT_PREFERENCES, type AlertKind, type AlertPreferences } from './alerts.js'
 import type { NotificationChannel } from './channel.js'
 import { personMaySee, type PersonAccess } from '../../auth/person.js'
 
@@ -21,7 +21,6 @@ const MAX_SUBSCRIPTIONS = 64
 const MAX_TRIES = 3
 const REQUEST_TIMEOUT_MS = 10_000
 const LOCAL_SUBJECT = 'mailto:talaria-web@localhost'
-const BODY: Record<AlertKind, string> = { approval: 'Approval needed', input: 'Input needed', completion: 'Completed', failure: 'Failed', decision: 'Decision review ready' }
 
 export class WebPushRequestError extends Error {
   constructor(message: string, readonly status: number) { super(message) }
@@ -49,6 +48,9 @@ export interface WebPushDeps {
    * while it is off), so a subscriber is alerted only about sessions that login may open.
    */
   personAccessFor?: (login: string | null) => Promise<PersonAccess | undefined>
+  /** TAL-2157: the session a completion alert quotes the final answer of, and whether session payloads are redacted. */
+  session?: (sid: string) => Promise<{ title?: unknown; messages?: unknown }>
+  redactEnabled?: () => boolean
   env: Record<string, string | undefined>
   now: () => number
   log: (line: string) => void
@@ -251,8 +253,10 @@ export class WebPushChannel implements NotificationChannel {
     const payload = JSON.stringify(typeof alert === 'object'
       ? { title: alert.title, body: alert.body, tag: `notify:${alert.id}`, url: session }
       : alert === 'decision' && row.decisionReviewId
-        ? { title: BODY.decision, body: row.decisionReviewTitle ?? '', tag: `decision:${row.decisionReviewId}`, url: `/decisions/${encodeURIComponent(row.decisionReviewId)}` }
-        : { title: row.title, body: BODY[alert], tag: row.sessionId, url: session })
+        ? { title: ALERT_BODY.decision, body: row.decisionReviewTitle ?? '', tag: `decision:${row.decisionReviewId}`, url: `/decisions/${encodeURIComponent(row.decisionReviewId)}` }
+        : alert === 'completion'
+          ? completionNotification(row.sessionId, await this.deps.session?.(row.sessionId).catch(() => null) ?? { title: row.title }, this.deps.redactEnabled?.() ?? true)
+          : { title: row.title, body: ALERT_BODY[alert], tag: row.sessionId, url: session })
     const urgent = typeof alert === 'object' ? alert.level === 'attention' : alert === 'approval' || alert === 'input'
     const details = webpush.generateRequestDetails({ endpoint: sub.endpoint, keys: sub.keys }, payload, {
       vapidDetails: { subject: this.subject(sub), publicKey: vapid.publicKey, privateKey: vapid.privateKey },

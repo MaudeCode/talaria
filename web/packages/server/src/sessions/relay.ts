@@ -24,6 +24,7 @@ import type { SessionStore } from './store.js'
 import { str } from '../util.js'
 import { ActivityStates, hasSessionData, type AgentNotice } from './notify/activity.js'
 import type { NotificationChannel } from './notify/channel.js'
+import { completionNotification } from './notify/alerts.js'
 
 export const PRESENCE_LEASE_SECONDS = 90
 export const PRESENCE_MAX_LEASES = 256
@@ -598,6 +599,8 @@ export interface RelayServiceDeps extends RelayPublisherDeps {
   events: SessionEventBus
   env: Record<string, string | undefined>
   canonicalProfile: (profile: string) => string
+  /** TAL-2157: whether a completion's notification text is redacted like session payloads. */
+  redactEnabled?: () => boolean
 }
 
 /** Owns the current publisher and the pairing state machine (Python module-level `_publisher` and friends). */
@@ -696,20 +699,21 @@ export class RelayService implements NotificationChannel {
   noteTerminal(streamId: string, phase: string): void {
     const run = this.deps.registry.activeRuns.get(streamId)
     if (phase !== 'completed' || !run || run.ephemeral || (run as { health_only?: boolean }).health_only) return
-    // Capture the run before teardown; this never materializes an owner-managed session.
-    void this.deps.store.get(run.session_id, { metadataOnly: true }).then((session) => {
-      this.noteWebCompletion(session.profile ?? 'default', run.session_id, run.stream_id)
+    // Capture the run before teardown; this never materializes an owner-managed session. The finished turn is persisted.
+    void this.deps.store.get(run.session_id).then((session) => {
+      this.noteWebCompletion(session.profile ?? 'default', run.session_id, run.stream_id, session)
     }).catch(() => undefined)
   }
 
-  /** Shared Web-only projection for direct turns and receipt-confirmed native owner executions. */
-  noteWebCompletion(profileName: string, sessionId: string, runIdentity: string): void {
+  /** Shared Web-only projection for direct turns and receipt-confirmed native owner executions; `session` holds the finished turn. */
+  noteWebCompletion(profileName: string, sessionId: string, runIdentity: string, session: { title?: unknown; messages?: unknown } | null): void {
     const profile = this.deps.canonicalProfile(profileName)
     const expires = this.deps.now() * 1000 + 60_000
+    const notification = completionNotification(sessionId, session, this.deps.redactEnabled?.() ?? true)
     void (async () => {
       const scope = await profileIdentity(this.deps, profile)
       const identity = createHash('sha256').update(JSON.stringify([scope, runIdentity])).digest('hex')
-      this.deps.events.publish('web_completion', { profile, sessionId, webAudio: { identity, scope, profile, eligible: true, expires_at: expires } })
+      this.deps.events.publish('web_completion', { profile, sessionId, webAudio: { identity, scope, profile, eligible: true, expires_at: expires, notification } })
     })().catch(() => undefined)
   }
 

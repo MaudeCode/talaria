@@ -341,6 +341,23 @@ describe('the browser notification permission (TAL-2146)', () => {
     vi.unstubAllGlobals()
   })
 
+  it.each([['granted', true, 'Allowed by this browser'], ['denied', false, "Blocked in this browser's settings"]] as const)('asks once when switched on before the browser was asked; %s leaves it on: %s (TAL-2157)', async (answer, on, words) => {
+    const stub: { permission: NotificationPermission; requestPermission: () => Promise<NotificationPermission> } = { permission: 'default', requestPermission: vi.fn(() => { stub.permission = answer; return Promise.resolve(answer) }) }
+    vi.stubGlobal('Notification', stub)
+    vi.mocked(saveSettings).mockClear()
+    renderSection(<NotificationsSection />)
+    const toggle = await screen.findByRole('switch', { name: 'Browser notifications' })
+    await userEvent.click(toggle)
+    expect(stub.requestPermission).toHaveBeenCalledOnce()
+    await screen.findByText(words)
+    if (on) await waitFor(() => { expect(saveSettings).toHaveBeenLastCalledWith({ notifications_enabled: true }) })
+    else {
+      expect(toggle).not.toBeChecked()
+      expect(saveSettings).not.toHaveBeenCalled()
+    }
+    vi.unstubAllGlobals()
+  })
+
   it('says the browser has no notifications and disables the switch', async () => {
     const saved = Object.getOwnPropertyDescriptor(window, 'Notification')
     Reflect.deleteProperty(window, 'Notification')

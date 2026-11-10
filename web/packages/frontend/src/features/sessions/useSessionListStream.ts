@@ -7,6 +7,7 @@ import { getStreamContext, useStreamContext, hasLiveConnection } from '../../str
 import { openSessionListStream, SSE_OPEN } from '../../api/sse'
 import { useSetting } from '../../app/settings'
 import { deliverCompletion } from '../voice/completionAudio'
+import { notifyCompletion } from '../notifications/completionNotification'
 
 /**
  * TAL-1209: refetch the sidebar rows (list and search) and every query of the named session; other sessions' transcripts,
@@ -23,6 +24,7 @@ function invalidateSidebar(qc: QueryClient, sessionId?: string | null, reason?: 
 export function useSessionListStream() {
   const qc = useQueryClient()
   const sound = useSetting('sound_enabled') === true
+  const notify = useSetting('notifications_enabled') === true
   const context = useStreamContext()
   useEffect(() => {
     let closed = false
@@ -31,7 +33,10 @@ export function useSessionListStream() {
       onEvent: (ev) => {
         if (closed || scope !== getStreamContext()) return
         if (ev.event === 'sessions_changed') {
-          for (const completion of ev.data.web_audio ?? []) void deliverCompletion(completion, () => !closed && sound && scope === getStreamContext())
+          for (const completion of ev.data.web_audio ?? []) {
+            void deliverCompletion(completion, () => !closed && sound && scope === getStreamContext())
+            void notifyCompletion(completion, () => !closed && notify && scope === getStreamContext())
+          }
           // TAL-1966: a review that opened or closed changes the Decisions list.
           if (ev.data.reason === 'decision_review') void qc.invalidateQueries({ queryKey: keys.decisionReviews })
           if (ev.data.session_id) invalidateSidebar(qc, ev.data.session_id, ev.data.reason)
@@ -49,5 +54,5 @@ export function useSessionListStream() {
       handle = { close: () => undefined, readyState: () => 2 }
       window.clearInterval(poll)
     }
-  }, [qc, sound, context])
+  }, [qc, sound, notify, context])
 }
