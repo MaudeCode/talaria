@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Settings › Access and System use the shared group headers and plain rows: Sign-in and Privacy on Access; Updates, Health and Server on System, with Stop server as an ordinary row.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

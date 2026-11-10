@@ -279,7 +279,7 @@ list of the Web violations that remain.
 | The App detail screen and the "No quota data" section use default `Section` headers instead of the uppercase header | TAL-1765 |
 | The App daily chart formats dates with bare `.dateTime`, not the environment locale and zone | TAL-1765 |
 | Stale and unavailable meters are orange on the App (palette default) and muted on Web | Decide with TAL-1533 (server-owned presentation state) |
-| Web Settings pages not yet on the kit (§12) | TAL-2075 (Chat, Navigation), TAL-2077 (Providers), TAL-2079 (Notifications, Speech), TAL-2080 (Access, System), TAL-2081 (About), TAL-2082 (Plugins), TAL-2083 (Appearance), TAL-2105 (Models, Tools), TAL-2106 (Extensions, Workspaces, Logs) |
+| Web Settings pages not yet on the kit (§12) | TAL-2075 (Chat, Navigation), TAL-2077 (Providers), TAL-2079 (Notifications, Speech), TAL-2081 (About), TAL-2082 (Plugins), TAL-2083 (Appearance), TAL-2105 (Models, Tools), TAL-2106 (Extensions, Workspaces, Logs) |
 | Composer menus mark the selected row four ways, lack a heading row and open in more than one placement (§13) | TAL-2095 |
 | The Toolsets menu holds a form with a Save button (§13) | TAL-2096 |
 | The App Settings root is not grouped by scope (§11, §12) | TAL-1695 |

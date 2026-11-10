@@ -68,7 +68,7 @@ const PLACEMENT: Record<string, SettingsSectionId> = {
   agent_approvals: 'tools',
   sync_to_insights: 'access', api_redact_enabled: 'access', confirm_external_links: 'access', trusted_link_hosts: 'access', bot_name: 'access', auth_disabled_acknowledged: 'access',
   update_channel: 'system', agent_update_channel: 'system', ignore_agent_updates: 'system', check_for_updates: 'system', auto_apply_updates: 'system',
-  summarize_updates_automatically: 'system', '#systemHealthHeading': 'system', '#systemStopHeading': 'system',
+  summarize_updates_automatically: 'system', '[data-group="health"]': 'system', '[data-group="server"]': 'system',
 }
 const isControl = (key: string) => key.startsWith('#') || key.startsWith('[')
 const CONTROLS = Object.keys(PLACEMENT).filter(isControl)
