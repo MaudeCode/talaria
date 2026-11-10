@@ -3,7 +3,7 @@ import { oc } from '@orpc/contract'
 import { z } from 'zod'
 import { TerminalIdSchema, TerminalViewSliceSchema } from '../terminal.js'
 import { PromptQueueRunSchema, PromptQueueCardsSchema, PromptQueueActionSchema } from '../prompt-queue.js'
-import { CronsSchema, CronContextSourcesSchema, CronRecentSchema, CronHistorySchema, CronRunSchema, CronStatusSchema, CronMutationSchema, KanbanInspectionSchema, KanbanBoardsViewSchema, KanbanBoardViewSchema, KanbanStatsViewSchema, KanbanTaskPolicyShape, ExtensionStatusSchema } from '../views.js'
+import { CronsSchema, CronContextSourcesSchema, CronRecentSchema, CronHistorySchema, CronRunSchema, CronStatusSchema, CronMutationSchema, KanbanInspectionSchema, KanbanBoardsViewSchema, KanbanBoardViewSchema, KanbanStatsViewSchema, KanbanTaskPolicyShape, ExtensionStatusSchema, ExtensionRegistrySchema } from '../views.js'
 import { CronBlueprintsSchema, CronBlueprintFillInputSchema, CronBlueprintFillSchema, KanbanAssigneeSchema, KanbanBoardMetaSchema, KanbanEventSchema, KanbanRunStartShape, KanbanTaskLinksShape, KanbanTaskSchema } from '../sidecar-shared.js'
 
 /** Crons, kanban, extensions, and the embedded terminal. */
@@ -86,9 +86,9 @@ export const automationContract = {
   },
   extensions: {
     status: oc.route({ method: 'GET', path: '/api/extensions/status', tags }).output(ExtensionStatusSchema),
-    registry: oc.route({ method: 'GET', path: '/api/extensions/registry', tags }).output(z.looseObject({ entries: z.array(Json), error: z.string().optional(), unavailable: z.boolean().optional() })),
+    registry: oc.route({ method: 'GET', path: '/api/extensions/registry', tags, summary: '`q` keeps entries whose name or description contains it, case-insensitively; `total` counts the whole gallery.' }).input(z.object({ q: z.string().optional() })).output(ExtensionRegistrySchema),
     // `can_toggle`: the server's decision that Settings shows an enable switch for the row (`toggle` accepts its id).
-    manifests: oc.route({ method: 'GET', path: '/api/extensions/manifests', tags }).output(z.object({ protocol_version: z.literal(1), manifests: z.array(z.looseObject({ can_toggle: z.boolean(), agent_host: z.boolean().optional(), display_id: z.string().optional(), native_view: z.literal('meshy_gallery').optional() })) })),
+    manifests: oc.route({ method: 'GET', path: '/api/extensions/manifests', tags, summary: '`q` keeps rows whose name, id or description contains it, case-insensitively; `total` and `enabled_count` count every row.' }).input(z.object({ q: z.string().optional() })).output(z.object({ protocol_version: z.literal(1), total: z.number().int(), enabled_count: z.number().int(), manifests: z.array(z.looseObject({ can_toggle: z.boolean(), agent_host: z.boolean().optional(), display_id: z.string().optional(), native_view: z.literal('meshy_gallery').optional() })) })),
     toggle: oc.route({ method: 'POST', path: '/api/extensions/toggle', tags, summary: '409 `plugin_toggle_refused` with the Agent\'s reason when it refuses to enable an Agent dashboard plugin (recalled by the catalog, or refused admission); nothing is written (TAL-2055).' }).input(z.object({ id: Json.optional(), enabled: Json.optional() })).output(ExtensionStatusSchema),
     consent: oc.route({ method: 'POST', path: '/api/extensions/sidecar-proxy-consent', tags }).input(z.object({ id: Json.optional(), approved: Json.optional() })).output(ExtensionStatusSchema),
     install: oc.route({ method: 'POST', path: '/api/extensions/install', tags }).input(z.object({ id: Json.optional(), download_url: Json.optional(), sha256: Json.optional() })).output(z.object({ installed: z.literal(true), id: z.string(), version: z.string() })),
