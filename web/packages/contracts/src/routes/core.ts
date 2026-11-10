@@ -118,7 +118,7 @@ export const WhatsNewAnnouncementSchema = z.object({
   /** The installed release version and source the rows were generated for. */
   version: z.string().min(1),
   sourceCommit: Sha1,
-  rows: z.array(WhatsNewRowSchema).min(1).max(4),
+  rows: z.array(WhatsNewRowSchema).min(1).max(24),
 })
 export type WhatsNewAnnouncement = z.infer<typeof WhatsNewAnnouncementSchema>
 

@@ -633,7 +633,7 @@ class ReleaseNotesTests(unittest.TestCase):
             self.write(f"changelog.d/{key}.json", json.dumps(data))
             self.commit(f"{key}: shared fixture", at=f"2026-01-03T00:{minute:02}:00+00:00")
 
-    def test_announcements_are_opt_in_component_scoped_ordered_capped_and_reproducible(self):
+    def test_announcements_are_opt_in_component_scoped_ordered_and_reproducible(self):
         self.write_shared_fragments()
         self.cli("validate", "--base", "v1.0.0")
         source = self.git("rev-parse", "HEAD")
@@ -681,22 +681,27 @@ class ReleaseNotesTests(unittest.TestCase):
         self.assertEqual(self.rows(version="1.1.1"), ["TAL-2-1"])
         self.assertEqual(self.rows(version="1.1.2"), ["TAL-2-1"])
 
-    def test_announcement_holds_the_newest_four_rows_by_fragment_commit_time(self):
-        self.announced(7, "Oldest", at="2026-01-03T00:00:00+00:00")
+    def test_announcement_holds_the_newest_24_rows_by_fragment_commit_time(self):
         self.announced(3, "Second", at="2026-01-03T00:01:00+00:00")
         self.announced(2, "Third with a tie")
         self.announced(6, "Third", at="2026-01-03T00:02:00+00:00")
         self.announced(5, "Newest", at="2026-01-03T00:03:00+00:00")
-        self.assertEqual(self.rows(), ["TAL-5-1", "TAL-6-1", "TAL-2-1", "TAL-3-1"])
         # A fragment's entries keep their authored order.
         self.write("changelog.d/TAL-8.json", json.dumps({"entries": [
             {"category": "Added", "summary": title, "highlight": False,
              "announcement": {"title": title, "description": "Two rows.", "icon": "chat"}} for title in ("First", "Second")]}))
         self.commit("TAL-8: two rows", at="2026-01-03T00:04:00+00:00")
-        self.assertEqual(self.rows(), ["TAL-8-1", "TAL-8-2", "TAL-5-1", "TAL-6-1"])
+        newest = ["TAL-8-1", "TAL-8-2", "TAL-5-1", "TAL-6-1", "TAL-2-1", "TAL-3-1"]
+        self.assertEqual(self.rows(), newest)
+        # 24 more rows from older fragments: of the 30, the newest 24 ship and the six oldest drop.
+        older = range(100, 124)
+        for minute, number in enumerate(older):
+            self.announced(number, f"Older {number}", at=f"2026-01-02T00:{minute:02}:00+00:00")
+        expected = newest + [f"TAL-{number}-1" for number in reversed(older[6:])]
+        self.assertEqual(self.rows(), expected)
         # No release tag is needed: the rows come from the source alone.
         self.git("tag", "-d", "v1.0.0")
-        self.assertEqual(self.rows(), ["TAL-8-1", "TAL-8-2", "TAL-5-1", "TAL-6-1"])
+        self.assertEqual(self.rows(), expected)
 
     def test_a_fragment_edited_to_announce_counts_as_newer_than_untouched_fragments(self):
         self.add_fragment(3, "Announced later")

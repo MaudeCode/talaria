@@ -15,7 +15,7 @@ import { BootstrapContext } from '../../app/bootstrap'
 import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
 import { Dialog } from '../../ui/Dialog'
 import { AboutSection } from '../settings/AboutSection'
-import { WhatsNew, whatsNewScope } from './WhatsNew'
+import { WhatsNew, WhatsNewDialog, whatsNewScope } from './WhatsNew'
 
 // The shared Web/App fixture the server suite composes (contracts/fixtures/whats-new.json).
 const shared = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/whats-new.json'), 'utf8')) as { state: WhatsNewState }
@@ -213,5 +213,129 @@ describe("What's New (TAL-1617)", () => {
     await waitFor(() => { expect(fetchMock).toHaveBeenCalledTimes(2) })
     // The acknowledgement this page kept answers the next read and suppresses a repeat prompt.
     expect(fetchMock).toHaveBeenLastCalledWith(ACK)
+  })
+})
+
+describe("What's New pages (TAL-2174)", () => {
+  /** Nine unseen rows: three pages of four, four and one. */
+  const nine = { ...announcement, rows: Array.from({ length: 9 }, (_, i) => ({ id: `TAL-${String(100 + i)}-1`, icon: 'sparkles' as const, title: `Row ${String(i + 1)}`, description: `About row ${String(i + 1)}.` })) }
+  const visibleTitles = (dialog: HTMLElement) => within(dialog).getAllByRole('listitem').map((row) => row.querySelector('p')?.textContent)
+  const dots = (dialog: HTMLElement) => [...dialog.querySelectorAll('[data-page-dot]')].map((dot) => dot.getAttribute('data-page-dot'))
+  const presentNine = async () => {
+    window.localStorage.setItem(SCOPE, 'web:1.0.0')
+    fetchMock.mockResolvedValue({ ...eligible, announcement: nine, presentation: nine, acknowledgement: 'web:rows:TAL-100-1' })
+    renderShell()
+    const dialog = await screen.findByRole('dialog', { name: TITLE })
+    await waitFor(() => { expect(within(dialog).getByRole('button', { name: 'Continue' })).toHaveFocus() })
+    return dialog
+  }
+
+  it('keeps four rows on one page with no dots, arrows or skip line, and Continue closes it', () => {
+    const onDismiss = vi.fn()
+    render(<WhatsNewDialog announcement={{ ...nine, rows: nine.rows.slice(0, 4) }} open onDismiss={onDismiss} />)
+    const dialog = screen.getByRole('dialog', { name: TITLE })
+    expect(visibleTitles(dialog)).toEqual(['Row 1', 'Row 2', 'Row 3', 'Row 4'])
+    expect(dots(dialog)).toEqual([])
+    expect(within(dialog).getAllByRole('button').map((b) => b.textContent)).toEqual(['Continue'])
+    act(() => { within(dialog).getByRole('button', { name: 'Continue' }).click() })
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+  })
+
+  it('pages nine rows four at a time with dots, arrows and arrow keys', async () => {
+    const onDismiss = vi.fn()
+    render(<WhatsNewDialog announcement={nine} open onDismiss={onDismiss} />)
+    const dialog = screen.getByRole('dialog', { name: TITLE })
+    const previous = within(dialog).getByRole('button', { name: 'Previous page' })
+    const next = within(dialog).getByRole('button', { name: 'Next page' })
+    const live = dialog.querySelector('[aria-live="polite"]')!
+    expect(dots(dialog)).toEqual(['current', '', ''])
+    expect(visibleTitles(dialog)).toEqual(['Row 1', 'Row 2', 'Row 3', 'Row 4'])
+    // The other pages are present for layout but hidden from reading and input.
+    const lists = dialog.querySelectorAll('ul')
+    expect([...lists].map((list) => [list.hasAttribute('inert'), list.getAttribute('aria-hidden')])).toEqual([[false, null], [true, 'true'], [true, 'true']])
+    expect(previous).toHaveAttribute('aria-disabled', 'true')
+    await userEvent.click(previous)
+    expect(visibleTitles(dialog)).toEqual(['Row 1', 'Row 2', 'Row 3', 'Row 4'])
+    expect(previous).toHaveFocus()
+
+    await userEvent.click(next)
+    expect(visibleTitles(dialog)).toEqual(['Row 5', 'Row 6', 'Row 7', 'Row 8'])
+    expect(dots(dialog)).toEqual(['', 'current', ''])
+    expect(live).toHaveTextContent('Page 2 of 3')
+    expect(previous).not.toHaveAttribute('aria-disabled')
+
+    await userEvent.keyboard('{ArrowRight}')
+    expect(visibleTitles(dialog)).toEqual(['Row 9'])
+    expect(next).toHaveAttribute('aria-disabled', 'true')
+    await userEvent.click(next)
+    expect(visibleTitles(dialog)).toEqual(['Row 9'])
+    expect(next).toHaveFocus()
+    await userEvent.keyboard('{ArrowLeft}')
+    expect(visibleTitles(dialog)).toEqual(['Row 5', 'Row 6', 'Row 7', 'Row 8'])
+    // From the dialog's own surface too, as after a click on its blank space.
+    act(() => { dialog.focus() })
+    await userEvent.keyboard('{ArrowLeft}')
+    expect(visibleTitles(dialog)).toEqual(['Row 1', 'Row 2', 'Row 3', 'Row 4'])
+    expect(onDismiss).not.toHaveBeenCalled()
+  })
+
+  it('turns the page with Continue until the last page, where it closes once and acknowledges all nine rows', async () => {
+    const dialog = await presentNine()
+    const next = within(dialog).getByRole('button', { name: 'Continue' })
+    await userEvent.click(next)
+    expect(visibleTitles(dialog)).toEqual(['Row 5', 'Row 6', 'Row 7', 'Row 8'])
+    expect(next).toHaveFocus()
+    expect(screen.getByRole('dialog', { name: TITLE })).toBe(dialog)
+    expect(window.localStorage.getItem(SCOPE)).toBe('web:1.0.0')
+    await userEvent.keyboard('{Enter}')
+    expect(visibleTitles(dialog)).toEqual(['Row 9'])
+    await userEvent.click(next)
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+    expect(window.localStorage.getItem(SCOPE)).toBe('web:rows:TAL-100-1')
+  })
+
+  it('offers the skip line on every page but the last', async () => {
+    const onDismiss = vi.fn()
+    render(<WhatsNewDialog announcement={nine} open onDismiss={onDismiss} />)
+    const dialog = screen.getByRole('dialog', { name: TITLE })
+    const skip = () => within(dialog).queryByRole('button', { name: 'Skip, I like surprises' })
+    expect(skip()).not.toBeNull()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Next page' }))
+    expect(skip()).not.toBeNull()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Next page' }))
+    expect(skip()).toBeNull()
+    expect(onDismiss).not.toHaveBeenCalled()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Continue' }))
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+    onDismiss.mockClear()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Previous page' }))
+    await userEvent.click(skip()!)
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    ['the skip line', async (dialog: HTMLElement) => { await userEvent.click(within(dialog).getByRole('button', { name: 'Skip, I like surprises' })) }],
+    ['Escape', async () => { await userEvent.keyboard('{Escape}') }],
+    ['the backdrop', async () => { await userEvent.click(document.querySelector<HTMLElement>('.z-\\[1300\\]')!) }],
+  ])('%s on page 1 closes once and acknowledges all nine rows', async (_name, close) => {
+    const dialog = await presentNine()
+    await close(dialog)
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+    expect(window.localStorage.getItem(SCOPE)).toBe('web:rows:TAL-100-1')
+  })
+
+  it('starts on the first page each time Settings replays it', async () => {
+    fetchMock.mockResolvedValue({ ...quiet, announcement: nine })
+    renderShell(<><AboutSection /><WhatsNew /></>)
+    await userEvent.click(await screen.findByRole('button', { name: REPLAY }))
+    let dialog = await screen.findByRole('dialog', { name: TITLE })
+    expect(visibleTitles(dialog)).toEqual(['Row 1', 'Row 2', 'Row 3', 'Row 4'])
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Next page' }))
+    expect(visibleTitles(dialog)).toEqual(['Row 5', 'Row 6', 'Row 7', 'Row 8'])
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+    await userEvent.click(screen.getByRole('button', { name: REPLAY }))
+    dialog = await screen.findByRole('dialog', { name: TITLE })
+    expect(visibleTitles(dialog)).toEqual(['Row 1', 'Row 2', 'Row 3', 'Row 4'])
   })
 })

@@ -185,7 +185,7 @@ export function loadWhatsNew(webRoot: string, release: ReleaseInfo): WhatsNewAnn
 
 const ROW_TOKEN_RE = /^web:rows:((?:TAL-[1-9][0-9]*-[1-9][0-9]*)(?:,TAL-[1-9][0-9]*-[1-9][0-9]*)*)?$/
 const LEGACY_TOKEN_RE = /^web:(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/
-const TOKEN_IDS = 32
+const TOKEN_IDS = 64
 const TOKEN_CHARS = 1024
 
 /** The acknowledged row ids in `observed`; a legacy release token acknowledges none, an unreadable one is null. */

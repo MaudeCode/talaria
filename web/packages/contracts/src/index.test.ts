@@ -384,6 +384,9 @@ it('parses the shared What\'s New payloads and state, rejects malformed ones, an
   expect(WhatsNewAnnouncementSchema.parse(fixture.web)).toEqual(fixture.web)
   expect(WhatsNewStateSchema.parse(fixture.state)).toEqual(fixture.state)
   for (const invalid of fixture.invalid) expect(WhatsNewAnnouncementSchema.safeParse(invalid).success).toBe(false)
+  // A build packages up to 24 rows, six pages of four (TAL-2174); the fixture's 25-row payload is rejected above.
+  const web = fixture.web as { rows: { id: string }[] }
+  expect(WhatsNewAnnouncementSchema.safeParse({ ...web, rows: Array.from({ length: 24 }, (_, i) => ({ ...web.rows[0], id: `TAL-9-${String(i + 1)}` })) }).success).toBe(true)
   expect(shared('whats-new.schema.json')).toEqual(z.toJSONSchema(WhatsNewAnnouncementSchema, { target: 'draft-2020-12', io: 'output' }))
 })
 

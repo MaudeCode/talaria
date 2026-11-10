@@ -112,8 +112,9 @@ never appears beside an `announcement`.
 }
 ```
 
-Every App and Web build packages the newest four announced rows reachable from
-its source, whatever release tags exist. A fragment's age is the commit time of
+Every App and Web build packages the newest 24 announced rows reachable from
+its source, whatever release tags exist, and both clients show them four to a
+page. A fragment's age is the commit time of
 the last commit that touched it, so a fragment edited later to add an
 `announcement` counts as new. Rows run newest first, ties by ticket number
 descending, entries in authored order; older rows stay in the release notes
@@ -246,7 +247,8 @@ announcements are excluded from both outputs.
 ## Packaged What's New
 
 `../scripts/stamp-release.py` generates the announcement while it stamps an App
-or Web artifact: the newest four announced rows reachable from the source.
+or Web artifact: the newest 24 announced rows reachable from the source, which
+the App sheet and the Web dialog show four to a page.
 Every path that builds an installable artifact passes through it: the release-set
 Web build (Stable npm package and image) and App dry run in `releases/build.py`,
 the Experimental Web package (`build.py web --experimental`), and the signed

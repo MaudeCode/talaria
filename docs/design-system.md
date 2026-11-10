@@ -301,7 +301,7 @@ action not in it gets a row here in the same change:
 | Sign in, authorize | `log-in` | Set up | `wrench` |
 | Use this profile | `arrow-left-right` | Restart | `rotate-cw` |
 | Stop, shut down | `power` | Reset, restore the default | `rotate-ccw` |
-| Play, preview | `play` | Back | `chevron-left` |
+| Play, preview | `play` | Back, previous page | `chevron-left` |
 | Sign out, log out | `log-out` | Clear, unset, cancel an inline form | `x` |
 | Set as default | `circle-check` | Search | `search` |
 | Browse the catalog | `store` | Details | `info` |
@@ -342,6 +342,7 @@ Menus are interaction surfaces (§14); every Web menu is built with `Menu` from
 | Kanban | Cards stay because it is a board; their chrome (type, chips, spacing, colours) follows this document | TAL-1769 |
 | Dialogs, menus, popovers, sheets | Interaction surfaces, not content containers. Web motion comes only from `ui/popupMotion.ts`: every Base UI popup and backdrop uses its shared classes, opens slower than it closes, takes clicks from the first frame, and only fades under reduced motion | Platform defaults |
 | Widgets and Live Activities | System layouts with the shared meter and palette | `app/Talaria/Models/ProviderQuotaWidget*.swift` |
+| Paged dialogs (What's New) | Four items a page, every page the height of the tallest. One centred line between the items and the primary action holds a `chevron-left` arrow, one dot per page (an indicator, never a control, the current one in the accent) and a `chevron-right` arrow; an arrow at either end stays focusable but does nothing. The primary action keeps its label, turns the page and closes on the last page. A one-line muted text skip action under it closes the dialog from every earlier page; the last page keeps its space empty | App `WhatsNewSheet`; Web `WhatsNewDialog` (`features/whats-new/WhatsNew.tsx`) |
 
 ## 15. Known deviations
 

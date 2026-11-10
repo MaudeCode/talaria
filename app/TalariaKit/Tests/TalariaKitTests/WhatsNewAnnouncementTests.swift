@@ -23,7 +23,7 @@ final class WhatsNewAnnouncementTests: XCTestCase {
     func testStampedPayloadDecodesItsOrderedRows() throws {
         let announcement = try XCTUnwrap(WhatsNewAnnouncement.installed(info: info(fixture()["app"])))
         XCTAssertEqual(announcement.id, "app-1.1.0")
-        XCTAssertEqual(announcement.rows.map(\.id), ["TAL-9-1", "TAL-10-1", "TAL-11-1", "TAL-11-2"])
+        XCTAssertEqual(announcement.rows.map(\.id), ["TAL-9-1", "TAL-10-1", "TAL-11-1", "TAL-11-2", "TAL-11-3"])
         XCTAssertEqual(announcement.rows.first, .init(id: "TAL-9-1", icon: "chat", title: "Pinned chats",
                                                        description: "Keep the conversations you use most at the top of the list."))
     }
