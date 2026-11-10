@@ -43,7 +43,14 @@ export function GroupsPage({ roomId }: { roomId: string | undefined }) {
   const navigate = useNavigate(), qc = useQueryClient(), bootstrap = useBootstrap()
   const [offset, setOffset] = useState(0)
   const catalogKey = ['groups', bootstrap.profile?.name, 'catalog', offset]
-  const catalog = useQuery({ queryKey: catalogKey, queryFn: () => api.fetchGroups(offset) })
+  // The list shows each member's server phase, so it polls while shown: quickly while anyone is busy, as Tasks does.
+  const catalog = useQuery({ queryKey: catalogKey, queryFn: () => api.fetchGroups(offset), refetchInterval: (query) => roomId ? false : query.state.data?.rooms.some((room) => room.members.some((member) => member.phase !== 'idle' || member.stalled)) ? 3_000 : 30_000 })
+  // Coming back from a room reads the list again; its observer stayed mounted, so nothing else would.
+  const shownRoom = useRef(roomId)
+  useEffect(() => {
+    if (shownRoom.current && !roomId) void qc.invalidateQueries({ queryKey: ['groups', bootstrap.profile?.name, 'catalog'] })
+    shownRoom.current = roomId
+  }, [roomId, qc, bootstrap.profile?.name])
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
   const [members, setMembers] = useState<string[]>([])
