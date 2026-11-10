@@ -161,7 +161,7 @@ describe('SystemSection "Check now"', () => {
     vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: current, agent: { ...behind(1), support: 'unchecked', current_support: 'unchecked' } })
     vi.mocked(api.applyUpdates).mockResolvedValue({ ok: false, confirmation_required: true, candidate_revision: 'b'.repeat(40), supported_version: '0.21.6', supported_revision: 'a'.repeat(40), agent_channel: 'stable' })
     renderSystem()
-    const path = within((await screen.findByRole('heading', { name: 'Hermes Agent' })).closest('section')!)
+    const path = within(await screen.findByRole('region', { name: 'Hermes Agent' }))
     expect(path.getByText('This Agent version is not officially supported by Talaria and may cause issues.')).toBeInTheDocument()
     expect(path.getByText('Not tested with this Talaria release.')).toBeInTheDocument()
     await userEvent.click(path.getByRole('button', { name: /update agent/i }))
@@ -614,8 +614,8 @@ describe('Access passkeys (TAL-1179)', () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
     const bootstrap = { ...DEFAULT_BOOTSTRAP, auth: { ...DEFAULT_BOOTSTRAP.auth, passkey_feature_flag: true } }
     render(<QueryClientProvider client={qc}><BootstrapContext.Provider value={bootstrap}><AccessSection /></BootstrapContext.Provider></QueryClientProvider>)
-    const row = (await screen.findByText('Laptop')).closest('li')!
-    await userEvent.click(within(row).getByRole('button', { name: 'Delete' }))
+    await screen.findByText('Laptop')
+    await userEvent.click(screen.getAllByRole('button', { name: 'Delete' })[0]!)
     expect(api.passkeyDelete).toHaveBeenCalledWith('k1')
     expect(screen.queryByText('Laptop')).toBeNull()
     expect(screen.getByText('Phone')).toBeInTheDocument()

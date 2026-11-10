@@ -8,12 +8,13 @@ import { keys } from '../../api/queryKeys'
 import { useBootstrap } from '../../app/bootstrap'
 import { Button } from '../../ui/Button'
 import { cn } from '../../ui/cn'
-import { Switch, FieldRow, HelpTip } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { ConfirmDialog, Dialog } from '../../ui/Dialog'
 import { ErrorState, LoadingState, formatDate } from '../../ui/States'
+import { SectionHeader } from '../../ui/List'
 import { showErrorToast } from '../toast/errorToast'
 import { useSettingField } from './useSettingField'
+import { SettingAction, SettingToggle, SettingsGroup } from './SettingsRows'
 import type { z } from 'zod'
 import type { UpdateApplySchema, UpdateTargetSchema, UpdateVersionSchema } from '../../contracts'
 import { useUpdateProgress } from '../notifications/UpdateNotificationCenter'
@@ -26,7 +27,7 @@ const CHANNEL_LABELS: Record<WebUpdateChannel, () => string> = { stable: m.setti
 export function SystemSection() {
   const bootstrap = useBootstrap()
   const qc = useQueryClient()
-  const { settings, save, str, bool, set } = useSettingField(['update_channel', 'update_channels', 'agent_update_channel', 'ignore_agent_updates', 'webui_version', 'check_for_updates', 'auto_apply_updates', 'agent_version', 'summarize_updates_automatically'])
+  const { settings, save, str, bool } = useSettingField(['update_channel', 'update_channels', 'agent_update_channel', 'ignore_agent_updates', 'webui_version', 'check_for_updates', 'auto_apply_updates', 'agent_version', 'summarize_updates_automatically'])
   const health = useQuery({ queryKey: keys.health.system, queryFn: api.fetchSystemHealth, staleTime: 30_000 })
   const agent = useQuery({ queryKey: keys.health.agent, queryFn: api.fetchAgentHealth, staleTime: 15_000 })
   const updates = useQuery({ queryKey: keys.updates.check, queryFn: () => api.fetchUpdatesCheck(), staleTime: 30_000, refetchInterval: 30_000 })
@@ -100,15 +101,12 @@ export function SystemSection() {
   const cachedCurrent = updates.data !== undefined && (updates.data.channel ?? channel) === channel && (updates.data.agent_channel ?? agentChannel) === agentChannel
   const webStatus = pathStatus(webUpdate, WEB, { failed: updates.isError && !cachedCurrent, pending: updates.isPending })
   const agentStatus = pathStatus(agentUpdate, AGENT, { failed: updates.isError && !cachedCurrent, pending: updates.isPending })
-  const heading = 'text-[15px] font-semibold text-text'
+  const recheck = () => { void qc.invalidateQueries({ queryKey: keys.updates.check }) }
   return (
-    <div className="flex flex-col gap-9" data-section="system">
-      <section aria-labelledby="systemUpdatesHeading" className="flex flex-col gap-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 id="systemUpdatesHeading" className={heading}>{m.system_updates()}<HelpTip label={m.field_help_about({ label: m.system_updates() })}>{m.system_updates_intro()}</HelpTip></h2>
-          <Button onClick={() => checkNow.mutate()} disabled={checkNow.isPending}>{checkNow.isPending ? m.settings_checking() : bool('ignore_agent_updates') ? m.system_check_web() : m.system_check_both()}</Button>
-        </div>
-        <div className="grid gap-x-10 gap-y-8 [grid-template-columns:repeat(auto-fit,minmax(min(100%,19rem),1fr))]">
+    <div className="flex flex-col gap-7" data-section="system">
+      <SettingsGroup id="updates" title={m.system_updates()} hint={m.system_updates_intro()}
+        action={<Button onClick={() => checkNow.mutate()} disabled={checkNow.isPending}>{checkNow.isPending ? m.settings_checking() : bool('ignore_agent_updates') ? m.system_check_web() : m.system_check_both()}</Button>}>
+        <div className="grid gap-x-10 gap-y-8 py-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,19rem),1fr))]">
           <UpdatePath id="systemWebPath" title={WEB} installed={webUpdate?.current_version ?? str('webui_version', bootstrap.webui_version)} installedAction={<WhatsNewReplay />} status={webStatus}
             channel={<Select id="settingsUpdateChannel" aria-label={m.settings_label_web_update_channel()} disabled={!canManage} value={channel} onValueChange={setChannel}>
               {webChannels.map((c) => <option key={c} value={c}>{CHANNEL_LABELS[c]()}</option>)}
@@ -117,7 +115,7 @@ export function SystemSection() {
             folded={canManage ? webUpdate?.versions.filter((v) => v.folded) : undefined} install={install(applyWeb)}
             manualLink={webUpdate?.manual_link === true}
             summary={webUpdate?.summary_available ? <UpdateSummary target="webui" name={WEB} info={webUpdate} /> : null}>
-            <FieldRow label={m.settings_label_auto_apply_updates()} hint={m.system_auto_apply_hint()} htmlFor="settingsAutoApplyUpdates" inline><Switch id="settingsAutoApplyUpdates" disabled={!canManage || !bool('check_for_updates', true)} checked={bool('auto_apply_updates')} onCheckedChange={(checked) => set({ auto_apply_updates: checked })} /></FieldRow>
+            <SettingToggle label={m.settings_label_auto_apply_updates()} hint={m.system_auto_apply_hint()} id="settingsAutoApplyUpdates" settingKey="auto_apply_updates" disabled={!canManage || !bool('check_for_updates', true)} />
           </UpdatePath>
           <UpdatePath id="systemAgentPath" title={AGENT} installed={agentUpdate?.current_version ?? str('agent_version', '—')} status={agentStatus}
             channel={<Select id="settingsAgentUpdateChannel" aria-label={m.settings_label_agent_update_channel()} disabled={!canManage} value={agentChannel} onValueChange={setAgentChannel}>
@@ -130,17 +128,14 @@ export function SystemSection() {
             support={agentUpdate?.can_apply ? agentSupport(agentUpdate) : null}
             installedNote={agentUpdate?.current_support === 'unchecked' ? m.system_agent_installed_unchecked() : null}
             summary={agentUpdate?.summary_available ? <UpdateSummary target="agent" name={AGENT} info={agentUpdate} /> : null}>
-            <FieldRow label={m.settings_label_ignore_agent_updates()} hint={m.system_agent_manual_hint()} htmlFor="settingsIgnoreAgentUpdates" inline><Switch id="settingsIgnoreAgentUpdates" checked={bool('ignore_agent_updates')} onCheckedChange={(checked) => save.mutate({ ignore_agent_updates: checked }, { onError: fail, onSettled: () => { void qc.invalidateQueries({ queryKey: keys.updates.check }) } })} /></FieldRow>
+            <SettingToggle label={m.settings_label_ignore_agent_updates()} hint={m.system_agent_manual_hint()} id="settingsIgnoreAgentUpdates" settingKey="ignore_agent_updates" onSaved={recheck} />
           </UpdatePath>
         </div>
-        <div className="border-t border-border-subtle pt-1">
-          <FieldRow label={m.settings_label_summarize_updates_automatically()} htmlFor="settingsSummarizeUpdatesAutomatically" inline><Switch id="settingsSummarizeUpdatesAutomatically" disabled={!canManage || !bool('check_for_updates', true)} checked={bool('summarize_updates_automatically', true)} onCheckedChange={(checked) => set({ summarize_updates_automatically: checked })} /></FieldRow>
-          <FieldRow label={m.settings_label_check_updates()} hint={m.system_check_updates_hint()} htmlFor="settingsCheckUpdates" inline><Switch id="settingsCheckUpdates" disabled={!canManage} checked={bool('check_for_updates', true)} onCheckedChange={(checked) => set({ check_for_updates: checked })} /></FieldRow>
-        </div>
-      </section>
-      <section aria-labelledby="systemHealthHeading">
-        <h2 id="systemHealthHeading" className={heading}>{m.system_health()}</h2>
-        <dl className="mt-2 grid grid-cols-[auto_1fr_auto] items-center gap-x-4 gap-y-2 text-sm">
+        <SettingToggle label={m.settings_label_summarize_updates_automatically()} id="settingsSummarizeUpdatesAutomatically" settingKey="summarize_updates_automatically" fallback disabled={!canManage || !bool('check_for_updates', true)} />
+        <SettingToggle label={m.settings_label_check_updates()} hint={m.system_check_updates_hint()} id="settingsCheckUpdates" settingKey="check_for_updates" fallback disabled={!canManage} />
+      </SettingsGroup>
+      <SettingsGroup id="health" title={m.settings_group_health()}>
+        <dl className="grid grid-cols-[auto_1fr_auto] items-center gap-x-4 gap-y-2 py-2 text-sm">
           <dt className="text-muted">{WEB}</dt>
           <dd className="text-text">{health.data?.status ?? '—'}{health.data?.disk?.percent !== undefined ? <span className="text-muted">{', '}{m.system_disk_used({ n: health.data.disk.percent.toFixed(0) })}</span> : null}</dd>
           <dd className="text-xs text-muted">{health.data?.checked_at ? formatDate(health.data.checked_at) : null}</dd>
@@ -148,12 +143,11 @@ export function SystemSection() {
           <dd className="text-text">{agent.data?.alive === true ? 'ok' : agent.data?.alive === false ? (agent.data.details?.reason ?? 'down') : agent.data?.details?.state ?? '—'}</dd>
           <dd>{canManage && <GatewayRestart />}</dd>
         </dl>
-      </section>
+      </SettingsGroup>
       {canManage && (
-        <section aria-labelledby="systemStopHeading" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-error/40 px-4 py-3">
-          <h2 id="systemStopHeading" className="text-sm font-semibold text-error">{m.system_shutdown()}<HelpTip label={m.field_help_about({ label: m.system_shutdown() })}>{m.system_shutdown_hint()}</HelpTip></h2>
-          <Button variant="ghost-danger" onClick={() => setConfirmShutdown(true)}>{m.system_shutdown()}</Button>
-        </section>
+        <SettingsGroup id="server" title={m.settings_group_server()}>
+          <SettingAction label={m.system_shutdown()} hint={m.system_shutdown_hint()}><Button variant="danger" onClick={() => setConfirmShutdown(true)}>{m.system_shutdown()}</Button></SettingAction>
+        </SettingsGroup>
       )}
       <ConfirmDialog open={confirmShutdown} onOpenChange={setConfirmShutdown} title={m.system_shutdown()} description={m.system_shutdown_confirm()} confirmLabel={m.system_shutdown()} cancelLabel={m.cancel()} danger onConfirm={() => shutdown.mutate()} />
       {/* Cancel sends nothing; the confirmation is sent once, with the same update. */}
@@ -216,7 +210,7 @@ function UpdateSummary({ target, name, info }: { target: 'webui' | 'agent'; name
               <div className="flex flex-col gap-4">
                 {summary.data.summary_sections.map((section) => (
                   <section key={section.title}>
-                    <h3 className="font-medium text-text">{section.title}</h3>
+                    <SectionHeader>{section.title}</SectionHeader>
                     <ul className="mt-1 list-disc pl-5 text-muted">{section.items.map((item) => <li key={item}>{item}</li>)}</ul>
                   </section>
                 ))}
@@ -263,7 +257,7 @@ function UpdatePath({ id, title, installed, installedNote, installedAction, stat
   return (
     <section aria-labelledby={`${id}Heading`} data-update-path={id} className="row-span-3 grid min-w-0 grid-rows-subgrid gap-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 id={`${id}Heading`} className="text-sm font-semibold text-text">{title}</h3>
+        <span id={`${id}Heading`} className="text-sm font-semibold text-text">{title}</span>
         {channel}
       </div>
       <ol className={cn('ml-[5px] self-start border-l pl-4', next && status.tone === 'update' ? 'border-accent' : 'border-border')}>

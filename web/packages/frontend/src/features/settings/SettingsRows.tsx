@@ -12,13 +12,13 @@ interface SettingProps { label: string; hint?: string; settingKey: string; id?: 
 const rowId = (id: string | undefined, settingKey: string) => id ?? `settings-${settingKey}`
 const trimmed = (draft: string) => draft.trim()
 
-/** One boolean server setting as a switch row. */
-export function SettingToggle({ label, hint, settingKey, id: givenId, fallback = false, disabled }: SettingProps & { fallback?: boolean }) {
+/** One boolean server setting as a switch row; `onSaved` runs once the server confirms a write. */
+export function SettingToggle({ label, hint, settingKey, id: givenId, fallback = false, disabled, onSaved }: SettingProps & { fallback?: boolean; onSaved?: () => void }) {
   const id = rowId(givenId, settingKey)
   const { bool, set } = useSettingField([settingKey])
   return (
     <FieldRow label={label} htmlFor={id} hint={hint} inline>
-      <Switch id={id} disabled={disabled} checked={bool(settingKey, fallback)} onCheckedChange={(checked) => set({ [settingKey]: checked })} />
+      <Switch id={id} disabled={disabled} checked={bool(settingKey, fallback)} onCheckedChange={(checked) => set({ [settingKey]: checked }, onSaved)} />
     </FieldRow>
   )
 }

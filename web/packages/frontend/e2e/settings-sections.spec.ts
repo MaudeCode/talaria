@@ -30,7 +30,7 @@ test('/settings/system still opens Updates, the update notification\'s settings.
   await page.goto('/settings/system')
   await expect(page).toHaveURL(/\/settings\/system$/)
   await expect(page.locator('[data-section="system"]')).toBeVisible()
-  await expect(page.locator('#systemUpdatesHeading')).toBeVisible()
+  await expect(page.locator('[data-group="updates"]')).toBeVisible()
 })
 
 test('a Tools tab keeps its list in the URL', async ({ page }) => {
