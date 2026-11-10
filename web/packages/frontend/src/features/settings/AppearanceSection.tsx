@@ -8,7 +8,6 @@ import { FontSizeSchema, SkinSchema } from '../../contracts/persisted'
 import { LOCALE_INFO } from '@maudecode/talaria-web-contracts'
 import { useLocale } from '../../i18n/useLocale'
 import { useSaveSettings } from '../../app/queries'
-import { SettingSelect } from './SettingsRows'
 import { useExtensionSkins } from '../../extensions/registry'
 import { cn } from '../../ui/cn'
 
@@ -88,10 +87,6 @@ export function AppearanceSection() {
           {LOCALE_INFO.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
         </Select>
       </FieldRow>
-      <SettingSelect label={m.settings_label_sidebar_density()} id="settingsSidebarDensity" settingKey="sidebar_density" fallback="compact" options={[
-        { value: 'compact', label: m.settings_sidebar_density_compact() },
-        { value: 'detailed', label: m.settings_sidebar_density_detailed() },
-      ]} />
     </div>
   )
 }
