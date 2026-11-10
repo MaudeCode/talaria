@@ -1,9 +1,10 @@
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { bootTestServer } from '../../server/dist/test/harness.js'
 import { FakeSidecar } from '../../server/dist/sidecar/fake.js'
 import { groupFixture } from '../../server/dist/test/group-fixture.js'
 import { Session } from '../../server/dist/sessions/session.js'
+import { writeEnvFile } from '../../server/dist/test/env-file.js'
 
 /** The seeded chat with tool calls and thinking; `/session/<id>` opens its transcript. */
 export const DEMO_SESSION_ID = '20261108_120000_demo'
@@ -46,6 +47,12 @@ async function seed(server: Awaited<ReturnType<typeof discussionServer>>['server
     jobs: [job('digest', 'Morning digest', {}), job('backup', 'Weekly backup', { enabled: false, state: 'paused' }), job('audit', 'Dependency audit', { last_status: 'error', last_error: 'Synthetic failure: registry unreachable' })] as never[],
     ...(params.probe_store ? { schedule_policy: true } : {}),
   }))
+  // A config.yaml with a default model and two synthetic provider keys gives the model picker a catalog to show.
+  writeFileSync(join(server.state, 'config.yaml'), '# demo\n')
+  sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: { model: { default: 'claude-sonnet-4-6', provider: 'anthropic' } } }))
+  writeEnvFile(join(server.state, '.env'), { ANTHROPIC_API_KEY: 'sk-ant-demo-0000', OPENROUTER_API_KEY: 'sk-or-demo-0000' })
+  server.deps.agentConfig.invalidate()
+  server.deps.catalog.invalidate()
   const workspace = join(server.state, 'workspace')
   mkdirSync(workspace, { recursive: true })
   const now = Math.floor(Date.now() / 1000)
