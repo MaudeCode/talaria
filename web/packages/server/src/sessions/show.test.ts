@@ -130,7 +130,8 @@ describe('show blocks (TAL-1968)', () => {
     expect(frame.headers.get('set-cookie')).toBeNull()
     expect(await frame.text()).toBe(body)
     // A forged grant, or another block's id under it, serves nothing.
-    expect((await s.get(`/${frameUrl.slice(0, -2)}00`)).status).toBe(404)
+    // The last hex digit flipped, so the forgery never equals the real signature (a fixed `00` did 1 run in 256).
+    expect((await s.get(`/${frameUrl.slice(0, -1)}${frameUrl.endsWith('0') ? '1' : '0'}`)).status).toBe(404)
     expect((await s.get('/show-frame/' + Buffer.from(reply.block_id).toString('base64url') + '.9999999999.00')).status).toBe(404)
     expect(await put('html', { title: 'Big', body: 'x'.repeat(512 * 1024 + 1) })).toMatchObject({ condition: 'html_too_large' })
     expect(await put('html', { title: 'Empty', body: '' })).toMatchObject({ condition: 'payload_invalid' })
