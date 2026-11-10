@@ -75,6 +75,9 @@ Follow that checklist's safety rules:
   `docs/UIUX-GUIDE.md`.
 - New UI with item actions (rows, cards, chips, tiles, messages, file entries) must ship a
   right-click and long-press menu through `ContextMenu`; see "Context menus" in `docs/UIUX-GUIDE.md`.
+- UI changes run `npm run lint -w packages/frontend` (its UI rules check is in `TESTING.md`), lower
+  `scripts/ui-rules-baseline.json` with `--update` when they remove a violation, and attach the demo tour's
+  screenshots (`TOUR_SHOTS`) of the pages they touch.
 - For UI or UX changes, include before/after evidence in the PR description
   (uploaded attachments, never committed files) and test relevant desktop,
   narrow, and mobile states.
