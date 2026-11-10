@@ -1,4 +1,4 @@
-import type { GatewaySessionParams, SideLaunch } from '@maudecode/talaria-web-contracts'
+import type { GatewaySessionParams, GatewaySessionResult, SideLaunch } from '@maudecode/talaria-web-contracts'
 import type { DatabaseSync } from 'node:sqlite'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -116,22 +116,29 @@ describe('native side launches (TAL-1340)', () => {
   })
 
   it('keeps one pending row while the receipt is held, and adopts an early completion without opening a second observation', async () => {
-    let accept!: () => void
+    let entered!: () => void
+    const dispatched = new Promise<void>((resolve) => { entered = resolve })
+    let acknowledge!: (result: GatewaySessionResult) => void
+    const receipt = new Promise<GatewaySessionResult>((resolve) => { acknowledge = resolve })
     const original = sidecar.responderFor('gateway.session')!
     sidecar.respond('gateway.session', (params, send, opts) => {
-      if (params.action === 'launch_background') return new Promise((resolve) => {
-        accept = () => { complete('background', 'Finished before the reply'); resolve({ ...attached(snapshot()), launch: reply }) }
-      })
+      if (params.action === 'launch_background') { entered(); return receipt }
       return original(params, send, opts)
     })
     const request = post('background')
-    await vi.waitFor(() => { expect(accept).toBeTypeOf('function') })
-    expect(await tasks()).toEqual([expect.objectContaining({ status: 'running', launch_state: 'pending' })])
-    accept()
-    const response = await request
-    expect(response.status).toBe(200)
-    await vi.waitFor(async () => { expect(await tasks()).toEqual([expect.objectContaining({ status: 'completed', launch_state: 'accepted' })]) })
-    expect(sidecar.calls.filter((c) => c.method === 'gateway.session' && (c.params as GatewaySessionParams).action === 'watch')).toHaveLength(1)
+    try {
+      await Promise.race([dispatched, request.then(async (response) => { throw new Error(`Launch ended before dispatch: ${response.status} ${await response.text()}`) })])
+      expect(await tasks()).toEqual([expect.objectContaining({ status: 'running', launch_state: 'pending' })])
+      complete('background', 'Finished before the reply')
+      acknowledge({ ...attached(snapshot()), launch: reply })
+      const response = await request
+      expect(response.status).toBe(200)
+      await vi.waitFor(async () => { expect(await tasks()).toEqual([expect.objectContaining({ status: 'completed', launch_state: 'accepted' })]) })
+      expect(sidecar.calls.filter((c) => c.method === 'gateway.session' && (c.params as GatewaySessionParams).action === 'watch')).toHaveLength(1)
+    } finally {
+      acknowledge({ ...attached(snapshot()), launch: reply })
+      await request.catch(() => undefined)
+    }
   })
 
   it.each(['disconnect', 'replay gap'])('keeps a launch unknown after %s and reconciles its matching replay without resending', async (failure) => {
