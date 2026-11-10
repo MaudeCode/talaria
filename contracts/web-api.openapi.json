@@ -87652,6 +87652,16 @@
                     "password_auth_enabled": {
                       "type": "boolean"
                     },
+                    "password_state": {
+                      "enum": [
+                        "ok",
+                        "idle",
+                        "warning",
+                        "error"
+                      ],
+                      "type": "string",
+                      "description": "TAL-2143: the Access password row's status: ok with a password, idle without one while sign-in is on, else the no-password warning level."
+                    },
                     "password_env_var": {
                       "type": "boolean"
                     },
@@ -88058,6 +88068,16 @@
                     },
                     "password_auth_enabled": {
                       "type": "boolean"
+                    },
+                    "password_state": {
+                      "enum": [
+                        "ok",
+                        "idle",
+                        "warning",
+                        "error"
+                      ],
+                      "type": "string",
+                      "description": "TAL-2143: the Access password row's status: ok with a password, idle without one while sign-in is on, else the no-password warning level."
                     },
                     "password_env_var": {
                       "type": "boolean"

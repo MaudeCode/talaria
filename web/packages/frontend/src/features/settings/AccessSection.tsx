@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import type { Settings } from '@maudecode/talaria-web-contracts'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { loadBootstrap, useBootstrap } from '../../app/bootstrap'
@@ -24,7 +25,7 @@ import { useResourceEffects, useResourceMutation, withEffects } from '../session
 export function AccessSection() {
   const bootstrap = useBootstrap()
   const qc = useQueryClient()
-  const { settings, bool } = useSettingField(['password_env_var', 'password_auth_enabled', 'auth_enabled', 'auth_disabled_acknowledged'])
+  const { settings, bool } = useSettingField(['password_env_var', 'password_auth_enabled', 'password_state', 'auth_enabled', 'auth_disabled_acknowledged'])
   const passkeys = useQuery({ queryKey: ['auth', 'passkeys'], queryFn: api.passkeysList, staleTime: 30_000, enabled: bootstrap.auth.passkey_feature_flag })
   const logout = useLogout()
   const fail = (e: unknown) => showErrorToast(e)
@@ -50,8 +51,8 @@ export function AccessSection() {
       {(canManage || passkeysOn || authEnabled) && (
         <SettingsGroup id="sign-in" title={m.settings_group_sign_in()} action={authEnabled ? <IconButton variant="ghost" label={m.system_logout()} onClick={() => { void logout() }}><LogOut aria-hidden="true" /></IconButton> : undefined}>
           {canManage && (bool('password_env_var')
-            ? <SettingRow label={m.settings_label_password()} hint={m.password_env_var_locked()} icon={Lock} detail={<StatusDot state="ok">{m.password_env_var_set()}</StatusDot>}>{null}</SettingRow>
-            : <PasswordRow passwordSet={bool('password_auth_enabled')} warning={bootstrap.auth.no_password_warning} />)}
+            ? <SettingRow label={m.settings_label_password()} hint={m.password_env_var_locked()} icon={Lock} detail={settings.data.password_state && <StatusDot state={settings.data.password_state}>{m.password_env_var_set()}</StatusDot>}>{null}</SettingRow>
+            : <PasswordRow passwordSet={bool('password_auth_enabled')} state={settings.data.password_state} />)}
           {canManage && !bool('auth_enabled') && <SettingToggle label={m.settings_label_auth_acknowledged()} hint={m.auth_acknowledged_label()} id="settingsAuthAck" settingKey="auth_disabled_acknowledged" icon={BellOff} onSaved={() => { void loadBootstrap() }} />}
           {passkeysOn && <>
             <SettingAction label={m.system_passkeys()}>{passkeysSupported() && <IconButton variant="default" label={m.system_passkey_register()} onClick={() => registerPasskey.mutate()} disabled={registerPasskey.isPending}><Plus aria-hidden="true" /></IconButton>}</SettingAction>
@@ -70,13 +71,15 @@ export function AccessSection() {
 
 /**
  * TAL-2143: whether a password is set, and one button that opens the password form under the row; Escape or a saved
- * password closes it. Without a password the server's no-password warning level, when it reports one, is the row's state.
+ * password closes it. The server's `password_state` is its dot; a warning or error level carries the no-password warning.
  */
-function PasswordRow({ passwordSet, warning }: { passwordSet: boolean; warning: 'error' | 'warning' | null }) {
+const PASSWORD_STATE_WORDS: Record<NonNullable<Settings['password_state']>, () => string> = {
+  ok: m.settings_password_state_set, idle: m.settings_password_state_not_set, warning: m.auth_disabled_warning_message, error: m.auth_disabled_warning_message,
+}
+
+function PasswordRow({ passwordSet, state: level }: { passwordSet: boolean; state: Settings['password_state'] }) {
   const [open, setOpen] = useState(false)
-  const state = passwordSet ? <StatusDot state="ok">{m.settings_password_state_set()}</StatusDot>
-    : warning ? <StatusDot state={warning} title={m.auth_disabled_warning_message()}>{m.auth_disabled_warning_message()}</StatusDot>
-    : <StatusDot state="idle">{m.settings_password_state_not_set()}</StatusDot>
+  const state = level && <StatusDot state={level} title={PASSWORD_STATE_WORDS[level]()}>{PASSWORD_STATE_WORDS[level]()}</StatusDot>
   return (
     <div>
       <SettingRow label={m.settings_label_password()} htmlFor="settingsPassword" icon={Lock} detail={state}>

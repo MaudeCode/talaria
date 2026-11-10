@@ -498,6 +498,18 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect((await json(await s.get('/api/settings'))).trusted_link_hosts_count).toBe(0)
   })
 
+  it('TAL-2143: load and save answer the password row\'s status: the no-password level, then ok once a password is set', async () => {
+    const fresh = await bootTestServer({ sidecar: new FakeSidecar() })
+    try {
+      expect((await json(await fresh.get('/api/settings'))).password_state).toBe('error')
+      expect((await json(await post(fresh, '/api/settings', { auth_disabled_acknowledged: true }))).password_state).toBe('warning')
+      expect((await json(await fresh.get('/api/settings'))).password_state).toBe('warning')
+      expect((await json(await post(fresh, '/api/settings', { _set_password: 'correct horse battery' }))).password_state).toBe('ok')
+    } finally {
+      await fresh.close()
+    }
+  })
+
   it('first password setup from loopback enables auth and logs the caller in with a session cookie', async () => {
     const res = await post(s, '/api/settings', { _set_password: 'correct horse battery' })
     expect(res.status).toBe(200)

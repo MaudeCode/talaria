@@ -110,6 +110,9 @@ async function authFields(ctx: RequestContext, into: Dict): Promise<void> {
   const auth = ctx.deps.auth
   into.auth_enabled = await auth.isAuthEnabled()
   into.password_auth_enabled = (await auth.getPasswordHash()) !== null
+  // TAL-2143: the Access password row's dot: set, unset behind another sign-in, else the no-password level (auth/gate.ts).
+  into.password_state = into.password_auth_enabled ? 'ok' : into.auth_enabled ? 'idle'
+    : (await ctx.deps.settings.load()).auth_disabled_acknowledged ? 'warning' : 'error'
   if (auth.passkeyFeatureFlagEnabled()) {
     const registered = await auth.passkeysEnabled()
     into.passkeys_enabled = registered

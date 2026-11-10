@@ -55,7 +55,7 @@ vi.mock('../../api/endpoints', async (original) => ({
 
   saveSettings: vi.fn(),
   fetchSkillContent: vi.fn(() => Promise.resolve({ content: 'Skill content', editable: false })),
-  fetchSettings: vi.fn(() => Promise.resolve({ password_auth_enabled: true, default_model: '' })),
+  fetchSettings: vi.fn(() => Promise.resolve({ password_auth_enabled: true, password_state: 'ok' as const, default_model: '' })),
   fetchSystemHealth: vi.fn(() => Promise.resolve({ status: 'ok' })),
   fetchAgentHealth: vi.fn(() => Promise.resolve({ alive: true })),
   fetchUpdatesCheck: vi.fn(() => Promise.resolve({})),

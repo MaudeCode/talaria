@@ -213,9 +213,9 @@ describe('settings pages', () => {
   })
 
   it('TAL-2143: without a password the row says so, or carries the server\'s warning level, and Escape closes the form Set password opens', async () => {
-    const access = (warning: 'error' | 'warning' | null) => <BootstrapContext.Provider value={{ ...DEFAULT_BOOTSTRAP, auth: { ...DEFAULT_BOOTSTRAP.auth, auth_enabled: false, no_password_warning: warning } }}><AccessSection /></BootstrapContext.Provider>
-    vi.mocked(fetchSettings).mockResolvedValueOnce({ password_auth_enabled: false, auth_enabled: false })
-    const view = await renderSection(access(null))
+    const access = <BootstrapContext.Provider value={{ ...DEFAULT_BOOTSTRAP, auth: { ...DEFAULT_BOOTSTRAP.auth, auth_enabled: false } }}><AccessSection /></BootstrapContext.Provider>
+    vi.mocked(fetchSettings).mockResolvedValueOnce({ password_auth_enabled: false, auth_enabled: false, password_state: 'idle' })
+    const view = await renderSection(access)
     const signIn = await screen.findByRole('region', { name: 'Sign-in' })
     expect(within(signIn).getByText('Not set').closest('[data-status]')).toHaveAttribute('data-status', 'idle')
     await userEvent.click(within(signIn).getByRole('button', { name: 'Set password' }))
@@ -228,8 +228,8 @@ describe('settings pages', () => {
     expect(screen.queryByRole('switch', { name: /approve/i })).toBeNull()
     view.unmount()
     for (const level of ['warning', 'error'] as const) {
-      vi.mocked(fetchSettings).mockResolvedValueOnce({ password_auth_enabled: false, auth_enabled: false })
-      const warnedView = await renderSection(access(level))
+      vi.mocked(fetchSettings).mockResolvedValueOnce({ password_auth_enabled: false, auth_enabled: false, password_state: level })
+      const warnedView = await renderSection(access)
       const warned = within(await screen.findByRole('region', { name: 'Sign-in' })).getByText('This instance is accessible without authentication.')
       expect(warned.closest('[data-status]')).toHaveAttribute('data-status', level)
       warnedView.unmount()
