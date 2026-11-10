@@ -212,7 +212,7 @@ test.describe('shell', () => {
       await page.getByRole('option', { name: 'Deutsch' }).click()
       await expect(page.locator('html')).toHaveAttribute('lang', 'de-DE')
       await expect(label).toHaveText('Sprache')
-      await expect(page.getByRole('heading', { name: 'Sprache', exact: true })).toBeVisible()
+      await expect(page.getByRole('group', { name: 'Design', exact: true })).toBeVisible()
       await expect(page.getByText('Language', { exact: true })).toHaveCount(0)
       expect(errors).toEqual([])
     } finally {
