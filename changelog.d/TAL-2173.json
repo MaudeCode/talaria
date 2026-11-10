@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "What's New in the iPhone app shows more than four new features in pages of four, with page dots and arrows; Continue turns the page and \"Skip, I like surprises\" closes it.",
+      "highlight": false,
+      "components": [
+        "app"
+      ],
+      "announce": false
+    }
+  ]
+}

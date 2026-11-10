@@ -28,6 +28,18 @@ final class WhatsNewAnnouncementTests: XCTestCase {
                                                        description: "Keep the conversations you use most at the top of the list."))
     }
 
+    /// The sheet pages any number of rows (TAL-2173); the generator owns the upper limit, so the App accepts it.
+    func testAnyNonEmptyRowCountIsAccepted() throws {
+        var payload = try XCTUnwrap(fixture()["app"] as? [String: Any])
+        let row = try XCTUnwrap((payload["rows"] as? [[String: Any]])?.first)
+        for count in [5, 24] {
+            payload["rows"] = (1...count).map { index in row.merging(["id": "TAL-\(index)-1"]) { $1 } }
+            XCTAssertEqual(WhatsNewAnnouncement.installed(info: try info(payload))?.rows.count, count)
+        }
+        payload["rows"] = [[String: Any]]()
+        XCTAssertNil(WhatsNewAnnouncement.installed(info: try info(payload)), "Zero rows stays quiet")
+    }
+
     func testUnknownFieldsAndIconsDecodeTolerantly() throws {
         var payload = try XCTUnwrap(fixture()["app"] as? [String: Any])
         payload["futureField"] = ["nested": true]

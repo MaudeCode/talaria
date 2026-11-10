@@ -27,7 +27,7 @@ public struct WhatsNewAnnouncement: Decodable, Equatable, Sendable, Identifiable
         guard let text = info[infoKey] as? String,
               let announcement = try? JSONDecoder().decode(Self.self, from: Data(text.utf8)),
               announcement.schemaVersion == 1, announcement.component == "app",
-              (1...4).contains(announcement.rows.count),
+              !announcement.rows.isEmpty,
               announcement.version == info["CFBundleShortVersionString"] as? String,
               announcement.sourceCommit == (info["TalariaRelease"] as? [String: Any])?["sourceRevision"] as? String
         else { return nil }

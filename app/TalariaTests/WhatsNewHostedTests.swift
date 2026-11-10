@@ -27,8 +27,9 @@ final class WhatsNewHostedTests: XCTestCase {
         return WhatsNewAnnouncement(
             schemaVersion: 1, id: "app-\(version)", component: "app", version: version,
             sourceCommit: String(repeating: "a", count: 40),
-            rows: authored.prefix(rows).enumerated().map { index, row in
-                .init(id: "TAL-\(firstTicket + index)-1", icon: row.0, title: row.1, description: row.2)
+            rows: (0..<rows).map { index in
+                let row = index < authored.count ? authored[index] : ("chat", "Feature \(index + 1)", "Synthetic row \(index + 1).")
+                return .init(id: "TAL-\(firstTicket + index)-1", icon: row.0, title: row.1, description: row.2)
             }
         )
     }
@@ -87,20 +88,162 @@ final class WhatsNewHostedTests: XCTestCase {
             ("duo-outer", HostedSize.duoOuter, .dark, .large),
             ("duo-inner", HostedSize.duoInner, .light, .large),
         ]
-        for (name, size, style, category) in layouts {
-            let window = try hostWindow(WhatsNewSheet(announcement: announcement(), defaults: defaults), size: size) {
-                $0.userInterfaceStyle = style
-                $0.preferredContentSizeCategory = category
+        // One page, then three pages of a nine-row announcement (TAL-2173), whose controls all stay on screen too.
+        for (rows, controls) in [(4, ["Continue"]), (9, ["Continue", Self.skip, "Previous page", "Next page", "Page 1 of 3"])] {
+            for (name, size, style, category) in layouts {
+                let name = "\(name)-\(rows)-rows"
+                let window = try hostWindow(WhatsNewSheet(announcement: announcement(rows: rows), defaults: defaults), size: size) {
+                    $0.userInterfaceStyle = style
+                    $0.preferredContentSizeCategory = category
+                }
+                for label in controls {
+                    let control = try XCTUnwrap(HostedAccessibility.element(in: window, label: label), "\(name): \(label)")
+                    let frame = control.accessibilityFrame
+                    XCTAssertTrue(window.bounds.contains(frame), "\(name): \(label) at \(frame) leaves \(window.bounds)")
+                }
+                if category.isAccessibilityCategory {
+                    // A page's own vertical scroll, not the pager's horizontal one.
+                    let scroll = window.firstView(ofType: UIScrollView.self) { $0.contentSize.height > $0.bounds.height }
+                    XCTAssertNotNil(scroll, "\(name): the rows scroll")
+                }
+                attachHostedScreenshot(window, name: "whats-new-\(name)")
             }
-            let scroll = try XCTUnwrap(window.firstView(ofType: UIScrollView.self), name)
-            let continueButton = try XCTUnwrap(HostedAccessibility.element(in: window, label: "Continue"), name)
-            let frame = continueButton.accessibilityFrame
-            XCTAssertTrue(window.bounds.contains(frame), "\(name): Continue at \(frame) leaves \(window.bounds)")
-            if category.isAccessibilityCategory {
-                XCTAssertGreaterThan(scroll.contentSize.height, scroll.bounds.height, "\(name): the rows scroll")
-            }
-            attachHostedScreenshot(window, name: "whats-new-\(name)")
         }
+    }
+
+    // MARK: - Pages (TAL-2173)
+
+    private static let skip = "Skip, I like surprises"
+
+    /// The row titles on the page in view: the pager keeps its neighbours mounted beside the window.
+    private func visibleRowTitles(in window: UIWindow, of announcement: WhatsNewAnnouncement) -> [String] {
+        let elements = HostedAccessibility.elements(in: window).filter { window.bounds.intersects($0.accessibilityFrame) }
+        return announcement.rows.map(\.title).filter { title in
+            elements.contains { $0.accessibilityLabel?.hasPrefix(title) == true }
+        }
+    }
+
+    func testMoreThanFourRowsPageFourAtATimeWithDotsAndArrows() throws {
+        // The sheet's safe area on the Duo outer screen, measured on the phone: its status column at the right edge
+        // narrows every row (TAL-2173 phone check). nil keeps the host's own.
+        let outerScreen = UIEdgeInsets(top: 8, left: 0, bottom: 35, right: 77)
+        let layouts: [(String, CGSize, UIUserInterfaceStyle, UIEdgeInsets?)] = [
+            ("phone-light", HostedSize.phone, .light, nil), ("phone-dark", HostedSize.phone, .dark, nil),
+            ("duo-outer-light", HostedSize.duoOuter, .light, outerScreen),
+            ("duo-outer-dark", HostedSize.duoOuter, .dark, outerScreen),
+        ]
+        let nine = announcement(rows: 9)
+        let titles = nine.rows.map(\.title)
+        for (name, size, style, insets) in layouts {
+            func host(_ announcement: WhatsNewAnnouncement) throws -> UIWindow {
+                let window = try hostWindow(WhatsNewSheet(announcement: announcement, defaults: defaults), size: size) {
+                    $0.userInterfaceStyle = style
+                }
+                if let insets, let root = window.rootViewController {
+                    // The host simulator's own insets differ from the Duo's; top them up, or take them back, to the Duo's.
+                    let host = root.view.safeAreaInsets
+                    root.additionalSafeAreaInsets = UIEdgeInsets(top: insets.top - host.top, left: insets.left - host.left,
+                                                                 bottom: insets.bottom - host.bottom, right: insets.right - host.right)
+                    window.layoutIfNeeded()
+                    settle()
+                    XCTAssertEqual(root.view.safeAreaInsets, insets, "\(name): the modelled safe area")
+                }
+                return window
+            }
+            // Paging leaves the heading where a one-page sheet has it.
+            let onePage = try host(announcement(rows: 4))
+            let onePageHeading = try XCTUnwrap(HostedAccessibility.element(in: onePage, label: WhatsNewSheet.title), name)
+                .accessibilityFrame
+            onePage.isHidden = true
+            let window = try host(nine)
+            XCTAssertEqual(visibleRowTitles(in: window, of: nine), Array(titles[0..<4]), "\(name): it opens on the first page")
+            XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Page 1 of 3"), name)
+            let previous = try XCTUnwrap(HostedAccessibility.element(in: window, label: "Previous page"), name)
+            let next = try XCTUnwrap(HostedAccessibility.element(in: window, label: "Next page"), name)
+            // A full page reads whole above the controls, without scrolling.
+            let lastRow = try XCTUnwrap(HostedAccessibility.elements(in: window, labelContaining: titles[3])
+                .first { window.bounds.intersects($0.accessibilityFrame) }, name)
+            XCTAssertLessThanOrEqual(lastRow.accessibilityFrame.maxY, previous.accessibilityFrame.minY,
+                                     "\(name): the fourth row runs under the page controls")
+            // Frames come back as 43.99999999999997 for a 44pt target; hit areas are checked to the whole point.
+            for arrow in [previous, next] {
+                XCTAssertGreaterThanOrEqual(arrow.accessibilityFrame.width.rounded(), 44, "\(name): \(arrow.accessibilityLabel ?? "")")
+                XCTAssertGreaterThanOrEqual(arrow.accessibilityFrame.height.rounded(), 44, "\(name): \(arrow.accessibilityLabel ?? "")")
+            }
+            let continueFrame = try XCTUnwrap(HostedAccessibility.element(in: window, label: "Continue"), name).accessibilityFrame
+            let headings = { HostedAccessibility.elements(in: window).filter { $0.accessibilityLabel == WhatsNewSheet.title } }
+            XCTAssertEqual(headings().count, 1, "\(name): one heading over every page")
+            let headingFrame = try XCTUnwrap(headings().first, name).accessibilityFrame
+            XCTAssertEqual(headingFrame, onePageHeading, "\(name): the heading sits where a one-page sheet has it")
+            XCTAssertTrue(previous.accessibilityTraits.contains(.notEnabled), "\(name): no page before the first")
+            XCTAssertFalse(next.accessibilityTraits.contains(.notEnabled), name)
+            attachHostedScreenshot(window, name: "whats-new-pages-first-\(name)")
+
+            HostedAccessibility.activate(next)
+            settle(0.3)
+            XCTAssertEqual(visibleRowTitles(in: window, of: nine), Array(titles[4..<8]), name)
+            XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Page 2 of 3"), "\(name): the current dot moved")
+            XCTAssertEqual(headings().map(\.accessibilityFrame), [headingFrame], "\(name): the heading stays put as the rows turn")
+
+            HostedAccessibility.activate(try XCTUnwrap(HostedAccessibility.element(in: window, label: "Next page"), name))
+            settle(0.3)
+            XCTAssertEqual(visibleRowTitles(in: window, of: nine), [titles[8]], name)
+            XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Page 3 of 3"), name)
+            let last = try XCTUnwrap(HostedAccessibility.element(in: window, label: "Next page"), name)
+            XCTAssertTrue(last.accessibilityTraits.contains(.notEnabled), "\(name): no page after the last")
+            XCTAssertEqual(try XCTUnwrap(HostedAccessibility.element(in: window, label: "Continue"), name).accessibilityFrame,
+                           continueFrame, "\(name): Continue stays under the thumb on the last page")
+            XCTAssertFalse(try XCTUnwrap(HostedAccessibility.element(in: window, label: "Previous page"), name)
+                .accessibilityTraits.contains(.notEnabled), name)
+            attachHostedScreenshot(window, name: "whats-new-pages-last-\(name)")
+            window.isHidden = true
+        }
+    }
+
+    func testContinueTurnsThePageAndTheSkipLineSitsUnderItUntilTheLast() async throws {
+        let presenter = WhatsNewPresenter(pending: nil, defaults: defaults)
+        let window = try hostWindow(WhatsNewHost(presenter: presenter))
+        let nine = announcement(rows: 9)
+        presenter.presented = nine
+        try await requireHeading(in: window)
+
+        for page in 1...2 {
+            _ = try await requireElement(in: window, label: "Page \(page) of 3")
+            let continueButton = try XCTUnwrap(HostedAccessibility.element(in: window, label: "Continue"))
+            let skip = try XCTUnwrap(HostedAccessibility.element(in: window, label: Self.skip), "Page \(page)")
+            XCTAssertGreaterThan(skip.accessibilityFrame.minY, continueButton.accessibilityFrame.minY, "Under Continue")
+            XCTAssertGreaterThanOrEqual(skip.accessibilityFrame.height.rounded(), 44)
+            HostedAccessibility.activate(continueButton)
+        }
+        _ = try await requireElement(in: window, label: "Page 3 of 3")
+        XCTAssertNotNil(HostedAccessibility.element(in: window, label: WhatsNewSheet.title), "Continue kept it open")
+        XCTAssertNil(HostedAccessibility.element(in: window, label: Self.skip), "No skip line on the last page")
+        XCTAssertEqual(acknowledged, [])
+        HostedAccessibility.activate(try XCTUnwrap(HostedAccessibility.element(in: window, label: "Continue")))
+        let closed = await awaitNoElement(in: window) { $0.accessibilityLabel == WhatsNewSheet.title }
+        XCTAssertTrue(closed, "Continue on the last page closes it")
+        XCTAssertEqual(acknowledged, nine.rows.map(\.id))
+    }
+
+    func testSkipAndSwipeFromTheFirstPageAcknowledgeEveryRow() async throws {
+        let presenter = WhatsNewPresenter(pending: nil, defaults: defaults)
+        let window = try hostWindow(WhatsNewHost(presenter: presenter))
+        let skipped = announcement("1.1.0", rows: 9)
+        presenter.presented = skipped
+        try await requireHeading(in: window)
+        HostedAccessibility.activate(try await requireElement(in: window, label: Self.skip))
+        let closed = await awaitNoElement(in: window) { $0.accessibilityLabel == WhatsNewSheet.title }
+        XCTAssertTrue(closed, "The skip line closes it")
+        XCTAssertEqual(acknowledged, skipped.rows.map(\.id), "Every row, shown or not")
+
+        let swiped = announcement("1.2.0", rows: 9, firstTicket: 10)
+        presenter.presented = swiped
+        try await requireHeading(in: window)
+        window.rootViewController?.presentedViewController?.dismiss(animated: false)
+        _ = await awaitNoElement(in: window) { $0.accessibilityLabel == WhatsNewSheet.title }
+        XCTAssertEqual(acknowledged, (skipped.rows + swiped.rows).map(\.id))
+        XCTAssertTrue(skipped.isAcknowledged(defaults: defaults) && swiped.isAcknowledged(defaults: defaults),
+                      "A later launch offers none of them")
     }
 
     func testOnboardingRowsKeepTheirLook() throws {
