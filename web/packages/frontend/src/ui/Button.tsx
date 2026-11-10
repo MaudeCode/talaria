@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import type { ButtonHTMLAttributes, ReactNode, Ref } from 'react'
 import { ChevronLeft } from 'lucide-react'
 import { m } from '../paraglide/messages.js'
 import { cn } from './cn'
@@ -17,6 +17,7 @@ const VARIANT: Record<Variant, string> = {
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant
+  ref?: Ref<HTMLButtonElement>
 }
 
 /** A button's classes, for a link that looks like one (an external authorization link). */

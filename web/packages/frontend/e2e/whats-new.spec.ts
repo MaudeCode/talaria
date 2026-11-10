@@ -19,10 +19,16 @@ const announcement: WhatsNewAnnouncement = {
     { id: 'TAL-12-1', icon: 'automation', title: 'Scheduled tasks', description: 'Run a prompt every morning and read the result when you sit down.' },
   ],
 }
-/** A later Experimental build of the same X.Y.Z core packages the newest four rows, one of them new (TAL-1981). */
+/** A later Experimental build of the same X.Y.Z core packages one new row beside the earlier ones (TAL-1981). */
 const EXPERIMENTAL = '1.1.0-exp.cccccccccccc'
 const NEW_ROW = { id: 'TAL-13-1', icon: 'share', title: 'Share a chat', description: 'Send a read-only link to any conversation.' } as const
 const experimental: WhatsNewAnnouncement = { ...announcement, id: `web-${EXPERIMENTAL}`, version: EXPERIMENTAL, rows: [...announcement.rows.slice(1), NEW_ROW] }
+/** A release with nine new rows: three pages of four, four and one (TAL-2174). */
+const PAGED_VERSION = '1.2.0'
+const paged: WhatsNewAnnouncement = {
+  ...announcement, id: `web-${PAGED_VERSION}`, version: PAGED_VERSION,
+  rows: Array.from({ length: 9 }, (_, i) => ({ id: `TAL-${String(200 + i)}-1`, icon: 'sparkles', title: `Feature ${String(i + 1)}`, description: `What feature ${String(i + 1)} does for you.` })),
+}
 const TITLE = "What's New in Talaria Web"
 const OLD_BUILD = 'a'.repeat(64)
 const BUILD_META = /(<meta name="talaria-build" content=")([a-f0-9]{64})(")/
@@ -38,7 +44,7 @@ async function serveWhatsNew(target: Page | BrowserContext, request: Page['reque
     const params = new URL(route.request().url()).searchParams
     server.reads.push({ loaded_build: params.get('loaded_build'), observed: params.get('observed') })
     if (server.fail) return route.fulfill({ status: 502, json: { error: 'bad gateway' } })
-    const payload = [announcement, experimental].find((a) => a.version === server.version) ?? null
+    const payload = [announcement, experimental, paged].find((a) => a.version === server.version) ?? null
     return route.fulfill({ json: whatsNewState(payload, release(server.version), params.get('observed') ?? undefined, params.get('loaded_build') ?? undefined, current) })
   })
 }
@@ -201,4 +207,77 @@ test('the prompt waits for a draft in progress and returns to it untouched', asy
   await expect(dialog(page)).toBeVisible()
   await dialog(page).getByRole('button', { name: 'Continue' }).click()
   await expect(page.locator('#msg')).toHaveValue('Keep this thought')
+})
+
+test('nine new rows page four at a time with arrows, keys, Continue and a skip line (TAL-2174)', async ({ page }, testInfo) => {
+  const server: Server = { version: '1.0.0', fail: false, reads: [] }
+  await serveWhatsNew(page, page.request, server)
+  await page.goto('/')
+  await settle(page)
+  await expect.poll(() => server.reads.length).toBe(1)
+  server.version = PAGED_VERSION
+  await page.reload()
+  const shown = dialog(page)
+  await expect(shown).toBeVisible()
+  const titles = (from: number, to: number) => paged.rows.slice(from, to).map((row) => row.title + row.description)
+  const rows = shown.getByRole('listitem')
+  const previous = shown.getByRole('button', { name: 'Previous page' })
+  const next = shown.getByRole('button', { name: 'Next page' })
+  const proceed = shown.getByRole('button', { name: 'Continue' })
+  const skip = shown.getByRole('button', { name: 'Skip, I like surprises' })
+  await expect(rows).toHaveText(titles(0, 4))
+  await expect(shown.locator('[data-page-dot]')).toHaveCount(3)
+  await expect(proceed).toBeFocused()
+  const height = (await shown.boundingBox())!.height
+  const sameHeight = async () => { expect((await shown.boundingBox())!.height).toBeCloseTo(height, 0) }
+  await page.screenshot({ path: testInfo.outputPath('whats-new-paged-1.png') })
+
+  // At every width the arrows and dots share one line, the skip line is one line, and nothing scrolls sideways.
+  const centre = async (target: ReturnType<Page['locator']>) => { const b = (await target.boundingBox())!; return b.y + b.height / 2 }
+  for (const target of [shown.locator('[data-page-dot]').first(), next]) expect(Math.abs(await centre(target) - await centre(previous))).toBeLessThan(1)
+  expect(await skip.evaluate((el) => { const range = document.createRange(); range.selectNodeContents(el); return range.getClientRects().length })).toBe(1)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+  if (testInfo.project.use.hasTouch) {
+    for (const target of [previous, next, skip]) {
+      const box = (await target.boundingBox())!
+      expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(44)
+    }
+  }
+
+  // Mouse: the next arrow turns the page; the previous arrow on page 1 does nothing.
+  await expect(previous).toHaveAttribute('aria-disabled', 'true')
+  await previous.click({ force: true })
+  await expect(rows).toHaveText(titles(0, 4))
+  await next.click()
+  await expect(rows).toHaveText(titles(4, 8))
+  await sameHeight()
+  // Keyboard: the arrow keys turn the page, and the last page keeps the skip line's space.
+  await page.keyboard.press('ArrowRight')
+  await expect(rows).toHaveText(titles(8, 9))
+  await expect(skip).toHaveCount(0)
+  await sameHeight()
+  await page.screenshot({ path: testInfo.outputPath('whats-new-paged-3.png') })
+  await page.keyboard.press('ArrowLeft')
+  await expect(rows).toHaveText(titles(4, 8))
+  // Continue turns the page and keeps focus, by keyboard and by mouse, and closes on the last page.
+  await proceed.focus()
+  await page.keyboard.press('Enter')
+  await expect(rows).toHaveText(titles(8, 9))
+  await expect(proceed).toBeFocused()
+  await sameHeight()
+  await proceed.click()
+  await expect(shown).toHaveCount(0)
+  await page.reload()
+  await settle(page)
+  await expect(dialog(page)).toHaveCount(0)
+
+  // Settings replays every packaged row in pages, from the first page, and the skip line closes it.
+  await page.goto('/settings/about')
+  await settle(page)
+  await page.getByRole('button', { name: REPLAY, exact: true }).click()
+  await expect(dialog(page).getByRole('listitem')).toHaveText(titles(0, 4))
+  await dialog(page).getByRole('button', { name: 'Continue' }).click()
+  await expect(dialog(page).getByRole('listitem')).toHaveText(titles(4, 8))
+  await dialog(page).getByRole('button', { name: 'Skip, I like surprises' }).click()
+  await expect(dialog(page)).toHaveCount(0)
 })

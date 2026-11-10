@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "What's New keeps the newest 24 new features instead of four, and Talaria Web shows them four to a page with dots and arrows; Continue turns the page and \"Skip, I like surprises\" closes it.",
+      "highlight": false,
+      "components": [
+        "app",
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

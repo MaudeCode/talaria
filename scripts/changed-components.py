@@ -121,9 +121,9 @@ def path_suites(path):
             or (docs_directory and path.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif")))
             or path in ("LICENSE", "web/NOTICE")):
         return set()
-    # The release-note generator and stamp read the What's New schema (TAL-1616).
+    # The release-note generator and stamp read the What's New schema (TAL-1616); Relay never does (TAL-2174).
     if path == "contracts/whats-new.schema.json":
-        return CONSUMERS | {"tooling"}
+        return CONSUMERS - {"relay"} | {"tooling"}
     # Only Web's drift check reads the OpenAPI document; the contracts probe covers what the App decodes (TAL-1674).
     if path == "contracts/web-api.openapi.json":
         return {"web_server", "contracts"}

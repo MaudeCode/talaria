@@ -335,7 +335,7 @@ shell once the server is reachable; offline it falls back to the cached shell an
 
 A stamped Web release can carry an authored announcement (`_whats_new.json`,
 generated from release fragments; see `app/docs/release-notes.md`): the newest
-four announced rows reachable from the source, whatever release tags exist. The server
+24 announced rows reachable from the source, whatever release tags exist. The server
 loads it at startup and discards a payload that is malformed or names another
 component, version, or source. `GET /api/whats-new` returns that announcement
 with the decision for one tab. The tab sends its `loaded_build` and the opaque
@@ -345,7 +345,7 @@ with the decision for one tab. The tab sends its `loaded_build` and the opaque
   it only after the user dismisses an `eligible` announcement). A failed read and
   an unseen announcement therefore leave the stored token unchanged.
 - The token lists the announcement row ids (`TAL-<n>-<entry>`) the browser has
-  acknowledged, newest last, capped at the 32 most recent ids and 1024
+  acknowledged, newest last, capped at the 64 most recent ids and 1024
   characters. The first observation in a browser is quiet and records every
   packaged row. After that, any packaged row the token does not list is
   presented once, whatever the release version: an Experimental build of the
@@ -361,8 +361,12 @@ with the decision for one tab. The tab sends its `loaded_build` and the opaque
 - The tab keeps the token per Web origin and signed-in user (anonymous use has
   its own scope) and shows the dialog only after sign-in and onboarding, once no
   other dialog or menu is open, no navigation is pending, and no focused field
-  holds a draft. Continue, Escape and the backdrop close it at once and store
-  the acknowledgement; other tabs of the browser close their copy. Settings >
+  holds a draft. The dialog shows four rows to a page; with more, dots and
+  arrows (or the Left and Right keys) turn the page, Continue turns it until the
+  last page, and "Skip, I like surprises" under it closes the dialog from any
+  earlier page. Continue on the last page, the skip line, Escape and the
+  backdrop close it at once and store the acknowledgement for every row; other
+  tabs of the browser close their copy. Settings >
   About > What's New replays the full announcement; a replay never re-enables
   the automatic prompt.
   A failed read stays quiet and is retried at the next launch or Settings visit.

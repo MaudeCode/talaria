@@ -189,11 +189,21 @@ describe("What's New (TAL-1616)", () => {
     }
   })
 
-  it('keeps the token at or under 32 ids and 1024 characters, dropping the oldest', () => {
-    const prior = Array.from({ length: 40 }, (_, i) => `TAL-${String(100000000 + i)}-1`)
+  it('presents the 20 unseen rows of a 24-row build after 4 were acknowledged, then records all 24 (TAL-2174)', () => {
+    const ids = Array.from({ length: 24 }, (_, i) => `TAL-${String(2000 + i)}-1`)
+    const packaged = withRows(...ids)
+    const seen = `web:rows:${ids.slice(20).join(',')}`
+    const first = state(stamped('1.1.0'), seen, build, build, packaged)
+    expect(first.presentation?.rows.map((r) => r.id)).toEqual(ids.slice(0, 20))
+    expect(first.acknowledgement!.slice('web:rows:'.length).split(',').sort()).toEqual([...ids].sort())
+    expect(state(stamped('1.1.0'), first.acknowledgement!, build, build, packaged)).toMatchObject({ eligible: false, presentation: null, observation: first.acknowledgement })
+  })
+
+  it('keeps the token at or under 64 ids and 1024 characters, dropping the oldest', () => {
+    const prior = Array.from({ length: 80 }, (_, i) => `TAL-${String(1000 + i)}-1`)
     const next = state(stamped('1.1.0'), `web:rows:${prior.join(',')}`).acknowledgement!
     const ids = next.slice('web:rows:'.length).split(',')
-    expect(ids.length).toBeLessThanOrEqual(32)
+    expect(ids.length).toBe(64)
     expect(next.length).toBeLessThanOrEqual(1024)
     expect(ids.slice(-2)).toEqual(['TAL-9-1', 'TAL-10-2'])
     expect(ids[0]).not.toBe(prior[0])

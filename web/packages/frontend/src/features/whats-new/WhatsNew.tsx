@@ -1,14 +1,15 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRouterState } from '@tanstack/react-router'
-import { Accessibility, Bell, Cpu, Gauge, Lock, MessageSquare, Mic, Palette, Paperclip, RefreshCw, Search, Settings, Share2, ShieldCheck, Sparkles, Workflow, type LucideIcon } from 'lucide-react'
+import { Accessibility, Bell, ChevronLeft, ChevronRight, Cpu, Gauge, Lock, MessageSquare, Mic, Palette, Paperclip, RefreshCw, Search, Settings, Share2, ShieldCheck, Sparkles, Workflow, type LucideIcon } from 'lucide-react'
 import { WhatsNewObservedSchema, type WhatsNewAnnouncement } from '@maudecode/talaria-web-contracts'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { useBootstrap } from '../../app/bootstrap'
 import { readPersisted, writePersisted } from '../../lib/persisted'
-import { Button } from '../../ui/Button'
+import { Button, IconButton } from '../../ui/Button'
+import { cn } from '../../ui/cn'
 import { Dialog } from '../../ui/Dialog'
 
 type Icon = WhatsNewAnnouncement['rows'][number]['icon']
@@ -112,27 +113,91 @@ export function WhatsNew() {
   return <WhatsNewDialog announcement={announcement} open={presented} onDismiss={dismiss} />
 }
 
-/** Apple Notes-style announcement: heading, up to four icon/title/benefit rows, one Continue action. */
+/** Layout, not a decision about which rows show: every row shows, this many to a page (TAL-2174). */
+const ROWS_PER_PAGE = 4
+/** The skip line's slot; the last page keeps it empty so the dialog's height never changes as the pages turn. */
+const SKIP_SLOT = 'mt-1 min-h-9 w-full pointer-coarse:min-h-11'
+
+const editable = (el: EventTarget | null) => el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement || (el instanceof HTMLElement && el.isContentEditable)
+
+/**
+ * Apple Notes-style announcement: heading, icon/title/benefit rows, one Continue action. More than four rows turn into
+ * pages of four with dots and arrows; Continue turns the page until the last, where it closes, and a skip line under it
+ * closes the dialog from any earlier page (TAL-2174). Every way of closing it acknowledges every row.
+ */
 export function WhatsNewDialog({ announcement, open, onDismiss }: { announcement: WhatsNewAnnouncement; open: boolean; onDismiss: () => void }) {
+  const pages: WhatsNewAnnouncement['rows'][] = []
+  for (let i = 0; i < announcement.rows.length; i += ROWS_PER_PAGE) pages.push(announcement.rows.slice(i, i + ROWS_PER_PAGE))
+  const [page, setPage] = useState(0)
+  // Each opening starts on the first page.
+  const [shownOpen, setShownOpen] = useState(open)
+  if (open !== shownOpen) {
+    setShownOpen(open)
+    if (open) setPage(0)
+  }
+  const current = Math.min(page, pages.length - 1)
+  const paged = pages.length > 1
+  const last = current === pages.length - 1
+  const turn = (to: number) => { if (to >= 0 && to < pages.length) setPage(to) }
+  const continueRef = useRef<HTMLButtonElement>(null)
+  const pageKeys = (event: KeyboardEvent) => {
+    if (!paged || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || editable(event.target)) return
+    if (event.key === 'ArrowRight') turn(current + 1)
+    else if (event.key === 'ArrowLeft') turn(current - 1)
+    else return
+    event.preventDefault()
+  }
+  // An unavailable arrow keeps focus (aria-disabled, not disabled) and does nothing.
+  const arrow = (to: number, label: string, Icon: LucideIcon) => {
+    const unavailable = to < 0 || to >= pages.length
+    return (
+      <IconButton variant="ghost" label={label} aria-disabled={unavailable || undefined} onClick={() => { turn(to) }}
+        className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:bg-transparent">
+        <Icon aria-hidden="true" />
+      </IconButton>
+    )
+  }
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) onDismiss() }} title={m.whats_new_title()}
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onDismiss() }} title={m.whats_new_title()} initialFocus={continueRef} onKeyDown={pageKeys}
       maxWidth={440} className="max-h-[90dvh] overflow-y-auto px-6 pt-8 pb-6 max-[480px]:px-5" titleClassName="text-center text-2xl leading-tight font-bold tracking-(--heading-tracking)">
       <div data-whats-new="">
-        <ul className="mt-2 flex flex-col gap-6">
-          {announcement.rows.map((row) => {
-            const RowIcon = ICONS[row.icon]
+        {/* Every page shares one grid cell, so the dialog is as tall as its tallest page and nothing moves on a turn. */}
+        <div className="mt-2 grid">
+          {pages.map((rows, index) => {
+            const hidden = index !== current
             return (
-              <li key={row.id} className="flex items-start gap-4">
-                <RowIcon aria-hidden="true" className="mt-0.5 size-7 shrink-0 text-accent-text" strokeWidth={1.75} />
-                <div className="min-w-0">
-                  <p className="text-[15px] font-semibold text-strong [overflow-wrap:anywhere]">{row.title}</p>
-                  <p className="mt-0.5 text-sm text-muted [overflow-wrap:anywhere]">{row.description}</p>
-                </div>
-              </li>
+              <ul key={index} className={cn('col-start-1 row-start-1 flex flex-col gap-6', hidden && 'invisible')} inert={hidden} aria-hidden={hidden || undefined}>
+                {rows.map((row) => {
+                  const RowIcon = ICONS[row.icon]
+                  return (
+                    <li key={row.id} className="flex items-start gap-4">
+                      <RowIcon aria-hidden="true" className="mt-0.5 size-7 shrink-0 text-accent-text" strokeWidth={1.75} />
+                      <div className="min-w-0">
+                        <p className="text-[15px] font-semibold text-strong [overflow-wrap:anywhere]">{row.title}</p>
+                        <p className="mt-0.5 text-sm text-muted [overflow-wrap:anywhere]">{row.description}</p>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
             )
           })}
-        </ul>
-        <Button variant="primary" className="mt-8 min-h-11 w-full justify-center" onClick={onDismiss}>{m.whats_new_continue()}</Button>
+        </div>
+        {paged && (
+          <div className="mt-6 flex items-center justify-center gap-3">
+            {arrow(current - 1, m.whats_new_previous_page(), ChevronLeft)}
+            {/* The dots only show where the reader is; the live region below says it. */}
+            <div aria-hidden="true" className="flex items-center gap-2">
+              {pages.map((_, index) => <span key={index} data-page-dot={index === current ? 'current' : ''} className={cn('size-2 rounded-full', index === current ? 'bg-accent' : 'bg-border2')} />)}
+            </div>
+            {arrow(current + 1, m.whats_new_next_page(), ChevronRight)}
+            <p className="sr-only" aria-live="polite">{m.whats_new_page_status({ page: String(current + 1), pages: String(pages.length) })}</p>
+          </div>
+        )}
+        <Button ref={continueRef} variant="primary" className={cn(paged ? 'mt-4' : 'mt-8', 'min-h-11 w-full justify-center')} onClick={() => { if (last) onDismiss(); else turn(current + 1) }}>{m.whats_new_continue()}</Button>
+        {/* Translations keep the word for skipping first and stay one short line. */}
+        {paged && !last && <button type="button" className={cn(SKIP_SLOT, 'text-[13px] text-muted hover:underline focus-visible:underline')} onClick={onDismiss}>{m.whats_new_skip()}</button>}
+        {paged && last && <div aria-hidden="true" className={SKIP_SLOT} />}
       </div>
     </Dialog>
   )

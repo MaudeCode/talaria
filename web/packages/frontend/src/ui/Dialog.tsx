@@ -1,6 +1,6 @@
 import { Dialog as BaseDialog } from '@base-ui/react/dialog'
 import { AlertDialog as BaseAlertDialog } from '@base-ui/react/alert-dialog'
-import { memo, type CSSProperties, type ReactNode } from 'react'
+import { memo, type CSSProperties, type KeyboardEventHandler, type ReactNode } from 'react'
 import { cn } from './cn'
 import { BACKDROP_MOTION, DIALOG_MOTION, playExitOnUnmount } from './popupMotion'
 
@@ -17,6 +17,10 @@ export interface DialogProps {
   titleClassName?: string | undefined
   /** Where focus goes on close; by default the element focused before it opened. */
   finalFocus?: BaseDialog.Popup.Props['finalFocus']
+  /** Where focus goes on open; by default the first focusable element. */
+  initialFocus?: BaseDialog.Popup.Props['initialFocus']
+  /** Keys pressed anywhere in the dialog, its own surface included. */
+  onKeyDown?: KeyboardEventHandler<HTMLDivElement> | undefined
 }
 
 /** A closing dialog keeps what it last showed through its exit: its parent has usually cleared those values already. */
@@ -27,12 +31,12 @@ const HeldWhileClosing = memo(function HeldWhileClosing({ children }: { open: bo
 const BACKDROP = cn('fixed inset-0 z-[1300] bg-black/50', BACKDROP_MOTION)
 
 /** Modal dialog: focus trap, escape, backdrop click, and aria wiring via Base UI. */
-export function Dialog({ open, onOpenChange, title, description, children, className, maxWidth = 520, titleClassName, finalFocus }: DialogProps) {
+export function Dialog({ open, onOpenChange, title, description, children, className, maxWidth = 520, titleClassName, finalFocus, initialFocus, onKeyDown }: DialogProps) {
   return (
     <BaseDialog.Root open={open} onOpenChange={onOpenChange}>
       <BaseDialog.Portal>
         <BaseDialog.Backdrop ref={playExitOnUnmount} className={BACKDROP} />
-        <BaseDialog.Popup ref={playExitOnUnmount} finalFocus={finalFocus} style={{ '--dialog-max': `${maxWidth}px` } as CSSProperties} className={cn('fixed left-1/2 top-1/2 z-[1301] max-h-[90dvh] overflow-y-auto w-[min(92%,var(--dialog-max))] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-surface p-5 text-text shadow-md outline-none', DIALOG_MOTION, className)}>
+        <BaseDialog.Popup ref={playExitOnUnmount} initialFocus={initialFocus} finalFocus={finalFocus} onKeyDown={onKeyDown} style={{ '--dialog-max': `${maxWidth}px` } as CSSProperties} className={cn('fixed left-1/2 top-1/2 z-[1301] max-h-[90dvh] overflow-y-auto w-[min(92%,var(--dialog-max))] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-surface p-5 text-text shadow-md outline-none', DIALOG_MOTION, className)}>
           <HeldWhileClosing open={open}>
             <BaseDialog.Title className={cn('text-strong [overflow-wrap:anywhere]', titleClassName ?? 'text-base font-semibold')}>{title}</BaseDialog.Title>
             {description && <BaseDialog.Description className="mt-1 text-sm text-muted [overflow-wrap:anywhere]">{description}</BaseDialog.Description>}

@@ -131,6 +131,12 @@
         "icon": "notifications",
         "title": "Calmer notifications",
         "description": "Alerts from the same chat now arrive together."
+      },
+      {
+        "id": "TAL-11-3",
+        "icon": "appearance",
+        "title": "Fresh colors",
+        "description": "Chats use clearer colors in light and dark mode."
       }
     ]
   },
@@ -244,6 +250,126 @@
         },
         {
           "id": "TAL-9-5",
+          "icon": "chat",
+          "title": "Pinned chats",
+          "description": "Keep the conversations you use most at the top of the list."
+        },
+        {
+          "id": "TAL-9-6",
+          "icon": "chat",
+          "title": "Pinned chats",
+          "description": "Keep the conversations you use most at the top of the list."
+        },
+        {
+          "id": "TAL-9-7",
+          "icon": "chat",
+          "title": "Pinned chats",
+          "description": "Keep the conversations you use most at the top of the list."
+        },
+        {
+          "id": "TAL-9-8",
+          "icon": "chat",
+          "title": "Pinned chats",
+          "description": "Keep the conversations you use most at the top of the list."
+        },
+        {
+          "id": "TAL-9-9",
+          "icon": "chat",
+          "title": "Pinned chats",
+          "description": "Keep the conversations you use most at the top of the list."
+        },
+        {
+          "id": "TAL-9-10",
+          "icon": "chat",
+          "title": "Pinned chats",
+          "description": "Keep the conversations you use most at the top of the list."
+        },
+        {
+          "id": "TAL-9-11",
+          "icon": "chat",
+          "title": "Pinned chats",
+          "description": "Keep the conversations you use most at the top of the list."
+        },
+        {
+          "id": "TAL-9-12",
+          "icon": "chat",
+          "title": "Pinned chats",
+          "description": "Keep the conversations you use most at the top of the list."
+        },
+        {
+          "id": "TAL-9-13",
+          "icon": "chat",
+          "title": "Pinned chats",
+          "description": "Keep the conversations you use most at the top of the list."
+        },
+        {
+          "id": "TAL-9-14",
+          "icon": "chat",
+          "title": "Pinned chats",
+          "description": "Keep the conversations you use most at the top of the list."
+        },
+        {
+          "id": "TAL-9-15",
+          "icon": "chat",
+          "title": "Pinned chats",
+          "description": "Keep the conversations you use most at the top of the list."
+        },
+        {
+          "id": "TAL-9-16",
+          "icon": "chat",
+          "title": "Pinned chats",
+          "description": "Keep the conversations you use most at the top of the list."
+        },
+        {
+          "id": "TAL-9-17",
+          "icon": "chat",
+          "title": "Pinned chats",
+          "description": "Keep the conversations you use most at the top of the list."
+        },
+        {
+          "id": "TAL-9-18",
+          "icon": "chat",
+          "title": "Pinned chats",
+          "description": "Keep the conversations you use most at the top of the list."
+        },
+        {
+          "id": "TAL-9-19",
+          "icon": "chat",
+          "title": "Pinned chats",
+          "description": "Keep the conversations you use most at the top of the list."
+        },
+        {
+          "id": "TAL-9-20",
+          "icon": "chat",
+          "title": "Pinned chats",
+          "description": "Keep the conversations you use most at the top of the list."
+        },
+        {
+          "id": "TAL-9-21",
+          "icon": "chat",
+          "title": "Pinned chats",
+          "description": "Keep the conversations you use most at the top of the list."
+        },
+        {
+          "id": "TAL-9-22",
+          "icon": "chat",
+          "title": "Pinned chats",
+          "description": "Keep the conversations you use most at the top of the list."
+        },
+        {
+          "id": "TAL-9-23",
+          "icon": "chat",
+          "title": "Pinned chats",
+          "description": "Keep the conversations you use most at the top of the list."
+        },
+        {
+          "id": "TAL-9-24",
+          "icon": "chat",
+          "title": "Pinned chats",
+          "description": "Keep the conversations you use most at the top of the list."
+        },
+        {
+          "id": "TAL-9-25",
           "icon": "chat",
           "title": "Pinned chats",
           "description": "Keep the conversations you use most at the top of the list."
