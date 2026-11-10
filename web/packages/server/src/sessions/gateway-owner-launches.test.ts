@@ -127,7 +127,7 @@ describe('native side launches (TAL-1340)', () => {
     })
     const request = post('background')
     try {
-      await Promise.race([dispatched, request.then(async (response) => { throw new Error(`Launch ended before dispatch: ${response.status} ${await response.text()}`) })])
+      await Promise.race([dispatched, request.then(async (response) => { throw new Error(`Launch ended before dispatch: ${response.status} ${await response.clone().text()}`) })])
       expect(await tasks()).toEqual([expect.objectContaining({ status: 'running', launch_state: 'pending' })])
       complete('background', 'Finished before the reply')
       acknowledge({ ...attached(snapshot()), launch: reply })
