@@ -1091,7 +1091,6 @@
 	"profile_active": "Attivo",
 	"profile_api_key_label": "Chiave API",
 	"profile_api_key_placeholder": "Chiave API (opzionale)",
-	"profile_api_keys_configured": "Chiavi API configurate",
 	"profile_base_url_label": "URL Base",
 	"profile_base_url_placeholder": "Base URL (opzionale, es. http://localhost:11434)",
 	"profile_base_url_rule": "L'URL Base deve iniziare con http:// o https://",

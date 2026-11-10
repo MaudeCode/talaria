@@ -1044,7 +1044,6 @@
 	"profile_active": "アクティブ",
 	"profile_api_key_label": "APIキー",
 	"profile_api_key_placeholder": "APIキー (任意)",
-	"profile_api_keys_configured": "APIキー設定済み",
 	"profile_base_url_label": "ベース URL",
 	"profile_base_url_placeholder": "ベース URL (任意、例: http://localhost:11434)",
 	"profile_base_url_rule": "ベース URL は http:// または https:// で始める必要があります",

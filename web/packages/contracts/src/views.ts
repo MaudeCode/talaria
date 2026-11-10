@@ -800,7 +800,10 @@ export const ProfileSchema = z.looseObject({
   /** TAL-819: skill and memory writes the Agent staged for approval, reviewed on the Skills and Memory pages. */
   pending_writes: z.number().int().optional(),
 })
-export const ProfilesSchema = z.looseObject({ profiles: z.array(ProfileSchema), active: z.string(), single_profile_mode: z.boolean().optional() })
+export const ProfilesSchema = z.looseObject({
+  profiles: z.array(ProfileSchema), active: z.string(), single_profile_mode: z.boolean().optional(),
+  summary: z.object({ total: z.number().int(), gateways_running: z.number().int() }).optional().describe('TAL-2143: Settings › Profiles\' figures, counted over profiles whose `visible` is not false.'),
+})
 export type Profiles = z.infer<typeof ProfilesSchema>
 export const ActiveProfileSchema = z.looseObject({ name: z.string(), path: z.string().optional(), is_default: z.boolean().optional(), default_workspace: NullableString.optional() })
 export const ProfileSwitchSchema = ProfilesSchema.extend({ is_default: z.boolean(), default_model: Json, default_model_provider: Json, default_workspace: z.string().nullable() })

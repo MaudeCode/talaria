@@ -97,7 +97,6 @@ describe('ProfilesPage', () => {
       const router = await renderPage()
       const scout = (await screen.findByText('Research lead')).closest('li')!
       expect(within(scout).getByText('scout')).toBeVisible()
-      expect(within(scout).getByText('Finds sources.')).toBeVisible()
       // The active default profile has no Bot Chat and nothing to use or delete, so its menu only edits it (TAL-2093), and it still opens.
       const plain = screen.getByText('default').closest('li')!
       expect(within(plain).getByRole('link', { name: 'default' })).toHaveAttribute('href', '/settings/profiles?name=default')
@@ -113,6 +112,46 @@ describe('ProfilesPage', () => {
     } finally {
       vi.unstubAllGlobals()
     }
+  })
+
+  it('TAL-2143: shows the server\'s figures and, per profile, its monogram, marks, model line and gateway state', async () => {
+    vi.mocked(api.fetchProfiles).mockResolvedValueOnce({
+      profiles: [
+        { name: 'default', is_default: true, display_name: 'Writer', model: 'claude-sonnet-4-6', provider: 'anthropic', gateway_running: true, has_env: false },
+        { name: 'scratch', gateway_running: false },
+      ],
+      active: 'default', single_profile_mode: false, summary: { total: 2, gateways_running: 1 },
+    })
+    const router = await renderPage()
+    await screen.findByText('Uses the default model')
+    const writer = document.querySelector<HTMLElement>('[data-profile="default"]')!
+    const figure = (id: string) => document.querySelector(`[data-stat="${id}"]`)?.textContent
+    expect(figure('profiles')).toBe('Profiles2')
+    expect(figure('active')).toBe('Active hereWriter')
+    expect(figure('gateways')).toBe('Gateways running1of 2')
+    expect(writer.querySelector('[data-monogram]')).toHaveTextContent('W')
+    expect(within(writer).getByText('default')).toBeVisible()
+    expect([...writer.querySelectorAll('[data-mark]')].map((mark) => mark.textContent)).toEqual(['Default', 'Active'])
+    expect(within(writer).getByText('claude-sonnet-4-6 · anthropic')).toBeVisible()
+    expect(within(writer).getByText('Gateway running').closest('[data-status]')).toHaveAttribute('data-status', 'ok')
+    expect(writer).not.toHaveTextContent(/\(default\)|No configuration/)
+    const scratch = document.querySelector<HTMLElement>('[data-profile="scratch"]')!
+    expect(within(scratch).getAllByText('scratch')).toHaveLength(1)
+    expect(within(scratch).getByText('Uses the default model')).toBeVisible()
+    expect(within(scratch).getByText('Gateway stopped').closest('[data-status]')).toHaveAttribute('data-status', 'idle')
+    // Use switches without opening the detail.
+    expect(within(scratch).getByRole('link', { name: 'scratch' })).toHaveAttribute('href', '/settings/profiles?name=scratch')
+    await userEvent.click(within(scratch).getByRole('button', { name: 'Use' }))
+    expect(api.switchProfile).toHaveBeenCalledWith('scratch')
+    expect(router.state.location.search).toEqual({})
+  })
+
+  it('TAL-2143: hides the figures from a server without the summary, and a click anywhere on a block opens its detail', async () => {
+    const router = await renderPage()
+    await screen.findByText('Research lead')
+    expect(document.querySelector('[data-settings-stats]')).toBeNull()
+    await userEvent.click(screen.getByText('gpt-6-astra · openai-codex'))
+    await vi.waitFor(() => { expect(router.state.location.search).toEqual({ name: 'scout' }) })
   })
 
   it('TAL-2084: offers Import agent setup in the header actions to an owner only', async () => {
@@ -133,7 +172,8 @@ describe('profile detail (TAL-2085)', () => {
   it('opens from the profile name and shows every field the server sent, with Back to the list', async () => {
     const router = await renderPage()
     const row = (await screen.findByText('Research lead')).closest('li')!
-    expect(within(row).queryByRole('button', { name: 'Use' })).toBeNull()
+    // TAL-2143: the block shows Use; Delete stays in its menu.
+    expect(within(row).getByRole('button', { name: 'Use' })).toBeVisible()
     expect(within(row).queryByRole('button', { name: 'Delete this profile' })).toBeNull()
     await userEvent.click(within(row).getByRole('link', { name: /Research lead/ }))
     await vi.waitFor(() => { expect(router.state.location.search).toEqual({ name: 'scout' }) })

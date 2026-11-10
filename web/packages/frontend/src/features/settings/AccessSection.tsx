@@ -4,8 +4,9 @@ import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { loadBootstrap, useBootstrap } from '../../app/bootstrap'
 import { useSaveSettings } from '../../app/queries'
-import { Check, LogOut, Plus, Trash2 } from 'lucide-react'
+import { BellOff, Check, KeyRound, Lock, LogOut, Pencil, Plus, Trash2 } from 'lucide-react'
 import { IconButton } from '../../ui/Button'
+import { StatusDot } from '../../ui/Badge'
 import { RowContextMenu } from '../../ui/Menu'
 import { TextInput } from '../../ui/Field'
 import { ErrorState, LoadingState } from '../../ui/States'
@@ -49,9 +50,9 @@ export function AccessSection() {
       {(canManage || passkeysOn || authEnabled) && (
         <SettingsGroup id="sign-in" title={m.settings_group_sign_in()} action={authEnabled ? <IconButton variant="ghost" label={m.system_logout()} onClick={() => { void logout() }}><LogOut aria-hidden="true" /></IconButton> : undefined}>
           {canManage && (bool('password_env_var')
-            ? <SettingRow label={m.settings_label_password()} hint={m.password_env_var_locked()}><span className="text-sm text-muted">{m.password_env_var_set()}</span></SettingRow>
-            : <SettingRow label={m.settings_label_password()} htmlFor="settingsPassword"><PasswordForm passwordAuthEnabled={bool('password_auth_enabled')} /></SettingRow>)}
-          {canManage && !bool('auth_enabled') && <SettingToggle label={m.settings_label_auth_acknowledged()} hint={m.auth_acknowledged_label()} id="settingsAuthAck" settingKey="auth_disabled_acknowledged" onSaved={() => { void loadBootstrap() }} />}
+            ? <SettingRow label={m.settings_label_password()} hint={m.password_env_var_locked()} icon={Lock} detail={<StatusDot state="ok">{m.password_env_var_set()}</StatusDot>}>{null}</SettingRow>
+            : <PasswordRow passwordSet={bool('password_auth_enabled')} warning={bootstrap.auth.no_password_warning !== null} />)}
+          {canManage && !bool('auth_enabled') && <SettingToggle label={m.settings_label_auth_acknowledged()} hint={m.auth_acknowledged_label()} id="settingsAuthAck" settingKey="auth_disabled_acknowledged" icon={BellOff} onSaved={() => { void loadBootstrap() }} />}
           {passkeysOn && <>
             <SettingAction label={m.system_passkeys()}>{passkeysSupported() && <IconButton variant="default" label={m.system_passkey_register()} onClick={() => registerPasskey.mutate()} disabled={registerPasskey.isPending}><Plus aria-hidden="true" /></IconButton>}</SettingAction>
             {withEffects(passkeys.data?.credentials ?? [], (k) => `passkey:${k.id}`, effects).map((k) => (
@@ -67,20 +68,41 @@ export function AccessSection() {
   )
 }
 
-// Credential drafts stay inside the form, as in the provider setup forms.
-function PasswordForm({ passwordAuthEnabled }: { passwordAuthEnabled: boolean }) {
+/**
+ * TAL-2143: whether a password is set, and one button that opens the password form under the row; Escape or a saved
+ * password closes it. Without a password the server's no-password warning, when it reports one, is the row's state.
+ */
+function PasswordRow({ passwordSet, warning }: { passwordSet: boolean; warning: boolean }) {
+  const [open, setOpen] = useState(false)
+  const state = passwordSet ? <StatusDot state="ok">{m.settings_password_state_set()}</StatusDot>
+    : warning ? <StatusDot state="warning" title={m.auth_disabled_warning_message()}>{m.auth_disabled_warning_message()}</StatusDot>
+    : <StatusDot state="idle">{m.settings_password_state_not_set()}</StatusDot>
+  return (
+    <div>
+      <SettingRow label={m.settings_label_password()} htmlFor="settingsPassword" icon={Lock} detail={state}>
+        <IconButton id="settingsPassword" variant="default" label={passwordSet ? m.settings_password_change() : m.system_password_set()} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          {passwordSet ? <Pencil aria-hidden="true" /> : <KeyRound aria-hidden="true" />}
+        </IconButton>
+      </SettingRow>
+      {open && <div className="pb-2 ps-7"><PasswordForm passwordAuthEnabled={passwordSet} onClose={() => setOpen(false)} /></div>}
+    </div>
+  )
+}
+
+// Credential drafts stay inside the form, as in the provider setup forms; closing the form drops them.
+function PasswordForm({ passwordAuthEnabled, onClose }: { passwordAuthEnabled: boolean; onClose: () => void }) {
   const [pw, setPw] = useState('')
   const [currentPw, setCurrentPw] = useState('')
   const qc = useQueryClient()
   const saveSettings = useSaveSettings()
-  const setPassword = useMutation({ mutationFn: (body: Record<string, unknown>) => saveSettings.mutateAsync(body), onSuccess: async () => { showToast(m.system_password_updated()); setPw(''); setCurrentPw(''); await loadBootstrap(); void qc.invalidateQueries() }, onError: (e) => showErrorToast(e) })
+  const setPassword = useMutation({ mutationFn: (body: Record<string, unknown>) => saveSettings.mutateAsync(body), onSuccess: async () => { showToast(m.system_password_updated()); setPw(''); setCurrentPw(''); onClose(); await loadBootstrap(); void qc.invalidateQueries() }, onError: (e) => showErrorToast(e) })
   return (
     // One line once the page is 46rem wide; stacked under that, as on a phone.
-    <form autoComplete="off" onSubmit={(e) => { e.preventDefault(); if (pw.trim()) setPassword.mutate({ _set_password: pw.trim(), ...(currentPw ? { _current_password: currentPw } : {}) }) }} className="flex flex-col gap-2 @min-[46rem]:flex-row @min-[46rem]:items-center">
-      {passwordAuthEnabled && <TextInput type="password" autoComplete="current-password" className="w-48" value={currentPw} onChange={(e) => setCurrentPw(e.target.value)} placeholder={m.current_password_placeholder()} aria-label={m.current_password_placeholder()} />}
-      <TextInput id="settingsPassword" type="password" autoComplete="new-password" className="w-48" value={pw} onChange={(e) => setPw(e.target.value)} placeholder={m.password_placeholder()} aria-label={m.settings_label_password()} />
+    <form autoComplete="off" onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); onClose() } }} onSubmit={(e) => { e.preventDefault(); if (pw.trim()) setPassword.mutate({ _set_password: pw.trim(), ...(currentPw ? { _current_password: currentPw } : {}) }) }} className="flex flex-col gap-2 @min-[46rem]:flex-row @min-[46rem]:items-center">
+      {passwordAuthEnabled && <TextInput type="password" autoComplete="current-password" autoFocus className="w-48" value={currentPw} onChange={(e) => setCurrentPw(e.target.value)} placeholder={m.current_password_placeholder()} aria-label={m.current_password_placeholder()} />}
+      <TextInput type="password" autoComplete="new-password" autoFocus={!passwordAuthEnabled} className="w-48" value={pw} onChange={(e) => setPw(e.target.value)} placeholder={m.password_placeholder()} aria-label={m.password_placeholder()} />
       <div className="flex gap-1 whitespace-nowrap">
-        <IconButton type="submit" variant="default" label={m.system_password_set()} disabled={!pw.trim() || setPassword.isPending}><Check aria-hidden="true" /></IconButton>
+        <IconButton type="submit" variant="default" label={m.save()} disabled={!pw.trim() || setPassword.isPending}><Check aria-hidden="true" /></IconButton>
         {passwordAuthEnabled && <IconButton variant="danger" label={m.system_password_clear()} onClick={() => setPassword.mutate({ _clear_password: true, ...(currentPw ? { _current_password: currentPw } : {}) })}><Trash2 aria-hidden="true" /></IconButton>}
       </div>
 

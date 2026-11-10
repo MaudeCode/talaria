@@ -156,8 +156,9 @@ describe('input render isolation (TAL-1405)', () => {
   it('typing ten characters in each password renders no passkey rows', async () => {
     mount(<AccessSection />)
     await screen.findByText('Laptop')
+    await userEvent.click(screen.getByRole('button', { name: 'Change' }))
     reset(renders.passkey)
-    for (const label of ['Enter current password…', 'Access Password']) {
+    for (const label of ['Enter current password…', 'Enter new password…']) {
       const input = screen.getByLabelText(label)
       await userEvent.type(input, 'abcdefghij')
       expect(input).toHaveValue('abcdefghij')
@@ -167,7 +168,8 @@ describe('input render isolation (TAL-1405)', () => {
 
   it.each(['Trusted link hosts'])('typing ten characters in %s does not re-render the Privacy page (TAL-2102)', async (label) => {
     mount(<PrivacySettings />)
-    const input = await screen.findByLabelText(label)
+    await userEvent.click(await screen.findByRole('button', { name: label }))
+    const input = screen.getByRole('textbox', { name: label })
     reset(renders.privacy)
     await userEvent.type(input, 'abcdefghij')
     expect((input as HTMLInputElement).value).toMatch(/abcdefghij$/)
@@ -191,19 +193,26 @@ describe('input render isolation (TAL-1405)', () => {
   it('keeps both password drafts on refusal and submits them on retry', async () => {
     vi.mocked(api.saveSettings).mockRejectedValueOnce(new ApiError({ kind: 'http', status: 403, path: '/api/settings', message: 'Wrong current password' })).mockResolvedValue({ ok: true })
     mount(<AccessSection />)
-    const current = await screen.findByLabelText('Enter current password…')
-    const next = screen.getByLabelText('Access Password')
+    // TAL-2143: the row says a password is set, and its field shows only once Change is pressed.
+    expect(within(await screen.findByRole('region', { name: 'Sign-in' })).getByText('Set')).toBeVisible()
+    expect(screen.queryByLabelText('Enter new password…')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Change' }))
+    const current = screen.getByLabelText('Enter current password…')
+    const next = screen.getByLabelText('Enter new password…')
     await userEvent.type(current, ' current-password ')
     await userEvent.type(next, ' next-password ')
-    await userEvent.click(screen.getByRole('button', { name: 'Set password' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(api.saveSettings).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Set password' })).toBeEnabled())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled())
     expect(current).toHaveValue(' current-password ')
     expect(next).toHaveValue(' next-password ')
-    await userEvent.click(screen.getByRole('button', { name: 'Set password' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(api.saveSettings).toHaveBeenLastCalledWith({ _set_password: 'next-password', _current_password: ' current-password ' }))
-    await waitFor(() => expect(next).toHaveValue(''))
-    expect(current).toHaveValue('')
+    // A saved password closes the form, and its drafts with it.
+    await waitFor(() => expect(screen.queryByLabelText('Enter new password…')).toBeNull())
+    await userEvent.click(screen.getByRole('button', { name: 'Change' }))
+    expect(screen.getByLabelText('Enter new password…')).toHaveValue('')
+    expect(screen.getByLabelText('Enter current password…')).toHaveValue('')
     // TAL-2158: the saved password rereads bootstrap, so the sidebar's no-password warning goes without a reload.
     expect(loadBootstrap).toHaveBeenCalledTimes(1)
   })

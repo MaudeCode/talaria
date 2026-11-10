@@ -234,7 +234,7 @@ Logs keeps the wider column its lines need.
 | One of two to four values with short labels | Pending the App sync (TAL-1695) | `SettingSegmented` (`ui/Segmented.tsx`: a `radiogroup`, one Tab stop, arrow keys move the selection, the selected option filled; it moves under its label when the column is too narrow for both); a browser-stored choice is a `Segmented` in a `SettingRow`. An option may be drawn (`display`, "Aa" at a font size) with its words as its name |
 | One of a few named values | Pending the App sync (TAL-1695) | `SettingSelect` |
 | An integer in a range | Pending the App sync (TAL-1695) | `SettingNumber` |
-| Free text or a list of lines | Pending the App sync (TAL-1695) | `SettingText` (the only row with a Save button, shown while the draft differs) |
+| Free text or a list of lines | Pending the App sync (TAL-1695) | `SettingText` (the only row with a Save button, shown while the draft differs); a rarely edited list is closed behind its count (`summary`, TAL-2143) and opens in place |
 | A control stored in this browser | Pending the App sync (TAL-1695) | `SettingRow` wrapping the control |
 | A row whose control is a button | Pending the App sync (TAL-1695) | `SettingAction` (danger styling on the button, never on the row) |
 | A row that opens a page or dialog | Pending the App sync (TAL-1695) | `SettingLink` (external pages open in a new tab; a sub-page row names its row count in `detail`) |

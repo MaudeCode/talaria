@@ -389,7 +389,11 @@ async function importProfile(ctx: RequestContext, input: Omit<SidecarParams<'pro
 /** `/api/profiles` in the request's profile; the agent's `profile_list` calls it too (TAL-1170). */
 export async function profileList(deps: AppDeps) {
   const active = deps.activeProfile()
-  return { profiles: await deps.profiles.list(active) as never[], active, single_profile_mode: deps.isolatedProfileMode() }
+  const profiles = await deps.profiles.list(active)
+  // TAL-2143: Settings › Profiles' figures, over the profiles the Agent has not hidden.
+  const visible = profiles.filter((p) => p.visible !== false)
+  const summary = { total: visible.length, gateways_running: visible.filter((p) => p.gateway_running === true).length }
+  return { profiles: profiles as never[], active, single_profile_mode: deps.isolatedProfileMode(), summary }
 }
 
 export const settingsRouter = os.router({

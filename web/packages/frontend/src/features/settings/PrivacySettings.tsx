@@ -1,3 +1,4 @@
+import { ChartLine, ExternalLink, EyeOff, Link } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import { LoadingState, ErrorState } from '../../ui/States'
 import { useBootstrap } from '../../app/bootstrap'
@@ -13,10 +14,14 @@ export function PrivacySettings() {
   if (settings.isError) return <ErrorState error={settings.error} onRetry={() => { void settings.refetch() }} />
   return (
     <SettingsGroup id="privacy" title={m.settings_group_privacy()}>
-      <Toggle label={m.settings_label_sync_insights()} settingKey="sync_to_insights" />
-      <Toggle label={m.settings_label_api_redact()} settingKey="api_redact_enabled" fallback disabled={!canManage} />
-      <Toggle label={m.settings_label_confirm_external_links()} settingKey="confirm_external_links" fallback disabled={!canManage} />
-      <SettingText label={m.settings_label_trusted_link_hosts()} hint={m.settings_desc_trusted_link_hosts()} id="settingsTrustedLinkHosts" settingKey="trusted_link_hosts" multiline placeholder="docs.example.com" disabled={!canManage} parse={(draft) => draft.split('\n')} format={(hosts) => (Array.isArray(hosts) ? hosts : []).join('\n')} />
+      <Toggle label={m.settings_label_sync_insights()} settingKey="sync_to_insights" icon={ChartLine} />
+      <Toggle label={m.settings_label_api_redact()} settingKey="api_redact_enabled" fallback disabled={!canManage} icon={EyeOff} />
+      <Toggle label={m.settings_label_confirm_external_links()} settingKey="confirm_external_links" fallback disabled={!canManage} icon={ExternalLink} />
+      {/* TAL-2143: closed to its host count; the server normalizes the hosts, one per line. */}
+      <SettingText label={m.settings_label_trusted_link_hosts()} hint={m.settings_desc_trusted_link_hosts()} id="settingsTrustedLinkHosts" settingKey="trusted_link_hosts" icon={Link} multiline placeholder="docs.example.com" disabled={!canManage}
+        parse={(draft) => draft.split('\n')} format={(hosts) => hostList(hosts).join('\n')} summary={(hosts) => { const count = hostList(hosts).length; return count ? m.settings_trusted_link_hosts_count({ count }) : m.settings_trusted_link_hosts_none() }} />
     </SettingsGroup>
   )
 }
+
+const hostList = (hosts: unknown): unknown[] => Array.isArray(hosts) ? hosts : []

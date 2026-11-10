@@ -89221,6 +89221,26 @@
                     },
                     "single_profile_mode": {
                       "type": "boolean"
+                    },
+                    "summary": {
+                      "type": "object",
+                      "properties": {
+                        "total": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "gateways_running": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "total",
+                        "gateways_running"
+                      ],
+                      "description": "TAL-2143: Settings › Profiles' figures, counted over profiles whose `visible` is not false."
                     }
                   },
                   "required": [
@@ -89429,6 +89449,26 @@
                     },
                     "single_profile_mode": {
                       "type": "boolean"
+                    },
+                    "summary": {
+                      "type": "object",
+                      "properties": {
+                        "total": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "gateways_running": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "total",
+                        "gateways_running"
+                      ],
+                      "description": "TAL-2143: Settings › Profiles' figures, counted over profiles whose `visible` is not false."
                     },
                     "is_default": {
                       "type": "boolean"

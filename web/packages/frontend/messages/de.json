@@ -1046,7 +1046,6 @@
 	"profile_active": "Aktiv",
 	"profile_api_key_label": "API-Schlüssel",
 	"profile_api_key_placeholder": "sk-…",
-	"profile_api_keys_configured": "API-Schlüssel konfiguriert",
 	"profile_base_url_label": "Basis-URL",
 	"profile_base_url_placeholder": "https://api.openai.com/v1",
 	"profile_base_url_rule": "Muss mit http:// oder https:// beginnen.",

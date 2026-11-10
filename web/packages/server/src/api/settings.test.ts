@@ -1606,6 +1606,23 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     }
   })
 
+  it('TAL-2143: the profile list counts its visible profiles and their running gateways', async () => {
+    const restore = sidecar.responderFor('profiles.list')
+    const row = (name: string, visible: boolean, gateway_running: boolean) => ({ name, path: join(s.state, 'profiles', name), is_default: false, gateway_running, model: null, provider: null, has_env: false, visible, skill_count: 0, enabled_skills: 0, total_skills: 0 })
+    sidecar.respond('profiles.list', () => ({ profiles: [
+      { ...row('default', true, true), path: s.state, is_default: true },
+      row('scout', true, false),
+      row('ghost', false, true),
+    ] }))
+    s.deps.profiles.invalidate()
+    try {
+      expect((await json(await s.get('/api/profiles'))).summary).toEqual({ total: 2, gateways_running: 1 })
+    } finally {
+      sidecar.respond('profiles.list', restore)
+      s.deps.profiles.invalidate()
+    }
+  })
+
   it('profiles list/active/switch/create/delete go through the sidecar and set the profile cookie', async () => {
     let res = await s.get('/api/profiles')
     expect(res.status).toBe(200)

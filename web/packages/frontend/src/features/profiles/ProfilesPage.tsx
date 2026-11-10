@@ -3,7 +3,7 @@ import { AgentImportDialog } from './AgentImportDialog'
 import { useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { PROFILE_DESCRIPTION_MAX, PROFILE_DISPLAY_NAME_MAX, type GatewayMode, type Profiles } from '@maudecode/talaria-web-contracts'
-import { ArrowLeftRight, ArrowUpRight, Import, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeftRight, ArrowUpRight, ChevronRight, Download, Pencil, Plus, Trash2 } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -11,12 +11,13 @@ import { useModelsQuery, useProfilesQuery, useSwitchProfile } from '../../app/qu
 import { catalogEntryById } from '../../lib/modelEntry'
 import { catalogModelOptgroups } from '../../lib/modelOptgroups'
 import { HubPage } from '../../shell/AppShell'
-import { Mark } from '../../ui/Badge'
+import { Mark, StatusDot } from '../../ui/Badge'
 import { BackButton, Button, IconButton } from '../../ui/Button'
 import { FieldRow, TextInput } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { ConfirmDialog, Dialog, DialogFooter } from '../../ui/Dialog'
 import { Row, RowList } from '../../ui/List'
+import { Monogram } from '../../ui/Monogram'
 import { RowContextMenu, type RowAction } from '../../ui/Menu'
 import { RowActionButtons, RowActionsMenu } from '../../ui/RowActionsMenu'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
@@ -24,7 +25,7 @@ import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
 import { cn } from '../../ui/cn'
 import { useResourceEffects, useResourceMutation, withCreated, withEffects } from '../sessions/useResourceMutation'
-import { SettingLink, SettingText, SettingValue, SettingValues, SettingsGroup, SETTINGS_PAGE } from '../settings/SettingsRows'
+import { SettingLink, SettingText, SettingValue, SettingValues, SettingsGroup, SettingsStats, SETTINGS_PAGE } from '../settings/SettingsRows'
 
 // TAL-805: `gateway_running` labels rows from a server without `gateway_mode`; delete the fallback once every supported server ships the field.
 const GATEWAY_MODE_LABEL: Record<GatewayMode, () => string> = {
@@ -32,6 +33,9 @@ const GATEWAY_MODE_LABEL: Record<GatewayMode, () => string> = {
 }
 
 type Profile = Profiles['profiles'][number]
+
+/** TAL-2143: the profile's own model and provider, else that it runs on the default model. */
+const modelLine = (p: Profile): string => [p.model, p.provider].filter(Boolean).join(' · ') || m.profile_uses_default_model()
 
 const gatewayLabel = (p: Profile): string | undefined => p.gateway_mode ? GATEWAY_MODE_LABEL[p.gateway_mode]()
   : p.gateway_running === undefined ? undefined : p.gateway_running ? m.profile_gateway_running() : m.profile_gateway_stopped()
@@ -67,8 +71,13 @@ export function ProfilesPage({ name }: { name?: string | undefined } = {}) {
   const effects = useResourceEffects()
   const list = withCreated(withEffects(profiles.data?.profiles ?? [], (p) => `profile:${p.name}`, effects), 'profile', effects)
   const active = profiles.data?.active
+  const summary = profiles.data?.summary
+  const activeRow = list.find((p) => p.name === active)
+  const activeName = activeRow ? activeRow.display_name || activeRow.name : active
   // TAL-213: opening a Bot Chat always reasserts its profile (another tab may have moved the shared cookie).
   const openBotChat = (name: string) => switchProfile.mutate({ name, botChat: true })
+  // TAL-2143: a click anywhere on a profile's block opens its detail; its name stays the link keyboards and the browser's link menu use.
+  const openDetail = (profile: string) => { void navigate({ to: '/settings/$section', params: { section: 'profiles' }, search: { name: profile } }) }
   const toList = () => { void navigate({ to: '/settings/$section', params: { section: 'profiles' }, search: {} }) }
   // A profile the server has not created yet has no detail to open and nothing to use or delete.
   const confirmed = (p: Profile) => !!profiles.data?.profiles.some((row) => row.name === p.name)
@@ -107,32 +116,37 @@ export function ProfilesPage({ name }: { name?: string | undefined } = {}) {
   }
   return (
     <HubPage title={m.tab_profiles()} help={<ProfileConceptHelp />} actions={<>
-      {canManage && <IconButton variant="ghost" tooltipSide="bottom" label={m.profile_import()} onClick={() => setImporting(true)}><Import aria-hidden="true" /></IconButton>}
+      {canManage && <IconButton variant="ghost" tooltipSide="bottom" label={m.profile_import()} onClick={() => setImporting(true)}><Download aria-hidden="true" /></IconButton>}
       {!profiles.data?.single_profile_mode && <IconButton variant="primary" tooltipSide="bottom" label={m.profile_create()} onClick={() => setCreating(true)}><Plus aria-hidden="true" /></IconButton>}
     </>}>
       {importing && <AgentImportDialog key={active} onClose={() => setImporting(false)} />}
       {profiles.isPending && <LoadingState />}
       {profiles.isError && <ErrorState error={profiles.error} onRetry={() => { void profiles.refetch() }} />}
       {profiles.isSuccess && list.length === 0 && <EmptyState compact>{m.profile_no_configuration()}</EmptyState>}
-      <RowList id="profilesPanel">
+      {summary && <SettingsStats label={m.tab_profiles()} stats={[
+        { id: 'profiles', label: m.tab_profiles(), value: String(summary.total) },
+        ...(activeName ? [{ id: 'active', label: m.profile_stat_active_here(), value: activeName, title: activeName }] : []),
+        { id: 'gateways', label: m.profile_stat_gateways_running(), value: String(summary.gateways_running), mode: m.profile_stat_gateways_of({ total: summary.total }) },
+      ]} />}
+      {/* `@container`: the gateway state shows once the list, not the window, is 601px wide (the Settings list may sit beside it). */}
+      <RowList id="profilesPanel" className="@container">
         {list.map((p) => {
           const actions = actionsFor(p)
           const gateway = gatewayLabel(p)
+          const use = actions.find((a) => a.label === m.profile_use())
           return (
-            <RowContextMenu key={p.name} label={m.profile_row_menu()} actions={actions} trigger={<Row data-profile={p.name}>
+            <RowContextMenu key={p.name} label={m.profile_row_menu()} actions={actions} trigger={<Row className={cn('group', confirmed(p) && 'cursor-pointer')} data-profile={p.name} onClick={(e) => { if (confirmed(p) && !(e.target as Element).closest('a, button, [role="menu"], [role="dialog"], [role="alertdialog"]')) openDetail(p.name) }}>
               <div className="flex items-center gap-3">
+                <Monogram name={p.display_name || p.name} />
                 <div className="min-w-0 flex-1">
                   <ProfileHeading profile={p} isActive={p.name === active} link={confirmed(p)} className="text-sm" />
-                  {p.description && <div className="mt-0.5 truncate text-xs text-muted" title={p.description}>{p.description}</div>}
-                  <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted">
-                    {p.is_default && <span>{m.profile_default_badge()}</span>}
-                    {p.model && <span>{p.provider ? `${p.provider} · ` : ''}{p.model}</span>}
-                    {p.has_env ? <span>{m.profile_api_keys_configured()}</span> : <span>{m.profile_no_configuration()}</span>}
-                    {gateway && <span>{gateway}</span>}
-                    {(p.enabled_skills ?? p.skill_count) !== undefined && <span>{m.profile_skill_count({ count: p.enabled_skills ?? p.skill_count ?? 0 })}</span>}
-                  </div>
+                  <div className="mt-0.5 truncate text-xs text-muted">{modelLine(p)}</div>
                 </div>
-                <RowActionsMenu label={m.profile_row_menu()} actions={actions} />
+                {gateway && <span className="hidden min-w-0 @min-[601px]:flex"><StatusDot state={p.gateway_running ? 'ok' : 'idle'}>{gateway}</StatusDot></span>}
+                {use && <RowActionButtons actions={[use]} />}
+                {/* The menu's trigger shows on hover and focus where a pointer hovers; right-click and long-press open the same menu. */}
+                {actions.length > 0 && <span className="flex [@media(hover:hover)]:opacity-0 group-hover:opacity-100 focus-within:opacity-100 has-data-popup-open:opacity-100"><RowActionsMenu label={m.profile_row_menu()} actions={actions} /></span>}
+                <ChevronRight size={16} aria-hidden="true" className="shrink-0 text-muted" />
               </div>
             </Row>} />
           )
@@ -145,17 +159,19 @@ export function ProfilesPage({ name }: { name?: string | undefined } = {}) {
   )
 }
 
-/** A profile's name line: the display name, else the name, then the name muted, and its Active mark. `link` opens its detail. */
+/** A profile's name line: the display name, else the name, then the name muted where it differs, and its Default and Active marks. `link` opens its detail. */
 function ProfileHeading({ profile: p, isActive, link, className }: { profile: Profile; isActive: boolean; link: boolean; className: string }) {
+  const shown = p.display_name || p.name
   const names = <>
-    {p.display_name && <span className="truncate">{p.display_name}</span>}
-    <span className={cn('truncate', p.display_name && 'text-xs font-normal text-muted')}>{p.name}</span>
+    <span className="truncate">{shown}</span>
+    {shown !== p.name && <span className="truncate text-xs font-normal text-muted">{p.name}</span>}
   </>
   return (
     <div className={cn('flex min-w-0 items-baseline gap-2 font-semibold text-text', className)}>
       {link
         ? <Link to="/settings/$section" params={{ section: 'profiles' }} search={{ name: p.name }} className="flex min-w-0 items-baseline gap-2 hover:underline">{names}</Link>
         : names}
+      {p.is_default && <Mark>{m.profile_default_badge()}</Mark>}
       {isActive && <Mark>{m.profile_active()}</Mark>}
     </div>
   )
@@ -176,7 +192,6 @@ function ProfileDetail({ profile: p, isActive, actions }: { profile: Profile; is
         <div className="min-w-0 flex-1 basis-48">
           <ProfileHeading profile={p} isActive={isActive} link={false} className="text-base" />
           {p.description && <p className="mt-1 text-sm text-muted">{p.description}</p>}
-          {p.is_default && <p className="mt-0.5 text-xs text-muted">{m.profile_default_badge()}</p>}
         </div>
         {actions.length > 0 && <div className="sm:ml-auto"><RowActionButtons actions={actions} /></div>}
       </div>} />

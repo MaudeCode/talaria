@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Settings › Profiles in Talaria Web shows how many profiles and gateways are running, and each profile's model and gateway state; Settings › Access shows whether a password is set and keeps trusted link hosts behind one row.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
