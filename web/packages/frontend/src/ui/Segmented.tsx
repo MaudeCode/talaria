@@ -10,10 +10,12 @@ export interface SegmentedOption { value: string; label: string; display?: React
  */
 export function Segmented({ id, label, options, value, onChange, disabled }: { id?: string; label: string; options: readonly SegmentedOption[]; value: string; onChange: (value: string) => void; disabled?: boolean | undefined }) {
   const buttons = useRef<(HTMLButtonElement | null)[]>([])
-  const selected = Math.max(0, options.findIndex((o) => o.value === value))
+  // A value the options do not offer checks none of them (TAL-2137); the first option is then the Tab stop.
+  const selected = options.findIndex((o) => o.value === value)
+  const stop = Math.max(0, selected)
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0
-    const next = e.key === 'Home' ? 0 : e.key === 'End' ? options.length - 1 : step ? (selected + step + options.length) % options.length : null
+    const next = e.key === 'Home' ? 0 : e.key === 'End' ? options.length - 1 : step ? (stop + step + options.length) % options.length : null
     const option = next === null ? undefined : options[next]
     if (!option || next === null) return
     e.preventDefault()
@@ -25,7 +27,7 @@ export function Segmented({ id, label, options, value, onChange, disabled }: { i
       {options.map((o, i) => {
         const checked = i === selected
         return (
-          <button key={o.value} ref={(el) => { buttons.current[i] = el }} type="button" role="radio" aria-checked={checked} aria-label={o.display ? o.label : undefined} tabIndex={checked ? 0 : -1} disabled={disabled} onClick={() => { if (!checked) onChange(o.value) }}
+          <button key={o.value} ref={(el) => { buttons.current[i] = el }} type="button" role="radio" aria-checked={checked} aria-label={o.display ? o.label : undefined} tabIndex={i === stop ? 0 : -1} disabled={disabled} onClick={() => { if (!checked) onChange(o.value) }}
             className={cn('min-h-7 whitespace-nowrap rounded px-2.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 pointer-coarse:min-h-11', checked ? 'bg-accent-bg text-accent-text' : 'text-muted hover:text-text')}>
             {o.display ?? o.label}
           </button>

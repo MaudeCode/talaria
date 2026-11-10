@@ -292,6 +292,18 @@ describe('the profile reasoning defaults (TAL-2078)', () => {
     expect(setReasoningEffort).toHaveBeenCalledWith('minimal', null, null, undefined)
   })
 
+  it('shows a saved effort the model does not list and lets Default clear it (TAL-2137)', async () => {
+    vi.mocked(fetchReasoning).mockResolvedValue({ ...status, reasoning_effort: 'none' })
+    vi.mocked(setReasoningEffort).mockResolvedValue({ ...status, reasoning_effort: null })
+    renderSection(<ModelsSection />)
+    const select = await screen.findByRole('combobox', { name: 'Reasoning effort' })
+    expect(select).toHaveTextContent('None')
+    await userEvent.click(select)
+    expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['Default', 'Low', 'Medium', 'High', 'None'])
+    await userEvent.click(screen.getByRole('option', { name: 'Default' }))
+    expect(setReasoningEffort).toHaveBeenCalledWith('', null, null, undefined)
+  })
+
   it('moves the effort at once and rolls it back with the error toast when the server refuses', async () => {
     vi.mocked(fetchReasoning).mockResolvedValue(status)
     const write = held()

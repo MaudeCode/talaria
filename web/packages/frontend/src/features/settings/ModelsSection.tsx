@@ -68,7 +68,9 @@ function ReasoningRows() {
   const display = useReasoningDisplayChoice()
   if (!status) return null
   const effort = effect && 'value' in effect ? effect.value ?? '' : status.reasoning_effort ?? ''
-  const levels = [{ value: '', label: m.reasoning_default() }, ...(status.supported_efforts ?? []).map((level) => ({ value: level, label: reasoningLevelLabel(level) }))]
+  // A saved effort the model does not list (the server keeps `none`) stays shown and selected, so Default can clear it.
+  const offered = status.supported_efforts ?? []
+  const levels = [{ value: '', label: m.reasoning_default() }, ...[...offered, ...(effort && !offered.includes(effort) ? [effort] : [])].map((level) => ({ value: level, label: reasoningLevelLabel(level) }))]
   const setEffort = (level: string) => { effortWrite.mutate({ key: PROFILE_REASONING, level: level || null }) }
   return (
     <>
