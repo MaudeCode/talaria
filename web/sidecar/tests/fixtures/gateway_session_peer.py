@@ -18,7 +18,27 @@ agent = Path(os.environ["HERMES_WEBUI_AGENT_DIR"])
 sys.path[:0] = [str(agent), str(agent / "tests/gateway/fixtures"), str(Path(__file__).resolve().parents[1])]
 from peer_phases import POLL_SECONDS, Phases, report_modes
 
-OWN_OWNER = {"recovery", "secure", "dedicated", "profiles", "replay", "restart", "reasoning"}
+OWN_OWNER = {"recovery", "secure", "dedicated", "profiles", "replay", "restart", "reasoning", "session-open"}
+# A profile plugin logging each on_session_open delivery; it holds the delivery past the owner's 5 s turn bound while
+# the .slow marker exists. Each line keeps its start time, so a barrier open can tell later deliveries from earlier ones.
+OPEN_COUNTER = """import json
+import time
+from pathlib import Path
+
+
+def register(ctx):
+    def opened(**kw):
+        from hermes_constants import get_hermes_home
+        log = Path(get_hermes_home()) / "opens.jsonl"
+        row = dict(kw, started=time.time())
+        with open(log, "a") as out:
+            out.write(json.dumps(dict(row, phase="start")) + "\\n")
+        if log.with_suffix(".slow").exists():
+            time.sleep(7)
+        with open(log, "a") as out:
+            out.write(json.dumps(dict(row, phase="done")) + "\\n")
+    ctx.register_hook("on_session_open", opened)
+"""
 
 
 def unsupported(mode):
@@ -39,6 +59,8 @@ def unsupported(mode):
         return "this supported Agent does not consume typed voice stops"
     if mode == "approval-tell" and "'session.steer'" not in source("gateway/session_busy_controls.py"):
         return "this supported Agent does not steer a native session's running turn"
+    if mode == "session-open" and not (agent / "gateway/session_open.py").exists():
+        return "this supported Agent has no on_session_open hook"
     if mode == "work" and "'subagent.tail'" not in source("gateway/session_ancillary.py"):
         return "this supported Agent does not project a session's processes and subagents"
     # Only releases publishing these verbs can establish their execution semantics.
@@ -516,6 +538,81 @@ async def probe_control(home, peer, desc, kind, instruction=None):
         sidecar.close()
 
 
+async def probe_session_open(home, peer, desc):
+    """TAL-2054: only a viewer opening the chat is an open. Web's snapshot polls and controls reach the owner as
+    reconnects, so a profile's on_session_open consumer sees the watch alone and a slow one never holds a Web turn."""
+    log = home / "opens.jsonl"
+
+    def delivered(since):
+        rows = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+        return [row["reason"] for row in rows if row["phase"] == "done" and row["started"] >= since]
+
+    async def barrier(since):
+        """A native viewer's own open. One session's deliveries run in order, so once a delivery that started after
+        this open is done, every open before it has been delivered."""
+        mark = time.time()
+        async with websocket(home, desc) as native:
+            assert "result" in await rpc(native, "session.resume", session_id=sid)
+        deadline = time.monotonic() + 30
+        while not delivered(mark):
+            assert time.monotonic() < deadline, log.read_text()
+            await asyncio.sleep(POLL_SECONDS)
+        return delivered(since)
+
+    sidecar, viewer = SidecarProcess(home), SidecarProcess(home)
+    try:
+        async with websocket(home, desc) as native:
+            created = await rpc(native, "session.create", request_id="open-create", source="cli", toolsets=["terminal"])
+            sid = created["result"]["session_id"]
+        deadline = time.monotonic() + 30
+        while delivered(0) != ["create"]:
+            assert time.monotonic() < deadline, log.read_text() if log.exists() else "no on_session_open delivery"
+            await asyncio.sleep(POLL_SECONDS)
+
+        def call(action, **params):
+            return sidecar.result("gateway.session", {"profile_home": str(home), "session_id": sid, "action": action, **params})
+        # A poll then a submit, while the consumer holds each delivery past the turn's 5 s bound.
+        polled = time.time()
+        log.with_suffix(".slow").touch()
+        assert (await asyncio.to_thread(call, "snapshot"))["state"] == "attached"
+        submitted = time.monotonic()
+        assert (await asyncio.to_thread(call, "submit", request_id="open-turn", text="Run fixture control"))["state"] == "attached"
+        while not any("Run fixture control" in json.dumps(request.get("messages")) for request in peer.requests):
+            assert time.monotonic() - submitted < 25, "the submitted turn did not reach the provider"
+            await asyncio.sleep(.05)
+        reached = time.monotonic() - submitted
+        while not (parked := await asyncio.to_thread(call, "snapshot"))["snapshot"]["prompts"]:
+            assert time.monotonic() - submitted < 30, parked
+            await asyncio.sleep(POLL_SECONDS)
+        log.with_suffix(".slow").unlink()
+        opened = await barrier(polled)
+        assert opened == ["resume"], f"Web's snapshot and submit were delivered as opens: {opened} (the last is the barrier); the turn waited {reached:.1f} s"
+        assert reached < 2.5, f"the submitted turn waited {reached:.1f} s on an open"
+
+        # The watch is the viewer opening the chat; every control alongside it is not.
+        watched = time.time()
+        watch_id = viewer.request("gateway.session", {"profile_home": str(home), "session_id": sid, "action": "watch"})
+        frame = await asyncio.to_thread(viewer.next_message, 20)
+        assert frame["method"] == "stream" and frame["params"]["event"] == "snapshot", frame
+        prompt = parked["snapshot"]["prompts"][0]
+        told = await asyncio.to_thread(call, "steer", execution_generation=prompt["execution_generation"], text="OPEN_STEER")
+        assert told["state"] == "attached", told
+        answered = await asyncio.to_thread(call, "approval", prompt_id=prompt["prompt_id"],
+                                           execution_generation=prompt["execution_generation"], choice="deny")
+        assert answered["state"] == "attached", answered
+        while (final := await asyncio.to_thread(call, "snapshot"))["snapshot"]["pending"] or final["snapshot"]["running"]:
+            assert time.monotonic() - submitted < 60, final
+            await asyncio.sleep(POLL_SECONDS)
+        viewer.request("rpc.cancel", {"id": watch_id})
+        while (await asyncio.to_thread(viewer.next_message, 20)).get("id") != watch_id:
+            pass
+        opened = await barrier(watched)
+        assert opened == ["resume", "resume"], f"only the watch and the barrier are opens: {opened}"
+    finally:
+        sidecar.close()
+        viewer.close()
+
+
 async def probe_batch(home, peer, desc):
     from importlib.util import find_spec
     if find_spec("gateway.session_clarify_lock") is None:
@@ -911,7 +1008,7 @@ async def probe_secure(home):
     from types import SimpleNamespace
     from unittest.mock import patch
     from websockets.asyncio.server import serve
-    from talaria_sidecar.methods.gateway_sessions import _connect, _run
+    from talaria_sidecar.methods.gateway_sessions import _connect, _opens_on_resume, _run
     answered = asyncio.Event()
     async def requests(ws):
         for name in ("sudo", "secret"):
@@ -954,10 +1051,12 @@ async def probe_secure(home):
             responses = {
                 "runtime.describe": {"instance_id": "fixture", "profile_id": str(home), "authority_epoch": 1,
                     "capabilities": ["durable-admission-v1", "event-replay-v1"]},
+                "session.events.since": {"events": [], "snapshot_required": True},
                 "session.resume": {"session_id": "fixture", "subscription_id": "viewer", "messages": [], "info": {}},
                 "prompt.submit": receipt,
             }
-            for method in ("runtime.describe", "session.resume", "prompt.submit"):
+            # An owner firing on_session_open first gets Web's reconnect read (TAL-2054).
+            for method in ("runtime.describe", *("session.events.since",) * _opens_on_resume(), "session.resume", "prompt.submit"):
                 frame = json.loads(await ws.recv())
                 assert frame["method"] == method, frame
                 await ws.send(json.dumps({"jsonrpc": "2.0", "id": frame["id"], "result": responses[method]}))
@@ -1216,10 +1315,11 @@ def arm(peer, home, mode):
     """Give one mode its handler and clean provider state on the provider URL every owner config names."""
     print("MODE " + mode, flush=True)
     peer.RequestHandlerClass = {"detail": DetailModel, "approval": ApprovalPeer, "approval-tell": ApprovalPeer, "restart": ApprovalPeer, "batch": BatchPeer,
-                                "clarify": ClarifyPeer, "profiles": ProfileModel, "connections": ConnectionModel}.get(mode, Model)
+                                "clarify": ClarifyPeer, "profiles": ProfileModel, "connections": ConnectionModel,
+                                "session-open": ApprovalPeer}.get(mode, Model)
     peer.requests = []
     peer.blocked, peer.release = threading.Event(), threading.Event()
-    if mode in {"approval", "approval-tell", "restart"}:
+    if mode in {"approval", "approval-tell", "restart", "session-open"}:
         import shlex
         target = home / ("owned-told" if mode == "approval-tell" else "owned-removal")
         target.mkdir()
@@ -1252,6 +1352,8 @@ def run_on_owner(mode, home, peer, desc, proc, env):
         return probe_connections(home, peer, desc)
     if mode == "work":
         return probe_work(home, peer, desc)
+    if mode == "session-open":
+        return probe_session_open(home, peer, desc)
     return probe(home, peer, desc, require_gap=mode == "replay")
 
 
@@ -1286,7 +1388,13 @@ def main():
     (home / "config.yaml").write_text(json.dumps({"gateway": {"multiplex_profiles": alone == "profiles"},
         "model": {"provider": "custom", "default": "owner-fixture", "base_url": url},
         "compression": {"in_place": False, "protect_first_n": 0, "protect_last_n": 0, "min_tail_user_messages": 1},
-        "auxiliary": {"title_generation": {"enabled": False}}, "approvals": {"mode": "manual", "timeout": 45}, "platform_toolsets": {"cli": []}}))
+        "auxiliary": {"title_generation": {"enabled": False}}, "approvals": {"mode": "manual", "timeout": 45}, "platform_toolsets": {"cli": []},
+        **({"plugins": {"enabled": ["open-counter"]}} if alone == "session-open" else {})}))
+    if alone == "session-open":
+        plugin = home / "plugins/open-counter"
+        plugin.mkdir(parents=True)
+        (plugin / "plugin.yaml").write_text("name: open-counter\nversion: '1.0'\n")
+        (plugin / "__init__.py").write_text(OPEN_COUNTER)
     if alone in {"profiles", "dedicated"}:
         alpha = home / "profiles/alpha"
         alpha.mkdir(parents=True)

@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "On Hermes Agent 0.23.1, Talaria Web's background checks and chat controls no longer count as opening the chat, so plugins that act when you open a chat run once and your messages are not held up by them.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
