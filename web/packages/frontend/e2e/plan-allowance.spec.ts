@@ -1,6 +1,7 @@
 import type { Locator } from '@playwright/test'
 import { createServer, type ServerResponse } from 'node:http'
 import { expect, settle, test } from './fixtures'
+import { routeProviders } from './providers'
 
 test.use({ serviceWorkers: 'block' })
 
@@ -52,7 +53,7 @@ for (const legacy of [true, false]) test(`${legacy ? 'legacy' : 'native'} model 
   await page.screenshot({ animations: 'disabled', path: info.outputPath(legacy ? 'before-models.png' : 'after-models.png') })
   if (!legacy) expect(await textIsUnclipped(page.getByRole('option', { name: 'Large model with a long catalog name (via Nous) · Large · Allowance exhausted', exact: true }), 'Allowance exhausted')).toBe(true)
   await page.keyboard.press('Escape')
-  await page.route('**/api/providers', (route) => route.fulfill({ json: { active_provider: 'nous', providers: [{ id: 'nous', display_name: 'Nous', configured: true, has_key: true }] } }))
+  await routeProviders(page, () => ({ active_provider: 'nous', providers: [{ id: 'nous', display_name: 'Nous', configured: true, has_key: true }] }))
   let quotaPhase = 'fresh'
   await page.route('**/api/provider/quotas*', (route) => route.fulfill({ json: {
     version: 1, computed_at: '2026-01-01T00:00:00Z', scope_id: 'test-scope', profile_id: 'default', active_provider: 'nous', requested_source_id: null, missing_source: false,

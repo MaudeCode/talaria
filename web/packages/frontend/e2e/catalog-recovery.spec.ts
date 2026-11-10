@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { ModelsSchema, ProviderQuotasSchema } from '../src/contracts/resources'
 import { expect, settle, test } from './fixtures'
+import { routeProviders } from './providers'
 
 test.use({ serviceWorkers: 'block' })
 const raw = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts/fixtures/catalog-recovery.json'), 'utf8')) as { models: unknown; quotas: unknown }
@@ -10,10 +11,10 @@ const quotas = ProviderQuotasSchema.parse(raw.quotas)
 
 test('recovery holds label cached quotas and the configured model truthfully', async ({ page }, testInfo) => {
   let held = false
-  await page.route('**/api/providers', (route) => route.fulfill({ json: {
+  await routeProviders(page, () => ({
     availability: held ? quotas.availability : undefined,
     active_provider: 'anthropic', providers: [{ id: 'anthropic', display_name: 'Anthropic', has_key: true, configured: true, is_oauth: true, models: [], models_total: 0 }],
-  } }))
+  }))
   await page.route('**/api/provider/quotas**', (route) => route.fulfill({ json: held ? quotas : { ...quotas, availability: undefined, sources: [] } }))
   await page.route('**/api/models', (route) => route.fulfill({ json: held ? models : { ...models, availability: undefined, groups: models.groups.map((g) => ({ ...g, availability: undefined })) } }))
   await page.goto('/settings/models')

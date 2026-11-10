@@ -1,14 +1,15 @@
 import { expect, settle, test } from './fixtures'
+import { routeProviders } from './providers'
 
 test.use({ serviceWorkers: 'block', video: 'on' })
 
 test('provider device sign-in is usable across phone layouts and reconciles approval', async ({ page }, testInfo) => {
   let approved = false
   const starts: unknown[] = []
-  await page.route('**/api/providers', (route) => route.fulfill({ json: { active_provider: 'copilot', providers: [
+  await routeProviders(page, () => ({ active_provider: 'copilot', providers: [
     { id: 'copilot', display_name: 'GitHub Copilot', is_plugin_provider: true, configurable: false, device_login: true, has_key: approved, configured: approved, models: [] },
     { id: 'no-hooks', display_name: 'No Hooks', is_plugin_provider: true, configurable: false, has_key: false, models: [] },
-  ] } }))
+  ] }))
   await page.route('**/api/onboarding/oauth/start', (route) => {
     starts.push(route.request().postDataJSON())
     return route.fulfill({ json: { ok: true, status: 'pending', provider: 'copilot', flow_id: 'device-flow', user_code: 'TEST-1827', verification_url: 'https://device.example.test/login', expires_in: 90, interval: 1 } })

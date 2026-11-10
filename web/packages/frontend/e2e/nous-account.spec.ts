@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { NousAccount } from '@maudecode/talaria-web-contracts'
 import { expect, settle, test } from './fixtures'
+import { routeProviders } from './providers'
 
 test.use({ serviceWorkers: 'block' })
 const fixtures = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts/fixtures/nous-account.json'), 'utf8')) as Record<'moved' | 'no_apps' | 'retrying', NousAccount>
@@ -10,7 +11,7 @@ test('Nous result remains readable, survives reload, and reconnect is an explici
   let result: NousAccount | null = null
   let accountError: string | null = null
   const writes: unknown[] = []
-  await page.route('**/api/providers', (route) => route.fulfill({ json: { providers: [{ id: 'nous', display_name: 'Nous Portal', is_oauth: true, has_key: true, configured: true, models: [], nous_account: result, nous_account_error: accountError }], active_provider: 'nous' } }))
+  await routeProviders(page, () => ({ providers: [{ id: 'nous', display_name: 'Nous Portal', is_oauth: true, has_key: true, configured: true, models: [], nous_account: result, nous_account_error: accountError }], active_provider: 'nous' }))
   await page.route('**/api/connectors/gmail/connect', async (route) => {
     writes.push(route.request().postDataJSON())
     await route.fulfill({ json: { op_id: 'reconnect-1', settled: false, outcome: null, can_continue: false, tool_call_id: null, targets: [

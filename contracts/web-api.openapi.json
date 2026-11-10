@@ -93143,8 +93143,20 @@
     "/api/providers": {
       "get": {
         "operationId": "providers.list",
+        "summary": "`q` keeps rows whose display name (or id when it has none) contains it, case-insensitively; `groups` lists the kept rows.",
         "tags": [
           "settings"
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
         ],
         "responses": {
           "200": {
@@ -93529,6 +93541,33 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "groups": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "enum": [
+                              "configured",
+                              "available"
+                            ],
+                            "type": "string"
+                          },
+                          "provider_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "provider_ids"
+                        ],
+                        "additionalProperties": {}
+                      },
+                      "description": "Configured first, then available; a group with no rows is omitted."
                     }
                   },
                   "required": [

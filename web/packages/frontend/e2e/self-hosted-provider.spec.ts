@@ -1,4 +1,5 @@
 import { expect, settle, test } from './fixtures'
+import { routeProviders } from './providers'
 
 // The replay sidecar cannot write config.yaml, so these fixtures own the provider and model answers (TAL-570).
 test.use({ serviceWorkers: 'block' })
@@ -10,7 +11,7 @@ test('adds a self-hosted provider, refreshes its models, and picks its model', a
   let lmstudio: Record<string, unknown> = { id: 'lmstudio', display_name: 'LM Studio', has_key: false, configured: false, configurable: true, is_self_hosted: true, key_source: 'none', key_source_kind: null, base_url: null, models: [], models_total: 0 }
   let active = 'anthropic'
   const anthropic = { id: 'anthropic', display_name: 'Anthropic', has_key: true, configured: true, key_source: 'env_file', key_source_kind: 'env', models: [], models_total: 0 }
-  await page.route('**/api/providers', (route) => route.fulfill({ json: { active_provider: active, providers: (active === 'lmstudio' ? [lmstudio, anthropic] : [anthropic, lmstudio]).map((p) => ({ ...p, is_active: p.id === active })) } }))
+  await routeProviders(page, () => ({ active_provider: active, providers: (active === 'lmstudio' ? [lmstudio, anthropic] : [anthropic, lmstudio]).map((p) => ({ ...p, is_active: p.id === active })) }))
   await page.route('**/api/providers/self-hosted', (route) => {
     lmstudio = { ...lmstudio, configured: true, base_url: URL, models: [entry], models_total: 1 }
     active = 'lmstudio'

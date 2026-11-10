@@ -1,8 +1,9 @@
 import { ModelOptionContent } from '../../lib/modelEntry'
 import { useProviderQuotas } from '../../lib/useProviderQuotas'
 import { memo, useRef, useState, type ReactNode } from 'react'
+import { useDebounced } from '../../lib/useDebounced'
 import type { z } from 'zod'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, replaceEqualDeep, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { RefreshCw } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -43,7 +44,9 @@ export function ProvidersPage() {
 export function ProvidersSection() {
   const qc = useQueryClient()
   const reads = useRef(0)
-  const providers = useQuery({ queryKey: keys.providers, queryFn: () => { reads.current += 1; return api.fetchProviders() }, staleTime: 30_000, refetchInterval: (query) => {
+  const [filter, setFilter] = useState('')
+  const q = useDebounced(filter.trim(), 250)
+  const providers = useQuery({ queryKey: [...keys.providers, { q }], queryFn: () => { reads.current += 1; return api.fetchProviders(q) }, staleTime: 30_000, placeholderData: keepPreviousData, refetchInterval: (query) => {
     const interval = query.state.data?.providers.find((p) => p.id === 'nous')?.nous_account?.poll_after
     return interval && reads.current < 120 ? interval * 1000 : false
   } })
@@ -52,7 +55,6 @@ export function ProvidersSection() {
   const setDefault = useSetDefaultModel()
   const chosenModel = useDefaultModelChoice()?.model
   const [editing, setEditing] = useState<string | null>(null)
-  const [filter, setFilter] = useState('')
   const invalidate = () => { void qc.invalidateQueries({ queryKey: keys.providers }); void qc.invalidateQueries({ queryKey: keys.models }) }
   const toastError = (e: unknown) => showErrorToast(e)
   const saveKey = useMutation({ mutationFn: ({ id, key }: { id: string; key: string | null }) => setProviderKey(id, key), onSuccess: (_r, v) => { showToast(v.key ? m.providers_key_saved() : m.providers_key_removed()); setEditing(null); invalidate() }, onError: toastError })
@@ -69,11 +71,8 @@ export function ProvidersSection() {
   const active = providers.data.active_provider
   const defaultModel = chosenModel ?? str('default_model')
   const quotaNotice = quotas.data?.availability?.unavailable_reason ?? providers.data.availability?.unavailable_reason
-  const q = filter.trim().toLowerCase()
-  const shown = q ? providers.data.providers.filter((p) => (p.display_name ?? p.id).toLowerCase().includes(q)) : providers.data.providers
-  // TAL-2077: the server's `configured` field alone places a row; each group keeps the server order.
-  // TAL-2127 moves this filter and grouping into the `/api/providers` response; delete both here once it ships.
-  const groups = [{ name: 'configured', title: m.providers_group_configured(), rows: shown.filter((p) => p.configured === true) }, { name: 'available', title: m.providers_group_available(), rows: shown.filter((p) => p.configured !== true) }]
+  const rows = new Map(providers.data.providers.map((p) => [p.id, p]))
+  const titles = { configured: m.providers_group_configured(), available: m.providers_group_available() }
   const catalogUnavailable = providers.data.availability?.authoritative === false
   return (
     <div className="flex flex-col gap-3" data-group="providers">
@@ -84,12 +83,14 @@ export function ProvidersSection() {
       {providers.isError && <p role="alert" className="text-warning">{m.oauth_result_unavailable()}</p>}
       {quotaNotice && <p role="status" className="text-xs text-muted">{quotaNotice}</p>}
       <TextInput type="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={m.providers_filter()} aria-label={m.providers_filter()} />
-      {shown.length === 0 && <EmptyState>{q ? m.providers_filter_empty() : m.providers_empty()}</EmptyState>}
-      {groups.map(({ name, title, rows }) => rows.length > 0 && (
+      {providers.data.providers.length === 0 && <EmptyState>{q ? m.providers_filter_empty() : m.providers_empty()}</EmptyState>}
+      {providers.data.groups?.map(({ id: name, provider_ids }) => (
         <section key={name} className="flex flex-col gap-1" data-section={`providers-${name}`}>
-          <SectionHeader detail={rows.length}>{title}</SectionHeader>
+          <SectionHeader detail={provider_ids.length}>{titles[name]}</SectionHeader>
           <RowList>
-            {rows.map((p) => {
+            {provider_ids.map((id) => {
+              const p = rows.get(id)
+              if (!p) return null
               const hint = p.install_hint
               return <ProviderRow key={p.id} p={p} compact={name === 'available'} quotaSources={quotas.data?.sources} quotaNotice={quotaNotice} catalogUnavailable={catalogUnavailable} defaultModel={defaultModel}
                 editing={editing === p.id} onEdit={setEditing} onInvalidate={invalidate} onSetDefault={setDefault.mutate}
@@ -130,7 +131,9 @@ interface ProviderRowProps {
   installBlocked: ReactNode
 }
 
-// Memoized so typing in the filter renders only the rows entering the list (TAL-1405).
+// Memoized so typing in the filter renders only the rows entering the list (TAL-1405). Each filter answer is a new
+// response (TAL-2127), so `p` compares by value.
+const sameRow = (a: ProviderRowProps, b: ProviderRowProps) => (Object.keys(b) as (keyof ProviderRowProps)[]).every((k) => k === 'p' ? replaceEqualDeep(a.p, b.p) === a.p : Object.is(a[k], b[k]))
 const ProviderRow = memo(function ProviderRow({ p, compact, quotaSources, quotaNotice, catalogUnavailable, defaultModel, editing, onEdit, onInvalidate, onSetDefault, onRefresh, refreshBusy, refreshing, onSaveKey, keySaving, onSaveHosted, hostedSaving, onInstall, installing, installBlocked }: ProviderRowProps) {
   const sources = quotaSources?.filter((s) => s.provider_id === p.id) ?? []
   const quota = sources[0]
@@ -192,7 +195,7 @@ const ProviderRow = memo(function ProviderRow({ p, compact, quotaSources, quotaN
       </div>
     </Row>} />
   )
-})
+}, sameRow)
 
 function ProviderKeyForm({ label, hasKey, saving, onSubmit }: { label: string; hasKey: boolean; saving: boolean; onSubmit: (key: string) => void }) {
   const [value, setValue] = useState('')

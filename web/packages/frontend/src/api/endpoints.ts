@@ -74,7 +74,7 @@ export const fetchAuxiliaryModels = () => orpc().models.auxiliary()
 /** One auxiliary task slot (`__reset__` returns every slot to Auto); answers the refreshed `auxiliary` state. Without `model`, only `reasoning_effort` changes (TAL-1285). */
 export const setAuxiliaryModel = (task: string, write: { model?: string | undefined; provider?: string | null | undefined; reasoning_effort?: string | null | undefined }) =>
   orpc().models.set({ scope: 'auxiliary', task, ...(write.model !== undefined ? { model: write.model } : {}), ...(write.provider ? { provider: write.provider } : {}), ...(write.reasoning_effort !== undefined ? { reasoning_effort: write.reasoning_effort } : {}) })
-export const fetchProviders = () => orpc().providers.list()
+export const fetchProviders = (q = '') => orpc().providers.list(q ? { q } : {})
 /** Ollama / LM Studio: saves the base URL (and optional key) and makes `model` the default. */
 export const saveSelfHostedProvider = (body: { provider: string; base_url: string; model: string; api_key?: string }) => orpc().providers.selfHosted(body)
 /** Evicts one provider's live model cache; answers the rebuilt `/api/models` catalog. */

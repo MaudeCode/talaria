@@ -13,13 +13,23 @@ const quotas = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../..
 const noPace = structuredClone(quotas)
 Object.assign(noPace.sources[0]!.windows[1]!, { pace: null, forecast: null })
 const quotaResponse = vi.hoisted((): { current: unknown } => ({ current: null }))
-const providersResponse = vi.hoisted((): { current: unknown } => ({ current: null }))
+// A test sets one server answer, or one per filter (`q`); an answer without `groups` gets the server's grouping by `configured`.
+const providersResponse = vi.hoisted(() => {
+  interface Answer { active_provider?: string; providers: { id: string; display_name?: string; has_key?: boolean; configured?: boolean }[]; groups?: unknown }
+  const fallback: Answer = { active_provider: 'openrouter', providers: [{ id: 'openrouter', display_name: 'OpenRouter', has_key: true }, { id: 'zai', display_name: 'Z.AI', has_key: true }, { id: 'anthropic', display_name: 'Anthropic', has_key: true }] }
+  const state = { current: null as unknown, serve: (q = '') => {
+    const body = ((typeof state.current === 'function' ? (state.current as (q: string) => unknown)(q) : state.current) ?? fallback) as Answer
+    const ids = (configured: boolean) => body.providers.filter((p) => (p.configured === true) === configured).map((p) => p.id)
+    return Promise.resolve(body.groups ? body : { ...body, groups: [{ id: 'configured', provider_ids: ids(true) }, { id: 'available', provider_ids: ids(false) }].filter((g) => g.provider_ids.length) })
+  } }
+  return state
+})
 vi.mock('../../api/endpoints', () => ({
   fetchOpenRouterCostHistory: vi.fn(() => Promise.resolve(costHistory)), saveSettings: vi.fn(), fetchSettings: vi.fn(() => Promise.resolve({})), setDefaultModel: vi.fn(),
   onboardingOauthStart: vi.fn(), onboardingOauthPoll: vi.fn(), onboardingOauthCancel: vi.fn(),
   saveSelfHostedProvider: vi.fn(), refreshModels: vi.fn(), installPlugin: vi.fn(),
   fetchModels: vi.fn(() => Promise.resolve({ groups: [] })), fetchAuxiliaryModels: vi.fn(() => Promise.resolve({ main: {}, tasks: [] })),
-  fetchProviders: vi.fn(() => Promise.resolve(providersResponse.current ?? { active_provider: 'openrouter', providers: [{ id: 'openrouter', display_name: 'OpenRouter', has_key: true }, { id: 'zai', display_name: 'Z.AI', has_key: true }, { id: 'anthropic', display_name: 'Anthropic', has_key: true }] })),
+  fetchProviders: vi.fn((q?: string) => providersResponse.serve(q)),
   fetchProviderQuotas: vi.fn(() => Promise.resolve(quotaResponse.current ?? { version: 1, computed_at: '2026-09-28T08:00:00Z', scope_id: 's', profile_id: 'default', active_provider: 'openrouter', requested_source_id: null, missing_source: false, sources: [] })),
 }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
@@ -44,38 +54,40 @@ describe('ProvidersSection', () => {
 
   afterEach(() => { quotaResponse.current = null; providersResponse.current = null; vi.useRealTimers() })
 
-  it('lists configured providers first by the server field, counts each group and filters both by name (TAL-2077)', async () => {
-    providersResponse.current = { active_provider: 'zai', providers: [
-      { id: 'openai', display_name: 'OpenAI', has_key: false, configured: false },
-      { id: 'zai', display_name: 'Z.AI', has_key: true, configured: true },
-      { id: 'openrouter', display_name: 'OpenRouter', has_key: true, configured: false },
-      { id: 'anthropic', display_name: 'Anthropic', has_key: true, configured: true },
-    ] }
+  it("renders the server's groups, counts and filter answers in server order (TAL-2077, TAL-2127)", async () => {
+    const openai = { id: 'openai', display_name: 'OpenAI', has_key: false, configured: false }
+    const zai = { id: 'zai', display_name: 'Z.AI', has_key: true, configured: true }
+    const openrouter = { id: 'openrouter', display_name: 'OpenRouter', has_key: true, configured: false }
+    const anthropic = { id: 'anthropic', display_name: 'Anthropic', has_key: true, configured: true }
+    const answers: Record<string, unknown> = {
+      '': { active_provider: 'zai', providers: [openai, zai, openrouter, anthropic], groups: [{ id: 'configured', provider_ids: ['anthropic', 'zai'] }, { id: 'available', provider_ids: ['openrouter', 'openai'] }] },
+      OPEN: { active_provider: 'zai', providers: [openai, openrouter], groups: [{ id: 'available', provider_ids: ['openai', 'openrouter'] }] },
+      zzz: { active_provider: 'zai', providers: [], groups: [] },
+    }
+    providersResponse.current = (q: string) => answers[q]
     renderSection()
     await screen.findByText('Z.AI')
     const group = (name: string) => document.querySelector<HTMLElement>(`[data-section="providers-${name}"]`)
     const ids = (name: string) => [...group(name)?.querySelectorAll('[data-provider]') ?? []].map((row) => row.getAttribute('data-provider'))
     const header = (name: string) => within(group(name)!).getByRole('heading').parentElement!
-    expect(ids('configured')).toEqual(['zai', 'anthropic'])
-    expect(ids('available')).toEqual(['openai', 'openrouter'])
+    expect(ids('configured')).toEqual(['anthropic', 'zai'])
+    expect(ids('available')).toEqual(['openrouter', 'openai'])
     expect(header('configured')).toHaveTextContent(/^Configured2$/)
     expect(header('available')).toHaveTextContent(/^Available2$/)
     expect(group('configured')!.compareDocumentPosition(group('available')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     const filter = screen.getByRole('searchbox', { name: 'Filter providers' })
     await userEvent.type(filter, 'OPEN')
-    expect(group('configured')).toBeNull()
+    await waitFor(() => expect(group('configured')).toBeNull())
+    expect(api.fetchProviders).toHaveBeenLastCalledWith('OPEN')
     expect(ids('available')).toEqual(['openai', 'openrouter'])
+    expect(header('available')).toHaveTextContent(/^Available2$/)
     await userEvent.clear(filter)
-    await userEvent.type(filter, 'a')
-    expect(ids('configured')).toEqual(['zai', 'anthropic'])
-    expect(ids('available')).toEqual(['openai'])
-    expect(header('available')).toHaveTextContent(/^Available1$/)
     await userEvent.type(filter, 'zzz')
-    expect(screen.getByText('No providers match')).toBeInTheDocument()
+    expect(await screen.findByText('No providers match')).toBeInTheDocument()
     expect(document.querySelector('[data-provider]')).toBeNull()
     await userEvent.clear(filter)
-    expect(ids('configured')).toEqual(['zai', 'anthropic'])
-    expect(ids('available')).toEqual(['openai', 'openrouter'])
+    await waitFor(() => expect(ids('configured')).toEqual(['anthropic', 'zai']))
+    expect(ids('available')).toEqual(['openrouter', 'openai'])
   })
 
   it('renders the server-offered device code and signed-in result (TAL-1827)', async () => {

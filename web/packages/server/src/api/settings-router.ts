@@ -21,7 +21,7 @@ import { agentApprovals, auxiliaryModels, auxiliaryReasoning, compressionPrepare
 import { ProfileError, validateProfileName } from '../profiles/profiles.js'
 import { OnboardingError } from '../onboarding.js'
 import { EnvWriteError } from '../providers/env-file.js'
-import { displayName, providerEnvVar, stampAuxiliarySelections } from '../providers/catalog.js'
+import { displayName, providerEnvVar, providerListing, stampAuxiliarySelections } from '../providers/catalog.js'
 import { OAUTH_PROVIDERS, SUPPORTED_PROVIDER_SETUPS } from '../providers/tables.js'
 import { displayBotName, KANBAN_PINS_BY_PROFILE_KEY, MODEL_FAVORITES_BY_PROFILE_KEY, QUOTA_THRESHOLDS_BY_PROFILE_KEY, SETTINGS_SPEECH_KEYS, pyBool, sidebarQuotaProjection } from '../settings.js'
 import { str } from '../util.js'
@@ -510,8 +510,8 @@ export const settingsRouter = os.router({
     })),
   },
   providers: {
-    list: os.providers.list.handler(({ context: { ctx } }) => run(async () => {
-      const payload = await ctx.deps.catalog.providers(home(ctx))
+    list: os.providers.list.handler(({ input, context: { ctx } }) => run(async () => {
+      const payload = providerListing(await ctx.deps.catalog.providers(home(ctx)), input.q)
       // The install route is operator-only; a member's card keeps its explanation without the offer.
       if (payload.providers.some((row) => row.install_hint) && !(await canManageServer(ctx))) for (const row of payload.providers) delete row.install_hint
       return payload as never

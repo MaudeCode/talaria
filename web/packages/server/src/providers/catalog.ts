@@ -562,6 +562,16 @@ export function uniqueQuotaSources<T extends { source_id: string; provider_id: s
 /** `removable` (TAL-641): `setProviderKey(…, null)` would leave the provider keyless: its own `.env` var holds the only key. */
 interface KeyProbe { authoritative: boolean; hasKey: boolean; keySource: string; authError: string | null; isOauth: boolean; removable: boolean }
 
+/** TAL-2127: Settings › Providers' name filter (display name, else id; case-insensitive) and its configured/available groups. */
+export function providerListing<T extends { providers: Dict[] }>(payload: T, q = ''): T & { groups: { id: 'configured' | 'available'; provider_ids: string[] }[] } {
+  const needle = q.trim().toLowerCase()
+  const providers = needle ? payload.providers.filter((row) => str(row.display_name || row.id).toLowerCase().includes(needle)) : payload.providers
+  const groups = (['configured', 'available'] as const)
+    .map((id) => ({ id, provider_ids: providers.filter((row) => (row.configured === true) === (id === 'configured')).map((row) => str(row.id)) }))
+    .filter((group) => group.provider_ids.length > 0)
+  return { ...payload, providers, groups }
+}
+
 export class ProviderCatalog {
   private readonly scopedKeyRevisions = new Map<string, string>()
   private readonly scopedKeyAuthority = new Map<string, boolean>()

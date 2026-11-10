@@ -35,11 +35,13 @@ export function usePluginInstall() {
     },
     onSettled: () => { active.current = false },
   })
+  // `mutate` is stable while the mutation result is not, so the request (a memoized row's prop) stays stable too.
+  const { mutate } = install
   const request = (name: string, token?: string) => {
     if (active.current) return
     active.current = true
     setResult(null)
-    install.mutate({ name, ...(token ? { token } : {}), context: getStreamContext() })
+    mutate({ name, ...(token ? { token } : {}), context: getStreamContext() })
   }
   const current = result?.context === streamContext ? result.value : null
   const consent = <ConfirmDialog open={current?.status === 'needs_consent'} onOpenChange={(open) => { if (!open) setResult(null) }} title={m.plugins_catalog_install()} description={current?.status === 'needs_consent' ? current.findings : undefined} confirmLabel={m.plugins_catalog_install()} cancelLabel={m.cancel()}

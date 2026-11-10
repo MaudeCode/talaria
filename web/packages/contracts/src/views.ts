@@ -864,7 +864,12 @@ export const ProviderSchema = z.looseObject({
   nous_account: NousAccountSchema.nullable().optional(), nous_account_error: NullableString.optional(),
   is_active: z.boolean().optional(), key_source_kind: KeySourceKindSchema.nullable().optional(), removable: z.boolean().optional(), install_hint: z.string().optional(), device_login: z.boolean().optional().describe('Offer the existing device-code sign-in for this provider.'),
 })
-export const ProvidersSchema = z.looseObject({ availability: CatalogAvailabilitySchema.optional(), providers: z.array(ProviderSchema), active_provider: NullableString.optional() })
+/** TAL-2127: one Settings › Providers group; `provider_ids` keeps the server's row order and its length is the header count. */
+export const ProviderGroupSchema = z.looseObject({ id: z.enum(['configured', 'available']), provider_ids: z.array(z.string()) })
+export const ProvidersSchema = z.looseObject({
+  availability: CatalogAvailabilitySchema.optional(), providers: z.array(ProviderSchema), active_provider: NullableString.optional(),
+  groups: z.array(ProviderGroupSchema).optional().describe('Configured first, then available; a group with no rows is omitted.'),
+})
 /** TAL-411: the server's classification per colour basis; `/api/provider/quotas` only, at the profile's thresholds. */
 export const QuotaUrgencySchema = z.looseObject({ remaining: QuotaLevelSchema, pace: QuotaLevelSchema.describe('Burn rate and pace tolerance; the remaining classification when the window has no pace.') })
 /** TAL-409: a window's pace as of the envelope's `computed_at`. Stale once `valid_until` (the window's reset) passes. */

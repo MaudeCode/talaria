@@ -12,24 +12,25 @@ vi.mock('../../paraglide/messages.js', async (original) => {
   const actual = await original<typeof import('../../paraglide/messages.js')>()
   return { ...actual, m: { ...actual.m,
     workspace_move_up: (...args: Parameters<typeof actual.m.workspace_move_up>) => { renders.workspace(); return actual.m.workspace_move_up(...args) },
-    providers_configured: (...args: Parameters<typeof actual.m.providers_configured>) => { renders.provider(); return actual.m.providers_configured(...args) },
     delete: (...args: Parameters<typeof actual.m.delete>) => { renders.passkey(); return actual.m.delete(...args) },
     skill_uses: (...args: Parameters<typeof actual.m.skill_uses>) => { renders.skill(args[0].n); return actual.m.skill_uses(...args) },
     mcp_tool_count: (...args: Parameters<typeof actual.m.mcp_tool_count>) => { renders.server(); return actual.m.mcp_tool_count(...args) },
     plugins_enabled: (...args: Parameters<typeof actual.m.plugins_enabled>) => { renders.plugin(); return actual.m.plugins_enabled(...args) },
   } }
 })
-// StatusBadge can be compiler-cached independently of a changed tool row.
+// The compiler caches a row's output per field it reads, so these rows are counted where memo lets a render through.
 vi.mock('react', async (original) => {
   const actual = await original<typeof import('react')>()
+  const counted: Record<string, () => void> = { McpToolRow: () => renders.tool(), ProviderRow: () => renders.provider() }
   return { ...actual, memo: (...args: Parameters<typeof actual.memo>) => {
     const [Component, compare] = args
-    if (typeof Component !== 'function' || Component.name !== 'McpToolRow') return actual.memo(...args)
-    function CountedToolRow(props: Record<string, unknown>) {
-      renders.tool()
+    const count = typeof Component === 'function' ? counted[Component.name] : undefined
+    if (!count) return actual.memo(...args)
+    function CountedRow(props: Record<string, unknown>) {
+      count!()
       return actual.createElement(Component, props)
     }
-    return actual.memo(CountedToolRow, compare)
+    return actual.memo(CountedRow, compare)
   } }
 })
 vi.mock('../../api/client', async (original) => ({ ...await original<typeof import('../../api/client')>(), post: vi.fn() }))
@@ -43,7 +44,11 @@ const tools = skills.map((s) => ({ name: s.name, server: 'test', status: 'active
 vi.mock('../../api/endpoints', async (original) => ({
   ...await original<typeof import('../../api/endpoints')>(),
   fetchWorkspaces: vi.fn(() => Promise.resolve({ workspaces: [{ path: '/test/one', name: 'One' }, { path: '/test/two', name: 'Two' }], last: null })),
-  fetchProviders: vi.fn(() => Promise.resolve({ providers: [{ id: 'one', has_key: true }, { id: 'two', has_key: true }, { id: 'local', has_key: true, is_self_hosted: true, base_url: '' }] })),
+  // The server's filter answer: each call returns new row objects, as a real response does.
+  fetchProviders: vi.fn((q = '') => {
+    const providers = [{ id: 'one', has_key: true }, { id: 'two', has_key: true }, { id: 'local', has_key: true, is_self_hosted: true, base_url: '' }].filter((p) => p.id.includes(q))
+    return Promise.resolve({ providers, groups: providers.length ? [{ id: 'available', provider_ids: providers.map((p) => p.id) }] : [] })
+  }),
   fetchProviderQuotas: vi.fn(() => Promise.resolve({ sources: [] })),
   saveSettings: vi.fn(),
   fetchSkillContent: vi.fn(() => Promise.resolve({ content: 'Skill content', editable: false })),
@@ -118,11 +123,11 @@ describe('input render isolation (TAL-1405)', () => {
     const input = screen.getByRole('searchbox', { name: 'Filter providers' })
     reset(renders.provider)
     await userEvent.type(input, 'one')
-    expect(document.querySelector('[data-provider="two"]')).toBeNull()
+    await waitFor(() => expect(document.querySelector('[data-provider="two"]')).toBeNull())
     expect(document.querySelector('[data-provider="one"]')).not.toBeNull()
     expect(renders.provider).not.toHaveBeenCalled()
     await userEvent.clear(input)
-    expect(document.querySelector('[data-provider="two"]')).not.toBeNull()
+    await waitFor(() => expect(document.querySelector('[data-provider="two"]')).not.toBeNull())
     expect(renders.provider).toHaveBeenCalledTimes(2)
   })
 

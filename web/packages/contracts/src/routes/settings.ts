@@ -100,7 +100,7 @@ export const settingsContract = {
     setDefault: oc.route({ method: 'POST', path: '/api/default-model', tags }).input(AdvancedBody.extend({ model: z.string().optional(), provider: z.string().nullable().optional() })).output(z.object({ ok: z.literal(true), model: z.string(), provider: z.string().nullable() })),
   },
   providers: {
-    list: oc.route({ method: 'GET', path: '/api/providers', tags }).output(ProvidersSchema),
+    list: oc.route({ method: 'GET', path: '/api/providers', tags, summary: '`q` keeps rows whose display name (or id when it has none) contains it, case-insensitively; `groups` lists the kept rows.' }).input(z.object({ q: z.string().optional() })).output(ProvidersSchema),
     setKey: oc.route({ method: 'POST', path: '/api/providers', tags, summary: 'Write (or clear when api_key is empty) a provider API key in the profile .env.' }).input(z.object({ provider: z.string().optional(), api_key: z.string().nullable().optional() })).output(z.object({ ok: z.literal(true), provider: z.string(), display_name: z.string(), action: z.string() })),
     delete: oc.route({ method: 'POST', path: '/api/providers/delete', tags }).input(z.object({ provider: z.string().optional() })).output(z.object({ ok: z.literal(true), provider: z.string(), display_name: z.string(), action: z.string() })),
     selfHosted: oc.route({ method: 'POST', path: '/api/providers/self-hosted', tags, summary: 'Save an Ollama or LM Studio endpoint (optional key) and make `model` the default; an endpoint whose `/models` does not answer is refused with 400 and nothing is saved.' }).input(Loose).output(Loose),
