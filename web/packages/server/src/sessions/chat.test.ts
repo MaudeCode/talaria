@@ -1339,8 +1339,8 @@ describe('chat turns through the sidecar', () => {
 
     const untilClarify = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'clarify')
     const clarify = untilClarify[untilClarify.length - 1]?.data as Json
-    // A frame without `timeout_seconds` (older sidecar) falls back to the Python default of 3600 s; a real sidecar stamps the resolved Agent timeout.
-    expect(clarify).toMatchObject({ question: 'Which env?', choices_offered: ['dev', 'prod'], timeout_seconds: 3600 })
+    // A frame without `timeout_seconds` (older sidecar) falls back to the Agent's default of 90 s (TAL-2053); a real sidecar stamps the resolved Agent timeout.
+    expect(clarify).toMatchObject({ question: 'Which env?', choices_offered: ['dev', 'prod'], timeout_seconds: 90 })
     expect(String(clarify.clarify_id)).toMatch(/^[0-9a-f]{32}$/)
     const clarifyPending = await json(await s.get(`/api/clarify/pending?session_id=${sid}`))
     expect((clarifyPending.pending as Json).clarify_id).toBe(clarify.clarify_id)

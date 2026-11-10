@@ -557,6 +557,19 @@ def test_an_approval_names_the_tool_call_the_agent_is_holding(monkeypatch) -> No
     assert [data.get("tool_call_id") for _, data in frames] == [None, "call-push"]
 
 
+def test_clarify_timeout_fallbacks_follow_the_agent_default(monkeypatch) -> None:
+    """TAL-2053: without the Agent's resolver, the clarify timeout falls back to its own default (90 s since v0.23.1)."""
+    config = types.ModuleType("hermes_cli.config")
+    config.load_config = lambda: {}
+    monkeypatch.setitem(sys.modules, "tools.clarify_gateway", None)
+    monkeypatch.setitem(sys.modules, "hermes_cli.config", config)
+    assert chat._clarify_timeout({}) == 90
+    config.load_config = lambda: {"agent": {"clarify_timeout": 1800}}
+    assert chat._clarify_timeout({}) == 1800
+    config.load_config = lambda: 1 / 0
+    assert chat._clarify_timeout({}) == 90
+
+
 def test_clarify_prompts_advertise_the_agent_timeout(monkeypatch) -> None:
     """The clarify frame carries the timeout the sidecar actually waits (predecessor ``_clarify_timeout_seconds``)."""
     _patch(monkeypatch)

@@ -399,7 +399,7 @@ def test_the_harness_toolset_registers_its_tools_and_the_talaria_one_stays_separ
 
 @pytest.mark.parametrize(("tool", "method"), [("propose", "server.proposal_put"), ("proposal_read", "server.proposal_read")])
 def test_harness_proposal_tools_forward_their_call_and_return_the_server_result_unchanged(monkeypatch, tool, method) -> None:
-    """TAL-1967: ``propose`` sends the kind, the payload as given and the session's clarify timeout; ``proposal_read`` the id."""
+    """TAL-1967: ``propose`` sends the kind, the payload as given and how long it stays open; ``proposal_read`` the id."""
     from types import SimpleNamespace
 
     from talaria_sidecar.methods import chat
@@ -462,7 +462,7 @@ def test_harness_show_forwards_its_call_and_returns_the_server_result_unchanged(
 
 
 def test_harness_request_secret_forwards_its_call_and_never_returns_the_value(monkeypatch) -> None:
-    """TAL-1969: ``request_secret`` sends the name, purpose and clarify timeout to ``server.secret_request``, outlasts the
+    """TAL-1969: ``request_secret`` sends the name, purpose and prompt timeout to ``server.secret_request``, outlasts the
     prompt, and on a save adds the value to this turn's secret scope from the profile ``.env``, reporting ``applied``
     once the Agent's resolver returns it. The value never reaches the result."""
     import sys
@@ -510,6 +510,27 @@ def test_harness_request_secret_forwards_its_call_and_never_returns_the_value(mo
     monkeypatch.setattr(rpc, "call_server", refuse)
     assert json.loads(harness_toolset.request_secret({**args, "env_name": "HERMES_HOME"}, session_id="20261109_090000_tip"))["condition"] == "env_name_reserved"
     assert json.loads(harness_toolset.request_secret({"env_name": "FOO_API_KEY"}, session_id="20261109_090000_tip")) == {"error": "purpose is required", "condition": "invalid_params"}
+
+
+@pytest.mark.parametrize(("clarify", "prompt", "deadline"), [(90, 3600, 3600 + rpc.SERVER_CALL_TIMEOUT), (7200, 7200, 7200 + rpc.SERVER_CALL_TIMEOUT), (0, 0, threading.TIMEOUT_MAX)], ids=["v0.23.1-default", "raised", "no-limit"])
+def test_harness_proposals_and_secret_requests_outlast_the_agent_clarify_default(monkeypatch, clarify, prompt, deadline) -> None:
+    """TAL-2053: Agent v0.23.1 lowers the clarify default to 90 s; a proposal or secret request stays open an hour (or the
+    configured clarify timeout when longer), and never expires when the clarify timeout is 0 or less."""
+    import sys
+    from types import ModuleType, SimpleNamespace
+
+    from talaria_sidecar.methods import chat
+
+    gateway = ModuleType("tools.clarify_gateway")
+    gateway.get_clarify_timeout = lambda: clarify
+    monkeypatch.setitem(sys.modules, "tools.clarify_gateway", gateway)
+    monkeypatch.setitem(chat._RUNS, "stream-1", SimpleNamespace(session_id="talaria-session", agent=SimpleNamespace(session_id="20261109_090000_tip")))
+    sent: list[tuple[str, dict, float | None]] = []
+    monkeypatch.setattr(rpc, "call_server", lambda m, params, timeout=None: sent.append((m, params, timeout)) or {"outcome": "declined"})
+    harness_toolset.propose({"kind": "setting", "payload": {}}, session_id="20261109_090000_tip")
+    harness_toolset.request_secret({"env_name": "FOO_API_KEY", "purpose": "the Foo API"}, session_id="20261109_090000_tip")
+    assert [(m, params["timeout_seconds"]) for m, params, _ in sent] == [("server.proposal_put", prompt), ("server.secret_request", prompt)]
+    assert sent[1][2] == deadline
 
 
 @pytest.mark.parametrize("recorded", NOTIFY_FIXTURES["server.notify"], ids=["sent", "rate_limited"])
