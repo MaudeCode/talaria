@@ -6,6 +6,7 @@ import { keys } from '../../api/queryKeys'
 
 vi.mock('../../api/endpoints', () => ({ fetchSession: vi.fn(), fetchStreamStatus: vi.fn(), switchProfile: vi.fn(() => Promise.resolve({})) }))
 vi.mock('../../api/sse', () => ({ SSE_CLOSED: 2, SSE_OPEN: 1, openSessionStream: vi.fn(() => ({ close: vi.fn(), readyState: () => 1 })), openChatStream: vi.fn() }))
+vi.mock(import('@tanstack/react-router'), async (original) => ({ ...await original(), Link: (({ children }: { children: React.ReactNode }) => <a>{children}</a>) as never }))
 vi.mock('../../shell/AppShell', () => ({ HubPage: ({ children }: { children: React.ReactNode }) => <main>{children}</main> }))
 const api = await import('../../api/endpoints')
 const { TodosPage } = await import('./TodosPage')
@@ -31,12 +32,12 @@ it('hydrates a cold session task list and clears it on an accepted clear and a p
   const withoutTodos = { ...fixture.session, todo_state: undefined }
   await act(() => refresh({ ...withoutTodos, messages: [] }, true))
   expect(screen.queryByText('Owner task')).not.toBeInTheDocument()
-  expect(screen.getByText('No task list for this conversation yet.')).toBeVisible()
+  expect(screen.getByText('This chat has no task list yet.')).toBeVisible()
 
   act(() => { qc.setQueryData(keys.sessions.detail(sid), { session: fixture.session }) })
   expect(await screen.findByText('Owner task')).toBeVisible()
   vi.mocked(api.fetchSession).mockResolvedValue({ session: { ...withoutTodos, messages: [] } } as Awaited<ReturnType<typeof api.fetchSession>>)
   await act(() => switchProfile('other'))
-  expect(await screen.findByText('No task list for this conversation yet.')).toBeVisible()
+  expect(await screen.findByText('This chat has no task list yet.')).toBeVisible()
   expect(screen.queryByText('Owner task')).not.toBeInTheDocument()
 })

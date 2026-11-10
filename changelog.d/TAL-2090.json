@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "The Todos page in Talaria Web names the chat whose task list it shows and links to it, and points you to a chat when none is open.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}
