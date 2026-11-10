@@ -2988,10 +2988,12 @@ describe('workspace routes preserve unresolved config state (TAL-730)', () => {
       const bytes = JSON.stringify(entries, null, 4) + '\n'
       writeFileSync(file, bytes)
       const config = vi.spyOn(s.deps.agentConfig, 'peekResolved').mockReturnValue(null)
+      // The registry entries the list shows, without the row fields TAL-2141 derives from them.
+      const registry = async (response?: Response) => ((await json(response ?? await s.get('/api/workspaces'))).workspaces as { path: string; name: string }[]).map(({ path, name }) => ({ path, name }))
       try {
         const listed = await s.get('/api/workspaces')
         expect(listed.status).toBe(200)
-        expect((await json(listed)).workspaces).not.toEqual(entries)
+        expect(await registry(listed)).not.toEqual(entries)
         expect(readFileSync(file, 'utf8')).toBe(bytes)
         for (const [route, body, status] of [
           ['remove', { path: entries[0]!.path }, 503],
@@ -3005,16 +3007,16 @@ describe('workspace routes preserve unresolved config state (TAL-730)', () => {
           expect(readFileSync(file, 'utf8'), route).toBe(bytes)
         }
         config.mockReturnValue({})
-        expect((await json(await s.get('/api/workspaces'))).workspaces).toEqual(entries)
+        expect(await registry()).toEqual(entries)
         expect((await post(s, '/api/workspaces/add', { path: added, name: 'Added' })).status).toBe(200)
         expect((await post(s, '/api/workspaces/rename', { path: entries[0]!.path, name: 'Renamed' })).status).toBe(200)
         const paths = [added, entries[1]!.path, entries[0]!.path]
         expect((await post(s, '/api/workspaces/reorder', { paths })).status).toBe(200)
-        expect((await json(await s.get('/api/workspaces'))).workspaces).toEqual([
+        expect(await registry()).toEqual([
           { path: added, name: 'Added' }, entries[1], { path: entries[0]!.path, name: 'Renamed' },
         ])
         expect((await post(s, '/api/workspaces/remove', { path: added })).status).toBe(200)
-        expect((await json(await s.get('/api/workspaces'))).workspaces).toEqual([entries[1], { path: entries[0]!.path, name: 'Renamed' }])
+        expect(await registry()).toEqual([entries[1], { path: entries[0]!.path, name: 'Renamed' }])
       } finally { config.mockRestore() }
     } finally { await s.close() }
   })

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ConfigUnavailable } from '../config/agent-config.js'
 import { JsonDocuments } from '../sessions/storage/json-documents.js'
 import { bootTestServer } from '../test/harness.js'
-import { isBlockedSystemPath, isBlockedWorkspacePath, WorkspaceRegistry, type WorkspaceDeps } from './workspaces.js'
+import { folderBrowse, isBlockedSystemPath, isBlockedWorkspacePath, WorkspaceRegistry, type WorkspaceDeps } from './workspaces.js'
 
 const realpathProbes = vi.hoisted(() => [] as string[])
 
@@ -166,5 +166,80 @@ describe('default workspace behind a symlink (TAL-2098)', () => {
       await s.close()
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('workspace list row fields (TAL-2141)', () => {
+  const post = (s: Awaited<ReturnType<typeof bootTestServer>>, path: string, body: unknown) => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
+  interface Entry { path: string; is_default?: boolean; exists?: boolean; display_path?: string; chat_count?: number }
+
+  it('marks the symlinked default, flags a missing folder, writes home as ~ and counts chats', async () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'talaria-ws-home-')))
+    vi.stubEnv('HOME', home)
+    const real = join(home, 'real')
+    const link = join(home, 'link')
+    const gone = join(home, 'projects', 'gone')
+    mkdirSync(real)
+    mkdirSync(gone, { recursive: true })
+    symlinkSync(real, link)
+    const s = await bootTestServer({ env: { HOME: home, HERMES_WEBUI_DEFAULT_WORKSPACE: link } })
+    try {
+      expect((await post(s, '/api/workspaces/add', { path: gone })).status).toBe(200)
+      for (let i = 0; i < 2; i++) {
+        const { session } = await (await post(s, '/api/session/new', { workspace: link })).json() as { session: { session_id: string } }
+        await s.deps.sessionStore.save(await s.deps.sessionStore.get(session.session_id))
+      }
+      rmSync(gone, { recursive: true })
+      const listed = await (await s.get('/api/workspaces')).json() as { workspaces: Entry[] }
+      expect(listed.workspaces.map(({ path, is_default, exists, display_path, chat_count }) => ({ path, is_default, exists, display_path, chat_count }))).toEqual([
+        { path: real, is_default: true, exists: true, display_path: '~/real', chat_count: 2 },
+        { path: gone, is_default: false, exists: false, display_path: '~/projects/gone', chat_count: 0 },
+      ])
+      const browsed = await (await s.get(`/api/workspaces/suggest?prefix=${encodeURIComponent(`${home}/`)}`)).json() as ReturnType<typeof folderBrowse>
+      expect(browsed.folders).toContainEqual({ path: join(home, 'projects'), name: 'projects', target: `${join(home, 'projects')}/` })
+      expect(browsed.parent).toBe(`${join(home, '..')}/`)
+    } finally {
+      await s.close()
+      vi.unstubAllEnvs()
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('workspace list row fields for a remote terminal profile (TAL-2141)', () => {
+  it('leaves folder existence unknown when the backend is remote, even without a terminal cwd', async () => {
+    const s = await bootTestServer()
+    const config = vi.spyOn(s.deps.agentConfig, 'peekResolved').mockReturnValue({ terminal: { backend: 'ssh' } })
+    try {
+      const listed = await (await s.get('/api/workspaces')).json() as { workspaces: Record<string, unknown>[]; terminal_remote_backend: boolean }
+      expect(listed.terminal_remote_backend).toBe(true)
+      expect(listed.workspaces.length).toBeGreaterThan(0)
+      expect(listed.workspaces.filter((w) => 'exists' in w)).toEqual([])
+    } finally {
+      config.mockRestore()
+      await s.close()
+    }
+  })
+})
+
+describe('Add space folder browser (TAL-2141)', () => {
+  it('goes up exactly one folder whether or not the prefix ends in a separator', () => {
+    expect(folderBrowse('/home/me/git', [], '/home/me').parent).toBe('/home/me/')
+    expect(folderBrowse('/home/me/git/', [], '/home/me').parent).toBe('/home/me/')
+    expect(folderBrowse('/home', [], '/home/me').parent).toBe('/')
+    expect(folderBrowse('~/git', [], '/home/me').parent).toBe('~/')
+    expect(folderBrowse('~', [], '/home/me').parent).toBe('')
+    expect(folderBrowse('/', [], '/home/me').parent).toBeNull()
+    expect(folderBrowse('', [], '/home/me').parent).toBeNull()
+  })
+
+  it('names each folder by its last segment and the space by the prefix\'s last folder', () => {
+    expect(folderBrowse('~/', ['~', '/srv/work/', '/'], '/home/me')).toEqual({
+      folders: [{ path: '~', name: '~', target: '~/' }, { path: '/srv/work/', name: 'work', target: '/srv/work/' }, { path: '/', name: '/', target: '/' }],
+      parent: '',
+      default_name: 'me',
+    })
+    expect(folderBrowse('/srv/work/', [], '/home/me').default_name).toBe('work')
+    expect(folderBrowse('', [], '/home/me').default_name).toBeNull()
   })
 })

@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Settings › Spaces in Talaria Web marks and changes the space new chats start in, flags a space whose folder is gone, shows each path from your home folder with its chat count, and lets you add a space by browsing folders instead of typing a path.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

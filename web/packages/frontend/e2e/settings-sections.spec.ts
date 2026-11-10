@@ -76,7 +76,7 @@ test('the Settings menu groups its sections by scope, naming the active profile 
 
 test('Profiles, Spaces and Logs live in Settings under Server, and their old URLs redirect there (TAL-2101)', async ({ page }) => {
   // TAL-2106: Logs' Refresh sits on its View group's header.
-  for (const [section, heading, action, actionHome] of [['profiles', 'Profiles', 'Create profile', '.settings-section-head'], ['workspaces', 'Spaces', 'Add workspace', '.settings-section-head'], ['logs', 'Logs', 'Refresh', '[data-group="view"]']] as const) {
+  for (const [section, heading, action, actionHome] of [['profiles', 'Profiles', 'Create profile', '.settings-section-head'], ['workspaces', 'Spaces', 'Add space', '.settings-section-head'], ['logs', 'Logs', 'Refresh', '[data-group="view"]']] as const) {
     await page.goto('/')
     await settle(page)
     await page.goto(`/${section}?from=bookmark`)
