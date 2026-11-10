@@ -1,4 +1,4 @@
-import { createFileRoute, notFound, redirect } from '@tanstack/react-router'
+import { createFileRoute, notFound, redirect, useLocation } from '@tanstack/react-router'
 import { LEGACY_SETTINGS_SECTIONS, SettingsSearchSchema, SettingsSectionSchema, type ToolsTab } from '../contracts/url'
 import { SettingsSection } from '../features/settings/SettingsSection'
 
@@ -21,6 +21,8 @@ function SettingsSectionPage() {
   const { section } = Route.useParams()
   const { tab, name } = Route.useSearch()
   const navigate = Route.useNavigate()
+  const row = useLocation({ select: (location) => location.hash || undefined })
+  const visit = useLocation({ select: (location) => location.state.__TSR_key })
   const setTab = (next: ToolsTab) => { void navigate({ search: { tab: next }, replace: true }) }
-  return <SettingsSection section={section} tab={tab} onTabChange={setTab} name={name} />
+  return <SettingsSection section={section} tab={tab} onTabChange={setTab} name={name} row={row} visit={visit} />
 }

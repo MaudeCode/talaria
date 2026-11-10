@@ -35,7 +35,7 @@ function keyBytes(base64url: string): Uint8Array<ArrayBuffer> {
   return Uint8Array.from(raw, (c) => c.charCodeAt(0))
 }
 
-/** TAL-1691: Settings > Notifications, in-app alerts and sounds, then this browser's push subscription. */
+/** TAL-1691, TAL-2086: Settings > Notifications, in-app alerts, this device's completion sound, then this browser's push subscription. */
 export function NotificationsSection() {
   const { settings } = useSettingField(['notifications_enabled', 'sound_enabled'])
   if (settings.isPending) return <LoadingState />
@@ -46,7 +46,7 @@ export function NotificationsSection() {
         <SettingToggle label={m.settings_label_notifications()} settingKey="notifications_enabled" />
         <SettingToggle label={m.settings_label_sound()} settingKey="sound_enabled" />
       </SettingsGroup>
-      <SettingsGroup id="completion-sound" title={m.settings_group_completion_sound()}><CompletionAudioSettings /></SettingsGroup>
+      <SettingsGroup id="this-device" title={m.settings_group_this_device()}><CompletionAudioSettings /></SettingsGroup>
       <WebPushSection />
     </div>
   )

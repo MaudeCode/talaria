@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Search every setting from the top of the Settings sidebar; choosing a result opens its page and moves focus to that setting. Theme, skin, right-to-left layout and the completion sound now sit under This device, since they stay in this browser.",
+      "highlight": true,
+      "components": ["web"],
+      "announcement": {
+        "title": "Settings, reorganised",
+        "description": "Settings are grouped by what they affect, with search, composer controls and a page per profile.",
+        "icon": "settings"
+      }
+    }
+  ]
+}
