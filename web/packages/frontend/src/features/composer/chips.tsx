@@ -137,12 +137,16 @@ export function ToolsetsChip({ value, onChange, row, sessionId }: { value: strin
 
 function ToolsetsPicker({ value, sessionId, search, onChange }: { value: string[] | null; sessionId?: string | undefined; search: string; onChange: (names: string[] | null) => void }) {
   const query = useToolsetsCatalogQuery(value, sessionId)
+  // The profile defaults, read beside an explicit choice, so a reset shows the defaults the server resolved at once.
+  useToolsetsCatalogQuery(null, sessionId)
   if (query.isPending) return <div role="status" className="p-3">{m.loading()}</div>
   if (query.isError) return <div className="p-3"><p role="alert">{m.toolsets_load_error()}</p><button type="button" onClick={() => { void query.refetch() }}>{m.retry()}</button></div>
-  // Until the catalog for a new choice arrives, the previous catalog's rows show that choice.
+  // Until the catalog for a new choice arrives, the previous catalog's rows show that choice. A reset before the defaults
+  // were read has nothing to show yet, so its rows wait for them rather than build on the old choice.
   const choosing = query.isPlaceholderData
+  const resetting = choosing && value === null
   const defaults = choosing ? value === null : query.data.using_defaults
-  const selected = choosing && value !== null ? value : query.data.selected_toolsets
+  const selected = choosing ? value ?? [] : query.data.selected_toolsets
   const needle = search.trim().toLowerCase()
   const shown = query.data.toolsets.filter((item) => !needle || item.name.toLowerCase().includes(needle) || item.description.toLowerCase().includes(needle))
   const unavailable = shown.filter((item) => !item.available)
@@ -150,7 +154,7 @@ function ToolsetsPicker({ value, sessionId, search, onChange }: { value: string[
     const on = selected.includes(item.name)
     return (
       // The last selected toolset stays: a session runs with at least one.
-      <MenuChoiceCheckbox key={item.name} checked={on} disabled={!item.available || (on && selected.length === 1)}
+      <MenuChoiceCheckbox key={item.name} checked={on} disabled={resetting || !item.available || (on && selected.length === 1)}
         onCheckedChange={(next) => onChange(next ? [...selected, item.name] : selected.filter((name) => name !== item.name))}>
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate">{item.name}</span>

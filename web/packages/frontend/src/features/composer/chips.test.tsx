@@ -496,6 +496,21 @@ describe('ToolsetsChip (TAL-2096)', () => {
     expect(screen.getByRole('button', { name: 'Session toolsets: 2 toolsets' })).toBeInTheDocument()
   })
 
+  it('shows the profile defaults at once after a reset, and a next toggle builds on them', async () => {
+    const { onChange, rerender } = renderToolsets(['web'])
+    await userEvent.click(screen.getByRole('button'))
+    await userEvent.click(await row('Use profile defaults'))
+    expect(onChange).toHaveBeenLastCalledWith(null)
+    // The reset's own read never answers: the rows still show the defaults the server resolved.
+    holdLaterReads()
+    rerender(null)
+    expect(await row('Use profile defaults')).toHaveAttribute('aria-checked', 'true')
+    expect(await row(/^web/)).toHaveAttribute('aria-checked', 'false')
+    expect(await row(/^file/)).toHaveAttribute('aria-checked', 'true')
+    await userEvent.click(await row(/^terminal/))
+    expect(onChange).toHaveBeenLastCalledWith(['file', 'terminal'])
+  })
+
   it('keeps the last selected toolset and sends null for the profile defaults', async () => {
     const { onChange } = renderToolsets(['web'])
     await userEvent.click(screen.getByRole('button'))
