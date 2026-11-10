@@ -1,5 +1,5 @@
 import { Menu as BaseMenu } from '@base-ui/react/menu'
-import { Check, ChevronRight } from 'lucide-react'
+import { Check, ChevronRight, type LucideIcon } from 'lucide-react'
 import { ContextMenu as BaseContextMenu } from '@base-ui/react/context-menu'
 import { useRef, useState, type ComponentProps, type FocusEvent, type KeyboardEvent, type PointerEvent, type ReactElement, type ReactNode, type RefObject, type SyntheticEvent } from 'react'
 import type { BaseUIEvent } from '@base-ui/react/types'
@@ -209,7 +209,7 @@ export function ContextMenu({ trigger, children, className, label }: Pick<MenuPr
 }
 
 /** One action of a row: the row shows it as its own control, and `RowContextMenu` offers it as a menu item. */
-export interface RowAction { label: string; run: () => void; disabled?: boolean; busy?: boolean; danger?: boolean; /** A disclosure's state, for its visible control. */ expanded?: boolean }
+export interface RowAction { label: string; run: () => void; disabled?: boolean; busy?: boolean; danger?: boolean; /** A disclosure's state, for its visible control. */ expanded?: boolean; /** TAL-2131: the §12 action-table symbol its visible `RowActionButtons` control shows. */ icon?: LucideIcon }
 
 /** A row's right-click and long-press menu, with the same actions as its visible controls; a row with none keeps the browser's menu. */
 export function RowContextMenu({ label, actions, trigger }: { label: string; actions: RowAction[]; trigger: ReactElement }) {

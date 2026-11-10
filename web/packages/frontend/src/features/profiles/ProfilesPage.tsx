@@ -3,7 +3,7 @@ import { AgentImportDialog } from './AgentImportDialog'
 import { useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { PROFILE_DESCRIPTION_MAX, PROFILE_DISPLAY_NAME_MAX, type GatewayMode, type Profiles } from '@maudecode/talaria-web-contracts'
-import { Import, Plus, Trash2, type LucideIcon } from 'lucide-react'
+import { ArrowLeftRight, ArrowUpRight, Import, Pencil, Plus, Trash2 } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -11,21 +11,20 @@ import { useModelsQuery, useProfilesQuery, useSwitchProfile } from '../../app/qu
 import { catalogEntryById } from '../../lib/modelEntry'
 import { catalogModelOptgroups } from '../../lib/modelOptgroups'
 import { HubPage } from '../../shell/AppShell'
-import { PanelHeadButton } from '../../shell/PanelHead'
-import { Badge } from '../../ui/Badge'
-import { BackButton, Button, IconButton, buttonClass } from '../../ui/Button'
+import { Mark } from '../../ui/Badge'
+import { BackButton, Button, IconButton } from '../../ui/Button'
 import { FieldRow, TextInput } from '../../ui/Field'
 import { Select } from '../../ui/Select'
-import { ConfirmDialog, Dialog } from '../../ui/Dialog'
+import { ConfirmDialog, Dialog, DialogFooter } from '../../ui/Dialog'
 import { Row, RowList } from '../../ui/List'
 import { RowContextMenu, type RowAction } from '../../ui/Menu'
-import { RowActionsMenu } from '../../ui/RowActionsMenu'
+import { RowActionButtons, RowActionsMenu } from '../../ui/RowActionsMenu'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
 import { cn } from '../../ui/cn'
 import { useResourceEffects, useResourceMutation, withCreated, withEffects } from '../sessions/useResourceMutation'
-import { SettingLink, SettingText, SettingValue, SettingValues, SettingsGroup } from '../settings/SettingsRows'
+import { SettingLink, SettingText, SettingValue, SettingValues, SettingsGroup, SETTINGS_PAGE } from '../settings/SettingsRows'
 
 // TAL-805: `gateway_running` labels rows from a server without `gateway_mode`; delete the fallback once every supported server ships the field.
 const GATEWAY_MODE_LABEL: Record<GatewayMode, () => string> = {
@@ -39,7 +38,7 @@ const gatewayLabel = (p: Profile): string | undefined => p.gateway_mode ? GATEWA
 
 type NewProfile = Record<string, unknown> & { name: string; default_model?: string | undefined }
 interface ProfileEdit { name: string; display_name?: string; description?: string }
-type ProfileAction = RowAction & { title?: string; Icon?: LucideIcon }
+type ProfileAction = RowAction & { icon: NonNullable<RowAction['icon']> }
 
 /** Settings > Profiles: the list, or with `name` (TAL-2085) that profile's detail. */
 export function ProfilesPage({ name }: { name?: string | undefined } = {}) {
@@ -77,10 +76,10 @@ export function ProfilesPage({ name }: { name?: string | undefined } = {}) {
     if (!confirmed(p)) return []
     const isActive = p.name === active
     return [
-      ...(p.canonical_session ? [{ label: m.profile_open_bot_chat(), run: () => openBotChat(p.name), disabled: switchProfile.isPending }] : []),
-      ...(!isActive ? [{ label: m.profile_use(), title: m.profile_switch_title(), run: () => switchProfile.mutate({ name: p.name }) }] : []),
-      ...(canManage && !profiles.data?.single_profile_mode ? [{ label: m.profile_edit(), run: () => setEditing(p.name) }] : []),
-      ...(!p.is_default && !isActive ? [{ label: m.profile_delete_title(), Icon: Trash2, run: () => setDeleting(p.name), danger: true }] : []),
+      ...(p.canonical_session ? [{ label: m.profile_open_bot_chat(), run: () => openBotChat(p.name), disabled: switchProfile.isPending, icon: ArrowUpRight }] : []),
+      ...(!isActive ? [{ label: m.profile_use(), run: () => switchProfile.mutate({ name: p.name }), icon: ArrowLeftRight }] : []),
+      ...(canManage && !profiles.data?.single_profile_mode ? [{ label: m.profile_edit(), run: () => setEditing(p.name), icon: Pencil }] : []),
+      ...(!p.is_default && !isActive ? [{ label: m.profile_delete_title(), icon: Trash2, run: () => setDeleting(p.name), danger: true }] : []),
     ]
   }
   // A delete from the detail returns to the list at once; a refused delete brings the row back there.
@@ -90,7 +89,7 @@ export function ProfilesPage({ name }: { name?: string | undefined } = {}) {
   if (name !== undefined) {
     const profile = list.find((p) => p.name === name)
     return (
-      <HubPage title={profile?.display_name || name} actions={<BackButton onClick={toList} />}>
+      <HubPage title={profile?.display_name || name} actions={<BackButton iconOnly onClick={toList} />}>
         {profiles.isPending && <LoadingState />}
         {profiles.isError && <ErrorState error={profiles.error} onRetry={() => { void profiles.refetch() }} />}
         {profiles.isSuccess && (profile
@@ -98,7 +97,7 @@ export function ProfilesPage({ name }: { name?: string | undefined } = {}) {
           : (
             <ErrorState>
               <div className="font-medium text-text">{m.profile_detail_not_found({ name })}</div>
-              <div><Link to="/settings/$section" params={{ section: 'profiles' }} search={{}} className={buttonClass()}>{m.profile_detail_back_to_list()}</Link></div>
+              <div><BackButton iconOnly label={m.profile_detail_back_to_list()} onClick={toList} /></div>
             </ErrorState>
           ))}
         {confirmDelete}
@@ -108,13 +107,13 @@ export function ProfilesPage({ name }: { name?: string | undefined } = {}) {
   }
   return (
     <HubPage title={m.tab_profiles()} help={<ProfileConceptHelp />} actions={<>
-      {canManage && <PanelHeadButton label={m.profile_import()} onClick={() => setImporting(true)}><Import size={16} aria-hidden="true" /></PanelHeadButton>}
-      {!profiles.data?.single_profile_mode && <PanelHeadButton label={m.profile_create()} className="primary" onClick={() => setCreating(true)}><Plus size={16} aria-hidden="true" /></PanelHeadButton>}
+      {canManage && <IconButton variant="ghost" tooltipSide="bottom" label={m.profile_import()} onClick={() => setImporting(true)}><Import aria-hidden="true" /></IconButton>}
+      {!profiles.data?.single_profile_mode && <IconButton variant="primary" tooltipSide="bottom" label={m.profile_create()} onClick={() => setCreating(true)}><Plus aria-hidden="true" /></IconButton>}
     </>}>
       {importing && <AgentImportDialog key={active} onClose={() => setImporting(false)} />}
       {profiles.isPending && <LoadingState />}
       {profiles.isError && <ErrorState error={profiles.error} onRetry={() => { void profiles.refetch() }} />}
-      {profiles.isSuccess && list.length === 0 && <EmptyState>{m.profile_no_configuration()}</EmptyState>}
+      {profiles.isSuccess && list.length === 0 && <EmptyState compact>{m.profile_no_configuration()}</EmptyState>}
       <RowList id="profilesPanel">
         {list.map((p) => {
           const actions = actionsFor(p)
@@ -126,6 +125,7 @@ export function ProfilesPage({ name }: { name?: string | undefined } = {}) {
                   <ProfileHeading profile={p} isActive={p.name === active} link={confirmed(p)} className="text-sm" />
                   {p.description && <div className="mt-0.5 truncate text-xs text-muted" title={p.description}>{p.description}</div>}
                   <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted">
+                    {p.is_default && <span>{m.profile_default_badge()}</span>}
                     {p.model && <span>{p.provider ? `${p.provider} · ` : ''}{p.model}</span>}
                     {p.has_env ? <span>{m.profile_api_keys_configured()}</span> : <span>{m.profile_no_configuration()}</span>}
                     {gateway && <span>{gateway}</span>}
@@ -145,7 +145,7 @@ export function ProfilesPage({ name }: { name?: string | undefined } = {}) {
   )
 }
 
-/** A profile's name line: the display name, else the name, then the name muted, and its Default and Active badges. `link` opens its detail. */
+/** A profile's name line: the display name, else the name, then the name muted, and its Active mark. `link` opens its detail. */
 function ProfileHeading({ profile: p, isActive, link, className }: { profile: Profile; isActive: boolean; link: boolean; className: string }) {
   const names = <>
     {p.display_name && <span className="truncate">{p.display_name}</span>}
@@ -156,8 +156,7 @@ function ProfileHeading({ profile: p, isActive, link, className }: { profile: Pr
       {link
         ? <Link to="/settings/$section" params={{ section: 'profiles' }} search={{ name: p.name }} className="flex min-w-0 items-baseline gap-2 hover:underline">{names}</Link>
         : names}
-      {p.is_default && <Badge tone="border-border text-muted">{m.profile_default_badge()}</Badge>}
-      {isActive && <Badge tone="border-accent text-accent-text">{m.profile_active()}</Badge>}
+      {isActive && <Mark>{m.profile_active()}</Mark>}
     </div>
   )
 }
@@ -172,19 +171,14 @@ function ProfileDetail({ profile: p, isActive, actions }: { profile: Profile; is
   const pending = p.pending_writes
   const agent = gateway !== undefined || skills !== undefined || p.has_env !== undefined || pending !== undefined
   return (
-    <div className="flex flex-col gap-7" data-profile-detail={p.name}>
+    <div className={SETTINGS_PAGE} data-profile-detail={p.name}>
       <RowContextMenu label={m.profile_row_menu()} actions={actions} trigger={<div className="flex flex-wrap items-center gap-3">
         <div className="min-w-0 flex-1 basis-48">
           <ProfileHeading profile={p} isActive={isActive} link={false} className="text-base" />
           {p.description && <p className="mt-1 text-sm text-muted">{p.description}</p>}
+          {p.is_default && <p className="mt-0.5 text-xs text-muted">{m.profile_default_badge()}</p>}
         </div>
-        {actions.length > 0 && (
-          <div className="flex items-center gap-3 sm:ml-auto">
-            {actions.map(({ label, title, Icon, run, disabled }) => Icon
-              ? <IconButton key={label} label={label} onClick={run} disabled={disabled}><Icon size={14} aria-hidden="true" /></IconButton>
-              : <Button key={label} onClick={run} disabled={disabled} title={title}>{label}</Button>)}
-          </div>
-        )}
+        {actions.length > 0 && <div className="sm:ml-auto"><RowActionButtons actions={actions} /></div>}
       </div>} />
       {/* TAL-2093: the root profile's assistant is named by the server-wide `bot_name` setting; a named profile goes by its own name. */}
       {p.is_default && (
@@ -244,7 +238,7 @@ function EditProfileDialog({ profile, onClose, onSubmit }: { profile: Profile; o
         <FieldRow label={m.profile_edit_description()} htmlFor="profileDescription">
           <TextInput id="profileDescription" autoFocus={overridden} value={description} onChange={(e) => setDescription(e.target.value)} maxLength={PROFILE_DESCRIPTION_MAX} />
         </FieldRow>
-        <div className="mt-3 flex justify-end gap-2"><Button onClick={onClose}>{m.cancel()}</Button><Button type="submit" variant="primary">{m.save()}</Button></div>
+        <DialogFooter className="mt-3"><Button onClick={onClose}>{m.cancel()}</Button><Button type="submit" variant="primary">{m.save()}</Button></DialogFooter>
       </form>
     </Dialog>
   )
@@ -285,7 +279,8 @@ function CreateProfileDialog({ existing, onClose, onSubmit }: { existing: string
         </FieldRow>
         <FieldRow label={m.profile_api_key_label()} htmlFor="profileApiKey"><TextInput id="profileApiKey" type="password" autoComplete="new-password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={m.profile_api_key_placeholder()} /></FieldRow>
         <FieldRow label={m.profile_base_url_label()} htmlFor="profileBaseUrl"><TextInput id="profileBaseUrl" inputMode="url" autoComplete="off" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder={m.profile_base_url_placeholder()} /></FieldRow>
-        <div className="mt-3 flex justify-end gap-2"><Button onClick={onClose}>{m.cancel()}</Button><Button type="submit" variant="primary" disabled={!valid}>{m.create()}</Button></div>
+        <DialogFooter className="mt-3"><Button onClick={onClose}>{m.cancel()}</Button><Button type="submit" variant="primary" disabled={!valid}>{m.create()}</Button></DialogFooter>
+
       </form>
     </Dialog>
   )

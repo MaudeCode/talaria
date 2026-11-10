@@ -7,7 +7,7 @@ import { readPersisted, writePersisted } from '../../lib/persisted'
 import { useTtsEngines } from '../../extensions/registry'
 import { TTS_PREF } from '../voice/tts'
 import { useSettingField } from './useSettingField'
-import { SettingsGroup } from './SettingsRows'
+import { SettingsGroup, SETTINGS_PAGE } from './SettingsRows'
 
 /** A device-local speech preference: `features/voice/tts.ts` reads it at speak time. */
 function useDevicePref(key: string, fallback: string): [string, (value: string) => void] {
@@ -40,7 +40,7 @@ export function SpeechSection() {
   // An engine saved here whose extension has not registered yet stays selectable under its id.
   const missing = engine !== 'browser' && !engines.some((e) => e.id === engine)
   return (
-    <div className="flex flex-col gap-7" data-section="speech">
+    <div className={SETTINGS_PAGE} data-section="speech">
       <SettingsGroup id="read-aloud" title={m.settings_group_read_aloud()}>
         <FieldRow label={m.settings_label_tts()} htmlFor="settings-tts_enabled" hint={m.settings_desc_tts()} inline>
           <Switch id="settings-tts_enabled" checked={bool('tts_enabled')} onCheckedChange={(checked) => set({ tts_enabled: checked })} />

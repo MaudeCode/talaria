@@ -12,8 +12,8 @@ import { randomUuid } from '../../lib/randomHex'
 import { readPersistedJson, removePersisted, writePersistedJson } from '../../lib/persisted'
 import { currentLocale } from '../../i18n/runtime'
 import { formatDurationUnits } from '../../i18n/units'
-import { Button } from '../../ui/Button'
-import { Dialog } from '../../ui/Dialog'
+import { Button, IconButton } from '../../ui/Button'
+import { Dialog, DialogFooter } from '../../ui/Dialog'
 import { TextInput } from '../../ui/Field'
 import { LoadingState, ErrorState } from '../../ui/States'
 import { cn } from '../../ui/cn'
@@ -326,16 +326,17 @@ export function FeedbackDialog() {
         </div>
         {limits && <AttachmentTray files={draft.files} placement="inline" onRemove={removeFile} onRetry={(key) => retryFile(key, limits)} />}
         {notice && <p role="alert" className="text-xs text-error">{notice}</p>}
-        <div className="mt-1 flex items-center gap-2">
+        <DialogFooter className="mt-1 items-center">
           {limits && (
             <>
               <input ref={picker} type="file" multiple hidden accept={accept} data-feedback-picker onChange={(e) => { if (e.target.files) addFiles(e.target.files, limits); e.target.value = '' }} />
-              <Button onClick={() => picker.current?.click()}><Paperclip size={14} aria-hidden="true" />{m.feedback_attach()}</Button>
+              <IconButton variant="default" label={m.feedback_attach()} onClick={() => picker.current?.click()}><Paperclip aria-hidden="true" /></IconButton>
             </>
           )}
           <Button className="ml-auto" onClick={() => update({ open: false })}>{m.cancel()}</Button>
           <Button type="submit" variant="primary" disabled={!ready}>{m.feedback_send()}</Button>
-        </div>
+        </DialogFooter>
+
       </form>
     </Dialog>
   )

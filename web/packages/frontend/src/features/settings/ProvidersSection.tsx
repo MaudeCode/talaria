@@ -5,24 +5,26 @@ import { useDebounced } from '../../lib/useDebounced'
 import { sameRowProps } from '../../lib/sameRowProps'
 import type { z } from 'zod'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { RefreshCw } from 'lucide-react'
+import { Check, CircleCheck, Download, KeyRound, RefreshCw, Trash2, Wrench } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
-import { useDefaultModelChoice, useSetDefaultModel } from '../../app/queries'
+import { useDefaultModelChoice, useModelsQuery, useSetDefaultModel } from '../../app/queries'
 import { post } from '../../api/client'
 import { OkSchema, type ProviderSchema } from '../../contracts'
-import { Button, IconButton } from '../../ui/Button'
+import { IconButton } from '../../ui/Button'
 import { RowContextMenu, type RowAction } from '../../ui/Menu'
+import { RowActionButtons } from '../../ui/RowActionsMenu'
 import { FieldRow, TextInput } from '../../ui/Field'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
 import { cn } from '../../ui/cn'
-import { Badge } from '../../ui/Badge'
+import { Mark, StatusDot } from '../../ui/Badge'
 import { Row, RowList, SectionHeader } from '../../ui/List'
 import { quotaSourcePlan, type QuotaSource } from '../insights/QuotaMeter'
 import { useSettingField } from './useSettingField'
+import { SETTINGS_PAGE } from './SettingsGroup'
 import { OpenRouterCost } from './OpenRouterCost'
 import { ProviderQuotaPace } from './ProviderQuotaPace'
 import { OAuthSignIn } from '../onboarding/OAuthSignIn'
@@ -35,7 +37,7 @@ const setProviderKey = (provider: string, api_key: string | null) => post('api/p
 /** TAL-2100: Settings > Providers, one row per provider the Agent knows, then the quota thresholds. TAL-2077: configured providers first, then the rest, under one name filter. */
 export function ProvidersPage() {
   return (
-    <div className="flex flex-col gap-7" data-section="providers">
+    <div className={SETTINGS_PAGE} data-section="providers">
       <ProvidersSection />
       <QuotaThresholdsForm />
     </div>
@@ -54,7 +56,9 @@ export function ProvidersSection() {
   const { quotas, refresh: refreshQuotas } = useProviderQuotas()
   const { str } = useSettingField(['default_model'])
   const setDefault = useSetDefaultModel()
-  const chosenModel = useDefaultModelChoice()?.model
+  const choice = useDefaultModelChoice()
+  // The server resolves which provider serves the default (`default_provider_id`); the same model id can sit on several cards.
+  const catalog = useModelsQuery()
   const [editing, setEditing] = useState<string | null>(null)
   const invalidate = () => { void qc.invalidateQueries({ queryKey: keys.providers }); void qc.invalidateQueries({ queryKey: keys.models }) }
   const toastError = (e: unknown) => showErrorToast(e)
@@ -70,7 +74,8 @@ export function ProvidersSection() {
   if (providers.isPending) return <LoadingState />
   if (providers.isError && !providers.data) return <ErrorState error={providers.error} onRetry={() => { void providers.refetch() }} />
   const active = providers.data.active_provider
-  const defaultModel = chosenModel ?? str('default_model')
+  const defaultModel = choice ? choice.model : str('default_model')
+  const defaultProvider = choice ? choice.provider : catalog.data?.default_provider_id ?? null
   const quotaNotice = quotas.data?.availability?.unavailable_reason ?? providers.data.availability?.unavailable_reason
   const rows = new Map(providers.data.providers.map((p) => [p.id, p]))
   const titles = { configured: m.providers_group_configured(), available: m.providers_group_available() }
@@ -79,12 +84,12 @@ export function ProvidersSection() {
     <div className="flex flex-col gap-3" data-group="providers">
       <div className="flex items-center justify-between text-xs text-muted">
         <span>{m.providers_active()}: <strong className="text-text">{active ?? '—'}</strong></span>
-        <Button onClick={() => { void refreshQuotas() }}>{m.providers_quota_refresh()}</Button>
+        <IconButton variant="ghost" label={m.providers_quota_refresh()} onClick={() => { void refreshQuotas() }}><RefreshCw aria-hidden="true" /></IconButton>
       </div>
       {providers.isError && <p role="alert" className="text-warning">{m.oauth_result_unavailable()}</p>}
       {quotaNotice && <p role="status" className="text-xs text-muted">{quotaNotice}</p>}
       <TextInput type="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={m.providers_filter()} aria-label={m.providers_filter()} />
-      {providers.data.providers.length === 0 && <EmptyState>{q ? m.providers_filter_empty() : m.providers_empty()}</EmptyState>}
+      {providers.data.providers.length === 0 && <EmptyState compact>{q ? m.providers_filter_empty() : m.providers_empty()}</EmptyState>}
       {providers.data.groups?.map(({ id: name, provider_ids }) => (
         <section key={name} className="flex flex-col gap-1" data-section={`providers-${name}`}>
           <SectionHeader detail={provider_ids.length}>{titles[name]}</SectionHeader>
@@ -93,7 +98,7 @@ export function ProvidersSection() {
               const p = rows.get(id)
               if (!p) return null
               const hint = p.install_hint
-              return <ProviderRow key={p.id} p={p} compact={name === 'available'} quotaSources={quotas.data?.sources} quotaNotice={quotaNotice} catalogUnavailable={catalogUnavailable} defaultModel={defaultModel}
+              return <ProviderRow key={p.id} p={p} compact={name === 'available'} quotaSources={quotas.data?.sources} quotaNotice={quotaNotice} catalogUnavailable={catalogUnavailable} defaultModel={defaultModel} defaultProvider={defaultProvider}
                 editing={editing === p.id} onEdit={setEditing} onInvalidate={invalidate} onSetDefault={setDefault.mutate}
                 onRefresh={refreshModels.mutate} refreshBusy={refreshModels.isPending} refreshing={refreshModels.isPending && refreshModels.variables === p.id}
                 onSaveKey={saveKey.mutate} keySaving={saveKey.isPending} onSaveHosted={saveHosted.mutate} hostedSaving={saveHosted.isPending}
@@ -116,6 +121,8 @@ interface ProviderRowProps {
   quotaNotice: string | null | undefined
   catalogUnavailable: boolean
   defaultModel: string | undefined
+  /** The provider serving `defaultModel`; null marks no card, so every card keeps its selection action. */
+  defaultProvider: string | null
   editing: boolean
   onEdit: (id: string | null) => void
   onInvalidate: () => void
@@ -134,44 +141,40 @@ interface ProviderRowProps {
 
 // Memoized so typing in the filter renders only the rows entering the list (TAL-1405). Each filter answer is a new
 // response (TAL-2127), so `p` compares by value.
-const ProviderRow = memo(function ProviderRow({ p, compact, quotaSources, quotaNotice, catalogUnavailable, defaultModel, editing, onEdit, onInvalidate, onSetDefault, onRefresh, refreshBusy, refreshing, onSaveKey, keySaving, onSaveHosted, hostedSaving, onInstall, installing, installBlocked }: ProviderRowProps) {
+const ProviderRow = memo(function ProviderRow({ p, compact, quotaSources, quotaNotice, catalogUnavailable, defaultModel, defaultProvider, editing, onEdit, onInvalidate, onSetDefault, onRefresh, refreshBusy, refreshing, onSaveKey, keySaving, onSaveHosted, hostedSaving, onInstall, installing, installBlocked }: ProviderRowProps) {
   const sources = quotaSources?.filter((s) => s.provider_id === p.id) ?? []
   const quota = sources[0]
   const plan = quotaSourcePlan(quota)
   const hint = p.install_hint
   const name = p.display_name ?? p.id
   // One list for the visible controls and the right-click and long-press menu.
-  const refresh: RowAction = { label: m.providers_refresh_models(), run: () => onRefresh(p.id), busy: refreshBusy }
-  const actions: RowAction[] = [
-    ...(hint ? [{ label: m.providers_install_plugin(), run: () => onInstall(hint), busy: installing }] : []),
-    ...(p.is_self_hosted ? [{ label: m.providers_self_hosted_setup(), run: () => onEdit(editing ? null : p.id) }]
-      : p.configurable !== false && !p.is_oauth ? [{ label: m.providers_key_set(), run: () => onEdit(editing ? null : p.id) }] : []),
-    ...(p.removable === true ? [{ label: m.providers_key_remove(), run: () => onSaveKey({ id: p.id, key: null }), danger: true }] : []),
-  ]
-  const status = <>
-    {catalogUnavailable ? m.catalog_unavailable() : (p.configured ?? p.has_key) ? m.providers_configured() : m.providers_not_configured()}{p.key_source_kind ? ` · ${p.key_source_kind === 'other' ? p.key_source : p.key_source_kind}` : ''}{p.base_url ? ` · ${p.base_url}` : ''}{p.models_total !== undefined ? ` · ${m.providers_models_count({ n: p.models_total })}` : ''}
-    {!quotaNotice && quota?.message ? ` · ${quota.message}` : ''}
-  </>
+  const actions = [
+    { label: m.providers_refresh_models(), run: () => onRefresh(p.id), busy: refreshBusy, icon: RefreshCw },
+    ...(hint ? [{ label: m.providers_install_plugin(), run: () => onInstall(hint), busy: installing, icon: Download }] : []),
+    ...(p.is_self_hosted ? [{ label: m.providers_self_hosted_setup(), run: () => onEdit(editing ? null : p.id), icon: Wrench }]
+      : p.configurable !== false && !p.is_oauth ? [{ label: m.providers_key_set(), run: () => onEdit(editing ? null : p.id), icon: KeyRound }] : []),
+    ...(p.removable === true ? [{ label: m.providers_key_remove(), run: () => onSaveKey({ id: p.id, key: null }), danger: true, icon: Trash2 }] : []),
+  ] satisfies RowAction[]
+  // TAL-2131: the plan word joins the second line, which the state leads as a dot with words (§7).
+  const configured = p.configured ?? p.has_key
+  const status = [
+    catalogUnavailable ? m.catalog_unavailable() : configured ? m.providers_configured() : m.providers_not_configured(),
+    plan, p.key_source_kind ? (p.key_source_kind === 'other' ? p.key_source : p.key_source_kind) : null, p.base_url,
+    p.models_total !== undefined ? m.providers_models_count({ n: p.models_total }) : null, !quotaNotice ? quota?.message : null,
+  ].filter(Boolean).join(' · ')
   return (
-    <RowContextMenu label={m.providers_row_menu()} actions={[refresh, ...actions]} trigger={<Row compact={compact} data-provider={p.id}>
+    <RowContextMenu label={m.providers_row_menu()} actions={actions} trigger={<Row compact={compact} data-provider={p.id}>
       <div className={cn('flex w-full flex-col', compact ? 'gap-2' : 'gap-4')}>
         <div className="flex flex-wrap items-center gap-2">
           <div className="min-w-0 flex-1 basis-48">
             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
               <span className={compact ? 'font-medium text-text' : 'text-sm font-semibold text-text'}>{name}</span>
-              {plan && <Badge tone="border-border text-muted">{plan}</Badge>}
-              {p.is_active && <Badge tone="border-accent text-accent-text">{m.provider_quota_active_provider()}</Badge>}
-              {compact && <span className="text-muted">{status}</span>}
+              {p.is_active && <Mark>{m.provider_quota_active_provider()}</Mark>}
             </div>
-            {!compact && <div className="text-[11px] text-muted">{status}</div>}
-            {p.auth_error && <div className="text-[11px] text-error">{p.auth_error}</div>}
+            <div className="flex min-w-0" data-refreshing={refreshing || undefined}><StatusDot state={catalogUnavailable ? 'warning' : configured ? 'ok' : 'idle'} title={status}>{status}</StatusDot></div>
+            {p.auth_error && <div className="flex min-w-0"><StatusDot state="error" title={p.auth_error}>{p.auth_error}</StatusDot></div>}
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <IconButton label={refresh.label} disabled={refresh.busy} onClick={refresh.run}>
-              <RefreshCw size={14} aria-hidden="true" className={cn(refreshing && 'animate-spin')} />
-            </IconButton>
-            {actions.map(({ label, run, busy, danger }) => <Button key={label} {...(danger ? { variant: 'ghost-danger' as const } : {})} {...(busy ? { 'aria-busy': true, disabled: true } : {})} onClick={run}>{label}</Button>)}
-          </div>
+          <RowActionButtons actions={actions} />
         </div>
         {installBlocked}
         {p.id === 'nous' && <OAuthSignIn provider={p.id} label={name} signedIn={p.has_key === true} account={p.nous_account ?? null} accountError={p.nous_account_error ?? null} resultOnly compact idPrefix="providersNousOauth" onApproved={onInvalidate} />}
@@ -183,10 +186,15 @@ const ProviderRow = memo(function ProviderRow({ p, compact, quotaSources, quotaN
         {p.models && p.models.length > 0 && (
           <details>
             <summary className="cursor-pointer text-xs text-muted">{m.providers_models_count({ n: p.models.length })}</summary>
-            <ul className="mt-1 flex flex-wrap gap-1">
+            <ul className="mt-1 flex flex-col divide-y divide-border-subtle">
               {p.models.map((mm) => (
-                <li key={mm.id}>
-                  <button type="button" onClick={() => onSetDefault({ model: mm.id, provider: p.id })} className={cn('rounded-full border px-2 py-0.5 text-[11px]', mm.id === defaultModel ? 'border-accent bg-accent-bg text-accent-text' : 'border-border text-muted hover:text-text')} title={m.providers_set_default()}><ModelOptionContent entry={mm} /></button>
+                <li key={mm.id} className="flex min-h-9 items-center justify-between gap-2 text-xs text-text" data-provider-model={mm.id}>
+                  <span className="flex min-w-0 items-center gap-2"><ModelOptionContent entry={mm} /></span>
+                  {mm.id === defaultModel && p.id === defaultProvider
+
+
+                    ? <Mark>{m.providers_default_model()}</Mark>
+                    : <IconButton variant="ghost" label={m.providers_set_default()} onClick={() => onSetDefault({ model: mm.id, provider: p.id })}><CircleCheck aria-hidden="true" /></IconButton>}
                 </li>
               ))}
             </ul>
@@ -202,7 +210,7 @@ function ProviderKeyForm({ label, hasKey, saving, onSubmit }: { label: string; h
   return (
     <form onSubmit={(e) => { e.preventDefault(); if (value.trim()) onSubmit(value.trim()) }} className="flex gap-2">
       <TextInput type="password" autoComplete="off" autoFocus value={value} onChange={(e) => setValue(e.target.value)} placeholder={hasKey ? m.providers_key_placeholder_replace() : m.providers_key_placeholder_new()} aria-label={label} />
-      <Button type="submit" variant="primary" disabled={saving}>{m.save()}</Button>
+      <IconButton type="submit" variant="default" label={m.save()} disabled={saving}><Check aria-hidden="true" /></IconButton>
     </form>
   )
 }
@@ -221,7 +229,8 @@ function SelfHostedForm({ id, baseUrl, saving, onSubmit }: { id: string; baseUrl
       <FieldRow label={m.onboarding_model_label()} htmlFor={`${id}-model`}>
         <TextInput id={`${id}-model`} required autoComplete="off" value={hosted.model} onChange={(e) => setHosted({ ...hosted, model: e.target.value })} />
       </FieldRow>
-      <Button type="submit" variant="primary" className="self-end" disabled={saving}>{m.save()}</Button>
+      <div className="flex justify-end"><IconButton type="submit" variant="default" label={m.save()} disabled={saving}><Check aria-hidden="true" /></IconButton></div>
+
     </form>
   )
 }

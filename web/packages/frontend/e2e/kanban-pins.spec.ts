@@ -42,8 +42,10 @@ test('pinned boards persist through the real settings API and fit foldable viewp
     await expect(page.getByRole('tab', { name: 'Release planning', exact: true })).toHaveAttribute('aria-selected', 'true')
     // Pointer off the tabs; a phone's Kanban heading is screen-reader-only (TAL-2089), so no element to hover.
     await page.mouse.move(1, 1)
-    const inactive = await page.getByRole('tab', { name: 'Operations', exact: true }).evaluate(el => getComputedStyle(el).backgroundColor)
-    await expect.poll(() => page.getByRole('tab', { name: 'Release planning', exact: true }).evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe(inactive)
+    // TAL-2131: the selected tab is underlined, so its bottom border takes a colour the others do not.
+    const inactive = await page.getByRole('tab', { name: 'Operations', exact: true }).evaluate(el => getComputedStyle(el).borderBottomColor)
+    await expect.poll(() => page.getByRole('tab', { name: 'Release planning', exact: true }).evaluate(el => getComputedStyle(el).borderBottomColor)).not.toBe(inactive)
+
     await page.screenshot({ path: info.outputPath('after-pinning.png'), fullPage: true })
     if (info.project.name === 'desktop') {
       for (const [name, width, height] of [['outer-portrait', 382, 580], ['outer-landscape', 594, 368], ['inner-split', 385, 571], ['inner-portrait', 669, 867], ['inner-landscape', 951, 585]] as const) {

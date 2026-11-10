@@ -14,8 +14,15 @@ export function LoadingState({ label, className, compact = false }: { label?: st
   )
 }
 
-export function EmptyState({ children }: { children: ReactNode }) {
-  return <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted">{children}</div>
+/** Nothing to show. `compact` (TAL-2131) is one muted line inside a Settings group, with an optional trailing `action`; the full form keeps its dashed frame. */
+export function EmptyState({ children, compact = false, action }: { children: ReactNode; compact?: boolean; action?: ReactNode }) {
+  if (!compact) return <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted">{children}</div>
+  return (
+    <div data-empty="" className="flex min-h-11 items-center gap-2 py-2 text-sm text-muted">
+      <span className="min-w-0 flex-1">{children}</span>
+      {action}
+    </div>
+  )
 }
 
 /**

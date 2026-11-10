@@ -64,8 +64,8 @@ describe('ProfilesPage', () => {
   it('TAL-1791: marks only the active profile', async () => {
     await renderPage()
     const active = (await screen.findByText('default')).closest('li')!
-    expect(within(active).getByText('ACTIVE')).toBeVisible()
-    expect(within(screen.getByText('scout').closest('li')!).queryByText('ACTIVE')).not.toBeInTheDocument()
+    expect(within(active).getByText('Active')).toBeVisible()
+    expect(within(screen.getByText('scout').closest('li')!).queryByText('Active')).not.toBeInTheDocument()
   })
 
   it('TAL-805: labels each profile by the server gateway mode', async () => {
@@ -159,7 +159,7 @@ describe('profile detail (TAL-2085)', () => {
 
   it('renders a direct load of the active default profile with only the fields it has', async () => {
     const router = await renderPage(DEFAULT_BOOTSTRAP, '/settings/profiles?name=default')
-    const detail = (await screen.findByText('ACTIVE')).closest<HTMLElement>('[data-profile-detail="default"]')!
+    const detail = (await screen.findByText('Active')).closest<HTMLElement>('[data-profile-detail="default"]')!
     expect(within(detail).getByText('Default')).toBeVisible()
     expect(within(detail).queryByRole('region', { name: 'Agent' })).toBeNull()
     expect(within(detail).queryByRole('region', { name: 'Location' })).toBeNull()
@@ -181,7 +181,8 @@ describe('profile detail (TAL-2085)', () => {
     const router = await renderPage(DEFAULT_BOOTSTRAP, '/settings/profiles?name=ghost')
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent('No profile named "ghost".')
-    await userEvent.click(within(alert).getByRole('link', { name: 'Back to Profiles' }))
+    await userEvent.click(within(alert).getByRole('button', { name: 'Back to Profiles' }))
+
     await vi.waitFor(() => { expect(router.state.location.search).toEqual({}) })
     expect(await screen.findByText('scout')).toBeVisible()
   })

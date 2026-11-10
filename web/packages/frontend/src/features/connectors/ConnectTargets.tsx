@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useMutationState, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ConnectorOperationView } from '@maudecode/talaria-web-contracts'
-import { ExternalLink } from 'lucide-react'
+import { Check, LogIn, RefreshCw, SkipForward } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { isApiError } from '../../contracts'
-import { Button, buttonClass } from '../../ui/Button'
+import { IconButton, iconButtonClass } from '../../ui/Button'
+import { Tooltip } from '../../ui/Tooltip'
 import { TextInput } from '../../ui/Field'
 import { showToast } from '../toast/toast'
 import { useResourceEffects, useResourceMutation, withEffects } from '../sessions/useResourceMutation'
@@ -119,13 +120,12 @@ function TargetRow({ target, busy, onMove }: { target: Target; busy: boolean; on
         </div>
         <div className="flex shrink-0 items-center gap-1">
         {target.connect_url && (
-          <a href={target.connect_url} target="_blank" rel="noopener noreferrer" className={buttonClass('primary')}>
-            {m.connectors_authorize()}<ExternalLink size={13} aria-hidden="true" />
-          </a>
+          <Tooltip label={m.connectors_authorize()} side="top"><a href={target.connect_url} target="_blank" rel="noopener noreferrer" aria-label={m.connectors_authorize()} className={iconButtonClass('default')}><LogIn aria-hidden="true" /></a></Tooltip>
         )}
-        {target.actions.includes('approve') && <Button variant="primary" disabled={busy || missing} onClick={() => onMove('approve', env)}>{m.connectors_approve()}</Button>}
-        {target.actions.includes('retry') && <Button disabled={busy || missing} onClick={() => onMove('retry', env)}>{m.connectors_retry()}</Button>}
-        {target.actions.includes('skip') && <Button variant="ghost" onClick={() => onMove('skip')}>{m.connectors_skip()}</Button>}
+        {target.actions.includes('approve') && <IconButton variant="default" label={m.connectors_approve()} disabled={busy || missing} onClick={() => onMove('approve', env)}><Check aria-hidden="true" /></IconButton>}
+        {target.actions.includes('retry') && <IconButton variant="default" label={m.connectors_retry()} disabled={busy || missing} onClick={() => onMove('retry', env)}><RefreshCw aria-hidden="true" /></IconButton>}
+        {target.actions.includes('skip') && <IconButton variant="ghost" label={m.connectors_skip()} onClick={() => onMove('skip')}><SkipForward aria-hidden="true" /></IconButton>}
+
         </div>
       </div>
       {target.detail && <div className="text-xs text-muted">{target.detail}</div>}

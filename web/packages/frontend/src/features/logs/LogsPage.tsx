@@ -7,7 +7,7 @@ import { keys } from '../../api/queryKeys'
 import { HubPage } from '../../shell/AppShell'
 import { IconButton } from '../../ui/Button'
 import { Select } from '../../ui/Select'
-import { SettingRow, SettingsGroup } from '../settings/SettingsGroup'
+import { SettingRow, SettingsGroup, SETTINGS_PAGE } from '../settings/SettingsGroup'
 import { EmptyState, ErrorState, LoadingState, formatBytes, formatDate } from '../../ui/States'
 
 const FILES = ['agent', 'webui', 'gateway', 'bootstrap'] as const
@@ -22,7 +22,7 @@ export function LogsPage() {
   const detail = logs.data?.total_bytes !== undefined ? `${m.logs_size()}: ${formatBytes(logs.data.total_bytes)}${logs.data.mtime ? ` · ${m.logs_updated()}: ${formatDate(logs.data.mtime)}` : ''}` : undefined
   return (
     <HubPage title={m.tab_logs()}>
-      <div className="flex flex-col gap-5">
+      <div className={SETTINGS_PAGE}>
         <SettingsGroup id="view" title={m.view()} detail={detail} action={<IconButton label={m.refresh()} onClick={() => { void logs.refetch() }}><RefreshCw size={16} aria-hidden="true" /></IconButton>}>
           <SettingRow label={m.logs_file_label()} htmlFor="logs-file"><Select id="logs-file" value={file} onValueChange={(v) => setFile(v)}>{FILES.map((f) => <option key={f} value={f}>{f}</option>)}</Select></SettingRow>
           <SettingRow label={m.logs_tail_label()} htmlFor="logs-tail"><Select id="logs-tail" value={tail} onValueChange={(v) => setTail(Number(v))}>{TAILS.map((t) => <option key={t} value={t}>{t}</option>)}</Select></SettingRow>

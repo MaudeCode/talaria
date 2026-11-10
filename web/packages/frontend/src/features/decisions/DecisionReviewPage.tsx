@@ -11,7 +11,8 @@ import type { DecisionsSearch } from '../../contracts/url'
 import { useLocale } from '../../i18n/useLocale'
 import { m } from '../../paraglide/messages.js'
 import { HubPage } from '../../shell/AppShell'
-import { Badge } from '../../ui/Badge'
+import { Badge, Mark } from '../../ui/Badge'
+import { TAB_STRIP, tabClass } from '../../ui/TabStrip'
 import { BackButton, Button } from '../../ui/Button'
 import { cn } from '../../ui/cn'
 import { Row, RowList, SectionHeader } from '../../ui/List'
@@ -121,9 +122,9 @@ export function DecisionReviewPage({ reviewId, search }: { reviewId: string; sea
       actions={sessionId ? <BackButton label={m.decision_review_back()} onClick={() => { void navigate({ to: '/session/$sessionId', params: { sessionId } }) }} /> : undefined}
       toolbar={review && (
         <>
-          <div role="tablist" aria-label={m.decision_review_views()} className="flex gap-1">
+          <div role="tablist" aria-label={m.decision_review_views()} className={TAB_STRIP}>
             {(['decide', 'answers'] as const).map((id) => (
-              <button key={id} type="button" role="tab" aria-selected={view === id} aria-controls={`decisions-${id}`} onClick={() => go(id === 'answers' ? { view: 'answers', filter: search.filter } : { item: search.item })} className={cn('rounded-md px-3 py-1.5 text-sm', view === id ? 'bg-accent-bg text-accent-text' : 'text-muted hover:bg-hover hover:text-text')}>
+              <button key={id} type="button" role="tab" aria-selected={view === id} aria-controls={`decisions-${id}`} onClick={() => go(id === 'answers' ? { view: 'answers', filter: search.filter } : { item: search.item })} className={tabClass(view === id)}>
                 {id === 'answers' ? m.decision_view_answers() : m.decision_view_decide()}
               </button>
             ))}
@@ -190,7 +191,7 @@ function DecideView({ review, itemId, draft: drafts, failure, onDraft, onAnswer,
                   <span className="flex min-w-0 flex-col gap-0.5">
                     <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                       <span className={cn('text-sm font-medium', recommended ? 'text-accent-text' : 'text-text')}>{choice.label}</span>
-                      {recommended && <Badge tone="border-accent text-accent-text">{m.decision_recommended()}</Badge>}
+                      {recommended && <Mark>{m.decision_recommended()}</Mark>}
                     </span>
                     <span className="text-xs text-muted">{choice.effect}</span>
                   </span>

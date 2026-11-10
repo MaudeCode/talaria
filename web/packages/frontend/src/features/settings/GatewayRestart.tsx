@@ -2,7 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { m } from '../../paraglide/messages.js'
-import { Button } from '../../ui/Button'
+import { RotateCw } from 'lucide-react'
+import { IconButton } from '../../ui/Button'
 import { HelpTip } from '../../ui/Field'
 import { showErrorToast } from '../toast/errorToast'
 import { showToast } from '../toast/toast'
@@ -14,7 +15,8 @@ export function GatewayRestart() {
   // A refused restart (TAL-1627) rereads the capability, so the control disappears with the error. A finished one may settle a required restart (TAL-1828).
   const restart = useMutation({ mutationFn: api.restartAgent, onSuccess: () => { showToast(m.saved()) }, onError: (e) => showErrorToast(e), onSettled: () => { void qc.invalidateQueries({ queryKey: keys.health.agent }); void qc.invalidateQueries({ queryKey: keys.settings }) } })
   const lifecycle = agent.data?.gateway_lifecycle
-  if (lifecycle?.managed === true) return <Button onClick={() => restart.mutate()} disabled={restart.isPending}>{m.system_restart_agent()}</Button>
+  if (lifecycle?.managed === true) return <IconButton variant="default" label={m.system_restart_agent()} onClick={() => restart.mutate()} disabled={restart.isPending}><RotateCw aria-hidden="true" /></IconButton>
+
   if (!lifecycle) return null
   return (
     <HelpTip label={m.system_gateway_restart_unavailable()}>

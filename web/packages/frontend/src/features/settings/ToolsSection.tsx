@@ -7,7 +7,7 @@ import { useSettingField } from './useSettingField'
 import { PluginsSection } from './PluginsSection'
 import { ConnectorsSection } from '../connectors/ConnectorsSection'
 import { McpSection } from './McpSection'
-import { SettingToggle, SettingsGroup } from './SettingsRows'
+import { SettingToggle, SettingsGroup, SETTINGS_PAGE } from './SettingsRows'
 
 /**
  * TAL-1691, TAL-2100: Settings > Tools, what the active profile's agent can reach. Plugins, connectors (behind the
@@ -27,12 +27,12 @@ export function ToolsSection({ tab, onTabChange }: { tab?: ToolsTab | undefined;
   const gating = tab === 'connectors' && gate.isPending
   const gateFailed = tab === 'connectors' && gate.isError && !gate.data
   return (
-    <div className="flex flex-col gap-5" data-section="tools">
+    <div className={SETTINGS_PAGE} data-section="tools">
       {typeof settings.data?.agent_approvals === 'boolean' ? <SettingsGroup id="approvals" title={m.settings_group_approvals()}><SettingToggle label={m.settings_label_agent_approvals()} settingKey="agent_approvals" /></SettingsGroup> : null}
       {gateFailed && <ErrorState error={gate.error} onRetry={() => { void gate.refetch() }} />}
       {gating ? <LoadingState compact /> : <>
         <TabStrip label={m.settings_section_tools_title()} tabs={tabs} value={active} onChange={(next) => onTabChange?.(next)} panelPrefix="tools" />
-        <div role="tabpanel" id={`tools-${active}`} data-group={active} className="flex flex-col gap-5">
+        <div role="tabpanel" id={`tools-${active}`} data-group={active} className={SETTINGS_PAGE}>
           {active === 'plugins' && <PluginsSection />}
           {active === 'connectors' && <ConnectorsSection />}
           {active === 'mcp' && <McpSection />}

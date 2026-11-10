@@ -1,18 +1,22 @@
 import { useRef, useState, type ChangeEvent, type ReactNode, type InputHTMLAttributes } from 'react'
 import { Switch as BaseSwitch } from '@base-ui/react/switch'
 import { Popover } from '@base-ui/react/popover'
-import { CircleHelp } from 'lucide-react'
+import { CircleHelp, type LucideIcon } from 'lucide-react'
 import { m } from '../paraglide/messages.js'
 import { cn } from './cn'
 import { POPUP_MOTION } from './popupMotion'
 
-export function FieldRow({ label, hint, htmlFor, children, inline }: { label: ReactNode; hint?: ReactNode; htmlFor?: string | undefined; children: ReactNode; inline?: boolean }) {
+/** A labelled control. `icon` (TAL-2131, §12) is a lucide symbol drawn 18px in muted colour before the label. */
+export function FieldRow({ label, hint, htmlFor, children, inline, icon: Icon }: { label: ReactNode; hint?: ReactNode; htmlFor?: string | undefined; children: ReactNode; inline?: boolean; icon?: LucideIcon | undefined }) {
+  const text = <>
+    <label htmlFor={htmlFor} className="text-sm text-text">{label}</label>
+    {hint && <HelpTip label={typeof label === 'string' ? m.field_help_about({ label }) : m.field_help()}>{hint}</HelpTip>}
+  </>
   return (
     <div className={cn('flex gap-3 py-2', inline ? 'items-center justify-between' : 'flex-col')}>
-      <div className="min-w-0">
-        <label htmlFor={htmlFor} className="text-sm text-text">{label}</label>
-        {hint && <HelpTip label={typeof label === 'string' ? m.field_help_about({ label }) : m.field_help()}>{hint}</HelpTip>}
-      </div>
+      {Icon
+        ? <div className="flex min-w-0 items-center gap-2.5"><Icon size={18} strokeWidth={1.75} aria-hidden="true" data-row-icon="" className="shrink-0 text-muted" /><div className="min-w-0">{text}</div></div>
+        : <div className="min-w-0">{text}</div>}
       <div className={cn(inline ? 'shrink-0' : '')}>{children}</div>
     </div>
   )

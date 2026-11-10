@@ -1018,7 +1018,7 @@
 	"primary_navigation": "기본 탐색",
 	"process_wakeup_label": "백그라운드 깨우기",
 	"process_wakeup_matched": "감시 패턴 일치",
-	"profile_active": "ACTIVE",
+	"profile_active": "Active",
 	"profile_api_key_label": "API key",
 	"profile_api_key_placeholder": "API key (optional)",
 	"profile_api_keys_configured": "API keys configured",

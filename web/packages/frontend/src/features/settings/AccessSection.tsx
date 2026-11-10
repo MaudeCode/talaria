@@ -4,7 +4,9 @@ import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { loadBootstrap, useBootstrap } from '../../app/bootstrap'
 import { useSaveSettings } from '../../app/queries'
-import { Button } from '../../ui/Button'
+import { Check, LogOut, Plus, Trash2 } from 'lucide-react'
+import { IconButton } from '../../ui/Button'
+import { RowContextMenu } from '../../ui/Menu'
 import { TextInput } from '../../ui/Field'
 import { ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
@@ -13,7 +15,8 @@ import { useSettingField } from './useSettingField'
 import { useLogout } from '../auth/useLogout'
 import { decodeCreationOptions, encodeAttestation, passkeysSupported } from '../auth/passkeys'
 import { PrivacySettings } from './PrivacySettings'
-import { SettingAction, SettingRow, SettingToggle, SettingsGroup } from './SettingsRows'
+import { cn } from '../../ui/cn'
+import { SettingAction, SettingRow, SettingToggle, SettingsGroup, SETTINGS_PAGE } from './SettingsRows'
 import { useResourceEffects, useResourceMutation, withEffects } from '../sessions/useResourceMutation'
 
 /** TAL-2100: Settings > Access, who can sign in to this server, then what leaves it (Privacy). */
@@ -42,17 +45,19 @@ export function AccessSection() {
   const { auth_enabled: authEnabled, passkey_feature_flag: passkeysOn } = bootstrap.auth
   return (
     // `@container`: the password form lays out by the page's width, not the window's (the Settings list may sit beside it).
-    <div className="@container flex flex-col gap-7" data-section="access">
+    <div className={cn('@container', SETTINGS_PAGE)} data-section="access">
       {(canManage || passkeysOn || authEnabled) && (
-        <SettingsGroup id="sign-in" title={m.settings_group_sign_in()} action={authEnabled ? <Button onClick={() => { void logout() }}>{m.system_logout()}</Button> : undefined}>
+        <SettingsGroup id="sign-in" title={m.settings_group_sign_in()} action={authEnabled ? <IconButton variant="ghost" label={m.system_logout()} onClick={() => { void logout() }}><LogOut aria-hidden="true" /></IconButton> : undefined}>
           {canManage && (bool('password_env_var')
             ? <SettingRow label={m.settings_label_password()} hint={m.password_env_var_locked()}><span className="text-sm text-muted">{m.password_env_var_set()}</span></SettingRow>
             : <SettingRow label={m.settings_label_password()} htmlFor="settingsPassword"><PasswordForm passwordAuthEnabled={bool('password_auth_enabled')} /></SettingRow>)}
           {canManage && !bool('auth_enabled') && <SettingToggle label={m.settings_label_auth_acknowledged()} hint={m.auth_acknowledged_label()} id="settingsAuthAck" settingKey="auth_disabled_acknowledged" />}
           {passkeysOn && <>
-            <SettingAction label={m.system_passkeys()}>{passkeysSupported() && <Button onClick={() => registerPasskey.mutate()} disabled={registerPasskey.isPending}>{m.system_passkey_register()}</Button>}</SettingAction>
+            <SettingAction label={m.system_passkeys()}>{passkeysSupported() && <IconButton variant="default" label={m.system_passkey_register()} onClick={() => registerPasskey.mutate()} disabled={registerPasskey.isPending}><Plus aria-hidden="true" /></IconButton>}</SettingAction>
             {withEffects(passkeys.data?.credentials ?? [], (k) => `passkey:${k.id}`, effects).map((k) => (
-              <SettingAction key={k.id} label={k.label || k.id}><Button variant="ghost-danger" onClick={() => deletePasskey.mutate(k.id)}>{m.delete()}</Button></SettingAction>
+              <RowContextMenu key={k.id} label={m.system_passkeys()} actions={[{ label: m.delete(), run: () => deletePasskey.mutate(k.id), danger: true }]} trigger={<div>
+                <SettingAction label={k.label || k.id}><IconButton variant="danger" label={m.delete()} onClick={() => deletePasskey.mutate(k.id)}><Trash2 aria-hidden="true" /></IconButton></SettingAction>
+              </div>} />
             ))}
           </>}
         </SettingsGroup>
@@ -74,10 +79,11 @@ function PasswordForm({ passwordAuthEnabled }: { passwordAuthEnabled: boolean })
     <form autoComplete="off" onSubmit={(e) => { e.preventDefault(); if (pw.trim()) setPassword.mutate({ _set_password: pw.trim(), ...(currentPw ? { _current_password: currentPw } : {}) }) }} className="flex flex-col gap-2 @min-[46rem]:flex-row @min-[46rem]:items-center">
       {passwordAuthEnabled && <TextInput type="password" autoComplete="current-password" className="w-48" value={currentPw} onChange={(e) => setCurrentPw(e.target.value)} placeholder={m.current_password_placeholder()} aria-label={m.current_password_placeholder()} />}
       <TextInput id="settingsPassword" type="password" autoComplete="new-password" className="w-48" value={pw} onChange={(e) => setPw(e.target.value)} placeholder={m.password_placeholder()} aria-label={m.settings_label_password()} />
-      <div className="flex gap-2 whitespace-nowrap">
-        <Button type="submit" variant="primary" disabled={!pw.trim() || setPassword.isPending}>{m.system_password_set()}</Button>
-        {passwordAuthEnabled && <Button variant="ghost-danger" onClick={() => setPassword.mutate({ _clear_password: true, ...(currentPw ? { _current_password: currentPw } : {}) })}>{m.system_password_clear()}</Button>}
+      <div className="flex gap-1 whitespace-nowrap">
+        <IconButton type="submit" variant="default" label={m.system_password_set()} disabled={!pw.trim() || setPassword.isPending}><Check aria-hidden="true" /></IconButton>
+        {passwordAuthEnabled && <IconButton variant="danger" label={m.system_password_clear()} onClick={() => setPassword.mutate({ _clear_password: true, ...(currentPw ? { _current_password: currentPw } : {}) })}><Trash2 aria-hidden="true" /></IconButton>}
       </div>
+
     </form>
   )
 }

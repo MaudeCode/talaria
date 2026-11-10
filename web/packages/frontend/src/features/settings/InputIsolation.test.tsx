@@ -50,6 +50,8 @@ vi.mock('../../api/endpoints', async (original) => ({
     return Promise.resolve({ providers, groups: providers.length ? [{ id: 'available', provider_ids: providers.map((p) => p.id) }] : [] })
   }),
   fetchProviderQuotas: vi.fn(() => Promise.resolve({ sources: [] })),
+  fetchModels: vi.fn(() => Promise.resolve({ groups: [] })),
+
   saveSettings: vi.fn(),
   fetchSkillContent: vi.fn(() => Promise.resolve({ content: 'Skill content', editable: false })),
   fetchSettings: vi.fn(() => Promise.resolve({ password_auth_enabled: true, default_model: '' })),

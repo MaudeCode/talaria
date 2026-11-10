@@ -8,7 +8,8 @@ import { deferred } from '../../test/fixtures'
 import * as api from '../../api/endpoints'
 import { ApiError } from '../../contracts/common'
 import { showToast } from '../toast/toast'
-import { SettingNumber, SettingSelect, SettingText, SettingToggle } from './SettingsRows'
+import { Bell } from 'lucide-react'
+import { SettingAction, SettingLink, SettingNumber, SettingRow, SettingSegmented, SettingSelect, SettingsStats, SettingText, SettingToggle } from './SettingsRows'
 
 vi.mock('../../api/endpoints', () => ({ fetchSettings: vi.fn(), saveSettings: vi.fn() }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
@@ -85,6 +86,55 @@ it('SettingText enables Save only while the draft differs, and writes the parsed
   await waitFor(() => expect(save).toBeDisabled())
 })
 
+it('SettingSegmented shows every option and writes the picked one like SettingSelect (TAL-2131)', async () => {
+  vi.mocked(api.saveSettings).mockResolvedValue({ ...initial, mode: 'b' })
+  setup(<SettingSegmented label="Mode" settingKey="mode" fallback="a" options={options} />)
+  expect(screen.getByRole('radiogroup', { name: 'Mode' })).toHaveAttribute('id', 'settings-mode')
+  expect(screen.getByRole('radio', { name: 'Alpha' })).toHaveAttribute('aria-checked', 'true')
+  await user.click(screen.getByRole('radio', { name: 'Beta' }))
+  await waitFor(() => expect(api.saveSettings).toHaveBeenCalledExactlyOnceWith({ mode: 'b' }))
+})
+
+
+it('every kit row draws its optional icon 18px muted before the label, and none without one (TAL-2131)', () => {
+  setup(<>
+    <SettingToggle icon={Bell} label="Toggle" settingKey="hide_thing" />
+    <SettingSelect icon={Bell} label="Select" settingKey="mode" fallback="a" options={options} />
+    <SettingSegmented icon={Bell} label="Segmented" settingKey="mode" fallback="a" options={options} />
+    <SettingNumber icon={Bell} label="Number" settingKey="limit" />
+    <SettingText icon={Bell} label="Text" settingKey="name" />
+    <SettingRow icon={Bell} label="Row">x</SettingRow>
+    <SettingAction icon={Bell} label="Action">y</SettingAction>
+    <SettingLink icon={Bell} label="Link" onClick={() => undefined} />
+    <SettingRow label="Plain">z</SettingRow>
+  </>)
+  const icons = document.querySelectorAll('[data-row-icon]')
+  expect(icons).toHaveLength(8)
+  for (const icon of icons) {
+    expect(icon).toHaveAttribute('aria-hidden', 'true')
+    expect(icon).toHaveAttribute('width', '18')
+    expect(icon).toHaveClass('text-muted')
+  }
+  expect(screen.getByText('Plain').parentElement?.querySelector('[data-row-icon]')).toBeNull()
+})
+
+it('SettingsStats lays out labelled figures with mode words and server tones (TAL-2131)', () => {
+  render(<SettingsStats label="Usage" stats={[
+    { id: 'left', label: 'Left', value: '21%', mode: 'left', title: '21.4% left' },
+    { id: 'spend', label: 'Spend', value: '$4.20', tone: 'warning' },
+    { id: 'errors', label: 'Errors', value: '3', tone: 'error' },
+  ]} />)
+  const grid = screen.getByLabelText('Usage')
+  expect(grid.tagName).toBe('DL')
+  expect(grid).toHaveClass('grid-cols-2', '@min-[521px]:grid-cols-4')
+  expect(screen.getByText('Left').tagName).toBe('DT')
+  expect(screen.getByText('21%')).toHaveClass('text-lg', 'font-semibold', 'tabular-nums', 'text-strong')
+  expect(screen.getByText('left')).toHaveClass('text-xs', 'text-muted')
+  expect(screen.getByText('21%').closest('dd')).toHaveAttribute('title', '21.4% left')
+  expect(screen.getByText('$4.20')).toHaveClass('text-warning')
+  expect(screen.getByText('3')).toHaveClass('text-error')
+})
+
 it.each([
   ['SettingToggle with inverted', <SettingToggle label="Row" settingKey="hide_thing" inverted />, async () => {
     await user.click(screen.getByRole('switch', { name: 'Row' }))
@@ -93,7 +143,11 @@ it.each([
     await user.click(screen.getByRole('combobox', { name: 'Row' }))
     await user.click(await screen.findByRole('option', { name: 'Beta' }))
   }, () => expect(screen.getByRole('combobox', { name: 'Row' })).toHaveTextContent('Beta'), () => expect(screen.getByRole('combobox', { name: 'Row' })).toHaveTextContent('Alpha')],
+  ['SettingSegmented', <SettingSegmented label="Row" settingKey="mode" fallback="a" options={options} />, async () => {
+    await user.click(screen.getByRole('radio', { name: 'Beta' }))
+  }, () => expect(screen.getByRole('radio', { name: 'Beta' })).toHaveAttribute('aria-checked', 'true'), () => expect(screen.getByRole('radio', { name: 'Alpha' })).toHaveAttribute('aria-checked', 'true')],
   ['SettingNumber', <SettingNumber label="Row" settingKey="limit" />, () => {
+
     fireEvent.change(screen.getByLabelText('Row'), { target: { value: '9' } })
   }, () => expect(screen.getByLabelText('Row')).toHaveValue(9), () => expect(screen.getByLabelText('Row')).toHaveValue(3)],
   ['SettingText', <SettingText label="Row" settingKey="name" />, async () => {

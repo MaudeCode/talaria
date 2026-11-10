@@ -11,7 +11,7 @@ import { useSaveSettings } from '../../app/queries'
 import { useExtensionSkins } from '../../extensions/registry'
 import { cn } from '../../ui/cn'
 import { SectionHeader } from '../../ui/List'
-import { SettingsGroup } from './SettingsRows'
+import { SettingsGroup, SETTINGS_PAGE } from './SettingsRows'
 
 /** Swatch colours per skin, carried forward from the legacy picker catalogue. */
 
@@ -23,7 +23,8 @@ function PickButton({ active, onClick, className, children, label, title, ...res
   return (
     <button type="button" className={cn(className, 'flex flex-col items-center text-center cursor-pointer bg-transparent border border-border2 rounded-[10px] transition-all duration-150', skin ? 'py-2 px-1' : 'py-2.5 px-2', active && 'active')} title={title} aria-pressed={active} onClick={onClick} {...rest}>
       {children}
-      <span className={cn('font-medium text-text', skin ? 'text-[11px]' : 'text-[12px]')}>{label}</span>
+      <span className="text-xs font-medium text-text">{label}</span>
+
     </button>
   )
 }
@@ -40,7 +41,7 @@ export function AppearanceSection() {
   const extSkins = useExtensionSkins()
   const pickSkin = (key: string) => { const v = SkinSchema.safeParse(key); if (v.success) setSkin(v.data); else if (extSkins.some((s) => s.key === key)) setSkin(key) }
   return (
-    <div className="settings-section flex flex-col gap-7" data-section="appearance">
+    <div className={cn('settings-section', SETTINGS_PAGE)} data-section="appearance">
       <SettingsGroup id="this-device" title={m.settings_group_this_device()}>
         <FieldRow label={m.settings_label_theme()}>
           <div id="themePickerGrid" role="group" aria-label={m.settings_label_theme()} className="grid gap-2 grid-cols-3">

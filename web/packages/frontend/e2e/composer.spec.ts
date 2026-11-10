@@ -919,9 +919,9 @@ test('the composer menus open upward under their name, check the chosen row, and
     }
     await shot(`menu-${name.toLowerCase().replace(/ /g, '-')}`)
     if (name === 'Profile') {
-      // The default profile named `default` reads once, and the check, not an ACTIVE tag, marks the active one.
+      // The default profile named `default` reads once, and the check, not an Active mark, marks the active one.
       await expect(menu.getByRole('menuitemradio', { name: 'default', exact: true })).toHaveAttribute('aria-checked', 'true')
-      await expect(menu).not.toContainText('ACTIVE')
+      await expect(menu).not.toContainText('Active')
     }
     await page.keyboard.press('Escape')
     await expect(menu).toHaveCount(0)

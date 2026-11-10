@@ -54,7 +54,24 @@ describe('ProvidersSection', () => {
 
   afterEach(() => { quotaResponse.current = null; providersResponse.current = null; vi.useRealTimers() })
 
+  it("marks the default model only on the server's default provider and keeps the same id selectable elsewhere (TAL-2131)", async () => {
+    const shared = [{ id: 'shared-model', label: 'Shared model' }]
+    providersResponse.current = { active_provider: 'zai', providers: [{ id: 'openrouter', display_name: 'OpenRouter', has_key: true, configured: true, models: shared }, { id: 'zai', display_name: 'Z.AI', has_key: true, configured: true, models: shared }] }
+    vi.mocked(api.fetchSettings).mockResolvedValue({ default_model: 'shared-model' })
+    vi.mocked(api.fetchModels).mockResolvedValue({ groups: [], default_model: 'shared-model', default_provider_id: 'zai' })
+    renderSection()
+    const card = async (id: string) => {
+      const row = (await screen.findByText(id === 'zai' ? 'Z.AI' : 'OpenRouter')).closest<HTMLElement>(`[data-provider="${id}"]`)!
+      return within(row.querySelector<HTMLElement>('[data-provider-model="shared-model"]')!)
+    }
+    await waitFor(async () => expect((await card('zai')).getByText('Default model')).toBeInTheDocument())
+    expect((await card('zai')).queryByRole('button', { name: 'Set as default' })).toBeNull()
+    await userEvent.click((await card('openrouter')).getByRole('button', { name: 'Set as default' }))
+    expect(api.setDefaultModel).toHaveBeenCalledWith('shared-model', 'openrouter', undefined)
+  })
+
   it("renders the server's groups, counts and filter answers in server order (TAL-2077, TAL-2127)", async () => {
+
     const openai = { id: 'openai', display_name: 'OpenAI', has_key: false, configured: false }
     const zai = { id: 'zai', display_name: 'Z.AI', has_key: true, configured: true }
     const openrouter = { id: 'openrouter', display_name: 'OpenRouter', has_key: true, configured: false }
@@ -214,7 +231,7 @@ describe('ProvidersSection', () => {
     renderSection()
     const pace = await screen.findByTestId('provider-quota-pace', {}, { timeout: 2000 })
     expect(pace.closest('[data-provider]')).toHaveAttribute('data-provider', 'anthropic')
-    expect(within(pace.closest<HTMLElement>('[data-provider]')!).getByText('max')).toBeInTheDocument()
+    expect(within(pace.closest<HTMLElement>('[data-provider]')!).getByText(/(^| · )max( · |$)/)).toBeInTheDocument()
     expect(within(pace).getByText('Weekly')).toBeInTheDocument()
     expect(within(pace).getByText('68% remaining')).toBeInTheDocument()
     expect(within(pace).getByText(`Resets ${new Date('2026-10-03T08:00:00Z').toLocaleString('en', { dateStyle: 'medium', timeStyle: 'short' })}`)).toBeInTheDocument()
@@ -263,8 +280,8 @@ describe('ProvidersSection', () => {
     ])
     renderSection()
     const zai = (await screen.findByText('Z.AI')).closest<HTMLElement>('[data-provider="zai"]')!
-    expect(await within(zai).findByText('Remaining: Warning', {}, { timeout: 2000 })).toHaveClass('text-warning')
-    expect(within(zai).getByText('Pace: Critical')).toHaveClass('text-error')
+    expect((await within(zai).findByText('Remaining: Warning', {}, { timeout: 2000 })).closest('[data-status]')).toHaveAttribute('data-status', 'warning')
+    expect(within(zai).getByText('Pace: Critical').closest('[data-status]')).toHaveAttribute('data-status', 'error')
     const openrouter = zai.parentElement!.querySelector<HTMLElement>('[data-provider="openrouter"]')!
     expect(openrouter.querySelector('[data-quota-urgency]')).toBeNull()
   })
@@ -276,8 +293,9 @@ describe('ProvidersSection', () => {
     quotaResponse.current = onPace
     renderSection()
     const pace = await screen.findByTestId('provider-quota-pace', {}, { timeout: 2000 })
-    expect(within(pace).getByText('Remaining: Healthy')).toHaveAttribute('data-level', 'healthy')
-    expect(within(pace).getByText('Pace: Warning')).toHaveClass('text-warning')
+    expect(within(pace).getByText('Remaining: Healthy').closest('[data-quota-urgency]')).toHaveAttribute('data-level', 'healthy')
+    expect(within(pace).getByText('Pace: Warning').closest('[data-status]')).toHaveAttribute('data-status', 'warning')
+
     expect(within(pace).getByText('On pace')).toBeInTheDocument()
     expect(within(pace).queryByText(/over pace/)).not.toBeInTheDocument()
   })

@@ -31,6 +31,14 @@ describe('SectionHeader', () => {
     expect(container.firstElementChild).toContainElement(screen.getByRole('heading', { level: 3, name: 'Title' }))
 
     rerender(<SectionHeader detail={0}>Title</SectionHeader>)
-    expect(screen.getByText('0')).toHaveClass('text-xs', 'text-muted')
+    expect(screen.getByText('0')).toHaveClass('text-xs', 'text-muted', 'tabular-nums')
+  })
+
+  it('is a sentence-case sm semibold heading as strong as the rows under it (TAL-2131)', () => {
+    render(<SectionHeader>Group title</SectionHeader>)
+    const heading = screen.getByRole('heading', { level: 3, name: 'Group title' })
+    expect(heading).toHaveClass('text-sm', 'font-semibold', 'text-strong')
+    expect(heading.className).not.toMatch(/uppercase|tracking/)
+
   })
 })

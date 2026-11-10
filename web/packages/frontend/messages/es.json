@@ -1029,7 +1029,7 @@
 	"primary_navigation": "Navegación principal",
 	"process_wakeup_label": "Activación en segundo plano",
 	"process_wakeup_matched": "Patrón de observación coincidente",
-	"profile_active": "ACTIVE",
+	"profile_active": "Activo",
 	"profile_api_key_label": "Clave API",
 	"profile_api_key_placeholder": "Clave API (opcional)",
 	"profile_api_keys_configured": "API keys configured",

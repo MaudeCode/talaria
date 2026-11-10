@@ -4,8 +4,9 @@ import type { AgentImportResult, AgentImportSource } from '@maudecode/talaria-we
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { m } from '../../paraglide/messages.js'
-import { Button } from '../../ui/Button'
-import { ConfirmDialog, Dialog } from '../../ui/Dialog'
+import { Copy } from 'lucide-react'
+import { Button, IconButton } from '../../ui/Button'
+import { ConfirmDialog, Dialog, DialogFooter } from '../../ui/Dialog'
 import { FieldRow } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { ErrorState, LoadingState } from '../../ui/States'
@@ -71,7 +72,7 @@ export function AgentImportDialog({ onClose }: { onClose: () => void }) {
           <FieldRow label={m.profile_import_export_file()} htmlFor="agent-import-file">
             <input key={agent} id="agent-import-file" className="min-w-0 max-w-full text-sm" type="file" accept=".json,.md,.txt,application/json,text/markdown,text/plain" onChange={(event) => { setExportFile(event.target.files?.[0] ?? null); startOver() }} />
           </FieldRow>
-          {exportPrompt && <div className="mt-2 flex justify-end"><Button className="min-h-11" onClick={() => { copyWithToast(exportPrompt) }}>{m.profile_import_copy_request()}</Button></div>}
+          {exportPrompt && <div className="mt-2 flex justify-end"><IconButton variant="default" label={m.profile_import_copy_request()} onClick={() => { copyWithToast(exportPrompt) }}><Copy aria-hidden="true" /></IconButton></div>}
         </>}
         {!discovery.data.sources.some((source) => source.available) && <p className="text-sm text-muted">{m.profile_import_no_sources()}</p>}
       </>}
@@ -82,12 +83,13 @@ export function AgentImportDialog({ onClose }: { onClose: () => void }) {
         {shown.items.map((item, index) => <li key={index} className="flex flex-wrap justify-between gap-2 py-2 text-sm"><span>{item.label}</span><span className="text-muted">{statusLabel(item.status)}</span></li>)}
       </ul>}
       {shown && shown.stripped_secrets.length > 0 && <div className="my-3 text-sm"><h3 className="font-medium">{m.profile_import_stripped()}</h3><ul className="break-all font-mono text-xs">{shown.stripped_secrets.map((name) => <li key={name}>{name}</li>)}</ul></div>}
-      <div className="sticky -bottom-5 -mb-5 mt-2 flex flex-wrap justify-end gap-2 bg-surface pb-5 pt-2">
+      <DialogFooter className="sticky -bottom-5 -mb-5 mt-2 bg-surface pb-5 pt-2">
         <Button className="min-h-11" onClick={close}>{m.cancel()}</Button>
         {(shown?.status === 'unknown' || operation.isError) && lastReceipt ? <Button className="min-h-11" onClick={() => run('result', lastReceipt)} disabled={operation.isPending} aria-busy={operation.isPending}>{m.profile_import_check()}</Button>
           : shown?.can_apply && shown.receipt ? <Button className="min-h-11" variant="primary" disabled={operation.isPending} aria-busy={operation.isPending} onClick={() => setConfirm(true)}>{m.profile_import_apply()}</Button>
           : discovery.data?.status === 'available' && <Button className="min-h-11" variant="primary" onClick={() => run('preview')} disabled={!agent || (needsFile && !exportFile) || operation.isPending} aria-busy={operation.isPending}>{m.profile_import_preview()}</Button>}
-      </div>
+      </DialogFooter>
+
     </Dialog>
     <ConfirmDialog open={confirm} onOpenChange={setConfirm} title={m.profile_import_confirm()} description={m.profile_import_confirm_body()} confirmLabel={m.profile_import_apply()} cancelLabel={m.cancel()} onConfirm={() => { if (shown?.receipt) { setLastReceipt(shown.receipt); run('apply', shown.receipt) } }} />
   </>

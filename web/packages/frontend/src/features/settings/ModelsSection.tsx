@@ -10,7 +10,7 @@ import { catalogEntryById } from '../../lib/modelEntry'
 import { catalogModelOptgroups } from '../../lib/modelOptgroups'
 import { useSettingField } from './useSettingField'
 import { AuxiliaryModelsSection } from './AuxiliaryModels'
-import { SettingRow, SettingsGroup } from './SettingsRows'
+import { SettingRow, SettingsGroup, SETTINGS_PAGE } from './SettingsRows'
 
 /** The main model and, when its catalog entry offers them, its speed tiers. */
 function MainModelRows() {
@@ -84,7 +84,7 @@ function ReasoningRows() {
 /** TAL-1691, TAL-2100: Settings > Models, the active profile's main and auxiliary models. */
 export function ModelsSection() {
   return (
-    <div className="flex flex-col gap-7" data-section="models">
+    <div className={SETTINGS_PAGE} data-section="models">
       <SettingsGroup id="main-model" title={m.settings_group_main_model()}><MainModelRows /></SettingsGroup>
       <SettingsGroup id="auxiliary" title={m.settings_label_auxiliary_models()}><AuxiliaryModelsSection /></SettingsGroup>
     </div>

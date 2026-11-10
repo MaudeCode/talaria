@@ -10,7 +10,7 @@ import { ErrorState, LoadingState } from '../../ui/States'
 import { showErrorToast } from '../toast/errorToast'
 import { CompletionAudioSettings } from './CompletionAudioSettings'
 import { useSettingField } from './useSettingField'
-import { SettingToggle, SettingsGroup } from './SettingsRows'
+import { SettingToggle, SettingsGroup, SETTINGS_PAGE } from './SettingsRows'
 
 const KINDS: { key: keyof WebPushPreferences; label: () => string }[] = [
   { key: 'notify_on_approval', label: () => m.settings_label_notify_approval() },
@@ -41,7 +41,7 @@ export function NotificationsSection() {
   if (settings.isPending) return <LoadingState />
   if (settings.isError) return <ErrorState error={settings.error} onRetry={() => { void settings.refetch() }} />
   return (
-    <div className="flex flex-col gap-7" data-section="notifications">
+    <div className={SETTINGS_PAGE} data-section="notifications">
       <SettingsGroup id="while-open" title={m.settings_group_while_open()}>
         <SettingToggle label={m.settings_label_notifications()} settingKey="notifications_enabled" />
         <SettingToggle label={m.settings_label_sound()} settingKey="sound_enabled" />

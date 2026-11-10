@@ -44,6 +44,11 @@ export function Dialog({ open, onOpenChange, title, description, children, class
   )
 }
 
+/** TAL-2131 (§12): a dialog's confirm and cancel buttons, the one place a button keeps its words. */
+export function DialogFooter({ children, className }: { children: ReactNode; className?: string }) {
+  return <div className={cn('flex flex-wrap justify-end gap-2', className)}>{children}</div>
+}
+
 export interface ConfirmDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
