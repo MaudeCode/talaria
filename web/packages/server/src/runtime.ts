@@ -561,7 +561,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     agentSessions: (profile) => readImportableAgentSessionRowsAsync(join(profileHome(profile), 'state.db')),
     personIsolation: () => personIsolationEnabled(env),
     agentSessionOwner: (sid, profile) => sessions.foreignOwnerOf(sid, profile),
-    documents: storage.documents, env, canonicalProfile: (p) => (isRootProfile(p) ? 'default' : p),
+    documents: storage.documents, env, canonicalProfile: (p) => (isRootProfile(p) ? 'default' : p), redactEnabled: sessions.deps.redactEnabled,
   })
   const webPush = new WebPushChannel({ documents: storage.documents, activity, lookup: () => deps.dnsLookup, fetch: () => deps.pinnedFetch, liveLogins: () => liveLoginHashes(auth, { sessionBindingIsCurrent: (info) => oidc?.sessionBindingIsCurrent(info) ?? Promise.resolve(false) }),
     // TAL-48: a subscription acts with its login's person authority; a login that is gone has none.
@@ -570,7 +570,8 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       const info = login ? auth.liveSessions().find((session) => loginHash(session.token) === login) : undefined
       return info ? { personId: personIdentity(info)?.id ?? null, serverOwner: await sessionCanManageServer({ deps }, info) } : { personId: null, serverOwner: false }
     },
-    profileExists: (profile) => { try { return statSync(profileHome(profile)).isDirectory() } catch { return false } }, env, now, log })
+    profileExists: (profile) => { try { return statSync(profileHome(profile)).isDirectory() } catch { return false } },
+    session: (sid) => store.get(sid), redactEnabled: sessions.deps.redactEnabled, env, now, log })
   const notifications = new NotificationHub(activity, [relay, webPush], events)
   const turns = new TurnRunner({
     notifications: updateNotifications,
@@ -741,7 +742,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   }
   const extensionsEnabled = (): boolean => { try { return deps.extensions.enabledSync() } catch { return false } }
   const ownerLaunchStore = new BackgroundTaskStore(storage.documents, now, undefined, 'owner-side-work')
-  sessions.owner = new GatewaySessions({ onWebCompletion: (profile, sid, identity) => { relay.noteWebCompletion(profile, sid, identity) }, service: sessions, sidecar: () => sidecar, registry, journal, events, channels, launchStore: ownerLaunchStore,
+  sessions.owner = new GatewaySessions({ onWebCompletion: (profile, sid, identity, session) => { relay.noteWebCompletion(profile, sid, identity, session) }, service: sessions, sidecar: () => sidecar, registry, journal, events, channels, launchStore: ownerLaunchStore,
     profileHome, activeProfile, showReasoning: async (home) => showReasoning(await agentConfig.read(home)), redactEnabled: sessions.deps.redactEnabled, now, log })
   // TAL-1164: the `talaria` agent toolset. A tool call names the Web session whose agent made it; that session's
   // profile scopes every answer, exactly as a request bound to that session would be.

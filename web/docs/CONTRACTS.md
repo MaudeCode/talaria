@@ -246,6 +246,12 @@ in browser storage. Audio files are limited to 1 MiB and 10 seconds; preview req
 Storage or autoplay failure stays quiet. Web audio does not change Relay/APNs policy, viewed
 acknowledgements, speech preferences or background-process notification settings.
 
+Each instruction also carries `notification` (TAL-2157): the chat's title, the start of the turn's final
+answer as redacted plain text of at most 140 characters, the chat's path and its tag. The server builds it
+with the same function as the completion's Web Push payload. With Browser notifications on, permission
+granted and the tab hidden, Web shows it through the service worker, tagged with the chat, unless this
+browser holds a push subscription that delivers the same completion.
+
 Explicit prompt queues use `/api/prompt-queues` and its versioned edit/action
 routes. Creating a run saves a draft; only `start` or `resume` authorizes dispatch.
 The server owns target profile/project/backend fences, ordered steps, availability,

@@ -2,11 +2,32 @@
  * The alert rule every notification channel applies, ported from the relay's `alertForTransition`
  * (relay/convex/lib/aggregate.ts). `contracts/fixtures/notification-alerts.json` pins both copies.
  */
-import type { WebPushPreferences } from '@maudecode/talaria-web-contracts'
+import type { WebAudioCompletion, WebPushPreferences } from '@maudecode/talaria-web-contracts'
+import { redactString } from '../../redact.js'
+import { markdownPlainText } from '../../text/markdown.js'
+import { bodyExcerpt, finalAnswerOf, isConversationalAssistant } from '../merge.js'
 
 export type AlertKind = 'approval' | 'input' | 'completion' | 'failure' | 'decision'
 
 export type AlertPreferences = WebPushPreferences
+
+/** What an alert of each kind says when nothing more specific applies. */
+export const ALERT_BODY: Record<AlertKind, string> = { approval: 'Approval needed', input: 'Input needed', completion: 'Completed', failure: 'Failed', decision: 'Decision review ready' }
+
+export type CompletionNotification = NonNullable<WebAudioCompletion['notification']>
+const COMPLETION_BODY_MAX = 140
+
+/**
+ * TAL-2157: a finished reply's notification, for its Web Push and the open tab's browser notification alike: the chat's
+ * title, then the start of the turn's final answer as redacted plain text. A turn that ended without an answer says so.
+ */
+export function completionNotification(sessionId: string, session: { title?: unknown; messages?: unknown } | null, redact: boolean): CompletionNotification {
+  const title = typeof session?.title === 'string' && session.title.trim() ? redactString(session.title, redact).slice(0, 120) : 'Untitled'
+  const last = Array.isArray(session?.messages) ? session.messages.findLast(isConversationalAssistant) : undefined
+  const text = markdownPlainText(redactString(last ? finalAnswerOf(last) : '', redact))
+  const body = text.length > COMPLETION_BODY_MAX ? `${bodyExcerpt(text, COMPLETION_BODY_MAX - 1)}…` : text
+  return { title, body: body || ALERT_BODY.completion, url: `/session/${encodeURIComponent(sessionId)}`, tag: sessionId }
+}
 
 export const DEFAULT_ALERT_PREFERENCES: AlertPreferences = { notify_on_approval: true, notify_on_input: true, notify_on_completion: true, notify_on_failure: true }
 

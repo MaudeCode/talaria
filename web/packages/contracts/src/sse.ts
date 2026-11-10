@@ -125,6 +125,8 @@ export const RELAY_CLOSE_EVENTS: ReadonlySet<ChatEventName> = new Set(['stream_e
 export const WebAudioCompletionSchema = z.object({
   identity: z.string().min(1).max(128), scope: z.string().min(1).max(128), profile: z.string().min(1),
   eligible: z.boolean(), expires_at: z.number(),
+  /** TAL-2157: what a browser notification for this completion shows, composed with its Web Push; `tag` is the chat's, as the push uses. */
+  notification: z.object({ title: z.string(), body: z.string(), url: z.string(), tag: z.string() }).optional(),
 })
 export type WebAudioCompletion = z.infer<typeof WebAudioCompletionSchema>
 /** `GET /api/sessions/events` global invalidation and live Web playback. */

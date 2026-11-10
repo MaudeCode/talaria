@@ -20,11 +20,14 @@ it('projects a live Web completion without pairing and keeps terminal failures q
   const server = await bootTestServer()
   try {
     const session = await server.deps.sessionStore.newSession()
+    session.title = 'Release'
+    session.messages = [{ role: 'user', content: 'ship it' }, { role: 'assistant', content: '**Shipped** with ghp_abcdefghij0123456789' }]
     server.deps.registry.registerActiveRun({ stream_id: 'audio-run', session_id: session.session_id, started_at: 1, phase: 'running', workspace: '', model: null, provider: null, ephemeral: false })
     const sub = server.deps.events.subscribe()
     server.deps.notifications.noteTerminal('audio-run', 'completed')
     const event = await sub.next(AbortSignal.timeout(1500))
-    expect(event).toMatchObject({ reason: 'web_completion', web_audio: [{ eligible: true, profile: 'default', identity: expect.any(String) as string, scope: expect.any(String) as string }] })
+    expect(event).toMatchObject({ reason: 'web_completion', web_audio: [{ eligible: true, profile: 'default', identity: expect.any(String) as string, scope: expect.any(String) as string,
+      notification: { title: 'Release', body: 'Shipped with ghp_ab...6789', url: `/session/${session.session_id}`, tag: session.session_id } }] })
     sub.close()
     const failed = server.deps.events.subscribe()
     server.deps.notifications.noteTerminal('audio-run', 'failed')

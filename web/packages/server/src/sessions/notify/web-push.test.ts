@@ -147,6 +147,23 @@ describe('Web Push channel', () => {
     s.deps.registry.activeRuns.delete('stream-other')
   })
 
+  it('sends a finished reply as its chat title and the start of its answer (TAL-2157)', async () => {
+    const on = { notify_on_approval: true, notify_on_input: true, notify_on_completion: true, notify_on_failure: true }
+    expect((await send(s, 'POST', PUSH_PATH, { endpoint: ENDPOINT, keys: { p256dh: keys.p256dh, auth: keys.auth }, preferences: on })).status).toBe(200)
+    const sid = String(((await json(await send(s, 'POST', '/api/session/new', {}))).session as Json).session_id)
+    const session = await s.deps.sessionStore.get(sid)
+    session.title = 'Release'
+    session.messages = [{ role: 'user', content: 'ship it' }, { role: 'assistant', content: '**Shipped** with ghp_abcdefghij0123456789' }]
+    s.deps.registry.activeRuns.set('stream-done', { stream_id: 'stream-done', session_id: sid, started_at: 6, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false })
+    await settle()
+    const before = push.pushes.length
+    s.deps.notifications.noteTerminal('stream-done', 'completed')
+    s.deps.registry.activeRuns.delete('stream-done')
+    await settle()
+    expect(push.pushes).toHaveLength(before + 1)
+    expect(keys.decrypt(Buffer.from(push.pushes.at(-1)!.init.body as Uint8Array))).toEqual({ title: 'Release', body: 'Shipped with ghp_ab...6789', tag: sid, url: `/session/${sid}` })
+  })
+
   it('deletes a subscription the push service reports gone (410)', async () => {
     const sid = String(((await json(await send(s, 'POST', '/api/session/new', { title: 'Gone' }))).session as Json).session_id)
     s.deps.registry.activeRuns.set('stream-gone', { stream_id: 'stream-gone', session_id: sid, started_at: 4, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false })

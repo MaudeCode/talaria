@@ -1303,15 +1303,15 @@ export const BODY_EXCERPT_LIMIT = 3000
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 
-/** The first `BODY_EXCERPT_LIMIT` characters, never splitting a grapheme, cut back to a line break (else a space) in the second half. */
-function bodyExcerpt(text: string): string {
+/** The first `limit` characters, never splitting a grapheme, cut back to a line break (else a space) in the second half. */
+export function bodyExcerpt(text: string, limit = BODY_EXCERPT_LIMIT): string {
   let end = 0
-  for (const { segment } of graphemes.segment(text.slice(0, BODY_EXCERPT_LIMIT + 16))) {
-    if (end + segment.length > BODY_EXCERPT_LIMIT) break
+  for (const { segment } of graphemes.segment(text.slice(0, limit + 16))) {
+    if (end + segment.length > limit) break
     end += segment.length
   }
   const head = text.slice(0, end)
-  const floor = BODY_EXCERPT_LIMIT / 2
+  const floor = limit / 2
   const lineBreak = head.lastIndexOf('\n')
   const space = head.lastIndexOf(' ')
   const cut = lineBreak >= floor ? lineBreak : space >= floor ? space : end

@@ -48,8 +48,8 @@ const PERMISSION: Record<Permission, { state: DotState; text: () => string }> = 
 
 const readPermission = (): Permission => 'Notification' in window ? Notification.permission : 'unsupported'
 
-/** TAL-2146: this browser's notification permission (platform state), following a change made in the browser's settings. */
-function useNotificationPermission(): Permission {
+/** TAL-2146: this browser's notification permission (platform state), following a change made in the browser's settings or a prompt. */
+function useNotificationPermission(): [Permission, () => void] {
   const [permission, setPermission] = useState(readPermission)
   useEffect(() => {
     let status: PermissionStatus | undefined
@@ -58,20 +58,26 @@ function useNotificationPermission(): Permission {
     void navigator.permissions?.query({ name: 'notifications' }).then((s) => { if (!live) return; status = s; s.addEventListener('change', update) }, () => undefined)
     return () => { live = false; status?.removeEventListener('change', update) }
   }, [])
-  return permission
+  return [permission, () => { setPermission(readPermission()) }]
 }
 
 /** TAL-1691, TAL-2086, TAL-2146: Settings > Notifications, in-app alerts with the browser's permission, the reply sound on this device, then this browser's push subscription. */
 export function NotificationsSection() {
   const { settings } = useSettingField(['notifications_enabled', 'sound_enabled'])
-  const permission = useNotificationPermission()
+  const [permission, refreshPermission] = useNotificationPermission()
+  // TAL-2157: turning alerts on asks for the permission they need, from the switch's click; a refusal leaves them off.
+  const allow = async () => {
+    const granted = Notification.permission === 'granted' || (await Notification.requestPermission()) === 'granted'
+    refreshPermission()
+    return granted
+  }
   if (settings.isPending) return <LoadingState />
   if (settings.isError) return <ErrorState error={settings.error} onRetry={() => { void settings.refetch() }} />
   const shown = PERMISSION[permission] ?? PERMISSION.default
   return (
     <div className={SETTINGS_PAGE} data-section="notifications">
       <SettingsGroup id="while-open" title={m.settings_group_while_open()}>
-        <SettingToggle label={m.settings_label_notifications()} settingKey="notifications_enabled" icon={AppWindow} disabled={permission === 'unsupported'}
+        <SettingToggle label={m.settings_label_notifications()} settingKey="notifications_enabled" icon={AppWindow} disabled={permission === 'unsupported'} confirmOn={allow}
           detail={<StatusDot state={shown.state}>{shown.text()}</StatusDot>} />
         <SettingToggle label={m.settings_label_sound()} settingKey="sound_enabled" icon={Volume2} />
       </SettingsGroup>

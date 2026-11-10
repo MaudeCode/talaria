@@ -3,7 +3,10 @@ import { act, cleanup, renderHook } from '@testing-library/react'
 import { QueryClient, QueryClientProvider, QueryObserver } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { keys } from '../../api/queryKeys'
+import { fetchWebPushStatus } from '../../api/endpoints'
 import { useSessionListStream } from './SessionListPanel'
+
+vi.mock('../../api/endpoints', async (importOriginal) => ({ ...await importOriginal<typeof import('../../api/endpoints')>(), fetchWebPushStatus: vi.fn() }))
 
 let sources: { readyState: number; close: () => void; emit: (name: string, data: unknown) => void }[] = []
 
@@ -114,5 +117,76 @@ describe('useSessionListStream fallback polling', () => {
     expect(sources[0]!.close).toHaveBeenCalledOnce()
     await act(async () => { await vi.advanceTimersByTimeAsync(60_000) })
     expect(invalidate).not.toHaveBeenCalled()
+  })
+})
+
+describe('useSessionListStream completion notifications (TAL-2157)', () => {
+  const notification = { title: 'Release', body: 'Shipped it', url: '/session/a', tag: 'a' }
+  const completion = { identity: 'run-1', scope: 'scope', profile: 'default', eligible: true, expires_at: Date.now() + 60_000, notification }
+  let shown: { title: string; options: NotificationOptions; onclick: (() => void) | null }[]
+  const showNotification = vi.fn()
+  let subscription: { endpoint: string } | null
+  let active: object | null
+
+  beforeEach(() => {
+    shown = []
+    subscription = null
+    active = {}
+    showNotification.mockReset()
+    vi.stubGlobal('Notification', class {
+      static permission = 'granted'
+      onclick: (() => void) | null = null
+      constructor(title: string, options: NotificationOptions) { shown.push(this as unknown as typeof shown[number]); Object.assign(this, { title, options }) }
+      close = vi.fn()
+    })
+    Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: { getRegistration: () => Promise.resolve({ active, showNotification, pushManager: { getSubscription: () => Promise.resolve(subscription) } }) } })
+  })
+  afterEach(() => { Reflect.deleteProperty(navigator, 'serviceWorker') })
+
+  async function finish(visibility: DocumentVisibilityState, enabled = true) {
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue(visibility)
+    const qc = new QueryClient()
+    qc.setQueryData(keys.settings, { notifications_enabled: enabled, sound_enabled: false })
+    renderHook(() => { useSessionListStream() }, { wrapper: ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider> })
+    await act(async () => {
+      sources.at(-1)?.emit('sessions_changed', { type: 'sessions_changed', version: 2, reason: 'web_completion', session_id: 'a', web_audio: [completion] })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+  }
+
+  it('shows one notification tagged with the chat through the service worker only while the tab is hidden and the setting is on', async () => {
+    await finish('visible')
+    await finish('hidden', false)
+    expect(showNotification).not.toHaveBeenCalled()
+    await finish('hidden')
+    expect(showNotification).toHaveBeenCalledExactlyOnceWith('Release', { body: 'Shipped it', tag: 'a', data: { url: '/session/a' } })
+  })
+
+  it('leaves the completion to Web Push only when the server sends it to this browser', async () => {
+    subscription = { endpoint: 'https://push.example/1' }
+    const all = { notify_on_approval: true, notify_on_input: true, notify_on_failure: true }
+    vi.mocked(fetchWebPushStatus).mockResolvedValue({ public_key: 'k', subscription: { preferences: { ...all, notify_on_completion: true } } })
+    await finish('hidden')
+    expect(fetchWebPushStatus).toHaveBeenLastCalledWith('https://push.example/1')
+    expect(showNotification).not.toHaveBeenCalled()
+    // Another profile's or a signed-out login's subscription, or completions turned off: Web Push sends nothing.
+    for (const status of [null, { preferences: { ...all, notify_on_completion: false } }]) {
+      vi.mocked(fetchWebPushStatus).mockResolvedValue({ public_key: 'k', subscription: status })
+      showNotification.mockClear()
+      await finish('hidden')
+      expect(showNotification).toHaveBeenCalledOnce()
+    }
+  })
+
+  it('falls back to a page notification without an active worker; clicking it focuses the tab on the chat', async () => {
+    active = null
+    const assign = vi.fn()
+    const focus = vi.spyOn(window, 'focus').mockImplementation(() => undefined)
+    await finish('hidden')
+    expect(shown).toHaveLength(1)
+    vi.stubGlobal('location', { href: window.location.href, origin: window.location.origin, assign })
+    shown[0]!.onclick?.()
+    expect(focus).toHaveBeenCalled()
+    expect(assign).toHaveBeenCalledExactlyOnceWith(new URL('session/a', window.location.href).href)
   })
 })
