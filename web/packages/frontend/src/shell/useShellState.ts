@@ -4,6 +4,7 @@ import { useLocation } from '@tanstack/react-router'
 import { readPersisted, writePersisted, readPersistedJson } from '../lib/persisted'
 import { TabIdListSchema } from '../contracts/persisted'
 import { panelForPath } from './nav'
+import { useSetting } from '../app/settings'
 
 interface ShellState { collapsed: boolean; mobileOpen: boolean; sidebarWidth: number; sidePanelOpen: boolean; sessionSearchRequested: boolean }
 let state: ShellState = { collapsed: readPersisted('hermes-webui-sidebar-collapsed') === '1', mobileOpen: false, sidebarWidth: Number(readPersisted('hermes-webui-sidebar-width')) || 300, sidePanelOpen: readPersisted('hermes-webui-workspace-panel') === 'open', sessionSearchRequested: false }
@@ -24,6 +25,16 @@ export function setSidePanelOpen(open: boolean): void {
   set({ sidePanelOpen: open })
 }
 export function toggleSidePanel(): void { setSidePanelOpen(!state.sidePanelOpen) }
+/** TAL-2154: with "Keep workspace panel open by default" on, a chat's first visit in this tab opens the panel; the person's own open or close wins after that. */
+const panelDefaulted = new Set<string>()
+export function useWorkspacePanelDefault(sessionId: string): void {
+  const on = useSetting('workspace_panel_open') === true
+  useEffect(() => {
+    if (!on || panelDefaulted.has(sessionId)) return
+    panelDefaulted.add(sessionId)
+    setSidePanelOpen(true)
+  }, [on, sessionId])
+}
 export function openMobileSidebar(): void { set({ mobileOpen: true }) }
 export function closeMobileSidebar(): void { set({ mobileOpen: false }) }
 export function toggleMobileSidebar(): void { set({ mobileOpen: !state.mobileOpen }) }

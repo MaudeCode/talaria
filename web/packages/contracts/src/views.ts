@@ -779,6 +779,8 @@ export const SettingsSchema = z.looseObject({
   group_discussion_max_messages: z.number().int().positive().nullable().optional().describe('TAL-1828: the root config\'s `hosted_rooms.discussion.max_messages`, as a gateway loads it (default 10). Null as `group_discussion_max_rounds`.'),
   group_discussion_restart_required: z.boolean().nullable().optional().describe('TAL-1828: the running gateway loaded other limits at startup, so a saved change applies after a gateway restart. Null as `group_discussion_max_rounds`.'),
   screen_reader_mode: z.boolean().optional().describe('TAL-1605: give the Web workspace PTY an xterm accessibility tree; owner-command output always has one.'),
+  workspace_panel_open: z.boolean().optional().describe('TAL-2154: open the Web chat workspace panel on each chat\'s first visit in a browser tab; the person\'s own open or close wins after that.'),
+  workspace_todos_tab: z.boolean().optional().describe('TAL-2154: show a Todos page for the current chat in the Web chat workspace panel.'),
 })
 export type Settings = z.infer<typeof SettingsSchema>
 export const ProfileSchema = z.looseObject({

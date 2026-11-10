@@ -1,5 +1,5 @@
 /**
- * TAL-373: the chat's right panel, a page host with Files, Agents, (TAL-571) Checkpoints and (TAL-1649) Skills. A later page (a terminal, say) is one more entry in
+ * TAL-373: the chat's right panel, a page host with Files, Agents, (TAL-571) Checkpoints, (TAL-1649) Skills and (TAL-2154) Todos when its setting is on. A later page (a terminal, say) is one more entry in
  * `pages`. The user's tab choice persists; when a session's panel first opens it shows Agents if agents are running or
  * need attention, else the last chosen page, and nothing switches it after that.
  */
@@ -7,6 +7,9 @@ import { useEffect, useState } from 'react'
 import { m } from '../../paraglide/messages.js'
 import { readPersisted, writePersisted } from '../../lib/persisted'
 import { PanelPageHost, type PanelPage } from '../../shell/PanelPageHost'
+import { useWorkspacePanelDefault } from '../../shell/useShellState'
+import { useSetting } from '../../app/settings'
+import { SessionTodos } from '../todos/TodosPage'
 import { FilesPage, type RestoredFiles } from '../workspace/FilesPage'
 import { CheckpointsPage } from '../workspace/CheckpointsPage'
 import { AgentsPage, useHasActiveAgents } from '../background/AgentsPage'
@@ -18,6 +21,8 @@ const PAGE_KEY = 'talaria-right-panel-page'
 /** The compiler caches this panel while the chat's turn-state frames leave its props unchanged (TAL-1388). */
 export function ChatSidePanel({ sessionId, workspace, open, onToggle, onClose }: { sessionId: string; workspace: string | null | undefined; open: boolean; onToggle: () => void; onClose: () => void }) {
   const hasActiveAgents = useHasActiveAgents(sessionId, open)
+  useWorkspacePanelDefault(sessionId)
+  const todosTab = useSetting('workspace_todos_tab') === true
   // This session's page, fixed on the panel's first open here; a later status change never moves it.
   const [chosen, setChosen] = useState<string | null>(null)
   const fallback = readPersisted(PAGE_KEY) ?? 'files'
@@ -32,6 +37,7 @@ export function ChatSidePanel({ sessionId, workspace, open, onToggle, onClose }:
     { id: 'agents', label: m.panel_agents(), render: (active) => <AgentsPage sessionId={sessionId} active={active} /> },
     { id: 'checkpoints', label: m.checkpoint_title(), render: (active) => <CheckpointsPage workspace={workspace} sessionId={sessionId} active={active} onRestored={(paths, restoredIn) => setRestored((r) => ({ seq: (r?.seq ?? 0) + 1, paths, workspace: restoredIn }))} /> },
     { id: 'skills', label: m.tab_skills(), render: (active) => <SessionSkillsPage sessionId={sessionId} active={active} /> },
+    ...(todosTab ? [{ id: 'todos', label: m.tab_todos(), render: () => <div className="min-h-0 flex-1 overflow-y-auto p-3"><SessionTodos sid={sessionId} /></div> }] : []),
   ]
   return (
     <PanelPageHost

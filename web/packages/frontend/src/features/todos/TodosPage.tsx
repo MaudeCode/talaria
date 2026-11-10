@@ -11,11 +11,16 @@ import { cn } from '../../ui/cn'
 export function TodosPage({ sessionId }: { sessionId?: string | null }) {
   const restored = SessionIdSchema.safeParse(readPersisted('hermes-webui-session'))
   const sid = sessionId ?? (restored.success ? restored.data : null)
+  return <HubPage title={m.tab_todos()}><SessionTodos sid={sid} /></HubPage>
+}
+
+/** One chat's server-ordered todos; the Todos hub page and (TAL-2154) the chat panel's Todos page show it. */
+export function SessionTodos({ sid }: { sid: string | null }) {
   const { session, query } = useTranscript(sid)
   const state = session?.todo_state
   const todos = state?.display_items ?? []
   return (
-    <HubPage title={m.tab_todos()}>
+    <>
       {query.isError && <ErrorState error={query.error} onRetry={() => { void query.refetch() }} />}
       {!sid && <EmptyState><Link to="/" className="text-accent hover:underline">{m.todos_open_chat()}</Link></EmptyState>}
       {sid && query.isPending && <LoadingState />}
@@ -41,6 +46,6 @@ export function TodosPage({ sessionId }: { sessionId?: string | null }) {
           {state?.description && <p className="text-xs text-muted">{state.description}</p>}
         </section>
       )}
-    </HubPage>
+    </>
   )
 }
