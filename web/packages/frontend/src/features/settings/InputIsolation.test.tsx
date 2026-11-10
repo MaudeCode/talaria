@@ -97,7 +97,8 @@ describe('input render isolation (TAL-1405)', () => {
   it('typing ten rename characters renders no workspace rows', async () => {
     mount(<WorkspacesPage />)
     const row = (await screen.findByText('One')).closest('li')!
-    await userEvent.click(within(row).getByRole('button', { name: 'Rename' }))
+    await userEvent.click(within(row).getByRole('button', { name: 'Workspace actions' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Rename' }))
     const input = screen.getByRole('textbox')
     reset(renders.workspace)
     await userEvent.type(input, 'abcdefghij')

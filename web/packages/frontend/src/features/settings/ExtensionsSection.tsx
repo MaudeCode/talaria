@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { m } from '../../paraglide/messages.js'
@@ -7,8 +7,9 @@ import { keys } from '../../api/queryKeys'
 import { useExtensionManifests } from '../../extensions/registry'
 import type { ExtensionManifest } from '../../contracts/extension'
 import { readExtensionSettings, writeExtensionSetting, type SettingValue } from '../../extensions/host'
+import { Badge } from '../../ui/Badge'
 import { Button } from '../../ui/Button'
-import { FieldRow, Switch, TextInput } from '../../ui/Field'
+import { Switch, TextInput } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { ConfirmDialog } from '../../ui/Dialog'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
@@ -16,7 +17,9 @@ import { showToast } from '../toast/toast'
 import { useBootstrap } from '../../app/bootstrap'
 import { useResourceEffects, useResourceMutation, withEffects, type ResourceEffect } from '../sessions/useResourceMutation'
 import { ResourceSwitch } from '../sessions/ResourceSwitch'
+import { Row, RowList } from '../../ui/List'
 import { cn } from '../../ui/cn'
+import { SettingRow, SettingsGroup } from './SettingsGroup'
 
 const GUIDE = 'https://github.com/MaudeCode/talaria/blob/main/web/docs/architecture/extension-migration-guide.md'
 
@@ -60,32 +63,34 @@ export function ExtensionsSection() {
   if (manifests.isPending) return <LoadingState />
   if (manifests.isError && !manifests.data) return <ErrorState error={manifests.error} onRetry={() => { void manifests.refetch() }} />
   const list = withEffects(manifests.data?.manifests ?? [], (e) => `extension:${e.id}`, effects)
-  const gallery = (registry.data?.entries ?? registry.data?.extensions ?? []) as { id?: string; name?: string; description?: string; version?: string; download_url?: string; sha256?: string }[]
+  const gallery = ((registry.data?.entries ?? registry.data?.extensions ?? []) as { id?: string; name?: string; description?: string; version?: string; download_url?: string; sha256?: string }[]).filter((g) => g.id)
   const installed = new Set(list.map((e) => e.id))
   const canManage = bootstrap.auth.can_manage_server
   return (
     <div className="flex flex-col gap-5">
-      <section>
-        <h2 className="mb-2 text-sm font-semibold text-text">{m.extensions_installed()}</h2>
+      <SettingsGroup id="installed" title={m.extensions_installed()} detail={list.length}>
         {list.length === 0 && <EmptyState>{m.extensions_none()}</EmptyState>}
-        <ul className="flex flex-col divide-y divide-border-subtle">
+        <RowList>
           {list.map((e) => <ExtensionRow key={e.id} ext={e} canManage={canManage} effect={effects[`extension:${e.id}`]} consentEffect={effects[`extension-consent:${e.id}`]} onToggle={(enabled) => toggle.mutate({ id: e.id, enabled })} onConsent={(value) => consent.mutate({ id: e.id, consent: value })} onUninstall={() => setConfirmUninstall(e.id)} />)}
-        </ul>
-      </section>
-      <section>
-        <h2 className="mb-2 text-sm font-semibold text-text">{m.extensions_gallery()}</h2>
+        </RowList>
+      </SettingsGroup>
+      <SettingsGroup id="gallery" title={m.extensions_gallery()} detail={registry.data ? gallery.length : undefined}>
         {registry.isPending && <LoadingState />}
-        {registry.isError && <p className="text-xs text-muted">{m.extensions_unavailable()}</p>}
-        {registry.data?.unavailable && <p className="text-xs text-muted">{m.extensions_unavailable()}</p>}
-        <ul className="flex flex-col divide-y divide-border-subtle">
-          {gallery.filter((g) => g.id).map((g) => (
-            <li key={g.id} className="flex items-center gap-3 py-2 text-sm">
-              <div className="min-w-0 flex-1"><div className="font-medium text-text">{g.name ?? g.id}{g.version ? <span className="ml-1 text-[11px] text-muted">v{g.version}</span> : null}</div><div className="truncate text-[11px] text-muted">{g.description ?? ''}</div></div>
-              {installed.has(g.id ?? '') ? <span className="text-[11px] text-muted">{m.extensions_installed()}</span> : canManage && <Button onClick={() => act.mutate({ action: 'install', body: { id: g.id, download_url: g.download_url, sha256: g.sha256 } })} disabled={act.isPending}>{m.extensions_install()}</Button>}
-            </li>
+        {(registry.isError || registry.data?.unavailable) && <p className="py-2 text-xs text-muted">{m.extensions_unavailable()}</p>}
+        <RowList>
+          {gallery.map((g) => (
+            <Row key={g.id}>
+              <div className="flex items-center gap-3">
+                <div className="min-w-0 flex-1">
+                  <ExtensionName name={g.name ?? g.id ?? ''} version={g.version} />
+                  {g.description && <div className="truncate text-xs text-muted">{g.description}</div>}
+                </div>
+                {installed.has(g.id ?? '') ? <span className="text-xs text-muted">{m.extensions_installed()}</span> : canManage && <Button onClick={() => act.mutate({ action: 'install', body: { id: g.id, download_url: g.download_url, sha256: g.sha256 } })} disabled={act.isPending}>{m.extensions_install()}</Button>}
+              </div>
+            </Row>
           ))}
-        </ul>
-      </section>
+        </RowList>
+      </SettingsGroup>
       <ConfirmDialog open={confirmUninstall !== null} onOpenChange={(o) => { if (!o) setConfirmUninstall(null) }} title={m.extensions_uninstall()} description={confirmUninstall ?? ''} confirmLabel={m.extensions_uninstall()} cancelLabel={m.cancel()} danger onConfirm={() => { if (confirmUninstall) uninstall.mutate(confirmUninstall) }} />
     </div>
   )
@@ -94,11 +99,11 @@ export function ExtensionsSection() {
 function ExtensionRow({ ext, canManage, effect, consentEffect, onToggle, onConsent, onUninstall }: { ext: ExtensionManifest; effect: ResourceEffect<boolean> | undefined; consentEffect: ResourceEffect<boolean> | undefined; canManage: boolean; onToggle: (enabled: boolean) => void; onConsent: (consent: boolean) => void; onUninstall: () => void }) {
   const perms = Object.entries(ext.permissions ?? {}).filter(([, v]) => v).map(([k]) => k)
   return (
-    <li className={cn('py-3 text-sm', !ext.enabled && 'opacity-80')} data-extension-id={ext.id} data-source={ext.source}>
+    <Row className={cn(!ext.enabled && 'opacity-80')} data-extension-id={ext.id} data-source={ext.source}>
       <div className="flex flex-wrap items-center gap-2">
         <div className="min-w-0 flex-1">
-          <div className="font-medium text-text">{ext.name}{ext.version ? <span className="ml-1 text-[11px] text-muted">v{ext.version}</span> : null} <span className="ml-1 whitespace-nowrap rounded-full border border-border px-1.5 text-xs uppercase tracking-wider text-muted">{ext.agent_host ? m.tab_agent() : ext.source}</span></div>
-          <div className="text-[11px] text-muted">{ext.display_id ?? ext.id}{ext.description ? ` · ${ext.description}` : ''}</div>
+          <ExtensionName name={ext.name} version={ext.version}><Badge tone="border-border text-muted">{ext.agent_host ? m.tab_agent() : ext.source}</Badge></ExtensionName>
+          <div className="text-xs text-muted">{ext.display_id ?? ext.id}{ext.description ? ` · ${ext.description}` : ''}</div>
         </div>
         {(ext.panel || ext.native_view) && ext.enabled && <Link to="/ext/$extensionId" params={{ extensionId: ext.id }} className="text-xs text-accent-text underline">{m.extensions_open()}</Link>}
         {canManage && ext.can_toggle && (
@@ -106,25 +111,32 @@ function ExtensionRow({ ext, canManage, effect, consentEffect, onToggle, onConse
         )}
         {canManage && ext.source === 'gallery' && <Button variant="ghost-danger" onClick={onUninstall}>{m.extensions_uninstall()}</Button>}
       </div>
-      <div className="mt-2 flex flex-wrap gap-1 text-xs uppercase tracking-wider text-muted">
-        {ext.capabilities.map((c) => <span key={c} className="rounded-full border border-border px-1.5">{c}</span>)}
-        {perms.map((p) => <span key={p} className="rounded-full border border-warning px-1.5 text-warning">{p}</span>)}
-      </div>
+      {(ext.capabilities.length > 0 || perms.length > 0) && (
+        <div className="flex flex-wrap gap-1">
+          {ext.capabilities.map((c) => <Badge key={c} tone="border-border text-muted">{c}</Badge>)}
+          {perms.map((p) => <Badge key={p} tone="border-warning text-warning">{p}</Badge>)}
+        </div>
+      )}
       {ext.settings_schema.length > 0 && <ExtensionSettings ext={ext} />}
       {ext.sidecar && (
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
           <span className="font-mono">{ext.sidecar.origin}</span>
           {canManage && <label className="flex items-center gap-1"><ResourceSwitch effect={consentEffect} checked={!!ext.sidecar.consented} onCheckedChange={(checked) => onConsent(checked)} /> {m.extensions_sidecar_consent()}</label>}
         </div>
       )}
-      {ext.legacy_injection && (
-        <div className="mt-2 rounded-md border border-warning px-2 py-1.5 text-xs text-warning" role="status">
-          {m.extensions_legacy_notice()} <a href={GUIDE} target="_blank" rel="noopener noreferrer" className="underline">{m.extensions_migration_guide()}</a>
+      {(ext.legacy_injection || ext.warnings.length > 0) && (
+        <div className="flex flex-col gap-1 text-xs text-warning">
+          {ext.legacy_injection && <p role="status">{m.extensions_legacy_notice()} <a href={GUIDE} target="_blank" rel="noopener noreferrer" className="underline">{m.extensions_migration_guide()}</a></p>}
+          {ext.warnings.length > 0 && <ul>{ext.warnings.map((w) => <li key={w}>{w === 'web_extension_migration_required' ? m.extensions_web_migration_required() : w}</li>)}</ul>}
         </div>
       )}
-      {ext.warnings.length > 0 && <ul className="mt-1 text-[11px] text-warning">{ext.warnings.map((w) => <li key={w}>{w === 'web_extension_migration_required' ? m.extensions_web_migration_required() : w}</li>)}</ul>}
-    </li>
+    </Row>
   )
+}
+
+/** A row's header line: the name, the version in muted text, then any state badge. */
+function ExtensionName({ name, version, children }: { name: string; version?: string | undefined; children?: ReactNode }) {
+  return <div className="flex flex-wrap items-baseline gap-x-2 text-sm font-medium text-text"><span>{name}</span>{version && <span className="text-xs font-normal text-muted">v{version}</span>}{children}</div>
 }
 
 /** The extension's settings_schema as a form; each change saves to the browser-local settings the extension reads. */
@@ -139,17 +151,17 @@ function ExtensionSettings({ ext }: { ext: ExtensionManifest }) {
     }
   }
   return (
-    <div className="mt-2 border-t border-border-subtle">
+    <div className="flex flex-col divide-y divide-border-subtle border-t border-border-subtle">
       {ext.settings_schema.map((f) => {
         const id = `ext-setting-${ext.id}-${f.key}`
         const value = values[f.key]
         return (
-          <FieldRow key={f.key} label={f.label} htmlFor={id} {...(f.description ? { hint: f.description } : {})} inline>
+          <SettingRow key={f.key} label={f.label} htmlFor={id} {...(f.description ? { hint: f.description } : {})}>
             {f.type === 'boolean' ? <Switch id={id} checked={value === true} onCheckedChange={(checked) => save(f.key, checked)} />
               : f.type === 'enum' ? <Select id={id} value={String(value ?? '')} onValueChange={(v) => save(f.key, v)}>{f.options?.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</Select>
               : f.type === 'string' ? <div className="w-48 max-w-[50vw]"><TextInput id={id} maxLength={2000} value={String(value ?? '')} onChange={(e) => save(f.key, e.target.value)} /></div>
               : <NumberSetting id={id} integer={f.type === 'integer'} value={value ?? null} onSave={(n) => save(f.key, n)} />}
-          </FieldRow>
+          </SettingRow>
         )
       })}
     </div>

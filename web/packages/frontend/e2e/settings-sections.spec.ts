@@ -69,15 +69,16 @@ test('the Settings menu groups its sections by scope, naming the active profile 
 })
 
 test('Profiles, Spaces and Logs live in Settings under Server, and their old URLs redirect there (TAL-2101)', async ({ page }) => {
-  for (const [section, heading, action] of [['profiles', 'Profiles', 'Create profile'], ['workspaces', 'Spaces', 'Add workspace'], ['logs', 'Logs', 'Refresh']] as const) {
+  // TAL-2106: Logs' Refresh sits on its View group's header.
+  for (const [section, heading, action, actionHome] of [['profiles', 'Profiles', 'Create profile', '.settings-section-head'], ['workspaces', 'Spaces', 'Add workspace', '.settings-section-head'], ['logs', 'Logs', 'Refresh', '[data-group="view"]']] as const) {
     await page.goto('/')
     await settle(page)
     await page.goto(`/${section}?from=bookmark`)
     await expect(page, section).toHaveURL(new RegExp(`/settings/${section}\\?from=bookmark$`))
     await expect(page.locator('#settingsMenu [aria-current="page"]'), section).toHaveAttribute('data-settings-section', section)
-    // One heading, from Settings, with the page's own action beside it.
+    // One heading, from Settings, and the page's own action.
     await expect(page.locator('#main h1'), section).toHaveText([heading])
-    await expect(page.locator('#main .settings-section-head').getByRole('button', { name: action }), section).toBeVisible()
+    await expect(page.locator(`#main ${actionHome}`).getByRole('button', { name: action }), section).toBeVisible()
     // The redirect replaces the old entry, so Back returns to the page before it.
     await page.goBack()
     await expect(page, section).toHaveURL(/\/$/)

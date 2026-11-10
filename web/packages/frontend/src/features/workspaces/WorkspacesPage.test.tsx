@@ -22,6 +22,11 @@ function renderPage() {
   render(<QueryClientProvider client={qc}><WorkspacesPage /></QueryClientProvider>)
 }
 const row = (name: string) => screen.getByText(name, { selector: '.truncate' }).closest('li')!
+/** Runs one row action from the row's visible actions trigger. */
+async function runAction(name: string, action: string) {
+  await userEvent.click(within(row(name)).getByRole('button', { name: 'Workspace actions' }))
+  await userEvent.click(await screen.findByRole('menuitem', { name: action }))
+}
 
 describe('WorkspacesPage', () => {
   beforeEach(() => { toast.mockReset(); vi.mocked(api.fetchWorkspaces).mockResolvedValue({ workspaces: [], last: null }) })
@@ -41,6 +46,17 @@ describe('WorkspacesPage', () => {
     expect(within(row('Beta')).getByText('Current')).toBeVisible()
     expect(within(row('Alpha')).queryByText('Current')).not.toBeInTheDocument()
   })
+
+  it('TAL-2106: keeps a row\'s actions behind its visible trigger, with the same disabled ends', async () => {
+    vi.mocked(api.fetchWorkspaces).mockResolvedValue(spaces)
+    renderPage()
+    await screen.findByText('Alpha')
+    expect(within(row('Alpha')).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(['Workspace actions'])
+    await userEvent.click(within(row('Alpha')).getByRole('button', { name: 'Workspace actions' }))
+    const menu = await screen.findByRole('menu', { name: 'Workspace actions' })
+    expect(within(menu).getAllByRole('menuitem').map((item) => [item.textContent, item.hasAttribute('data-disabled')])).toEqual([['Move up', true], ['Move down', false], ['Rename', false], ['Remove', false]])
+    expect(row('Alpha').querySelector('.font-mono')).toHaveAttribute('title', '/srv/alpha')
+  })
 })
 
 describe('space writes show their result while the server is held (TAL-1179)', () => {
@@ -54,9 +70,9 @@ describe('space writes show their result while the server is held (TAL-1179)', (
     vi.mocked(api.reorderWorkspaces).mockReturnValue(held())
     renderPage()
     await screen.findByText('Gamma')
-    await userEvent.click(within(row('Gamma')).getByRole('button', { name: 'Move up' }))
+    await runAction('Gamma', 'Move up')
     expect(names()).toEqual(['Alpha', 'Gamma', 'Beta'])
-    await userEvent.click(within(row('Gamma')).getByRole('button', { name: 'Move up' }))
+    await runAction('Gamma', 'Move up')
     expect(names()).toEqual(['Gamma', 'Alpha', 'Beta'])
     expect(api.reorderWorkspaces).toHaveBeenCalledWith(['/srv/alpha', '/srv/gamma', '/srv/beta'])
   })
@@ -65,7 +81,7 @@ describe('space writes show their result while the server is held (TAL-1179)', (
     vi.mocked(api.reorderWorkspaces).mockRejectedValue(new ApiError({ kind: 'http', status: 400, path: '/x', message: 'Unknown space' }))
     renderPage()
     await screen.findByText('Gamma')
-    await userEvent.click(within(row('Beta')).getByRole('button', { name: 'Move down' }))
+    await runAction('Beta', 'Move down')
     await waitFor(() => expect(toast).toHaveBeenCalledWith('Unknown space', 4000, 'error'))
     expect(names()).toEqual(['Alpha', 'Beta', 'Gamma'])
   })
@@ -75,13 +91,13 @@ describe('space writes show their result while the server is held (TAL-1179)', (
     vi.mocked(api.removeWorkspace).mockReturnValue(held())
     renderPage()
     await screen.findByText('Alpha')
-    await userEvent.click(within(row('Alpha')).getByRole('button', { name: 'Rename' }))
+    await runAction('Alpha', 'Rename')
     const input = screen.getByRole('textbox')
     await userEvent.clear(input)
     await userEvent.type(input, 'Primary{Enter}')
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(names()).toEqual(['Primary', 'Beta', 'Gamma'])
-    await userEvent.click(within(row('Beta')).getByRole('button', { name: 'Remove' }))
+    await runAction('Beta', 'Remove')
     await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Remove' }))
     expect(names()).toEqual(['Primary', 'Gamma'])
   })

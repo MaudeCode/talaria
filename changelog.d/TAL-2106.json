@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Web Settings › Extensions, Spaces and Logs use the shared Settings groups and rows; a space's move, rename and remove actions open from its row menu.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

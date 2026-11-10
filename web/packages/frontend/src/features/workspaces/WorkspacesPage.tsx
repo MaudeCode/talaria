@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowDown, ArrowUp, Pencil, Plus, Trash2, type LucideIcon } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -7,11 +7,12 @@ import { useWorkspacesQuery } from '../../app/queries'
 import { HubPage } from '../../shell/AppShell'
 import { PanelHeadButton } from '../../shell/PanelHead'
 import { Badge } from '../../ui/Badge'
-import { Button, IconButton } from '../../ui/Button'
+import { Button } from '../../ui/Button'
 import { TextInput } from '../../ui/Field'
 import { ConfirmDialog, Dialog } from '../../ui/Dialog'
 import { Row, RowList } from '../../ui/List'
 import { RowContextMenu, type RowAction } from '../../ui/Menu'
+import { RowActionsMenu } from '../../ui/RowActionsMenu'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { showErrorToast } from '../toast/errorToast'
 import { newResource, useResourceEffects, useResourceMutation, withCreated, withEffects } from '../sessions/useResourceMutation'
@@ -52,20 +53,20 @@ export function WorkspacesPage() {
       <RowList id="workspacesPanel">
         {list.map((w, i) => {
           // A space still being added has no server entry to move, rename or remove yet.
-          const actions: (RowAction & { Icon: LucideIcon })[] = confirmed.has(w.path) ? [
-            { label: m.workspace_move_up(), Icon: ArrowUp, run: () => move(i, -1), disabled: i === 0 },
-            { label: m.workspace_move_down(), Icon: ArrowDown, run: () => move(i, 1), disabled: i === list.length - 1 },
-            { label: m.rename(), Icon: Pencil, run: () => setRenaming({ path: w.path, name: w.name }) },
-            { label: m.remove(), Icon: Trash2, run: () => setRemoving(w.path), danger: true },
+          const actions: RowAction[] = confirmed.has(w.path) ? [
+            { label: m.workspace_move_up(), run: () => move(i, -1), disabled: i === 0 },
+            { label: m.workspace_move_down(), run: () => move(i, 1), disabled: i === list.length - 1 },
+            { label: m.rename(), run: () => setRenaming({ path: w.path, name: w.name }) },
+            { label: m.remove(), run: () => setRemoving(w.path), danger: true },
           ] : []
           return <RowContextMenu key={w.path} label={m.workspace_row_menu()} actions={actions} trigger={
             <Row>
               <div className="flex items-center gap-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-2 text-sm font-semibold text-text"><span className="truncate">{w.name}</span>{ws.data?.last === w.path && <Badge tone="border-accent text-accent-text">{m.workspace_current()}</Badge>}</div>
-                  <div className="truncate font-mono text-[11px] text-muted">{w.path}</div>
+                  <div className="truncate font-mono text-xs text-muted" title={w.path}>{w.path}</div>
                 </div>
-                {actions.map(({ label, Icon, run, disabled }) => <IconButton key={label} label={label} onClick={run} disabled={disabled}><Icon size={14} aria-hidden="true" /></IconButton>)}
+                <RowActionsMenu label={m.workspace_row_menu()} actions={actions} />
               </div>
             </Row>} />
         })}

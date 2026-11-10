@@ -6,6 +6,8 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, relative, resolve, sep } from 'node:path'
 
 const ALLOWED_SIZES = new Set(['11px', '13px', '20px'])
+/** The Settings row kit, which defines its rows on `FieldRow`. */
+const SETTINGS_KIT = new Set(['src/features/settings/SettingsRows.tsx', 'src/features/settings/SettingsGroup.tsx'])
 const UPDATE = 'node scripts/check-ui-rules.mjs --update'
 
 /** Each rule: the paths it scans (prefixes relative to the package), a matcher returning one entry per hit, and its message. */
@@ -26,7 +28,7 @@ const RULES = {
     message: 'use SettingsGroup or SectionHeader',
   },
   'settings-row': {
-    scope: (file) => file.startsWith('src/features/settings/') && file !== 'src/features/settings/SettingsRows.tsx',
+    scope: (file) => file.startsWith('src/features/settings/') && !SETTINGS_KIT.has(file),
     match: (line) => [...line.matchAll(/<FieldRow(?![\w$])/g)],
     message: 'use a SettingsRows.tsx row',
   },
