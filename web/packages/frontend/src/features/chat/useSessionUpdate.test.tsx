@@ -247,7 +247,7 @@ it('shows the picked workspace at once and rolls a refusal back with the error (
   render(<QueryClientProvider client={client}><WorkspaceChip /></QueryClientProvider>)
   await userEvent.click(screen.getByText('Pick workspace'))
   await waitFor(() => expect(screen.getByLabelText('chip')).toHaveTextContent('/srv/beta'))
-  expect(api.updateSession).toHaveBeenCalledWith('s1', { workspace: '/srv/beta' })
+  expect(api.updateSession).toHaveBeenCalledWith('s1', { workspace: '/srv/beta', accept_switched_to: true })
   await act(async () => { refuse(new ApiError({ kind: 'http', status: 400, path: '/api/session/update', message: 'Workspace is not allowed' })); await Promise.resolve() })
   await waitFor(() => expect(screen.getByLabelText('chip')).toHaveTextContent('/srv/alpha'))
   expect(showToast).toHaveBeenCalledWith('Workspace is not allowed', 4000, 'error')

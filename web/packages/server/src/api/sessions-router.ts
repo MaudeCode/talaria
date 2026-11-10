@@ -461,7 +461,8 @@ export const sessionsRouter = os.router({
     })),
     update: os.session.update.handler(({ input, context: { ctx } }) => run(async () => {
       await guardVisibility(ctx, input.session_id)
-      return (await ctx.deps.sessions.update(input.session_id, input)) as { session: { session_id: string; title: string } }
+      const newChatOnWorkspaceSwitch = input.accept_switched_to === true && input.workspace !== undefined && (await ctx.deps.settings.load()).new_chat_on_workspace_switch === true
+      return (await ctx.deps.sessions.update(input.session_id, input, { newChatOnWorkspaceSwitch })) as { session: { session_id: string; title: string }; switched_to?: string }
     })),
     toolsets: os.session.toolsets.handler(({ input, context: { ctx } }) => run(async () => {
       await guardVisibility(ctx, input.session_id)

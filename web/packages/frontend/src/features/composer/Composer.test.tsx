@@ -852,7 +852,7 @@ describe('Composer', () => {
     expect(await screen.findByRole('option', { name: /\/branch/ })).toBeInTheDocument()
     await userEvent.clear(box)
     await userEvent.type(box, '/fork Copy{Enter}')
-    await waitFor(() => expect(onLocalCommand).toHaveBeenCalledWith('branch', 'Copy'))
+    await waitFor(() => expect(onLocalCommand).toHaveBeenCalledWith('branch', 'Copy', expect.anything()))
     await userEvent.type(box, '/bg summarize repo{Enter}')
     await waitFor(() => expect(api.startBackground).toHaveBeenCalledWith('s1', 'summarize repo'))
     onLocalCommand.mockClear()
@@ -871,7 +871,7 @@ describe('Composer', () => {
     const box = screen.getByRole('textbox')
     await userEvent.type(box, '/goal gate add true{Enter}')
     await waitFor(() => expect(showToast).toHaveBeenCalledWith('/goal gate add: no active goal', 5000, 'error'))
-    expect(onLocalCommand).toHaveBeenCalledWith('goal', 'gate add true')
+    expect(onLocalCommand).toHaveBeenCalledWith('goal', 'gate add true', expect.anything())
     expect(box).toHaveValue('/goal gate add true')
   })
 

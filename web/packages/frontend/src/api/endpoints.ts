@@ -151,7 +151,7 @@ export const clearSession = (session_id: SessionId) => orpc().session.clear({ se
 export const regenerateTitle = (session_id: SessionId) => orpc().session.regenerateTitle({ session_id }, { signal: timeout(60_000) })
 export const exportSessionUrl = (session_id: SessionId, format: 'json' | 'markdown' | 'html' = 'json') => `api/session/export${qs({ session_id, format })}`
 export const modelCommand = (body: { session_id?: SessionId; args: string; current_model?: string | null }) => orpc().session.modelCommand(body)
-export const updateSession = (session_id: SessionId, body: { model?: string; model_provider?: string | null; workspace?: string; confirm_token?: string }) => orpc().session.update({ session_id, ...body })
+export const updateSession = (session_id: SessionId, body: { model?: string; model_provider?: string | null; workspace?: string; confirm_token?: string; accept_switched_to?: boolean }) => orpc().session.update({ session_id, ...body })
 export const setSessionYolo = (session_id: SessionId, enabled: boolean) => orpc().session.yoloSet({ session_id, enabled })
 export const fetchSessionYolo = (session_id: SessionId) => orpc().session.yoloGet({ session_id })
 export const fetchToolsetsCatalog = (toolsets: string[] | null, session_id?: string, q = '') => orpc().toolsetsCatalog({ toolsets, ...(session_id ? { session_id } : {}), ...(q ? { q } : {}) })
