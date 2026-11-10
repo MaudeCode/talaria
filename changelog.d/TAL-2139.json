@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Settings › Logs in Talaria Web now searches a log, shows only warnings or errors, colours each line by its level, counts errors and warnings, pauses following while you read, and copies the shown lines.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announcement": {
+        "title": "Search and filter logs",
+        "description": "Find a line in a log, show only warnings or errors, and stop the view jumping while you read.",
+        "icon": "search"
+      }
+    }
+  ]
+}
