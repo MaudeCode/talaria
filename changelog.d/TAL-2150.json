@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web's \"Show token speed\" setting now controls the tokens-per-second readout: off hides it while a reply streams, and on also shows each finished reply's speed beside its token usage.",
+      "highlight": false,
+      "announce": false,
+      "components": ["web"]
+    }
+  ]
+}

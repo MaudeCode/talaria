@@ -14,13 +14,13 @@ import { showToast } from '../toast/toast'
 import { onReturnToComposer } from '../composer/composerReturn'
 import { ApiError } from '../../contracts/common'
 
-vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), withdrawSteer: vi.fn(), sendSteerNow: vi.fn(), fetchSession: vi.fn() }))
+vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), withdrawSteer: vi.fn(), sendSteerNow: vi.fn(), fetchSession: vi.fn(), fetchSettings: vi.fn() }))
 vi.mock(import('../toast/toast'), async (importOriginal) => ({ ...(await importOriginal()), showToast: vi.fn() }))
 
 const render = (ui: ReactElement) => renderView(ui, { wrapper: queryWrapper() })
 
 const originalScroll = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTo')
-beforeEach(() => { resetStreamStoreForTests(); Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() }) })
+beforeEach(() => { resetStreamStoreForTests(); vi.mocked(api.fetchSettings).mockResolvedValue({ show_tps: true }); Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() }) })
 afterEach(() => {
   cleanup()
   if (originalScroll) Object.defineProperty(HTMLElement.prototype, 'scrollTo', originalScroll)
@@ -155,6 +155,16 @@ describe('live status', () => {
     run.reconnect()
     view.rerender(<LiveStatusPill sessionId={run.turn.sessionId} />)
     expect(pills(view.container)[0]).toHaveTextContent('Reconnecting…')
+  })
+
+  it('shows the rate only while "Show token speed" is on (TAL-2150)', async () => {
+    vi.mocked(api.fetchSettings).mockResolvedValue({ show_tps: false })
+    const run = liveRun()
+    run.emit({ event: 'metering', data: { tps: 42.14 } })
+    const view = render(<LiveStatusPill sessionId={run.turn.sessionId} />)
+    await act(async () => { await new Promise((done) => setTimeout(done, 20)) })
+    expect(pills(view.container)[0]).toHaveTextContent('Working')
+    expect(pills(view.container)[0]).not.toHaveTextContent('tok/s')
   })
 })
 
