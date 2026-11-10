@@ -10,7 +10,7 @@ import { ErrorState, LoadingState } from '../../ui/States'
 import { showErrorToast } from '../toast/errorToast'
 import { CompletionAudioSettings } from './CompletionAudioSettings'
 import { useSettingField } from './useSettingField'
-import { SettingToggle } from './SettingsRows'
+import { SettingToggle, SettingsGroup } from './SettingsRows'
 
 const KINDS: { key: keyof WebPushPreferences; label: () => string }[] = [
   { key: 'notify_on_approval', label: () => m.settings_label_notify_approval() },
@@ -41,17 +41,19 @@ export function NotificationsSection() {
   if (settings.isPending) return <LoadingState />
   if (settings.isError) return <ErrorState error={settings.error} onRetry={() => { void settings.refetch() }} />
   return (
-    <div className="flex flex-col divide-y divide-border-subtle" data-section="notifications">
-      <SettingToggle label={m.settings_label_notifications()} settingKey="notifications_enabled" />
-      <SettingToggle label={m.settings_label_sound()} settingKey="sound_enabled" />
-      <CompletionAudioSettings />
+    <div className="flex flex-col gap-7" data-section="notifications">
+      <SettingsGroup id="while-open" title={m.settings_group_while_open()}>
+        <SettingToggle label={m.settings_label_notifications()} settingKey="notifications_enabled" />
+        <SettingToggle label={m.settings_label_sound()} settingKey="sound_enabled" />
+      </SettingsGroup>
+      <SettingsGroup id="completion-sound" title={m.settings_group_completion_sound()}><CompletionAudioSettings /></SettingsGroup>
       <WebPushSection />
     </div>
   )
 }
 
 export function WebPushSection() {
-  return webPushSupported() ? <WebPushSettings /> : null
+  return webPushSupported() ? <SettingsGroup id="web-push" title={m.settings_group_web_push()}><WebPushSettings /></SettingsGroup> : null
 }
 
 interface Shown { enabled: boolean; preferences: WebPushPreferences | null }

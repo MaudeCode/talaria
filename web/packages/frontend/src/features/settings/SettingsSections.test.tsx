@@ -43,6 +43,7 @@ import { SettingsSection } from './SettingsSection'
 import { ModelsSection } from './ModelsSection'
 import { NotificationsSection } from './NotificationsSection'
 import { PrivacySettings } from './PrivacySettings'
+import { SpeechSection } from './SpeechSection'
 import { ToolsSection } from './ToolsSection'
 
 const renderSection = (ui: ReactElement, canManage = true, qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })) => {
@@ -304,6 +305,29 @@ it('offers device-local completion sound presets and explicit preview', async ()
   renderSection(<NotificationsSection />)
   expect(await screen.findByRole('combobox', { name: 'Completion sound' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Preview sound' })).toBeInTheDocument()
+})
+
+it('groups the Notifications and Speech rows and shows every slider value (TAL-2079)', async () => {
+  const group = (view: HTMLElement, id: string) => {
+    const element = view.querySelector<HTMLElement>(`[data-group="${id}"]`)
+    expect(element, `group ${id}`).toBeInstanceOf(HTMLElement)
+    return within(element!)
+  }
+  const notifications = renderSection(<NotificationsSection />)
+  await screen.findByRole('combobox', { name: 'Completion sound' })
+  const completion = group(notifications.container, 'completion-sound')
+  const open = group(notifications.container, 'while-open')
+  for (const name of ['Browser notifications', 'Notification sound']) expect(open.getByRole('switch', { name })).toBeInTheDocument()
+  expect(completion.getByRole('combobox', { name: 'Completion sound' })).toBeInTheDocument()
+  expect(completion.getByRole('slider', { name: 'Sound volume' }).nextElementSibling).toHaveTextContent('50%')
+  notifications.unmount()
+  const speech = renderSection(<SpeechSection />)
+  await screen.findByRole('slider', { name: 'Speech rate' })
+  const device = group(speech.container, 'this-device')
+  const server = group(speech.container, 'read-aloud')
+  for (const name of ['Text-to-Speech for responses', 'Auto-read responses aloud']) expect(server.getByRole('switch', { name })).toBeInTheDocument()
+  expect(device.getByRole('slider', { name: 'Speech rate' }).nextElementSibling).toHaveTextContent('1.0×')
+  expect(device.getByRole('slider', { name: 'Speech pitch' }).nextElementSibling).toHaveTextContent('1.0')
 })
 
 it('shows a failed connectors gate with a retry on the Connectors tab instead of loading forever (TAL-1691)', async () => {
