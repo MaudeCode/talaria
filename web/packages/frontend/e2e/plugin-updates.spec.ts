@@ -50,7 +50,7 @@ test('plugin updates show Agent scan consent and block dangerous revisions', asy
   await consent.getByRole('button', { name: 'Update', exact: true }).click()
   await expect(consent).toContainText('The scan findings changed')
   await consent.getByRole('button', { name: 'Update', exact: true }).click()
-  await expect(section.getByText('v2.0.0', { exact: true })).toBeVisible()
+  await expect(section.getByText('2.0.0', { exact: true })).toBeVisible()
   await expect(section.getByText('Update available', { exact: true })).toHaveCount(0)
   expect(calls).toEqual([{ key: 'weather', accept_caution: false }, { key: 'weather', accept_caution: false }, { key: 'weather', accept_caution: true, consent_token: 'synthetic-consent' }, { key: 'weather', accept_caution: true, consent_token: 'renewed-consent' }])
 
@@ -114,7 +114,7 @@ test('TAL-1914: the switch, Update all and a behind catalog row work and fit the
   await page.goto('/settings/tools')
   await settle(page)
   const section = page.locator('[data-section="plugins"]')
-  const toggle = section.getByRole('switch', { name: 'Auto-update' })
+  const toggle = section.getByRole('switch', { name: 'Update automatically' })
 
   await toggle.click()
   await expect(toggle).toBeChecked()
@@ -126,12 +126,12 @@ test('TAL-1914: the switch, Update all and a behind catalog row work and fit the
   await expect(results.getByRole('listitem').nth(1)).toContainText('Needs review')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 
-  await section.getByRole('button', { name: 'Catalog', exact: true }).click()
+  await page.getByRole('button', { name: 'Add plugin', exact: true }).click()
   const catalog = section.getByRole('region', { name: 'Catalog' })
   await catalog.getByRole('button', { name: 'Update', exact: true }).click()
   const consent = page.getByRole('alertdialog')
   await expect(consent).toContainText('adds tools: forecast')
   await consent.getByRole('button', { name: 'Update', exact: true }).click()
-  await expect(section.getByText('v2.0.0', { exact: true })).toBeVisible()
+  await expect(section.getByText('2.0.0', { exact: true })).toBeVisible()
   await expect(catalog.getByRole('button', { name: 'Update', exact: true })).toHaveCount(0)
 })

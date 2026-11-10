@@ -26,7 +26,7 @@ test('catalog previews, confirms a disabled install and reconciles a lost acknow
     await page.screenshot({ path: `${evidence}/before-${testInfo.project.name}.png` })
     return
   }
-  await section.getByRole('button', { name: 'Catalog', exact: true }).click()
+  await page.getByRole('button', { name: 'Add plugin', exact: true }).click()
   await section.getByRole('button', { name: 'Details', exact: true }).click()
   await expect(section.getByText('Environment: CALENDAR_CLIENT_ID', { exact: true })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
@@ -36,9 +36,9 @@ test('catalog previews, confirms a disabled install and reconciles a lost acknow
   await expect(dialog).toContainText('No dependency, host capability or sidecar permission is granted')
   await page.screenshot({ path: `${evidence}/confirm-${testInfo.project.name}.png` })
   await dialog.getByRole('button', { name: 'Install disabled', exact: true }).click()
-  await expect(section.getByText('Installed', { exact: true })).toBeVisible()
+  await expect(section.getByRole('region', { name: 'Catalog' }).getByText('Installed', { exact: true })).toBeVisible()
   await expect(section.getByRole('button', { name: 'Install disabled', exact: true })).toHaveCount(0)
-  await expect(section.getByText('Disabled · disabled', { exact: true })).toBeVisible()
+  await expect(section.locator('[data-plugin="calendar-native"]')).toContainText('Off')
   expect(calls).toEqual([{ name: 'calendar-probe' }, { name: 'calendar-probe', consent_token: 'synthetic-bound-preview' }])
   const expected = /^503 POST .*\/api\/plugins\/install$/
   expect(errors.filter((error) => expected.test(error))).toHaveLength(1)
@@ -55,7 +55,7 @@ test('catalog and installed empty states identify their own list', async ({ page
   await page.goto('/settings/tools')
   await settle(page)
   const section = page.locator('[data-section="plugins"]')
-  await section.getByRole('button', { name: 'Catalog', exact: true }).click()
+  await page.getByRole('button', { name: 'Add plugin', exact: true }).click()
   await expect(section.getByText('Calendar', { exact: true })).toBeVisible()
   if (process.env.TALARIA_CATALOG_BEFORE === '1') {
     await expect(section.getByText('No plugins found.', { exact: true })).toBeVisible()

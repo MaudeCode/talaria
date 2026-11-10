@@ -19,7 +19,7 @@ beforeEach(() => {
 async function setup(installAvailable = true) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   render(<QueryClientProvider client={qc}><PluginsSection /></QueryClientProvider>)
-  fireEvent.click(await screen.findByRole('button', { name: 'Catalog' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Add plugin' }))
   return installAvailable ? screen.findByRole('button', { name: 'Install disabled' }) : screen.findByRole('region', { name: 'Catalog' })
 }
 

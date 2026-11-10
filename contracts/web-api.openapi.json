@@ -108350,6 +108350,16 @@
                               ]
                             }
                           },
+                          "category": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "enum": [
+                              "installed",
+                              "bundled"
+                            ],
+                            "type": "string"
+                          },
                           "update": {
                             "type": "object",
                             "properties": {
@@ -108530,6 +108540,108 @@
                         "auto_apply",
                         "check_hours",
                         "inactive_reason"
+                      ]
+                    },
+                    "groups": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "enum": [
+                              "installed",
+                              "platforms",
+                              "web",
+                              "image_gen",
+                              "video_gen",
+                              "browser",
+                              "dashboard_auth",
+                              "memory",
+                              "model_providers",
+                              "other"
+                            ],
+                            "type": "string"
+                          },
+                          "plugin_keys": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "enabled_count": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "total_count": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "enabled_percent": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 100
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "plugin_keys",
+                          "enabled_count",
+                          "total_count",
+                          "enabled_percent"
+                        ]
+                      }
+                    },
+                    "summary": {
+                      "type": "object",
+                      "properties": {
+                        "installed": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "bundled": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "enabled": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "total": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "updates": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "updates_tone": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "warning"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "installed",
+                        "bundled",
+                        "enabled",
+                        "total",
+                        "updates",
+                        "updates_tone"
                       ]
                     }
                   },

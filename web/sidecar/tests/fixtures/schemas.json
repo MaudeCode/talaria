@@ -1506,6 +1506,16 @@
                 "reason"
               ],
               "additionalProperties": false
+            },
+            "category": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string",
+              "enum": [
+                "installed",
+                "bundled"
+              ]
             }
           },
           "required": [

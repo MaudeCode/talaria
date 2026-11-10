@@ -5,7 +5,7 @@ import { SETTINGS_INDEX } from './settingsIndex'
 import { LoadingState } from '../../ui/States'
 import { cn } from '../../ui/cn'
 import { useLocale } from '../../i18n/useLocale'
-import { HubHeadSlotsContext } from '../../shell/AppShell'
+import { HubHeadSlotsContext } from '../../shell/hubHeadSlots'
 
 const AppearanceSection = lazy(() => import('./AppearanceSection').then((module) => ({ default: module.AppearanceSection })))
 const ChatSection = lazy(() => import('./ChatSection').then((module) => ({ default: module.ChatSection })))

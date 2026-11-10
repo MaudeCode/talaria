@@ -1311,6 +1311,10 @@ export type PluginSettingView = z.infer<typeof PluginSettingViewSchema>
 export const PluginOAuthClientViewSchema = PluginOAuthClientSchema.extend({ can_sign_out: z.boolean() })
 export type PluginOAuthClientView = z.infer<typeof PluginOAuthClientViewSchema>
 export const PluginSchema = z.looseObject({ key: z.string(), name: z.string().optional(), kind: z.string().optional(), enabled: z.boolean().optional(), description: z.string().optional(), version: z.string().optional(), activation: z.string().optional(), is_active_provider: z.boolean().optional(), hooks: z.array(Json).optional(),
+  /** TAL-2132: the key's first path segment (`image_gen` for `image_gen/fal`), `""` when it has none. */
+  category: z.string().optional(),
+  /** TAL-2132: `installed` when the plugin's directory sits directly in the profile's `plugins/`, else `bundled` (shipped with the Agent). */
+  source: z.enum(['installed', 'bundled']).optional(),
   /** Stored Agent check, absent when the installed Agent lacks cached update support. */
   update: z.object({ available: z.boolean(), latest_revision: z.string().optional() }).optional(),
   /** TAL-1829: an Agent update turned this plugin off and later updates retry it; absent otherwise and on Agents before v0.22.6. */
@@ -1335,7 +1339,18 @@ export type PluginAutoUpdateView = z.infer<typeof PluginAutoUpdateViewSchema>
  * `plugin_isolation_advisory` (TAL-820): more than one profile has third-party plugins installed and one of those runs them
  * `in_process`, so Settings recommends `plugins.isolation: host`; Talaria never sets the mode.
  */
-export const PluginsSchema = z.looseObject({ plugins: z.array(PluginSchema), total: z.number().int().optional().describe('Installed plugins before the `q` filter (TAL-2129).'), empty: z.boolean().optional(), read_only: z.boolean().optional(), supported_hooks: z.array(z.string()).optional(), unavailable: z.boolean().optional(), plugin_isolation_advisory: z.boolean().optional(), auto_update: PluginAutoUpdateViewSchema.optional() })
+/** TAL-2132: Settings › Tools › Plugins' groups, in display order. */
+export const PluginGroupIdSchema = z.enum(['installed', 'platforms', 'web', 'image_gen', 'video_gen', 'browser', 'dashboard_auth', 'memory', 'model_providers', 'other'])
+export type PluginGroupId = z.infer<typeof PluginGroupIdSchema>
+/**
+ * TAL-2132: `installed` holds every `source: installed` row, comes first and is present even when empty; a bundled row joins the
+ * group its `category` names (`-` read as `_`), else `other`. Rows sort by name; other empty groups are left out. With `q`, only
+ * groups with a match are listed and `plugin_keys` holds only matches, while both counts describe the whole group. `enabled_percent` is the share turned on, 0 for an empty group.
+ */
+export const PluginGroupSchema = z.object({ id: PluginGroupIdSchema, plugin_keys: z.array(z.string()), enabled_count: z.number().int(), total_count: z.number().int(), enabled_percent: z.number().min(0).max(100) })
+/** TAL-2132: the install's figures, regardless of `q`; `updates_tone` is `warning` while a plugin has an update waiting. */
+export const PluginsSummarySchema = z.object({ installed: z.number().int(), bundled: z.number().int(), enabled: z.number().int(), total: z.number().int(), updates: z.number().int(), updates_tone: z.enum(['warning']).nullable() })
+export const PluginsSchema = z.looseObject({ plugins: z.array(PluginSchema), total: z.number().int().optional().describe('Installed plugins before the `q` filter (TAL-2129).'), empty: z.boolean().optional(), read_only: z.boolean().optional(), supported_hooks: z.array(z.string()).optional(), unavailable: z.boolean().optional(), plugin_isolation_advisory: z.boolean().optional(), auto_update: PluginAutoUpdateViewSchema.optional(), groups: z.array(PluginGroupSchema).optional(), summary: PluginsSummarySchema.optional() })
 /** `active`: the Agent holds the server connected. `failed` (TAL-1845): it reports a failed connect or a parked connection. */
 export const McpServerStatusSchema = z.enum(['active', 'configured', 'disabled', 'failed', 'invalid_config'])
 export const McpServerSchema = z.looseObject({ cost_policy: McpCostPolicySchema.nullable().optional(), events: McpEventsSchema.optional(), name: z.string(), id: z.string().optional(), transport: z.string().optional(), enabled: z.boolean().optional(), can_toggle: z.boolean().optional().describe('Whether PATCH can enable or disable this server; false for invalid config.'), active: z.boolean().optional(), status: McpServerStatusSchema.optional(), tools: z.number().optional(), tool_count: z.number().int().nullable().optional(), health: z.string().optional(), health_detail: z.string().optional(), health_checked_at: Json.optional(), health_pending: z.boolean().optional() })

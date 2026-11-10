@@ -127,6 +127,11 @@ async function settingsPages(page: Page, info: TestInfo, theme: Theme) {
       await expect(page, name).toHaveURL((url) => `${url.pathname}${url.search}` === `/settings/${path}`)
       await expect(page.locator('#main .settings-section-title'), name).toBeVisible()
       if (tab) await expect(page.getByRole('tab', { selected: true }), name).toHaveAttribute('aria-controls', `tools-${tab}`)
+      // TAL-2132: the stock install's 64 plugins fold into at most 12 rows until a group opens.
+      if (tab === 'plugins') {
+        await expect(page.locator('#main [data-plugin-group]').first(), name).toBeVisible()
+        expect(await page.locator('#main [data-plugin], #main [data-plugin-group]').count(), name).toBeLessThanOrEqual(12)
+      }
       await settle(page)
       // The section scrolls inside its own pane (`overflow-y-auto`), so a too-wide row scrolls there, not the document.
       const pane = page.locator('#main .settings-main').locator('..')

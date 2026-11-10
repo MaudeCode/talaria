@@ -100,9 +100,9 @@ it("renders the server's filter answer and keeps each description to one titled 
   vi.mocked(api.fetchPlugins).mockImplementation((q = '') => Promise.resolve({ read_only: false, total: 3, empty: false, plugins: structuredClone(answers[q] ?? []) }))
   renderPlugins()
   const shown = () => [...document.querySelectorAll('[data-plugin]')].map((row) => row.getAttribute('data-plugin'))
-  const description = await screen.findByText('standalone · Reads your events')
+  const description = await screen.findByText('Reads your events')
   expect(description).toHaveClass('truncate')
-  expect(description).toHaveAttribute('title', 'standalone · Reads your events')
+  expect(description).toHaveAttribute('title', 'Reads your events')
   const filter = screen.getByRole('searchbox', { name: 'Filter plugins' })
   await userEvent.type(filter, ' calendar ')
   await waitFor(() => expect(shown()).toEqual(['calendar', 'mailer']))
@@ -125,4 +125,54 @@ it('an install with no plugins shows the empty state without a filter (TAL-2129)
   renderPlugins()
   expect(await screen.findByText('No plugins found.')).toBeInTheDocument()
   expect(screen.queryByRole('searchbox', { name: 'Filter plugins' })).not.toBeInTheDocument()
+})
+
+it('TAL-2132: shows the server figures and groups; a group opens and closes, and the filter opens the groups with a match', async () => {
+  const rows = {
+    meshy: { key: 'meshy', name: 'meshy', version: '1.2.0', kind: 'standalone', activation: 'enabled', enabled: true, description: 'Text to 3D', update: { available: true }, source: 'installed' as const, category: '' },
+    notes: { key: 'team-notes', name: 'team-notes', enabled: false, activation: 'disabled', description: 'Shared notes', source: 'installed' as const, category: '' },
+    slack: { key: 'platforms/slack', name: 'slack', enabled: true, activation: 'enabled', description: 'Slack adapter', source: 'bundled' as const, category: 'platforms' },
+    image: { key: 'image_gen/fal', name: 'fal', enabled: true, kind: 'exclusive', activation: 'exclusive', is_active_provider: true, description: 'flux-2-pro', source: 'bundled' as const, category: 'image_gen' },
+    video: { key: 'video_gen/fal', name: 'fal', enabled: true, description: 'Veo', source: 'bundled' as const, category: 'video_gen' },
+  }
+  const group = (id: 'installed' | 'platforms' | 'image_gen' | 'video_gen', plugin_keys: string[], enabled_count: number, total_count: number) => ({ id, plugin_keys, enabled_count, total_count, enabled_percent: 100 * enabled_count / total_count })
+  const summary = { installed: 2, bundled: 3, enabled: 4, total: 5, updates: 1, updates_tone: 'warning' as const }
+  // The server's answers per `q`: with a filter only `plugins` and `plugin_keys` narrow.
+  vi.mocked(api.fetchPlugins).mockImplementation((q = '') => Promise.resolve(q === 'fal'
+    ? { read_only: false, total: 5, summary, plugins: [rows.image, rows.video], groups: [group('image_gen', ['image_gen/fal'], 1, 1), group('video_gen', ['video_gen/fal'], 1, 1)] }
+    : { read_only: false, total: 5, summary, plugins: Object.values(rows), groups: [group('installed', ['meshy', 'team-notes'], 1, 2), group('platforms', ['platforms/slack'], 1, 1), group('image_gen', ['image_gen/fal'], 1, 1), group('video_gen', ['video_gen/fal'], 1, 1)] }))
+  renderPlugins()
+  const shown = () => [...document.querySelectorAll('[data-plugin]')].map((row) => row.getAttribute('data-plugin'))
+  await screen.findByText('meshy')
+  const figures = document.querySelector('[data-settings-stats]')
+  expect([...figures?.querySelectorAll('[data-stat]') ?? []].map((stat) => stat.textContent)).toEqual(['Installed2', 'Built in3', 'Turned on4of 5', 'Updates1'])
+  expect(figures?.querySelector('[data-stat="updates"] [data-figure-tone]')).toHaveAttribute('data-figure-tone', 'warning')
+  const installed = screen.getByRole('region', { name: 'Installed' })
+  expect(within(installed).getByText('Update available')).toBeInTheDocument()
+  expect((await screen.findByText('team-notes')).closest('li')).toHaveTextContent('Off')
+  expect(document.body).not.toHaveTextContent(/Enabled|exclusive|standalone/)
+  // Closed on load: only the profile's own plugins are rows.
+  expect(shown()).toEqual(['meshy', 'team-notes'])
+  const image = screen.getByRole('button', { name: /Image generation/ })
+  expect(image).toHaveAttribute('aria-expanded', 'false')
+  expect(image).toHaveTextContent('1 on')
+  expect(within(image).getByRole('meter')).toHaveAttribute('aria-valuenow', '100')
+  await userEvent.click(image)
+  expect(image).toHaveAttribute('aria-expanded', 'true')
+  expect(shown()).toEqual(['meshy', 'team-notes', 'image_gen/fal'])
+  expect(screen.getByText('fal').closest('li')).toHaveTextContent('In use')
+  await userEvent.click(image)
+  expect(shown()).toEqual(['meshy', 'team-notes'])
+  // A filter opens every group with a match and hides the rest; clearing it restores the closed groups.
+  const filter = screen.getByRole('searchbox', { name: 'Filter plugins' })
+  await userEvent.type(filter, 'fal')
+  await waitFor(() => expect(shown()).toEqual(['image_gen/fal', 'video_gen/fal']))
+  expect(screen.queryByRole('button', { name: /Messaging platforms/ })).not.toBeInTheDocument()
+  expect(screen.queryByRole('region', { name: 'Installed' })).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /Video generation/ })).toHaveAttribute('aria-expanded', 'true')
+  await userEvent.clear(filter)
+  await waitFor(() => expect(shown()).toEqual(['meshy', 'team-notes']))
+  expect(screen.getByRole('button', { name: /Messaging platforms/ })).toHaveAttribute('aria-expanded', 'false')
+  expect(screen.getByRole('button', { name: /Image generation/ })).toHaveAttribute('aria-expanded', 'false')
+  vi.mocked(api.fetchPlugins).mockReset()
 })

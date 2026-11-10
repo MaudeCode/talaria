@@ -15,7 +15,7 @@ vi.mock('../../paraglide/messages.js', async (original) => {
     delete: (...args: Parameters<typeof actual.m.delete>) => { renders.passkey(); return actual.m.delete(...args) },
     skill_uses: (...args: Parameters<typeof actual.m.skill_uses>) => { renders.skill(args[0].n); return actual.m.skill_uses(...args) },
     mcp_tool_count: (...args: Parameters<typeof actual.m.mcp_tool_count>) => { renders.server(); return actual.m.mcp_tool_count(...args) },
-    plugins_enabled: (...args: Parameters<typeof actual.m.plugins_enabled>) => { renders.plugin(); return actual.m.plugins_enabled(...args) },
+    plugins_row_menu: (...args: Parameters<typeof actual.m.plugins_row_menu>) => { renders.plugin(); return actual.m.plugins_row_menu(...args) },
   } }
 })
 // The compiler caches a row's output per field it reads, so these rows are counted where memo lets a render through.
