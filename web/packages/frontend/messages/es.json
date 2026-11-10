@@ -1068,7 +1068,6 @@
 	"profile_active": "Activo",
 	"profile_api_key_label": "Clave API",
 	"profile_api_key_placeholder": "Clave API (opcional)",
-	"profile_api_keys_configured": "API keys configured",
 	"profile_base_url_label": "URL base",
 	"profile_base_url_placeholder": "URL base (opcional, p. ej. http://localhost:11434)",
 	"profile_base_url_rule": "Base URL must start with http:// or https://",

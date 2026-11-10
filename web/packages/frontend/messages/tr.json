@@ -1057,7 +1057,6 @@
 	"profile_active": "Aktif",
 	"profile_api_key_label": "API anahtarı",
 	"profile_api_key_placeholder": "API anahtarı (isteğe bağlı)",
-	"profile_api_keys_configured": "API anahtarları yapılandırıldı",
 	"profile_base_url_label": "Temel URL",
 	"profile_base_url_placeholder": "Temel URL (isteğe bağlı, örneğin http://localhost:11434)",
 	"profile_base_url_rule": "Temel URL http:// veya https:// ile başlamalıdır",

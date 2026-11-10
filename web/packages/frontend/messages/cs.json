@@ -1086,7 +1086,6 @@
 	"profile_active": "Aktivní",
 	"profile_api_key_label": "API klíč",
 	"profile_api_key_placeholder": "API klíč (volitelný)",
-	"profile_api_keys_configured": "API klíče nakonfigurovány",
 	"profile_base_url_label": "Základní URL",
 	"profile_base_url_placeholder": "Základní URL (volitelná, např. http://localhost:11434)",
 	"profile_base_url_rule": "Základní URL musí začínat http:// nebo https://",

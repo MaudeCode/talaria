@@ -1874,7 +1874,6 @@
 	"profile_active": "Active",
 	"profile_api_key_label": "API key",
 	"profile_api_key_placeholder": "API key (optional)",
-	"profile_api_keys_configured": "API keys configured",
 	"profile_base_url_label": "Base URL",
 	"profile_base_url_placeholder": "Base URL (optional, e.g. http://localhost:11434)",
 	"profile_base_url_rule": "Base URL must start with http:// or https://",
@@ -1974,10 +1973,14 @@
 		}
 	],
 	"profile_skills": "{n} skills",
+	"profile_stat_active_here": "Active here",
+	"profile_stat_gateways_of": "of {total}",
+	"profile_stat_gateways_running": "Gateways running",
 	"profile_switch_title": "Switch to this profile",
 	"profile_switched": "Switched to profile: {name}",
 	"profile_switched_new_conversation": "Switched to profile: {name} — new conversation started",
 	"profile_use": "Use",
+	"profile_uses_default_model": "Uses the default model",
 	"profiles_empty_sub": "Pick an agent profile from the sidebar to view and edit its settings, or create a new one.",
 	"profiles_empty_title": "Select a profile",
 	"profiles_load_failed": "Failed to load profiles",
@@ -2736,7 +2739,7 @@
 	"settings_label_notify_completion": "Completed runs",
 	"settings_label_notify_failure": "Failed runs",
 	"settings_label_notify_input": "Input requests",
-	"settings_label_password": "Access Password",
+	"settings_label_password": "Password",
 	"settings_label_pinned_shown": "Pinned chats shown",
 	"settings_label_previous_messaging_sessions": "Show previous messaging sessions",
 	"settings_label_profile_switcher": "Profile switcher",
@@ -2802,6 +2805,9 @@
 	"settings_option_hide_all_activity": "Final answer only",
 	"settings_option_transparent_stream": "Every step",
 	"settings_page_advanced": "Advanced",
+	"settings_password_change": "Change",
+	"settings_password_state_not_set": "Not set",
+	"settings_password_state_set": "Set",
 	"settings_placeholder_max_tokens_fallback": "No override (fallback: {a0})",
 	"settings_placeholder_max_tokens_none": "No override",
 	"settings_plugins_empty": "No Hermes plugins are currently visible. Install or enable plugins from the Hermes CLI/config to see them here.",
@@ -2868,6 +2874,21 @@
 	"settings_task_models_model": "Model",
 	"settings_task_models_task": "Task",
 	"settings_title": "Settings",
+	"settings_trusted_link_hosts_count": [
+		{
+			"declarations": [
+				"input count"
+			],
+			"selectors": [
+				"count"
+			],
+			"match": {
+				"count=1": "{count} host",
+				"count=*": "{count} hosts"
+			}
+		}
+	],
+	"settings_trusted_link_hosts_none": "None",
 	"settings_tts_engine_browser": "Browser",
 	"settings_tts_sample_play": "Play a sample",
 	"settings_tts_sample_stop": "Stop the sample",

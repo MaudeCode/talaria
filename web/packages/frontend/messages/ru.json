@@ -1108,7 +1108,6 @@
 	"profile_active": "Активен",
 	"profile_api_key_label": "API-ключ",
 	"profile_api_key_placeholder": "API-ключ (необязательно)",
-	"profile_api_keys_configured": "API-ключи настроены",
 	"profile_base_url_label": "Базовый URL",
 	"profile_base_url_placeholder": "Базовый URL (необязательно, например http://localhost:11434)",
 	"profile_base_url_rule": "Базовый URL должен начинаться с http:// или https://",

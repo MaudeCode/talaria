@@ -775,12 +775,14 @@ export const SettingsSchema = z.looseObject({
   outside_chats_total: z.number().int().nonnegative().optional().describe('TAL-2175, every settings read and save: how many kinds of chats from outside Talaria Settings › Navigation lists.'),
   hidden_tabs: z.array(z.string()).optional(), composer_control_order: z.array(z.string()).optional(), show_cli_sessions: z.boolean().optional(), show_claude_code_sessions: z.boolean().optional(),
   show_cron_sessions: z.boolean().optional(), show_sidebar_feedback: z.boolean().optional().describe('TAL-1588: show Send feedback in the Web rail above Notifications.'), sidebar_quota_sources: z.array(z.string()).optional().describe('TAL-1870: the provider quota source ids the expanded Web sidebar pins, in order; the server keeps at most two unique ids.'), sidebar_source_ids: z.array(z.string()).optional().describe('TAL-1870, a save of `sidebar_quota_sources` only: the quota projection for the saved pins, as `/api/provider/quotas` ships it; absent if the read failed.'), sidebar_can_pin: z.boolean().optional().describe('TAL-1870, a save of `sidebar_quota_sources` only: whether another source can be pinned.'), show_webhook_sessions: z.boolean().optional(), show_kanban_sessions: z.boolean().optional(), check_for_updates: z.boolean().optional(), summarize_updates_automatically: z.boolean().optional(), ignore_agent_updates: z.boolean().optional(),
-  auth_enabled: z.boolean().optional(), password_auth_enabled: z.boolean().optional(), password_env_var: z.boolean().optional(), passkeys_enabled: z.boolean().optional(), passwordless_enabled: z.boolean().optional(),
+  auth_enabled: z.boolean().optional(), password_auth_enabled: z.boolean().optional(),
+  password_state: z.enum(['ok', 'idle', 'warning', 'error']).optional().describe('TAL-2143: the Access password row\'s status: ok with a password, idle without one while sign-in is on, else the no-password warning level.'), password_env_var: z.boolean().optional(), passkeys_enabled: z.boolean().optional(), passwordless_enabled: z.boolean().optional(),
   auth_disabled_acknowledged: z.boolean().optional(), webui_version: z.string().optional(), agent_version: z.string().optional(), update_channel: z.string().optional(), update_channels: z.array(WebUpdateChannelSchema).optional().describe('TAL-1569: the Web update channels this server offers, in display order.'), agent_update_channel: z.enum(['stable', 'experimental']).optional(), update_channel_version: NullableString.optional(),
   max_tokens: NullableNumber.optional(), max_tokens_effective: NullableNumber.optional(), max_tokens_fallback: NullableNumber.optional(), tts_engine: z.string().optional(), tts_voice: z.string().optional(),
   dictation_append: z.boolean().optional(), persisted_speech_keys: z.array(z.string()).optional(),
   /** TAL-279: ask before opening external chat links; `trusted_link_hosts` are exact, server-normalized hostnames that skip the ask. */
   confirm_external_links: z.boolean().optional(), trusted_link_hosts: z.array(z.string()).optional(),
+  trusted_link_hosts_count: z.number().int().optional().describe('TAL-2143: how many normalized `trusted_link_hosts` there are; load and save both answer it.'),
   provider_quota_thresholds: QuotaThresholdsSchema.optional(),
   agent_approvals: z.boolean().nullable().optional().describe('TAL-1169: the profile\'s `talaria.agent_approvals` (default false): whether an agent with the talaria toolset may approve once or deny another session\'s pending command. Null when the profile config cannot be read.'),
   compression_prepare_ahead: z.boolean().nullable().optional().describe('TAL-1825: the profile\'s `compression.prepare_ahead`; null when the Agent does not offer it.'),
@@ -803,10 +805,19 @@ export const ProfileSchema = z.looseObject({
   display_name_overridden: z.boolean().optional(),
   /** TAL-213: present only when the profile has a canonical Bot Chat; clients open `tip_session_id` after switching to the profile. */
   canonical_session: CanonicalBotChatSchema.nullable().optional(),
+  /** TAL-2143, `/api/profiles` only: the gateway's status dot, `ok` while it runs and `idle` while it does not; absent with `gateway_running`. */
+  gateway_state: z.enum(['ok', 'idle']).optional(),
+  /** TAL-2143, `/api/profiles` only: the profile names no model or provider of its own, so it runs on the default model. */
+  uses_default_model: z.boolean().optional(),
+  /** TAL-2143, `/api/profiles` only: the profile has a display name other than its name, so the name shows muted after it. */
+  name_differs: z.boolean().optional(),
   /** TAL-819: skill and memory writes the Agent staged for approval, reviewed on the Skills and Memory pages. */
   pending_writes: z.number().int().optional(),
 })
-export const ProfilesSchema = z.looseObject({ profiles: z.array(ProfileSchema), active: z.string(), single_profile_mode: z.boolean().optional() })
+export const ProfilesSchema = z.looseObject({
+  profiles: z.array(ProfileSchema), active: z.string(), single_profile_mode: z.boolean().optional(),
+  summary: z.object({ total: z.number().int(), gateways_running: z.number().int(), active_name: z.string() }).optional().describe('TAL-2143: Settings › Profiles\' figures, counted over profiles whose `visible` is not false, and the active profile\'s display name, else its name.'),
+})
 export type Profiles = z.infer<typeof ProfilesSchema>
 export const ActiveProfileSchema = z.looseObject({ name: z.string(), path: z.string().optional(), is_default: z.boolean().optional(), default_workspace: NullableString.optional() })
 export const ProfileSwitchSchema = ProfilesSchema.extend({ is_default: z.boolean(), default_model: Json, default_model_provider: Json, default_workspace: z.string().nullable() })

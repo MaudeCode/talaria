@@ -487,6 +487,29 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(await check('https://anything.test/')).toBe(false)
   })
 
+  it('TAL-2143: load and save answer the count of normalized trusted link hosts', async () => {
+    try {
+      const saved = await json(await post(s, '/api/settings', { trusted_link_hosts: [' Docs.Example.com ', 'docs.example.com', 'b.example', 'not a host'] }))
+      expect(saved).toMatchObject({ trusted_link_hosts: ['docs.example.com', 'b.example'], trusted_link_hosts_count: 2 })
+      expect((await json(await s.get('/api/settings'))).trusted_link_hosts_count).toBe(2)
+    } finally {
+      await post(s, '/api/settings', { trusted_link_hosts: [] })
+    }
+    expect((await json(await s.get('/api/settings'))).trusted_link_hosts_count).toBe(0)
+  })
+
+  it('TAL-2143: load and save answer the password row\'s status: the no-password level, then ok once a password is set', async () => {
+    const fresh = await bootTestServer({ sidecar: new FakeSidecar() })
+    try {
+      expect((await json(await fresh.get('/api/settings'))).password_state).toBe('error')
+      expect((await json(await post(fresh, '/api/settings', { auth_disabled_acknowledged: true }))).password_state).toBe('warning')
+      expect((await json(await fresh.get('/api/settings'))).password_state).toBe('warning')
+      expect((await json(await post(fresh, '/api/settings', { _set_password: 'correct horse battery' }))).password_state).toBe('ok')
+    } finally {
+      await fresh.close()
+    }
+  })
+
   it('first password setup from loopback enables auth and logs the caller in with a session cookie', async () => {
     const res = await post(s, '/api/settings', { _set_password: 'correct horse battery' })
     expect(res.status).toBe(200)
@@ -1634,6 +1657,37 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       expect(rows.map((p) => [p.name, p.pending_writes])).toEqual([['default', 0], ['scout', 0]])
     } finally {
       rmSync(pending, { recursive: true, force: true })
+      sidecar.respond('profiles.list', restore)
+      s.deps.profiles.invalidate()
+    }
+  })
+
+  it('TAL-2143: the profile list counts its visible profiles and their running gateways, and names the active one, and classifies each gateway', async () => {
+    const restore = sidecar.responderFor('profiles.list')
+    const row = (name: string, visible: boolean, gateway_running: boolean) => ({ name, path: join(s.state, 'profiles', name), is_default: false, gateway_running, model: null, provider: null, has_env: false, visible, skill_count: 0, enabled_skills: 0, total_skills: 0 })
+    sidecar.respond('profiles.list', () => ({ profiles: [
+      { ...row('default', true, true), path: s.state, is_default: true },
+      row('scout', true, false),
+      row('ghost', false, true),
+    ] }))
+    s.deps.profiles.invalidate()
+    try {
+      const body = await json(await s.get('/api/profiles'))
+      expect(body.summary).toEqual({ total: 2, gateways_running: 1, active_name: 'default' })
+      expect((body.profiles as Json[]).map((p) => [p.name, p.gateway_state])).toEqual([['default', 'ok'], ['scout', 'idle'], ['ghost', 'ok']])
+      // Each row says whether it runs on the default model and whether its name differs from the name shown.
+      sidecar.respond('profiles.list', () => ({ profiles: [
+        { ...row('default', true, true), path: s.state, is_default: true, display_name: 'Writer', model: 'claude-sonnet-4-6', provider: null },
+        { ...row('scout', true, false), display_name: 'scout' },
+        { ...row('plain', true, false), provider: 'anthropic' },
+      ] }))
+      s.deps.profiles.invalidate()
+      const rows = (await json(await s.get('/api/profiles'))).profiles as Json[]
+      expect(rows.map((p) => [p.name, p.uses_default_model, p.name_differs])).toEqual([['default', false, true], ['scout', true, false], ['plain', false, false]])
+      sidecar.respond('profiles.list', () => ({ profiles: [{ ...row('default', true, true), path: s.state, is_default: true, display_name: 'Writer' }] }))
+      s.deps.profiles.invalidate()
+      expect((await json(await s.get('/api/profiles'))).summary).toMatchObject({ active_name: 'Writer' })
+    } finally {
       sidecar.respond('profiles.list', restore)
       s.deps.profiles.invalidate()
     }

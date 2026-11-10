@@ -1020,7 +1020,6 @@
 	"profile_active": "当前",
 	"profile_api_key_label": "API 密钥",
 	"profile_api_key_placeholder": "API 密钥（可选）",
-	"profile_api_keys_configured": "已配置 API 密钥",
 	"profile_base_url_label": "基础 URL",
 	"profile_base_url_placeholder": "Base URL（可选，例如 http://localhost:11434）",
 	"profile_base_url_rule": "Base URL 必须以 http:// 或 https:// 开头",

@@ -87676,6 +87676,16 @@
                     "password_auth_enabled": {
                       "type": "boolean"
                     },
+                    "password_state": {
+                      "enum": [
+                        "ok",
+                        "idle",
+                        "warning",
+                        "error"
+                      ],
+                      "type": "string",
+                      "description": "TAL-2143: the Access password row's status: ok with a password, idle without one while sign-in is on, else the no-password warning level."
+                    },
                     "password_env_var": {
                       "type": "boolean"
                     },
@@ -87779,6 +87789,12 @@
                       "items": {
                         "type": "string"
                       }
+                    },
+                    "trusted_link_hosts_count": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "description": "TAL-2143: how many normalized `trusted_link_hosts` there are; load and save both answer it."
                     },
                     "provider_quota_thresholds": {
                       "type": "object",
@@ -88101,6 +88117,16 @@
                     "password_auth_enabled": {
                       "type": "boolean"
                     },
+                    "password_state": {
+                      "enum": [
+                        "ok",
+                        "idle",
+                        "warning",
+                        "error"
+                      ],
+                      "type": "string",
+                      "description": "TAL-2143: the Access password row's status: ok with a password, idle without one while sign-in is on, else the no-password warning level."
+                    },
                     "password_env_var": {
                       "type": "boolean"
                     },
@@ -88204,6 +88230,12 @@
                       "items": {
                         "type": "string"
                       }
+                    },
+                    "trusted_link_hosts_count": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "description": "TAL-2143: how many normalized `trusted_link_hosts` there are; load and save both answer it."
                     },
                     "provider_quota_thresholds": {
                       "type": "object",
@@ -89276,6 +89308,19 @@
                               }
                             ]
                           },
+                          "gateway_state": {
+                            "enum": [
+                              "ok",
+                              "idle"
+                            ],
+                            "type": "string"
+                          },
+                          "uses_default_model": {
+                            "type": "boolean"
+                          },
+                          "name_differs": {
+                            "type": "boolean"
+                          },
                           "pending_writes": {
                             "type": "integer",
                             "minimum": -9007199254740991,
@@ -89293,6 +89338,30 @@
                     },
                     "single_profile_mode": {
                       "type": "boolean"
+                    },
+                    "summary": {
+                      "type": "object",
+                      "properties": {
+                        "total": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "gateways_running": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "active_name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "total",
+                        "gateways_running",
+                        "active_name"
+                      ],
+                      "description": "TAL-2143: Settings › Profiles' figures, counted over profiles whose `visible` is not false, and the active profile's display name, else its name."
                     }
                   },
                   "required": [
@@ -89484,6 +89553,19 @@
                               }
                             ]
                           },
+                          "gateway_state": {
+                            "enum": [
+                              "ok",
+                              "idle"
+                            ],
+                            "type": "string"
+                          },
+                          "uses_default_model": {
+                            "type": "boolean"
+                          },
+                          "name_differs": {
+                            "type": "boolean"
+                          },
                           "pending_writes": {
                             "type": "integer",
                             "minimum": -9007199254740991,
@@ -89501,6 +89583,30 @@
                     },
                     "single_profile_mode": {
                       "type": "boolean"
+                    },
+                    "summary": {
+                      "type": "object",
+                      "properties": {
+                        "total": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "gateways_running": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "active_name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "total",
+                        "gateways_running",
+                        "active_name"
+                      ],
+                      "description": "TAL-2143: Settings › Profiles' figures, counted over profiles whose `visible` is not false, and the active profile's display name, else its name."
                     },
                     "is_default": {
                       "type": "boolean"
@@ -89711,6 +89817,19 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "gateway_state": {
+                          "enum": [
+                            "ok",
+                            "idle"
+                          ],
+                          "type": "string"
+                        },
+                        "uses_default_model": {
+                          "type": "boolean"
+                        },
+                        "name_differs": {
+                          "type": "boolean"
                         },
                         "pending_writes": {
                           "type": "integer",
@@ -89923,6 +90042,19 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "gateway_state": {
+                          "enum": [
+                            "ok",
+                            "idle"
+                          ],
+                          "type": "string"
+                        },
+                        "uses_default_model": {
+                          "type": "boolean"
+                        },
+                        "name_differs": {
+                          "type": "boolean"
                         },
                         "pending_writes": {
                           "type": "integer",

@@ -110,6 +110,9 @@ async function authFields(ctx: RequestContext, into: Dict): Promise<void> {
   const auth = ctx.deps.auth
   into.auth_enabled = await auth.isAuthEnabled()
   into.password_auth_enabled = (await auth.getPasswordHash()) !== null
+  // TAL-2143: the Access password row's dot: set, unset behind another sign-in, else the no-password level (auth/gate.ts).
+  into.password_state = into.password_auth_enabled ? 'ok' : into.auth_enabled ? 'idle'
+    : (await ctx.deps.settings.load()).auth_disabled_acknowledged ? 'warning' : 'error'
   if (auth.passkeyFeatureFlagEnabled()) {
     const registered = await auth.passkeysEnabled()
     into.passkeys_enabled = registered
@@ -138,6 +141,8 @@ async function derivedFields(ctx: RequestContext, into: Dict): Promise<void> {
   const deps = ctx.deps
   Object.assign(into, composerControlCount(into), navigationCounts(into))
   into.password_env_var = Boolean((deps.config.env.HERMES_WEBUI_PASSWORD ?? '').trim())
+  // TAL-2143: Settings › Access shows the normalized host count on its closed Trusted link hosts row.
+  into.trusted_link_hosts_count = Array.isArray(into.trusted_link_hosts) ? into.trusted_link_hosts.length : 0
   into.webui_version = deps.version
   into.agent_version = deps.agentVersion()
   into.update_channel = str(into.update_channel) || 'stable'
@@ -390,7 +395,20 @@ async function importProfile(ctx: RequestContext, input: Omit<SidecarParams<'pro
 /** `/api/profiles` in the request's profile; the agent's `profile_list` calls it too (TAL-1170). */
 export async function profileList(deps: AppDeps) {
   const active = deps.activeProfile()
-  return { profiles: await deps.profiles.list(active) as never[], active, single_profile_mode: deps.isolatedProfileMode() }
+  const profiles = await deps.profiles.list(active)
+  // TAL-2143: Settings › Profiles' figures, over the profiles the Agent has not hidden, and the active profile's shown name.
+  const visible = profiles.filter((p) => p.visible !== false)
+  const current = profiles.find((p) => p.name === active)
+  const summary = { total: visible.length, gateways_running: visible.filter((p) => p.gateway_running === true).length, active_name: str(current?.display_name) || active }
+  // TAL-2143: each row's gateway dot (none without `gateway_running`), whether it runs on the default model, and whether
+  // its name differs from the display name shown before it.
+  const rows = profiles.map((p) => ({
+    ...p,
+    ...(typeof p.gateway_running === 'boolean' ? { gateway_state: p.gateway_running ? 'ok' : 'idle' } : {}),
+    uses_default_model: !str(p.model) && !str(p.provider),
+    name_differs: !!str(p.display_name) && str(p.display_name) !== str(p.name),
+  }))
+  return { profiles: rows as never[], active, single_profile_mode: deps.isolatedProfileMode(), summary }
 }
 
 export const settingsRouter = os.router({

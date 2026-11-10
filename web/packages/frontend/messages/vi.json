@@ -1044,7 +1044,6 @@
 	"profile_active": "Đang hoạt động",
 	"profile_api_key_label": "API key",
 	"profile_api_key_placeholder": "API key (tùy chọn)",
-	"profile_api_keys_configured": "Đã cấu hình API key",
 	"profile_base_url_label": "Base URL",
 	"profile_base_url_placeholder": "Base URL (tùy chọn, ví dụ: http://localhost:11434)",
 	"profile_base_url_rule": "Base URL phải bắt đầu bằng http:// hoặc https://",

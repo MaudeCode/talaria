@@ -3114,6 +3114,19 @@
                   }
                 ]
               },
+              "gateway_state": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "idle"
+                ]
+              },
+              "uses_default_model": {
+                "type": "boolean"
+              },
+              "name_differs": {
+                "type": "boolean"
+              },
               "pending_writes": {
                 "type": "integer",
                 "minimum": -9007199254740991,
@@ -3131,6 +3144,31 @@
         },
         "single_profile_mode": {
           "type": "boolean"
+        },
+        "summary": {
+          "description": "TAL-2143: Settings › Profiles' figures, counted over profiles whose `visible` is not false, and the active profile's display name, else its name.",
+          "type": "object",
+          "properties": {
+            "total": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "gateways_running": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "active_name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "total",
+            "gateways_running",
+            "active_name"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [

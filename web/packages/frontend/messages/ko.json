@@ -1057,7 +1057,6 @@
 	"profile_active": "Active",
 	"profile_api_key_label": "API key",
 	"profile_api_key_placeholder": "API key (optional)",
-	"profile_api_keys_configured": "API keys configured",
 	"profile_base_url_label": "Base URL",
 	"profile_base_url_placeholder": "Base URL (optional, e.g. http://localhost:11434)",
 	"profile_base_url_rule": "Base URL must start with http:// or https://",

@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { Check, type LucideIcon } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, type LucideIcon } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import { FieldRow, Switch, TextInput } from '../../ui/Field'
 import { Select } from '../../ui/Select'
@@ -104,28 +104,42 @@ export function SettingNumber({ label, hint, settingKey, field, id: givenId, fal
 /**
  * One text server setting with a Save button, enabled while the draft differs from the stored value. Save writes `parse(draft)`
  * and drops the draft once the write confirms, so a refused save keeps it. It stacks: the field needs the row's width.
+ * With `summary` (TAL-2143) the row is closed by default: its `id` is the button that opens the field under it, showing
+ * `summary` (words for a server field, such as a count) before its chevron; a save leaves it open.
  */
-export function SettingText({ label, hint, settingKey, id: givenId, fallback = '', maxLength, multiline, placeholder, parse = trimmed, format, disabled, icon }: SettingProps & { fallback?: string; maxLength?: number; multiline?: boolean; placeholder?: string; parse?: (draft: string) => unknown; format?: (stored: unknown) => string }) {
+export function SettingText({ label, hint, settingKey, id: givenId, fallback = '', maxLength, multiline, placeholder, parse = trimmed, format, disabled, icon, summary }: SettingProps & { fallback?: string; maxLength?: number; multiline?: boolean; placeholder?: string; parse?: (draft: string) => unknown; format?: (stored: unknown) => string; summary?: string }) {
   const id = rowId(givenId, settingKey)
   const { settings, str, set } = useSettingField([settingKey])
   const [draft, setDraft] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)
   const stored = format ? format(settings.data?.[settingKey]) : str(settingKey, fallback)
   const value = draft ?? stored
-  const field = { id, value, disabled, maxLength, placeholder }
+  // Behind a disclosure the label names the button, so the field takes the label as its own name.
+  const field = { ...(summary !== undefined ? { 'aria-label': label } : { id }), value, disabled, maxLength, placeholder }
+  const editor = (
+    <form className={cn('flex gap-2', summary !== undefined ? 'flex-col items-end' : multiline && 'items-start')} onSubmit={(e) => {
+      e.preventDefault()
+      if (draft === null || draft === stored) return
+      const submitted = draft
+      set({ [settingKey]: parse(submitted) }, () => setDraft((current) => current === submitted ? null : current))
+    }}>
+      {multiline
+        ? <textarea {...field} rows={3} spellCheck={false} autoCapitalize="none" className="min-h-9 w-full rounded-md border border-border bg-input px-3 py-2 font-mono text-sm text-text placeholder:text-muted focus:border-accent disabled:cursor-not-allowed disabled:opacity-50" onChange={(e) => setDraft(e.target.value)} />
+        : <TextInput {...field} onChange={(e) => setDraft(e.target.value)} />}
+      <IconButton type="submit" variant="default" label={m.save()} disabled={disabled || value === stored}><Check aria-hidden="true" /></IconButton>
+    </form>
+  )
+  if (summary === undefined) return <FieldRow label={label} htmlFor={id} hint={hint} icon={icon}>{editor}</FieldRow>
+  const Chevron = open ? ChevronDown : ChevronRight
   return (
-    <FieldRow label={label} htmlFor={id} hint={hint} icon={icon}>
-      <form className={cn('flex gap-2', multiline && 'items-start')} onSubmit={(e) => {
-        e.preventDefault()
-        if (draft === null || draft === stored) return
-        const submitted = draft
-        set({ [settingKey]: parse(submitted) }, () => setDraft((current) => current === submitted ? null : current))
-      }}>
-        {multiline
-          ? <textarea {...field} rows={3} spellCheck={false} autoCapitalize="none" className="min-h-9 w-full rounded-md border border-border bg-input px-3 py-2 font-mono text-sm text-text placeholder:text-muted focus:border-accent disabled:cursor-not-allowed disabled:opacity-50" onChange={(e) => setDraft(e.target.value)} />
-          : <TextInput {...field} onChange={(e) => setDraft(e.target.value)} />}
-        <IconButton type="submit" variant="default" label={m.save()} disabled={disabled || value === stored}><Check aria-hidden="true" /></IconButton>
-      </form>
-    </FieldRow>
+    <div>
+      <FieldRow label={label} htmlFor={id} hint={hint} icon={icon} inline>
+        <button id={id} type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)} className="flex min-h-9 items-center gap-2 text-xs text-muted transition-colors hover:text-text focus-visible:outline-2 focus-visible:outline-accent">
+          {summary}<Chevron size={14} aria-hidden="true" />
+        </button>
+      </FieldRow>
+      {open && <div className={cn('pb-2', icon && 'ps-7')}>{editor}</div>}
+    </div>
   )
 }
 

@@ -1044,7 +1044,6 @@
 	"profile_active": "啟用中",
 	"profile_api_key_label": "API 金鑰",
 	"profile_api_key_placeholder": "API 金鑰（選填）",
-	"profile_api_keys_configured": "API 金鑰已設定",
 	"profile_base_url_label": "Base URL",
 	"profile_base_url_placeholder": "基本 URL（選填，例如 http://localhost:11434）",
 	"profile_base_url_rule": "基本 URL 必須以 http:// 或 https:// 開頭",
