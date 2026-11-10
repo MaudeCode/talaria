@@ -986,7 +986,18 @@ export const MaxTokensSchema = z.looseObject({ max_tokens: NullableNumber, max_t
 // ── workspaces, files, git ───────────────────────────────────────────────
 
 /** A registry entry; `name` is never empty (the folder name when none is registered, `Home` for `default`), so pickers show it as-is (TAL-303). */
-export const WorkspaceEntrySchema = z.looseObject({ name: z.string().min(1), path: z.string() })
+export const WorkspaceEntrySchema = z.looseObject({
+  name: z.string().min(1),
+  path: z.string(),
+  /** TAL-2141: this entry is the `default_workspace` setting new chats start in, compared in the list's canonical spelling. */
+  is_default: z.boolean().optional(),
+  /** TAL-2141: the path is a directory the server can read now; absent for a remote terminal backend. */
+  exists: z.boolean().optional(),
+  /** TAL-2141: the path with the server user's home directory written as `~`. */
+  display_path: z.string().optional(),
+  /** TAL-2141: chats in this space from the session index; absent when the index cannot be read. */
+  chat_count: z.number().int().optional(),
+})
 export type Workspace = z.infer<typeof WorkspaceEntrySchema>
 export const WorkspacesSchema = z.looseObject({ workspaces: z.array(WorkspaceEntrySchema), last: NullableString.optional(), terminal_remote_backend: z.boolean().optional() })
 export type Workspaces = z.infer<typeof WorkspacesSchema>

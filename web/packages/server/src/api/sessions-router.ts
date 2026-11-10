@@ -17,7 +17,7 @@ import { compressionStatusPayload } from '../sessions/compress.js'
 import { titleFailureReason } from '../sessions/titles.js'
 import { SessionNotFound } from '../sessions/store.js'
 import { type Session } from '../sessions/session.js'
-import { isBlockedSystemPath, REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE, stripSurroundingQuotes } from '../workspace/workspaces.js'
+import { isBlockedSystemPath, isDir, REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE, stripSurroundingQuotes, type WorkspaceEntry } from '../workspace/workspaces.js'
 import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
 import { fileSourceSession, managedBuffers } from '../workspace/managed-buffers.js'
 import { previewUrl, readFilePreview } from '../workspace/preview.js'
@@ -195,7 +195,33 @@ export async function projectRename(deps: AppDeps, input: { project_id: string; 
 
 export async function workspaceList(deps: AppDeps) {
   const profile = deps.activeProfile()
-  return { workspaces: (await deps.workspaces.load(profile)), last: (await deps.workspaces.lastWorkspace(profile)), terminal_remote_backend: deps.features().terminal_remote_backend }
+  return { workspaces: await workspaceRows(deps, await deps.workspaces.load(profile), profile), last: (await deps.workspaces.lastWorkspace(profile)), terminal_remote_backend: deps.features().terminal_remote_backend }
+}
+
+/** TAL-2141: each space as Settings › Spaces shows it: the default new chats start in, whether its folder exists, its path from `~`, and its chat count. */
+async function workspaceRows(deps: AppDeps, entries: WorkspaceEntry[], profile: string) {
+  const ws = deps.workspaces
+  const setting = (await deps.settings.load()).default_workspace
+  // TAL-2098: the setting is stored in the list's canonical spelling; resolving again covers a value written before it.
+  const defaultPath = typeof setting === 'string' && setting ? resolvePathLikePython(setting, ws.home) : null
+  // A remote terminal backend's paths live on its target, so this server cannot say whether they exist.
+  const local = ws.remoteTerminalCwd(profile) === null
+  const home = ws.homePath()
+  let counts: Map<string, number> | null = new Map()
+  try {
+    for (const row of await deps.sessionStore.readIndexEntries()) {
+      if (!deps.sessions.personMaySee(row.owner_person_id) || !deps.profilesMatch(str(row.profile) || null, profile)) continue
+      const path = str(row.workspace)
+      counts.set(path, (counts.get(path) ?? 0) + 1)
+    }
+  } catch { counts = null }
+  return entries.map((w) => ({
+    ...w,
+    is_default: w.path === defaultPath,
+    ...(local ? { exists: isDir(w.path) } : {}),
+    display_path: home !== '/' && isWithin(w.path, home) ? `~${w.path.slice(home.length)}` : w.path,
+    ...(counts ? { chat_count: counts.get(w.path) ?? 0 } : {}),
+  }))
 }
 
 export async function workspaceAdd(deps: AppDeps, input: { path: string; name?: string | undefined; create?: unknown }) {

@@ -168,3 +168,37 @@ describe('default workspace behind a symlink (TAL-2098)', () => {
     }
   })
 })
+
+describe('workspace list row fields (TAL-2141)', () => {
+  const post = (s: Awaited<ReturnType<typeof bootTestServer>>, path: string, body: unknown) => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
+  interface Entry { path: string; is_default?: boolean; exists?: boolean; display_path?: string; chat_count?: number }
+
+  it('marks the symlinked default, flags a missing folder, writes home as ~ and counts chats', async () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'talaria-ws-home-')))
+    vi.stubEnv('HOME', home)
+    const real = join(home, 'real')
+    const link = join(home, 'link')
+    const gone = join(home, 'projects', 'gone')
+    mkdirSync(real)
+    mkdirSync(gone, { recursive: true })
+    symlinkSync(real, link)
+    const s = await bootTestServer({ env: { HOME: home, HERMES_WEBUI_DEFAULT_WORKSPACE: link } })
+    try {
+      expect((await post(s, '/api/workspaces/add', { path: gone })).status).toBe(200)
+      for (let i = 0; i < 2; i++) {
+        const { session } = await (await post(s, '/api/session/new', { workspace: link })).json() as { session: { session_id: string } }
+        await s.deps.sessionStore.save(await s.deps.sessionStore.get(session.session_id))
+      }
+      rmSync(gone, { recursive: true })
+      const listed = await (await s.get('/api/workspaces')).json() as { workspaces: Entry[] }
+      expect(listed.workspaces.map(({ path, is_default, exists, display_path, chat_count }) => ({ path, is_default, exists, display_path, chat_count }))).toEqual([
+        { path: real, is_default: true, exists: true, display_path: '~/real', chat_count: 2 },
+        { path: gone, is_default: false, exists: false, display_path: '~/projects/gone', chat_count: 0 },
+      ])
+    } finally {
+      await s.close()
+      vi.unstubAllEnvs()
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+})

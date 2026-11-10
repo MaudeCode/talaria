@@ -60392,6 +60392,20 @@
                           },
                           "path": {
                             "type": "string"
+                          },
+                          "is_default": {
+                            "type": "boolean"
+                          },
+                          "exists": {
+                            "type": "boolean"
+                          },
+                          "display_path": {
+                            "type": "string"
+                          },
+                          "chat_count": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
                           }
                         },
                         "required": [
@@ -60522,6 +60536,20 @@
                           },
                           "path": {
                             "type": "string"
+                          },
+                          "is_default": {
+                            "type": "boolean"
+                          },
+                          "exists": {
+                            "type": "boolean"
+                          },
+                          "display_path": {
+                            "type": "string"
+                          },
+                          "chat_count": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
                           }
                         },
                         "required": [
@@ -60589,6 +60617,20 @@
                           },
                           "path": {
                             "type": "string"
+                          },
+                          "is_default": {
+                            "type": "boolean"
+                          },
+                          "exists": {
+                            "type": "boolean"
+                          },
+                          "display_path": {
+                            "type": "string"
+                          },
+                          "chat_count": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
                           }
                         },
                         "required": [
@@ -60660,6 +60702,20 @@
                           },
                           "path": {
                             "type": "string"
+                          },
+                          "is_default": {
+                            "type": "boolean"
+                          },
+                          "exists": {
+                            "type": "boolean"
+                          },
+                          "display_path": {
+                            "type": "string"
+                          },
+                          "chat_count": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
                           }
                         },
                         "required": [
@@ -60722,6 +60778,20 @@
                           },
                           "path": {
                             "type": "string"
+                          },
+                          "is_default": {
+                            "type": "boolean"
+                          },
+                          "exists": {
+                            "type": "boolean"
+                          },
+                          "display_path": {
+                            "type": "string"
+                          },
+                          "chat_count": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
                           }
                         },
                         "required": [
@@ -95862,6 +95932,20 @@
                               },
                               "path": {
                                 "type": "string"
+                              },
+                              "is_default": {
+                                "type": "boolean"
+                              },
+                              "exists": {
+                                "type": "boolean"
+                              },
+                              "display_path": {
+                                "type": "string"
+                              },
+                              "chat_count": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
                               }
                             },
                             "required": [
@@ -96716,6 +96800,20 @@
                               },
                               "path": {
                                 "type": "string"
+                              },
+                              "is_default": {
+                                "type": "boolean"
+                              },
+                              "exists": {
+                                "type": "boolean"
+                              },
+                              "display_path": {
+                                "type": "string"
+                              },
+                              "chat_count": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
                               }
                             },
                             "required": [
