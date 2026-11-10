@@ -208,7 +208,7 @@ function ConfiguredProvider({ p, catalogUnavailable, sources, cost, spend, onRef
         <Monogram name={name} />
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-baseline gap-2">
-            <Link to="/settings/providers/$providerId" params={{ providerId: p.id }} state={{ providersList: true }} className="truncate text-sm font-semibold text-text outline-none after:absolute after:inset-0 after:rounded-md focus-visible:after:outline-2 focus-visible:after:outline-accent">{name}</Link>
+            <Link to="/settings/providers/$providerId" params={{ providerId: p.id }} state={{ settingsParent: true }} className="truncate text-sm font-semibold text-text outline-none after:absolute after:inset-0 after:rounded-md focus-visible:after:outline-2 focus-visible:after:outline-accent">{name}</Link>
             {p.is_active && <Mark>{m.providers_default()}</Mark>}
           </div>
           <div className="flex min-w-0"><ProviderStatus p={p} catalogUnavailable={catalogUnavailable} extra={quotaSourcePlan(source)} /></div>

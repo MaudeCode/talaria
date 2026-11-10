@@ -10,18 +10,18 @@ import { POPUP_MOTION } from './popupMotion'
  * A labelled control. `icon` (TAL-2131, §12) is a lucide symbol drawn 18px in muted colour before the label; `detail`
  * (TAL-2146, §7) is the row's one-line second line, such as a `StatusDot` and its state.
  */
-export function FieldRow({ label, hint, htmlFor, children, inline, icon: Icon, detail }: { label: ReactNode; hint?: ReactNode; htmlFor?: string | undefined; children: ReactNode; inline?: boolean; icon?: LucideIcon | undefined; detail?: ReactNode }) {
+export function FieldRow({ label, hint, htmlFor, children, inline, wrap, icon: Icon, detail }: { label: ReactNode; hint?: ReactNode; htmlFor?: string | undefined; children: ReactNode; inline?: boolean; /** An inline control too wide to sit beside its label moves under it, at the right. */ wrap?: boolean; icon?: LucideIcon | undefined; detail?: ReactNode }) {
   const text = <>
     <label htmlFor={htmlFor} className="text-sm text-text">{label}</label>
     {hint && <HelpTip label={typeof label === 'string' ? m.field_help_about({ label }) : m.field_help()}>{hint}</HelpTip>}
     {detail && <div className="flex min-w-0 text-xs text-muted" data-row-detail="">{detail}</div>}
   </>
   return (
-    <div className={cn('flex gap-3 py-2', inline ? 'items-center justify-between' : 'flex-col')}>
+    <div className={cn('flex gap-3 py-2', inline ? 'items-center justify-between' : 'flex-col', wrap && 'flex-wrap gap-y-2')}>
       {Icon
         ? <div className="flex min-w-0 items-center gap-2.5"><RowIcon icon={Icon} /><div className="min-w-0">{text}</div></div>
         : <div className="min-w-0">{text}</div>}
-      <div className={cn(inline ? 'shrink-0' : '')}>{children}</div>
+      <div className={cn(inline ? 'shrink-0' : '', wrap && 'ms-auto')}>{children}</div>
     </div>
   )
 }

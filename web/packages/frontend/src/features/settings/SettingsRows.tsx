@@ -49,14 +49,14 @@ export function SettingSelect({ label, hint, settingKey, id: givenId, fallback, 
 }
 
 /**
- * TAL-2131: one string server setting as a segmented control, saving like `SettingSelect`. For two to four options whose
- * labels are 12 characters or fewer; anything longer or more is a `SettingSelect`.
+ * TAL-2131: one string server setting as a segmented control, saving like `SettingSelect`, for two to four short options.
+ * On a column too narrow for the label and every option, the control moves under its label (TAL-2138).
  */
 export function SettingSegmented({ label, hint, settingKey, id: givenId, fallback, options, disabled, icon }: SettingProps & { fallback: string; options: readonly { value: string; label: string }[] }) {
   const id = rowId(givenId, settingKey)
   const { str, set } = useSettingField([settingKey])
   return (
-    <FieldRow label={label} htmlFor={id} hint={hint} icon={icon} inline>
+    <FieldRow label={label} htmlFor={id} hint={hint} icon={icon} inline wrap>
       <Segmented id={id} label={label} disabled={disabled} options={options} value={str(settingKey, fallback)} onChange={(v) => set({ [settingKey]: v })} />
     </FieldRow>
   )
@@ -106,4 +106,4 @@ export function SettingText({ label, hint, settingKey, id: givenId, fallback = '
   )
 }
 
-export { SETTINGS_PAGE, SettingAction, SettingHeadline, SettingLink, SettingRow, SettingsGroup, SettingsStats, SettingValue, SettingValues } from './SettingsGroup'
+export { SETTINGS_PAGE, SETTINGS_TITLE, SettingAction, SettingHeadline, SettingLink, SettingRow, SettingsBack, SettingsGroup, SettingsStats, SettingValue, SettingValues } from './SettingsGroup'

@@ -1,5 +1,4 @@
 import { useState, type ReactElement } from 'react'
-import { useLocation, useNavigate, useRouter } from '@tanstack/react-router'
 import { KeyRound, PanelLeft, Pencil, RefreshCw, Server, Trash2, Wrench } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import { useDefaultModelChoice, useModelsQuery } from '../../app/queries'
@@ -7,7 +6,7 @@ import { useProviderQuotas, useSetSidebarQuotaPins, useSidebarQuotaPins } from '
 import { ModelOptionContent } from '../../lib/modelEntry'
 import { useLocale } from '../../i18n/useLocale'
 import { formatPercent } from '../../i18n/units'
-import { BackButton, IconButton } from '../../ui/Button'
+import { IconButton } from '../../ui/Button'
 import { Mark } from '../../ui/Badge'
 import { ConfirmDialog } from '../../ui/Dialog'
 import { RowContextMenu, type RowAction } from '../../ui/Menu'
@@ -21,15 +20,8 @@ import { OAuthSignIn } from '../onboarding/OAuthSignIn'
 import { OpenRouterCost } from './OpenRouterCost'
 import { ProviderQuotaPace } from './ProviderQuotaPace'
 import { LEVEL_TONE, ProviderKeyForm, ProviderStatus, QuotaSourceStatus, SelfHostedForm, useProviders, useProviderWrites, type Provider } from './ProvidersSection'
-import { SETTINGS_PAGE, SETTINGS_TITLE, SettingAction, SettingRow, SettingsGroup, SettingsStats, type SettingsStat } from './SettingsGroup'
+import { SETTINGS_PAGE, SETTINGS_TITLE, SettingAction, SettingsBack, SettingRow, SettingsGroup, SettingsStats, type SettingsStat } from './SettingsGroup'
 import { useSettingField } from './useSettingField'
-
-declare module '@tanstack/react-router' {
-  interface HistoryState {
-    /** TAL-2135: this provider page was opened from the Providers list, so Back returns to it where it was scrolled. */
-    providersList?: true
-  }
-}
 
 /** The models a provider's page lists before its "more" disclosure. */
 const MODELS_SHOWN = 5
@@ -41,11 +33,7 @@ const MODELS_SHOWN = 5
 export function ProviderDetail({ id }: { id: string }) {
   const providers = useProviders()
   const { quotas, refresh } = useProviderQuotas()
-  const navigate = useNavigate()
-  const router = useRouter()
-  const fromList = useLocation({ select: (l) => l.state.providersList === true })
-  const toList = () => { if (fromList) router.history.back(); else void navigate({ to: '/settings/$section', params: { section: 'providers' } }) }
-  const back = <div><BackButton label={m.settings_section_providers_title()} onClick={toList} /></div>
+  const back = <SettingsBack label={m.settings_section_providers_title()} section="providers" />
   if (providers.isPending) return <LoadingState />
   if (providers.isError && !providers.data) return <ErrorState error={providers.error} onRetry={() => { void providers.refetch() }} />
   const p = providers.data.providers.find((row) => row.id === id)
