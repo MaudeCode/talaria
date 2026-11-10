@@ -4,7 +4,7 @@ import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest'
 import { FeedbackSubmitSchema } from '@maudecode/talaria-web-contracts'
 import { deferred } from '../../test/fixtures'
 
-vi.mock('../../api/endpoints', () => ({ fetchSettings: vi.fn(() => Promise.resolve({})), submitFeedback: vi.fn(), fetchFeedbackDiagnostics: vi.fn(), fetchFeedbackOptions: vi.fn(), uploadFeedbackAttachment: vi.fn() }))
+vi.mock('../../api/endpoints', () => ({ fetchSettings: vi.fn(() => Promise.resolve({})), fetchWhatsNew: vi.fn(() => Promise.resolve({ announcement: null, presentation: null, eligible: false, observation: null, acknowledgement: null })), submitFeedback: vi.fn(), fetchFeedbackDiagnostics: vi.fn(), fetchFeedbackOptions: vi.fn(), uploadFeedbackAttachment: vi.fn() }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn(), showRichToast: vi.fn(), dismissToast: vi.fn() }))
 // jsdom has no canvas or WebCodecs; the real compression runs in Playwright (e2e/feedback-media.spec.ts).
 vi.mock('./feedbackMedia', () => ({ compressImage: vi.fn(), compressVideo: vi.fn() }))
@@ -28,8 +28,10 @@ async function setup(options: Options = OPTIONS) {
   // The shell owns the single dialog mount (TAL-1588); Help only opens it.
   const { FeedbackDialog } = await import('./FeedbackDialog')
   ;({ ApiError } = await import('../../contracts/common'))
+  const { BootstrapContext } = await import('../../app/bootstrap')
+  const { DEFAULT_BOOTSTRAP } = await import('../../contracts/adapters/memory')
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const view = render(<QueryClientProvider client={qc}><AboutSection /><FeedbackDialog /></QueryClientProvider>)
+  const view = render(<QueryClientProvider client={qc}><BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><AboutSection /><FeedbackDialog /></BootstrapContext.Provider></QueryClientProvider>)
   return { upload: vi.mocked(api.uploadFeedbackAttachment), compressImage: vi.mocked(media.compressImage), submit: vi.mocked(api.submitFeedback), diagnostics: vi.mocked(api.fetchFeedbackDiagnostics), toast: vi.mocked(toasts.showToast), sentToast: vi.mocked(toasts.showRichToast), dismiss: vi.mocked(toasts.dismissToast), ...view }
 }
 const open = () => fireEvent.click(screen.getByRole('button', { name: 'Send feedback' }))

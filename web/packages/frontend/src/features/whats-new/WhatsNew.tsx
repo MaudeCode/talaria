@@ -34,7 +34,7 @@ const subscribe = (listener: () => void) => {
   return () => { listeners.delete(listener) }
 }
 
-/** Settings > System: replay the installed release's announcement; this never re-enables the automatic prompt. */
+/** Settings > About: replay the installed release's announcement; this never re-enables the automatic prompt. */
 export function openWhatsNew(): void {
   manual = true
   notify()
@@ -136,10 +136,4 @@ export function WhatsNewDialog({ announcement, open, onDismiss }: { announcement
       </div>
     </Dialog>
   )
-}
-
-/** Settings > System replay control, shown only when the installed release has an announcement. */
-export function WhatsNewReplay() {
-  const { state } = useWhatsNewState()
-  return state?.announcement ? <Button variant="ghost" className="-ml-3 min-h-11" onClick={openWhatsNew}>{m.whats_new_open()}</Button> : null
 }

@@ -1,43 +1,43 @@
 import { m } from '../../paraglide/messages.js'
-import { Button } from '../../ui/Button'
 import { useSetting } from '../../app/queries'
+import { openWhatsNew, useWhatsNewState } from '../whats-new/WhatsNew'
 import { openFeedback } from './FeedbackDialog'
+import { SettingLink, SettingValue, SettingValues, SettingsGroup } from './SettingsRows'
 
-const BADGE = 'settings-version-badge inline-flex items-center px-2 py-[3px] rounded-(--r-sm) bg-surface-subtle text-muted text-[11px] font-semibold font-mono tracking-[.02em] border border-border'
-
-/** TAL-1691: Settings > About, the installed versions, docs, shortcuts and feedback. */
+/** TAL-1691, TAL-2081: Settings > About, the installed versions, What's New, help links and shortcuts. */
 export function AboutSection() {
   const mod = /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘' : 'Ctrl'
   const web = useSetting('webui_version')
   const agent = useSetting('agent_version')
+  const whatsNew = useWhatsNewState().state?.announcement
   return (
-    <div className="flex flex-col gap-4 text-sm" data-section="about">
-      {(web || agent) && <section>
-        <h2 className="mb-1 font-semibold text-text">{m.settings_group_versions()}</h2>
-        <dl className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-1">
-          {web && <><dt className="text-muted">Talaria Web</dt><dd><span className={BADGE} data-testid="webui-version">{web}</span></dd></>}
-          {agent && <><dt className="text-muted">Hermes Agent</dt><dd><span className={BADGE} data-testid="agent-version">{agent}</span></dd></>}
-        </dl>
-      </section>}
-      <section>
-        <Button onClick={openFeedback}>{m.feedback_send_open()}</Button>
-      </section>
-      <section>
-        <h2 className="mb-1 font-semibold text-text">{m.help_docs()}</h2>
-        <ul className="list-disc pl-5 text-muted">
-          <li><a className="text-accent-text underline" href="https://github.com/MaudeCode/talaria/blob/main/web/README.md" target="_blank" rel="noopener noreferrer">README</a></li>
-          <li><a className="text-accent-text underline" href="https://github.com/MaudeCode/talaria/blob/main/web/docs/troubleshooting.md" target="_blank" rel="noopener noreferrer">Troubleshooting</a></li>
-        </ul>
-      </section>
-      <section>
-        <h2 className="mb-1 font-semibold text-text">{m.help_shortcuts()}</h2>
-        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-          <dt><kbd className="rounded border border-border bg-surface px-1.5 font-mono text-xs">{mod}+K</kbd></dt><dd className="text-muted">{m.help_shortcut_new_chat()}</dd>
-          <dt><kbd className="rounded border border-border bg-surface px-1.5 font-mono text-xs">{mod}+B</kbd></dt><dd className="text-muted">{m.help_shortcut_sidebar()}</dd>
-          <dt><kbd className="rounded border border-border bg-surface px-1.5 font-mono text-xs">{mod}+/</kbd></dt><dd className="text-muted">{m.help_shortcut_composer()}</dd>
-          <dt><kbd className="rounded border border-border bg-surface px-1.5 font-mono text-xs">{mod}+,</kbd></dt><dd className="text-muted">{m.help_shortcut_settings()}</dd>
-        </dl>
-      </section>
+    <div className="flex flex-col gap-7" data-section="about">
+      {(web || agent) && (
+        <SettingsGroup id="versions" title={m.settings_group_versions()}>
+          <SettingValues>
+            {web && <SettingValue label="Talaria Web"><span className="font-mono tabular-nums" data-testid="webui-version">{web}</span></SettingValue>}
+            {agent && <SettingValue label="Hermes Agent"><span className="font-mono tabular-nums" data-testid="agent-version">{agent}</span></SettingValue>}
+          </SettingValues>
+        </SettingsGroup>
+      )}
+      {whatsNew && (
+        <SettingsGroup id="whats-new" title={m.whats_new_open()}>
+          <SettingLink label={m.whats_new_title()} onClick={openWhatsNew} />
+        </SettingsGroup>
+      )}
+      <SettingsGroup id="help" title={m.settings_group_help()}>
+        <SettingLink label="README" href="https://github.com/MaudeCode/talaria/blob/main/web/README.md" />
+        <SettingLink label="Troubleshooting" href="https://github.com/MaudeCode/talaria/blob/main/web/docs/troubleshooting.md" />
+        <SettingLink label={m.feedback_send_open()} onClick={openFeedback} />
+      </SettingsGroup>
+      <SettingsGroup id="shortcuts" title={m.help_shortcuts()}>
+        <SettingValues>
+          <SettingValue label={m.help_shortcut_new_chat()}><kbd className="font-mono">{mod}+K</kbd></SettingValue>
+          <SettingValue label={m.help_shortcut_sidebar()}><kbd className="font-mono">{mod}+B</kbd></SettingValue>
+          <SettingValue label={m.help_shortcut_composer()}><kbd className="font-mono">{mod}+/</kbd></SettingValue>
+          <SettingValue label={m.help_shortcut_settings()}><kbd className="font-mono">{mod}+,</kbd></SettingValue>
+        </SettingValues>
+      </SettingsGroup>
     </div>
   )
 }
