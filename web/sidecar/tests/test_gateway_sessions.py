@@ -55,7 +55,7 @@ def test_real_native_owner_shared_admission_and_detach(request, tmp_path):
 
 
 @requires_agent
-@pytest.mark.parametrize("mode", ["recovery", "secure", "profiles", "dedicated", "replay", "restart", "reasoning"])
+@pytest.mark.parametrize("mode", ["recovery", "secure", "profiles", "dedicated", "replay", "restart", "reasoning", "session-open"])
 def test_real_native_owner_on_its_own_daemon(request, tmp_path, mode):
     run_owner_peer(request, tmp_path, "gateway_session_peer.py", [mode])
 
@@ -133,6 +133,24 @@ def test_watch_negotiates_display_without_breaking_older_owners(native_owner_stu
     assert frames[0][0] == "snapshot"
     assert ("config.set", {"session_id": "native", "key": "show_reasoning", "value": "1" if shown else "0", "_timeout": 10}) in native_owner_stub.calls
     assert native_owner_stub.calls[-1] == ("session.detach", {"session_id": "native", "subscription_id": "viewer"})
+
+
+@pytest.mark.parametrize("action,extra", [("snapshot", {}), ("submit", {"request_id": "turn", "text": "Hi"}), ("watch", {})])
+@pytest.mark.parametrize("opens", [True, False])
+def test_only_the_watch_resumes_as_an_open(native_owner_stub, monkeypatch, action, extra, opens):
+    """TAL-2054: an owner firing on_session_open counts a connection's first resume as an open unless that connection read
+    the replay first. Web's polls and controls read it first; the watch is the viewer opening the chat. Older owners keep
+    the plain resume."""
+    from types import SimpleNamespace
+    from talaria_sidecar.methods import gateway_sessions as adapter
+    monkeypatch.setattr(adapter, "_opens_on_resume", lambda: opens)
+    ctx = SimpleNamespace(cancelled=False)
+    ctx.emit = lambda kind, data: setattr(ctx, "cancelled", True)
+    assert native_owner_stub.run(ctx, {"session_id": "native", "action": action, **extra})["state"] == "attached"
+    reads = [call for call in native_owner_stub.calls if call[0] in {"session.events.since", "session.resume"}]
+    reconnect = opens and action != "watch"
+    assert reads[:2] == [("session.events.since", {"session_id": "native"})] * reconnect + [("session.resume", {"session_id": "native"})] * (2 - reconnect)
+    assert reads.count(("session.events.since", {"session_id": "native"})) == reconnect
 
 
 @pytest.fixture

@@ -46,6 +46,15 @@ def _batch_locks() -> bool:
     return find_spec("gateway.session_clarify_lock") is not None
 
 
+def _opens_on_resume() -> bool:
+    """v0.23.1 owners fire ``on_session_open`` on a connection's first resume of a session, unless that connection read
+    the session's replay first (a reconnect). Only the watch is a viewer opening the chat (TAL-2054)."""
+    try:
+        return find_spec("gateway.session_open") is not None
+    except ModuleNotFoundError:  # no Agent ``gateway`` package to look in
+        return False
+
+
 def _restart_wait(home: Path) -> bool:
     """Whether the owner has entered a restart's after-turn wait since a watch attached. The owner announces
     it on no socket, and the watch must not send on its own: a socket opened before the wait is cut when it does."""
@@ -386,6 +395,10 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
 
         async def snapshot():
             nonlocal subscription, sid
+            if subscription is None and params["action"] != "watch" and _opens_on_resume():
+                # No epoch: the owner answers snapshot_required with no events and records a reconnect.
+                with suppress(GatewayRPCError):
+                    await client.rpc("session.events.since", session_id=sid)
             value = await client.rpc("session.resume", session_id=sid)
             sid = value["session_id"]
             # Native attach reuses this actor's subscription; overflow retires it before
