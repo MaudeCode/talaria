@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Settings › Chat in Talaria Web draws the composer so you show or hide each of its controls by pressing it, chooses the send key, busy-message mode and activity display with segmented controls, names its settings plainly, and moves the workspace panel and rarely changed settings to its own Workspace panel and Advanced pages; on Tools the agent approvals switch sits below the tabs.",
+      "highlight": false,
+      "components": ["web"],
+      "announcement": {
+        "title": "Choose composer controls on a picture",
+        "description": "Press a control in the drawing of the composer to show or hide it.",
+        "icon": "settings"
+      }
+    }
+  ]
+}

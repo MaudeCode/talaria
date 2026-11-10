@@ -215,6 +215,8 @@ Decide an item's home before building it:
 | A per-chat composer control whose default is configurable has that default in Settings (Chat when it is an interface setting, the Profile group when it is profile configuration), never only in the composer | The composer changes one chat; the default needs a home that outlasts it |
 | A new setting goes in an existing group of an existing section. A new group needs at least two rows. A new section needs at least five rows that fit no existing section, and is added to `SettingsSectionSchema` with its group | Small groups and sections fragment Settings into pages that hold one switch |
 | A group holds at most eight rows; a longer one is split by what the rows affect | A long group hides the row the user came for |
+| A page over about 20 rows moves its rarely changed rows to a named sub-page (`settings/<section>/<page>`) behind a `SettingLink` row that counts them; the sub-page has the back link and title of a provider's own page | A long page buries the settings people change behind the ones they never touch |
+| A set of show/hide switches for one visible component (the composer's controls) is edited on a drawing of that component, each part a toggle button with `aria-pressed` | The user sees what each switch hides instead of picturing a control from its name |
 
 ## 12. Settings and forms
 
@@ -229,13 +231,13 @@ Logs keeps the wider column its lines need.
 | --- | --- | --- |
 | A titled group of rows | Pending the App sync (TAL-1695) | `SettingsGroup` (title is a noun; optional live `detail`, optional `action`) |
 | On or off, server setting | Pending the App sync (TAL-1695) | `SettingToggle` |
-| One of two to four values, each label 12 characters or fewer | Pending the App sync (TAL-1695) | `SettingSegmented` (`ui/Segmented.tsx`: a `radiogroup`, one Tab stop, arrow keys move the selection, the selected option filled); a browser-stored choice is a `Segmented` in a `SettingRow`. An option may be drawn (`display`, "Aa" at a font size) with its words as its name |
+| One of two to four values with short labels | Pending the App sync (TAL-1695) | `SettingSegmented` (`ui/Segmented.tsx`: a `radiogroup`, one Tab stop, arrow keys move the selection, the selected option filled; it moves under its label when the column is too narrow for both); a browser-stored choice is a `Segmented` in a `SettingRow`. An option may be drawn (`display`, "Aa" at a font size) with its words as its name |
 | One of a few named values | Pending the App sync (TAL-1695) | `SettingSelect` |
 | An integer in a range | Pending the App sync (TAL-1695) | `SettingNumber` |
 | Free text or a list of lines | Pending the App sync (TAL-1695) | `SettingText` (the only row with a Save button, shown while the draft differs) |
 | A control stored in this browser | Pending the App sync (TAL-1695) | `SettingRow` wrapping the control |
 | A row whose control is a button | Pending the App sync (TAL-1695) | `SettingAction` (danger styling on the button, never on the row) |
-| A row that opens a page or dialog | Pending the App sync (TAL-1695) | `SettingLink` (external pages open in a new tab) |
+| A row that opens a page or dialog | Pending the App sync (TAL-1695) | `SettingLink` (external pages open in a new tab; a sub-page row names its row count in `detail`) |
 | Installed versions | Pending the App sync (TAL-1695) | `SettingsStats` figures |
 | Read-only values (keyboard shortcuts) | Pending the App sync (TAL-1695) | `SettingValue` rows with an `icon` in one `SettingValues` list; keys as `Keys` (`ui/Keys.tsx`) keycaps, the modifier ⌘ on Apple platforms and Ctrl elsewhere |
 | A continuous value | Pending the App sync (TAL-1695) | `Slider` in a `SettingRow`, with its value shown in tabular digits |
