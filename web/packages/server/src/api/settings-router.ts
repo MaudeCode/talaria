@@ -23,7 +23,7 @@ import { OnboardingError } from '../onboarding.js'
 import { EnvWriteError } from '../providers/env-file.js'
 import { composerQuota, displayName, providerEnvVar, providerListing, stampAuxiliarySelections, type QuotaSourceRow } from '../providers/catalog.js'
 import { OAUTH_PROVIDERS, SUPPORTED_PROVIDER_SETUPS } from '../providers/tables.js'
-import { displayBotName, KANBAN_PINS_BY_PROFILE_KEY, MODEL_FAVORITES_BY_PROFILE_KEY, QUOTA_THRESHOLDS_BY_PROFILE_KEY, SETTINGS_SPEECH_KEYS, pyBool, sidebarQuotaProjection } from '../settings.js'
+import { displayBotName, KANBAN_PINS_BY_PROFILE_KEY, MODEL_FAVORITES_BY_PROFILE_KEY, QUOTA_THRESHOLDS_BY_PROFILE_KEY, SETTINGS_SPEECH_KEYS, pyBool, sidebarQuotaProjection, composerControlCount } from '../settings.js'
 import { str } from '../util.js'
 import { checkExternalLink, linkPreferences } from '../links.js'
 import { forgetPluginFlow, isPluginFlow, rememberPluginFlow } from '../tools/plugin-oauth.js'
@@ -133,9 +133,10 @@ async function settingsPayload(ctx: RequestContext): Promise<Dict> {
   return settings
 }
 
-/** Fields computed from the environment, not stored: load and save both return them so a save never blanks them in the client cache. */
+/** Fields computed from the environment or the settings, not stored: load and save both return them so a save never blanks them in the client cache. */
 async function derivedFields(ctx: RequestContext, into: Dict): Promise<void> {
   const deps = ctx.deps
+  Object.assign(into, composerControlCount(into))
   into.password_env_var = Boolean((deps.config.env.HERMES_WEBUI_PASSWORD ?? '').trim())
   // TAL-2143: Settings › Access shows the normalized host count on its closed Trusted link hosts row.
   into.trusted_link_hosts_count = Array.isArray(into.trusted_link_hosts) ? into.trusted_link_hosts.length : 0

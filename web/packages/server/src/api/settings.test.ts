@@ -951,6 +951,19 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(sources.find((q) => q.provider_id === 'anthropic')).toMatchObject({ status: 'available', windows: [expect.objectContaining({ label: 'Current session', used_percent: 12 })] })
   })
 
+  it('counts the composer controls shown on every settings read and save (TAL-2172)', async () => {
+    const count = (body: Json) => [body.composer_controls_shown, body.composer_controls_total]
+    try {
+      // By default every control shows but the provider quota chip.
+      expect(count(await json(await s.get('/api/settings')))).toEqual([9, 10])
+      expect(count(await json(await post(s, '/api/settings', { show_quota_chip: true })))).toEqual([10, 10])
+      expect(count(await json(await post(s, '/api/settings', { hide_composer_model: true, hide_composer_mic: true, show_quota_chip: false })))).toEqual([7, 10])
+      expect(count(await json(await s.get('/api/settings')))).toEqual([7, 10])
+    } finally {
+      await post(s, '/api/settings', { hide_composer_model: false, hide_composer_mic: false, show_quota_chip: false })
+    }
+  })
+
   it('projects the pinned sources this read lists, in pinned order, for the Web sidebar (TAL-1870)', async () => {
     const saved = configs.get(s.state)
     const reset = (config: Json | undefined): void => { configs.set(s.state, config ?? {}); s.deps.agentConfig.invalidate(); s.deps.catalog.invalidate() }

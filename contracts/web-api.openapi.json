@@ -87576,6 +87576,18 @@
                       "type": "boolean",
                       "description": "TAL-2148: older messages load while scrolling up (default true); off, a Load earlier messages button loads them."
                     },
+                    "composer_controls_shown": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "TAL-2172, every settings read and save: how many of the composer controls Settings › Chat draws are shown (each `hide_composer_*` key while false, `show_quota_chip` while true)."
+                    },
+                    "composer_controls_total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "TAL-2172, every settings read and save: how many composer controls Settings › Chat draws."
+                    },
                     "hidden_tabs": {
                       "type": "array",
                       "items": {
@@ -87970,6 +87982,18 @@
                     "session_endless_scroll": {
                       "type": "boolean",
                       "description": "TAL-2148: older messages load while scrolling up (default true); off, a Load earlier messages button loads them."
+                    },
+                    "composer_controls_shown": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "TAL-2172, every settings read and save: how many of the composer controls Settings › Chat draws are shown (each `hide_composer_*` key while false, `show_quota_chip` while true)."
+                    },
+                    "composer_controls_total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "TAL-2172, every settings read and save: how many composer controls Settings › Chat draws."
                     },
                     "hidden_tabs": {
                       "type": "array",

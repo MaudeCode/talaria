@@ -1,6 +1,6 @@
 import { m } from '../../paraglide/messages.js'
 import type { ChatPage, SettingsSection, ToolsTab } from '../../contracts/url'
-import { FIXED_TABS, NAV_ITEMS } from '../../shell/nav'
+import { SIDEBAR_DESTINATIONS } from '../../shell/nav'
 import { COMPOSER_CONTROLS, composerControlId } from './composerControls'
 
 /**
@@ -67,17 +67,16 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
       ['settingsMaxTokens', m.settings_label_max_tokens], [key('compression_prepare_ahead'), m.settings_label_compression_prepare_ahead, 'settingsMaxTokens'], ['settingsAutoTitleRefresh', m.settings_label_auto_title_refresh],
     ]),
   ]),
-  ...rows('navigation', m.settings_group_chats_list, 'interface', [
-    ['settingsPinnedLimit', m.settings_label_pinned_limit], ['settingsSidebarDensity', m.settings_label_sidebar_density], [key('project_quick_create_buttons'), m.settings_label_project_quick_create],
+  // TAL-2145: the sidebar's items are toggles on the drawing of the sidebar, in its order, beside its three rows.
+  ...rows('navigation', m.settings_group_sidebar, 'interface', [
+    ...SIDEBAR_DESTINATIONS.map((n) => [`settingsHiddenTab-${n.id}`, n.label] as const),
+    [key('show_sidebar_feedback'), m.feedback_rail_label], [key('show_titlebar_profile'), m.settings_label_profile_switcher],
+    ['settingsSidebarDensity', m.settings_label_density], ['settingsPinnedLimit', m.settings_label_pinned_shown], [key('project_quick_create_buttons'), m.settings_label_project_new_chat],
   ]),
-  ...rows('navigation', m.settings_group_sessions_shown, 'interface', [
+  ...rows('navigation', m.settings_group_outside_chats, 'interface', [
     [key('show_cli_sessions'), m.settings_label_external_sessions], [key('show_claude_code_sessions'), m.settings_label_claude_code_sessions],
-    [key('show_cron_sessions'), m.settings_label_cron_sessions], [key('show_webhook_sessions'), m.settings_label_webhook_sessions],
-    [key('show_kanban_sessions'), m.settings_label_kanban_sessions], [key('show_previous_messaging_sessions'), m.settings_label_previous_messaging_sessions],
-  ]),
-  ...rows('navigation', m.settings_group_destinations, 'interface', NAV_ITEMS.filter((n) => !FIXED_TABS.has(n.id)).map((n) => [`settingsHiddenTab-${n.id}`, n.label] as const)),
-  ...rows('navigation', m.settings_group_buttons, 'interface', [
-    [key('show_sidebar_feedback'), m.settings_label_sidebar_feedback], [key('show_titlebar_profile'), m.settings_label_show_titlebar_profile],
+    [key('show_previous_messaging_sessions'), m.settings_label_previous_messaging_sessions], [key('show_cron_sessions'), m.settings_label_cron_sessions],
+    [key('show_webhook_sessions'), m.settings_label_webhook_sessions], [key('show_kanban_sessions'), m.settings_label_kanban_sessions],
   ]),
   ...rows('notifications', m.settings_group_while_open, 'interface', [
     [key('notifications_enabled'), m.settings_label_notifications], [key('sound_enabled'), m.settings_label_sound],

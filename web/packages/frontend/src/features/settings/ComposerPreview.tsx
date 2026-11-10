@@ -4,25 +4,29 @@ import { m } from '../../paraglide/messages.js'
 import { useBootstrap } from '../../app/bootstrap'
 import { cn } from '../../ui/cn'
 import { Chip, ContextRingGlyph } from '../composer/chips'
+import { useSettingIntents } from '../../app/settings'
+import { PreviewToggle } from './PreviewToggle'
 import { SettingsGroup } from './SettingsGroup'
 import { useSettingField } from './useSettingField'
 import { COMPOSER_CONTROLS, composerControlId, type ComposerControl } from './composerControls'
 
 const KEYS = COMPOSER_CONTROLS.map((c) => c.key)
-/** A hidden control: a dashed outline in its own text colour (the chip's border colour is clear until hovered), faded and struck through. */
-const HIDDEN = 'border-dashed border-current! line-through opacity-50'
+const COUNT_KEYS = ['composer_controls_shown', 'composer_controls_total']
 
 /**
- * TAL-2138: Settings › Chat's Composer group. Its header counts the controls shown, and its first row is the composer drawing.
- * Pressing a control saves its key at once through `useSettingField`, which rolls it back with the error toast when the server refuses.
+ * TAL-2138: Settings › Chat's Composer group. Its header shows the server's count of the controls shown (TAL-2172), and its first
+ * row is the composer drawing. Pressing a control saves its key at once through `useSettingField`, which rolls it back with the
+ * error toast when the server refuses.
  */
 export function ComposerGroup({ children }: { children: ReactNode }) {
-  const { bool, set } = useSettingField(KEYS)
+  const { bool, num, set } = useSettingField([...KEYS, ...COUNT_KEYS])
   const shown = (c: ComposerControl) => c.shows ? bool(c.key) : !bool(c.key)
-  // TAL-2172 sends this count from the server; until then the client counts the stored keys, its own writes included.
-  const count = COMPOSER_CONTROLS.filter(shown).length
+  // While the user's own write of a control is unconfirmed, the header counts the drawing it shows; the server's count follows.
+  const unconfirmed = Object.keys(useSettingIntents(KEYS)).length > 0
+  const total = num('composer_controls_total', -1)
+  const count = unconfirmed ? COMPOSER_CONTROLS.filter(shown).length : num('composer_controls_shown', 0)
   return (
-    <SettingsGroup id="composer" title={m.settings_group_composer()} detail={m.settings_composer_controls_shown({ shown: count, total: COMPOSER_CONTROLS.length })}>
+    <SettingsGroup id="composer" title={m.settings_group_composer()} detail={total < 0 ? undefined : m.settings_composer_controls_shown({ shown: count, total })}>
       <ComposerPreview shown={shown} onToggle={(c) => set({ [c.key]: c.shows ? !shown(c) : shown(c) })} />
       {children}
     </SettingsGroup>
@@ -44,15 +48,13 @@ function ComposerPreview({ shown, onToggle }: { shown: (c: ComposerControl) => b
         <div className="flex items-end gap-2">
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
             {COMPOSER_CONTROLS.map((c) => {
-              const on = shown(c)
               const icon = c.glyph === 'ring' ? <ContextRingGlyph pct={40} /> : c.glyph === 'yolo' ? <span aria-hidden="true">⚡</span> : c.icon && <c.icon size={14} className="shrink-0" aria-hidden="true" />
               return (
-                <button key={c.key} type="button" id={composerControlId(c.key)} aria-pressed={on} aria-label={m.settings_composer_show({ control: c.name() })} title={c.name()} onClick={() => onToggle(c)}
-                  className="rounded-(--control-radius) outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)">
-                  {c.label
-                    ? <Chip readOnly size="xs" icon={icon} label={c.label()} title={c.name()} className={cn('cursor-pointer', !on && HIDDEN)} />
-                    : <span className={cn('flex size-7 items-center justify-center rounded-(--control-radius) border text-(--chip-fg)', on ? 'border-transparent' : HIDDEN)}>{icon}</span>}
-                </button>
+                <PreviewToggle key={c.key} id={composerControlId(c.key)} name={c.name()} shown={shown(c)} onToggle={() => onToggle(c)}>
+                  {(hidden) => c.label
+                    ? <Chip readOnly size="xs" icon={icon} label={c.label()} title={c.name()} className={cn('cursor-pointer', hidden)} />
+                    : <span className={cn('flex size-7 items-center justify-center rounded-(--control-radius) border border-transparent text-(--chip-fg)', hidden)}>{icon}</span>}
+                </PreviewToggle>
               )
             })}
           </div>

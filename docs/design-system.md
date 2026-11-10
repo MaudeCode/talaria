@@ -216,7 +216,7 @@ Decide an item's home before building it:
 | A new setting goes in an existing group of an existing section. A new group needs at least two rows. A new section needs at least five rows that fit no existing section, and is added to `SettingsSectionSchema` with its group | Small groups and sections fragment Settings into pages that hold one switch |
 | A group holds at most eight rows; a longer one is split by what the rows affect | A long group hides the row the user came for |
 | A page over about 20 rows moves its rarely changed rows to a named sub-page (`settings/<section>/<page>`) behind a `SettingLink` row that counts them; the sub-page has the back link and title of a provider's own page | A long page buries the settings people change behind the ones they never touch |
-| A set of show/hide switches for one visible component (the composer's controls) is edited on a drawing of that component, each part a toggle button with `aria-pressed` | The user sees what each switch hides instead of picturing a control from its name |
+| A set of show/hide switches for one visible component (the composer's controls, the sidebar's items) is edited on a drawing of that component, each part a `PreviewToggle` (`features/settings/PreviewToggle.tsx`) with `aria-pressed`, which owns the hidden style | The user sees what each switch hides instead of picturing a control from its name |
 
 ## 12. Settings and forms
 

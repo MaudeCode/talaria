@@ -61,7 +61,7 @@ test('Sidebar feedback button is opt-in and sits above Notifications on the rail
   const railButton = page.locator('aside.sidebar').getByRole('button', { name: 'Send feedback' })
   const notifications = page.locator('aside.sidebar').getByRole('button', { name: 'Notifications', exact: true })
   const back = page.locator('aside.sidebar').getByRole('button', { name: 'Back', exact: true })
-  const toggle = page.getByRole('switch', { name: 'Sidebar feedback button' })
+  const toggle = page.getByRole('button', { name: 'Show Feedback' })
   const openSidebarSettings = async () => {
     await page.locator('aside.sidebar').getByRole('link', { name: 'Settings', exact: true }).click()
     await page.locator('[data-settings-section="navigation"]').click()
@@ -74,7 +74,7 @@ test('Sidebar feedback button is opt-in and sits above Notifications on the rail
     await expect(railButton).toHaveCount(0)
     await page.screenshot({ path: testInfo.outputPath('rail-feedback-off.png') })
     await openSidebarSettings()
-    await expect(toggle).not.toBeChecked()
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false')
     const saved = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/api/settings'))
     await toggle.click()
     await back.click()
