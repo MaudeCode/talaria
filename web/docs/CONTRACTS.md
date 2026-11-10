@@ -343,6 +343,20 @@ other boards. Profile switching clears the existing Query cache and closes the
 previous detail selection. The shared fixture is
 `contracts/fixtures/kanban-inspection.json` at the repository root.
 
+## Model favorites
+
+`GET /api/models` carries `favorites`, the active profile's starred
+`{ provider_id, model }` pairs in starred order, and stamps `favorite` on every
+entry whose `provider_id` and `bare_id` match one. `null` means the profile has
+never saved favorites. `POST /api/models/favorite` stars or unstars one model
+under the settings queue, so concurrent writes for different models all
+persist; a new star goes last and at most 200 are kept. `POST
+/api/models/favorites/import` writes a client's list only while the stored value
+is `null` and answers `imported: false` otherwise. A favorite whose model left
+the catalog stays stored and marks no row until the model returns. Talaria
+stores them in the additive `model_favorites_by_profile` settings map, never in
+Agent files, and settings responses never expose it.
+
 ## Canonical reasoning level
 
 `owner_attachment.reasoning_control` is one owner chat's own level, read from its owner:

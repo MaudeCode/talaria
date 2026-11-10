@@ -16,7 +16,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { atomicWriteText } from '../fs/atomic.js'
 import type { SidecarLike } from '../sidecar/client.js'
-import type { CatalogAvailability, ModelAllowance, PlanUsage, KeySourceKind, SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
+import type { CatalogAvailability, ModelAllowance, ModelFavorite, PlanUsage, KeySourceKind, SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { QUOTA_THRESHOLD_DEFAULTS, type QuotaThresholds } from '../settings.js'
 import { loadEnvFile } from './env-file.js'
@@ -28,7 +28,7 @@ import {
   modelSection, parseProviderQualifiedModel, pluginAliasTargets, providerIdentity, resolveProviderAlias, type AgentConfig, type Config, type Dict, type SpeedTier,
 } from '../config/agent-config.js'
 
-export interface ModelEntry { id: string; label: string; supports_fast_tier?: boolean; supported_speed_tiers?: SpeedTier[]; provider_id?: string; bare_id?: string; allowance?: ModelAllowance; limit?: { scope: 'model'; resets_at: string } }
+export interface ModelEntry { id: string; label: string; favorite?: boolean; supports_fast_tier?: boolean; supported_speed_tiers?: SpeedTier[]; provider_id?: string; bare_id?: string; allowance?: ModelAllowance; limit?: { scope: 'model'; resets_at: string } }
 type PluginProvider = SidecarResult<'plugins.providers'>['providers'][number]
 export interface QuotaSourceRow extends Dict { source_id: string; provider_id: string; account_label: string }
 interface CatalogLookup<T> { value: T | null; authoritative: boolean }
@@ -103,7 +103,7 @@ export function repairSessionModel(catalog: ModelsCatalog, model: string, provid
   return defaultModel && defaultProvider && (defaultModel !== model || defaultProvider !== pid) ? [defaultModel, defaultProvider] : null
 }
 
-export interface ModelsCatalog { availability?: CatalogAvailability; active_provider: string | null; default_model: string; default_provider_id?: string | null; default_bare_id?: string; default_option_id?: string | null; groups: ModelGroup[]; aliases: Record<string, string>; configured_model_badges: Record<string, { role: string; label: string; provider: string }> }
+export interface ModelsCatalog { availability?: CatalogAvailability; active_provider: string | null; default_model: string; default_provider_id?: string | null; default_bare_id?: string; default_option_id?: string | null; groups: ModelGroup[]; aliases: Record<string, string>; configured_model_badges: Record<string, { role: string; label: string; provider: string }>; favorites?: ModelFavorite[] | null }
 
 /**
  * TAL-388: stamp each auxiliary slot with its display value and the catalog entry whose provider/model pair equals the
@@ -153,6 +153,8 @@ export interface CatalogDeps {
   documents?: DocumentBackend
   /** Settings `provider_quota_thresholds` for a profile; defaults when absent. */
   quotaThresholds?: (profile: string) => Promise<QuotaThresholds>
+  /** TAL-1857: a profile's starred models, `null` while it has never saved any. */
+  modelFavorites?: (profile: string) => Promise<ModelFavorite[] | null>
 }
 
 /** Python `_BESPOKE_CATALOG_PROVIDERS`: cards whose catalog is resolved by their own rule, never the generic live probe. */
@@ -1333,6 +1335,10 @@ export class ProviderCatalog {
     // An account limit already says the login is out; the quota level would only repeat it.
     const levels = await Promise.all(catalog.groups.map((g) => (g.limit?.scope === 'account' ? Promise.resolve(null) : this.pickerQuotaLevel(profileHome, g.provider_id, thresholds))))
     catalog.groups.forEach((g, i) => { const level = levels[i]; if (level) g.quota_level = level })
+    // TAL-1857: a favorite whose model left the catalog stays in `favorites` and marks no row.
+    catalog.favorites = (await this.deps.modelFavorites?.(profile)) ?? null
+    const starred = new Set((catalog.favorites ?? []).map((f) => `${f.provider_id}\0${f.model}`))
+    for (const g of catalog.groups) for (const e of entries(g)) e.favorite = starred.has(`${str(e.provider_id).toLowerCase()}\0${e.bare_id ?? e.id}`)
     return catalog
   }
 

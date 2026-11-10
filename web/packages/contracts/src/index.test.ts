@@ -271,6 +271,15 @@ describe('contracts package', () => {
     expect(groups.map((g) => [g.limit?.scope ?? null, g.quota_level ?? null])).toEqual([['models', 'warning'], ['account', null], [null, 'critical']])
     expect(groups[0]?.models.map((e) => e.limit?.resets_at ?? null)).toEqual([null, '2026-10-14T16:30:00Z'])
   })
+  it('parses the shared model favorites, keeping a starred model the catalog no longer lists (TAL-1857)', () => {
+    const fixture = shared('fixtures/model-favorites.json') as Record<string, unknown>
+    const models = ModelsSchema.parse(fixture.models)
+    expect(models.groups.flatMap((g) => g.models.map((e) => e.favorite))).toEqual([true, false, true])
+    expect(models.favorites?.map((f) => f.model)).toEqual(['shared-model', 'claude-sonnet-4.5', 'gpt-5.5'])
+    expect(ModelsSchema.parse(fixture.never_saved).favorites).toBeNull()
+    expect(settingsContract.models.favorite['~orpc'].outputSchema!.parse(fixture.favorite)).toEqual(fixture.favorite)
+    expect(settingsContract.models.importFavorites['~orpc'].outputSchema!.parse(fixture.import)).toEqual(fixture.import)
+  })
   it('parses the shared live dictation exchange (TAL-802)', () => {
     const fixture = shared('fixtures/transcribe-stream.json') as { start: unknown; end: unknown; events: unknown[]; unavailable: unknown }
     expect(TranscribeStreamStartSchema.parse(fixture.start).sample_rate).toBe(48000)
