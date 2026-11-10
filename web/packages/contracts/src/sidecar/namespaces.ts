@@ -118,6 +118,7 @@ export const COMMANDS_METHODS = {
     result: z.object({ supported: z.boolean(), buffers: z.array(z.object({ name: ManagedBufferName, size: ManagedBufferSize, read_only: z.boolean() })).max(200), content: z.string().max(MAX_MANAGED_BUFFER_BYTES).optional(), size: ManagedBufferSize.optional(), read_only: z.boolean().optional(), write_semantics: z.literal('unconditional') }),
   },
   'plugins.dashboard_list': { params: ProfileHomeParams, result: z.object({ supported: z.boolean(), plugins: z.array(AgentDashboardPluginSchema) }) },
+  /** TAL-2055: an enable the Agent refuses (a recalled plugin, a refused admission) fails with `data.condition: plugin_toggle_refused` and the Agent's reason; nothing is written. */
   'plugins.dashboard_toggle': { params: DashboardNameParams.extend({ enabled: z.boolean() }), result: z.object({ ok: z.literal(true) }) },
   'plugins.dashboard_asset': { params: DashboardNameParams.extend({ path: z.string() }), result: AgentDashboardResponseSchema },
   /** Buffered HTTP only. Cancellation abandons the result; the Agent has no handler-cancel operation. */

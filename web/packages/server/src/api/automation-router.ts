@@ -29,6 +29,7 @@ function failure(error: unknown): never {
   if (error instanceof ExtensionError) throw new HttpError(error.status, error.message)
   if (error instanceof SessionNotFound) throw new HttpError(404, 'Session not found')
   if (error instanceof ConfigUnavailable) throw new HttpError(503, error.message)
+  if (error instanceof SidecarError && error.condition === 'plugin_toggle_refused') throw new HttpError(409, error.message, { condition: error.condition })
   if (error instanceof SidecarError) throw new HttpError(error.condition === 'sidecar_unavailable' ? 503 : 500, error.message, { condition: error.condition })
   throw error
 }

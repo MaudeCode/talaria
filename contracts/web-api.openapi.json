@@ -125144,6 +125144,7 @@
     "/api/extensions/toggle": {
       "post": {
         "operationId": "extensions.toggle",
+        "summary": "409 `plugin_toggle_refused` with the Agent's reason when it refuses to enable an Agent dashboard plugin (recalled by the catalog, or refused admission); nothing is written (TAL-2055).",
         "tags": [
           "automation"
         ],

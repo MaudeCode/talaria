@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Turning on a Web dashboard plugin that Hermes Agent has recalled or refuses to admit now turns the switch back off and shows the Agent's reason instead of an internal error.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
