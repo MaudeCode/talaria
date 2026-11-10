@@ -6,7 +6,7 @@ import { m } from '../paraglide/messages.js'
 import { cn } from './cn'
 import { POPUP_MOTION } from './popupMotion'
 
-export function FieldRow({ label, hint, htmlFor, children, inline }: { label: ReactNode; hint?: ReactNode; htmlFor?: string; children: ReactNode; inline?: boolean }) {
+export function FieldRow({ label, hint, htmlFor, children, inline }: { label: ReactNode; hint?: ReactNode; htmlFor?: string | undefined; children: ReactNode; inline?: boolean }) {
   return (
     <div className={cn('flex gap-3 py-2', inline ? 'items-center justify-between' : 'flex-col')}>
       <div className="min-w-0">
@@ -55,5 +55,16 @@ export function Switch({ className, ...props }: Omit<BaseSwitch.Root.Props, 'cla
     <BaseSwitch.Root {...props} className={cn('relative inline-flex h-[18px] w-8 shrink-0 cursor-pointer items-center rounded-full border-0 bg-border2 p-0 transition-colors duration-200 data-checked:bg-accent data-disabled:cursor-not-allowed data-disabled:opacity-50', className)}>
       <BaseSwitch.Thumb className="block size-3 translate-x-[3px] rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,.45)] transition-transform duration-200 data-checked:translate-x-[17px]" />
     </BaseSwitch.Root>
+  )
+}
+
+/** A range control with its value beside it in tabular digits and an optional unit. */
+export function Slider({ id, value, min, max, onChange, unit = '' }: { id: string; value: string; min: number; max: number; onChange: (value: string) => void; unit?: string }) {
+  const n = Number.parseFloat(value)
+  return (
+    <span className="flex items-center gap-3">
+      <input id={id} type="range" min={min} max={max} step={0.1} value={Number.isNaN(n) ? 1 : n} onChange={(e) => onChange(e.target.value)} className="w-40" />
+      <output htmlFor={id} className="w-10 text-right text-xs tabular-nums text-muted">{(Number.isNaN(n) ? 1 : n).toFixed(1)}{unit}</output>
+    </span>
   )
 }

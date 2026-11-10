@@ -134,9 +134,9 @@ it.each(['normalization', 'failure'] as const)('reconciles the focused numeric d
   setup()
   const input = document.getElementById('settingsPinnedLimit')!
   await user.click(input)
-  fireEvent.change(input, { target: { value: '100' } })
-  expect(input).toHaveValue(100)
-  await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ pinned_sessions_limit: 100 }))
+  fireEvent.change(input, { target: { value: '40' } })
+  expect(input).toHaveValue(40)
+  await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ pinned_sessions_limit: 40 }))
   held.resolve(initial)
   await waitFor(() => expect(input).toHaveValue(3))
   expect(input).toHaveFocus()

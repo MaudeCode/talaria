@@ -8,7 +8,7 @@ import { FontSizeSchema, SkinSchema } from '../../contracts/persisted'
 import { LOCALE_INFO } from '@maudecode/talaria-web-contracts'
 import { useLocale } from '../../i18n/useLocale'
 import { useSaveSettings } from '../../app/queries'
-import { useSettingField } from './useSettingField'
+import { SettingSelect } from './SettingsRows'
 import { useExtensionSkins } from '../../extensions/registry'
 import { cn } from '../../ui/cn'
 
@@ -30,7 +30,6 @@ function PickButton({ active, onClick, className, children, label, ...rest }: { 
 export function AppearanceSection() {
   const appearance = useAppearance()
   const locale = useLocale()
-  const density = useSettingField(['sidebar_density'])
   const save = useSaveSettings()
   const extSkins = useExtensionSkins()
   const pickSkin = (key: string) => { const v = SkinSchema.safeParse(key); if (v.success) setSkin(v.data); else if (extSkins.some((s) => s.key === key)) setSkin(key) }
@@ -89,12 +88,10 @@ export function AppearanceSection() {
           {LOCALE_INFO.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
         </Select>
       </FieldRow>
-      <FieldRow label={m.settings_label_sidebar_density()} htmlFor="settingsSidebarDensity" inline>
-        <Select id="settingsSidebarDensity" value={density.str('sidebar_density', 'compact')} onValueChange={(v) => density.set({ sidebar_density: v })}>
-          <option value="compact">{m.settings_sidebar_density_compact()}</option>
-          <option value="detailed">{m.settings_sidebar_density_detailed()}</option>
-        </Select>
-      </FieldRow>
+      <SettingSelect label={m.settings_label_sidebar_density()} id="settingsSidebarDensity" settingKey="sidebar_density" fallback="compact" options={[
+        { value: 'compact', label: m.settings_sidebar_density_compact() },
+        { value: 'detailed', label: m.settings_sidebar_density_detailed() },
+      ]} />
     </div>
   )
 }

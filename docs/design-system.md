@@ -96,6 +96,8 @@ and a tiled column in landscape. On Web it is `shell/Sidebar.tsx`, on every page
 | Reordering | `.onMove` under an edit mode the toolbar toggles; order is a device setting | Not shipped; when added, a drag handle per row and the order kept per browser through `lib/persisted` |
 | Grouping | A second `Section("…")` for items without data ("No quota data"), compact rows | A second `<section data-section="<feature>-unavailable">` with an `h3` header, compact rows |
 
+A Web Settings page declares its rows from `features/settings/SettingsRows.tsx`, one component per control type: `SettingToggle`, `SettingSelect`, `SettingNumber`, `SettingText` (draft and Save), `SettingRow` (a device-local control, `stacked` for a list of switches), `SettingAction` (label and button), grouped by `SettingsGroup`. Each renders through `FieldRow`, so a page writes no row layout of its own.
+
 ## 4. Section headers
 
 | App | Web |

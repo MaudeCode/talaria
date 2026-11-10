@@ -1,11 +1,11 @@
 import { m } from '../../paraglide/messages.js'
-import { Switch, FieldRow, TextInput } from '../../ui/Field'
+import { Switch } from '../../ui/Field'
 import { useSettingField } from './useSettingField'
 import { LoadingState, ErrorState } from '../../ui/States'
 import { NAV_ITEMS, FIXED_TABS } from '../../shell/nav'
 import { useProviderQuotas, useSetSidebarQuotaPins, useSidebarQuotaPins } from '../../lib/useProviderQuotas'
 import { quotaSourceName } from '../insights/QuotaMeter'
-import { SettingToggle as Toggle, SettingsGroup } from './SettingsRows'
+import { SettingNumber, SettingRow, SettingToggle as Toggle, SettingsGroup } from './SettingsRows'
 
 /** TAL-1870: pins the sidebar's quota sources from the server's projection. */
 function SidebarQuotaSources() {
@@ -14,7 +14,7 @@ function SidebarQuotaSources() {
   const sources = quotas.data?.sources
   const { ids: pinned, canPin } = useSidebarQuotaPins(quotas.data)
   return (
-    <FieldRow label={m.settings_label_sidebar_quotas()} hint={m.settings_desc_sidebar_quotas()} htmlFor="settingsSidebarQuotas">
+    <SettingRow label={m.settings_label_sidebar_quotas()} hint={m.settings_desc_sidebar_quotas()} htmlFor="settingsSidebarQuotas" stacked>
       <div id="settingsSidebarQuotas" className="flex flex-wrap gap-3">
         {quotas.isPending && <LoadingState compact />}
         {quotas.isError && !sources && <ErrorState error={quotas.error} onRetry={() => { void quotas.refetch() }} />}
@@ -28,26 +28,24 @@ function SidebarQuotaSources() {
           )
         })}
       </div>
-    </FieldRow>
+    </SettingRow>
   )
 }
 
 /** TAL-1691, TAL-2100: Settings > Navigation, what the chats list, the tabs and the workspace panel show. */
 export function SidebarSection() {
-  const { settings, set, setAsync, bool, num } = useSettingField(['pinned_sessions_limit', 'show_cli_sessions', 'hidden_tabs'])
+  const { settings, set } = useSettingField(['hidden_tabs'])
   if (settings.isPending) return <LoadingState />
   if (settings.isError) return <ErrorState error={settings.error} onRetry={() => { void settings.refetch() }} />
   return (
     <div className="flex flex-col gap-7" data-section="navigation">
       <SettingsGroup id="chats" title={m.settings_group_chats_list()}>
-        <FieldRow label={m.settings_label_pinned_limit()} hint={m.settings_desc_pinned_limit()} htmlFor="settingsPinnedLimit" inline>
-          <TextInput id="settingsPinnedLimit" type="number" retainDraft min={1} max={50} className="w-20" value={num('pinned_sessions_limit', 3)} onChange={(e) => { const n = Number(e.target.value); if (Number.isInteger(n) && n > 0) return setAsync({ pinned_sessions_limit: n }) }} />
-        </FieldRow>
+        <SettingNumber label={m.settings_label_pinned_limit()} hint={m.settings_desc_pinned_limit()} id="settingsPinnedLimit" settingKey="pinned_sessions_limit" fallback={3} max={50} />
         <Toggle label={m.settings_label_session_endless_scroll()} settingKey="session_endless_scroll" fallback />
         <Toggle label={m.settings_label_session_jump_buttons()} settingKey="session_jump_buttons" fallback />
         <Toggle label={m.settings_label_conversation_outline()} settingKey="show_conversation_outline" />
         <Toggle label={m.settings_label_project_quick_create()} settingKey="project_quick_create_buttons" />
-        <FieldRow label={m.settings_label_external_sessions()} htmlFor="settings-show_cli_sessions" inline><Switch id="settings-show_cli_sessions" checked={bool('show_cli_sessions')} onCheckedChange={(checked) => set({ show_cli_sessions: checked })} /></FieldRow>
+        <Toggle label={m.settings_label_external_sessions()} settingKey="show_cli_sessions" />
         <Toggle label={m.settings_label_claude_code_sessions()} settingKey="show_claude_code_sessions" />
         <Toggle label={m.settings_label_cron_sessions()} settingKey="show_cron_sessions" />
         <Toggle label={m.settings_label_webhook_sessions()} settingKey="show_webhook_sessions" />
@@ -55,7 +53,7 @@ export function SidebarSection() {
         <Toggle label={m.settings_label_previous_messaging_sessions()} settingKey="show_previous_messaging_sessions" />
       </SettingsGroup>
       <SettingsGroup id="tabs" title={m.settings_group_tabs()}>
-        <FieldRow label={m.settings_label_tab_visibility()} htmlFor="settingsHiddenTabs">
+        <SettingRow label={m.settings_label_tab_visibility()} htmlFor="settingsHiddenTabs" stacked>
           <div id="settingsHiddenTabs" className="flex flex-wrap gap-3">
             {NAV_ITEMS.filter((n) => !FIXED_TABS.has(n.id)).map((n) => {
               const hidden = (settings.data.hidden_tabs ?? []).includes(n.id)
@@ -66,7 +64,7 @@ export function SidebarSection() {
               )
             })}
           </div>
-        </FieldRow>
+        </SettingRow>
         <Toggle label={m.settings_label_show_titlebar_profile()} settingKey="show_titlebar_profile" fallback />
         <Toggle label={m.settings_label_sidebar_feedback()} settingKey="show_sidebar_feedback" />
         <Toggle label={m.settings_label_quota_chip()} settingKey="show_quota_chip" fallback />

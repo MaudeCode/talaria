@@ -55,18 +55,18 @@ test('numeric settings reconcile a completed save while the input keeps focus', 
   await page.route('**/api/settings', async (route) => {
     if (route.request().method() === 'POST') { writes++; await held.promise }
     else reads++
-    // The server refuses 100 and returns the prior confirmed value.
+    // The server refuses 40 and returns the prior confirmed value.
     await route.fulfill({ json: settings })
   })
   try {
     await page.goto('/settings/navigation')
     const input = page.locator('#settingsPinnedLimit')
-    await input.fill('100')
-    await expect(input).toHaveValue('100')
+    await input.fill('40')
+    await expect(input).toHaveValue('40')
     await expect.poll(() => writes).toBe(1)
     held.resolve(undefined)
     await expect.poll(() => reads).toBeGreaterThan(1)
-    await expect(input).toHaveValue(baseline ? '100' : '3')
+    await expect(input).toHaveValue(baseline ? '40' : '3')
     await expect(input).toBeFocused()
     await input.evaluate((element) => element.scrollIntoView({ block: 'center' }))
     await capture(page, 'numeric', info.project.name)
