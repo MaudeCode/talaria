@@ -60,7 +60,7 @@ inside them adds no horizontal inset of its own.
 | Part | App | Web |
 | --- | --- | --- |
 | Title | `navigationTitle`; `.inline` display on detail screens | `HubPage` `title` (`shell/AppShell.tsx`) |
-| Tabs | Segmented `Picker` in `safeAreaInset(edge: .top)` on the system background, identifier `<feature>-tabs`; the tab is device-local `@State`, a deep link selects its tab | `role="tablist"` of `role="tab"` buttons in the `HubPage` toolbar, `aria-selected`, `aria-controls="<feature>-<tab>"`, active `bg-accent-bg text-accent-text`, idle `text-muted hover:bg-hover hover:text-text`; the tab is a `?tab=` search param |
+| Tabs | Segmented `Picker` in `safeAreaInset(edge: .top)` on the system background, identifier `<feature>-tabs`; the tab is device-local `@State`, a deep link selects its tab | `TabStrip` (`ui/TabStrip.tsx`): a `role="tablist"` of `role="tab"` buttons in the `HubPage` toolbar, `aria-selected`, `aria-controls="<feature>-<tab>"`. Underlined text: idle `text-muted`, selected `text-strong` over a 2px accent line, a hairline under the strip, which scrolls sideways when its tabs do not fit. A page with its own tablist (Kanban pins, the panel tabs) uses `TAB_STRIP` and `tabClass`. The tab is a `?tab=` search param |
 | Toolbar | Trailing `ToolbarItem`s: refresh (`RefreshToolbarButton`), then a `Menu` behind `ellipsis.circle` for secondary actions and pickers, then a tinted warning button that opens a popover when the server reports a notice | Selects in `<label className="ml-auto flex items-center gap-2 text-xs text-muted">`, each with an `aria-label`; the primary action is a `Button` at the right of the section heading |
 | Body | `List { … }.listStyle(.plain)` on `Color(.systemBackground)`; content that is not a row hides its separator | `<section data-section="<feature>">` containing `h2` + `ul`, or a `<dl>`, or a `<figure>`; the page body scrolls, not the section |
 | Background | `Color(.systemBackground)` everywhere, including behind the tabs | `bg-bg` from the shell; no `bg-surface` behind lists |
@@ -107,7 +107,7 @@ Settings rows follow §12.
 
 | App | Web |
 | --- | --- |
-| `Text(title).font(.footnote.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase)`, optional trailing detail `.footnote` secondary, optional small `ProgressView`; `.padding(.horizontal, 20).padding(.vertical, 6)`, `listRowInsets(EdgeInsets())`, system background (`InsightsView.usageHeader`; TAL-1765 moves it to a shared header and puts it on the detail screen and the "No quota data" section, which still use the default `Section` header) | `SectionHeader` (`ui/List.tsx`): `<h3 className="text-xs font-medium uppercase tracking-wider text-muted">`, optional trailing `detail` `text-xs text-muted`, optional `action` at the right; the page section title is `<h2 className="text-base font-semibold text-text">` with the primary action beside it |
+| `Text(title).font(.footnote.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase)`, optional trailing detail `.footnote` secondary, optional small `ProgressView`; `.padding(.horizontal, 20).padding(.vertical, 6)`, `listRowInsets(EdgeInsets())`, system background (`InsightsView.usageHeader`; TAL-1765 moves it to a shared header and puts it on the detail screen and the "No quota data" section, which still use the default `Section` header) | `SectionHeader` (`ui/List.tsx`), whose `SECTION_HEADER` is the only definition of the style: `<h3 className="text-sm font-semibold text-strong">` in sentence case, no uppercase or tracking, so it reads above the rows under it; optional trailing `detail` `text-xs font-normal text-muted tabular-nums`, optional `action` at the right (a `ghost` `IconButton`, §12). On a Settings page 30px separate one group from the next header (`SETTINGS_PAGE`). The page section title is `<h2 className="text-base font-semibold text-text">` with the primary action beside it |
 
 The trailing detail is live data (a peak, a count), never an explanation.
 
@@ -117,11 +117,13 @@ The trailing detail is live data (a peak, a count), never an explanation.
 | --- | --- | --- |
 | Headline figure | `.font(.title2.weight(.semibold).monospacedDigit())`, mode word `.caption` secondary beside it, `.lastTextBaseline` aligned | `text-lg font-semibold tabular-nums text-strong`, mode word `text-xs text-muted`, `items-baseline` |
 | Stat grid | `InsightsStatGrid`: `.adaptive(minimum: 140)` columns, title `.caption` secondary, value `.title3.weight(.semibold)` | `<dl className="grid grid-cols-2 sm:grid-cols-4">`, `StatLabel` (`ui/List.tsx`) `dt text-xs uppercase tracking-wider text-muted`, `dd text-lg font-semibold text-strong` with the exact value in `title` |
+| Page figures | Pending the App sync (TAL-1695) | `SettingsStats` (`features/settings/SettingsGroup.tsx`), the stat grid for a Settings page: two columns, four once its column is 521px wide; each value a `Figure` with an optional mode word, `tone="warning"` or `"error"` when the server marks it. Every value is a server field the page only formats |
+| Row figure | `.title3.weight(.semibold).monospacedDigit()` at the row's trailing edge | `Figure` (`ui/List.tsx`) at the end of a row: one headline figure and its mode word ("21% left"), the classes of the headline figure above |
 | Metric cell | `ProviderQuotaMetricCell(title:value:)` (`Models/ProviderQuotaForecastView.swift`): title `.caption2` secondary, value `.caption.weight(.semibold).monospacedDigit()`, padding 8/6, `.secondary.opacity(0.1)` fill, radius 9, one accessibility element "title, value" | `MetricCell` (`ui/List.tsx`): `rounded-md bg-hover px-2 py-1.5`, label `text-[11px] text-muted`, value `text-xs font-semibold tabular-nums text-text` |
 | Meter | `ProgressRailView(percent:markerPercent:tint:height:)` (`Models/ProgressRailView.swift`): height 3 default, 8 for a window, 4 for a share; track `.secondary.opacity(0.18)`; marker 1.5pt primary | `QuotaMeter` (`features/insights/QuotaMeter.tsx`): `<div role="meter" aria-valuemin aria-valuemax aria-valuenow aria-label>` `relative h-2 overflow-hidden rounded-full bg-border`, fill `h-full rounded-full` + level class, marker `absolute inset-y-0 w-px bg-text` |
 | Meter tint | The server level through `ProviderQuotaWidgetPalette.arcColor` (healthy accent, warning orange, critical red, user-overridable); stale and unavailable orange | `LEVEL_FILL`: `healthy bg-accent`, `warning bg-warning`, `critical bg-error`, `stale`/`unavailable bg-muted` |
 | Forecast line | Reset label left (`.caption` secondary), forecast `Label` right tinted `ProviderQuotaForecastOutcome.tint` (safe green, warning orange) | Reset left, forecast right, `text-warning` only when warning, `data-forecast` |
-| Share rail | `ModelBreakdownRow`: `ProgressRailView(height: 4)` under the row | A right-aligned `tabular-nums` column; the rail follows when a Web share row is added |
+| Share rail | `ModelBreakdownRow`: `ProgressRailView(height: 4)` under the row | `QuotaMeter thin` (`METER_RAIL_THIN`): 4px tall and 84px wide at the end of a row, beside its figure |
 
 Metric cells are the one filled shape inside a list. They hold a label and a
 figure, never prose, never an action, and never nest.
@@ -147,9 +149,10 @@ Both clients follow the same chart contract (the `dataviz` rules):
 
 | Element | App | Web |
 | --- | --- | --- |
-| Plan or kind chip | `.caption2.weight(.medium)` secondary in a row, `.caption.weight(.medium)` in a detail header, padding 7/3, `Capsule().fill(Color(.tertiarySystemFill))` | `Badge tone="border-border text-muted"` |
-| Active or selected mark | `checkmark.circle.fill` `.caption.weight(.semibold)` green with an accessibility label in a row; a `Label` with the same icon in a detail header | `Badge tone="border-accent text-accent-text"` |
-| Status text | `.footnote` secondary beside a 7pt dot (green available, orange stale, red failed); retry notes `.caption` orange | `text-xs`; `text-warning` for stale, `text-error` for failures |
+| Plan or kind chip | `.caption2.weight(.medium)` secondary in a row, `.caption.weight(.medium)` in a detail header, padding 7/3, `Capsule().fill(Color(.tertiarySystemFill))` | `Badge tone="border-border text-muted"`, outside Settings, Profiles, Spaces, Logs and Connectors; there the word leads the row's second line instead |
+| Active or selected mark | `checkmark.circle.fill` `.caption.weight(.semibold)` green with an accessibility label in a row; a `Label` with the same icon in a detail header | `Mark` (`ui/Badge.tsx`): a 13px check and one or two words in `text-accent-text`, no border, no fill |
+| Status text | `.footnote` secondary beside a 7pt dot (green available, orange stale, red failed); retry notes `.caption` orange | `StatusDot` (`ui/Badge.tsx`): a 7px dot (`ok`, `warning`, `error`, `idle`) and its words in `text-xs text-muted`; the dot alone takes the state colour. Green text is never a state (`success-text` rule) |
+| Second line | `.footnote` secondary under the name | `text-xs text-muted`, one truncated line with the full text in `title`; a state leads it as a `StatusDot`. No `text-[11px]` and no coloured state text without a dot in Settings, Profiles, Spaces, Logs and Connectors |
 | Freshness | "Updated 3 min ago" `.caption2` secondary, clamped so a future timestamp reads as now | `As of … · Last checked …` `text-xs text-muted`, `text-warning` when stale |
 
 Chips carry one or two words. A chip never carries a sentence or a number
@@ -163,12 +166,13 @@ text moves to the start of the description line (`SkillRow`).
 | --- | --- | --- |
 | Loading | A small `ProgressView` in the section header or toolbar; existing rows stay | `LoadingState` (`compact` when a heading is already on screen); existing rows stay |
 | Refreshing | `ProgressView().controlSize(.small)` in the row header of the item being refreshed | The section's refresh `Button` is disabled and reads "Refreshing…" |
-| Empty | A `ContentUnavailableView` or one caption row with the server's reason | `EmptyState` with the server's reason |
+| Empty | A `ContentUnavailableView` or one caption row with the server's reason | `EmptyState` with the server's reason; inside a Settings group `EmptyState compact`, one muted line with no frame and an optional trailing `action` |
 | Error | `ContentUnavailableView` with the server's message and "Try Again" when nothing loaded; a tinted toolbar button with a popover when rows exist | `ErrorState` with `onRetry`, or with an alert's own wording and actions as `children`; an alert that asks for nothing is plain text with its `role`; never a blank pane |
 | Unavailable items | Grouped below the data rows under a header, one line each: name and reason | The `-unavailable` section with compact rows |
 
 `EmptyState` and `ErrorState` keep their dashed or alert frame because they
-ask for an action. No other state wears a frame.
+ask for an action. No other state wears a frame; `EmptyState compact` has none.
+
 
 ## 9. Copy
 
@@ -215,14 +219,17 @@ Decide an item's home before building it:
 ## 12. Settings and forms
 
 A Settings page is the section heading (`SettingsSection`) and a column of
-`SettingsGroup`s; every row is inside a group. Pages import their rows from
+`SettingsGroup`s (`SETTINGS_PAGE`); every row is inside a group. Pages import their rows from
 `web/packages/frontend/src/features/settings/SettingsRows.tsx` (or, for a page
 that reads no server setting, `SettingsGroup.tsx`) and write no layout classes.
+The content column is 640px wide at most, so a label stays near its control;
+Logs keeps the wider column its lines need.
 
 | Need | App | Web |
 | --- | --- | --- |
 | A titled group of rows | Pending the App sync (TAL-1695) | `SettingsGroup` (title is a noun; optional live `detail`, optional `action`) |
 | On or off, server setting | Pending the App sync (TAL-1695) | `SettingToggle` |
+| One of two to four values, each label 12 characters or fewer | Pending the App sync (TAL-1695) | `SettingSegmented` (`ui/Segmented.tsx`: a `radiogroup`, one Tab stop, arrow keys move the selection, the selected option filled) |
 | One of a few named values | Pending the App sync (TAL-1695) | `SettingSelect` |
 | An integer in a range | Pending the App sync (TAL-1695) | `SettingNumber` |
 | Free text or a list of lines | Pending the App sync (TAL-1695) | `SettingText` (the only row with a Save button, shown while the draft differs) |
@@ -234,10 +241,13 @@ that reads no server setting, `SettingsGroup.tsx`) and write no layout classes.
 | A visual choice (theme, skin, font size, width) | Pending the App sync (TAL-1695) | Picker tiles in a `SettingRow`; these tiles are the only bordered shapes on a Settings page |
 | A list of things with their own actions (providers, plugins, profiles) | Pending the App sync (TAL-1695) | `RowList` and `Row` (`ui/List.tsx`) with a `ContextMenu`, per §3 |
 | More than twelve list items | Pending the App sync (TAL-1695) | One filter input above the list; the filter is device-local state |
+| A provider or profile in a row or header | Pending the App sync (TAL-1695) | `Monogram` (`ui/Monogram.tsx`): its first letter on a 30px square (24px `sm`) on `bg-hover` |
 
 - A label names the thing controlled (§9).
 - An explanation goes in `hint`, which renders a `HelpTip`, never as text
   under the row.
+- A row may take an `icon` (a lucide component), drawn 18px in `text-muted`
+  before its label; every kit row accepts it.
 - Every write is optimistic with rollback through `useSettingField`; no page
   has a page-level Save.
 - A row the server did not send a field for is not rendered.
@@ -252,7 +262,51 @@ that reads no server setting, `SettingsGroup.tsx`) and write no layout classes.
   when its scope does not match the section's §11 group, or when a setting
   stored only in this browser sits outside "This device".
 
+### Buttons are symbols
+
+In Settings, Profiles, Spaces, Logs and Connectors a button shows a lucide
+symbol and no words. Words stay only on a dialog's confirm and cancel buttons,
+inside a `DialogFooter` (`ui/Dialog.tsx`), and inside segmented controls. The
+`word-button` UI rule fails on any other `<Button>` there.
+
+| Variant | Web (`IconButton`, `ui/Button.tsx`) | Use |
+| --- | --- | --- |
+| `default` | 32px square, hairline border | A row's or form's action |
+| `primary` | Accent fill | The one main action of a page, in its header |
+| `ghost` | No border, muted | Header and group-header actions, row menus |
+| `danger` | No border, error colour | Remove, delete, uninstall, disconnect |
+
+Every icon button has an `aria-label` and the shared `Tooltip` with the same
+words, and grows to a 44px target under a coarse pointer. A row's actions use
+`RowActionButtons` (`ui/RowActionsMenu.tsx`) over the same `RowAction` list
+its `RowContextMenu` shows with words. A link that looks like one (Open,
+Authorize) uses `iconButtonClass` inside the `Tooltip`. The action's words are
+its accessible name and tooltip; its symbol comes from this table, and an
+action not in it gets a row here in the same change:
+
+| Action | Icon | Action | Icon |
+| --- | --- | --- | --- |
+| Add, new, register | `plus` | Refresh, check now, retry | `refresh-cw` |
+| Update, update all, apply an update | `circle-arrow-up` | Install, import | `download` |
+| Edit, change, replace, choose | `pencil` | Remove, delete, uninstall | `trash-2` |
+| Save, set, submit, approve | `check` | Copy | `copy` |
+| Settings of an item | `settings-2` | More actions | `ellipsis` |
+| Open | `arrow-up-right` | Set key | `key-round` |
+| Sign in, authorize | `log-in` | Set up | `wrench` |
+| Use this profile | `arrow-left-right` | Restart | `rotate-cw` |
+| Stop, shut down | `power` | Reset, restore the default | `rotate-ccw` |
+| Play, preview | `play` | Back | `chevron-left` |
+| Sign out, log out | `log-out` | Clear, unset, cancel an inline form | `x` |
+| Set as default | `circle-check` | Search | `search` |
+| Browse the catalog | `store` | Details | `info` |
+| First page | `chevrons-left` | Next page | `chevron-right` |
+| Connect | `plug` | Disconnect | `unplug` |
+| Continue | `arrow-right` | Skip | `skip-forward` |
+| Summarize | `sparkles` | Attach | `paperclip` |
+| Show more | `chevron-down` | Show less | `chevron-up` |
+
 ## 13. Menus
+
 
 Menus are interaction surfaces (§14); every Web menu is built with `Menu` from
 `web/packages/frontend/src/ui/Menu.tsx`.

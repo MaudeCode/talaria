@@ -3,6 +3,7 @@ import type { ToolsTab, SettingsSection as Section } from '../../contracts/url'
 import { SECTION_LABEL } from './SettingsLayout'
 import { SETTINGS_INDEX } from './settingsIndex'
 import { LoadingState } from '../../ui/States'
+import { cn } from '../../ui/cn'
 import { useLocale } from '../../i18n/useLocale'
 import { HubHeadSlotsContext } from '../../shell/AppShell'
 
@@ -49,9 +50,10 @@ export function registerSettingsSection(section: Section, render: (props: Sectio
   SECTIONS[section] = render
 }
 
-/** A picker grid focuses its chosen tile; a Switch's id is on its hidden input, so the switch beside it takes focus. */
+/** A picker grid or segmented control focuses its chosen option; a Switch's id is on its hidden input, so the switch beside it takes focus. */
 function focusTarget(element: HTMLElement): HTMLElement | null {
-  if (element.getAttribute('role') === 'group') return element.querySelector<HTMLElement>('[aria-pressed="true"]') ?? element.querySelector<HTMLElement>('button')
+  const role = element.getAttribute('role')
+  if (role === 'group' || role === 'radiogroup') return element.querySelector<HTMLElement>('[aria-pressed="true"], [aria-checked="true"]') ?? element.querySelector<HTMLElement>('button')
   if (element.tabIndex < 0) return element.parentElement?.querySelector<HTMLElement>('[role="switch"]') ?? null
   return element
 }
@@ -104,7 +106,8 @@ export function SettingsSection({ section, row, visit, ...props }: { section: Se
   const [actions, setActions] = useState<HTMLElement | null>(null)
   return (
     <div ref={page} className="flex-1 min-h-0 overflow-y-auto">
-      <div className="settings-main w-full max-w-[820px] mx-auto min-w-0 pt-6 px-7 pb-12 max-[769px]:pt-4 max-[769px]:px-3.5 max-[769px]:pb-10">
+      {/* TAL-2131: the content column is 640px at most; Logs keeps the wide column its lines need. */}
+      <div className={cn('settings-main w-full mx-auto min-w-0 pt-6 px-7 pb-12 max-[769px]:pt-4 max-[769px]:px-3.5 max-[769px]:pb-10', section === 'logs' ? 'max-w-[820px]' : 'max-w-[696px] max-[769px]:max-w-[668px]')}>
         <div className="settings-section-head flex items-center justify-between gap-4 mb-5 pb-3.5 border-b border-border">
           <div ref={setHelp} className="flex min-w-0 items-center">
             <h1 className="settings-section-title text-[18px] font-semibold tracking-(--heading-tracking) text-text leading-[1.3] mb-1">{SECTION_LABEL[section]()}</h1>
