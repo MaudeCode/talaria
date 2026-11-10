@@ -94682,6 +94682,16 @@
             },
             "allowEmptyValue": true,
             "allowReserved": true
+          },
+          {
+            "name": "provider",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "TAL-2151: the chat's provider id; the read then carries `composer`."
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
           }
         ],
         "responses": {
@@ -95332,6 +95342,53 @@
                     "sidebar_can_pin": {
                       "type": "boolean",
                       "description": "TAL-1870: whether another source can be pinned; a pin this read does not list does not count."
+                    },
+                    "composer": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "source_id": {
+                              "type": "string"
+                            },
+                            "label": {
+                              "type": "string",
+                              "description": "The chip text: \"21% left\", else the window's detail, else the credit balance."
+                            },
+                            "percent_remaining": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "level": {
+                              "enum": [
+                                "healthy",
+                                "warning",
+                                "critical",
+                                "stale",
+                                "unavailable"
+                              ],
+                              "type": "string",
+                              "description": "The window's `display_level`."
+                            }
+                          },
+                          "required": [
+                            "source_id",
+                            "label",
+                            "percent_remaining",
+                            "level"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "TAL-2151: the composer chip's quota for `?provider=`: that provider's `provider_headline` source and its headline window; null when it has no source or no figure. Absent without `?provider=`."
                     },
                     "summary": {
                       "type": "object",

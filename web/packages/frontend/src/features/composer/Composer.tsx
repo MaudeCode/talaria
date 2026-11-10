@@ -14,8 +14,8 @@ import { showErrorToast } from '../toast/errorToast'
 import { AttachmentTray, pastedText, type PendingFile } from './Attachments'
 import { CommandPaletteList, useCommandPalette } from './CommandPalette'
 import { parseCommand, resolveCommand, runsOnServer, type CommandSuggestion } from './commands'
-import { ContextRing, type ContextFigures } from './chips'
-import { ComposerControls, hideComposerControl } from './ComposerControls'
+import { ContextRing, QuotaChip, type ContextFigures } from './chips'
+import { ComposerControls, chatModelChoice, hideComposerControl, quotaChipShown } from './ComposerControls'
 import { beginUpload, clearDraft, dropStagedFiles, finishUpload, moveStagedFiles, readLocalDraft, useDraftPersistence, useServerDraft, useStagedFiles } from './useDraft'
 import { createRecognition, dictationSupported, classifyDictationError, type DictationErrorKind } from '../voice/dictation'
 import { dictateLive, liveDictationErrorKind, liveDictationSupported, type LiveDictationHandle } from '../voice/liveDictation'
@@ -896,6 +896,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
               )}
               {!hide('hide_composer_mic') && (liveOffered || dictationSupported()) && <button type="button" className={cn('icon-btn mic-btn has-tooltip', dictating && 'active')} id="btnMic" data-tooltip={dictating ? m.voice_dictate_active() : m.voice_dictate()} aria-label={dictating ? m.voice_dictate_active() : m.voice_dictate()} aria-pressed={dictating} onClick={toggleDictation}><Mic size={16} aria-hidden="true" /></button>}
             </div>
+            {!room && quotaChipShown(settings) && <QuotaChip {...chatModelChoice(session, pendingChoices)} />}
             {!room && !hide('hide_composer_context') && <ContextRing {...context} />}
             {clarify && (
               <button type="button" onClick={() => clarify.send(value)} disabled={!canAnswer} className="send-btn has-tooltip has-tooltip--left" id="btnClarifySend" data-tooltip={clarify.index < clarify.total - 1 ? m.composer_clarify_next() : m.composer_clarify()} aria-label={clarify.index < clarify.total - 1 ? m.composer_clarify_next() : m.composer_clarify()}>

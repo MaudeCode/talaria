@@ -29,7 +29,6 @@
     "hide_composer_mobile_config": false,
     "hide_composer_model": false,
     "hide_composer_profile": false,
-    "hide_composer_quota_chip": false,
     "hide_composer_reasoning": false,
     "hide_composer_saved_prompts": false,
     "hide_composer_status": false,

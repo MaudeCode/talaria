@@ -906,6 +906,10 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(body).toMatchObject({ version: 1, scope_id: expectedScope, profile_id: 'default', requested_source_id: null, missing_source: false })
     const anthropicId = `qsrc_${createHash('sha256').update(`${expectedScope}\0anthropic\0provider`).digest('hex').slice(0, 32)}`
     expect(anthropic?.source_id).toBe(anthropicId)
+    // TAL-2151: `?provider=` adds the composer chip's quota for that provider, null for one without a source; a plain read has none.
+    expect(body).not.toHaveProperty('composer')
+    expect((await json(await s.get('/api/provider/quotas?provider=anthropic'))).composer).toEqual({ source_id: anthropicId, label: '88% left', percent_remaining: 88, level: 'healthy' })
+    expect((await json(await s.get('/api/provider/quotas?provider=zai'))).composer).toBeNull()
     const missing = await json(await s.get('/api/provider/quotas?source=qsrc_unknown'))
     expect(missing).toMatchObject({ requested_source_id: 'qsrc_unknown', missing_source: true, sources: [] })
     // The scope survives restarts: a second read answers the same id.

@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { createMemoryHistory, createRootRoute, createRoute, createRouter, Outlet, RouterProvider } from '@tanstack/react-router'
 
 // TAL-288: a plugin provider's group from the server catalog, listing a bare id another provider also lists.
 const PLUGIN_CATALOG = {
@@ -67,11 +68,11 @@ function toolsetsCatalog(choice: string[] | null, q = '') {
 }
 
 let modes: unknown = { modes: [{ mode: 'normal', available: true, reason: null }, { mode: 'ignore_config', available: true, reason: null }, { mode: 'safe', available: true, reason: null }] }
-vi.mock('../../api/endpoints', () => ({ fetchExecutionModes: vi.fn(() => Promise.resolve(modes)), fetchToolsetsCatalog: vi.fn((choice: string[] | null, _session?: string, q?: string) => Promise.resolve(toolsetsCatalog(choice, q))), fetchModels: vi.fn(() => Promise.resolve(catalog)), fetchWorkspaces: vi.fn(() => Promise.resolve(WORKSPACES)), setModelFavorite: vi.fn() }))
+vi.mock('../../api/endpoints', () => ({ fetchExecutionModes: vi.fn(() => Promise.resolve(modes)), fetchToolsetsCatalog: vi.fn((choice: string[] | null, _session?: string, q?: string) => Promise.resolve(toolsetsCatalog(choice, q))), fetchModels: vi.fn(() => Promise.resolve(catalog)), fetchWorkspaces: vi.fn(() => Promise.resolve(WORKSPACES)), setModelFavorite: vi.fn(), fetchProviderQuotas: vi.fn() }))
 vi.mock('../toast/errorToast', () => ({ showErrorToast: vi.fn() }))
-import { ExecutionModeChip, ModelChip, ReasoningChip, ToolsetsChip, WorkspaceChip } from './chips'
+import { ExecutionModeChip, ModelChip, QuotaChip, ReasoningChip, ToolsetsChip, WorkspaceChip } from './chips'
 import { Dialog } from '../../ui/Dialog'
-import { fetchExecutionModes, fetchModels, fetchToolsetsCatalog, setModelFavorite } from '../../api/endpoints'
+import { fetchExecutionModes, fetchModels, fetchProviderQuotas, fetchToolsetsCatalog, setModelFavorite } from '../../api/endpoints'
 import { showErrorToast } from '../toast/errorToast'
 import { ApiError } from '../../contracts/common'
 
@@ -693,5 +694,22 @@ describe('ExecutionModeChip (TAL-1040)', () => {
     renderMode({ value: 'ignore_config' })
     expect(screen.getByLabelText('Agent mode: Ignore profile config')).toBeInTheDocument()
     expect(screen.queryByRole('button')).toBeNull()
+  })
+})
+
+describe('QuotaChip (TAL-2151)', () => {
+  it('opens the provider\'s Settings page for the chat\'s model with the server\'s label', async () => {
+    catalog = PLUGIN_CATALOG
+    vi.mocked(fetchProviderQuotas).mockResolvedValue({ version: 1, computed_at: '2026-11-10T00:00:00Z', scope_id: 's', profile_id: 'default', active_provider: 'anthropic', requested_source_id: null, missing_source: false, sources: [], composer: { source_id: 'qsrc_a', label: '62% left', percent_remaining: 62, level: 'healthy' } })
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const root = createRootRoute({ component: () => <QueryClientProvider client={qc}><Outlet /></QueryClientProvider> })
+    const chat = createRoute({ getParentRoute: () => root, path: '/session/$sessionId', component: () => <QuotaChip model="claude-sonnet-4-6" optionId="@fake-sub:claude-sonnet-4-6" /> })
+    const provider = createRoute({ getParentRoute: () => root, path: '/settings/providers/$providerId', component: () => <p>provider page</p> })
+    const router = createRouter({ routeTree: root.addChildren([chat, provider]), history: createMemoryHistory({ initialEntries: ['/session/s1'] }) })
+    await router.load()
+    render(<RouterProvider router={router} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Provider quota: 62% left' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/settings/providers/fake-sub'))
+    expect(fetchProviderQuotas).toHaveBeenCalledWith(false, 'fake-sub')
   })
 })

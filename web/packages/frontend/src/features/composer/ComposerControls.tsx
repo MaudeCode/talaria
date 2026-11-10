@@ -3,7 +3,7 @@ import { SlidersHorizontal, TerminalSquare } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import { cn } from '../../ui/cn'
 import { ProfileMenu } from '../../shell/ProfileMenu'
-import { ContextRow, ExecutionModeChip, ModelChip, ReasoningChip, ToolsetsChip, WorkspaceChip, type ContextFigures } from './chips'
+import { ContextRow, ExecutionModeChip, ModelChip, QuotaChip, ReasoningChip, ToolsetsChip, WorkspaceChip, type ContextFigures } from './chips'
 import type { ComposerProps } from './Composer'
 
 type ControlsProps = Pick<ComposerProps, 'sessionId' | 'session' | 'settings' | 'pendingChoices' | 'onModelChange' | 'onReasoningChange' | 'reasoning' | 'reasoningLevels' | 'reasoningSupported' | 'onWorkspaceChange' | 'onNewWorktreeChat' | 'onRemoveWorktree' | 'onToolsetsChange' | 'terminalOpen' | 'onToggleTerminal'> & {
@@ -23,12 +23,20 @@ export function hideComposerControl(settings: ComposerProps['settings'], answeri
   return (answering && MESSAGE_ONLY_CONTROLS.has(key)) || !!settings?.[key]
 }
 
+/** The model a chat's chips show: the session's with the server's option id, else the unsaved chat's pending pick. */
+export function chatModelChoice(session: ComposerProps['session'], pendingChoices: ComposerProps['pendingChoices']) {
+  return session?.model ? { model: session.model, optionId: session.model_option_id ?? null } : { model: pendingChoices?.model ?? null, optionId: pendingChoices?.model ?? null }
+}
+
+/** TAL-2151: the provider quota chip shows while Settings' `show_quota_chip` is on. */
+export const quotaChipShown = (settings: ComposerProps['settings']) => settings?.show_quota_chip === true
+
 /** Stable control groups at the existing DOM positions around the input and send actions. */
 export function ComposerControls({ placement, sessionId, session, settings, pendingChoices, onExecutionModeChange, onModelChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, onWorkspaceChange, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, terminalOpen, onToggleTerminal, answering, stage, phone, collapsed, configOpen, setConfigOpen, context }: ControlsProps) {
   const hide = (key: string) => hideComposerControl(settings, answering, key)
   // TAL-1319: an owner chat is read-only locally, and its owner's actions say whether its level can change.
   const reasoningShown = (!session?.read_only || session.owner_attachment?.reasoning_control?.actions.includes('set')) && !hide('hide_composer_reasoning') && reasoningSupported
-  const modelChoice = { ...(session?.model ? { model: session.model, optionId: session.model_option_id ?? null } : { model: pendingChoices?.model ?? null, optionId: pendingChoices?.model ?? null }), servedModel: session?.served_model ?? null }
+  const modelChoice = { ...chatModelChoice(session, pendingChoices), servedModel: session?.served_model ?? null }
   const modeChip = !sessionId && onExecutionModeChange ? <ExecutionModeChip value={pendingChoices?.execution_mode ?? 'normal'} onChange={onExecutionModeChange} />
     : session?.execution_mode && session.execution_mode !== 'normal' ? <ExecutionModeChip value={session.execution_mode} /> : null
   if (placement === 'footer') return (
@@ -46,6 +54,7 @@ export function ComposerControls({ placement, sessionId, session, settings, pend
       {stage === 'burger' && reasoningShown && <ReasoningChip row value={reasoning} levels={reasoningLevels} onChange={onReasoningChange} />}
       {/* The chat header carries the terminal toggle above phone width. */}
       {stage === 'burger' && phone && <button type="button" className={cn('icon-btn', terminalOpen && 'active')} id="btnTerminal" title={m.composer_terminal_toggle()} aria-label={m.composer_terminal_toggle()} aria-pressed={terminalOpen} onClick={() => { setConfigOpen(false); onToggleTerminal() }}><TerminalSquare size={16} aria-hidden="true" /><span className="composer-mobile-config-value">{m.composer_terminal_toggle()}</span></button>}
+      {configOpen && stage === 'burger' && quotaChipShown(settings) && <QuotaChip row {...chatModelChoice(session, pendingChoices)} />}
       {configOpen && stage === 'burger' && !hide('hide_composer_context') && <ContextRow {...context} />}
     </div>
   )

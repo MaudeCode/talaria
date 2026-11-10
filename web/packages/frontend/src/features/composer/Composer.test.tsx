@@ -18,7 +18,7 @@ import { returnToComposer } from './composerReturn'
 import { commandCatalog } from '../../../../server/src/tools/commands.ts'
 import { showToast } from '../toast/toast'
 
-vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), cancelChat: vi.fn(), fetchStreamStatus: vi.fn(), fetchSession: vi.fn(), uploadFile: vi.fn(), rollbackUpload: vi.fn(), saveDraft: vi.fn(), fetchDraft: vi.fn(), steerChat: vi.fn(), startChat: vi.fn(), startBackground: vi.fn(), fetchBackgroundTasks: vi.fn(), fetchBackgroundResult: vi.fn(), askBtw: vi.fn(), fetchCommands: vi.fn(), execCommand: vi.fn(), fetchTranscribeCapability: vi.fn(), fetchExecutionModes: vi.fn(() => Promise.resolve({ modes: [{ mode: 'normal', available: true, reason: null, can_attach: true }, { mode: 'ignore_config', available: true, reason: null, can_attach: false }, { mode: 'safe', available: true, reason: null, can_attach: false }] } satisfies ExecutionModes)) }))
+vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), cancelChat: vi.fn(), fetchStreamStatus: vi.fn(), fetchSession: vi.fn(), uploadFile: vi.fn(), rollbackUpload: vi.fn(), saveDraft: vi.fn(), fetchDraft: vi.fn(), steerChat: vi.fn(), startChat: vi.fn(), startBackground: vi.fn(), fetchBackgroundTasks: vi.fn(), fetchBackgroundResult: vi.fn(), askBtw: vi.fn(), fetchCommands: vi.fn(), fetchModels: vi.fn(() => Promise.reject(new Error('offline'))), fetchProviderQuotas: vi.fn(() => Promise.reject(new Error('offline'))), execCommand: vi.fn(), fetchTranscribeCapability: vi.fn(), fetchExecutionModes: vi.fn(() => Promise.resolve({ modes: [{ mode: 'normal', available: true, reason: null, can_attach: true }, { mode: 'ignore_config', available: true, reason: null, can_attach: false }, { mode: 'safe', available: true, reason: null, can_attach: false }] } satisfies ExecutionModes)) }))
 // jsdom has no EventSource: a followed turn opens a stream handle that does nothing.
 vi.mock(import('../toast/toast'), async (importOriginal) => ({ ...(await importOriginal()), showToast: vi.fn() }))
 vi.mock(import('../../api/sse'), async (importOriginal) => ({ ...(await importOriginal()), openChatStream: vi.fn(() => ({ close: () => undefined, readyState: () => 0 })) }))
@@ -440,6 +440,44 @@ describe('Composer', () => {
     // jsdom has no matchMedia; the composer asks whether it is on a phone-width viewport.
     window.matchMedia = vi.fn(() => ({ matches: false, addEventListener: noop, removeEventListener: noop })) as unknown as typeof window.matchMedia
     globalThis.ResizeObserver = class { observe = noop; unobserve = noop; disconnect = noop }
+  })
+
+  describe('provider quota chip (TAL-2151)', () => {
+    const catalog = { default_model: 'claude-opus-4.7', default_option_id: 'claude-opus-4.7', groups: [
+      { provider: 'Anthropic', provider_id: 'anthropic', models: [{ id: 'claude-opus-4.7', label: 'Claude Opus 4.7', provider_id: 'anthropic', bare_id: 'claude-opus-4.7' }] },
+      { provider: 'DeepSeek', provider_id: 'deepseek', models: [{ id: '@deepseek:deepseek-chat', label: 'DeepSeek Chat', provider_id: 'deepseek', bare_id: 'deepseek-chat' }] },
+    ] }
+    const quotas = (composer: unknown) => ({ version: 1, computed_at: '2026-11-10T00:00:00Z', scope_id: 's', profile_id: 'default', active_provider: 'anthropic', requested_source_id: null, missing_source: false, sources: [], composer })
+    const chat = (optionId: string): Session => ({ ...writable, is_streaming: false, model: optionId, model_option_id: optionId })
+    beforeEach(() => {
+      vi.mocked(api.fetchModels).mockResolvedValue(catalog)
+      vi.mocked(api.fetchProviderQuotas).mockReset().mockImplementation((_refresh, provider) => Promise.resolve(quotas(provider === 'anthropic' ? { source_id: 'qsrc_a', label: '21% left', percent_remaining: 21, level: 'warning' } : null) as never))
+    })
+
+    it('shows the server\'s label and level for the chat\'s provider while the setting is on', async () => {
+      renderComposer(chat('claude-opus-4.7'), null, noop, { show_quota_chip: true })
+      const chip = await screen.findByRole('button', { name: 'Provider quota: 21% left' })
+      expect(chip).toHaveAttribute('data-level', 'warning')
+      expect(chip.querySelector('svg')).toHaveClass('text-warning')
+      expect(api.fetchProviderQuotas).toHaveBeenCalledWith(false, 'anthropic')
+    })
+
+    it('renders nothing and reads no quota while the setting is off', async () => {
+      renderComposer(chat('claude-opus-4.7'), null, noop, { show_quota_chip: false })
+      await waitFor(() => expect(api.fetchModels).toHaveBeenCalled())
+      await act(async () => { await Promise.resolve() })
+      expect(document.getElementById('composerQuotaChip')).toBeNull()
+      expect(api.fetchProviderQuotas).not.toHaveBeenCalled()
+    })
+
+    it('leaves no chip and no gap for a provider the server has no quota for', async () => {
+      renderComposer(chat('@deepseek:deepseek-chat'), null, noop, { show_quota_chip: true })
+      await waitFor(() => expect(api.fetchProviderQuotas).toHaveBeenCalledWith(false, 'deepseek'))
+      await act(async () => { await Promise.resolve() })
+      expect(document.getElementById('composerQuotaChip')).toBeNull()
+      // The ring and send button are the right-hand group's only entries: the chip adds no empty element to its flex gap.
+      expect(Array.from(document.querySelector('.composer-right')?.children ?? []).map((e) => e.className.split(' ')[0])).not.toContain('')
+    })
   })
 
   it('clears an existing submitted draft before start resolves and preserves newer typing', async () => {

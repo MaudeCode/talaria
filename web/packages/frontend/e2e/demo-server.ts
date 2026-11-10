@@ -79,6 +79,9 @@ async function seed(server: Awaited<ReturnType<typeof discussionServer>>['server
   sidecar.respond('plugins.list', () => ({ plugins: DEMO_PLUGINS, supported_hooks: [] }))
   sidecar.respond('plugins.settings', () => ({ supported: true, plugins: [{ key: 'meshy', fields: [{ key: 'quality', type: 'enum', label: 'Quality', description: '', required: false, choices: ['draft', 'final'], value: 'draft' }] }, { key: 'image_gen/fal', fields: [{ key: 'model', type: 'string', label: 'Model', description: '', required: false, value: 'flux-2-pro' }] }] }))
   sidecar.respond('plugins.auto_update', () => ({ supported: true, auto_apply: true, check_hours: 6 }))
+  // TAL-2151: an Anthropic 5h window at 79% used, and the composer's quota chip on, so the chat page shows "21% left".
+  sidecar.respond('usage.account', (params) => ({ snapshot: { provider: params.provider, available: true, title: 'Claude limits', plan: 'max', windows: [{ label: '5h', used_percent: 79 }], details: [] } }))
+  await server.deps.settings.save({ show_quota_chip: true })
   server.deps.agentConfig.invalidate()
   server.deps.catalog.invalidate()
   const workspace = join(server.state, 'workspace')
@@ -104,7 +107,7 @@ async function seed(server: Awaited<ReturnType<typeof discussionServer>>['server
   const saveSession = (data: Record<string, unknown>) => server.deps.sessionStore.save(new Session({ profile: 'default', workspace, ...data }, { workspace, model: null }))
 
   await saveSession({
-    session_id: DEMO_SESSION_ID, title: 'Audit the settings pages', model: 'claude-sonnet-4-6', pinned: true, input_tokens: 48_200, output_tokens: 3_900, estimated_cost: 0.31, created_at: now - 3600, updated_at: now - 600,
+    session_id: DEMO_SESSION_ID, title: 'Audit the settings pages', model: 'claude-sonnet-4-6', model_provider: 'anthropic', pinned: true, input_tokens: 48_200, output_tokens: 3_900, estimated_cost: 0.31, created_at: now - 3600, updated_at: now - 600,
     messages: [
       { role: 'user', content: 'Audit the settings pages and tell me which ones need work.', timestamp: now - 3600 },
       { role: 'assistant', content: '', reasoning: 'Read the section components first, then compare each with the design system.', tool_calls: [toolCall('read', 'read_file', { path: 'src/features/settings/ChatSection.tsx' }), toolCall('grep', 'terminal', { command: 'grep -rn "settingKey" src/features/settings | wc -l' })], timestamp: now - 3590 },

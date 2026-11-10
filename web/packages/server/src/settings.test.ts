@@ -166,12 +166,13 @@ describe('load', () => {
   })
 
   it('applies the legacy-key migrations', async () => {
-    write({ activity_feed_expanded_default: 1, busy_input_mode: 'queue', simplified_tool_calling: false, assistant_language: 'fr', virtualize_transcript: true, onboarding_completed: true })
+    write({ activity_feed_expanded_default: 1, busy_input_mode: 'queue', simplified_tool_calling: false, assistant_language: 'fr', hide_composer_quota_chip: true, virtualize_transcript: true, onboarding_completed: true })
     const s = (await store().load())
     expect(s.worklog_details_expanded_default).toBe(true)
     expect(s.default_message_mode).toBe('queue')
     expect(s).not.toHaveProperty('busy_input_mode')
     expect(s).not.toHaveProperty('assistant_language')
+    expect(s).not.toHaveProperty('hide_composer_quota_chip')
     expect(s.simplified_tool_calling).toBe(true)
     expect(s.virtualize_transcript).toBe(false)
     // Established install without the CLI-sessions key is grandfathered off.

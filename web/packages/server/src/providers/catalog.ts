@@ -256,6 +256,24 @@ export function quotaSummary(providers: Dict[], defaultProvider: string | null, 
   }
 }
 
+/**
+ * TAL-2151: the composer chip's quota for `provider`: its `provider_headline` source's headline window as "21% left", else
+ * the window's own detail, else its credit balance, at the level that window's meter shows. Null when the provider has no
+ * source, or its source has no figure (an unsupported provider, or an unavailable read with nothing cached).
+ */
+export function composerQuota(rows: QuotaSourceRow[], provider: string): { source_id: string; label: string; percent_remaining: number | null; level: QuotaLevel } | null {
+  const id = canonicaliseProviderId(provider)
+  const s = rows.find((r) => r.provider_headline === true && canonicaliseProviderId(r.provider_id) === id)
+  if (!s) return null
+  const i = s.headline_window_index as number | null | undefined
+  const w = i == null ? undefined : (s.windows as (ClassifiedQuotaWindow & { display_level?: QuotaLevel; detail?: unknown })[] | undefined)?.[i]
+  const left = finite(w?.remaining_percent)
+  const credits = finite(dict(s.quota).limit_remaining)
+  const label = left !== null ? `${String(Math.round(left))}% left` : str(w?.detail) || (credits !== null ? `${credits.toLocaleString('en-US', { maximumFractionDigits: 2 })} credits left` : '')
+  if (!label) return null
+  return { source_id: s.source_id, label, percent_remaining: left, level: w?.display_level ?? (s.display_level as QuotaLevel | undefined) ?? 'unavailable' }
+}
+
 /** TAL-2135: marks each provider's `provider_headline` source: the one whose headline window has the least remaining, else its first. */
 export function withProviderHeadlines<T extends QuotaSourceRow>(rows: T[]): (T & { provider_headline: boolean })[] {
   const left = (s: T) => {

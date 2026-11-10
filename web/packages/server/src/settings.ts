@@ -31,7 +31,7 @@ const CHOSEN_ONLY_KEYS = new Set([...SETTINGS_SPEECH_KEYS, 'language'])
  */
 const CHAT_SWITCHES_MARKER = 'chat_switches_migrated'
 const CHAT_SWITCHES = ['show_busy_placeholder_hint', 'session_endless_scroll'] as const
-const LEGACY_DROP_KEYS = new Set(['assistant_language', 'bubble_layout', 'default_model', 'activity_feed_expanded_default', 'simplified_tool_calling'])
+const LEGACY_DROP_KEYS = new Set(['assistant_language', 'bubble_layout', 'default_model', 'activity_feed_expanded_default', 'simplified_tool_calling', 'hide_composer_quota_chip'])
 export const SETTINGS_THEME_VALUES = new Set(['light', 'dark', 'system'])
 export const SETTINGS_SKIN_VALUES = new Set([
   'default', 'ares', 'mono', 'graphite', 'slate', 'poseidon', 'sisyphus', 'charizard', 'sienna', 'catppuccin', 'nous',
@@ -111,7 +111,6 @@ export function settingsDefaults(opts: { defaultWorkspace: string; botName: stri
     hide_composer_workspace: false,
     hide_composer_mobile_config: false,
     hide_composer_model: false,
-    hide_composer_quota_chip: false,
     hide_composer_reasoning: false,
     hide_composer_toolsets: false,
     hide_composer_status: false,

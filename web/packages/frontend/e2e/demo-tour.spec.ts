@@ -79,6 +79,7 @@ async function dataPages(page: Page, info: TestInfo, theme: Theme) {
     }
     await visit('chat', `/session/${DEMO_SESSION_ID}`, 'Filed two tickets and ordered them so they cannot conflict.')
     if (desktop) {
+      await expect(page.getByRole('button', { name: 'Provider quota: 21% left' })).toBeVisible()
       await page.locator('#composerModelChip').click()
       await expect(page.getByRole('option', { name: /^Claude Sonnet 4\.6/ }).first()).toBeVisible()
       await check('model-menu', false)
