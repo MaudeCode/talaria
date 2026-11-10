@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "The Toolsets menu in the Talaria Web composer applies each toolset as you tick it, shows each toolset's description, lists unavailable toolsets separately, and has a search field.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

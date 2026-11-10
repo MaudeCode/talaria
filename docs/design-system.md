@@ -287,7 +287,6 @@ list of the Web violations that remain.
 | The App daily chart formats dates with bare `.dateTime`, not the environment locale and zone | TAL-1765 |
 | Stale and unavailable meters are orange on the App (palette default) and muted on Web | Decide with TAL-1533 (server-owned presentation state) |
 | Web Settings pages not yet on the kit (§12) | TAL-2077 (Providers), TAL-2079 (Notifications, Speech), TAL-2082 (Plugins) |
-| The Toolsets menu holds a form with a Save button (§13) | TAL-2096 |
 | The App Settings root is not grouped by scope (§11, §12) | TAL-1695 |
 
 ## 16. Checklist for a UI change

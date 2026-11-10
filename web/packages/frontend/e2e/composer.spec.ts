@@ -844,9 +844,11 @@ test('an empty phone composer keeps its strip while each chip opens and applies,
 
   await msg.tap()
   await strip.locator('.composer-toolsets-chip').tap()
-  await page.getByRole('checkbox', { name: 'terminal' }).tap()
-  await page.getByRole('button', { name: 'Save' }).tap()
-  await expect(strip.locator('.composer-toolsets-chip')).toContainText('web, terminal')
+  await page.getByRole('menuitemcheckbox', { name: /^terminal/ }).tap()
+  await expect(strip.locator('.composer-toolsets-chip')).toContainText('2 toolsets')
+  // A toggle leaves the menu open; closing it hands focus back to the chip, so the strip stays.
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('menu')).toHaveCount(0)
 
   await msg.tap()
   await strip.locator('.composer-execution-mode-chip').tap()
@@ -860,7 +862,7 @@ test('an empty phone composer keeps its strip while each chip opens and applies,
   await shot('resting')
 
   await msg.tap()
-  await strip.getByRole('button', { name: /default/ }).tap()
+  await strip.getByRole('button', { name: 'Switch to this profile: default' }).tap()
   const switched = page.waitForRequest((req) => req.url().endsWith('/api/profile/switch'))
   await page.getByRole('menuitemradio', { name: /research/ }).tap()
   expect((await switched).postDataJSON()).toMatchObject({ name: 'research' })
@@ -886,7 +888,7 @@ test('the composer menus open upward under their name, check the chosen row, and
     { name: 'Switch workspace', trigger: strip.locator('.composer-workspace-chip'), chosen: false },
     { name: 'Session toolsets', trigger: strip.locator('.composer-toolsets-chip'), chosen: false },
     { name: 'Agent mode', trigger: strip.locator('.composer-execution-mode-chip'), chosen: true },
-    { name: 'Profile', trigger: strip.getByRole('button', { name: /default/ }), chosen: true },
+    { name: 'Profile', trigger: strip.getByRole('button', { name: 'Switch to this profile: default' }), chosen: true },
   ]
   for (const { name, trigger, chosen } of menus) {
     // At phone width the footer folds Reasoning into the config panel once it fits.
@@ -948,7 +950,7 @@ test('a composer menu whose chip sits near the right edge stays inside a narrow 
   await page.route('**/api/profiles', (route) => route.fulfill({ json: { profiles: [{ name: 'default', is_default: true }, { name: 'research' }], active: 'default' } }))
   await page.goto('/')
   await page.locator('#msg').click()
-  const trigger = page.locator('.composer-strip').getByRole('button', { name: /default/ })
+  const trigger = page.locator('.composer-strip').getByRole('button', { name: 'Switch to this profile: default' })
   await trigger.click()
   const menu = page.getByRole('menu')
   await expect(menu.getByRole('menuitemradio', { name: 'default', exact: true })).toBeVisible()
