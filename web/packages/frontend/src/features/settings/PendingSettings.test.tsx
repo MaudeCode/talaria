@@ -16,7 +16,7 @@ import { showToast } from '../toast/toast'
 
 vi.mock('../../api/endpoints', () => ({ fetchSettings: vi.fn(), saveSettings: vi.fn(), fetchModels: vi.fn(), fetchAuxiliaryModels: vi.fn(), fetchAgentHealth: vi.fn(), restartAgent: vi.fn() }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
-const initial = { bot_name: 'Hermes', send_key: 'enter', pinned_sessions_limit: 3, structured_code_auto_tree_lines: 40, max_tokens: null, show_cli_sessions: false, sound_enabled: false }
+const initial = { bot_name: 'Hermes', send_key: 'enter', pinned_sessions_limit: 3, max_tokens: null, show_cli_sessions: false, sound_enabled: false }
 let user: UserEvent
 
 beforeEach(() => {
@@ -48,8 +48,6 @@ it('renders actual preference and conversation controls before their writes fini
   }
   fireEvent.change(document.getElementById('settingsPinnedLimit')!, { target: { value: '12' } })
   expect(document.getElementById('settingsPinnedLimit')).toHaveValue(12)
-  fireEvent.change(document.getElementById('settingsStructuredCodeAutoLines')!, { target: { value: '80' } })
-  expect(document.getElementById('settingsStructuredCodeAutoLines')).toHaveValue(80)
 })
 
 it('shows the prepared compaction choice at once and rolls back when the server refuses it (TAL-1825)', async () => {
