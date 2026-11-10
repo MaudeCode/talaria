@@ -345,8 +345,9 @@ export class SettingsStore {
   async importModelFavorites(profile: string, favorites: ModelFavorite[]): Promise<{ imported: boolean; favorites: ModelFavorite[] }> {
     let imported = false
     const result = await this.updateFavorites(profile, (list) => {
+      // Set per attempt: a revision retry that finds another server's list reports that import as not ours.
+      imported = list === null
       if (list !== null) return list
-      imported = true
       return favorites.reduce<ModelFavorite[]>((out, f) => (out.some((o) => sameFavorite(o, f)) ? out : [...out, { provider_id: f.provider_id, model: f.model }]), [])
     })
     return { imported, favorites: result }

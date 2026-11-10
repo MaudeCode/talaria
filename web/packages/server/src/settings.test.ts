@@ -470,4 +470,18 @@ describe('settings policies and revision retries', () => {
     expect(writes).toHaveBeenCalledTimes(2)
     expect(changed).toHaveBeenCalledTimes(1)
   })
+
+  it('reports a favorites import another server won during a revision conflict as not imported (TAL-1857)', async () => {
+    const documents = new JsonDocuments(dir)
+    const settings = store({}, documents)
+    write({ theme: 'dark' })
+    const winner = [{ provider_id: 'anthropic', model: 'claude-opus-4-7' }]
+    const put = documents.put.bind(documents)
+    vi.spyOn(documents, 'put').mockImplementationOnce(async (namespace, key, _value, expected) => {
+      await put(namespace, key, { theme: 'dark', model_favorites_by_profile: { default: winner } }, expected)
+      throw new RevisionConflict(key)
+    })
+    expect(await settings.importModelFavorites('default', [{ provider_id: 'openai', model: 'gpt-5.5' }])).toEqual({ imported: false, favorites: winner })
+    expect(onDisk().model_favorites_by_profile).toEqual({ default: winner })
+  })
 })
