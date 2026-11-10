@@ -4,10 +4,11 @@ import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { useSaveSettings } from '../../app/queries'
-import { Check, X } from 'lucide-react'
+import { Check, Wallet, X } from 'lucide-react'
 import { IconButton } from '../../ui/Button'
 import { StatusDot, type DotState } from '../../ui/Badge'
 import { TextInput } from '../../ui/Field'
+import { SettingRow } from './SettingsGroup'
 import { showToast } from '../toast/toast'
 import { isDefiniteRefusal } from '../../contracts/common'
 import { cn } from '../../ui/cn'
@@ -15,10 +16,13 @@ import { cn } from '../../ui/cn'
 const LEVEL_FILL = { ok: 'bg-accent', warn: 'bg-warning', over: 'bg-error' } as const
 const LEVEL_DOT: Record<keyof typeof LEVEL_FILL, DotState> = { ok: 'ok', warn: 'warning', over: 'error' }
 
-/** OpenRouter daily spend, monthly pace, and budget standing; every value is a `/api/provider/cost-history` field (TAL-412). */
+/** The OpenRouter cost history every Providers surface reads (TAL-412): one cache entry, a minute of freshness; `enabled` once OpenRouter has a key. */
+export const useOpenRouterCostHistory = (enabled = true) => useQuery({ queryKey: keys.providerCostHistory, queryFn: api.fetchOpenRouterCostHistory, staleTime: 60_000, enabled })
+
+/** OpenRouter daily spend, monthly pace, and budget standing; every value is a `/api/provider/cost-history` field (TAL-412). TAL-2135: the budget is a kit row. */
 export function OpenRouterCost() {
   const qc = useQueryClient()
-  const history = useQuery({ queryKey: keys.providerCostHistory, queryFn: api.fetchOpenRouterCostHistory, staleTime: 60_000 })
+  const history = useOpenRouterCostHistory()
   const save = useSaveSettings()
   const [draft, setDraft] = useState<string | null>(null)
   // A budget saved (or with an unknown outcome) whose reread failed: the next successful read of the history settles it.
@@ -79,12 +83,15 @@ export function OpenRouterCost() {
       ) : (
         <div className="text-xs text-muted">{m.provider_cost_not_enough_data()}</div>
       )}
-      <form className="flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); const n = Number.parseFloat(value); if (Number.isFinite(n) && n > 0) saveBudget(n, value) }}>
-        <label htmlFor="provider-cost-budget" className="text-xs text-muted">{m.provider_cost_budget_label()}</label>
-        <span className="text-xs text-muted" aria-hidden="true">$</span>
-        <div className="w-28"><TextInput id="provider-cost-budget" type="number" min="0.01" step="0.01" inputMode="decimal" value={value} placeholder={m.provider_cost_budget_placeholder()} onChange={(e) => setDraft(e.target.value)} /></div>
-        <IconButton type="submit" variant="default" label={m.provider_cost_budget_set()}><Check aria-hidden="true" /></IconButton>
-        {budget !== null && <IconButton variant="ghost" label={m.provider_cost_budget_clear()} onClick={() => { setDraft(''); saveBudget(null, '') }}><X aria-hidden="true" /></IconButton>}
+      <form onSubmit={(e) => { e.preventDefault(); const n = Number.parseFloat(value); if (Number.isFinite(n) && n > 0) saveBudget(n, value) }}>
+        <SettingRow label={m.provider_cost_budget_label()} htmlFor="provider-cost-budget" icon={Wallet}>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted" aria-hidden="true">$</span>
+            <div className="w-28"><TextInput id="provider-cost-budget" type="number" min="0.01" step="0.01" inputMode="decimal" value={value} placeholder={m.provider_cost_budget_placeholder()} onChange={(e) => setDraft(e.target.value)} /></div>
+            <IconButton type="submit" variant="default" label={m.provider_cost_budget_set()}><Check aria-hidden="true" /></IconButton>
+            {budget !== null && <IconButton variant="ghost" label={m.provider_cost_budget_clear()} onClick={() => { setDraft(''); saveBudget(null, '') }}><X aria-hidden="true" /></IconButton>}
+          </div>
+        </SettingRow>
       </form>
       {budget !== null && level && h.budget_percent !== null && h.budget_percent !== undefined && (
         <div className="flex items-center gap-2" data-budget-level={level}>

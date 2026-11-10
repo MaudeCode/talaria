@@ -216,7 +216,9 @@ function costHistoryView(rows: CostSnapshot[], days: number, budget: number | nu
   const maxDelta = Math.max(...deltas.map((d) => d ?? 0), 1e-9)
   const pace = known.length ? finite((known.reduce((a, b) => a + b, 0) / known.length) * 30) : null
   const budgetPercent = pace !== null && pace > 0 && budget !== null && budget > 0 ? finite(Math.round((pace / budget) * 100)) : null
+  const latest = window.map((e, i) => ({ date: e.date, spend: deltas[i] ?? null })).findLast((d): d is { date: string; spend: number } => d.spend !== null) ?? null
   return {
+    latest_day: latest,
     snapshots: window.map((e, i) => {
       const delta = deltas[i] ?? null
       return { date: e.date, used: e.used, delta, bar_percent: delta === null ? 0 : Number(Math.max((delta / maxDelta) * 100, delta > 0 ? 2 : 0).toFixed(1)) }
@@ -226,6 +228,46 @@ function costHistoryView(rows: CostSnapshot[], days: number, budget: number | nu
     budget_percent: budgetPercent,
     budget_level: budgetPercent === null ? null : budgetPercent >= 100 ? 'over' : budgetPercent >= 80 ? 'warn' : 'ok',
   }
+}
+
+/** TAL-2135: the spend of the UTC month `month` (`YYYY-MM`): the sum of its days' deltas, null when none is known. */
+function monthSpend(rows: CostSnapshot[], month: string): number | null {
+  const deltas = (costHistoryView(rows, rows.length, null).snapshots as { date: string; delta: number | null }[])
+    .flatMap((s) => (s.date.startsWith(month) && s.delta !== null ? [s.delta] : []))
+  return deltas.length ? finite(Math.round(deltas.reduce((a, b) => a + b, 0) * 100) / 100) : null
+}
+
+/**
+ * TAL-2135: Settings › Providers' figures: how many providers are configured, the quota window with the least left across
+ * every source (its meter level), the month's OpenRouter spend, and the name of the provider serving the default.
+ */
+export function quotaSummary(providers: Dict[], defaultProvider: string | null, sources: QuotaSourceRow[], spend: number | null) {
+  let lowest: { source_id: string; percent_remaining: number; level: QuotaLevel } | null = null
+  for (const s of sources) {
+    for (const w of (s.windows ?? []) as (ClassifiedQuotaWindow & { display_level?: QuotaLevel })[]) {
+      const left = finite(w.remaining_percent)
+      if (left !== null && (lowest === null || left < lowest.percent_remaining)) lowest = { source_id: s.source_id, percent_remaining: left, level: w.display_level ?? w.urgency.remaining }
+    }
+  }
+  const current = providers.find((p) => p.id === defaultProvider)
+  return {
+    connected: providers.filter((p) => p.configured === true).length, lowest, spend_month: spend, spend_currency: spend === null ? null : 'USD',
+    default_provider_name: defaultProvider ? str(current?.display_name) || displayName(defaultProvider) : null,
+  }
+}
+
+/** TAL-2135: marks each provider's `provider_headline` source: the one whose headline window has the least remaining, else its first. */
+export function withProviderHeadlines<T extends QuotaSourceRow>(rows: T[]): (T & { provider_headline: boolean })[] {
+  const left = (s: T) => {
+    const i = s.headline_window_index as number | null | undefined
+    return finite((i == null ? undefined : (s.windows as { remaining_percent?: unknown }[] | undefined)?.[i])?.remaining_percent) ?? Infinity
+  }
+  const best = new Map<string, T>()
+  for (const s of rows) {
+    const current = best.get(s.provider_id)
+    if (!current || left(s) < left(current)) best.set(s.provider_id, s)
+  }
+  return rows.map((s) => ({ ...s, provider_headline: best.get(s.provider_id) === s }))
 }
 
 const FIVE_HOUR_WINDOW_S = 18_000
@@ -1843,7 +1885,13 @@ export class ProviderCatalog {
     if (currentSource !== source) { poolUnknown = true; sources = [] }
     const latestMembership = this.lastQuotaSources.get(cacheKey)?.membership
     const availability = this.availability(currentSource, !poolUnknown, sources.length > 0)
-    return { availability, version: 1, computed_at: isoAt(at), scope_id: scopeId, profile_id: profile, active_provider: active, requested_source_id: requested, missing_source: Boolean(requested && !poolUnknown && !latestMembership?.has(requested)), retained_display_level: availability.authoritative ? null : availability.status === 'stale' ? 'stale' : 'unavailable', sources: sources.map(withQuotaDisplay) }
+    const rows = withProviderHeadlines(sources.map(withQuotaDisplay))
+    // A `?source=` read answers one row, so only a full read carries the page's figures.
+    const openRouter = status.providers.some((p) => p.id === 'openrouter' && p.configured === true)
+    // The provider the default model routes to, resolved as `buildModels` resolves `default_provider_id`.
+    const defaultProvider = requested ? null : parseProviderQualifiedModel(effectiveDefaultModel(await this.deps.config.readResolved(profileHome), this.deps.env))?.[1] ?? active
+    const summary = requested ? undefined : quotaSummary(status.providers, defaultProvider, rows, openRouter ? monthSpend(this.readCostSnapshots(profileHome), isoAt(at).slice(0, 7)) : null)
+    return { availability, version: 1, ...(summary ? { summary } : {}), computed_at: isoAt(at), scope_id: scopeId, profile_id: profile, active_provider: active, requested_source_id: requested, missing_source: Boolean(requested && !poolUnknown && !latestMembership?.has(requested)), retained_display_level: availability.authoritative ? null : availability.status === 'stale' ? 'stale' : 'unavailable', sources: rows }
   }
 
   /**

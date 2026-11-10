@@ -119,6 +119,8 @@ async function settingsPages(page: Page, info: TestInfo, theme: Theme) {
     ...ToolsTabSchema.options.map((tab) => ({ name: `tools-${tab}`, path: `tools?tab=${tab}`, tab })),
     // TAL-2085: a profile's detail page.
     { name: 'profiles-detail', path: 'profiles?name=default', tab: undefined },
+    // TAL-2135: a configured provider's own page.
+    { name: 'providers-anthropic', path: 'providers/anthropic', tab: undefined },
   ]
   try {
     if (theme === 'light') await pickLightTheme(page, server.base)

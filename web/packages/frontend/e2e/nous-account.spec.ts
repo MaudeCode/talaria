@@ -21,9 +21,10 @@ test('Nous result remains readable, survives reload, and reconnect is an explici
   await page.route('**/api/connectors/operations/reconnect-1', (route) => route.fulfill({ json: { op_id: 'reconnect-1', settled: false, outcome: null, can_continue: false, tool_call_id: null, targets: [
     { name: 'gmail', title: 'Gmail', kind: 'connector', state: 'initiated', detail: '', connect_url: 'https://vendor.example.test/authorize/gmail', launch: null, actions: ['skip'], env_fields: [] },
   ] } }))
-  await page.goto('/settings/providers')
+  // TAL-2135: a configured provider's sign-in lives on its own page.
+  await page.goto('/settings/providers/nous')
   await settle(page)
-  const row = page.locator('[data-provider="nous"]')
+  const row = page.locator('[data-group="sign-in"]')
   await expect(row).not.toContainText('u***@example.test')
   await page.screenshot({ path: testInfo.outputPath(`nous-without-result-${testInfo.project.name}.png`) })
   result = fixtures.moved

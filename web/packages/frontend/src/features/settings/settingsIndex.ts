@@ -13,7 +13,7 @@ export type SettingScope = 'device' | 'interface' | 'profile' | 'server'
  * its control's. A row shown only under a condition names in `shownWith` the control on its page that shows it, or the
  * nearest row beside it, so a jump to it while hidden lands there.
  */
-export interface SettingsIndexEntry { section: SettingsSection; tab?: ToolsTab; group: () => string; id: string; label: () => string; scope: SettingScope; shownWith?: string }
+export interface SettingsIndexEntry { section: SettingsSection; tab?: ToolsTab; group: () => string; id: string; label: () => string; scope: SettingScope; shownWith?: string; /** TAL-2135: the row sits on each listed item's own page (a provider's), so a jump lands on the group that lists them. */ item?: true }
 
 type Row = readonly [id: string, label: () => string, shownWith?: string]
 const rows = (section: SettingsSection, group: () => string, scope: SettingScope, list: readonly Row[], tab?: ToolsTab): SettingsIndexEntry[] =>
@@ -93,6 +93,8 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
   ...rows('models', m.settings_group_main_model, 'profile', [
     ['settingsModel', m.settings_label_model], ['settingsModelSpeed', m.settings_model_speed, 'settingsModel'], ['settingsReasoningEffort', m.settings_reasoning_effort, 'settingsModel'], ['settingsShowThinking', m.settings_show_thinking, 'settingsModel'],
   ]),
+  // TAL-2135: each provider's page pins its quota to the sidebar; the search leads to the providers that have one.
+  { section: 'providers', group: m.providers_group_yours, id: 'providerSidebarQuota', label: m.providers_quota_in_sidebar, scope: 'profile', item: true },
   ...rows('providers', m.providers_quota_thresholds_title, 'profile', [
     ['quotaThreshold-warning_remaining_percent', m.providers_quota_warning_remaining], ['quotaThreshold-critical_remaining_percent', m.providers_quota_critical_remaining],
     ['quotaThreshold-pace_tolerance_percent', m.providers_quota_pace_tolerance], ['quotaThreshold-pace_warning_burn_rate_percent', m.providers_quota_pace_warning_burn],

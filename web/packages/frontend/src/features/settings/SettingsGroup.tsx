@@ -7,6 +7,8 @@ import { Monogram } from '../../ui/Monogram'
 
 /** TAL-2131: a Settings page's column of groups, 30px between one group and the next header (§4). */
 export const SETTINGS_PAGE = 'flex flex-col gap-7.5'
+/** A Settings page's `h1`: the section's title, or on a provider's own page (TAL-2135) its name. */
+export const SETTINGS_TITLE = 'settings-section-title text-lg font-semibold tracking-(--heading-tracking) text-text leading-[1.3] mb-1'
 
 // The Settings kit's rows that read no server setting, apart from `SettingsRows.tsx` so a page can use them without
 // loading the settings store (TAL-2106: the Extensions chunk reaching it split the static Menu chunk past the layout budget).
@@ -16,9 +18,9 @@ export function SettingRow({ label, hint, htmlFor, stacked, icon, detail, childr
   return <FieldRow label={label} hint={hint} htmlFor={htmlFor} icon={icon} detail={detail} inline={!stacked}>{children}</FieldRow>
 }
 
-/** A label with action button(s) at the right; the button's own `variant` carries any danger styling. */
-export function SettingAction({ label, hint, icon, children }: { label: string; hint?: string; icon?: LucideIcon; children: ReactNode }) {
-  return <FieldRow label={label} hint={hint} icon={icon} inline>{children}</FieldRow>
+/** A label with action button(s) at the right; the button's own `variant` carries any danger styling. `detail` is its second line (TAL-2135). */
+export function SettingAction({ label, hint, icon, detail, children }: { label: string; hint?: string; icon?: LucideIcon; detail?: ReactNode; children?: ReactNode }) {
+  return <FieldRow label={label} hint={hint} icon={icon} detail={detail} inline>{children}</FieldRow>
 }
 
 /** TAL-2081: read-only label/value rows (versions, keyboard shortcuts) as one `<dl>`; each row is a `SettingValue`. */

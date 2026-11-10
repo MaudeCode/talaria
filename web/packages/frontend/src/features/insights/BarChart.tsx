@@ -8,8 +8,9 @@ export interface BarChartRow { label: string; value: number; /** Longer label fo
  * (else first and last), and the table twin behind a disclosure. One hue; the title says what is plotted.
  * TAL-1968: `variant: 'line'` draws the same series as a line through each bar's centre; `maxDisplay` and `peak` are the
  * scale label and peak point the server chose. A negative value plots below a zero line, and its bar hangs from it.
+ * TAL-2135: `compact` is the 44px plot alone, for a row that captions it; the table twin stays for assistive technology.
  */
-export function BarChart({ title, rows, format = String, exact, controls, id, variant = 'bar', maxDisplay, peak: serverPeak }: { title: string; rows: BarChartRow[]; format?: (value: number) => string; /** The exact value for a bar's hover title, when `format` rounds it. */ exact?: ((value: number) => string) | undefined; controls?: ReactNode; id: string; variant?: 'bar' | 'line'; maxDisplay?: string; peak?: { label: string; display: string } }) {
+export function BarChart({ title, rows, format = String, exact, controls, id, variant = 'bar', maxDisplay, peak: serverPeak, compact }: { title: string; rows: BarChartRow[]; format?: (value: number) => string; /** The exact value for a bar's hover title, when `format` rounds it. */ exact?: ((value: number) => string) | undefined; controls?: ReactNode; id: string; variant?: 'bar' | 'line'; maxDisplay?: string; peak?: { label: string; display: string }; compact?: boolean }) {
   const tableId = useId()
   const shown = (r: BarChartRow) => r.display ?? format(r.value)
   // The table twin is always in the tree for assistive technology; the toggle only reveals it to sighted readers.
@@ -26,14 +27,14 @@ export function BarChart({ title, rows, format = String, exact, controls, id, va
   const last = rows[rows.length - 1]
   return (
     <figure className="flex min-w-0 flex-col gap-1.5" data-chart={id}>
-      <figcaption className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
+      {!compact && <figcaption className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
         <span className="font-medium text-text">{title}</span>
         <span className="flex items-center gap-2">
           {controls}
           <span className="tabular-nums text-muted">{m.insights_chart_max({ value: maxDisplay ?? format(max) })}</span>
         </span>
-      </figcaption>
-      <div role="img" aria-label={peak ? `${title}: ${m.insights_chart_peak({ label: peak.label, value: peak.display })}` : title} className="relative h-28 border-b border-border">
+      </figcaption>}
+      <div role="img" aria-label={peak ? `${title}: ${m.insights_chart_peak({ label: peak.label, value: peak.display })}` : title} className={`relative border-b border-border ${compact ? 'h-11' : 'h-28'}`}>
         <div aria-hidden="true" className="absolute inset-x-0 top-1/2 border-t border-border-subtle" />
         {min < 0 && <div aria-hidden="true" className="absolute inset-x-0 border-t border-border" style={{ top: `${String(zero)}%` }} />}
         <div className="flex h-full gap-px">
@@ -50,12 +51,12 @@ export function BarChart({ title, rows, format = String, exact, controls, id, va
           <polyline fill="none" stroke="currentColor" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round" points={rows.map((r, i) => `${String(((i + 0.5) / rows.length) * 100)},${String(fromTop(r.value))}`).join(' ')} />
         </svg>}
       </div>
-      <div aria-hidden="true" className="flex gap-px text-xs text-muted">
+      {!compact && <div aria-hidden="true" className="flex gap-px text-xs text-muted">
         {labelEvery
           ? rows.map((r) => <span key={r.label} className="min-w-0 flex-1 truncate text-center">{r.label}</span>)
           : <><span className="flex-1">{first?.label}</span><span className="flex-1 text-right">{last?.label}</span></>}
-      </div>
-      <button type="button" aria-expanded={showsTable} aria-controls={tableId} onClick={() => setShowsTable((v) => !v)} className="self-start text-xs text-muted hover:text-text">{m.insights_chart_table()}</button>
+      </div>}
+      {!compact && <button type="button" aria-expanded={showsTable} aria-controls={tableId} onClick={() => setShowsTable((v) => !v)} className="self-start text-xs text-muted hover:text-text">{m.insights_chart_table()}</button>}
       <table id={tableId} className={showsTable ? 'mt-1 w-full text-xs tabular-nums' : 'sr-only'}>
         <caption className="sr-only">{title}</caption>
         <tbody>{rows.map((r) => <tr key={r.label} className="border-t border-border-subtle"><th scope="row" className="py-0.5 text-left font-normal text-muted">{r.title ?? r.label}</th><td className="py-0.5 text-right text-text">{shown(r)}</td></tr>)}</tbody>

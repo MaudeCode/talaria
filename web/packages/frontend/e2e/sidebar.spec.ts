@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test'
 import { expect, settle, test } from './fixtures'
+import { routeProviders } from './providers'
 
 /** TAL-1867: one left column on every page, expanded or as an icon rail, tiled from 641px and a drawer below. */
 test.use({ serviceWorkers: 'block' })
@@ -387,6 +388,10 @@ const quotas = {
   ],
 }
 const pin = (page: Page, sources: string[]) => page.request.post('/api/settings', { data: { sidebar_quota_sources: sources } })
+/** TAL-2135: each provider's page pins its own sources; here every source is one provider's account, so one page holds all four pins. */
+const accounts = { ...quotas, sources: quotas.sources.map((s) => ({ ...s, provider_id: 'anthropic' })) }
+const routeAccounts = (page: Page) => routeProviders(page, () => ({ active_provider: 'anthropic', providers: [{ id: 'anthropic', display_name: 'Claude', has_key: true, configured: true }] }))
+const pinSwitch = (page: Page, name: string) => page.locator('[data-provider-detail] [data-group="quota"]').getByRole('switch', { name: `Show ${name} in sidebar` })
 const quotaGroup = (page: Page) => sidebar(page).locator('[data-section="sidebar-quotas"]')
 const quotaRow = (page: Page, source: string) => quotaGroup(page).locator(`[data-quota-source="${source}"]`)
 
@@ -467,20 +472,21 @@ test('with nothing pinned the sidebar has no group and reads no quotas', async (
   expect(reads).toBe(0)
 })
 
-test('Sidebar settings pin from the server projection, shows a choice at once and rolls a refusal back', async ({ page, errors }, info) => {
+test('A provider page pins from the server projection, shows a choice at once and rolls a refusal back', async ({ page, errors }, info) => {
   desktopOnly(info.project.name)
   let projection = { sidebar_source_ids: [] as string[], sidebar_can_pin: true }
-  await page.route('**/api/provider/quotas**', (route) => route.fulfill({ json: { ...quotas, ...projection } }))
+  await routeAccounts(page)
+  await page.route('**/api/provider/quotas**', (route) => route.fulfill({ json: { ...accounts, ...projection } }))
   // Synthetic quota IDs need the same projection on successful saves and reads.
   await page.route(/\/api\/settings$/, async (route) => {
     if (route.request().method() !== 'POST') return route.fallback()
     const response = await route.fetch()
     await route.fulfill({ response, json: { ...await response.json(), ...projection } })
   })
-  await page.goto('/settings/navigation')
+  await page.goto('/settings/providers/anthropic')
   await settle(page)
-  const picker = page.locator('[data-section="navigation"] [data-group="quotas"]')
-  const source = (name: string) => picker.getByRole('switch', { name })
+  const picker = page.locator('[data-provider-detail] [data-group="quota"]')
+  const source = (name: string) => pinSwitch(page, name)
   const toggle = (name: string) => Promise.all([page.waitForResponse((r) => r.url().endsWith('/api/settings') && r.request().method() === 'POST'), source(name).click()])
   await expect(picker.getByRole('switch')).toHaveCount(4)
   try {
@@ -519,10 +525,11 @@ test('Sidebar settings pin from the server projection, shows a choice at once an
     })
     await source('Z.ai').click()
     await expect(source('Z.ai')).toBeChecked()
-    // Leaving the section unmounts the picker while the write is still held.
+    // Leaving the page unmounts the pins while the write is still held.
     await sidebar(page).getByRole('link', { name: 'Appearance' }).click()
     await expect(picker).toHaveCount(0)
-    await sidebar(page).getByRole('link', { name: 'Navigation', exact: true }).click()
+    await sidebar(page).getByRole('link', { name: 'Providers', exact: true }).click()
+    await page.locator('[data-provider="anthropic"]').getByRole('link', { name: 'Claude' }).click()
     await source('OpenRouter').click()
     await expect(source('OpenRouter')).not.toBeChecked()
     refuse()
@@ -569,15 +576,16 @@ test('a confirmed first pin stays in the sidebar when a later choice is refused 
   const held = new Promise<void>((resolve) => { release = resolve })
   let posts = 0
   let readsFail = false
-  await page.route('**/api/provider/quotas**', (route) => route.fulfill({ json: { ...quotas, sidebar_source_ids: posts ? ['qsrc_weekly'] : [], sidebar_can_pin: true } }))
+  await routeAccounts(page)
+  await page.route('**/api/provider/quotas**', (route) => route.fulfill({ json: { ...accounts, sidebar_source_ids: posts ? ['qsrc_weekly'] : [], sidebar_can_pin: true } }))
   await page.route('**/api/settings', async (route) => {
     if (route.request().method() !== 'POST') return readsFail ? route.fulfill({ status: 500, json: { error: 'Down' } }) : route.fallback()
     await held
     return ++posts === 1 ? route.fulfill({ json: { sidebar_quota_sources: ['qsrc_weekly'], sidebar_source_ids: ['qsrc_weekly'], sidebar_can_pin: true } }) : route.fulfill({ status: 400, json: { error: 'Refused' } })
   })
-  await page.goto('/settings/navigation')
+  await page.goto('/settings/providers/anthropic')
   await settle(page)
-  const source = (name: string) => page.locator('[data-section="navigation"] [data-group="quotas"]').getByRole('switch', { name })
+  const source = (name: string) => pinSwitch(page, name)
   await source('Claude').click()
   await expect(source('Claude')).toBeChecked()
   await source('Z.ai').click()

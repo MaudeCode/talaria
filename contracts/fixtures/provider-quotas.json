@@ -112,6 +112,7 @@
       "fetched_at": "2026-09-28T07:59:30Z",
       "pace_window_index": 1,
       "headline_window_index": 1,
+      "provider_headline": true,
       "display_name": "Anthropic",
       "status_message": "Anthropic account limits loaded.",
       "display_level": "warning",
@@ -125,5 +126,16 @@
   ],
   "retained_display_level": null,
   "sidebar_source_ids": [],
-  "sidebar_can_pin": true
+  "sidebar_can_pin": true,
+  "summary": {
+    "connected": 1,
+    "lowest": {
+      "source_id": "qsrc_69e3029fba20a8b0ea82fff362e093f5",
+      "percent_remaining": 68,
+      "level": "warning"
+    },
+    "spend_month": null,
+    "spend_currency": null,
+    "default_provider_name": "Anthropic"
+  }
 }

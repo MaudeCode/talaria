@@ -50,7 +50,9 @@ const resultId = (index: number) => `settingsSearchResult-${index}`
 
 export function SectionMenu() {
   useLocale()
-  const params: { section?: string } = useParams({ strict: false })
+  const params: { section?: string; providerId?: string } = useParams({ strict: false })
+  // A provider's own page (TAL-2135) sits under Providers.
+  const current = params.section ?? (params.providerId === undefined ? undefined : 'providers')
   const profile = useActiveProfileName()
   const navigate = useNavigate()
   // TAL-2086: device-local UI state over the rows' own wording; while it has text, the matches replace the section list.
@@ -106,7 +108,7 @@ export function SectionMenu() {
             <div key={group} role="group" aria-labelledby={`settingsGroup-${group}`} data-settings-group={group} className="flex flex-col gap-0.5">
               <SectionHeader className="px-2.5 pb-1" detail={group === 'profile' && profile ? <Link to="/settings/$section" params={{ section: 'profiles' }} search={{ name: profile }} onClick={closeMobileSidebar} data-settings-profile-link="" className="hover:text-text hover:underline">{profile}</Link> : undefined}><span id={`settingsGroup-${group}`}>{GROUP_LABEL[group]()}</span></SectionHeader>
               {sections.map((section) => {
-                const active = params.section === section
+                const active = current === section
                 const Icon = SECTION_ICON[section]
                 return (
                   <Link key={section} to="/settings/$section" params={{ section }} onClick={closeMobileSidebar} aria-current={active ? 'page' : undefined} className={cn('side-menu-item flex w-full items-center gap-2 px-2.5 py-[7px] rounded-(--r-sm) border-0 bg-transparent text-text cursor-pointer text-left text-[13px] font-medium transition-[background,color] duration-(--dur) ease-(--ease) hover:bg-hover [&.active]:bg-(--menu-active-bg) [&.active]:text-(--menu-active-fg) [&.active]:shadow-(--menu-active-shadow) [&.active]:[font-weight:var(--menu-active-weight)] [&_svg]:shrink-0 [&_svg]:size-4 [&_svg]:opacity-90 [&.active_svg]:text-(--menu-active-fg)', active && 'active')} data-settings-section={section}>

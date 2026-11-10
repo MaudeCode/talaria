@@ -95208,6 +95208,10 @@
                             ],
                             "description": "TAL-1870: the window a one-figure row shows: the pace window, else the first; null without windows."
                           },
+                          "provider_headline": {
+                            "type": "boolean",
+                            "description": "TAL-2135: the source a provider's one-figure row shows among its accounts in this read: the one whose headline window has the least remaining, else its first."
+                          },
                           "display_name": {
                             "type": "string",
                             "description": "TAL-1870: the provider, with its account when that tells two sources of one provider apart."
@@ -95328,6 +95332,93 @@
                     "sidebar_can_pin": {
                       "type": "boolean",
                       "description": "TAL-1870: whether another source can be pinned; a pin this read does not list does not count."
+                    },
+                    "summary": {
+                      "type": "object",
+                      "properties": {
+                        "connected": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991,
+                          "description": "Configured providers."
+                        },
+                        "lowest": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "source_id": {
+                                  "type": "string"
+                                },
+                                "percent_remaining": {
+                                  "type": "number"
+                                },
+                                "level": {
+                                  "enum": [
+                                    "healthy",
+                                    "warning",
+                                    "critical",
+                                    "stale",
+                                    "unavailable"
+                                  ],
+                                  "type": "string",
+                                  "description": "The window's `display_level`."
+                                }
+                              },
+                              "required": [
+                                "source_id",
+                                "percent_remaining",
+                                "level"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "The quota window with the least remaining across every source; null without a remaining percent."
+                        },
+                        "spend_month": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "OpenRouter spend this UTC month, the sum of the cost history's daily deltas; null without an OpenRouter key or a known delta."
+                        },
+                        "spend_currency": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "ISO 4217 code of `spend_month`; null with it."
+                        },
+                        "default_provider_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Display name of the provider serving the default model."
+                        }
+                      },
+                      "required": [
+                        "connected",
+                        "lowest",
+                        "spend_month",
+                        "spend_currency",
+                        "default_provider_name"
+                      ],
+                      "description": "TAL-2135: Settings › Providers' figures; absent on a `?source=` read."
                     }
                   },
                   "required": [
@@ -95530,6 +95621,29 @@
                         }
                       ],
                       "description": "`warn` from 80%, `over` from 100%; null without `budget_percent`."
+                    },
+                    "latest_day": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "date": {
+                              "type": "string"
+                            },
+                            "spend": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "date",
+                            "spend"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "TAL-2135: the newest UTC day with a known spend (`delta`), the one a provider row captions; null without one."
                     }
                   },
                   "required": [

@@ -909,6 +909,7 @@ export const QuotaSourceSchema = z.looseObject({
   is_active_provider: z.boolean().optional(), quota: Json.optional(), windows: z.array(QuotaWindowSchema).optional(), balances: Json.optional(), plan: Json.optional(), details: Json.optional(), unavailable_reason: Json.optional(), retry_after: Json.optional(), fetched_at: Json.optional(),
   pace_window_index: QuotaWindowIndex.describe('The window a pace-coloured widget shows: the weekly one, else the first 5h/session window.'),
   headline_window_index: QuotaWindowIndex.describe('TAL-1870: the window a one-figure row shows: the pace window, else the first; null without windows.'),
+  provider_headline: z.boolean().optional().describe('TAL-2135: the source a provider\'s one-figure row shows among its accounts in this read: the one whose headline window has the least remaining, else its first.'),
   display_name: z.string().optional().describe('TAL-1870: the provider, with its account when that tells two sources of one provider apart.'),
   status_message: z.string().nullable().optional().describe('TAL-1870: the server text a source status shows: its unavailable reason, else its message; null leaves the status word.'),
   display_level: QuotaLevelSchema.optional().describe('TAL-1870: the effective level of a source with no window to show; the source status outranks its urgency.'),
@@ -937,6 +938,13 @@ export const ProviderQuotasSchema = z.looseObject({ availability: CatalogAvailab
   retained_display_level: QuotaLevelSchema.nullable().optional().describe('TAL-1870: the level of a cached row this read does not carry, shown with `availability.unavailable_reason`; null when `availability.authoritative`.'),
   sidebar_source_ids: z.array(z.string()).optional().describe('TAL-1870: the `sidebar_quota_sources` pins this read lists, in pinned order; the rows the expanded Web sidebar shows. Every pin while `availability.authoritative` is false.'),
   sidebar_can_pin: z.boolean().optional().describe('TAL-1870: whether another source can be pinned; a pin this read does not list does not count.'),
+  summary: z.object({
+    connected: z.number().int().describe('Configured providers.'),
+    lowest: z.object({ source_id: z.string(), percent_remaining: z.number(), level: QuotaLevelSchema.describe('The window\'s `display_level`.') }).nullable().describe('The quota window with the least remaining across every source; null without a remaining percent.'),
+    spend_month: z.number().nullable().describe('OpenRouter spend this UTC month, the sum of the cost history\'s daily deltas; null without an OpenRouter key or a known delta.'),
+    spend_currency: z.string().nullable().describe('ISO 4217 code of `spend_month`; null with it.'),
+    default_provider_name: z.string().nullable().describe('Display name of the provider serving the default model.'),
+  }).optional().describe('TAL-2135: Settings › Providers\' figures; absent on a `?source=` read.'),
 })
 /** One day of OpenRouter spend on `/api/provider/cost-history` (TAL-412). */
 export const CostSnapshotSchema = z.looseObject({
@@ -953,6 +961,7 @@ export const ProviderCostHistorySchema = z.looseObject({
   has_enough_data: z.boolean().optional().describe('At least one non-null delta (two daily snapshots).'),
   budget_percent: NullableNumber.optional().describe('round(pace / budget × 100); null without a positive pace and a budget.'),
   budget_level: z.enum(['ok', 'warn', 'over']).nullable().optional().describe('`warn` from 80%, `over` from 100%; null without `budget_percent`.'),
+  latest_day: z.object({ date: z.string(), spend: z.number() }).nullable().optional().describe('TAL-2135: the newest UTC day with a known spend (`delta`), the one a provider row captions; null without one.'),
 })
 export type ProviderCostHistory = z.infer<typeof ProviderCostHistorySchema>
 export const PersonalitiesSchema = z.looseObject({ personalities: z.array(z.looseObject({ name: z.string(), description: z.string().optional() })) })
