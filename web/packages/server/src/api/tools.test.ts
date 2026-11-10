@@ -694,6 +694,8 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
         plugins: [{ ...row, settings: [], oauth_clients: [{ ...oauthClient, can_sign_out: false }] }],
         total: 1, empty: false, supported_hooks: ['pre_tool_call'], read_only: false, plugin_isolation_advisory: true,
         auto_update: { auto_apply: false, check_hours: 24, inactive_reason: 'no_gateway' },
+        groups: [{ id: 'installed', plugin_keys: [], enabled_count: 0, total_count: 0 }, { id: 'other', plugin_keys: ['probe'], enabled_count: 1, total_count: 1 }],
+        summary: { installed: 0, bundled: 1, enabled: 1, total: 1, updates: 0 },
       }
       expect(await json(await s.get('/api/plugins'))).toEqual(expected)
       let release!: () => void

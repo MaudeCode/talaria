@@ -779,12 +779,14 @@ def plugin_visibility(selected_providers: dict) -> dict:
         manager.discover_and_load(force=False)
     except Exception as exc:  # noqa: BLE001
         raise RpcError(f"plugin manager unavailable: {exc}", condition="plugins_unavailable") from exc
+    from hermes_constants import get_hermes_home
+
+    profile_plugins = (get_hermes_home() / "plugins").resolve()
     modules = _plugin_update_modules()
     updates = None
     catalog_updates = {}
     if modules:
         from hermes_cli.plugins_provenance import read_sidecar_rows
-        from hermes_constants import get_hermes_home
 
         from .plugin_catalog import catalog_updates as behind_catalog
         records = read_sidecar_rows(get_hermes_home() / "plugins")
@@ -817,14 +819,17 @@ def plugin_visibility(selected_providers: dict) -> dict:
             "description": _clean_text(getattr(manifest, "description", ""), 280), "enabled": enabled, "kind": kind, "activation": activation,
             "hooks": sorted({str(h).strip() for h in list(getattr(manifest, "provides_hooks", []) or []) + list(getattr(loaded, "hooks_registered", []) or []) if str(h).strip() in PLUGIN_VISIBILITY_HOOKS}, key=PLUGIN_VISIBILITY_HOOKS.index),
         }
+        # TAL-2132: Settings groups the rows by category and lists the profile's own plugins first.
+        installed = pathlib.Path(str(getattr(manifest, "path", "") or "")).resolve()
+        in_profile = installed.parent == profile_plugins
+        row["category"] = category
+        row["source"] = "installed" if in_profile else "bundled"
         if kind == "exclusive":
             if category:
                 row["is_active_provider"] = bool(selected) and slug == selected
         else:
             row["is_active_provider"] = kind == "model-provider" and enabled
         if updates is not None:
-            installed = pathlib.Path(str(getattr(manifest, "path", "") or "")).resolve()
-            in_profile = installed.parent == (get_hermes_home() / "plugins").resolve()
             revision = updates.get(installed.name) if in_profile and (installed / ".git").is_dir() else None
             revision = revision or (catalog_updates.get(installed.name) if in_profile else None)
             row["update_available"] = bool(revision)
