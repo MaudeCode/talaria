@@ -349,7 +349,12 @@ previous detail selection. The shared fixture is
 `{ provider_id, model }` pairs in starred order, and stamps `favorite` on every
 entry whose `provider_id` and `bare_id` match one. `favorite_option_ids` lists
 those entries' ids in starred order, which is the order the picker's Favorites
-show. `null` means the profile has never saved favorites. `POST /api/models/favorite` stars or unstars one model
+show. `null` means the profile has never saved favorites.
+
+Each picker group also carries `icon`, which the server resolves from
+`provider_id` alone with the App's registry: `asset` names
+`static/brand/providers/<asset>.svg` (null for an unknown or `custom:`
+provider), `initials` is the fallback, and `color` keeps the SVG's own colours. `POST /api/models/favorite` stars or unstars one model
 under the settings queue, so concurrent writes for different models all
 persist; a new star goes last and at most 200 are kept. `POST
 /api/models/favorites/import` writes a client's list only while the stored value

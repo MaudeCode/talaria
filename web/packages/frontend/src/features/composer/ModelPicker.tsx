@@ -195,7 +195,7 @@ function ProviderRail({ groups, view, onPick, onFocusSearch }: { groups: Group[]
         <div className="border-b border-border" aria-hidden="true" />
         {groups.map((group) => {
           const label = catalogGroupLabel(group)
-          return <RailButton key={groupKey(group)} label={label} pressed={view === groupKey(group)} data={groupKey(group)} className={button} onClick={() => onPick(groupKey(group))}><ProviderIcon providerId={group.provider_id} label={group.provider} className="size-5" /></RailButton>
+          return <RailButton key={groupKey(group)} label={label} pressed={view === groupKey(group)} data={groupKey(group)} className={button} onClick={() => onPick(groupKey(group))}><ProviderIcon icon={group.icon} className="size-5" /></RailButton>
         })}
       </div>
     </Toolbar.Root>
@@ -220,7 +220,7 @@ const ModelRow = memo(function ModelRow({ entry, group, index, locale, mixed, se
           <ModelOptionContent entry={entry} />
           {resetsAt && <span data-model-limit="model" className="ms-auto shrink-0 text-xs text-warning">{m.model_limited_until({ time: resetTime(locale, resetsAt) })}</span>}
         </span>
-        {mixed && <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted"><ProviderIcon providerId={group.provider_id} label={group.provider} className="size-3" /><span className="truncate">{provider}</span></span>}
+        {mixed && <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted"><ProviderIcon icon={group.icon} className="size-3" /><span className="truncate">{provider}</span></span>}
       </span>
       {starrable
         ? <button type="button" aria-label={starLabel} title={starLabel} data-model-favorite={favorite ? 'true' : 'false'}

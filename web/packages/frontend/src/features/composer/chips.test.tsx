@@ -29,17 +29,18 @@ const COLON_CATALOG = {
     { provider: 'Ollama', provider_id: 'ollama', models: [{ id: '@ollama:llama3:8b', label: 'Llama3 (8B)', provider_id: 'ollama', bare_id: 'llama3:8b' }] },
   ],
 }
-// TAL-1858: a starred model under each of two providers, and a provider with no known icon whose ids look like another's.
+// TAL-1858: a starred model under each of two providers, and a provider with no known icon whose ids look like another's;
+// each group carries the icon the server resolved from its provider id.
 const FAVORITES_CATALOG = {
   active_provider: 'anthropic',
   default_model: 'claude-opus-4.7', default_provider_id: 'anthropic', default_bare_id: 'claude-opus-4.7', default_option_id: 'claude-opus-4.7',
   groups: [
-    { provider: 'Anthropic', provider_id: 'anthropic', models: [
+    { provider: 'Anthropic', provider_id: 'anthropic', icon: { asset: 'Anthropic', initials: 'A', color: true }, models: [
       { id: 'claude-opus-4.7', label: 'Claude Opus 4.7', provider_id: 'anthropic', bare_id: 'claude-opus-4.7', favorite: false },
       { id: 'claude-haiku-4.5', label: 'Claude Haiku 4.5', provider_id: 'anthropic', bare_id: 'claude-haiku-4.5', favorite: true },
     ] },
-    { provider: 'OpenRouter', provider_id: 'openrouter', models: [{ id: '@openrouter:qwen/qwen3', label: 'Qwen3', provider_id: 'openrouter', bare_id: 'qwen/qwen3', favorite: true }] },
-    { provider: 'Acme Cloud', provider_id: 'acme-cloud', models: [{ id: '@anthropic:claude-opus-4.7', label: 'Acme Opus', provider_id: 'acme-cloud', bare_id: '@anthropic:claude-opus-4.7', favorite: false }] },
+    { provider: 'OpenRouter', provider_id: 'openrouter', icon: { asset: 'OpenRouter', initials: 'O', color: false }, models: [{ id: '@openrouter:qwen/qwen3', label: 'Qwen3', provider_id: 'openrouter', bare_id: 'qwen/qwen3', favorite: true }] },
+    { provider: 'Acme Cloud', provider_id: 'acme-cloud', icon: { asset: null, initials: 'AC', color: false }, models: [{ id: '@anthropic:claude-opus-4.7', label: 'Acme Opus', provider_id: 'acme-cloud', bare_id: '@anthropic:claude-opus-4.7', favorite: false }] },
   ],
   // Starred OpenRouter first, so the starred order differs from the catalog's.
   favorites: [{ provider_id: 'openrouter', model: 'qwen/qwen3' }, { provider_id: 'anthropic', model: 'claude-haiku-4.5' }],
@@ -218,7 +219,7 @@ describe('ModelChip', () => {
     expect(onChange).toHaveBeenCalledTimes(1)
   })
 
-  it('draws a known provider\'s icon and an unknown provider\'s initials from provider_id alone (TAL-1858)', async () => {
+  it('draws the server\'s provider icon: an asset in its colours or the text colour, else the initials (TAL-1858)', async () => {
     catalog = FAVORITES_CATALOG
     renderChip({ model: '@anthropic:claude-opus-4.7', optionId: '@anthropic:claude-opus-4.7' })
     // The selected entry's id names Anthropic, but its provider is Acme Cloud, which has no icon.
@@ -227,8 +228,12 @@ describe('ModelChip', () => {
     expect(screen.getByRole('button')).toHaveTextContent(/^ACAcme Opus$/)
     await userEvent.click(screen.getByRole('button'))
     await picker()
-    expect(within(rail()).getByRole('button', { name: 'Anthropic' }).querySelector('[data-provider-icon]')).toHaveAttribute('data-provider-icon', 'Anthropic')
-    expect(within(rail()).getByRole('button', { name: 'OpenRouter' }).querySelector('[data-provider-icon]')).toHaveAttribute('data-provider-icon', 'OpenRouter')
+    const railIcon = (name: string) => within(rail()).getByRole('button', { name }).querySelector('[data-provider-icon]')
+    expect(railIcon('Anthropic')).toHaveAttribute('data-provider-icon', 'Anthropic')
+    expect(railIcon('Anthropic')?.tagName).toBe('IMG')
+    expect(railIcon('OpenRouter')).toHaveAttribute('data-provider-icon', 'OpenRouter')
+    // A single-colour icon takes the text colour through a mask.
+    expect((railIcon('OpenRouter') as HTMLElement).style.maskImage).toContain('static/brand/providers/OpenRouter.svg')
     expect(within(rail()).getByRole('button', { name: 'Acme Cloud' }).querySelector('[data-provider-icon]')).toHaveAttribute('data-provider-icon', 'initials')
   })
 

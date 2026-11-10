@@ -96,8 +96,8 @@ def path_suites(path):
     # Runtime resources and test fixtures can be Markdown too; never classify
     # them as documentation just because of their extension.
     if (component == "app" and local.startswith(("Talaria", "Packages/", "Config/"))):
-        # Web's provider icon test holds web/static/brand/providers to the App's registry and SVGs (TAL-1858).
-        icons = {"web_frontend"} if (local == "Talaria/Models/ProviderIconRegistry.swift"
+        # The Web server's provider icon test holds its table and web/static/brand/providers to the App's (TAL-1858).
+        icons = {"web_server"} if (local == "Talaria/Models/ProviderIconRegistry.swift"
                                      or local.startswith("Talaria/Resources/ProviderIcons.xcassets/")) else set()
         # The live Web fixture test runs only in PR CI's contracts step, so it selects contracts too. TalariaKit
         # (TAL-399) holds the networking and models, and its package job runs that test.

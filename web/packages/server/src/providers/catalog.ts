@@ -16,7 +16,8 @@ import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { atomicWriteText } from '../fs/atomic.js'
 import type { SidecarLike } from '../sidecar/client.js'
-import type { CatalogAvailability, ModelAllowance, ModelFavorite, PlanUsage, KeySourceKind, SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
+import { providerIcon } from './icons.js'
+import type { CatalogAvailability, ModelAllowance, ModelFavorite, PlanUsage, ProviderIcon, KeySourceKind, SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { QUOTA_THRESHOLD_DEFAULTS, type QuotaThresholds } from '../settings.js'
 import { loadEnvFile } from './env-file.js'
@@ -37,6 +38,7 @@ export interface ModelGroup {
   plan_usage?: PlanUsage | null; plan_stale?: boolean; sections?: { kind: 'recommended' | 'other'; model_ids: string[] }[]
   provider: string; provider_id: string; models: ModelEntry[]
   limit?: { scope: 'account'; resets_at: string } | { scope: 'models'; models: Record<string, string> }; quota_level?: QuotaLevel
+  icon?: ProviderIcon
 }
 
 /** TAL-301: every entry names its routing provider and bare id, split once by `parseProviderQualifiedModel`. */
@@ -1348,6 +1350,7 @@ export class ProviderCatalog {
     }
     // TAL-1858: the starred rows' ids in starred order; a stable sort keeps catalog order between rows of one favorite.
     catalog.favorite_option_ids = starred.sort((a, b) => a[0] - b[0]).map(([, id]) => id)
+    for (const g of catalog.groups) g.icon = providerIcon(g.provider_id, g.provider)
     return catalog
   }
 

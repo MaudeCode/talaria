@@ -238,6 +238,11 @@ describe('bounded picker pool limits (TAL-1222)', () => {
     rmSync(home, { recursive: true, force: true })
   })
 
+  it('stamps each picker group with its provider icon (TAL-1858)', async () => {
+    const ollama = group(await picker())
+    expect(ollama?.icon).toEqual({ asset: 'Ollama', initials: (ollama?.provider ?? '').slice(0, 1).toUpperCase(), color: false })
+  })
+
   it('settles a non-answering limits read in three seconds and caches the failure for 45 seconds', async () => {
     // The responder never answers; emulate the real client's transport deadline.
     sidecar.respond('usage.limits', (_p, _emit, opts) => new Promise((_resolve, reject) => {

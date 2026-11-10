@@ -63,7 +63,7 @@ export function ModelChip({ model, optionId, servedModel = null, onChange, row }
   const label = servedModel ?? configured
   const title = servedModel && !row ? m.composer_model_served({ configured, served: servedModel }) : m.composer_control_model()
   const group = selected && models.data?.groups.find((g) => g.models.includes(selected))
-  const icon = group ? <ProviderIcon providerId={group.provider_id} label={group.provider} className={row ? 'size-5' : undefined} /> : <Cpu size={16} aria-hidden="true" />
+  const icon = group ? <ProviderIcon icon={group.icon} className={row ? 'size-5' : undefined} /> : <Cpu size={16} aria-hidden="true" />
   const pick = (id: string, provider: string | null) => { setOpen(false); onChange(id, provider) }
   return (
     // TAL-807: opening the picker reads the catalog again, so a rate limit or quota level reflects the server now.

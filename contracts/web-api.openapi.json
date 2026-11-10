@@ -90589,6 +90589,33 @@
                               "unavailable"
                             ],
                             "type": "string"
+                          },
+                          "icon": {
+                            "type": "object",
+                            "properties": {
+                              "asset": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "initials": {
+                                "type": "string"
+                              },
+                              "color": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "asset",
+                              "initials",
+                              "color"
+                            ],
+                            "description": "TAL-1858: the picker group's provider icon."
                           }
                         },
                         "required": [
@@ -91368,6 +91395,33 @@
                                   "unavailable"
                                 ],
                                 "type": "string"
+                              },
+                              "icon": {
+                                "type": "object",
+                                "properties": {
+                                  "asset": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "initials": {
+                                    "type": "string"
+                                  },
+                                  "color": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "asset",
+                                  "initials",
+                                  "color"
+                                ],
+                                "description": "TAL-1858: the picker group's provider icon."
                               }
                             },
                             "required": [
@@ -95972,6 +96026,33 @@
                                   "unavailable"
                                 ],
                                 "type": "string"
+                              },
+                              "icon": {
+                                "type": "object",
+                                "properties": {
+                                  "asset": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "initials": {
+                                    "type": "string"
+                                  },
+                                  "color": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "asset",
+                                  "initials",
+                                  "color"
+                                ],
+                                "description": "TAL-1858: the picker group's provider icon."
                               }
                             },
                             "required": [
@@ -96799,6 +96880,33 @@
                                   "unavailable"
                                 ],
                                 "type": "string"
+                              },
+                              "icon": {
+                                "type": "object",
+                                "properties": {
+                                  "asset": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "initials": {
+                                    "type": "string"
+                                  },
+                                  "color": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "asset",
+                                  "initials",
+                                  "color"
+                                ],
+                                "description": "TAL-1858: the picker group's provider icon."
                               }
                             },
                             "required": [
