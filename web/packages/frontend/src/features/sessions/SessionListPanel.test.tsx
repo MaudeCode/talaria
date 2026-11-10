@@ -601,6 +601,7 @@ describe('Chats filter menu (TAL-1869)', () => {
     await userEvent.click(box)
     await screen.findByText('Hidden')
     expect(screen.getByRole('button', { name: 'Chat filters, filtered' })).toBeInTheDocument()
-    expect(within(await openFilters()).getByRole('menuitemcheckbox', { name: 'Show archived' })).toHaveAttribute('aria-checked', 'true')
+    // A checkbox row keeps the menu open.
+    expect(box).toHaveAttribute('aria-checked', 'true')
   })
 })

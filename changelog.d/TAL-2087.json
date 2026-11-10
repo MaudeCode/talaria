@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "The Kanban toolbar fits on one row: New board and Archive board moved into Board actions, and assignee, tenant, Only mine, Include archived and Lanes by profile share one filter menu. Empty columns are narrow, so the first tasks show without scrolling.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}
