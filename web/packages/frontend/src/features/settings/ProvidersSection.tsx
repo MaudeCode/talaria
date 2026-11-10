@@ -77,9 +77,15 @@ export function keySourceText(p: Provider): string | null {
   }
 }
 
-/** A provider's state as a dot and its words (§7): the server's sign-in error, else ready with where its key comes from. */
-export function ProviderStatus({ p, extra }: { p: Provider; extra?: string | null }) {
+/**
+ * A provider's state as a dot and its words (§7), from the server's fields: its sign-in error; a catalog the server could not
+ * confirm (`availability.authoritative` false), whose last-known rows are not vouched for; not configured; else ready with
+ * where its key comes from.
+ */
+export function ProviderStatus({ p, catalogUnavailable, extra }: { p: Provider; catalogUnavailable: boolean; extra?: string | null }) {
   if (p.auth_error) return <StatusDot state="error" title={p.auth_error}>{p.auth_error}</StatusDot>
+  if (catalogUnavailable) return <StatusDot state="warning">{m.catalog_unavailable()}</StatusDot>
+  if (!(p.configured ?? p.has_key)) return <StatusDot state="idle">{m.providers_not_configured()}</StatusDot>
   const words = [keySourceText(p) ?? m.providers_configured(), extra].filter(Boolean).join(' · ')
   return <StatusDot state="ok" title={words}>{words}</StatusDot>
 }
@@ -135,7 +141,7 @@ export function ProvidersSection() {
           <RowList>
             {yours.map((id) => {
               const p = byId.get(id)
-              return p && <ConfiguredProvider key={id} p={p} sources={quotas.data?.sources?.filter((s) => s.provider_id === id) ?? []} cost={id === 'openrouter' && p.has_key ? cost.data : undefined} spend={quotas.data?.summary?.spend_month ?? null}
+              return p && <ConfiguredProvider key={id} p={p} catalogUnavailable={all.data?.availability?.authoritative === false} sources={quotas.data?.sources?.filter((s) => s.provider_id === id) ?? []} cost={id === 'openrouter' && p.has_key ? cost.data : undefined} spend={quotas.data?.summary?.spend_month ?? null}
                 onRefresh={refreshModels.mutate} refreshBusy={refreshModels.isPending} />
             })}
           </RowList>
@@ -174,7 +180,7 @@ type CostHistory = ReturnType<typeof useOpenRouterCostHistory>['data']
  * key source and plan, one headline figure, then the headline window's meter (a quota) or the daily spend (OpenRouter).
  * The name is the link; it covers the block, so the block has no other control. Its context menu keeps Refresh models.
  */
-function ConfiguredProvider({ p, sources, cost, spend, onRefresh, refreshBusy }: { p: Provider; sources: QuotaSource[]; cost: CostHistory; spend: number | null; onRefresh: (id: string) => void; refreshBusy: boolean }) {
+function ConfiguredProvider({ p, catalogUnavailable, sources, cost, spend, onRefresh, refreshBusy }: { p: Provider; catalogUnavailable: boolean; sources: QuotaSource[]; cost: CostHistory; spend: number | null; onRefresh: (id: string) => void; refreshBusy: boolean }) {
   const locale = useLocale()
   const name = p.display_name ?? p.id
   const source = sources[0]
@@ -197,7 +203,7 @@ function ConfiguredProvider({ p, sources, cost, spend, onRefresh, refreshBusy }:
             <Link to="/settings/providers/$providerId" params={{ providerId: p.id }} state={{ providersList: true }} className="truncate text-sm font-semibold text-text outline-none after:absolute after:inset-0 after:rounded-md focus-visible:after:outline-2 focus-visible:after:outline-accent">{name}</Link>
             {p.is_active && <Mark>{m.providers_default()}</Mark>}
           </div>
-          <div className="flex min-w-0"><ProviderStatus p={p} extra={quotaSourcePlan(source)} /></div>
+          <div className="flex min-w-0"><ProviderStatus p={p} catalogUnavailable={catalogUnavailable} extra={quotaSourcePlan(source)} /></div>
         </div>
         {figure && <span className="shrink-0">{figure}</span>}
         <ChevronRight size={16} aria-hidden="true" className="shrink-0 text-muted" />

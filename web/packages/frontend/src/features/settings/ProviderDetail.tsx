@@ -56,6 +56,9 @@ export function ProviderDetail({ id }: { id: string }) {
   )
   const sources = quotas.data?.sources?.filter((s) => s.provider_id === id) ?? []
   const name = p.display_name ?? p.id
+  const catalogUnavailable = providers.data.availability?.authoritative === false
+  // The server's reason its provider or quota answer is last-known, as the list shows it.
+  const notice = quotas.data?.availability?.unavailable_reason ?? providers.data.availability?.unavailable_reason
   return (
     <div className={SETTINGS_PAGE} data-section="providers" data-provider-detail={id}>
       <div className="flex flex-col gap-2">
@@ -66,10 +69,11 @@ export function ProviderDetail({ id }: { id: string }) {
           {p.is_active && <Mark>{m.providers_default()}</Mark>}
         </div>
       </div>
+      {notice && <p role="status" className="text-xs text-muted">{notice}</p>}
       <ProviderFigures p={p} sources={sources} />
       {sources.length > 0 && <ProviderQuota sources={sources} pins={quotas.data} onRefresh={() => { void refresh() }} />}
       {p.id === 'openrouter' && p.has_key && <SettingsGroup id="spend" title={m.providers_group_spend()}><OpenRouterCost /></SettingsGroup>}
-      <ProviderSignIn p={p} />
+      <ProviderSignIn p={p} catalogUnavailable={catalogUnavailable} />
       <ProviderModels p={p} />
     </div>
   )
@@ -128,7 +132,7 @@ function ProviderQuota({ sources, pins, onRefresh }: { sources: QuotaSource[]; p
 }
 
 /** Sign-in: the credential with its state and a way to replace it, removal behind a confirm, OAuth and self-hosted setup. */
-function ProviderSignIn({ p }: { p: Provider }) {
+function ProviderSignIn({ p, catalogUnavailable }: { p: Provider; catalogUnavailable: boolean }) {
   const [editing, setEditing] = useState(false)
   const [removing, setRemoving] = useState(false)
   const { saveKey, saveHosted, invalidate } = useProviderWrites({ onSaved: () => setEditing(false) })
@@ -137,7 +141,7 @@ function ProviderSignIn({ p }: { p: Provider }) {
   const edit = p.is_self_hosted ? m.providers_self_hosted_setup() : p.has_key ? m.providers_key_replace() : m.providers_key_set()
   return (
     <SettingsGroup id="sign-in" title={m.providers_group_sign_in()}>
-      <SettingAction label={p.is_self_hosted ? m.providers_endpoint() : keyed ? m.providers_api_key() : m.providers_account()} icon={p.is_self_hosted ? Server : KeyRound} detail={<ProviderStatus p={p} />}>
+      <SettingAction label={p.is_self_hosted ? m.providers_endpoint() : keyed ? m.providers_api_key() : m.providers_account()} icon={p.is_self_hosted ? Server : KeyRound} detail={<ProviderStatus p={p} catalogUnavailable={catalogUnavailable} />}>
         {(keyed || p.is_self_hosted) && <IconButton variant="default" label={edit} aria-expanded={editing} onClick={() => setEditing((v) => !v)}>{p.is_self_hosted ? <Wrench aria-hidden="true" /> : <Pencil aria-hidden="true" />}</IconButton>}
       </SettingAction>
       {editing && p.is_self_hosted && <div className="py-2"><SelfHostedForm id={p.id} baseUrl={p.base_url ?? ''} saving={saveHosted.isPending} onSubmit={(body) => saveHosted.mutate({ id: p.id, name, ...body })} /></div>}

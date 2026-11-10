@@ -430,6 +430,27 @@ describe('ProviderDetail (TAL-2135)', () => {
     await waitFor(() => expect(document.querySelector('[data-stat="pace"]')).toHaveTextContent(/^PaceOn pace$/))
   })
 
+  it("keeps a configured provider's last-known row unverified while the server cannot confirm the catalog", async () => {
+    const availability = { status: 'stale', authoritative: false, generation: 'test', unavailable_reason: 'Provider data is temporarily unavailable. Showing last-confirmed data.' }
+    providersResponse.current = { availability, active_provider: 'anthropic', providers: [anthropic] }
+    await renderAt()
+    const a = await found('[data-provider="anthropic"]')
+    expect(within(a).getByText('Temporarily unavailable').closest('[data-status]')).toHaveAttribute('data-status', 'warning')
+    expect(within(a).queryByText('Key from .env')).toBeNull()
+    await userEvent.click(within(a).getByRole('link', { name: 'Anthropic' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('Showing last-confirmed data')
+    const signIn = await found('[data-group="sign-in"]')
+    expect(within(signIn).getByText('Temporarily unavailable').closest('[data-status]')).toHaveAttribute('data-status', 'warning')
+  })
+
+  it('words a provider whose key is gone as not configured, never ready', async () => {
+    providersResponse.current = { active_provider: 'anthropic', providers: [{ ...anthropic, has_key: false, configured: false, key_source: 'none', key_source_kind: null, removable: false }] }
+    await renderAt('/settings/providers/anthropic')
+    const signIn = await found('[data-group="sign-in"]')
+    expect(within(signIn).getByText('Not configured').closest('[data-status]')).toHaveAttribute('data-status', 'idle')
+    expect(within(signIn).queryByText('Configured')).toBeNull()
+  })
+
   it('shows an unknown provider as an error with the way back', async () => {
     providersResponse.current = { active_provider: 'anthropic', providers: [anthropic] }
     const router = await renderAt('/settings/providers/nope')
