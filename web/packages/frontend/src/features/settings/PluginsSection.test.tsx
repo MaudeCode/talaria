@@ -90,3 +90,27 @@ it('closes plugin settings on Save and shows the saved value at once (TAL-1179)'
   await userEvent.click(screen.getByRole('button', { name: 'Settings' }))
   expect(screen.getByRole('textbox', { name: 'Endpoint' })).toHaveValue('two')
 })
+
+it('filters installed plugins by name or description and keeps each description to one titled line (TAL-2082)', async () => {
+  vi.mocked(api.fetchPlugins).mockResolvedValueOnce({ read_only: false, plugins: [
+    { key: 'calendar', name: 'Calendar', kind: 'standalone', description: 'Reads your events', enabled: true },
+    { key: 'mailer', name: 'Mailer', description: 'Sends CALENDAR invites by email', enabled: true },
+    { key: 'notes', name: 'Notes', enabled: true },
+  ] })
+  renderPlugins()
+  const shown = () => [...document.querySelectorAll('[data-plugin]')].map((row) => row.getAttribute('data-plugin'))
+  const description = await screen.findByText('standalone · Reads your events')
+  expect(description).toHaveClass('truncate')
+  expect(description).toHaveAttribute('title', 'standalone · Reads your events')
+  const filter = screen.getByRole('searchbox', { name: 'Filter plugins' })
+  await userEvent.type(filter, 'calendar')
+  expect(shown()).toEqual(['calendar', 'mailer'])
+  await userEvent.clear(filter)
+  await userEvent.type(filter, 'EMAIL')
+  expect(shown()).toEqual(['mailer'])
+  await userEvent.type(filter, 'zzz')
+  expect(shown()).toEqual([])
+  expect(screen.getByText('No plugins match')).toBeInTheDocument()
+  await userEvent.clear(filter)
+  expect(shown()).toEqual(['calendar', 'mailer', 'notes'])
+})

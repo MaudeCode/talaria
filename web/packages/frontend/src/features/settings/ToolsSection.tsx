@@ -8,7 +8,7 @@ import { useSettingField } from './useSettingField'
 import { PluginsSection } from './PluginsSection'
 import { ConnectorsSection } from '../connectors/ConnectorsSection'
 import { McpSection } from './McpSection'
-import { SettingToggle } from './SettingsRows'
+import { SettingToggle, SettingsGroup } from './SettingsRows'
 
 /**
  * TAL-1691, TAL-2100: Settings > Tools, what the active profile's agent can reach. Plugins, connectors (behind the
@@ -29,7 +29,7 @@ export function ToolsSection({ tab, onTabChange }: { tab?: ToolsTab | undefined;
   const gateFailed = tab === 'connectors' && gate.isError && !gate.data
   return (
     <div className="flex flex-col gap-5" data-section="tools">
-      {typeof settings.data?.agent_approvals === 'boolean' ? <SettingToggle label={m.settings_label_agent_approvals()} settingKey="agent_approvals" /> : null}
+      {typeof settings.data?.agent_approvals === 'boolean' ? <SettingsGroup id="approvals" title={m.settings_group_approvals()}><SettingToggle label={m.settings_label_agent_approvals()} settingKey="agent_approvals" /></SettingsGroup> : null}
       {gateFailed && <ErrorState error={gate.error} onRetry={() => { void gate.refetch() }} />}
       {gating ? <LoadingState compact /> : <>
         <TabStrip label={m.settings_section_tools_title()} tabs={tabs} value={active} onChange={(next) => onTabChange?.(next)} panelPrefix="tools" />

@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Settings › Tools › Plugins has a filter to find a plugin by name or description, keeps each plugin's description to one line, and groups the agent approvals switch under an Approvals heading.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

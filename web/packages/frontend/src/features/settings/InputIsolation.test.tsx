@@ -6,7 +6,7 @@ import type { ReactNode } from 'react'
 import { BootstrapContext } from '../../app/bootstrap'
 import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
 
-const renders = vi.hoisted(() => ({ workspace: vi.fn(), provider: vi.fn(), passkey: vi.fn(), skill: vi.fn(), server: vi.fn(), tool: vi.fn(), privacy: vi.fn() }))
+const renders = vi.hoisted(() => ({ workspace: vi.fn(), provider: vi.fn(), passkey: vi.fn(), skill: vi.fn(), server: vi.fn(), tool: vi.fn(), privacy: vi.fn(), plugin: vi.fn() }))
 // Count one existing piece of output per real row, without replacing the rows or their controls.
 vi.mock('../../paraglide/messages.js', async (original) => {
   const actual = await original<typeof import('../../paraglide/messages.js')>()
@@ -16,6 +16,7 @@ vi.mock('../../paraglide/messages.js', async (original) => {
     delete: (...args: Parameters<typeof actual.m.delete>) => { renders.passkey(); return actual.m.delete(...args) },
     skill_uses: (...args: Parameters<typeof actual.m.skill_uses>) => { renders.skill(args[0].n); return actual.m.skill_uses(...args) },
     mcp_tool_count: (...args: Parameters<typeof actual.m.mcp_tool_count>) => { renders.server(); return actual.m.mcp_tool_count(...args) },
+    plugins_enabled: (...args: Parameters<typeof actual.m.plugins_enabled>) => { renders.plugin(); return actual.m.plugins_enabled(...args) },
   } }
 })
 // StatusBadge can be compiler-cached independently of a changed tool row.
@@ -56,6 +57,7 @@ vi.mock('../../api/endpoints', async (original) => ({
   fetchSkillsUsage: vi.fn(() => Promise.resolve({ usage: Object.fromEntries(skills.map((s, i) => [s.name, { use_count: i + 1 }])) })),
   fetchPendingWrites: vi.fn(() => Promise.resolve({ kind: 'skills', visible: false, enabled: false, items: [] })),
   fetchMcpServers: vi.fn(() => Promise.resolve({ toggle_supported: true, servers: [{ name: 'test', status: 'configured', enabled: true, can_toggle: true, tool_count: 3 }] })),
+  fetchPlugins: vi.fn(() => Promise.resolve({ read_only: false, plugins: [{ key: 'one', name: 'One', enabled: true, update: { available: true } }, { key: 'two', name: 'Two', enabled: true, settings: [] }] })),
   fetchMcpTools: vi.fn((q: string) => Promise.resolve({ tools: tools.filter((t) => t.name.includes(q)).map((t) => ({ ...t })), total: 3 })),
 }))
 import * as api from '../../api/endpoints'
@@ -66,6 +68,7 @@ import { ProvidersSection } from './ProvidersSection'
 import { AccessSection } from './AccessSection'
 import { SkillsPage } from '../skills/SkillsPage'
 import { McpSection } from './McpSection'
+import { PluginsSection } from './PluginsSection'
 import { PrivacySettings } from './PrivacySettings'
 
 const clients: QueryClient[] = []
@@ -121,6 +124,20 @@ describe('input render isolation (TAL-1405)', () => {
     await userEvent.clear(input)
     expect(document.querySelector('[data-provider="two"]')).not.toBeNull()
     expect(renders.provider).toHaveBeenCalledTimes(2)
+  })
+
+  it('plugin filtering renders only rows entering the visible list (TAL-2082)', async () => {
+    mount(<PluginsSection />)
+    await screen.findByText('One')
+    const input = screen.getByRole('searchbox', { name: 'Filter plugins' })
+    reset(renders.plugin)
+    await userEvent.type(input, 'one')
+    expect(document.querySelector('[data-plugin="two"]')).toBeNull()
+    expect(document.querySelector('[data-plugin="one"]')).not.toBeNull()
+    expect(renders.plugin).not.toHaveBeenCalled()
+    await userEvent.clear(input)
+    expect(document.querySelector('[data-plugin="two"]')).not.toBeNull()
+    expect(renders.plugin).toHaveBeenCalledTimes(1)
   })
 
   it('typing ten characters in each password renders no passkey rows', async () => {
