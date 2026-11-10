@@ -169,10 +169,10 @@ describe('TAL-1914', () => {
     const plain = (await screen.findByText('Plain')).closest('li')!
     expect(plain).not.toHaveAttribute('data-context-menu')
     const row = (await screen.findByText('Behind')).closest('li')!
-    expect(within(row).getByRole('button', { name: 'Details' })).toBeVisible()
+    expect(within(row).getByRole('button', { name: 'Update' })).toBeVisible()
     fireEvent.contextMenu(row)
     const menu = await screen.findByRole('menu', { name: 'Plugin actions' })
-    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Details', 'Update'])
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Update', 'Details'])
     fireEvent.click(within(menu).getByRole('menuitem', { name: 'Update' }))
     await waitFor(() => expect(api.updatePlugin).toHaveBeenCalledWith('catalog-key', false, undefined))
   })
@@ -193,4 +193,18 @@ describe('TAL-1914', () => {
     await waitFor(() => expect(api.updatePlugin).toHaveBeenLastCalledWith('probe', true, 'synthetic-consent'))
     await waitFor(() => expect(api.fetchPluginCatalog).toHaveBeenCalledTimes(2))
   })
+})
+
+it('TAL-2134: shows a blocked catalog update inside the dialog, beside its entry', async () => {
+  const entry = { title: 'Behind', description: '', repo: 'https://example.invalid/p', sha: 'b'.repeat(40), tier: 'verified', category: 'tools', requirements: [], installed_sha: 'a'.repeat(40), can_install: false, refusal: null }
+  vi.mocked(api.fetchPlugins).mockResolvedValue({ total: 1, plugins: [{ key: 'catalog-key', name: 'Catalog key' }] })
+  vi.mocked(api.fetchPluginCatalog).mockResolvedValue({ supported: true, total: 1, next_offset: null, entries: [{ ...entry, name: 'behind', installed_key: 'catalog-key', can_update: true }] })
+  vi.mocked(api.updatePlugin).mockResolvedValue({ key: 'catalog-key', status: 'blocked', verdict: 'dangerous', findings: 'Agent scan: credential exfiltration' })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+  render(<QueryClientProvider client={client}><PluginsSection /></QueryClientProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: 'Add plugin' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Add plugin' })
+  fireEvent.click(await within(dialog).findByRole('button', { name: 'Update' }))
+  const row = within(dialog).getByText('Behind').closest('li')!
+  expect(await within(row).findByRole('alert')).toHaveTextContent('Agent scan: credential exfiltration')
 })

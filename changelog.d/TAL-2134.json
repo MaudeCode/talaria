@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Settings › Tools › Plugins opens the plugin catalog from Add plugin in a dialog that searches as you type; a plugin's details open from its row, and each row ends in Install, Update or Installed.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}
