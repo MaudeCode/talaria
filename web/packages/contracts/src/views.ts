@@ -764,7 +764,10 @@ export const SettingsSchema = z.looseObject({
   kanban_pinned_boards: KanbanPinnedBoardsSchema.optional().describe('TAL-1851: replace the active profile ordered board pins; stored in Talaria settings, independently of the Agent.'),
   bot_name: z.string().optional(), default_model: z.string().optional(), default_workspace: z.string().optional(), language: z.string().optional(), send_key: z.string().optional(), font_size: z.string().optional(),
   full_width_chat: z.boolean().optional(), chat_width: z.enum(['comfortable', 'wide', 'full']).optional(), auto_scroll_follow: z.boolean().optional(), render_user_markdown: z.boolean().optional(), chat_activity_display_mode: z.string().optional(), default_message_mode: z.string().optional(),
-  fade_text_effect: z.boolean().optional(), hidden_tabs: z.array(z.string()).optional(), composer_control_order: z.array(z.string()).optional(), show_cli_sessions: z.boolean().optional(), show_claude_code_sessions: z.boolean().optional(),
+  fade_text_effect: z.boolean().optional().describe('TAL-2148: fade the streaming reply\'s new words in (default false); clients skip code and honour reduced motion.'),
+  show_busy_placeholder_hint: z.boolean().optional().describe('TAL-2148: while a chat is busy and the draft is empty, the composer placeholder names the busy action (default true).'),
+  session_endless_scroll: z.boolean().optional().describe('TAL-2148: older messages load while scrolling up (default true); off, a Load earlier messages button loads them.'),
+  hidden_tabs: z.array(z.string()).optional(), composer_control_order: z.array(z.string()).optional(), show_cli_sessions: z.boolean().optional(), show_claude_code_sessions: z.boolean().optional(),
   show_cron_sessions: z.boolean().optional(), show_sidebar_feedback: z.boolean().optional().describe('TAL-1588: show Send feedback in the Web rail above Notifications.'), sidebar_quota_sources: z.array(z.string()).optional().describe('TAL-1870: the provider quota source ids the expanded Web sidebar pins, in order; the server keeps at most two unique ids.'), sidebar_source_ids: z.array(z.string()).optional().describe('TAL-1870, a save of `sidebar_quota_sources` only: the quota projection for the saved pins, as `/api/provider/quotas` ships it; absent if the read failed.'), sidebar_can_pin: z.boolean().optional().describe('TAL-1870, a save of `sidebar_quota_sources` only: whether another source can be pinned.'), show_webhook_sessions: z.boolean().optional(), show_kanban_sessions: z.boolean().optional(), check_for_updates: z.boolean().optional(), summarize_updates_automatically: z.boolean().optional(), ignore_agent_updates: z.boolean().optional(),
   auth_enabled: z.boolean().optional(), password_auth_enabled: z.boolean().optional(), password_env_var: z.boolean().optional(), passkeys_enabled: z.boolean().optional(), passwordless_enabled: z.boolean().optional(),
   auth_disabled_acknowledged: z.boolean().optional(), webui_version: z.string().optional(), agent_version: z.string().optional(), update_channel: z.string().optional(), update_channels: z.array(WebUpdateChannelSchema).optional().describe('TAL-1569: the Web update channels this server offers, in display order.'), agent_update_channel: z.enum(['stable', 'experimental']).optional(), update_channel_version: NullableString.optional(),
@@ -779,6 +782,8 @@ export const SettingsSchema = z.looseObject({
   group_discussion_max_messages: z.number().int().positive().nullable().optional().describe('TAL-1828: the root config\'s `hosted_rooms.discussion.max_messages`, as a gateway loads it (default 10). Null as `group_discussion_max_rounds`.'),
   group_discussion_restart_required: z.boolean().nullable().optional().describe('TAL-1828: the running gateway loaded other limits at startup, so a saved change applies after a gateway restart. Null as `group_discussion_max_rounds`.'),
   screen_reader_mode: z.boolean().optional().describe('TAL-1605: give the Web workspace PTY an xterm accessibility tree; owner-command output always has one.'),
+  workspace_panel_open: z.boolean().optional().describe('TAL-2154: open the Web chat workspace panel on each chat\'s first visit in a browser tab; the person\'s own open or close wins after that.'),
+  workspace_todos_tab: z.boolean().optional().describe('TAL-2154: show a Todos page for the current chat in the Web chat workspace panel.'),
 })
 export type Settings = z.infer<typeof SettingsSchema>
 export const ProfileSchema = z.looseObject({
@@ -986,7 +991,18 @@ export const MaxTokensSchema = z.looseObject({ max_tokens: NullableNumber, max_t
 // ── workspaces, files, git ───────────────────────────────────────────────
 
 /** A registry entry; `name` is never empty (the folder name when none is registered, `Home` for `default`), so pickers show it as-is (TAL-303). */
-export const WorkspaceEntrySchema = z.looseObject({ name: z.string().min(1), path: z.string() })
+export const WorkspaceEntrySchema = z.looseObject({
+  name: z.string().min(1),
+  path: z.string(),
+  /** TAL-2141: this entry is the `default_workspace` setting new chats start in, compared in the list's canonical spelling. */
+  is_default: z.boolean().optional(),
+  /** TAL-2141: the path is a directory the server can read now; absent for a remote terminal backend. */
+  exists: z.boolean().optional(),
+  /** TAL-2141: the path with the server user's home directory written as `~`. */
+  display_path: z.string().optional(),
+  /** TAL-2141: chats in this space from the session index; absent when the index cannot be read. */
+  chat_count: z.number().int().optional(),
+})
 export type Workspace = z.infer<typeof WorkspaceEntrySchema>
 export const WorkspacesSchema = z.looseObject({ workspaces: z.array(WorkspaceEntrySchema), last: NullableString.optional(), terminal_remote_backend: z.boolean().optional() })
 export type Workspaces = z.infer<typeof WorkspacesSchema>
@@ -1526,6 +1542,17 @@ export const KanbanBoardsViewSchema = z.looseObject({ boards: z.array(z.looseObj
   pinned: KanbanPinnedBoardsSchema.describe('TAL-1851: ordered pinned board slugs for this profile, excluding missing and archived boards.') })
 /** Board-wide task counts (TAL-567): `status_counts` in board-column order, unknown statuses after; `total` excludes archived tasks. */
 export const KanbanStatsViewSchema = z.looseObject({ by_status: z.record(z.string(), z.number()), total: z.number().int(), status_counts: z.array(z.object({ status: z.string(), count: z.number().int() })) })
+/**
+ * TAL-2142: one gallery entry as Settings shows it. The server drops entries without an id, decides `installed`, and
+ * reduces the registry's permission declaration to the keys that grant something (the same reduction installed rows use).
+ */
+export const ExtensionRegistryEntrySchema = z.looseObject({
+  id: z.string(), name: z.string(), description: z.string(), version: z.string(), installed: z.boolean(),
+  capabilities: z.array(z.string()), permissions: z.array(z.string()), homepage: z.string().nullable(), download_url: z.string(), sha256: z.string(),
+})
+export type ExtensionRegistryEntry = z.infer<typeof ExtensionRegistryEntrySchema>
+/** `entries` honour `q`; `total` counts the whole gallery. `error` is set when the registry could not be read. */
+export const ExtensionRegistrySchema = z.looseObject({ entries: z.array(ExtensionRegistryEntrySchema), total: z.number().int(), error: z.string().optional() })
 export const ExtensionStatusSchema = z.looseObject({
   enabled: z.boolean(), extension_dir_configured: z.boolean().optional(), extension_dir_valid: z.boolean().optional(), script_urls: z.array(z.string()).optional(), stylesheet_urls: z.array(z.string()).optional(), sidecars: z.array(Json).optional(),
   extensions: z.array(z.looseObject({ id: z.string(), enabled: z.boolean().optional(), name: z.string().optional(), version: z.string().optional() })).optional(), warnings: z.array(Json).optional(),

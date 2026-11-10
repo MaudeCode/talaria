@@ -1937,6 +1937,7 @@
 	"token_usage_on": "Отображение токенов включено",
 	"tool_target_skill_suffix": "навык",
 	"transcript": "Транскрипт",
+	"transcript_load_earlier": "Загрузить более ранние сообщения",
 	"tree_view": "Дерево",
 	"tts_listen": "Прослушать",
 	"tts_not_supported": "Синтез речи не поддерживается",

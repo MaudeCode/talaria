@@ -1869,6 +1869,7 @@
 	"token_usage_on": "Používání tokenu zapnuto",
 	"tool_target_skill_suffix": "dovednost",
 	"transcript": "Transkript",
+	"transcript_load_earlier": "Načíst starší zprávy",
 	"tree_view": "Strom",
 	"tts_listen": "Poslouchat",
 	"tts_not_supported": "Syntéza řeči není v tomto prohlížeči podporována.",

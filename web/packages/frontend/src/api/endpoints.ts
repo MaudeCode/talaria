@@ -325,7 +325,7 @@ export const onboardingComplete = (body: Record<string, unknown> = {}) => orpc()
 export const onboardingOauthStart = (provider: string) => orpc().onboarding.oauthStart({ provider }, { signal: timeout(60_000) })
 export const onboardingOauthPoll = (flowId: string) => orpc().onboarding.oauthPoll({ flow_id: flowId })
 export const onboardingOauthCancel = (flowId: string) => orpc().onboarding.oauthCancel({ flow_id: flowId })
-export const fetchExtensionRegistry = () => orpc().extensions.registry(undefined, { signal: timeout(45_000) })
+export const fetchExtensionRegistry = (q = '') => orpc().extensions.registry(q ? { q } : {}, { signal: timeout(45_000) })
 export const extensionAction = (action: 'install' | 'uninstall' | 'toggle' | 'sidecar-proxy-consent', body: Record<string, unknown>) => {
   const e = orpc().extensions
   const opts = { signal: timeout(120_000) }

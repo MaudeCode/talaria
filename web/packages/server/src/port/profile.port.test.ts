@@ -538,7 +538,7 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     writeFileSync(join(workHome, 'webui_state', 'last_workspace.txt'), last)
     writeFileSync(join(workHome, 'webui_state', 'workspaces.json'), '[]')
     const body = await json(await s.get('/api/workspaces', { headers: asWork() }))
-    expect((body.workspaces as { path: string; name: string }[]).map((w) => ({ ...w, path: realpathSync(w.path) }))).toEqual([{ path: realpathSync(join(workHome, 'ws-config')), name: 'Home' }])
+    expect((body.workspaces as { path: string; name: string }[]).map((w) => ({ path: realpathSync(w.path), name: w.name }))).toEqual([{ path: realpathSync(join(workHome, 'ws-config')), name: 'Home' }])
     // `/api/profile/active` keeps preferring the profile's own last workspace.
     expect(realpathSync(String((await json(await s.get('/api/profile/active', { headers: asWork() }))).default_workspace))).toBe(realpathSync(last))
     rmSync(join(workHome, 'webui_state', 'workspaces.json'), { force: true })

@@ -16,7 +16,7 @@ import { TerminalNotRunning } from '../tools/terminal.js'
 import { sessionTerminal, startSessionTerminal, terminalSlice, TerminalRefused } from '../tools/agent-terminal.js'
 import { onboardingGateAllows } from './settings-router.js'
 import { sanitizeError } from '../workspace/media.js'
-import { str } from '../util.js'
+import { containsQuery, str } from '../util.js'
 
 const os = implement(automationContract).$context<ApiContext>().use(requestSessionIdGuard)
 
@@ -142,8 +142,12 @@ export const automationRouter = os.router({
   },
   extensions: {
     status: os.extensions.status.handler(({ context: { ctx } }) => run(() => ctx.deps.extensions.status() as Promise<never>)),
-    registry: os.extensions.registry.handler(({ context: { ctx } }) => run(() => ctx.deps.extensions.registry())),
-    manifests: os.extensions.manifests.handler(({ context: { ctx } }) => run(async () => (await manifestList(ctx)))),
+    registry: os.extensions.registry.handler(({ input, context: { ctx } }) => run(() => ctx.deps.extensions.registry(input.q))),
+    // TAL-2142: `q` filters the rows; `total` and `enabled_count` count every row.
+    manifests: os.extensions.manifests.handler(({ input, context: { ctx } }) => run(async () => {
+      const { protocol_version, manifests } = await manifestList(ctx)
+      return { protocol_version, total: manifests.length, enabled_count: manifests.filter((m) => m.enabled === true).length, manifests: manifests.filter((m) => containsQuery(input.q, [m.name, m.id, m.description])) }
+    })),
     toggle: os.extensions.toggle.handler(({ input, context: { ctx } }) => run(async () => {
       // A listed plugin row persists `dashboard_plugins.<id>`; every other id is an extension override.
       const id = typeof input.id === 'string' ? input.id.trim() : ''

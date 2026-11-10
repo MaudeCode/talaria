@@ -52,7 +52,7 @@ exports[`preserves main JSON bytes for every document namespace and run-journal 
   "show_sidebar_feedback": false,
   "sidebar_quota_sources": [],
   "show_conversation_outline": false,
-  "show_busy_placeholder_hint": false,
+  "show_busy_placeholder_hint": true,
   "new_chat_on_workspace_switch": false,
   "virtualize_transcript": false,
   "virtualize_transcript_optin": false,
@@ -82,7 +82,7 @@ exports[`preserves main JSON bytes for every document namespace and run-journal 
   "project_quick_create_buttons": false,
   "structured_code_default_view": "auto",
   "structured_code_auto_tree_lines": 10,
-  "session_endless_scroll": false,
+  "session_endless_scroll": true,
   "chat_activity_display_mode": "compact_worklog",
   "transparent_stream_event_timestamps": true,
   "auto_scroll_follow": true,
@@ -120,6 +120,7 @@ exports[`preserves main JSON bytes for every document namespace and run-journal 
   "simplified_tool_calling": true,
   "terminal_auto_expand_on_output": false,
   "screen_reader_mode": false,
+  "workspace_panel_open": false,
   "workspace_todos_tab": false,
   "api_redact_enabled": true,
   "dashboard_plugins": {},
@@ -130,7 +131,8 @@ exports[`preserves main JSON bytes for every document namespace and run-journal 
   "auth_disabled_acknowledged": false,
   "provider_cost_budget": null,
   "confirm_external_links": true,
-  "trusted_link_hosts": []
+  "trusted_link_hosts": [],
+  "chat_switches_migrated": true
 }",
     "shares/BwcHBwcHBwcHBwcHBwcHBwcH.json": "{
   "token": "BwcHBwcHBwcHBwcHBwcHBwcH",

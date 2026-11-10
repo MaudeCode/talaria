@@ -1664,6 +1664,7 @@
 	"token_usage_on": "Uso de tokens ligado",
 	"tool_target_skill_suffix": "skill",
 	"transcript": "Transcrição",
+	"transcript_load_earlier": "Carregar mensagens anteriores",
 	"tts_listen": "Ouvir",
 	"tts_not_supported": "Síntese de voz não disponível",
 	"type_slash": "Digite / para ver comandos",

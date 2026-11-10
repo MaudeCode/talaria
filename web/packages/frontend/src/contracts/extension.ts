@@ -71,6 +71,8 @@ export const ExtensionManifestSchema = z.object({
 })
 export type ExtensionManifest = z.infer<typeof ExtensionManifestSchema>
 export const ExtensionManifestsSchema = z.object({ protocol_version: z.literal(EXTENSION_PROTOCOL_VERSION), manifests: z.array(ExtensionManifestSchema).max(200) })
+/** TAL-2142: Settings' list, filtered by `q`; `total` and `enabled_count` count every row. */
+export const ExtensionManifestListSchema = ExtensionManifestsSchema.extend({ total: z.number().int(), enabled_count: z.number().int() })
 
 // ── Wire protocol (host <-> iframe over a dedicated MessageChannel) ─────────
 const Nonce = z.string().regex(/^[A-Za-z0-9_-]{16,64}$/)

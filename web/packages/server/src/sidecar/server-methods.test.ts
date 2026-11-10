@@ -721,7 +721,7 @@ describe('server.project_*, workspace_*, profile_list, goal_get, goal_set (TAL-1
       expect(added).toMatchObject({ result: { ok: true, workspaces: expect.arrayContaining([{ path: folder, name: 'Synthetic' }]) as unknown } })
       expect(await ask('server.workspace_rename', { path: folder, name: 'Synthetic repo' })).toMatchObject({ result: { ok: true, workspaces: expect.arrayContaining([{ path: folder, name: 'Synthetic repo' }]) as unknown } })
       const workspaces = await ask('server.workspace_list')
-      expect((workspaces as { result: { workspaces: unknown[] } }).result.workspaces).toContainEqual({ path: folder, name: 'Synthetic repo' })
+      expect((workspaces as { result: { workspaces: unknown[] } }).result.workspaces).toContainEqual(expect.objectContaining({ path: folder, name: 'Synthetic repo' }))
       expect(workspaces).toEqual({ result: await route('/api/workspaces') })
       // An invalid path is refused with the route's own validation error.
       const missing = join(s.state, 'no-such-folder')

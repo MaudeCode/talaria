@@ -1837,6 +1837,7 @@
 	"token_usage_on": "Token usage on",
 	"tool_target_skill_suffix": "skill",
 	"transcript": "대화 기록",
+	"transcript_load_earlier": "이전 메시지 불러오기",
 	"tree_view": "Tree",
 	"tts_listen": "듣기",
 	"tts_not_supported": "음성 합성을 사용할 수 없습니다",

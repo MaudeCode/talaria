@@ -1845,6 +1845,7 @@
 	"token_usage_on": "Uso token attivo",
 	"tool_target_skill_suffix": "skill",
 	"transcript": "Trascrizione",
+	"transcript_load_earlier": "Carica messaggi precedenti",
 	"tree_view": "Albero",
 	"tts_listen": "Ascolta",
 	"tts_not_supported": "Sintesi vocale non supportata in questo browser.",

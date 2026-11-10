@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import type { BackgroundTask } from '@maudecode/talaria-web-contracts'
+import type { Session } from '../../contracts'
 
 vi.mock('../../api/endpoints', () => ({
   fetchBackgroundTasks: vi.fn(),
@@ -16,7 +17,9 @@ vi.mock('../../api/endpoints', () => ({
   fetchCheckpoints: vi.fn(),
   fetchCheckpointDiff: vi.fn(),
   restoreCheckpoint: vi.fn(),
+  fetchSettings: vi.fn(),
 }))
+vi.mock('./useTranscript', () => ({ useTranscript: vi.fn() }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn(), showRichToast: vi.fn() }))
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, params, className }: { children: ReactNode; params: { sessionId: string }; className?: string }) => <a href={`/session/${params.sessionId}`} className={className}>{children}</a>,
@@ -25,6 +28,9 @@ import * as api from '../../api/endpoints'
 import { showRichToast, showToast } from '../toast/toast'
 import { ChatSidePanel } from './ChatSidePanel'
 import { requestOpenFile } from '../workspace/openFileRequest'
+import { useTranscript } from './useTranscript'
+import { setSidePanelOpen, useShellState } from '../../shell/useShellState'
+import todosFixture from '../../../../../../contracts/fixtures/web-native-todos.json'
 
 const agent = (overrides: Partial<BackgroundTask>): BackgroundTask => ({
   task_id: 'd', kind: 'delegation', status: 'running', title: 'Fix CI', started_at: 1, updated_at: Date.now() / 1000, completed_at: null,
@@ -33,8 +39,8 @@ const agent = (overrides: Partial<BackgroundTask>): BackgroundTask => ({
 const tasks = (list: BackgroundTask[], agent_available = true) => ({ session_id: 's1', agent_available, tasks: list, pinned_count: list.filter((t) => t.pinned).length, agents_working: list.some((t) => t.status === 'running' || t.status === 'attention') })
 
 let qc: QueryClient
-function Panel({ workspace = '/repo', sessionId = 's1', open = true }: { workspace?: string | null; sessionId?: string; open?: boolean }) {
-  return <QueryClientProvider client={qc}><ChatSidePanel key={sessionId} sessionId={sessionId} workspace={workspace} open={open} onToggle={() => undefined} onClose={() => undefined} /></QueryClientProvider>
+function Panel({ workspace = '/repo', sessionId = 's1', open = true, todoState }: { workspace?: string | null; sessionId?: string; open?: boolean; todoState?: Session['todo_state'] }) {
+  return <QueryClientProvider client={qc}><ChatSidePanel key={sessionId} sessionId={sessionId} workspace={workspace} todoState={todoState} open={open} onToggle={() => undefined} onClose={() => undefined} /></QueryClientProvider>
 }
 
 beforeEach(() => {
@@ -44,6 +50,8 @@ beforeEach(() => {
   vi.mocked(api.fetchBackgroundTasks).mockReset().mockResolvedValue(tasks([]))
   vi.mocked(api.listDir).mockReset().mockResolvedValue({ entries: [{ name: 'src', is_dir: true }, { name: 'README.md', size: 10 }] })
   vi.mocked(api.fetchGitInfo).mockReset().mockResolvedValue({ git: null })
+  vi.mocked(api.fetchSettings).mockReset().mockResolvedValue({})
+  vi.mocked(useTranscript).mockReset().mockReturnValue({ session: null, query: { isError: false, isPending: true } } as unknown as ReturnType<typeof useTranscript>)
 })
 
 describe('chat side panel (TAL-373)', () => {
@@ -287,5 +295,57 @@ describe('chat side panel Checkpoints (TAL-571)', () => {
     await restore()
     await waitFor(() => { expect(showToast).toHaveBeenCalledWith('Restore: notes.txt: Permission denied', 6000, 'error') })
     expect(showToast).not.toHaveBeenCalledWith('Checkpoint restored')
+  })
+})
+
+describe('chat side panel settings (TAL-2154)', () => {
+  const settings = (values: Record<string, boolean>) => qc.setQueryData(['settings'], values)
+  // The panel reads its open state from the shell, as ChatView passes it.
+  function ShellPanel({ sessionId }: { sessionId: string }) {
+    const { sidePanelOpen } = useShellState()
+    return <QueryClientProvider client={qc}><ChatSidePanel key={sessionId} sessionId={sessionId} workspace="/repo" todoState={undefined} open={sidePanelOpen} onToggle={() => undefined} onClose={() => undefined} /></QueryClientProvider>
+  }
+  const panelOpen = () => document.documentElement.dataset.workspacePanel === 'open'
+
+  it('opens the panel on a chat\'s first visit while "Keep open by default" is on, and restores each chat\'s own choice on return', async () => {
+    act(() => { setSidePanelOpen(false) })
+    settings({ workspace_panel_open: true })
+    const { rerender } = render(<ShellPanel sessionId="first" />)
+    await waitFor(() => { expect(panelOpen()).toBe(true) })
+    act(() => { setSidePanelOpen(false) })
+    rerender(<ShellPanel sessionId="first" />)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(panelOpen()).toBe(false)
+    // A new chat opens it, and returning to the first chat without touching the second restores the first chat's close.
+    rerender(<ShellPanel sessionId="second" />)
+    await waitFor(() => { expect(panelOpen()).toBe(true) })
+    rerender(<ShellPanel sessionId="first" />)
+    await waitFor(() => { expect(panelOpen()).toBe(false) })
+    rerender(<ShellPanel sessionId="second" />)
+    await waitFor(() => { expect(panelOpen()).toBe(true) })
+  })
+
+  it('leaves the panel as it was while "Keep open by default" is off', async () => {
+    act(() => { setSidePanelOpen(false) })
+    settings({ workspace_panel_open: false })
+    render(<ShellPanel sessionId="off" />)
+    await screen.findByRole('tab', { name: 'Files' })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(panelOpen()).toBe(false)
+  })
+
+  it('adds a Todos tab listing the chat\'s todos only while the setting is on, without opening a transcript reader of its own', async () => {
+    settings({ workspace_todos_tab: false })
+    const { unmount } = render(<Panel />)
+    await screen.findByRole('tab', { name: 'Files' })
+    expect(screen.queryByRole('tab', { name: 'Todos' })).not.toBeInTheDocument()
+    unmount()
+    settings({ workspace_todos_tab: true })
+    render(<Panel todoState={todosFixture.public as Session['todo_state']} />)
+    await userEvent.click(await screen.findByRole('tab', { name: 'Todos' }))
+    // A second transcript reader would tear down the chat's live stream when its tab is hidden.
+    expect(useTranscript).not.toHaveBeenCalled()
+    const rows = within(screen.getByRole('list', { name: 'Current task list' })).getAllByRole('listitem')
+    expect(rows.map((r) => r.textContent)).toEqual(['Owner taskWorking', '✓Finished taskDone'])
   })
 })

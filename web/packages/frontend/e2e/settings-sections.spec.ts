@@ -76,7 +76,7 @@ test('the Settings menu groups its sections by scope, naming the active profile 
 
 test('Profiles, Spaces and Logs live in Settings under Server, and their old URLs redirect there (TAL-2101)', async ({ page }) => {
   // TAL-2139: Logs' Copy sits in the section heading, like the other pages' actions.
-  for (const [section, heading, action, actionHome] of [['profiles', 'Profiles', 'Create profile', '.settings-section-head'], ['workspaces', 'Spaces', 'Add workspace', '.settings-section-head'], ['logs', 'Logs', 'Copy', '.settings-section-head']] as const) {
+  for (const [section, heading, action, actionHome] of [['profiles', 'Profiles', 'Create profile', '.settings-section-head'], ['workspaces', 'Spaces', 'Add space', '.settings-section-head'], ['logs', 'Logs', 'Copy', '.settings-section-head']] as const) {
     await page.goto('/')
     await settle(page)
     await page.goto(`/${section}?from=bookmark`)

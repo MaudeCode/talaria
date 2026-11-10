@@ -99,6 +99,21 @@ async function seed(server: Awaited<ReturnType<typeof discussionServer>>['server
     await saveSession({ session_id: `2026110${String(index + 1)}_090000_demo`, title, model, input_tokens: input, output_tokens: output, estimated_cost: input / 200_000, created_at: at, updated_at: at + 900, messages: [{ role: 'user', content: title, timestamp: at }, { role: 'assistant', content: `Done: ${title.toLowerCase()}.`, timestamp: at + 900 }] })
   }
 
+  // TAL-2142: Settings › Extensions shows one gallery install and a gallery of three, one declaring what it can access.
+  const extDir = join(server.state, 'extensions', 'flightdeck')
+  mkdirSync(extDir, { recursive: true })
+  writeFileSync(join(extDir, 'manifest.json'), JSON.stringify({ name: 'Flightdeck', version: '0.2.0', description: 'Live agent instruments beside the chat', panel: 'index.html', capabilities: ['lifecycle', 'session'], permissions: { webui_api: { read: ['session'], write: [] } } }))
+  writeFileSync(join(extDir, 'index.html'), '<!doctype html><title>Flightdeck</title>')
+  writeFileSync(join(server.state, 'extension-install-manifest.json'), JSON.stringify({ version: 1, installed: { flightdeck: { version: '0.2.0', files: ['manifest.json', 'index.html'], installed_at: '2026-11-01T00:00:00Z' } } }))
+  const gallery = { extensions: [
+    { id: 'flightdeck', name: 'Flightdeck', version: '0.2.0', description: 'Live agent instruments beside the chat' },
+    { id: 'message-pins', name: 'Message Pins', version: '0.1.0', description: 'Pin individual messages in a conversation. Adds a pin button to each message and a header popover listing pinned messages with click-to-jump.', capabilities: ['manifest-bundle'], permissions: { webui_api: { read: ['session'], write: [] }, dom: { owned: true, mutates_core_views: true } }, homepage: 'https://example.com/message-pins' },
+    { id: 'model-favorites', name: 'Model Favorites', version: '0.1.0', description: 'Star your most-used models in the composer model picker' },
+    { id: 'rss-feeds', name: 'RSS Feeds', version: '0.1.0', description: 'RSS and Atom reader with keyword filters and AI summaries' },
+  ] }
+  const realFetch = server.deps.fetch
+  ;(server.deps as { fetch: typeof fetch }).fetch = (input, init) => String(input instanceof Request ? input.url : input).endsWith('/registry.json') ? Promise.resolve(new Response(JSON.stringify(gallery), { status: 200 })) : realFetch(input, init)
+
   const review = await sidecar.serverRequest('server.decision_review_put', { caller_session_id: DEMO_SESSION_ID, title: 'Settings audit', items: [decisionItem('retention', 'Retention'), decisionItem('telemetry', 'Telemetry'), decisionItem('autosave', 'Autosave')] })
   if (!('result' in review)) throw new Error(JSON.stringify(review))
 

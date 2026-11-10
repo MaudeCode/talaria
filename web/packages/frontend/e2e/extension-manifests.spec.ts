@@ -21,7 +21,10 @@ test('a gallery extension with a panel gets a sidebar entry, Open, and Uninstall
     await settle(page)
     const gal = page.locator('[data-extension-id="gal"]')
     await expect(gal).toHaveAttribute('data-source', 'gallery')
-    await expect(gal.getByRole('button', { name: 'Uninstall' })).toBeVisible()
+    // TAL-2142: Uninstall sits in the row's actions menu.
+    await gal.getByRole('button', { name: 'Extension actions' }).click()
+    await expect(page.getByRole('menuitem', { name: 'Uninstall' })).toBeVisible()
+    await page.keyboard.press('Escape')
     await expect(gal.getByRole('link', { name: 'Open' })).toBeVisible()
     const old = page.locator('[data-extension-id="old"]')
     await expect(old.getByRole('status')).toBeVisible()

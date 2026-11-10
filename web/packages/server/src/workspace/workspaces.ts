@@ -123,6 +123,21 @@ export function workspaceDisplayName(path: string, entries: readonly WorkspaceEn
   return entries.find((w) => w.path === path)?.name || basename(path) || path
 }
 
+/**
+ * TAL-2141: the Add space folder browser's view of a suggest prefix: each suggestion's last folder and the input value that
+ * lists its children, the value one folder up (exactly one, with or without a trailing separator), and the default name.
+ */
+export function folderBrowse(prefix: string, suggestions: readonly string[], home: string): { folders: { path: string; name: string; target: string }[]; parent: string | null; default_name: string | null } {
+  const raw = prefix.trim()
+  const stripped = raw.replace(/\/+$/, '')
+  const cut = stripped.lastIndexOf('/')
+  return {
+    folders: suggestions.map((path) => ({ path, name: basename(path) || path, target: path.endsWith('/') ? path : `${path}/` })),
+    parent: stripped ? (cut < 0 ? '' : stripped.slice(0, cut + 1)) : null,
+    default_name: raw ? basename(expandHome(stripped, home)) || '/' : null,
+  }
+}
+
 export class WorkspaceRegistry {
   readonly home: string
   constructor(readonly deps: WorkspaceDeps) {

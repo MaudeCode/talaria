@@ -1770,6 +1770,7 @@
 	"token_usage_on": "Token 用量顯示已開啟",
 	"tool_target_skill_suffix": "技能",
 	"transcript": "對話記錄",
+	"transcript_load_earlier": "載入較早訊息",
 	"tree_view": "樹狀",
 	"tts_listen": "收聽",
 	"tts_not_supported": "語音合成無法使用",

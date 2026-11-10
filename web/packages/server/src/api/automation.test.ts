@@ -631,7 +631,7 @@ describe('crons, kanban, extensions, terminal', () => {
     let body = await json(res)
     expect(body).toMatchObject({ enabled: false, extension_dir_configured: true, extension_dir_valid: false })
     res = await s.get('/api/extensions/registry')
-    expect(await json(res)).toEqual({ entries: [{ id: 'ext-one' }] })
+    expect(await json(res)).toEqual({ total: 1, entries: [{ id: 'ext-one', name: 'ext-one', description: '', version: '', installed: false, capabilities: [], permissions: [], homepage: null, download_url: '', sha256: '' }] })
     res = await post(s, '/api/extensions/install', { id: 'ext-one', download_url: 'https://evil.example/ext-one.zip', sha256: sha })
     expect(res.status).toBe(400)
     res = await post(s, '/api/extensions/install', { id: 'ext-one', download_url: 'https://hermes-webui.github.io/x/big.zip', sha256: sha })
@@ -1214,6 +1214,63 @@ describe('extension manifest toggle decision (TAL-685)', () => {
       expect((await service.manifests()).manifests.map((m) => [m.id, m.can_toggle])).toEqual([['live', true], ['off', false]])
     } finally {
       rmSync(stateDir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('Settings › Extensions gallery and filters (TAL-2142)', () => {
+  const PINS = {
+    id: 'pins', name: 'Message Pins', description: 'Pin individual messages in a conversation.', version: '0.1.0', capabilities: ['manifest-bundle'], homepage: 'https://example.com/pins',
+    download: 'https://hermes-webui.github.io/x/pins.zip', sha256: 'a'.repeat(64),
+    permissions: { webui_api: { read: ['session'], write: [] }, dom: { owned: false, mutates_core_views: false }, storage: { owned: [], note: 'words only' }, network_external: false, native_host: true },
+  }
+  const FAV = { id: 'fav', name: 'Model Favorites', description: 'Star your most-used models', version: '0.1.0', homepage: 'javascript:alert(1)' }
+
+  it('ships each registry entry typed, drops entries without an id, and filters by name or description with the gallery total', async () => {
+    const stateDir = mkdtempSync(join(tmpdir(), 'talaria-ext-'))
+    const root = join(stateDir, 'ext-root')
+    mkdirSync(root)
+    writeFileSync(join(root, 'manifest.json'), JSON.stringify({ extensions: [{ id: 'fav', name: 'Model Favorites' }] }))
+    const registryFetch: typeof fetch = () => Promise.resolve(new Response(JSON.stringify({ extensions: [PINS, FAV, { name: 'No id' }, { id: '  ' }] }), { status: 200 }))
+    const service = new ExtensionService({ documents: new JsonDocuments(stateDir), env: { HERMES_WEBUI_EXTENSION_DIR: root, HERMES_WEBUI_EXTENSION_MANIFEST: 'manifest.json' }, stateDir, isAuthEnabled: () => Promise.resolve(false), fetch: registryFetch, log: () => undefined })
+    try {
+      const all = await service.registry()
+      expect(all.total).toBe(2)
+      expect(all.entries).toEqual([
+        // Only declarations that grant something name a permission; the registry's `download` is the install URL.
+        { id: 'pins', name: 'Message Pins', description: PINS.description, version: '0.1.0', installed: false, capabilities: ['manifest-bundle'], permissions: ['webui_api', 'native_host'], homepage: 'https://example.com/pins', download_url: PINS.download, sha256: PINS.sha256 },
+        // No declared permissions or capabilities read as empty lists; a non-http homepage is no link; a listed id is installed.
+        { id: 'fav', name: 'Model Favorites', description: FAV.description, version: '0.1.0', installed: true, capabilities: [], permissions: [], homepage: null, download_url: '', sha256: '' },
+      ])
+      expect(await service.registry('PIN')).toMatchObject({ total: 2, entries: [{ id: 'pins' }] })
+      expect(await service.registry('most-used')).toMatchObject({ total: 2, entries: [{ id: 'fav' }] })
+      expect(await service.registry('nothing like it')).toEqual({ total: 2, entries: [] })
+    } finally {
+      rmSync(stateDir, { recursive: true, force: true })
+    }
+  })
+
+  it('filters /api/extensions/manifests by name, id or description and counts every row and every enabled row', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'talaria-ext-'))
+    writeFileSync(join(root, 'manifest.json'), JSON.stringify({ extensions: [
+      { id: 'flightdeck', name: 'Flightdeck', description: 'Live agent instruments', panel: 'f/index.html' },
+      { id: 'off', name: 'Quiet', description: 'Turned off', panel: 'o/index.html', enabled: false },
+      { id: 'notes', name: 'Notes', description: 'Scratch pad', panel: 'n/index.html' },
+    ] }))
+    const s = await bootTestServer({ env: { HERMES_WEBUI_EXTENSION_DIR: root, HERMES_WEBUI_EXTENSION_MANIFEST: 'manifest.json' } })
+    try {
+      const ids = (body: Json): string[] => (body.manifests as Json[]).map((m) => String(m.id))
+      const all = await json(await s.get('/api/extensions/manifests'))
+      expect(ids(all)).toEqual(['flightdeck', 'off', 'notes'])
+      expect(all).toMatchObject({ total: 3, enabled_count: 2 })
+      for (const [q, want] of [['FLIGHT', ['flightdeck']], ['off', ['off']], ['scratch', ['notes']], ['zzz', []]] as const) {
+        const body = await json(await s.get(`/api/extensions/manifests?q=${q}`))
+        expect(ids(body)).toEqual(want)
+        expect(body).toMatchObject({ total: 3, enabled_count: 2 })
+      }
+    } finally {
+      await s.close()
+      rmSync(root, { recursive: true, force: true })
     }
   })
 })

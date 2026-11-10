@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Settings › Extensions in Talaria Web shows how many extensions are installed, turned on and in the gallery, filters both lists, opens a gallery extension to its full description and what it can access before you install it, and marks only the install you started as busy.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

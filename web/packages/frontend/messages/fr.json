@@ -1863,6 +1863,7 @@
 	"token_usage_on": "Utilisation des jetons activée",
 	"tool_target_skill_suffix": "compétence",
 	"transcript": "Transcription",
+	"transcript_load_earlier": "Charger les messages précédents",
 	"tree_view": "Arborescence",
 	"tts_listen": "Écouter",
 	"tts_not_supported": "La synthèse vocale n'est pas prise en charge dans ce navigateur.",

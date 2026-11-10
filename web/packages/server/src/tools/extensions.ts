@@ -12,8 +12,8 @@ import { readZip } from '../workspace/unzip.js'
 import { readAll } from '../workspace/media.js'
 import { signatureOf, statSignatureAsync, weakEtag } from '../fs/stat.js'
 import { isDict, type Dict } from '../config/agent-config.js'
-import { str } from '../util.js'
-import { SKIN_TOKEN_NAMES, SKIN_VALUE_RE } from '@maudecode/talaria-web-contracts'
+import { containsQuery, str } from '../util.js'
+import { SKIN_TOKEN_NAMES, SKIN_VALUE_RE, type ExtensionRegistryEntry } from '@maudecode/talaria-web-contracts'
 
 export class ExtensionError extends Error {
   constructor(message: string, readonly status = 400) { super(message) }
@@ -46,6 +46,28 @@ const DECLARATION_ID_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/
 const TEXT_MIME = new Set(['text/css', 'application/javascript', 'text/html', 'image/svg+xml', 'text/plain'])
 
 export interface ExtensionDeps { env: Record<string, string | undefined>; stateDir: string; documents: DocumentBackend; isAuthEnabled: () => Promise<boolean>; fetch: typeof fetch; log: (line: string) => void }
+
+/** TAL-2142: a permission declaration grants something when it is `true`, a non-empty list, or an object with a granting member; words (`note`) never do. */
+const grants = (v: unknown): boolean => v === true || (Array.isArray(v) && v.length > 0) || (isDict(v) && Object.values(v).some(grants))
+/** A manifest's or registry entry's permission keys with whether each grants anything; keys the frontend contract rejects (over 64 chars) are dropped. */
+const permissionGrants = (raw: unknown): [string, boolean][] => isDict(raw) ? Object.entries(raw).filter(([k]) => k.length <= 64).map(([k, v]) => [k, grants(v)]) : []
+
+/** TAL-2142: one registry entry as Settings shows it, or null without an id. `installed` is whether an extension of that id is listed. */
+function registryEntryView(raw: unknown, installed: ReadonlySet<string>): ExtensionRegistryEntry | null {
+  if (!isDict(raw) || typeof raw.id !== 'string' || !raw.id.trim()) return null
+  const id = raw.id.trim()
+  const text = (v: unknown): string => typeof v === 'string' ? v.trim() : ''
+  const homepage = text(raw.homepage)
+  return {
+    id, name: text(raw.name) || id, description: text(raw.description), version: text(raw.version), installed: installed.has(id),
+    capabilities: Array.isArray(raw.capabilities) ? raw.capabilities.filter((c): c is string => typeof c === 'string') : [],
+    permissions: permissionGrants(raw.permissions).filter(([, granted]) => granted).map(([k]) => k),
+    // A link the page opens: only http(s).
+    homepage: /^https?:\/\//i.test(homepage) ? homepage : null,
+    // The published registry names the archive `download`; older entries used `download_url`.
+    download_url: text(raw.download_url) || text(raw.download), sha256: text(raw.sha256),
+  }
+}
 
 export const validId = (v: unknown): v is string => typeof v === 'string' && ID_RE.test(v.trim())
 interface Diagnostics { warnings: { code: string; source: string }[] }
@@ -687,7 +709,16 @@ export class ExtensionService {
     return res
   }
 
-  async registry(): Promise<{ entries: unknown[]; error?: string }> {
+  /** TAL-2142: the gallery as Settings shows it: entries matching `q` (name or description), `total` over the whole gallery. */
+  async registry(q = ''): Promise<{ entries: ExtensionRegistryEntry[]; total: number; error?: string }> {
+    const { entries: raw, error } = await this.registryEntries()
+    let ids = new Set<string>()
+    try { ids = new Set((await this.manifests()).manifests.map((m) => str(m.id))) } catch { /* no extension directory: nothing is installed */ }
+    const entries = raw.map((e) => registryEntryView(e, ids)).filter((e) => e !== null)
+    return { entries: entries.filter((e) => containsQuery(q, [e.name, e.description])), total: entries.length, ...(error ? { error } : {}) }
+  }
+
+  private async registryEntries(): Promise<{ entries: unknown[]; error?: string }> {
     const now = Date.now()
     if (this.registryCache && now - this.registryCache.at < REGISTRY_TTL_MS) return { entries: this.registryCache.entries }
     if (this.registryInflight) return this.registryCache ? { entries: this.registryCache.entries } : { entries: [], error: 'registry_unavailable' }
@@ -902,7 +933,7 @@ export class ExtensionService {
       const legacy = Boolean((scripts.length || stylesheets.length) && !panel && !theme)
       const rawNav = isDict(rawManifest.nav) ? rawManifest.nav : {}
       const nav = panel ? { label: text(rawNav.label, 40) || text(entry.name, 40) || id, ...(text(rawNav.icon, 40) ? { icon: text(rawNav.icon, 40) } : {}) } : null
-      const permissions = isDict(rawManifest.permissions) ? Object.fromEntries(Object.entries(rawManifest.permissions).filter(([k]) => k.length <= 64).map(([k, v]) => [k, Boolean(v)])) : {}
+      const permissions = Object.fromEntries(permissionGrants(rawManifest.permissions))
       const tts = ttsFromEntry(rawManifest.tts)
       if (!tts && rawManifest.tts != null) warnings.push('tts_rejected')
       // The sidecar the proxy would serve: same record, availability, and saved consent `proxyTarget` enforces

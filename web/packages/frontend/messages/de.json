@@ -1794,6 +1794,7 @@
 	"token_usage_on": "Token-Verbrauch an",
 	"tool_target_skill_suffix": "skill",
 	"transcript": "Protokoll",
+	"transcript_load_earlier": "Frühere Nachrichten laden",
 	"tree_view": "Baum",
 	"tts_listen": "Anhören",
 	"tts_not_supported": "Sprachsynthese nicht verfügbar",

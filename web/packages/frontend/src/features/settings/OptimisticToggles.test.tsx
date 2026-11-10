@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { cloneElement, type ReactNode } from 'react'
 import { BootstrapContext } from '../../app/bootstrap'
@@ -21,17 +21,17 @@ vi.mock('../../shell/AppShell', () => ({ HubPage: ({ children, toolbar }: { chil
 vi.mock('../pending-writes/PendingWritesPanel', () => ({ PendingWritesPanel: () => null }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
 const manifests = vi.hoisted(() => vi.fn())
-vi.mock('../../extensions/registry', () => ({ useExtensionManifests: () => useQuery({ queryKey: keys.extensions.manifests, queryFn: manifests, staleTime: 30_000 }) }))
+vi.mock('../../extensions/registry', () => ({ fetchExtensionManifestList: manifests }))
 
 const ids = ['alpha', 'beta']
 const skills = () => ({ skills: ids.map((name) => ({ name, disabled: true, category: null, description: '' })) })
 const mcp = () => ({ toggle_supported: true, reload_required: true, servers: ids.map((name) => ({ name, enabled: false, can_toggle: true, status: 'disabled', health: 'unhealthy' })) })
-const extensions = () => ({ protocol_version: 1, manifests: ids.map((id) => ({ id, name: id, source: 'manifest', enabled: false, can_toggle: true, capabilities: [], permissions: {}, settings_schema: [], warnings: [], sidecar: { origin: 'http://127.0.0.1:1234', consented: false } })) })
+const extensions = () => ({ protocol_version: 1, total: 2, enabled_count: 0, manifests: ids.map((id) => ({ id, name: id, source: 'manifest', enabled: false, can_toggle: true, capabilities: [], permissions: {}, settings_schema: [], warnings: [], sidecar: { origin: 'http://127.0.0.1:1234', consented: false } })) })
 const connectors = () => ({ available: true, policy_revision: 'rev-1', connectors: ids.map((slug) => ({ slug, name: slug, enabled: false, rules_editable: true, connected: true, accounts: [], tools_off: 3, org_locked: false })) })
 const cases = [
   { name: 'skill', ui: <SkillsPage />, key: keys.skills.all, snapshot: skills, read: () => vi.mocked(api.fetchSkills), write: () => vi.mocked(api.toggleSkill) },
   { name: 'MCP', ui: <McpSection />, key: keys.mcp.servers, snapshot: mcp, read: () => vi.mocked(api.fetchMcpServers), write: () => vi.mocked(api.toggleMcpServer) },
-  { name: 'extension', ui: <ExtensionsSection />, key: keys.extensions.manifests, snapshot: extensions, read: () => manifests, write: () => vi.mocked(api.extensionAction) },
+  { name: 'extension', ui: <ExtensionsSection />, key: [...keys.extensions.manifests, { q: '' }], snapshot: extensions, read: () => manifests, write: () => vi.mocked(api.extensionAction) },
   { name: 'connector', ui: <ConnectorsSection />, key: keys.connectors.page, snapshot: connectors, read: () => vi.mocked(api.fetchConnectors), write: () => vi.mocked(api.setConnectorRule) },
 ]
 
@@ -40,7 +40,7 @@ beforeEach(() => {
   teardownAll()
   vi.mocked(api.fetchSkillsUsage).mockResolvedValue({ usage: {} })
   vi.mocked(api.fetchMcpTools).mockResolvedValue({ tools: [], total: 0 })
-  vi.mocked(api.fetchExtensionRegistry).mockResolvedValue({ entries: [] })
+  vi.mocked(api.fetchExtensionRegistry).mockResolvedValue({ entries: [], total: 0 })
   vi.mocked(api.fetchConnectorTools).mockResolvedValue({ connector: 'alpha', policy_revision: 'rev-1', tools: [{ slug: 'read', name: 'Read', description: '', deprecated: false, enabled: false, editable: true, facet: 'read', locked: false }] })
 })
 
@@ -307,10 +307,12 @@ it('uninstalls an extension at once and flips its sidecar consent at once', asyn
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   render(<QueryClientProvider client={qc}><BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><ExtensionsSection /></BootstrapContext.Provider></QueryClientProvider>)
   const alpha = (await screen.findByRole('switch', { name: /^alpha/ })).closest('li')!
+  await userEvent.click(within(alpha).getByRole('button', { name: 'Show details' }))
   await userEvent.click(within(alpha).getByRole('switch', { name: /Allow the proxied sidecar/ }))
   expect(within(alpha).getByRole('switch', { name: /Allow the proxied sidecar/ })).toBeChecked()
   expect(api.extensionAction).toHaveBeenCalledWith('sidecar-proxy-consent', { id: 'alpha', consent: true })
-  await userEvent.click(within(alpha).getByRole('button', { name: 'Uninstall' }))
+  await userEvent.click(within(alpha).getByRole('button', { name: 'Extension actions' }))
+  await userEvent.click(screen.getByRole('menuitem', { name: 'Uninstall' }))
   await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Uninstall' }))
   expect(screen.queryByRole('switch', { name: /^alpha/ })).toBeNull()
   expect(screen.getByRole('switch', { name: /^beta/ })).toBeInTheDocument()

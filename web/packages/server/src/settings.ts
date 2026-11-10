@@ -25,6 +25,12 @@ const PERSISTED_SPEECH_KEYS_FIELD = 'persisted_speech_keys'
  * choice: the speech keys, and `language` (TAL-1031: absent means the browser language applies).
  */
 const CHOSEN_ONLY_KEYS = new Set([...SETTINGS_SPEECH_KEYS, 'language'])
+/**
+ * TAL-2148: the busy hint and load-on-scroll were always on while their stored switches (written with every save)
+ * defaulted off, so a `false` stored before they worked carries no choice. This marker records that it was discarded.
+ */
+const CHAT_SWITCHES_MARKER = 'chat_switches_migrated'
+const CHAT_SWITCHES = ['show_busy_placeholder_hint', 'session_endless_scroll'] as const
 const LEGACY_DROP_KEYS = new Set(['assistant_language', 'bubble_layout', 'default_model', 'activity_feed_expanded_default', 'simplified_tool_calling'])
 export const SETTINGS_THEME_VALUES = new Set(['light', 'dark', 'system'])
 export const SETTINGS_SKIN_VALUES = new Set([
@@ -50,7 +56,7 @@ export function settingsDefaults(opts: { defaultWorkspace: string; botName: stri
     show_sidebar_feedback: false,
     sidebar_quota_sources: [],
     show_conversation_outline: false,
-    show_busy_placeholder_hint: false,
+    show_busy_placeholder_hint: true,
     new_chat_on_workspace_switch: false,
     virtualize_transcript: false,
     virtualize_transcript_optin: false,
@@ -90,7 +96,7 @@ export function settingsDefaults(opts: { defaultWorkspace: string; botName: stri
     project_quick_create_buttons: false,
     structured_code_default_view: 'auto',
     structured_code_auto_tree_lines: 10,
-    session_endless_scroll: false,
+    session_endless_scroll: true,
     chat_activity_display_mode: 'compact_worklog',
     transparent_stream_event_timestamps: true,
     auto_scroll_follow: true,
@@ -129,6 +135,7 @@ export function settingsDefaults(opts: { defaultWorkspace: string; botName: stri
     simplified_tool_calling: true,
     terminal_auto_expand_on_output: false,
     screen_reader_mode: false,
+    workspace_panel_open: false,
     workspace_todos_tab: false,
     api_redact_enabled: true,
     dashboard_plugins: {},
@@ -420,6 +427,7 @@ export class SettingsStore {
     const establishedKeys = Object.keys(stored).filter((k) => k !== 'show_cli_sessions' && k !== 'onboarding_completed')
     if (!('show_cli_sessions' in stored) && (pyBool(stored.onboarding_completed) || establishedKeys.length > 0)) settings.show_cli_sessions = false
     if (!pyBool(stored.virtualize_transcript_optin)) settings.virtualize_transcript = false
+    if (stored[CHAT_SWITCHES_MARKER] !== true) for (const key of CHAT_SWITCHES) settings[key] = true
     settings.trusted_link_hosts = normalizeTrustedLinkHosts(settings.trusted_link_hosts)
     settings.sidebar_quota_sources = normalizeSidebarQuotaSources(settings.sidebar_quota_sources)
     const hasStoredAppearance = 'theme' in stored || 'skin' in stored
@@ -600,6 +608,7 @@ export class SettingsStore {
       }
       // An explicit toggle records the opt-in marker so `fromRaw` keeps it on after a reload.
       if ('virtualize_transcript' in settings) current.virtualize_transcript_optin = current.virtualize_transcript
+      current[CHAT_SWITCHES_MARKER] = true
       let skinValue = pendingSkin
       if (themeExplicit && !skinExplicit) {
         const rawTheme = typeof pendingTheme === 'string' ? pendingTheme.trim().toLowerCase() : ''

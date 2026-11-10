@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { Transcript, type TranscriptProps } from './Transcript'
 import { projectMessages } from './useTranscript'
@@ -364,6 +364,36 @@ it('prefetches from a sentinel one viewport before the top, with no load button'
   expect(view.queryByRole('button', { name: 'Load older messages' })).toBeNull()
   act(() => intersect([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver))
   expect(input.onLoadOlder).toHaveBeenCalledTimes(1)
+})
+
+it('fades the streaming reply in only while the fade setting is on, following it without a reload (TAL-2148)', async () => {
+  dispatch({ type: 'start', sessionId: 'history', streamId: 'run', turnId: 'run', userMessageId: '1', userText: 'Question', now: 0 })
+  dispatch({ type: 'event', sessionId: 'history', streamId: 'run', event: { event: 'token', data: { text: 'Words still arriving' } }, lastEventId: 'run:1', now: 1 })
+  const input = { ...props(), truncated: false, rows: projectMessages([{ id: 1, role: 'user' as const, content: 'Question', _turn_id: 'run' }]), live: getStreamState().turns.history! }
+  const view = render(<Transcript {...input} fadeText />)
+  // The Markdown chunk loads asynchronously; the plain-text fallback before it has no spans either way.
+  await waitFor(() => { expect(view.container.querySelector('.msg-body [data-sd-animate]')).not.toBeNull() })
+  // Switched off mid-reply: the words that arrive next render without the fade.
+  view.rerender(<Transcript {...input} fadeText={false} />)
+  act(() => { dispatch({ type: 'event', sessionId: 'history', streamId: 'run', event: { event: 'token', data: { text: ' and more' } }, lastEventId: 'run:2', now: 2 }) })
+  view.rerender(<Transcript {...input} live={getStreamState().turns.history!} fadeText={false} />)
+  expect([...view.container.querySelectorAll('.msg-body')].at(-1)).toHaveTextContent('Words still arriving and more')
+  expect(view.container.querySelector('.msg-body [data-sd-animate]')).toBeNull()
+})
+
+it('loads nothing on scroll with endless scroll off, one page per press of the load button, and follows the switch live (TAL-2148)', () => {
+  const input = { ...props(), endlessScroll: false }
+  const view = render(<Transcript {...input} />)
+  expect(observe).not.toHaveBeenCalled()
+  const load = view.getByRole('button', { name: 'Load earlier messages' })
+  fireEvent.click(load)
+  expect(input.onLoadOlder).toHaveBeenCalledTimes(1)
+  fireEvent.click(load)
+  expect(input.onLoadOlder).toHaveBeenCalledTimes(2)
+  view.rerender(<Transcript {...input} endlessScroll />)
+  expect(view.queryByRole('button', { name: 'Load earlier messages' })).toBeNull()
+  act(() => intersect([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver))
+  expect(input.onLoadOlder).toHaveBeenCalledTimes(3)
 })
 
 it('shows progress, pauses after a failure, and retries from the same slot', () => {

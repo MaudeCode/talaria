@@ -18,7 +18,16 @@ const EscapeReadOnly = { escape_read_only: z.literal(true).describe('Opened thro
 export const workspacesContract = {
   workspaces: {
     list: oc.route({ method: 'GET', path: '/api/workspaces', tags }).output(WorkspacesSchema),
-    suggest: oc.route({ method: 'GET', path: '/api/workspaces/suggest', tags }).input(z.object({ prefix: z.string().optional() })).output(z.object({ suggestions: z.array(z.string()), prefix: z.string() })),
+    suggest: oc.route({ method: 'GET', path: '/api/workspaces/suggest', tags }).input(z.object({ prefix: z.string().optional() })).output(z.object({
+      suggestions: z.array(z.string()),
+      prefix: z.string(),
+      /** TAL-2141: each suggestion as the Add space browser shows it: its last folder and the input value that lists its children. */
+      folders: z.array(z.object({ path: z.string(), name: z.string(), target: z.string() })).optional(),
+      /** TAL-2141: the input value one folder above the prefix, for the browser's `..` row; null when the prefix is empty or the root. */
+      parent: z.string().nullable().optional(),
+      /** TAL-2141: the name a space added at the prefix gets when none is typed; null for an empty prefix. */
+      default_name: z.string().nullable().optional(),
+    })),
     add: oc.route({ method: 'POST', path: '/api/workspaces/add', tags }).input(z.object({ path: z.string(), name: z.string().optional(), create: Json.optional() })).output(WorkspacesMutation),
     remove: oc.route({ method: 'POST', path: '/api/workspaces/remove', tags }).input(z.object({ path: z.string() })).output(WorkspacesMutation),
     rename: oc.route({ method: 'POST', path: '/api/workspaces/rename', tags }).input(z.object({ path: z.string(), name: z.string() })).output(WorkspacesMutation),
