@@ -15,6 +15,7 @@ struct WhatsNewSheet: View {
     var defaults: UserDefaults = .standard
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
     @AppStorage(HeaderLogoColor.storageKey) private var accentHex = HeaderLogoColor.defaultHex
     @State private var page = 0
 
@@ -28,15 +29,27 @@ struct WhatsNewSheet: View {
         let pages = Self.pages(of: announcement.rows)
         Group {
             if pages.count > 1 {
-                // The construction onboarding pages with, so a swipe turns the page too.
-                TabView(selection: $page) {
-                    ForEach(pages.indices, id: \.self) { index in
-                        rowsPage(pages[index], accent: accent).tag(index)
+                // The heading stays put while the rows turn. At accessibility sizes it scrolls away with each page
+                // instead, so the rows keep room to read.
+                let pinsHeading = !typeSize.isAccessibilitySize
+                VStack(spacing: 0) {
+                    if pinsHeading {
+                        heading
+                            .padding(.horizontal, 28)
+                            .padding(.top, 48)
+                            .padding(.bottom, 36)
+                            .onboardingReadableWidth()
                     }
+                    // The construction onboarding pages with, so a swipe turns the page too.
+                    TabView(selection: $page) {
+                        ForEach(pages.indices, id: \.self) { index in
+                            rowsPage(pages[index], accent: accent, showsHeading: !pinsHeading).tag(index)
+                        }
+                    }
+                    .tabViewStyle(.page(indexDisplayMode: .never))
                 }
-                .tabViewStyle(.page(indexDisplayMode: .never))
             } else {
-                rowsPage(announcement.rows, accent: accent)
+                rowsPage(announcement.rows, accent: accent, showsHeading: true)
             }
         }
         .safeAreaInset(edge: .bottom) { controls(pageCount: pages.count, accent: accent) }
@@ -44,15 +57,20 @@ struct WhatsNewSheet: View {
         .onDisappear { announcement.acknowledge(defaults: defaults) }
     }
 
-    /// The heading over `rows`, scrolling on its own so a page at the largest text size still reads in full.
-    private func rowsPage(_ rows: [WhatsNewAnnouncement.Row], accent: Color) -> some View {
+    private var heading: some View {
+        Text(Self.title)
+            .font(.largeTitle.bold())
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    /// `rows`, under the heading when it scrolls with them, scrolling on their own so a page at the largest text size
+    /// still reads in full.
+    private func rowsPage(_ rows: [WhatsNewAnnouncement.Row], accent: Color, showsHeading: Bool) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 36) {
-                Text(Self.title)
-                    .font(.largeTitle.bold())
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-                    .accessibilityAddTraits(.isHeader)
+                if showsHeading { heading }
 
                 VStack(alignment: .leading, spacing: 24) {
                     ForEach(rows) { row in
@@ -67,7 +85,7 @@ struct WhatsNewSheet: View {
                 }
             }
             .padding(.horizontal, 28)
-            .padding(.top, 48)
+            .padding(.top, showsHeading ? 48 : 0)
             .padding(.bottom, 24)
             .onboardingReadableWidth()
         }
@@ -75,9 +93,11 @@ struct WhatsNewSheet: View {
     }
 
     private func controls(pageCount: Int, accent: Color) -> some View {
+        let isPaged = pageCount > 1
         let isLastPage = page >= pageCount - 1
-        return VStack(spacing: 8) {
-            if pageCount > 1 {
+        // The 44pt arrows and skip line carry their own space, so the paged controls add no more around them.
+        return VStack(spacing: 0) {
+            if isPaged {
                 HStack(spacing: 12) {
                     pageArrow("chevron.left", label: "Previous page", to: page - 1, accent: accent)
                         .disabled(page == 0)
@@ -110,10 +130,13 @@ struct WhatsNewSheet: View {
                 .foregroundStyle(.secondary)
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("whats-new-skip")
+            } else if isPaged {
+                // Its slot stays, so Continue does not move under the thumb on the last page.
+                Color.clear.frame(height: 44)
             }
         }
         .padding(.horizontal, 28)
-        .padding(.vertical, 16)
+        .padding(.vertical, isPaged ? 0 : 16)
         .onboardingReadableWidth()
         .background(Color(.systemBackground))
     }
