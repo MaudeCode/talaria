@@ -44,6 +44,8 @@ export interface TranscriptProps {
   tts: boolean
   /** `show_token_usage` setting: each reply's own token summary in its footer (TAL-1076). */
   tokenUsage?: boolean
+  /** `show_tps` setting: each reply's own tokens per second in its footer (TAL-2150). */
+  tps?: boolean
   /** `tts_auto_read` setting: speak each reply this view watched finish. */
   autoRead?: boolean
   truncated: boolean
@@ -379,7 +381,7 @@ export function Transcript(props: TranscriptProps) {
       ? <DeliveryRow key={row.key} row={row} />
       : row.message.role === 'user'
       ? <UserMessageRow key={row.key} row={row} renderMarkdown={renderUserMarkdown} sessionId={sessionId} actions={actions} />
-      : <AssistantMessageRow sessionId={sessionId} scope={props.disclosureScope} key={row.key} row={row} name={row.author ?? assistantName} mode={mode} actions={actions} tts={tts} tokenUsage={props.tokenUsage ?? false} isLast={i === lastAssistantIndex && !showLive} retainHeight={i === lastAssistantIndex} continuation={row === continued ? continuedTurn : undefined} />
+      : <AssistantMessageRow sessionId={sessionId} scope={props.disclosureScope} key={row.key} row={row} name={row.author ?? assistantName} mode={mode} actions={actions} tts={tts} tokenUsage={props.tokenUsage ?? false} tps={props.tps ?? false} isLast={i === lastAssistantIndex && !showLive} retainHeight={i === lastAssistantIndex} continuation={row === continued ? continuedTurn : undefined} />
   )
   // Reuse mounted history; the opt-in virtualizer still creates only its visible window.
   const renderedRows = virtualize ? null : rows.map(renderRow)

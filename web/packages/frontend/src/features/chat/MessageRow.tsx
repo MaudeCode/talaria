@@ -284,12 +284,14 @@ function TurnUsageMeta({ usage }: { usage: TurnUsage }) {
   )
 }
 
-/** `continuation`: the live turn that continues this running scene (TAL-374). `tokenUsage`: the `show_token_usage` setting. */
-export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name, mode, actions, tts, tokenUsage = false, isLast, retainHeight = isLast, sessionId, scope, continuation }: { row: VisibleMessage; name: string; mode: ActivityMode; actions: RowActions; tts: boolean; tokenUsage?: boolean; isLast: boolean; retainHeight?: boolean; sessionId?: string | undefined; scope?: string | undefined; continuation?: LiveTurn | undefined }) {
+/** `continuation`: the live turn that continues this running scene (TAL-374). `tokenUsage`: the `show_token_usage` setting.
+ *  `tps`: the `show_tps` setting, independent of `tokenUsage` (TAL-2150). */
+export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name, mode, actions, tts, tokenUsage = false, tps = false, isLast, retainHeight = isLast, sessionId, scope, continuation }: { row: VisibleMessage; name: string; mode: ActivityMode; actions: RowActions; tts: boolean; tokenUsage?: boolean; tps?: boolean; isLast: boolean; retainHeight?: boolean; sessionId?: string | undefined; scope?: string | undefined; continuation?: LiveTurn | undefined }) {
   const activity = continuation ? continuedActivity(persistedActivity(row), continuation) : persistedActivity(row)
   const content = activityText(activity)
   const parts = row.assistantRows ?? [row]
   const run = row.message as { _turnDuration?: number | null; _usedModel?: string | null }
+  const speed = tps && typeof row.message._turnTps === 'number' ? row.message._turnTps : null
   const meta = [typeof run._turnDuration === 'number' && run._turnDuration >= 0.5 ? `${run._turnDuration < 10 ? run._turnDuration.toFixed(1) : Math.round(run._turnDuration)}s` : null, run._usedModel || null].filter(Boolean).join(' · ')
   const ref = useRef<HTMLDivElement>(null)
   const jumpToQuestion = () => {
@@ -315,6 +317,7 @@ export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name
         {parts.map((part) => <MessageReactions key={part.key} row={part} actions={actions} />)}
         {row.message.timestamp ? <span className="msg-time">{formatDate(row.message.timestamp)}</span> : null}
         {meta && <span className="msg-run-meta font-mono text-[11px] tabular-nums text-muted opacity-75">{meta}</span>}
+        {speed !== null && <span className="msg-turn-tps whitespace-nowrap font-mono text-[11px] tabular-nums text-muted opacity-75" title={`${speed} tok/s`}>{Math.round(speed)} tok/s</span>}
         {tokenUsage && row.message._turnUsage && <TurnUsageMeta usage={row.message._turnUsage} />}
         <span className="ml-auto" aria-hidden="true" />
         <ActionButtons items={items} />

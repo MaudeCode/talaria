@@ -7,6 +7,7 @@ import { formatDurationUnits, resetTime } from '../../i18n/units'
 import { ArrowUp, Pencil, X } from 'lucide-react'
 import type { LiveTurn, PendingSteerRow } from '../../stream/reducer'
 import { useLiveTurn } from '../../stream/store'
+import { useSetting } from '../../app/queries'
 import { fetchSession, sendSteerNow, withdrawSteer } from '../../api/endpoints'
 import { dispatch } from '../../stream/store'
 import { usePromptAnswer } from './usePromptAnswer'
@@ -109,11 +110,12 @@ function PendingSteerMessage({ sessionId, steer }: { sessionId: string; steer: P
  * The live turn's status, docked as a centered pill above the composer so it never takes transcript space.
  * `background`: the server says a background result started this turn (`active_turn_origin`, TAL-460).
  * TAL-821: while the Agent sits out a rate limit, the server's provider and reset time replace "Working"; the composer's
- * Stop stays the way out.
+ * Stop stays the way out. The rate shows only while `show_tps` is on (TAL-2150).
  */
 export function LiveStatusPill({ sessionId, background = false }: { sessionId: string | null; background?: boolean }) {
   const turn = useLiveTurn(sessionId)
   const locale = useLocale()
+  const showTps = useSetting('show_tps') === true
   if (!turn) return null
   const reconnecting = turn.status === 'reconnecting'
   const status = reconnecting ? null : turn.runStatus
@@ -134,7 +136,7 @@ export function LiveStatusPill({ sessionId, background = false }: { sessionId: s
       <span className="live-run-label">{label}</span>
       {!reconnecting && !background && !wait && !compressing && (!status || status.phase === 'working') && <>{' '}<RunElapsed since={turn.startedAt} /></>}
       {compressing && turn.compressionStartedAt !== null && <>{' '}<RunElapsed since={turn.compressionStartedAt} /></>}
-      {turn.tps != null && <span className="font-mono text-[11px] tabular-nums opacity-75" title="Tokens per second">{turn.tps.toFixed(1)} tok/s</span>}
+      {showTps && turn.tps != null && <span className="font-mono text-[11px] tabular-nums opacity-75" title="Tokens per second">{turn.tps.toFixed(1)} tok/s</span>}
     </div>
   )
 }

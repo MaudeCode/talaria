@@ -19,8 +19,8 @@ vi.mock('../../app/bootstrap', async (original) => {
   return { ...await original<object>(), useBootstrap: () => DEFAULT_BOOTSTRAP }
 })
 vi.mock('../../app/queries', async (original) => {
-  const settings = { auto_scroll_follow: false }
-  return { ...await original<object>(), useSettingsQuery: () => ({ data: settings }), useWorkspacesQuery: () => ({ data: { workspaces: [] } }) }
+  const settings = { auto_scroll_follow: false, show_tps: true }
+  return { ...await original<object>(), useSettingsQuery: () => ({ data: settings }), useSetting: (key: keyof typeof settings) => settings[key], useWorkspacesQuery: () => ({ data: { workspaces: [] } }) }
 })
 vi.mock('./ChatSidePanel', () => ({ ChatSidePanel: () => null }))
 vi.mock('./useMarkViewed', () => ({ useMarkViewed: () => undefined }))

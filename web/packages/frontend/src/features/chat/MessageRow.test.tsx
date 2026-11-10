@@ -9,6 +9,7 @@ import { groupAssistantTurns } from './turnActivity'
 import { projectMessages } from './useTranscript'
 import { LiveStatusPill } from './LiveTurnView'
 import { dispatch, resetStreamStoreForTests } from '../../stream/store'
+import { queryWrapper } from '../../test/fixtures'
 
 afterEach(cleanup)
 
@@ -88,6 +89,25 @@ describe('reply token usage (TAL-1076)', () => {
   })
 })
 
+describe('reply token speed (TAL-2150)', () => {
+  const usage = { input_tokens: 12_345, output_tokens: 678, cache_read_tokens: 9_000, cache_write_tokens: 120, estimated_cost: 0.0123, cache_hit_percent: 73 }
+  const reply = (extra: Partial<Message> = {}) => groupAssistantTurns(projectMessages([{ role: 'assistant', id: 1, content: 'Done.', _turnDuration: 4.25, _usedModel: 'test-model', _turnUsage: usage, ...extra }]))[0]!
+
+  it.each([[false, false], [false, true], [true, false], [true, true]])('shows the speed with tps %s and token usage %s, each on its own', (tps, tokenUsage) => {
+    render(<AssistantMessageRow row={reply({ _turnTps: 41.6 })} name="Assistant" mode="compact_worklog" actions={{}} tts={false} tokenUsage={tokenUsage} tps={tps} isLast />)
+    const speed = screen.queryByText('42 tok/s')
+    expect(speed !== null).toBe(tps)
+    if (speed) { expect(speed).toHaveAttribute('title', '41.6 tok/s'); expect(speed).toHaveClass('tabular-nums') }
+    expect(screen.queryByRole('button', { name: /Token usage/ }) !== null).toBe(tokenUsage)
+  })
+
+  it('shows no speed for a reply stored without one', () => {
+    render(<AssistantMessageRow row={reply()} name="Assistant" mode="compact_worklog" actions={{}} tts={false} tps isLast />)
+    expect(screen.queryByText(/tok\/s/)).toBeNull()
+    expect(screen.getByText('4.3s · test-model')).toBeTruthy()
+  })
+})
+
 describe('background updates (TAL-460)', () => {
   const fixture = (): Message[] => (JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/web-session.json'), 'utf8')) as { background_update_session: { messages: Message[] } }).background_update_session.messages
 
@@ -162,7 +182,7 @@ describe('background updates (TAL-460)', () => {
   it('says the run is working on background results only while the server says a background result started it', () => {
     resetStreamStoreForTests()
     dispatch({ type: 'start', sessionId: 'background-status', streamId: 'run', turnId: null, userMessageId: null, userText: '', now: Date.now() })
-    const { rerender } = render(<LiveStatusPill sessionId="background-status" background />)
+    const { rerender } = render(<LiveStatusPill sessionId="background-status" background />, { wrapper: queryWrapper() })
     expect(screen.getByRole('status')).toHaveTextContent('Working on background results')
     rerender(<LiveStatusPill sessionId="background-status" />)
     expect(screen.getByRole('status')).toHaveTextContent('Working')

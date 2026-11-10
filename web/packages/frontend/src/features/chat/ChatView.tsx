@@ -546,6 +546,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
             actions={actions}
             tts={!!settings.data?.tts_enabled}
             tokenUsage={settings.data?.show_token_usage === true}
+            tps={settings.data?.show_tps === true}
             autoRead={settings.data?.tts_auto_read === true}
             truncated={truncated}
             loadedFrom={base}
