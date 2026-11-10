@@ -1758,6 +1758,7 @@
 	"token_usage_on": "トークン使用量: ON",
 	"tool_target_skill_suffix": "スキル",
 	"transcript": "トランスクリプト",
+	"transcript_load_earlier": "以前のメッセージを読み込む",
 	"tree_view": "ツリー",
 	"tts_listen": "読み上げ",
 	"tts_not_supported": "このブラウザは音声合成に対応していません。",

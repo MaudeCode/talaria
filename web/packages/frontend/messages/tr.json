@@ -1823,6 +1823,7 @@
 	"token_usage_on": "Jeton kullanımı açık",
 	"tool_target_skill_suffix": "skill",
 	"transcript": "Deşifre metni",
+	"transcript_load_earlier": "Önceki mesajları yükle",
 	"tree_view": "Ağaç",
 	"tts_listen": "Dinlemek",
 	"tts_not_supported": "Konuşma sentezi bu tarayıcıda desteklenmiyor.",

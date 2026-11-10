@@ -47,7 +47,7 @@ export function ChatSection() {
         <Toggle label={m.settings_label_transparent_stream_event_timestamps()} hint={m.settings_desc_transparent_stream_event_timestamps()} settingKey="transparent_stream_event_timestamps" fallback />
         <Toggle label={m.settings_label_worklog_details_expanded_default()} settingKey="worklog_details_expanded_default" />
         <Toggle label={m.settings_label_render_user_markdown()} hint={m.settings_desc_render_user_markdown()} settingKey="render_user_markdown" />
-        <Toggle label={m.settings_label_fade_text_effect()} settingKey="fade_text_effect" fallback />
+        <Toggle label={m.settings_label_fade_text_effect()} settingKey="fade_text_effect" />
         <Toggle label={m.settings_label_token_usage()} settingKey="show_token_usage" fallback />
         <Toggle label={m.settings_label_token_speed()} settingKey="show_tps" />
       </SettingsGroup>

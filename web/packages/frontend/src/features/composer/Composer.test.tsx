@@ -1086,6 +1086,13 @@ describe('Composer', () => {
     expect(screen.getByRole('textbox')).toHaveValue('')
   })
 
+  it('names the busy action in the placeholder only while the busy hint is on, and follows the switch without a reload (TAL-2148)', () => {
+    const view = renderComposer(writable, running(), noop, { default_message_mode: 'queue', show_busy_placeholder_hint: false })
+    expect(screen.getByRole('textbox')).toHaveAttribute('placeholder', expect.stringMatching(/^Message /))
+    view.rerenderSettings({ default_message_mode: 'queue', show_busy_placeholder_hint: true })
+    expect(screen.getByRole('textbox')).toHaveAttribute('placeholder', 'Enter = queue | /interrupt | /background | /steer')
+  })
+
   it('labels the mid-turn arrow by the queue busy mode and queues on click', async () => {
     const onQueue = vi.fn()
     renderComposer(writable, running(), onQueue, { default_message_mode: 'queue' })

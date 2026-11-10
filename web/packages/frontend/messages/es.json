@@ -1804,6 +1804,7 @@
 	"token_usage_on": "Uso de tokens activado",
 	"tool_target_skill_suffix": "skill",
 	"transcript": "Transcripción",
+	"transcript_load_earlier": "Cargar mensajes anteriores",
 	"tree_view": "树形",
 	"tts_listen": "Escuchar",
 	"tts_not_supported": "Síntesis de voz no disponible",

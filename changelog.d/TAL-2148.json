@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Three Chat settings in Talaria Web now work: the busy hint in the composer, loading older messages while scrolling up (off shows a Load earlier messages button), and the fade text effect for streamed replies.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

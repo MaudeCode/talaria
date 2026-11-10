@@ -80,3 +80,23 @@ describe('JSON code blocks (TAL-615)', () => {
     expect(screen.getByRole('button', { name: 'Tree' })).toBeInTheDocument()
   })
 })
+
+describe('fade text effect (TAL-2148)', () => {
+  const text = 'Streamed words arrive\n\n```ts\nconst kept = 1\n```\n'
+  const motion = (reduce: boolean) => { vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: reduce, addEventListener: vi.fn(), removeEventListener: vi.fn() }))) }
+  const animated = (container: HTMLElement) => container.querySelectorAll('p [data-sd-animate]').length
+  afterEach(() => { vi.unstubAllGlobals(); Reflect.deleteProperty(HTMLElement.prototype, 'scrollTo') })
+
+  it('fades streamed words in when on, never inside a code block, and nothing when off or reduced motion is set', () => {
+    HTMLElement.prototype.scrollTo = vi.fn()
+    motion(false)
+    const view = render(<Markdown text={text} streaming fade />)
+    expect(animated(view.container)).toBeGreaterThan(0)
+    expect(view.container.querySelector('[data-streamdown="code-block"] [data-sd-animate]')).toBeNull()
+    view.rerender(<Markdown text={text} streaming />)
+    expect(animated(view.container)).toBe(0)
+    cleanup()
+    motion(true)
+    expect(animated(render(<Markdown text={text} streaming fade />).container)).toBe(0)
+  })
+})

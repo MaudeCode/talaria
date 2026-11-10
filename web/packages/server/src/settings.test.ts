@@ -182,6 +182,27 @@ describe('load', () => {
     expect((await store().load()).show_cli_sessions).toBe(true)
   })
 
+  it('shows the busy hint and loads older messages on scroll by default, and fades nothing (TAL-2148)', async () => {
+    const s = await store().load()
+    expect([s.show_busy_placeholder_hint, s.session_endless_scroll, s.fade_text_effect]).toEqual([true, true, false])
+  })
+
+  it('reads a false stored before the busy hint and load-on-scroll worked as on, and keeps one saved after (TAL-2148)', async () => {
+    // Saves persisted every default, so an old document holds `false` for both switches without anyone choosing it.
+    write({ show_busy_placeholder_hint: false, session_endless_scroll: false, fade_text_effect: false, theme: 'light' })
+    const s = store()
+    const old = await s.load()
+    expect([old.show_busy_placeholder_hint, old.session_endless_scroll, old.fade_text_effect]).toEqual([true, true, false])
+    await s.save({ theme: 'dark' })
+    expect(onDisk()).toMatchObject({ show_busy_placeholder_hint: true, session_endless_scroll: true })
+    await s.save({ show_busy_placeholder_hint: false, session_endless_scroll: false })
+    const restarted = await store().load()
+    expect([restarted.show_busy_placeholder_hint, restarted.session_endless_scroll]).toEqual([false, false])
+    // A document written after the migration ran keeps its choice across restarts.
+    write(onDisk())
+    expect((await store().load()).session_endless_scroll).toBe(false)
+  })
+
   it('treats a malformed file as empty unless strict', async () => {
     writeFileSync(join(dir, 'settings.json'), '{oops')
     const s = store()

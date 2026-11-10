@@ -18,6 +18,7 @@ import 'streamdown/styles.css'
 import { Dialog } from '../../../ui/Dialog'
 import { Button } from '../../../ui/Button'
 import { m } from '../../../paraglide/messages.js'
+import { prefersReducedMotion } from '../../../lib/motion'
 
 // Streamdown checks renderers before Mermaid, so `mermaid` keeps its diagram; unlabeled fences fall back to `code`.
 const OWN_RENDERERS = new Set(['json', 'mermaid', 'mmd'])
@@ -69,7 +70,7 @@ function LinkSafetyDialog({ isOpen, onClose, onConfirm, url, host }: LinkSafetyM
   )
 }
 
-export default function MarkdownRenderer({ text, streaming = false, className, dir = 'auto' }: MarkdownProps) {
+export default function MarkdownRenderer({ text, streaming = false, fade = false, className, dir = 'auto' }: MarkdownProps) {
   const check = use(LinkCheckContext)
   const parseBlocks = streaming ? createIncrementalMarkdownParser() : parseMarkdownIntoBlocks
   // Syntax detection selects display assets only; transcript state and link decisions remain server-owned.
@@ -96,6 +97,8 @@ export default function MarkdownRenderer({ text, streaming = false, className, d
         mode={streaming ? 'streaming' : 'static'}
         parseIncompleteMarkdown={streaming}
         isAnimating={streaming}
+        // Streamdown skips `pre`, `svg` and math; inline code is held still in chat.css.
+        animated={streaming && fade && !prefersReducedMotion()}
         parseMarkdownIntoBlocksFn={parseBlocks}
         className={className ?? 'hermes-prose'}
         plugins={plugins}

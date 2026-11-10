@@ -3,6 +3,8 @@ import { Suspense, useState, useSyncExternalStore, type ComponentType } from 're
 export interface MarkdownProps {
   text: string
   streaming?: boolean
+  /** `fade_text_effect` setting (TAL-2148): streamed words fade in; reduced motion and code never animate. */
+  fade?: boolean
   className?: string
   /** Hostile content stays escaped by Streamdown's sanitizer; raw HTML is never rendered. */
   dir?: 'auto' | 'ltr' | 'rtl'
