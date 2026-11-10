@@ -112,6 +112,11 @@
       "reason": "Real Agent config loader and plugin discovery must surface the plugins.disabled_by_update record the Agent writes, read from a test-owned config.",
       "cases": [""]
     },
+    "tests/test_plugin_set_enabled.py::test_the_agent_turns_a_synthetic_plugin_on_and_off": {
+      "layer": "compatibility",
+      "reason": "Real Agent dashboard_set_agent_plugin_enabled must resolve, admit and persist a profile plugin's switch, and plugin discovery must report the new state and offer no switch for exclusive backends.",
+      "cases": [""]
+    },
     "tests/test_plugin_source.py::test_rows_carry_category_and_source": {
       "layer": "compatibility",
       "reason": "Real Agent plugin discovery decides each manifest's path and key: a profile plugin must read installed and every plugin the Agent ships bundled with its key's category.",

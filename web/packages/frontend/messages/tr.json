@@ -1049,6 +1049,7 @@
 	"plugins_stat_enabled": "Açık",
 	"plugins_stat_of": "/ {total}",
 	"plugins_stat_updates": "Güncellemeler",
+	"plugins_toggle_restart_required": "Eklenti değişikliğini tamamlamak için ağ geçidini yeniden başlatın.",
 	"plugins_unnamed": "Adsız eklenti",
 	"preserved_task_list_label": "Korunmuş görev listesi",
 	"primary_navigation": "Ana gezinme",

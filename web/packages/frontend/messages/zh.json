@@ -1012,6 +1012,7 @@
 	"plugins_stat_enabled": "已开启",
 	"plugins_stat_of": "/ {total}",
 	"plugins_stat_updates": "更新",
+	"plugins_toggle_restart_required": "重启网关以完成插件更改。",
 	"plugins_unnamed": "未命名插件",
 	"preserved_task_list_label": "保留的任务列表",
 	"primary_navigation": "主导航",

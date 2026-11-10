@@ -108574,6 +108574,9 @@
                             ],
                             "type": "string"
                           },
+                          "can_toggle": {
+                            "type": "boolean"
+                          },
                           "update": {
                             "type": "object",
                             "properties": {
@@ -109395,6 +109398,66 @@
                     "auto_apply",
                     "check_hours",
                     "inactive_reason"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/plugins/enabled": {
+      "post": {
+        "operationId": "pluginEnabled",
+        "summary": "TAL-2133 (operator only): turn a plugin on or off for the active profile through the Agent's own writer, which resolves `key` to the canonical one it returns. Enabling loads the plugin now; disabling is config-only, so `restart_required` is true until the gateway restarts. 409 with the Agent's refusal (unknown plugin, refused admission); 403 on a managed install; 503 on an Agent before v0.22.7.",
+        "tags": [
+          "tools"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "key",
+                  "enabled"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "restart_required": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "enabled",
+                    "restart_required"
                   ]
                 }
               }

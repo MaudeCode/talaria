@@ -805,6 +805,47 @@
         "findings": "Dangerous revision"
       }
     }
-
+  ],
+  "plugins.set_enabled": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "key": "team-notes",
+        "enabled": true
+      },
+      "result": {
+        "supported": true,
+        "ok": true,
+        "name": "team-notes",
+        "unchanged": false,
+        "restart_required": true
+      }
+    },
+    {
+      "params": {
+        "profile_home": "<home>",
+        "key": "team-notes",
+        "enabled": false
+      },
+      "result": {
+        "supported": true,
+        "ok": true,
+        "name": "team-notes",
+        "unchanged": false,
+        "restart_required": true
+      }
+    },
+    {
+      "params": {
+        "profile_home": "<home>",
+        "key": "no-such-plugin",
+        "enabled": true
+      },
+      "result": {
+        "supported": true,
+        "ok": false,
+        "error": "Plugin 'no-such-plugin' is not installed or bundled."
+      }
+    }
   ]
 }

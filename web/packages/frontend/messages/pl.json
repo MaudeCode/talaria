@@ -1104,6 +1104,7 @@
 	"plugins_stat_enabled": "Włączone",
 	"plugins_stat_of": "z {total}",
 	"plugins_stat_updates": "Aktualizacje",
+	"plugins_toggle_restart_required": "Uruchom ponownie bramę, aby dokończyć zmianę wtyczki.",
 	"plugins_unnamed": "Nienazwana wtyczka",
 	"preserved_task_list_label": "Zachowana lista zadań",
 	"primary_navigation": "Nawigacja główna",

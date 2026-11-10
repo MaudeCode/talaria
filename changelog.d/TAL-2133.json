@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Settings › Tools › Plugins in Talaria Web turns a plugin on or off with a switch on its row.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announcement": {
+        "title": "Turn plugins on and off",
+        "description": "Switch any plugin on or off from Settings › Tools › Plugins.",
+        "icon": "settings"
+      }
+    }
+  ]
+}

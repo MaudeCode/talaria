@@ -1075,6 +1075,7 @@
 	"plugins_stat_enabled": "Activés",
 	"plugins_stat_of": "sur {total}",
 	"plugins_stat_updates": "Mises à jour",
+	"plugins_toggle_restart_required": "Redémarrez la passerelle pour terminer la modification du plugin.",
 	"plugins_unnamed": "Plugin sans nom",
 	"preserved_task_list_label": "Liste de tâches préservée",
 	"primary_navigation": "Navigation principale",

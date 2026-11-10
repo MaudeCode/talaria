@@ -691,7 +691,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     sidecar.respond('gateway.mode', () => ({ gateway_mode: 'stopped' }))
     try {
       const expected = {
-        plugins: [{ ...row, settings: [], oauth_clients: [{ ...oauthClient, can_sign_out: false }] }],
+        plugins: [{ ...row, can_toggle: false, settings: [], oauth_clients: [{ ...oauthClient, can_sign_out: false }] }],
         total: 1, empty: false, supported_hooks: ['pre_tool_call'], read_only: false, plugin_isolation_advisory: true,
         auto_update: { auto_apply: false, check_hours: 24, inactive_reason: 'no_gateway' },
         groups: [{ id: 'installed', plugin_keys: [], enabled_count: 0, total_count: 0, enabled_percent: 0 }, { id: 'other', plugin_keys: ['probe'], enabled_count: 1, total_count: 1, enabled_percent: 100 }],
@@ -849,6 +849,35 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       expect((unreadable.plugins as Json[]).map((plugin) => plugin.key)).toEqual(['probe'])
     } finally {
       for (const method of ['plugins.list', 'plugins.auto_update', 'plugins.auto_update_set', 'gateway.mode'] as const) sidecar.respond(method, undefined)
+    }
+  })
+
+  it('TAL-2133: turns a plugin on or off through the Agent and maps its refusal, a managed install and an old Agent', async () => {
+    const calls: unknown[] = []
+    sidecar.respond('plugins.list', () => ({ plugins: [
+      { name: 'probe', key: 'probe', version: '1', description: '', enabled: false, kind: 'standalone', activation: 'disabled', hooks: [], can_toggle: true },
+      { name: 'solo', key: 'memory/solo', version: '1', description: '', enabled: false, kind: 'exclusive', activation: 'exclusive', hooks: [], can_toggle: false },
+    ], supported_hooks: [] }))
+    sidecar.respond('plugins.set_enabled', (params) => { calls.push(params); return { supported: true, ok: true, name: 'probe', unchanged: false, restart_required: !params.enabled } })
+    try {
+      expect(((await json(await s.get('/api/plugins'))).plugins as Json[]).map((p) => [p.key, p.can_toggle])).toEqual([['probe', true], ['memory/solo', false]])
+      expect(await json(await post(s, '/api/plugins/enabled', { key: 'probe', enabled: true }))).toEqual({ key: 'probe', enabled: true, restart_required: false })
+      expect(await json(await post(s, '/api/plugins/enabled', { key: 'probe', enabled: false }))).toEqual({ key: 'probe', enabled: false, restart_required: true })
+      expect(calls).toEqual([{ profile_home: s.deps.profileHome('default'), key: 'probe', enabled: true }, { profile_home: s.deps.profileHome('default'), key: 'probe', enabled: false }])
+      expect((await post(s, '/api/plugins/enabled', { key: 'probe', enabled: 'yes' })).status).toBe(400)
+      sidecar.respond('plugins.set_enabled', () => ({ supported: true, ok: false, error: "Plugin 'nope' is not installed or bundled." }))
+      const refused = await post(s, '/api/plugins/enabled', { key: 'nope', enabled: true })
+      expect(refused.status).toBe(409)
+      expect(await json(refused)).toMatchObject({ error: "Plugin 'nope' is not installed or bundled.", condition: 'plugin_enable_refused' })
+      sidecar.respond('plugins.set_enabled', () => { throw new SidecarError('Managed by a package manager', { condition: 'plugin_enable_managed' }) })
+      const managed = await post(s, '/api/plugins/enabled', { key: 'probe', enabled: true })
+      expect(managed.status).toBe(403)
+      expect(await json(managed)).toMatchObject({ error: 'Managed by a package manager' })
+      sidecar.respond('plugins.set_enabled', () => ({ supported: false }))
+      expect((await post(s, '/api/plugins/enabled', { key: 'probe', enabled: true })).status).toBe(503)
+    } finally {
+      sidecar.respond('plugins.list', undefined)
+      sidecar.respond('plugins.set_enabled', undefined)
     }
   })
 

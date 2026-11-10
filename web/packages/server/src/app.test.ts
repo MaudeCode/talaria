@@ -535,7 +535,7 @@ describe('trusted-header auth', () => {
     const pluginUpdate = await s.get('/api/plugins/update', { method: 'POST', headers: { cookie: session!, 'X-Remote-User': 'kim', 'X-Remote-Groups': 'ops', 'content-type': 'application/json' }, body: JSON.stringify({ key: 'p', accept_caution: true }) })
     expect(pluginUpdate.status).toBe(403)
     expect(await pluginUpdate.json()).toEqual({ error: 'Owner session required' })
-    for (const path of ['/api/plugins/update-all', '/api/plugins/auto-update']) {
+    for (const path of ['/api/plugins/update-all', '/api/plugins/auto-update', '/api/plugins/enabled']) {
       const pluginWrite = await s.get(path, { method: 'POST', headers: { cookie: session!, 'X-Remote-User': 'kim', 'X-Remote-Groups': 'ops', 'content-type': 'application/json' }, body: JSON.stringify({ enabled: true }) })
       expect(pluginWrite.status).toBe(403)
     }

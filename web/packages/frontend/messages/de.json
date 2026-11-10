@@ -1038,6 +1038,7 @@
 	"plugins_stat_enabled": "Eingeschaltet",
 	"plugins_stat_of": "von {total}",
 	"plugins_stat_updates": "Updates",
+	"plugins_toggle_restart_required": "Starte das Gateway neu, um die Plugin-Änderung abzuschließen.",
 	"plugins_unnamed": "Unbenanntes Plugin",
 	"preserved_task_list_label": "Beibehaltene Aufgabenliste",
 	"primary_navigation": "Hauptnavigation",

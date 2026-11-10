@@ -1036,6 +1036,7 @@
 	"plugins_stat_enabled": "オン",
 	"plugins_stat_of": "/ {total}",
 	"plugins_stat_updates": "アップデート",
+	"plugins_toggle_restart_required": "プラグインの変更を完了するにはゲートウェイを再起動してください。",
 	"plugins_unnamed": "名前なしプラグイン",
 	"preserved_task_list_label": "保持されたタスクリスト",
 	"primary_navigation": "メインナビゲーション",

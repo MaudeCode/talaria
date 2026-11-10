@@ -628,6 +628,43 @@ def set_plugin_auto_update(enabled) -> dict:
         raise RpcError(str(exc), condition="plugin_update_refused") from exc
 
 
+def _plugin_enable_function():
+    """The Agent's dashboard enable/disable (v0.22.7+); ``None`` hides Web's per-plugin switch on older Agents."""
+    try:
+        from hermes_cli.plugins_cmd import dashboard_set_agent_plugin_enabled
+    except ImportError:
+        return None
+    return dashboard_set_agent_plugin_enabled
+
+
+def set_plugin_enabled(key: str, enabled) -> dict:
+    """TAL-2133: the Agent resolves the key, runs its admission transaction and writes ``plugins.enabled``/``disabled``; Talaria never writes config."""
+    if not key or not isinstance(enabled, bool):
+        raise InvalidParams("plugins.set_enabled requires a key and boolean enabled")
+    set_enabled = _plugin_enable_function()
+    if set_enabled is None:
+        return {"supported": False}
+    from hermes_cli.config import format_managed_message, is_managed
+
+    # The Agent's config writer only prints its managed refusal, which would read as a successful write.
+    if is_managed():
+        raise RpcError(format_managed_message("change plugins"), condition="plugin_enable_managed")
+    from .dashboard_plugins import _toggle_refusals
+
+    try:
+        outcome = set_enabled(key, enabled=enabled)
+    except _toggle_refusals() as exc:  # v0.22.7 raises a recalled plugin's refusal instead of returning it
+        outcome = {"ok": False, "error": str(exc)}
+    if not outcome.get("ok"):
+        return {"supported": True, "ok": False, "error": _clean_text(outcome.get("error"), 300) or f"Plugin {key!r} could not be changed"}
+    if not outcome.get("unchanged"):
+        # The loaded manager still reports the old state until it rediscovers, as after an update.
+        from hermes_cli.plugins import discover_plugins
+        discover_plugins(force=True)
+    return {"supported": True, "ok": True, "name": str(outcome.get("name") or key), "unchanged": bool(outcome.get("unchanged")),
+            "restart_required": bool(outcome.get("restart_required"))}
+
+
 def update_all_plugins() -> dict:
     """The Agent's unattended batch: it moves nothing for a widened update, a caution scan or a ``--ref`` hold."""
     outcome = _require_plugin_auto_update().update_all_unattended()
@@ -793,6 +830,7 @@ def plugin_visibility(selected_providers: dict) -> dict:
         updates = modules[2](records)
         catalog_updates = behind_catalog(records)
     update_disabled = _update_disabled_reasons()
+    can_set_enabled = _plugin_enable_function() is not None
     rows = []
     for key, loaded in sorted((getattr(manager, "_plugins", {}) or {}).items(), key=lambda item: str(item[0])):
         manifest = getattr(loaded, "manifest", None)
@@ -824,6 +862,8 @@ def plugin_visibility(selected_providers: dict) -> dict:
         in_profile = installed.parent == profile_plugins
         row["category"] = category
         row["source"] = "installed" if in_profile else "bundled"
+        # TAL-2133: an exclusive backend is chosen through its category's provider setting, never this switch.
+        row["can_toggle"] = can_set_enabled and kind != "exclusive"
         if kind == "exclusive":
             if category:
                 row["is_active_provider"] = bool(selected) and slug == selected
@@ -1056,6 +1096,11 @@ def register(registry) -> None:
     def auto_update_set(ctx: CallContext, params: dict) -> dict:
         with scoped_home(profile_home_param(params)):
             return set_plugin_auto_update(params.get("enabled"))
+
+    @registry.method("plugins.set_enabled")
+    def set_enabled(ctx: CallContext, params: dict) -> dict:
+        with scoped_home(profile_home_param(params)):
+            return set_plugin_enabled(str(params.get("key") or "").strip(), params.get("enabled"))
 
     @registry.method("plugins.isolation")
     def isolation(ctx: CallContext, params: dict) -> dict:

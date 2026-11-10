@@ -1516,6 +1516,9 @@
                 "installed",
                 "bundled"
               ]
+            },
+            "can_toggle": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -1900,6 +1903,34 @@
       "supported",
       "auto_apply",
       "check_hours"
+    ],
+    "additionalProperties": false
+  },
+  "plugins.set_enabled": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "supported": {
+        "type": "boolean"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "name": {
+        "type": "string"
+      },
+      "unchanged": {
+        "type": "boolean"
+      },
+      "restart_required": {
+        "type": "boolean"
+      },
+      "error": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "supported"
     ],
     "additionalProperties": false
   },

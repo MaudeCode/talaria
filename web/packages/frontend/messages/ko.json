@@ -1049,6 +1049,7 @@
 	"plugins_stat_enabled": "켜짐",
 	"plugins_stat_of": "/ {total}",
 	"plugins_stat_updates": "업데이트",
+	"plugins_toggle_restart_required": "플러그인 변경을 완료하려면 게이트웨이를 다시 시작하세요.",
 	"plugins_unnamed": "이름 없는 플러그인",
 	"preserved_task_list_label": "보존된 작업 목록",
 	"primary_navigation": "기본 탐색",

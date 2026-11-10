@@ -15,6 +15,11 @@ it('keeps member catalog reads display-only and refuses installation before call
   expect(await read.json()).toMatchObject({ read_only: true, entries: [{ can_install: false }] })
   expect((await server.get('/api/plugins/install', { method: 'POST', body: '{"name":"catalog-probe"}', headers })).status).toBe(403)
   expect(sidecar.calls.some((c) => c.method === 'plugins.install')).toBe(false)
+  // TAL-2133: a member sees no plugin switch, and the switch's route refuses before calling the Agent.
+  sidecar.respond('plugins.list', () => ({ plugins: [{ name: 'probe', key: 'probe', version: '1', description: '', enabled: true, kind: 'standalone', activation: 'enabled', hooks: [], can_toggle: true }], supported_hooks: [] }))
+  expect(await (await server.get('/api/plugins', { headers })).json()).toMatchObject({ read_only: true, plugins: [{ key: 'probe', can_toggle: false }] })
+  expect((await server.get('/api/plugins/enabled', { method: 'POST', body: '{"key":"probe","enabled":false}', headers })).status).toBe(403)
+  expect(sidecar.calls.some((c) => c.method === 'plugins.set_enabled')).toBe(false)
   // TAL-1812: the provider card's install offer follows the same operator gate.
   sidecar.respond('plugins.providers', () => ({ providers: [{ name: 'left-core', display_name: 'Left Core', auth_type: '', setup: 'not_installed', install_hint: 'left-core-plugin' }] }))
   const { providers } = await (await server.get('/api/providers', { headers })).json() as { providers: { id: string; install_hint?: string }[] }

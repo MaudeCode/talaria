@@ -363,6 +363,7 @@ export const performUpdateNotificationAction = (id: string, action_id: string) =
 export const updatePlugin = (key: string, accept_caution = false, consent_token?: string) => orpc().pluginUpdate({ key, accept_caution, ...(consent_token ? { consent_token } : {}) }, { signal: new AbortController().signal })
 export const updateAllPlugins = () => orpc().pluginUpdateAll(undefined, { signal: new AbortController().signal })
 export const setPluginAutoUpdate = (enabled: boolean) => orpc().pluginAutoUpdate({ enabled })
+export const setPluginEnabled = (key: string, enabled: boolean) => orpc().pluginEnabled({ key, enabled })
 export const fetchPlugins = (q = '') => orpc().plugins(q ? { q } : {})
 export const fetchPluginCatalog = (query = '', offset = 0) => orpc().pluginCatalog({ query, offset, limit: 20 })
 export const installPlugin = (name: string, consent_token?: string) => orpc().pluginInstall({ name, ...(consent_token ? { consent_token } : {}) }, { signal: new AbortController().signal })

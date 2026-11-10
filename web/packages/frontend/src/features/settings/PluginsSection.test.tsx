@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -17,11 +17,13 @@ vi.mock('../../api/endpoints', () => ({
   pluginOauthRedirect: vi.fn(() => Promise.resolve({ ok: true, status: 'pending', flow_id: 'flow-1' })),
   pluginOauthLogout: vi.fn((_key: string, id: string) => { Object.assign(clients.find((c) => c.id === id)!, { state: 'logged_out', can_sign_out: false }); return Promise.resolve({ ok: true, removed: true }) }),
   savePluginSettings: vi.fn(),
+  setPluginEnabled: vi.fn(),
 }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
 import * as api from '../../api/endpoints'
 import { PluginsSection } from './PluginsSection'
 import { showToast } from '../toast/toast'
+import { ApiError } from '../../contracts/common'
 
 function renderPlugins() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
@@ -175,4 +177,80 @@ it('TAL-2132: shows the server figures and groups; a group opens and closes, and
   expect(screen.getByRole('button', { name: /Messaging platforms/ })).toHaveAttribute('aria-expanded', 'false')
   expect(screen.getByRole('button', { name: /Image generation/ })).toHaveAttribute('aria-expanded', 'false')
   vi.mocked(api.fetchPlugins).mockReset()
+})
+
+it('TAL-2133: a row switch moves at once, the figures follow the reread, and a refusal rolls back with the server error', async () => {
+  // The server's state: what the next GET answers. Built-in groups count from it, as the server does.
+  const on = { 'team-notes': false, meshy: true }
+  const answer = (readOnly = false) => {
+    const enabled = Object.values(on).filter(Boolean).length + 1
+    return {
+      read_only: readOnly, total: 3,
+      summary: { installed: 2, bundled: 1, enabled, total: 3, updates: 0, updates_tone: null },
+      plugins: [
+        { key: 'meshy', name: 'meshy', enabled: on.meshy, source: 'installed' as const, category: '', can_toggle: !readOnly },
+        { key: 'team-notes', name: 'team-notes', enabled: on['team-notes'], source: 'installed' as const, category: '', can_toggle: !readOnly, disabled_reason: { kind: 'update' as const, reason: 'its dependencies could not be prepared' } },
+        { key: 'image_gen/fal', name: 'fal', enabled: true, kind: 'exclusive', source: 'bundled' as const, category: 'image_gen', can_toggle: false },
+      ],
+      groups: [
+        { id: 'installed' as const, plugin_keys: ['meshy', 'team-notes'], enabled_count: enabled - 1, total_count: 2, enabled_percent: 50 * (enabled - 1) },
+        { id: 'image_gen' as const, plugin_keys: ['image_gen/fal'], enabled_count: 1, total_count: 1, enabled_percent: 100 },
+      ],
+    }
+  }
+  vi.mocked(api.fetchPlugins).mockImplementation(() => Promise.resolve(answer()))
+  let finish: (() => void) | undefined
+  vi.mocked(api.setPluginEnabled).mockImplementation((key, enabled) => new Promise((resolve) => {
+    finish = () => { on[key as keyof typeof on] = enabled; resolve({ key, enabled, restart_required: !enabled }) }
+  }))
+  renderPlugins()
+  const turnedOn = () => document.querySelector('[data-stat="enabled"]')?.textContent
+  const notes = await screen.findByRole('switch', { name: 'team-notes' })
+  expect(notes).not.toBeChecked()
+  expect(turnedOn()).toBe('Turned on2of 3')
+  expect(notes.closest('li')).toHaveTextContent('Disabled')
+  expect(notes.closest('li')).not.toHaveTextContent('Off')
+  expect(notes.closest('li')).toHaveTextContent('its dependencies could not be prepared')
+  await userEvent.click(notes)
+  // Before the server answers.
+  expect(notes).toBeChecked()
+  expect(notes.closest('li')).toHaveTextContent('Enabled')
+  expect(api.setPluginEnabled).toHaveBeenLastCalledWith('team-notes', true)
+  finish!()
+  await waitFor(() => expect(turnedOn()).toBe('Turned on3of 3'))
+  expect(notes).toBeChecked()
+  expect(showToast).not.toHaveBeenCalledWith('Restart the gateway to finish this plugin change.', 10000)
+  // Turning one off asks for the gateway restart the Agent reports.
+  await userEvent.click(notes)
+  expect(notes).not.toBeChecked()
+  finish!()
+  await waitFor(() => expect(showToast).toHaveBeenCalledWith('Restart the gateway to finish this plugin change.', 10000))
+  await waitFor(() => expect(turnedOn()).toBe('Turned on2of 3'))
+  // A refusal restores the server's value and shows its reason.
+  vi.mocked(api.setPluginEnabled).mockRejectedValueOnce(new ApiError({ kind: 'http', status: 409, path: '/api/plugins/enabled', message: 'Admission refused: synthetic conflict' }))
+  const meshy = screen.getByRole('switch', { name: 'meshy' })
+  await userEvent.click(meshy)
+  await waitFor(() => expect(showToast).toHaveBeenCalledWith('Admission refused: synthetic conflict', 5000, 'error'))
+  await waitFor(() => expect(meshy).toBeChecked())
+  expect(turnedOn()).toBe('Turned on2of 3')
+  // The row menu offers the same move, through the same write.
+  fireEvent.contextMenu(meshy.closest('li')!)
+  await userEvent.click(within(await screen.findByRole('menu', { name: 'Plugin actions' })).getByRole('menuitem', { name: 'Disable' }))
+  expect(meshy).not.toBeChecked()
+  expect(api.setPluginEnabled).toHaveBeenLastCalledWith('meshy', false)
+  finish!()
+  await waitFor(() => expect(turnedOn()).toBe('Turned on1of 3'))
+  // The exclusive backend has no switch and no menu.
+  await userEvent.click(screen.getByRole('button', { name: /Image generation/ }))
+  const fal = screen.getByText('fal').closest('li')!
+  expect(fal.querySelector('[role="switch"]')).toBeNull()
+  expect(fal).not.toHaveAttribute('data-context-menu')
+  vi.mocked(api.fetchPlugins).mockReset()
+})
+
+it('TAL-2133: a read-only session sees "Off" and no switch', async () => {
+  vi.mocked(api.fetchPlugins).mockResolvedValueOnce({ read_only: true, total: 1, plugins: [{ key: 'team-notes', name: 'team-notes', enabled: false, can_toggle: false }] })
+  renderPlugins()
+  expect((await screen.findByText('team-notes')).closest('li')).toHaveTextContent('Off')
+  expect(screen.queryByRole('switch')).not.toBeInTheDocument()
 })
