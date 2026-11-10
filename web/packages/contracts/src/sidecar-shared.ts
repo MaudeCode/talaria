@@ -83,6 +83,9 @@ export const KanbanInspectionSnapshotSchema = z.object({
 /** Busy Agent work, or retained canonical history that this Agent cannot safely retire. */
 export const SessionDeleteRefusedSchema = z.enum(['active_turn', 'runtime_history_unsupported'])
 export type SessionDeleteRefused = z.infer<typeof SessionDeleteRefusedSchema>
+/** TAL-2093: a profile's display name and description, one printable line each, as `profiles.list` bounds them on read. */
+export const PROFILE_DISPLAY_NAME_MAX = 80
+export const PROFILE_DESCRIPTION_MAX = 280
 /** TAL-213: the profile's canonical Bot Chat (its session titled exactly "Bot Chat") and that chat's live compression tip. */
 export const CanonicalBotChatSchema = z.object({ session_id: z.string(), tip_session_id: z.string() })
 /**

@@ -223,6 +223,7 @@ export const ProfileRowSchema = z.object({
   gateway_mode: GatewayModeSchema.default('stopped'),
   // Absent reads as no identity and no chat, so hand-built rows (test fakes) need not spell them out.
   display_name: z.string().default(''), description: z.string().default(''), has_avatar: z.boolean().default(false),
+  display_name_overridden: z.boolean().default(false),
   canonical_session: CanonicalBotChatSchema.nullable().default(null),
 })
 export const PROFILES_METHODS = {
@@ -230,6 +231,8 @@ export const PROFILES_METHODS = {
   'profiles.list': { params: BaseHomeParams, result: z.object({ profiles: z.array(ProfileRowSchema) }) },
   'profiles.create': { params: BaseHomeParams.extend({ name: z.string().min(1), clone_from: z.string().nullable().optional(), clone_config: z.boolean().optional() }), result: z.object({ profile: ProfileRowSchema }) },
   'profiles.delete': { params: BaseHomeParams.extend({ name: z.string().min(1) }), result: z.object({ ok: z.literal(true) }) },
+  /** TAL-2093: write the profile's own `display_name` (empty clears it) and `description` through the Agent's `write_profile_meta`; omitted fields stay. `name` is `default` for the root profile. */
+  'profiles.set_meta': { params: BaseHomeParams.extend({ name: z.string().min(1), display_name: z.string().optional(), description: z.string().optional() }), result: z.object({ profile: ProfileRowSchema }) },
   'profiles.runtime_env': { params: ProfileHomeParams.extend({ protected_keys: z.array(z.string()).optional() }), result: z.object({ env: z.record(z.string(), z.string()) }) },
   'profiles.skills_stats': { params: ProfileHomeParams, result: z.object({ enabled: z.number().int(), total: z.number().int() }) },
   /** TAL-1578: the server's own skill file writes end the home's cached `profiles.skills_stats` count at once. */

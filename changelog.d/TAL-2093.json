@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Talaria Web edits a profile's display name and description from its page in Settings > Profiles, and the default profile's page names the assistant; that name leaves Settings > Access.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

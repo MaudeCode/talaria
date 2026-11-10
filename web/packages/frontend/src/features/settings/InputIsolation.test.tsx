@@ -159,7 +159,7 @@ describe('input render isolation (TAL-1405)', () => {
     expect(renders.passkey).not.toHaveBeenCalled()
   })
 
-  it.each(['Default assistant name', 'Trusted link hosts'])('typing ten characters in %s does not re-render the Privacy page (TAL-2102)', async (label) => {
+  it.each(['Trusted link hosts'])('typing ten characters in %s does not re-render the Privacy page (TAL-2102)', async (label) => {
     mount(<PrivacySettings />)
     const input = await screen.findByLabelText(label)
     reset(renders.privacy)

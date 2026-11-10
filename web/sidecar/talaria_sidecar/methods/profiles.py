@@ -167,9 +167,10 @@ def bot_identity(home: Path) -> dict:
     meta = _yaml_load(home / "profile.yaml") or {}
     ui_meta = meta.get("ui_meta") if isinstance(meta.get("ui_meta"), dict) else {}
     bots = ui_meta.get("hermes-bots") if isinstance(ui_meta.get("hermes-bots"), dict) else {}
+    title = _bounded(bots.get("title"), 80)
     return {
-        # Bot Mode's roster name (``ui_meta['hermes-bots'].title``) wins over the profile's own display name.
-        "display_name": _bounded(bots.get("title"), 80) or _bounded(meta.get("display_name"), 80),
+        # Bot Mode's roster name (``ui_meta['hermes-bots'].title``) wins over the profile's own display name (TAL-2093).
+        "display_name": title or _bounded(meta.get("display_name"), 80), "display_name_overridden": bool(title),
         "description": _bounded(meta.get("description"), 280), "has_avatar": any((home / "assets" / f"avatar.{ext}").is_file() for ext in _AVATAR_EXTS),
     }
 
@@ -364,6 +365,27 @@ def delete_profile(base_home: Path, name: str) -> None:
             raise InvalidParams(str(exc)) from exc
 
 
+def set_profile_meta(base_home: Path, name: str, *, display_name: str | None, description: str | None) -> Path:
+    """TAL-2093: write the profile's own ``display_name``/``description`` through the Agent's ``write_profile_meta``; only
+    the passed fields change, an empty name clears it, and ``ui_meta`` is never touched. A typed description is the
+    user's, so it is marked ``description_auto: false`` as ``hermes profile describe --set`` does."""
+    if name == "default":
+        home = base_home
+    else:
+        validate_name(name)
+        home = dict(named_profile_homes(base_home)).get(name)
+        if home is None:
+            if (base_home / "profiles" / name).exists():
+                raise InvalidParams(f"Profile '{name}' resolves outside the profiles directory.")
+            raise RpcError(f"Profile '{name}' does not exist.", condition="not_found")
+    if not home.is_dir():
+        raise RpcError(f"Profile '{name}' does not exist.", condition="not_found")
+    from hermes_cli.profiles import write_profile_meta
+
+    write_profile_meta(home, display_name=display_name, description=description, description_auto=False if description is not None else None)
+    return home
+
+
 def runtime_env(home: Path, protected_keys: set[str]) -> dict[str, str]:
     """Env vars an agent turn for this profile home needs (terminal config + .env)."""
     env: dict[str, str] = {}
@@ -402,6 +424,13 @@ def register(registry) -> None:
         rows = list_profiles(base)
         row = next((r for r in rows if r["name"] == name), None) or _row(path, name, False)
         return {"profile": row}
+
+    @registry.method("profiles.set_meta")
+    def set_meta(ctx: CallContext, params: dict) -> dict:
+        base, name = profile_home_param(params, "base_home"), str(params.get("name") or "").strip()
+        fields = {key: params[key] if isinstance(params.get(key), str) else None for key in ("display_name", "description")}
+        home = set_profile_meta(base, name, **fields)
+        return {"profile": _row(home, name, name == "default")}
 
     @registry.method("profiles.delete")
     def delete(ctx: CallContext, params: dict) -> dict:

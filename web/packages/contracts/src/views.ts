@@ -788,6 +788,8 @@ export const ProfileSchema = z.looseObject({
   gateway_mode: GatewayModeSchema.optional(),
   /** TAL-213: Bot Mode identity from `profile.yaml` (the bot's roster title, else the profile's display name), one bounded printable line each. */
   display_name: z.string().optional(), description: z.string().optional(), has_avatar: z.boolean().optional(),
+  /** TAL-2093: Bot Mode's roster title is the shown `display_name`, so a written display name stays hidden behind it. */
+  display_name_overridden: z.boolean().optional(),
   /** TAL-213: present only when the profile has a canonical Bot Chat; clients open `tip_session_id` after switching to the profile. */
   canonical_session: CanonicalBotChatSchema.nullable().optional(),
   /** TAL-819: skill and memory writes the Agent staged for approval, reviewed on the Skills and Memory pages. */

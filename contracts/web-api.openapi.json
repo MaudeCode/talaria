@@ -88902,6 +88902,9 @@
                           "has_avatar": {
                             "type": "boolean"
                           },
+                          "display_name_overridden": {
+                            "type": "boolean"
+                          },
                           "canonical_session": {
                             "anyOf": [
                               {
@@ -89105,6 +89108,9 @@
                             "type": "string"
                           },
                           "has_avatar": {
+                            "type": "boolean"
+                          },
+                          "display_name_overridden": {
                             "type": "boolean"
                           },
                           "canonical_session": {
@@ -89332,6 +89338,9 @@
                         "has_avatar": {
                           "type": "boolean"
                         },
+                        "display_name_overridden": {
+                          "type": "boolean"
+                        },
                         "canonical_session": {
                           "anyOf": [
                             {
@@ -89419,6 +89428,168 @@
                   "required": [
                     "ok",
                     "name"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile/update": {
+      "post": {
+        "operationId": "profiles.update",
+        "summary": "TAL-2093, owner only: write a profile's own `display_name` (empty clears it) and `description` to its profile.yaml; omitted fields stay. Each is trimmed and must be one printable line of at most 80 and 280 characters. Errors: invalid (400, including a name resolving outside the profiles directory), forbidden (403, also in isolated profile mode), not_found (404, including a deleted profile), conflict (409 while the profile is being deleted).",
+        "tags": [
+          "settings"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "display_name": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "path": {
+                          "type": "string"
+                        },
+                        "is_active": {
+                          "type": "boolean"
+                        },
+                        "is_default": {
+                          "type": "boolean"
+                        },
+                        "model": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "provider": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "skill_count": {
+                          "type": "number"
+                        },
+                        "total_skills": {
+                          "type": "number"
+                        },
+                        "enabled_skills": {
+                          "type": "number"
+                        },
+                        "gateway_running": {
+                          "type": "boolean"
+                        },
+                        "has_env": {
+                          "type": "boolean"
+                        },
+                        "visible": {
+                          "type": "boolean"
+                        },
+                        "gateway_mode": {
+                          "enum": [
+                            "own",
+                            "served",
+                            "parked",
+                            "standalone",
+                            "stopped"
+                          ],
+                          "type": "string"
+                        },
+                        "display_name": {
+                          "type": "string"
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "has_avatar": {
+                          "type": "boolean"
+                        },
+                        "display_name_overridden": {
+                          "type": "boolean"
+                        },
+                        "canonical_session": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "session_id": {
+                                  "type": "string"
+                                },
+                                "tip_session_id": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "session_id",
+                                "tip_session_id"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "pending_writes": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "profile"
                   ]
                 }
               }

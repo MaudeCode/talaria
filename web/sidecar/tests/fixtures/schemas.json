@@ -4401,6 +4401,10 @@
               "default": false,
               "type": "boolean"
             },
+            "display_name_overridden": {
+              "default": false,
+              "type": "boolean"
+            },
             "canonical_session": {
               "default": null,
               "anyOf": [
@@ -4442,6 +4446,7 @@
             "display_name",
             "description",
             "has_avatar",
+            "display_name_overridden",
             "canonical_session"
           ],
           "additionalProperties": false
@@ -4528,6 +4533,10 @@
             "default": false,
             "type": "boolean"
           },
+          "display_name_overridden": {
+            "default": false,
+            "type": "boolean"
+          },
           "canonical_session": {
             "default": null,
             "anyOf": [
@@ -4569,6 +4578,7 @@
           "display_name",
           "description",
           "has_avatar",
+          "display_name_overridden",
           "canonical_session"
         ],
         "additionalProperties": false
@@ -4590,6 +4600,137 @@
     },
     "required": [
       "ok"
+    ],
+    "additionalProperties": false
+  },
+  "profiles.set_meta": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "profile": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "is_default": {
+            "type": "boolean"
+          },
+          "gateway_running": {
+            "type": "boolean"
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "has_env": {
+            "type": "boolean"
+          },
+          "visible": {
+            "type": "boolean"
+          },
+          "skill_count": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "enabled_skills": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "total_skills": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "gateway_mode": {
+            "default": "stopped",
+            "type": "string",
+            "enum": [
+              "own",
+              "served",
+              "parked",
+              "standalone",
+              "stopped"
+            ]
+          },
+          "display_name": {
+            "default": "",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "type": "string"
+          },
+          "has_avatar": {
+            "default": false,
+            "type": "boolean"
+          },
+          "display_name_overridden": {
+            "default": false,
+            "type": "boolean"
+          },
+          "canonical_session": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  },
+                  "tip_session_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "session_id",
+                  "tip_session_id"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "path",
+          "is_default",
+          "gateway_running",
+          "model",
+          "provider",
+          "has_env",
+          "visible",
+          "skill_count",
+          "enabled_skills",
+          "total_skills",
+          "gateway_mode",
+          "display_name",
+          "description",
+          "has_avatar",
+          "display_name_overridden",
+          "canonical_session"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "required": [
+      "profile"
     ],
     "additionalProperties": false
   },

@@ -47,7 +47,7 @@ test('a workspace row offers its buttons, with the same disabled ends, and Renam
   await expect.poll(() => renames).toEqual([{ path: '/srv/alpha', name: 'Alpha renamed' }])
 })
 
-test('a profile row offers Delete only when its button shows, and Delete keeps its confirmation', async ({ page }, info) => {
+test('a profile row offers Delete only when its button shows, Edit to an owner (TAL-2093), and Delete keeps its confirmation', async ({ page }, info) => {
   desktopOnly(info.project.name)
   const session = { tip_session_id: 'bot-chat' }
   await page.route('**/api/profiles', (route) => route.fulfill({ json: { active: 'work', profiles: [
@@ -63,14 +63,14 @@ test('a profile row offers Delete only when its button shows, and Delete keeps i
   const menu = rowMenu(page, 'Profile actions')
   const row = (name: string) => page.locator(`[data-profile="${name}"]`)
   await row('work').click({ button: 'right' })
-  await expect(items(menu)).toHaveText(['Open Bot Chat'])
+  await expect(items(menu)).toHaveText(['Open Bot Chat', 'Edit'])
   await page.keyboard.press('Escape')
   await row('default').click({ button: 'right' })
-  await expect(items(menu)).toHaveText(['Use'])
+  await expect(items(menu)).toHaveText(['Use', 'Edit'])
   await page.keyboard.press('Escape')
 
   await row('research').click({ button: 'right' })
-  await expect(items(menu)).toHaveText(['Open Bot Chat', 'Use', 'Delete this profile'])
+  await expect(items(menu)).toHaveText(['Open Bot Chat', 'Use', 'Edit', 'Delete this profile'])
   await page.screenshot({ path: info.outputPath('profile-menu-desktop.png') })
   await menu.getByRole('menuitem', { name: 'Delete this profile' }).click()
   const confirm = page.getByRole('alertdialog')

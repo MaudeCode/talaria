@@ -65,6 +65,7 @@ export const fetchActiveProfile = () => orpc().profiles.active()
 export const switchProfile = (name: string) => orpc().profiles.switch({ name })
 export const createProfile = (body: Record<string, unknown>) => orpc().profiles.create(body)
 export const deleteProfile = (name: string) => orpc().profiles.delete({ name })
+export const updateProfile = (body: { name: string; display_name?: string; description?: string }) => orpc().profiles.update(body)
 export const fetchModels = (freshness?: 'session_visit') => orpc().models.list(freshness ? { freshness } : {})
 /** config.yaml model.default (and provider): `/api/settings` does not persist `default_model`. */
 /** TAL-1857: star or unstar one catalog model for the active profile. */

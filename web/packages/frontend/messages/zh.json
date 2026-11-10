@@ -1467,7 +1467,6 @@
 	"settings_label_auto_scroll_follow": "自动跟随新内容",
 	"settings_label_auto_title_refresh": "自适应标题更新",
 	"settings_label_auxiliary_models": "辅助模型",
-	"settings_label_bot_name": "默认助手名称",
 	"settings_label_busy_placeholder_hint": "显示忙碌占位提示",
 	"settings_label_chat_activity_display_mode": "活动显示",
 	"settings_label_check_updates": "检查更新",

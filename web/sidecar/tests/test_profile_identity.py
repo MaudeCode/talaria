@@ -1,7 +1,9 @@
-"""TAL-213: ``profiles.list`` carries each profile's Bot Mode identity and canonical Bot Chat, read-only."""
+"""TAL-213: ``profiles.list`` carries each profile's Bot Mode identity and canonical Bot Chat, read-only.
+TAL-2093: ``profiles.set_meta`` writes the profile's own display name and description and nothing else."""
 
 from __future__ import annotations
 
+import json
 import pathlib
 import subprocess
 
@@ -95,3 +97,51 @@ def test_profiles_list_reports_identity_and_canonical_bot_chat_per_profile(hands
     after = _db_files(hermes_home)
     assert {p: after[p] for p in before} == before
     assert all(size == 0 for p, (_, size) in after.items() if p not in before)
+
+
+def _profile_yaml(home: pathlib.Path) -> dict:
+    """``profile.yaml`` as the Agent's YAML parser reads it."""
+    script = "import json, sys; sys.path.insert(0, sys.argv[1]); import hermes_yaml; print(json.dumps(hermes_yaml.safe_load(open(sys.argv[2], encoding='utf-8'))))"
+    return json.loads(subprocess.run([AGENT_PYTHON, "-c", script, str(AGENT_DIR), str(home / "profile.yaml")], check=True, capture_output=True, text=True).stdout)
+
+
+@requires_agent
+def test_set_meta_writes_only_the_passed_fields_and_reports_a_bot_mode_override(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
+    profiles = hermes_home / "profiles"
+    scout, plain, outside = profiles / "scout", profiles / "plain", hermes_home.parent / "outside"
+    for home in (scout, plain, outside):
+        home.mkdir(parents=True)
+    (profiles / "escape").symlink_to(outside)
+    (scout / "profile.yaml").write_text(
+        "display_name: Scout\ndescription: Old\ndescription_auto: true\nvisible: false\nprevious_names: [ranger]\n"
+        "ui_meta:\n  hermes-bots:\n    title: Research lead\n    secret_note: kept\n",
+        encoding="utf-8",
+    )
+    base = str(hermes_home)
+
+    row = handshaken.result("profiles.set_meta", {"base_home": base, "name": "scout", "display_name": "  Field agent ", "description": "Finds sources."})["profile"]
+    assert_matches("profiles.set_meta", {"profile": row})
+    assert _profile_yaml(scout) == {
+        "display_name": "Field agent", "description": "Finds sources.", "description_auto": False, "visible": False, "previous_names": ["ranger"],
+        "ui_meta": {"hermes-bots": {"title": "Research lead", "secret_note": "kept"}},
+    }
+    # Bot Mode's roster title still wins on read, and the row says so.
+    assert (row["name"], row["display_name"], row["display_name_overridden"], row["description"]) == ("scout", "Research lead", True, "Finds sources.")
+
+    # An empty name clears the key; an omitted description stays.
+    row = handshaken.result("profiles.set_meta", {"base_home": base, "name": "plain", "display_name": "Plain"})["profile"]
+    assert (row["display_name"], row["display_name_overridden"]) == ("Plain", False)
+    row = handshaken.result("profiles.set_meta", {"base_home": base, "name": "plain", "display_name": ""})["profile"]
+    assert row["display_name"] == "" and "display_name" not in _profile_yaml(plain)
+
+    # The root profile writes the base home's own profile.yaml.
+    row = handshaken.result("profiles.set_meta", {"base_home": base, "name": "default", "description": "Home base"})["profile"]
+    assert (row["name"], row["is_default"], row["description"]) == ("default", True, "Home base")
+    assert _profile_yaml(hermes_home) == {"description": "Home base", "description_auto": False}
+
+    # Unknown, escaping and malformed names write nothing.
+    for name, condition in (("ghost", "not_found"), ("escape", None), ("../outside", None)):
+        message, _ = handshaken.call("profiles.set_meta", {"base_home": base, "name": name, "display_name": "x"})
+        assert "error" in message, name
+        assert (message["error"].get("data") or {}).get("condition") == condition, (name, message["error"])
+    assert not (outside / "profile.yaml").exists() and not (profiles / "ghost").exists()
