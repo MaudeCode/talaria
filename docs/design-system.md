@@ -303,4 +303,7 @@ list of the Web violations that remain.
    one line.
 10. For a Web change, run `npm run lint -w packages/frontend` from `web/` (it
     ends with the UI rules check) and attach the demo tour's screenshots
-    (`web/TESTING.md`) of each touched page at desktop and 390px.
+    (`web/TESTING.md`) of each touched page at desktop and 390px, at the five
+    iPhone Duo viewports (outer portrait 382×580, outer landscape 594×368,
+    inner portrait 669×867, inner landscape 951×585, inner split 385×571),
+    and in the light theme at desktop and 390px.

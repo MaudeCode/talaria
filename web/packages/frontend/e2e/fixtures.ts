@@ -98,6 +98,41 @@ export async function hideClipboardApi(page: Page): Promise<() => Promise<string
   return () => page.evaluate(() => (window as unknown as { realClipboard: Clipboard }).realClipboard.readText())
 }
 
+/** The iPhone Duo's Safari viewports in CSS px (foldable-web skill): each display in both orientations, and split view. */
+export const DUO_VIEWPORTS = [
+  { name: 'outer-portrait', width: 382, height: 580 },
+  { name: 'outer-landscape', width: 594, height: 368 },
+  { name: 'inner-portrait', width: 669, height: 867 },
+  { name: 'inner-landscape', width: 951, height: 585 },
+  { name: 'inner-split', width: 385, height: 571 },
+] as const
+
+/**
+ * Sizes the page to each Duo viewport and asserts the document has no sideways scroll there, then restores the original
+ * size. `pane`, for a page whose content scrolls inside its own element (Settings), is held to the same rule, since its
+ * overflow never widens the document; `pane.known` names the ticket for a viewport where it overflows today, and the
+ * check then expects the overflow so a fix forces the entry's removal. `shot`, when given, is called with
+ * `<name>-<viewport>` at each viewport.
+ */
+export async function expectNoOverflow(page: Page, name: string, shot?: (name: string) => Promise<void>, pane?: { locator: Locator; known?: (viewport: string) => string | undefined }): Promise<void> {
+  const original = page.viewportSize()
+  try {
+    for (const { name: viewport, width, height } of DUO_VIEWPORTS) {
+      await page.setViewportSize({ width, height })
+      // Two frames: media-query listeners re-render after the resize before the width is read.
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${name} has no horizontal scroll at ${viewport}`).toBe(true)
+      if (pane) {
+        const known = pane.known?.(viewport)
+        await expect.poll(() => pane.locator.evaluate((el) => el.scrollWidth <= el.clientWidth), known ? `${name} still overflows its pane at ${viewport} (${known}); remove its known entry` : `${name} has no horizontal scroll in its pane at ${viewport}`).toBe(!known)
+      }
+      await shot?.(`${name}-${viewport}`)
+    }
+  } finally {
+    if (original) await page.setViewportSize(original)
+  }
+}
+
 /** TAL-1943: the prompt card starts below the chat header, each control is on screen and uncovered once scrolled to, and the page has no sideways scroll. */
 export async function expectPromptReachable(page: Page, card: Locator, controls: Locator[]): Promise<void> {
   // --composer-h is a whole pixel, so the card's edge can land a fraction of one past the stage's.

@@ -185,10 +185,20 @@ the next port) fails the run; set `HERMES_E2E_PORT` to a free port. The run neve
 
 The replay servers leave Tasks, Decisions, Discussions, Insights usage and chat transcripts empty. For a page review
 that needs data, `e2e/demo-server.ts` boots a server seeded with synthetic chats, jobs, a decision review and a
-discussion, and `e2e/demo-tour.spec.ts` checks it. From `packages/frontend`,
-`TOUR_SHOTS=<dir> npx playwright test e2e/demo-tour.spec.ts` also saves a full-height screenshot of each of those
-pages for the desktop and mobile projects. The tour also opens every Settings section (`SettingsSectionSchema`) and
-each Tools tab, checks its heading and that the page has no sideways scroll, and saves `settings-<id>-<project>.png`.
+discussion, and `e2e/demo-tour.spec.ts` checks it. The tour visits those pages, the model menu (desktop), every
+Settings section (`SettingsSectionSchema`) and each Tools tab, checks each page's seeded value or heading and that
+Settings has no sideways scroll, in three passes:
+
+1. Dark, on the desktop (1280×800) and mobile (390×844) projects.
+2. Duo, on the desktop project only: each page at the five iPhone Duo viewports in `DUO_VIEWPORTS`
+   (`e2e/fixtures.ts`: outer portrait 382×580, outer landscape 594×368, inner portrait 669×867, inner landscape
+   951×585, inner split 385×571), where `expectNoOverflow` asserts the document, and for Settings the section's
+   scrolling pane, has no sideways scroll.
+3. Light, on both projects, after picking Light in Settings › Appearance.
+
+From `packages/frontend`, `TOUR_SHOTS=<dir> npx playwright test e2e/demo-tour.spec.ts` also saves a full-height
+screenshot of every page: `<page>-<project>.png` (dark), `<page>-<viewport>.png` (Duo) and
+`<page>-light-<project>.png` (light), where a Settings page is named `settings-<id>`.
 
 ### UI rules
 
