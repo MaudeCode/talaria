@@ -54,7 +54,8 @@ export interface ComposerProps {
   terminalOpen: boolean
   onToggleTerminal: () => void
   onModelChange: (model: string, provider: string | null) => void
-  onWorkspaceChange: (path: string) => void
+  /** `draft.take` hands over and clears this chat's draft when the change starts a new chat (TAL-2155). */
+  onWorkspaceChange: (path: string, draft?: { take: () => string }) => void
   onNewWorktreeChat?: ((workspace: string | undefined) => void) | undefined
   onRemoveWorktree?: (() => void) | undefined
   onToolsetsChange: (toolsets: string[] | null) => void
@@ -829,7 +830,16 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
   // The server marks sessions Web may not continue (TAL-312); it would refuse every send, so none is offered.
   if (readOnly) return <div className="composer-wrap" id="composerWrap"><div className="mx-auto max-w-(--msg-max) px-3 py-2 text-center text-xs text-muted" role="note">{session?.owner_attachment?.reason === 'native_clarify_batch_unavailable' ? m.owner_batch_unavailable() : session?.owner_attachment?.reason === 'served_profile_sessions_unavailable' ? m.owner_profile_unverified() : m.session_read_only_notice()}</div></div>
 
-  const controls = { sessionId, session, settings, pendingChoices, onExecutionModeChange, onModelChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported, onWorkspaceChange, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, terminalOpen, onToggleTerminal, answering, stage, phone, collapsed, configOpen, setConfigOpen, context }
+  // TAL-2155: read when the answer arrives, so text typed while the change is decided moves too.
+  const takeDraft = () => {
+    const taken = draft.current
+    if (!taken) return taken
+    setText('')
+    if (localStateId) clearDraft(localStateId, !session?.owner_attachment)
+    return taken
+  }
+  const changeWorkspace = (path: string) => onWorkspaceChange(path, { take: takeDraft })
+  const controls = { sessionId, session, settings, pendingChoices, onExecutionModeChange, onModelChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported, onWorkspaceChange: changeWorkspace, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, terminalOpen, onToggleTerminal, answering, stage, phone, collapsed, configOpen, setConfigOpen, context }
 
   return (
     // Drops land anywhere on the composer, the image strip above the card included (TAL-1552).

@@ -244,7 +244,16 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   }
 
   const onModelChange = (model: string, provider: string | null, ownerPayload?: Parameters<typeof updateSession>[1]) => { if (!sessionId) { setPending((p) => ({ ...p, model, model_provider: provider })); return } updateSession({ model, model_provider: provider }, ownerPayload) }
-  const onWorkspaceChange = (path: string) => { if (!sessionId) { setPending((p) => ({ ...p, workspace: path })); return } updateSession({ workspace: path }) }
+  // TAL-2155: when the server starts a new chat for the chosen workspace instead, the composer's draft moves there with the user.
+  const onWorkspaceChange = (path: string, draft?: { take: () => string }) => {
+    if (!sessionId) { setPending((p) => ({ ...p, workspace: path })); return }
+    updateSession({ workspace: path }, undefined, undefined, (next) => {
+      const text = draft?.take() ?? ''
+      if (text.trim()) returnToComposer(next, text)
+      void invalidateSessionQueries(qc, next)
+      void navigate({ to: '/session/$sessionId', params: { sessionId: next } })
+    })
+  }
   const onExecutionModeChange = (mode: ExecutionMode) => {
     const canReference = executionModes.data?.modes.find((option) => option.mode === mode)?.can_reference === true
     setPending((p) => ({ ...p, execution_mode: mode, ...(canReference ? {} : { source_references: [] }) }))

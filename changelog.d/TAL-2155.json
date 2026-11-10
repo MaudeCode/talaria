@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web's \"Start a new chat when switching workspace\" setting now works: choosing another workspace in a chat that already has messages opens a new chat there with your draft, and the original chat keeps its workspace.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

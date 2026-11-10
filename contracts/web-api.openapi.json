@@ -30447,6 +30447,10 @@
                   },
                   "confirm_token": {
                     "type": "string"
+                  },
+                  "accept_switched_to": {
+                    "type": "boolean",
+                    "description": "TAL-2155: the client can follow `switched_to`; without it a workspace change always applies in place."
                   }
                 },
                 "required": [
@@ -34702,6 +34706,10 @@
                         "can_share"
                       ],
                       "additionalProperties": {}
+                    },
+                    "switched_to": {
+                      "type": "string",
+                      "description": "TAL-2155: with `new_chat_on_workspace_switch` on, a workspace change to a chat with messages leaves it unchanged and starts this new chat on the chosen workspace; `session` is the new chat."
                     }
                   },
                   "required": [

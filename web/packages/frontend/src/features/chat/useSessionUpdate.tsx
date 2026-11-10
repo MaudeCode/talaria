@@ -65,8 +65,12 @@ export function useSessionUpdate(sessionId: string | null, refresh: (session?: S
   const write = useSessionWrite({
     fields: ({ body, ownerPayload, effort }: { sid: string; body: Update; owner: OwnerAttachment | undefined; ownerPayload: OwnerPayload | undefined; effort: string | null | undefined }) =>
       effort !== undefined ? { reasoning_effort: effort } : { ...chosenFields(body), ...(ownerPayload?.reasoning ? { reasoning_effort: ownerPayload.reasoning } : {}) },
-    mutationFn: async ({ sid, body, owner: seen, ownerPayload, effort }): Promise<{ native: OwnerResult | null; session: unknown }> => {
-      if (!seen) return { native: null, session: (await api.updateSession(sid, body)).session }
+    mutationFn: async ({ sid, body, owner: seen, ownerPayload, effort }): Promise<{ native: OwnerResult | null; session: unknown; switchedTo?: string | undefined }> => {
+      if (!seen) {
+        // TAL-2155: a workspace change may come back as a new chat the server started instead (`switched_to`).
+        const r = await api.updateSession(sid, body.workspace !== undefined ? { ...body, accept_switched_to: true } : body)
+        return { native: null, session: r.session, switchedTo: r.switched_to }
+      }
       const carried = latestOwner.current?.sid === sid ? latestOwner.current.owner : undefined
       const owner = carried && (carried.revision ?? -1) > (seen.revision ?? -1) ? carried : seen
       if (owner.revision === null || owner.execution_generation === null) throw new Error(m.error_generic())
@@ -81,7 +85,8 @@ export function useSessionUpdate(sessionId: string | null, refresh: (session?: S
     },
   })
   const send = write.mutate
-  const updateSession = (body: Update, ownerPayload?: OwnerPayload, effort?: string | null) => {
+  /** `onSwitched` receives the chat the server started for a workspace change instead of moving this one (TAL-2155). */
+  const updateSession = (body: Update, ownerPayload?: OwnerPayload, effort?: string | null, onSwitched?: (sessionId: string) => void) => {
     if (!sessionId) return
     if (nativeOwner && (nativeOwner.revision === null || nativeOwner.execution_generation === null)) return
     const life = lifecycle.current
@@ -90,6 +95,8 @@ export function useSessionUpdate(sessionId: string | null, refresh: (session?: S
     send({ sid: sessionId, body, owner: nativeOwner, ownerPayload, effort }, {
       onSuccess: (result) => {
         if (!current()) return
+        // This chat kept its workspace: its reread drops the shown choice, and the chosen one is the new chat's.
+        if (result.switchedTo) { setPending(null); onSwitched?.(result.switchedTo); return }
         // The server's returned session replaces the shown choice at once; the reread converges the rest.
         if (result.native) presentNative(result.native.model_change, effort === undefined && body.workspace === undefined)
         else setPending(null)

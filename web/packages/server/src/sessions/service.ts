@@ -2289,10 +2289,15 @@ export class SessionService {
     if (token !== confirmToken) throw new HttpFailure(409, decision.warnings.map((w) => w.message).join('\n\n'), { type: 'model_confirmation_required', warnings: decision.warnings, confirm_token: confirmToken })
   }
 
-  async update(sid: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  /**
+   * TAL-2155: with `newChatOnWorkspaceSwitch`, choosing another workspace for a chat that has messages leaves that chat where
+   * it is and starts a new one there (same profile, project and model), answering `switched_to` with the new chat's id.
+   */
+  async update(sid: string, body: Record<string, unknown>, opts: { newChatOnWorkspaceSwitch?: boolean } = {}): Promise<Record<string, unknown>> {
     let s = (await this.mutationTarget(sid, 'updated'))
     let oldWs = s.workspace
     let newWs = oldWs
+    let startNewChat = false
     await this.withMutationLock(sid, async () => {
       s = await this.mutationTarget(sid, 'updated')
       oldWs = s.workspace
@@ -2301,6 +2306,8 @@ export class SessionService {
       } catch (error) {
         throw new HttpFailure(400, (error as Error).message)
       }
+      startNewChat = !!opts.newChatOnWorkspaceSwitch && str(oldWs) !== str(newWs) && (s.messages.length > 0 || !!s.pending_user_message)
+      if (startNewChat) { await this.assertWritable(s); return }
       const oldModel = s.model
       const oldProvider = s.model_provider
       const hasModel = 'model' in body || 'model_provider' in body
@@ -2324,6 +2331,12 @@ export class SessionService {
       if (changed || oldWs !== newWs) await this.deps.runtime.evictAgent(sid)
       await this.store.save(s)
     })
+    if (startNewChat) {
+      const created = await this.create({ profile: s.profile, project_id: s.project_id, workspace: newWs, model: s.model, model_provider: s.model_provider })
+      await this.deps.workspaces.setLastWorkspace(newWs, s.profile)
+      this.publish('session_new', created.profile, created.session_id)
+      return { session: (await this.publicSession(created)), switched_to: created.session_id }
+    }
     if (str(oldWs) !== str(newWs)) this.deps.runtime.closeTerminal(sid)
     await this.deps.workspaces.setLastWorkspace(newWs, s.profile)
     return { session: (await this.publicSession(s)) }
