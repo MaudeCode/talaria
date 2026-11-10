@@ -67,6 +67,8 @@ export const createProfile = (body: Record<string, unknown>) => orpc().profiles.
 export const deleteProfile = (name: string) => orpc().profiles.delete({ name })
 export const fetchModels = (freshness?: 'session_visit') => orpc().models.list(freshness ? { freshness } : {})
 /** config.yaml model.default (and provider): `/api/settings` does not persist `default_model`. */
+/** TAL-1857: star or unstar one catalog model for the active profile. */
+export const setModelFavorite = (write: { provider_id: string; model: string; favorite: boolean }) => orpc().models.favorite(write)
 export const setDefaultModel = (model: string, provider?: string | null, advanced?: { service_tier: string }) => orpc().models.setDefault({ model, ...(provider ? { provider } : {}), ...(advanced ? { advanced } : {}) })
 export const fetchAuxiliaryModels = () => orpc().models.auxiliary()
 /** One auxiliary task slot (`__reset__` returns every slot to Auto); answers the refreshed `auxiliary` state. Without `model`, only `reasoning_effort` changes (TAL-1285). */

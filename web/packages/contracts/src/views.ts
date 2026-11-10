@@ -831,13 +831,21 @@ export const ModelGroupLimitSchema = z.discriminatedUnion('scope', [
  */
 export const CatalogAvailabilitySchema = z.object({ status: z.enum(['available', 'stale', 'unavailable']), authoritative: z.boolean(), unavailable_reason: NullableString, generation: z.string().min(1).describe('Opaque source generation; cached data from another generation must never be merged.') })
 export type CatalogAvailability = z.infer<typeof CatalogAvailabilitySchema>
+/**
+ * TAL-1858: a provider group's icon, resolved by the server from `provider_id` alone. `asset` names
+ * `static/brand/providers/<asset>.svg`, or is null for an unknown or custom provider, which shows `initials`; `color`
+ * keeps the SVG's own colours instead of the text colour.
+ */
+export const ProviderIconSchema = z.object({ asset: z.string().nullable(), initials: z.string(), color: z.boolean() })
+export type ProviderIcon = z.infer<typeof ProviderIconSchema>
 export const ModelGroupSchema = z.looseObject({
   plan_usage: PlanUsageSchema.nullable().optional(), plan_stale: z.boolean().optional(), sections: ModelSectionsSchema.optional(),
   availability: CatalogAvailabilitySchema.optional(),
   provider: z.string(), provider_id: z.string().optional(), models: z.array(ModelEntrySchema),
   limit: ModelGroupLimitSchema.optional(), quota_level: QuotaLevelSchema.optional(),
+  icon: ProviderIconSchema.optional().describe('TAL-1858: the picker group\'s provider icon.'),
 })
-export const ModelsSchema = z.looseObject({ availability: CatalogAvailabilitySchema.optional(), active_provider: NullableString.optional(), default_model: z.string().optional(), default_provider_id: NullableString.optional(), default_bare_id: z.string().optional(), default_option_id: NullableString.optional(), groups: z.array(ModelGroupSchema), aliases: z.record(z.string(), Json).optional(), configured_model_badges: z.record(z.string(), Json).optional(), favorites: ModelFavoritesSchema.optional() })
+export const ModelsSchema = z.looseObject({ availability: CatalogAvailabilitySchema.optional(), active_provider: NullableString.optional(), default_model: z.string().optional(), default_provider_id: NullableString.optional(), default_bare_id: z.string().optional(), default_option_id: NullableString.optional(), groups: z.array(ModelGroupSchema), aliases: z.record(z.string(), Json).optional(), configured_model_badges: z.record(z.string(), Json).optional(), favorites: ModelFavoritesSchema.optional(), favorite_option_ids: z.array(z.string()).optional().describe('TAL-1858: the ids of the entries `favorites` marks, in starred order; the picker lists Favorites in this order.') })
 export const ModelsLiveSchema = z.looseObject({ availability: CatalogAvailabilitySchema.optional(), provider: z.string().optional(), source: z.string().optional(), models: z.array(ModelEntrySchema), count: z.number().optional(), error: z.string().optional() })
 export type Models = z.infer<typeof ModelsSchema>
 /** TAL-603: where a card's credential comes from; `other` is a source the server cannot name, shown as its raw `key_source`. */

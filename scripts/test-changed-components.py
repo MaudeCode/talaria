@@ -82,6 +82,9 @@ class RoutingTests(unittest.TestCase):
             (["app/Talaria/Features/Chat/ChatView.swift"], {"app"}),
             (["app/Talaria/Resources/Guide.md"], {"app"}),
             (["app/Talaria/Networking/APIClient.swift"], {"app", "contracts"}),
+            # The Web server's provider icon test reads the App's icon registry and SVGs (TAL-1858).
+            (["app/Talaria/Models/ProviderIconRegistry.swift"], {"app", "contracts", "web_server"}),
+            (["app/Talaria/Resources/ProviderIcons.xcassets/ProviderIconOpenAI.imageset/icon.svg"], {"app", "web_server"}),
             (["app/ci/release_notes.py"], {"tooling"}),
             (["app/scripts/test-ios"], {"app_tooling", "tooling"}),
             (["app/scripts/prepare-ui-simulator", "app/scripts/ready-simulator-documents",

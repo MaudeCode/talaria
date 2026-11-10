@@ -20,7 +20,7 @@ test('the demo server shows seeded data on every data page', async ({ page }, in
     await visit('chat', `/session/${DEMO_SESSION_ID}`, 'Filed two tickets and ordered them so they cannot conflict.')
     if (info.project.name === 'desktop') {
       await page.locator('#composerModelChip').click()
-      await expect(page.getByRole('menuitemradio', { name: 'Claude Sonnet 4.6', exact: true }).first()).toBeVisible()
+      await expect(page.getByRole('option', { name: /^Claude Sonnet 4\.6/ }).first()).toBeVisible()
       if (shots) await page.screenshot({ path: `${shots}/model-menu-${info.project.name}.png` })
       await page.keyboard.press('Escape')
     }

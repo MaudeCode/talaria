@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -29,42 +29,61 @@ const COLON_CATALOG = {
     { provider: 'Ollama', provider_id: 'ollama', models: [{ id: '@ollama:llama3:8b', label: 'Llama3 (8B)', provider_id: 'ollama', bare_id: 'llama3:8b' }] },
   ],
 }
+// TAL-1858: a starred model under each of two providers, and a provider with no known icon whose ids look like another's;
+// each group carries the icon the server resolved from its provider id.
+const FAVORITES_CATALOG = {
+  active_provider: 'anthropic',
+  default_model: 'claude-opus-4.7', default_provider_id: 'anthropic', default_bare_id: 'claude-opus-4.7', default_option_id: 'claude-opus-4.7',
+  groups: [
+    { provider: 'Anthropic', provider_id: 'anthropic', icon: { asset: 'Anthropic', initials: 'A', color: true }, models: [
+      { id: 'claude-opus-4.7', label: 'Claude Opus 4.7', provider_id: 'anthropic', bare_id: 'claude-opus-4.7', favorite: false },
+      { id: 'claude-haiku-4.5', label: 'Claude Haiku 4.5', provider_id: 'anthropic', bare_id: 'claude-haiku-4.5', favorite: true },
+    ] },
+    { provider: 'OpenRouter', provider_id: 'openrouter', icon: { asset: 'OpenRouter', initials: 'O', color: false }, models: [{ id: '@openrouter:qwen/qwen3', label: 'Qwen3', provider_id: 'openrouter', bare_id: 'qwen/qwen3', favorite: true }] },
+    { provider: 'Acme Cloud', provider_id: 'acme-cloud', icon: { asset: null, initials: 'AC', color: false }, models: [{ id: '@anthropic:claude-opus-4.7', label: 'Acme Opus', provider_id: 'acme-cloud', bare_id: '@anthropic:claude-opus-4.7', favorite: false }] },
+  ],
+  // Starred OpenRouter first, so the starred order differs from the catalog's.
+  favorites: [{ provider_id: 'openrouter', model: 'qwen/qwen3' }, { provider_id: 'anthropic', model: 'claude-haiku-4.5' }],
+  favorite_option_ids: ['@openrouter:qwen/qwen3', 'claude-haiku-4.5'],
+}
 let catalog: unknown = PLUGIN_CATALOG
 
 // The server's registry: every entry named, the default one `Home` (TAL-303).
 const WORKSPACES = { workspaces: [{ path: '/src/talaria-main', name: 'Talaria' }, { path: '/src/scratch', name: 'scratch' }], last: '/src/talaria-main' }
 
 let modes: unknown = { modes: [{ mode: 'normal', available: true, reason: null }, { mode: 'ignore_config', available: true, reason: null }, { mode: 'safe', available: true, reason: null }] }
-vi.mock('../../api/endpoints', () => ({ fetchExecutionModes: vi.fn(() => Promise.resolve(modes)), fetchToolsetsCatalog: vi.fn(() => Promise.resolve({ toolsets: [{ name: 'file', description: 'Files', available: true, selected: true, unavailable_reason: null }, { name: 'todo', description: 'Tasks', available: false, selected: false, unavailable_reason: 'disabled' }], selected_toolsets: ['file'], using_defaults: true })), fetchModels: vi.fn(() => Promise.resolve(catalog)), fetchWorkspaces: vi.fn(() => Promise.resolve(WORKSPACES)) }))
-const rowRenders = vi.hoisted(() => new Map<string, number>())
-vi.mock('../../ui/Menu', async (original) => {
-  const menu = await original<typeof import('../../ui/Menu')>()
-  const { countRenders } = await import('../../test/countRenders')
-  return { ...menu, MenuRadioItem: countRenders(menu.MenuRadioItem, (props) => {
-    const id = String(props.value)
-    rowRenders.set(id, (rowRenders.get(id) ?? 0) + 1)
-  }) }
-})
+vi.mock('../../api/endpoints', () => ({ fetchExecutionModes: vi.fn(() => Promise.resolve(modes)), fetchToolsetsCatalog: vi.fn(() => Promise.resolve({ toolsets: [{ name: 'file', description: 'Files', available: true, selected: true, unavailable_reason: null }, { name: 'todo', description: 'Tasks', available: false, selected: false, unavailable_reason: 'disabled' }], selected_toolsets: ['file'], using_defaults: true })), fetchModels: vi.fn(() => Promise.resolve(catalog)), fetchWorkspaces: vi.fn(() => Promise.resolve(WORKSPACES)), setModelFavorite: vi.fn() }))
+vi.mock('../toast/errorToast', () => ({ showErrorToast: vi.fn() }))
 import { ExecutionModeChip, ModelChip, ToolsetsChip, WorkspaceChip } from './chips'
 import { Dialog } from '../../ui/Dialog'
-import { fetchModels } from '../../api/endpoints'
+import { fetchModels, setModelFavorite } from '../../api/endpoints'
+import { showErrorToast } from '../toast/errorToast'
+import { ApiError } from '../../contracts/common'
+
+// jsdom lays nothing out; the picker's scroller gets a height so the virtualized list renders its rows.
+const offsetHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')
+beforeAll(() => { Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, get(this: HTMLElement) { return this.hasAttribute('data-model-picker-list') ? 100_000 : 0 } }) })
+afterAll(() => { if (offsetHeight) Object.defineProperty(HTMLElement.prototype, 'offsetHeight', offsetHeight) })
 
 function renderChip(props: { model: string | null; optionId: string | null }, onChange = vi.fn()) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(<QueryClientProvider client={qc}><ModelChip {...props} onChange={onChange} /></QueryClientProvider>)
 }
+const picker = () => screen.findByRole('dialog', { name: 'Conversation model' })
+const optionNames = () => screen.getAllByRole('option').map((el) => el.getAttribute('aria-label'))
+const rail = () => screen.getByRole('toolbar', { name: 'Providers' })
 
 describe('ModelChip', () => {
   it('keeps its rows through the exit transition (TAL-1784)', async () => {
     catalog = COLON_CATALOG
     renderChip({ model: 'claude-opus-4.7', optionId: 'claude-opus-4.7' })
     await userEvent.click(screen.getByRole('button', { name: /Conversation model/ }))
-    await screen.findByRole('menuitemradio', { name: /Claude Opus 4\.7/ })
+    await screen.findByRole('option', { name: 'Claude Opus 4.7' })
     // A running exit transition: Base UI keeps the popup mounted until this finishes.
     Object.defineProperty(HTMLElement.prototype, 'getAnimations', { configurable: true, value: () => [{ finished: new Promise(() => undefined), pending: true }] })
     try {
       await userEvent.keyboard('{Escape}')
-      const closing = await screen.findByRole('menu', { hidden: true })
+      const closing = await screen.findByRole('dialog', { hidden: true })
       await waitFor(() => { expect(closing).toHaveAttribute('data-ending-style') })
       expect(closing).toHaveTextContent('Claude Opus 4.7')
     } finally {
@@ -74,7 +93,7 @@ describe('ModelChip', () => {
 
   it.each([
     ['the model that answered after a fallback', 'fallback-model', 'fallback-model', 'Conversation model Claude Opus 4.7, answered by fallback-model after a fallback'],
-    ['the configured model when it answered', null, 'Claude Opus 4.7', 'Conversation model'],
+    ['the configured model, with its full name in the tooltip, when it answered', null, 'Claude Opus 4.7', 'Conversation model: Claude Opus 4.7'],
   ])('names %s (TAL-978)', async (_case, servedModel, label, title) => {
     catalog = COLON_CATALOG
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -82,7 +101,7 @@ describe('ModelChip', () => {
     await waitFor(() => { expect(screen.getByRole('button')).toHaveAttribute('title', title); expect(screen.getByRole('button')).toHaveTextContent(label) })
     // The picker keeps the configured model ticked: it is what the next turn asks for.
     await userEvent.click(screen.getByRole('button'))
-    expect(await screen.findByRole('menuitemradio', { name: 'Claude Opus 4.7' })).toHaveAttribute('aria-checked', 'true')
+    expect(await screen.findByRole('option', { name: 'Claude Opus 4.7' })).toHaveAttribute('aria-selected', 'true')
     cleanup()
   })
 
@@ -98,32 +117,124 @@ describe('ModelChip', () => {
     }] }
     renderChip({ model: 'saved', optionId: 'saved' })
     await userEvent.click(screen.getByRole('button'))
-    expect(await screen.findByText('Recommended')).toBeVisible()
-    expect(screen.getByText('Other')).toBeVisible()
-    expect(within(screen.getByRole('group', { name: /^Recommended$/ })).getAllByRole('menuitemradio')).toHaveLength(1)
-    expect(within(screen.getByRole('group', { name: /^Other$/ })).getAllByRole('menuitemradio')).toHaveLength(3)
-    expect(screen.getAllByRole('menuitemradio').map((el) => el.textContent)).toEqual([
-      'Included model · Included', 'Saved model · Allowance unknown', 'Free model · Free', 'Large model · Large · Allowance exhausted',
-    ])
-    expect(screen.getByRole('menuitemradio', { name: 'Saved model · Allowance unknown' })).not.toHaveAttribute('aria-disabled', 'true')
+    const list = await screen.findByRole('listbox')
+    // Section labels sit before their rows, in the server's order.
+    expect(list.textContent).toMatch(/^Recommended.*Included model.*Other.*Saved model.*Free model.*Large model/)
+    expect(optionNames()).toEqual(['Included model · Included', 'Saved model · Allowance unknown', 'Free model · Free', 'Large model · Large · Allowance exhausted'])
+    expect(screen.getByRole('option', { name: 'Saved model · Allowance unknown' })).not.toHaveAttribute('aria-disabled', 'true')
   })
 
-  it('keeps model-search focus through initialization and closes on Escape', async () => {
-    catalog = COLON_CATALOG
-    renderChip({ model: null, optionId: null })
+  it('lists Favorites then each provider on the rail; a provider tab filters the list and search spans them all (TAL-1858)', async () => {
+    catalog = FAVORITES_CATALOG
+    renderChip({ model: 'claude-opus-4.7', optionId: 'claude-opus-4.7' })
+    await userEvent.click(screen.getByRole('button'))
+    await picker()
+    expect(within(rail()).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(['Favorites', 'Anthropic', 'OpenRouter', 'Acme Cloud'])
+    // Favorites exist, so the picker opens on them in the server's starred order, each row naming its provider.
+    expect(within(rail()).getByRole('button', { name: 'Favorites' })).toHaveAttribute('aria-pressed', 'true')
+    expect(optionNames()).toEqual(['Qwen3 · OpenRouter', 'Claude Haiku 4.5 · Anthropic'])
+
+    await userEvent.click(within(rail()).getByRole('button', { name: 'Anthropic' }))
+    expect(within(rail()).getByRole('button', { name: 'Anthropic' })).toHaveAttribute('aria-pressed', 'true')
+    expect(optionNames()).toEqual(['Claude Opus 4.7', 'Claude Haiku 4.5'])
+    expect(screen.getByRole('option', { name: 'Claude Opus 4.7' })).toHaveAttribute('aria-selected', 'true')
+
+    await userEvent.type(screen.getByRole('combobox', { name: 'Search models…' }), 'qwen')
+    expect(screen.queryByRole('toolbar', { name: 'Providers' })).toBeNull()
+    // No catalog id is exactly the query, so a custom id is offered last.
+    expect(optionNames()).toEqual(['Qwen3 · OpenRouter', 'Custom model ID: qwen'])
+    await userEvent.clear(screen.getByRole('combobox'))
+    expect(rail()).toBeVisible()
+    expect(optionNames()).toEqual(['Claude Opus 4.7', 'Claude Haiku 4.5'])
+  })
+
+  it('stars at once in the row and Favorites without changing the selection; a refused write rolls back with its error (TAL-1858)', async () => {
+    catalog = FAVORITES_CATALOG
+    const onChange = vi.fn()
+    let refuse!: (error: unknown) => void
+    vi.mocked(setModelFavorite).mockImplementationOnce(() => new Promise((_, reject) => { refuse = reject }))
+    renderChip({ model: 'claude-opus-4.7', optionId: 'claude-opus-4.7' }, onChange)
+    await userEvent.click(screen.getByRole('button'))
+    await picker()
+    await userEvent.click(within(rail()).getByRole('button', { name: 'Anthropic' }))
+    const opus = screen.getByRole('option', { name: 'Claude Opus 4.7' })
+    await userEvent.click(within(opus).getByRole('button', { name: 'Add to favorites' }))
+    expect(setModelFavorite).toHaveBeenCalledWith({ provider_id: 'anthropic', model: 'claude-opus-4.7', favorite: true })
+    // Shown before the server answers, and the picker stays open on the same selection.
+    expect(within(opus).getByRole('button', { name: 'Remove from favorites' })).toHaveAttribute('data-model-favorite', 'true')
+    expect(onChange).not.toHaveBeenCalled()
+    expect(opus).toHaveAttribute('aria-selected', 'true')
+    await userEvent.click(within(rail()).getByRole('button', { name: 'Favorites' }))
+    // A new star goes last, where the server puts it.
+    expect(optionNames()).toEqual(['Qwen3 · OpenRouter', 'Claude Haiku 4.5 · Anthropic', 'Claude Opus 4.7 · Anthropic'])
+
+    const refused = new ApiError({ kind: 'http', status: 400, path: '/api/models/favorite', message: 'At most 200 favorites' })
+    await act(async () => { refuse(refused); await Promise.resolve() })
+    await waitFor(() => { expect(optionNames()).toEqual(['Qwen3 · OpenRouter', 'Claude Haiku 4.5 · Anthropic']) })
+    expect(showErrorToast).toHaveBeenCalledWith(refused)
+    expect(onChange).not.toHaveBeenCalled()
+
+    // Right-click offers the same star; an unstar the server confirms leaves Favorites and stays gone after the reread.
+    vi.mocked(setModelFavorite).mockImplementationOnce(() => {
+      catalog = { ...FAVORITES_CATALOG, favorite_option_ids: ['claude-haiku-4.5'], groups: FAVORITES_CATALOG.groups.map((g) => ({ ...g, models: g.models.map((e) => e.id === '@openrouter:qwen/qwen3' ? { ...e, favorite: false } : e) })) }
+      return Promise.resolve({ ok: true as const, favorites: [{ provider_id: 'anthropic', model: 'claude-haiku-4.5' }] })
+    })
+    const reads = vi.mocked(fetchModels).mock.results.length
+    await userEvent.pointer({ keys: '[MouseRight]', target: screen.getByRole('option', { name: 'Qwen3 · OpenRouter' }) })
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Remove from favorites' }))
+    expect(setModelFavorite).toHaveBeenLastCalledWith({ provider_id: 'openrouter', model: 'qwen/qwen3', favorite: false })
+    expect(optionNames()).toEqual(['Claude Haiku 4.5 · Anthropic'])
+    await waitFor(() => { expect(vi.mocked(fetchModels).mock.results.length).toBeGreaterThan(reads) })
+    expect(optionNames()).toEqual(['Claude Haiku 4.5 · Anthropic'])
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('arrow keys, Enter and Escape work from search; rail items and stars are named (TAL-1858)', async () => {
+    catalog = FAVORITES_CATALOG
+    const onChange = vi.fn()
+    renderChip({ model: 'claude-opus-4.7', optionId: 'claude-opus-4.7' }, onChange)
     const trigger = screen.getByRole('button')
+    // A keyboard opening focuses search (TAL-1625).
+    act(() => trigger.focus())
+    await userEvent.keyboard('{Enter}')
+    const search = await screen.findByRole('combobox', { name: 'Search models…' })
+    await waitFor(() => expect(search).toHaveFocus())
+    for (const button of within(rail()).getAllByRole('button')) expect(button).toHaveAccessibleName()
+    for (const option of screen.getAllByRole('option')) expect(within(option).getByRole('button')).toHaveAccessibleName(/favorites/)
+    await userEvent.keyboard('{ArrowDown}')
+    const highlighted = () => screen.getAllByRole('option').find((el) => el.hasAttribute('data-highlighted'))?.getAttribute('aria-label')
+    expect(highlighted()).toBe('Qwen3 · OpenRouter')
+    await userEvent.keyboard('{ArrowDown}')
+    expect(highlighted()).toBe('Claude Haiku 4.5 · Anthropic')
+    expect(search).toHaveFocus()
+    await userEvent.keyboard('{Enter}')
+    expect(onChange).toHaveBeenCalledWith('claude-haiku-4.5', 'anthropic')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
     await userEvent.click(trigger)
-    const search = await screen.findByRole('searchbox')
-    expect(search).toHaveFocus()
-    act(() => screen.getByRole('menu').focus())
-    expect(search).toHaveFocus()
-    const row = screen.getByRole('menuitemradio', { name: 'Claude Opus 4.7' })
-    act(() => row.focus())
-    expect(row).toHaveFocus()
-    act(() => search.focus())
+    await screen.findByRole('combobox', { name: 'Search models…' })
     await userEvent.keyboard('{Escape}')
-    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(trigger).toHaveFocus()
+    expect(onChange).toHaveBeenCalledTimes(1)
+  })
+
+  it('draws the server\'s provider icon: an asset in its colours or the text colour, else the initials (TAL-1858)', async () => {
+    catalog = FAVORITES_CATALOG
+    renderChip({ model: '@anthropic:claude-opus-4.7', optionId: '@anthropic:claude-opus-4.7' })
+    // The selected entry's id names Anthropic, but its provider is Acme Cloud, which has no icon.
+    await waitFor(() => { expect(screen.getByRole('button')).toHaveTextContent('Acme Opus') })
+    expect(screen.getByRole('button').querySelector('[data-provider-icon]')).toHaveAttribute('data-provider-icon', 'initials')
+    expect(screen.getByRole('button')).toHaveTextContent(/^ACAcme Opus$/)
+    await userEvent.click(screen.getByRole('button'))
+    await picker()
+    const railIcon = (name: string) => within(rail()).getByRole('button', { name }).querySelector('[data-provider-icon]')
+    expect(railIcon('Anthropic')).toHaveAttribute('data-provider-icon', 'Anthropic')
+    expect(railIcon('Anthropic')?.tagName).toBe('IMG')
+    expect(railIcon('OpenRouter')).toHaveAttribute('data-provider-icon', 'OpenRouter')
+    // A single-colour icon takes the text colour through a mask.
+    expect((railIcon('OpenRouter') as HTMLElement).style.maskImage).toContain('static/brand/providers/OpenRouter.svg')
+    expect(within(rail()).getByRole('button', { name: 'Acme Cloud' }).querySelector('[data-provider-icon]')).toHaveAttribute('data-provider-icon', 'initials')
   })
 
   // TAL-1625: a touch opening keeps the software keyboard down so the list stays visible; the footer chip and the
@@ -134,39 +245,12 @@ describe('ModelChip', () => {
     render(<QueryClientProvider client={qc}><ModelChip model={null} optionId={null} row={row} onChange={vi.fn()} /></QueryClientProvider>)
     const user = userEvent.setup()
     await user.pointer({ keys: '[TouchA]', target: screen.getByRole('button') })
-    const search = await screen.findByRole('searchbox')
-    await screen.findAllByRole('menuitemradio')
-    const menu = screen.getByRole('menu')
+    const dialog = await picker()
+    const search = screen.getByRole('combobox', { name: 'Search models…' })
+    await screen.findAllByRole('option')
     expect(search).not.toHaveFocus()
-    expect(menu).toHaveFocus()
-    // Base UI's delayed popup focus must not pull focus into search either.
-    act(() => menu.focus())
-    expect(search).not.toHaveFocus()
-    expect(screen.getByRole('menuitemradio', { name: 'Claude Opus 4.7' })).toBeVisible()
-  })
-
-  it('a keyboard opening focuses search for typing and ArrowDown, each key acting once (TAL-1625)', async () => {
-    catalog = COLON_CATALOG
-    const onChange = vi.fn()
-    renderChip({ model: null, optionId: null }, onChange)
-    const user = userEvent.setup()
-    const trigger = screen.getByRole('button')
-    act(() => trigger.focus())
-    await user.keyboard('{Enter}')
-    const search = await screen.findByRole('searchbox')
-    await screen.findAllByRole('menuitemradio')
-    expect(search).toHaveFocus()
-    await user.keyboard('gem')
-    expect(search).toHaveValue('gem')
-    expect(screen.getAllByRole('menuitemradio')).toHaveLength(2)
-    await user.keyboard('{ArrowDown}')
-    expect(screen.getAllByRole('menuitemradio')[0]).toHaveFocus()
-    await user.keyboard('{ArrowDown}')
-    expect(screen.getAllByRole('menuitemradio')[1]).toHaveFocus()
-    await user.keyboard('{Escape}')
-    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
-    expect(trigger).toHaveFocus()
-    expect(onChange).not.toHaveBeenCalled()
+    expect(dialog).toHaveFocus()
+    expect(screen.getByRole('option', { name: 'Claude Opus 4.7' })).toBeVisible()
   })
 
   it('a touch opening with a hardware keyboard sends a printable key to search; touching search keeps focus through the refresh (TAL-1625)', async () => {
@@ -179,18 +263,21 @@ describe('ModelChip', () => {
     const refreshed = { ...COLON_CATALOG, groups: [...COLON_CATALOG.groups, { provider: 'Mistral', provider_id: 'mistral', models: [{ id: '@mistral:large', label: 'Mistral Large', provider_id: 'mistral', bare_id: 'large' }] }] }
     vi.mocked(fetchModels).mockImplementationOnce(() => new Promise((resolve) => { release = () => resolve(refreshed) }))
     await user.pointer({ keys: '[TouchA]', target: screen.getByRole('button') })
-    const search = await screen.findByRole('searchbox')
-    expect(screen.getByRole('menu')).toHaveFocus()
+    const dialog = await picker()
+    const search = screen.getByRole('combobox', { name: 'Search models…' })
+    expect(dialog).toHaveFocus()
     await user.keyboard('o')
     expect(search).toHaveFocus()
     expect(search).toHaveValue('o')
     await user.clear(search)
-    act(() => screen.getByRole('menu').focus())
+    act(() => dialog.focus())
     await user.pointer({ keys: '[TouchA]', target: search })
     expect(search).toHaveFocus()
-    act(() => { release() })
-    expect(await screen.findByRole('menuitemradio', { name: 'Mistral Large' })).toBeVisible()
-    expect(screen.getByRole('searchbox')).toHaveFocus()
+    await act(async () => { release(); await Promise.resolve() })
+    expect(await within(rail()).findByRole('button', { name: 'Mistral' })).toBeVisible()
+    expect(search).toHaveFocus()
+    await user.click(within(rail()).getByRole('button', { name: 'Mistral' }))
+    expect(await screen.findByRole('option', { name: 'Mistral Large' })).toBeVisible()
   })
 
   it('Escape after a touch opening closes only the picker inside a dialog and returns focus to the chip (TAL-1625)', async () => {
@@ -198,58 +285,43 @@ describe('ModelChip', () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(<QueryClientProvider client={qc}><Dialog open onOpenChange={vi.fn()} title="Settings"><ModelChip model={null} optionId={null} onChange={vi.fn()} /></Dialog></QueryClientProvider>)
     const user = userEvent.setup()
-    const trigger = within(screen.getByRole('dialog')).getByRole('button')
+    const trigger = within(screen.getByRole('dialog', { name: 'Settings' })).getByRole('button', { name: /Conversation model/ })
     await user.pointer({ keys: '[TouchA]', target: trigger })
-    await screen.findAllByRole('menuitemradio')
+    await screen.findAllByRole('option')
     await user.keyboard('{Escape}')
-    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
-    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Conversation model' })).not.toBeInTheDocument())
+    expect(screen.getByRole('dialog', { name: 'Settings' })).toBeInTheDocument()
     expect(trigger).toHaveFocus()
   })
 
-  it('pins search above the scrolling rows, reaches them with ArrowDown and keeps the selection through a refresh (TAL-1131)', async () => {
+  it('pins search above the scrolling rows and keeps the selection through a refresh (TAL-1131)', async () => {
     catalog = COLON_CATALOG
     renderChip({ model: '@ollama:llama3:8b', optionId: '@ollama:llama3:8b' })
     const trigger = screen.getByRole('button')
     await userEvent.click(trigger)
-    const search = await screen.findByRole('searchbox')
-    const rows = screen.getAllByRole('menuitemradio')[0]!.closest('.overflow-y-auto')
-    expect(rows).toBeInstanceOf(HTMLElement)
-    expect(rows).not.toContainElement(search)
-    expect(screen.getByRole('menu')).toContainElement(search)
+    const search = await screen.findByRole('combobox', { name: 'Search models…' })
+    // No favorites: the picker opens on the selected model's provider.
+    expect(within(rail()).getByRole('button', { name: 'Ollama' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('listbox')).not.toContainElement(search)
     expect(search).toHaveFocus()
-    await userEvent.keyboard('{ArrowDown}')
-    expect(screen.getByRole('menuitemradio', { name: 'Claude Opus 4.7' })).toHaveFocus()
     await userEvent.keyboard('{Escape}')
-    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     catalog = { ...COLON_CATALOG, groups: [...COLON_CATALOG.groups, { provider: 'Mistral', provider_id: 'mistral', models: [{ id: '@mistral:large', label: 'Mistral Large', provider_id: 'mistral', bare_id: 'large' }] }] }
     await userEvent.click(trigger)
-    expect(await screen.findByRole('menuitemradio', { name: 'Mistral Large' })).toHaveAttribute('aria-checked', 'false')
-    expect(screen.getByRole('menuitemradio', { name: 'Llama3 (8B)' })).toHaveAttribute('aria-checked', 'true')
-  })
-
-  it('keeps surviving model rows out of search renders and mounts returning rows once', async () => {
-    catalog = COLON_CATALOG
-    renderChip({ model: null, optionId: null })
-    await userEvent.click(screen.getByRole('button'))
-    await screen.findAllByRole('menuitemradio')
-    const search = screen.getByRole('searchbox')
-    expect(search).toHaveFocus()
-    const before = new Map(rowRenders)
-    await userEvent.type(search, 'gemini')
-    for (const id of ['@gemini:gemini-2.5-flash', '@google:gemini-2.5-flash']) expect(rowRenders.get(id)).toBe(before.get(id))
-    expect(screen.getAllByRole('menuitemradio')).toHaveLength(2)
-    await userEvent.clear(search)
-    expect(rowRenders.get('claude-opus-4.7')).toBe((before.get('claude-opus-4.7') ?? 0) + 1)
-    expect(rowRenders.get('@gemini:gemini-2.5-flash')).toBe(before.get('@gemini:gemini-2.5-flash'))
+    await userEvent.click(await within(rail()).findByRole('button', { name: 'Mistral' }))
+    expect(screen.getByRole('option', { name: 'Mistral Large' })).toHaveAttribute('aria-selected', 'false')
+    await userEvent.click(within(rail()).getByRole('button', { name: 'Ollama' }))
+    expect(screen.getByRole('option', { name: 'Llama3 (8B)' })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('labels a fallback model group unavailable while keeping the configured model selected', async () => {
     catalog = { ...PLUGIN_CATALOG, default_model: 'gpt-6.1-sol', default_option_id: 'gpt-6.1-sol', groups: [{ provider: 'OpenAI Codex', provider_id: 'openai-codex', availability: { status: 'unavailable', authoritative: false, generation: 'test', unavailable_reason: 'Agent recovery is incomplete.' }, models: [{ id: 'gpt-6.1-sol', label: 'GPT-6.1 Sol', bare_id: 'gpt-6.1-sol', provider_id: 'openai-codex' }] }] }
     renderChip({ model: null, optionId: null })
     await userEvent.click(screen.getByRole('button'))
-    const group = await screen.findByRole('group', { name: 'OpenAI Codex · Temporarily unavailable' })
-    expect(within(group).getByRole('menuitemradio', { name: 'GPT-6.1 Sol' })).toHaveAttribute('aria-checked', 'true')
+    await picker()
+    expect(within(rail()).getByRole('button', { name: 'OpenAI Codex · Temporarily unavailable' })).toHaveAttribute('aria-pressed', 'true')
+    expect(document.querySelector('[data-model-picker-group="openai-codex"]')).toHaveTextContent('OpenAI Codex · Temporarily unavailable')
+    expect(screen.getByRole('option', { name: 'GPT-6.1 Sol' })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('a plugin provider model keeps the plugin provider when another provider lists the same model', async () => {
@@ -257,8 +329,8 @@ describe('ModelChip', () => {
     const onChange = vi.fn()
     renderChip({ model: null, optionId: null }, onChange)
     await userEvent.click(screen.getByRole('button'))
-    const group = await screen.findByRole('group', { name: 'Fake Subscription' })
-    await userEvent.click(within(group).getByRole('menuitemradio', { name: 'Claude Sonnet 4.6' }))
+    await userEvent.click(within(rail()).getByRole('button', { name: 'Fake Subscription' }))
+    await userEvent.click(screen.getByRole('option', { name: 'Claude Sonnet 4.6' }))
     expect(onChange).toHaveBeenCalledWith('@fake-sub:claude-sonnet-4-6', 'fake-sub')
   })
 
@@ -275,9 +347,12 @@ describe('ModelChip', () => {
     for (const [model, optionId, group, label] of cases) {
       const { unmount } = renderChip({ model, optionId })
       await userEvent.click(screen.getByRole('button'))
-      const checked = (await screen.findAllByRole('menuitemradio')).filter((el) => el.getAttribute('aria-checked') === 'true')
+      await picker()
+      // The picker opens on the selected entry's provider, where exactly that row is ticked.
+      expect(within(rail()).getByRole('button', { name: group })).toHaveAttribute('aria-pressed', 'true')
+      const checked = screen.getAllByRole('option').filter((el) => el.getAttribute('aria-selected') === 'true')
       expect(checked, `${String(model)} / ${String(optionId)}`).toHaveLength(1)
-      expect(within(screen.getByRole('group', { name: group })).getByRole('menuitemradio', { name: label })).toBe(checked[0])
+      expect(checked[0]).toHaveAccessibleName(label)
       unmount()
     }
   })
@@ -287,10 +362,14 @@ describe('ModelChip', () => {
     catalog = { ...PLUGIN_CATALOG, default_model: 'vendor/model-30', default_option_id: 'vendor/model-30', groups: [{ provider: 'OpenRouter', provider_id: 'openrouter', models }] }
     renderChip({ model: 'vendor/model-30', optionId: 'vendor/model-30' })
     await userEvent.click(screen.getByRole('button'))
-    expect(await screen.findAllByRole('menuitemradio')).toHaveLength(40)
-    expect(screen.getByRole('menuitemradio', { name: 'Model 30' })).toHaveAttribute('aria-checked', 'true')
-    await userEvent.type(screen.getByRole('searchbox'), 'model 40')
-    expect(screen.getAllByRole('menuitemradio').map((el) => el.textContent)).toEqual(['Model 40'])
+    // The list is virtualized: the deep selection is rendered and ticked on open, and search reaches both ends.
+    expect(await screen.findByRole('option', { name: 'Model 30' })).toHaveAttribute('aria-selected', 'true')
+    const search = screen.getByRole('combobox')
+    await userEvent.type(search, 'model 1')
+    expect(optionNames()).toEqual([1, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19].map((n) => `Model ${String(n)} · OpenRouter`).concat('Custom model ID: model 1'))
+    await userEvent.clear(search)
+    await userEvent.type(search, 'model 40')
+    expect(optionNames()).toEqual(['Model 40 · OpenRouter', 'Custom model ID: model 40'])
   })
 
   it('a stored model the server pairs with no entry ticks nothing and keeps its own name (TAL-301)', async () => {
@@ -298,7 +377,19 @@ describe('ModelChip', () => {
     renderChip({ model: 'qwen3:32b', optionId: null })
     expect(await screen.findByRole('button', { name: /qwen3:32b/ })).toBeVisible()
     await userEvent.click(screen.getByRole('button'))
-    expect((await screen.findAllByRole('menuitemradio')).filter((el) => el.getAttribute('aria-checked') === 'true')).toHaveLength(0)
+    expect((await screen.findAllByRole('option')).filter((el) => el.getAttribute('aria-selected') === 'true')).toHaveLength(0)
+  })
+
+  it('offers a custom id when search matches no catalog id, and sends it without a provider', async () => {
+    catalog = COLON_CATALOG
+    const onChange = vi.fn()
+    renderChip({ model: null, optionId: null }, onChange)
+    await userEvent.click(screen.getByRole('button'))
+    await userEvent.type(await screen.findByRole('combobox'), 'vendor/new-model')
+    expect(optionNames()).toEqual(['Custom model ID: vendor/new-model'])
+    await userEvent.click(screen.getByRole('option', { name: 'Custom model ID: vendor/new-model' }))
+    expect(onChange).toHaveBeenCalledWith('vendor/new-model', null)
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
 
   it('sends the picked id with its own provider (TAL-301)', async () => {
@@ -306,7 +397,7 @@ describe('ModelChip', () => {
     const onChange = vi.fn()
     renderChip({ model: 'claude-opus-4.7', optionId: 'claude-opus-4.7' }, onChange)
     await userEvent.click(screen.getByRole('button'))
-    await userEvent.click(within(await screen.findByRole('group', { name: 'Anthropic' })).getByRole('menuitemradio', { name: 'M' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'M' }))
     expect(onChange).toHaveBeenCalledWith('@custom:localhost:8080:m', 'custom:localhost:8080')
   })
 
@@ -326,14 +417,22 @@ describe('ModelChip', () => {
     await userEvent.click(screen.getByRole('button'))
     // Opening the picker reads the catalog again, so the limits shown are the server's current ones.
     await waitFor(() => { expect(vi.mocked(fetchModels).mock.calls.length).toBe(reads + 1) })
-    const anthropic = await screen.findByRole('group', { name: /^Anthropic/ })
-    expect(within(anthropic).getByRole('menuitemradio', { name: /Claude Opus 4\.7/ })).toHaveTextContent(`Limited until ${time}`)
-    expect(within(anthropic).getByRole('menuitemradio', { name: 'M' })).not.toHaveTextContent('Limited')
-    expect(anthropic).toHaveTextContent('Low quota')
-    expect(screen.getByRole('group', { name: /^Gemini/ })).toHaveTextContent(`Limited until ${time}`)
-    expect(screen.getByRole('group', { name: /^Google/ })).toHaveTextContent('Quota nearly out')
+    const header = (id: string) => document.querySelector(`[data-model-picker-group="${id}"]`)
+    await waitFor(() => { expect(header('anthropic')).toHaveTextContent('Low quota') })
+    expect(screen.getByRole('option', { name: `Claude Opus 4.7 · Limited until ${time}` })).toHaveTextContent(`Limited until ${time}`)
+    expect(screen.getByRole('option', { name: 'M' })).not.toHaveTextContent('Limited')
+    await userEvent.click(within(rail()).getByRole('button', { name: 'Gemini' }))
+    expect(header('gemini')).toHaveTextContent(`Limited until ${time}`)
+    await userEvent.click(within(rail()).getByRole('button', { name: 'Google' }))
+    expect(header('google')).toHaveTextContent('Quota nearly out')
     // A healthy level shows nothing.
-    expect(screen.getByRole('group', { name: 'Ollama' })).not.toHaveTextContent(/quota|Limited/i)
+    await userEvent.click(within(rail()).getByRole('button', { name: 'Ollama' }))
+    expect(header('ollama')).not.toHaveTextContent(/quota|Limited/i)
+    // Search mixes providers and has no header, so each row carries its group's limit beside the provider.
+    await userEvent.type(screen.getByRole('combobox'), 'gemini 2.5')
+    const gemini = screen.getByRole('option', { name: `Gemini 2.5 Flash · Gemini · Limited until ${time}` })
+    expect(gemini.querySelector('[data-model-limit="account"]')).toHaveTextContent(`Limited until ${time}`)
+    expect(screen.getByRole('option', { name: 'Gemini 2.5 Flash · Google · Quota nearly out' })).toHaveTextContent('Quota nearly out')
   })
 })
 

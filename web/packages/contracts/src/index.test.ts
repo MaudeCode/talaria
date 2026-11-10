@@ -284,6 +284,8 @@ describe('contracts package', () => {
     const models = ModelsSchema.parse(fixture.models)
     expect(models.groups.flatMap((g) => g.models.map((e) => e.favorite))).toEqual([true, false, true])
     expect(models.favorites?.map((f) => f.model)).toEqual(['shared-model', 'claude-sonnet-4.5', 'gpt-5.5'])
+    // TAL-1858: the marked rows in starred order; the unlisted model's favorite marks none.
+    expect(models.favorite_option_ids).toEqual(['@openrouter:shared-model', 'claude-sonnet-4.5'])
     expect(ModelsSchema.parse(fixture.never_saved).favorites).toBeNull()
     expect(settingsContract.models.favorite['~orpc'].outputSchema!.parse(fixture.favorite)).toEqual(fixture.favorite)
     expect(settingsContract.models.importFavorites['~orpc'].outputSchema!.parse(fixture.import)).toEqual(fixture.import)

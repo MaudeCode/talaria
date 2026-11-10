@@ -58,6 +58,6 @@ test('adds a self-hosted provider, refreshes its models, and picks its model', a
   // The narrow composer folds its chips away; the picker opens from the desktop strip.
   if (testInfo.project.name !== 'desktop') return
   await chip.click()
-  await expect(page.getByRole('menuitemradio', { name: 'Synthetic Local Model' })).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByRole('option', { name: 'Synthetic Local Model' })).toHaveAttribute('aria-selected', 'true')
   await page.screenshot({ path: testInfo.outputPath('self-hosted-picker.png') })
 })

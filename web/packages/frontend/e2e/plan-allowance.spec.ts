@@ -93,11 +93,12 @@ for (const legacy of [true, false]) test(`${legacy ? 'legacy' : 'native'} model 
       await page.locator('#composerMobileConfigBtn').click()
       await page.locator('#composerMobileConfigPanel').getByRole('button', { name: /model:/i }).click()
     }
-    await expect(page.getByRole('menuitemradio')).toHaveCount(4)
+    const list = page.getByRole('dialog', { name: 'Conversation model' }).getByRole('listbox')
+    await expect(list.getByRole('option')).toHaveCount(4)
     await page.screenshot({ animations: 'disabled', path: info.outputPath('composer-models.png') })
-    expect(await textIsUnclipped(page.getByRole('menuitemradio', { name: 'Large model with a long catalog name (via Nous) · Large · Allowance exhausted', exact: true }), 'Allowance exhausted')).toBe(true)
-    await expect(page.getByRole('group', { name: 'Recommended', exact: true })).toBeVisible()
-    await expect(page.getByRole('group', { name: 'Other', exact: true })).toBeVisible()
+    expect(await textIsUnclipped(page.getByRole('option', { name: 'Large model with a long catalog name (via Nous) · Large · Allowance exhausted', exact: true }), 'Allowance exhausted')).toBe(true)
+    await expect(list.getByText('Recommended', { exact: true })).toBeVisible()
+    await expect(list.getByText('Other', { exact: true })).toBeVisible()
   }
 })
 

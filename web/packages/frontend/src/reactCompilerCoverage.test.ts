@@ -14,8 +14,9 @@ const sources = readdirSync(root, { recursive: true })
   .sort()
 
 // Files React Compiler may still skip. The list only shrinks: a listed file that starts compiling fails until it is removed.
-// TanStack Virtual's `useVirtualizer` returns functions the compiler cannot memoize, so its one caller stays uncompiled.
-const KNOWN_BAILOUTS = new Set(['features/chat/VirtualHistory.tsx'])
+// TanStack Virtual's `useVirtualizer` returns functions the compiler cannot memoize, so its callers stay uncompiled, each
+// alone in its file.
+const KNOWN_BAILOUTS = new Set(['features/chat/VirtualHistory.tsx', 'features/composer/ModelPickerList.tsx'])
 
 // The components and hooks that re-render while a reply streams.
 const HOT_PATH = ['features/chat/ChatView.tsx', 'features/chat/Transcript.tsx', 'features/chat/LiveTurnView.tsx', 'features/chat/useTranscript.ts', 'features/composer/Composer.tsx']

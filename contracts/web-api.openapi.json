@@ -90684,6 +90684,33 @@
                               "unavailable"
                             ],
                             "type": "string"
+                          },
+                          "icon": {
+                            "type": "object",
+                            "properties": {
+                              "asset": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "initials": {
+                                "type": "string"
+                              },
+                              "color": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "asset",
+                              "initials",
+                              "color"
+                            ],
+                            "description": "TAL-1858: the picker group's provider icon."
                           }
                         },
                         "required": [
@@ -90736,6 +90763,13 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "favorite_option_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "TAL-1858: the ids of the entries `favorites` marks, in starred order; the picker lists Favorites in this order."
                     }
                   },
                   "required": [
@@ -91456,6 +91490,33 @@
                                   "unavailable"
                                 ],
                                 "type": "string"
+                              },
+                              "icon": {
+                                "type": "object",
+                                "properties": {
+                                  "asset": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "initials": {
+                                    "type": "string"
+                                  },
+                                  "color": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "asset",
+                                  "initials",
+                                  "color"
+                                ],
+                                "description": "TAL-1858: the picker group's provider icon."
                               }
                             },
                             "required": [
@@ -91508,6 +91569,13 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "favorite_option_ids": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "TAL-1858: the ids of the entries `favorites` marks, in starred order; the picker lists Favorites in this order."
                         }
                       },
                       "required": [
@@ -96053,6 +96121,33 @@
                                   "unavailable"
                                 ],
                                 "type": "string"
+                              },
+                              "icon": {
+                                "type": "object",
+                                "properties": {
+                                  "asset": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "initials": {
+                                    "type": "string"
+                                  },
+                                  "color": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "asset",
+                                  "initials",
+                                  "color"
+                                ],
+                                "description": "TAL-1858: the picker group's provider icon."
                               }
                             },
                             "required": [
@@ -96105,6 +96200,13 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "favorite_option_ids": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "TAL-1858: the ids of the entries `favorites` marks, in starred order; the picker lists Favorites in this order."
                         }
                       },
                       "required": [
@@ -96873,6 +96975,33 @@
                                   "unavailable"
                                 ],
                                 "type": "string"
+                              },
+                              "icon": {
+                                "type": "object",
+                                "properties": {
+                                  "asset": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "initials": {
+                                    "type": "string"
+                                  },
+                                  "color": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "asset",
+                                  "initials",
+                                  "color"
+                                ],
+                                "description": "TAL-1858: the picker group's provider icon."
                               }
                             },
                             "required": [
@@ -96925,6 +97054,13 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "favorite_option_ids": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "TAL-1858: the ids of the entries `favorites` marks, in starred order; the picker lists Favorites in this order."
                         }
                       },
                       "required": [
