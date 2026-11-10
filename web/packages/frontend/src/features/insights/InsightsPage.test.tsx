@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { UseQueryResult } from '@tanstack/react-query'
 import type { z } from 'zod'
@@ -110,11 +111,16 @@ describe('BarChart', () => {
 
 describe('InsightsPage usage amounts', () => {
   it('shows one cent or more at exactly two decimals, less at up to four, each with its exact value in title', async () => {
-    vi.mocked(api.fetchInsights).mockResolvedValue({ total_sessions: 3, total_cost: 0.455, models: [{ model: 'synthetic-a', cost: 0.3705 }, { model: 'synthetic-b', cost: 0.0004 }] })
+    vi.mocked(api.fetchInsights).mockResolvedValue({ total_sessions: 3, total_cost: 0.455, daily_tokens: [{ date: '2030-01-01', cost: 0.3705 }, { date: '2030-01-02', cost: 0.0004 }], models: [{ model: 'synthetic-a', cost: 0.3705 }, { model: 'synthetic-b', cost: 0.0004 }] })
     render(<QueryClientProvider client={new QueryClient()}><InsightsPage /></QueryClientProvider>)
     expect(await screen.findByTitle('$0.455')).toHaveTextContent(/^\$0\.46$/)
     const table = screen.getByTestId('insights-models')
     expect(within(table).getByTitle('$0.3705')).toHaveTextContent(/^\$0\.37$/)
     expect(within(table).getByTitle('$0.0004')).toHaveTextContent(/^\$0\.0004$/)
+    await userEvent.click(screen.getByRole('combobox', { name: 'Metric' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Estimated cost' }))
+    const daily = document.querySelector('[data-chart="daily"]')!
+    expect(within(daily as HTMLElement).getByText('Max $0.37')).toBeInTheDocument()
+    expect(within(daily as HTMLElement).getByTitle('2030-01-01: $0.3705')).toBeInTheDocument()
   })
 })

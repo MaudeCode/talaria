@@ -77,7 +77,7 @@ const isDisclosure = (id: GroupId): id is DisclosureId => id === 'scheduled' || 
 /** Rows a closed-search disclosure previews before View all, as in the App sidebar. */
 const DISCLOSURE_PREVIEW = 5
 /** A status line in the list, inset like a session row (8px, 12px on a phone) so it aligns with the titles. */
-const LIST_NOTE = 'px-2 py-2 text-sm text-muted max-[640px]:px-3'
+const LIST_NOTE = 'px-2 py-2 text-sm text-muted max-[641px]:px-3'
 
 /** Spoken status for a row that needs the user; the server names the kind. */
 const attentionLabel = (kind: string | undefined) => kind === 'approval' ? m.session_attention_approval_title() : kind === 'clarify' ? m.session_attention_clarify_title() : kind === 'decision' ? m.session_attention_decision_title() : m.session_attention_generic_title()

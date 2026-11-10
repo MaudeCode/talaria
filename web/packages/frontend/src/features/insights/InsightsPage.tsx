@@ -104,6 +104,7 @@ export function InsightsPage() {
                   title={m.insights_daily()}
                   rows={d.daily_tokens.map((r) => ({ label: dayLabel(r.date), title: r.date, value: metricValue[metric](r) }))}
                   format={metricFormat[metric]}
+                  exact={metric === 'cost' ? exactUsd : undefined}
                   controls={<Select value={metric} onValueChange={(v) => setMetric(v as Metric)} aria-label={m.insights_metric()} className="h-7 text-xs">{METRICS.map((k) => <option key={k} value={k}>{metricLabel[k]}</option>)}</Select>}
                 />
               )}
