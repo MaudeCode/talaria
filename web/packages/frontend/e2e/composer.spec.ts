@@ -866,3 +866,94 @@ test('an empty phone composer keeps its strip while each chip opens and applies,
   expect((await switched).postDataJSON()).toMatchObject({ name: 'research' })
   await expect(msg).toHaveValue('')
 })
+
+test('the composer menus open upward under their name, check the chosen row, and span the card on a phone (TAL-2095)', async ({ page }, testInfo) => {
+  const phone = testInfo.project.name === 'mobile'
+  const shot = (name: string) => page.screenshot({ path: process.env.TAL2095_SHOTS ? `${process.env.TAL2095_SHOTS}/${name}-${testInfo.project.name}.png` : testInfo.outputPath(`${name}.png`) })
+  await page.route('**/api/workspaces', (route) => route.fulfill({ json: { workspaces: [{ name: 'alpha', path: '/tmp/tal2095-alpha' }, { name: 'beta', path: '/tmp/tal2095-beta' }] } }))
+  await page.route('**/api/session/execution-modes', (route) => route.fulfill({ json: { modes: [
+    { mode: 'normal', available: true, reason: null, can_attach: true, can_reference: true },
+    { mode: 'safe', available: true, reason: null, can_attach: false, can_reference: false },
+  ] } }))
+  await page.route('**/api/profiles', (route) => route.fulfill({ json: { profiles: [{ name: 'default', is_default: true }, { name: 'research' }], active: 'default' } }))
+  await page.route('**/api/reasoning**', (route) => route.fulfill({ json: { supports_reasoning_effort: true, reasoning_effort: 'medium', supported_efforts: ['low', 'medium', 'high'] } }))
+  await page.goto('/')
+  await page.locator('#msg').click()
+  const strip = page.locator('.composer-strip')
+  const menus = [
+    { name: 'Reasoning effort', trigger: page.locator('.composer-footer .composer-reasoning-chip'), chosen: true },
+    // A fresh chat with no default workspace has no chosen row.
+    { name: 'Switch workspace', trigger: strip.locator('.composer-workspace-chip'), chosen: false },
+    { name: 'Session toolsets', trigger: strip.locator('.composer-toolsets-chip'), chosen: false },
+    { name: 'Agent mode', trigger: strip.locator('.composer-execution-mode-chip'), chosen: true },
+    { name: 'Profile', trigger: strip.getByRole('button', { name: /default/ }), chosen: true },
+  ]
+  for (const { name, trigger, chosen } of menus) {
+    // At phone width the footer folds Reasoning into the config panel once it fits.
+    const folded = phone && name === 'Reasoning effort'
+    if (folded) {
+      await expect(page.locator('.composer-footer.cf-burger')).toBeVisible()
+      await page.locator('#composerMobileConfigBtn').click()
+    }
+    const target = folded ? page.locator('#composerMobileConfigPanel .composer-mobile-config-action', { hasText: name }) : trigger
+    await target.click()
+    const menu = page.getByRole('menu')
+    await expect(menu.getByRole('group', { name, exact: true })).toBeVisible()
+    await expect(menu.locator('[role=group]').first().locator('> :first-child')).toHaveText(name)
+    // Only the chosen row carries the check.
+    await expect(menu.locator('[role=menuitemradio][aria-checked=true] [aria-hidden=true] svg')).toHaveCount(chosen ? 1 : 0)
+    await expect(menu.locator('[role=menuitemradio][aria-checked=false] svg')).toHaveCount(0)
+    await menu.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)))
+    const popup = (await menu.boundingBox())!
+    const card = await box(page, '#composerBox')
+    // Above its chip, and on a phone above the whole card, so it never covers the input.
+    expect(popup.y + popup.height, `${name} opens upward`).toBeLessThanOrEqual((phone ? card : (await target.boundingBox())!).y + 1)
+    if (phone) {
+      expect(Math.abs(popup.x - card.x), `${name} starts at the card's left edge`).toBeLessThanOrEqual(1)
+      expect(Math.abs(popup.width - card.width), `${name} spans the card`).toBeLessThanOrEqual(1)
+      expect(popup.x + popup.width).toBeLessThanOrEqual(page.viewportSize()!.width)
+    } else {
+      expect(popup.width, `${name} keeps the strip menus' minimum width`).toBeGreaterThanOrEqual(256)
+    }
+    await shot(`menu-${name.toLowerCase().replace(/ /g, '-')}`)
+    if (name === 'Profile') {
+      // The default profile named `default` reads once, and the check, not an ACTIVE tag, marks the active one.
+      await expect(menu.getByRole('menuitemradio', { name: 'default', exact: true })).toHaveAttribute('aria-checked', 'true')
+      await expect(menu).not.toContainText('ACTIVE')
+    }
+    await page.keyboard.press('Escape')
+    await expect(menu).toHaveCount(0)
+  }
+})
+
+test('the titlebar profile menu still opens downward (TAL-2095)', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile', 'The titlebar shows at phone width.')
+  await page.route('**/api/profiles', (route) => route.fulfill({ json: { profiles: [{ name: 'default', is_default: true }, { name: 'research' }], active: 'default' } }))
+  await page.goto('/')
+  const trigger = page.locator('.app-titlebar-left').getByRole('button', { name: /default/ })
+  await trigger.click()
+  const menu = page.getByRole('menu')
+  await expect(menu.getByRole('menuitemradio', { name: 'default', exact: true })).toBeVisible()
+  await menu.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)))
+  expect((await menu.boundingBox())!.y).toBeGreaterThanOrEqual((await trigger.boundingBox())!.y + (await trigger.boundingBox())!.height - 1)
+})
+
+test('a composer menu whose chip sits near the right edge stays inside a narrow desktop viewport (TAL-2095)', async ({ page, request }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'Above phone width the menu anchors to its chip.')
+  await page.setViewportSize({ width: 650, height: 800 })
+  // A long workspace name pushes the Profile chip toward the strip's right end.
+  const settings = { ...await (await request.get('/api/settings')).json(), default_workspace: '/tmp/tal2095-long' }
+  await page.route('**/api/settings', (route) => route.request().method() === 'GET' ? route.fulfill({ json: settings }) : route.fallback())
+  await page.route('**/api/workspaces', (route) => route.fulfill({ json: { workspaces: [{ name: 'a-workspace-with-a-very-long-name-indeed', path: '/tmp/tal2095-long' }] } }))
+  await page.route('**/api/profiles', (route) => route.fulfill({ json: { profiles: [{ name: 'default', is_default: true }, { name: 'research' }], active: 'default' } }))
+  await page.goto('/')
+  await page.locator('#msg').click()
+  const trigger = page.locator('.composer-strip').getByRole('button', { name: /default/ })
+  await trigger.click()
+  const menu = page.getByRole('menu')
+  await expect(menu.getByRole('menuitemradio', { name: 'default', exact: true })).toBeVisible()
+  await menu.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)))
+  const popup = (await menu.boundingBox())!
+  expect(popup.x + popup.width).toBeLessThanOrEqual(650)
+  expect(popup.y + popup.height).toBeLessThanOrEqual((await trigger.boundingBox())!.y + 1)
+})

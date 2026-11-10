@@ -253,17 +253,17 @@ Menus are interaction surfaces (§14); every Web menu is built with `Menu` from
 
 | Rule | App | Web |
 | --- | --- | --- |
-| Row style | Pending the App sync (TAL-1695) | `MENU_ROW`; choices use `MENU_CHOICE` |
+| Row style | Pending the App sync (TAL-1695) | `MENU_ROW`; choices use `MenuChoiceItem` and `MenuChoiceCheckbox` |
 | First row | Pending the App sync (TAL-1695) | A `MenuGroupLabel` naming what the menu sets |
-| Choose one | Pending the App sync (TAL-1695) | `MenuRadioItem` in a `MenuRadioGroup`; selecting applies at once and closes |
-| Choose several | Pending the App sync (TAL-1695) | `MenuCheckboxItem`; toggling applies at once and the menu stays open |
+| Choose one | Pending the App sync (TAL-1695) | `MenuChoiceItem` in a `MenuRadioGroup`; selecting applies at once and closes |
+| Choose several | Pending the App sync (TAL-1695) | `MenuChoiceCheckbox`; toggling applies at once and the menu stays open |
 | Selected mark | Pending the App sync (TAL-1695) | A trailing check from the shared row; colour alone never carries the state |
 | Unavailable option | Pending the App sync (TAL-1695) | Disabled, with the server's reason in muted text at the right |
 | Grouping | Pending the App sync (TAL-1695) | `MenuGroup` with a `MenuGroupLabel`, by a server field |
 | Long lists | Pending the App sync (TAL-1695) | A pinned search header above twelve items |
 | Destructive item | Pending the App sync (TAL-1695) | Last, after a `MenuSeparator`, in `text-error` |
 | Never in a menu | Pending the App sync (TAL-1695) | A form, a Save button, a native checkbox or radio, explanatory sub-text |
-| Composer menus | Pending the App sync (TAL-1695) | Open upward; at 640px and below span the composer's width |
+| Composer menus | Pending the App sync (TAL-1695) | `ComposerMenu` (`features/composer/chips.tsx`): open upward at one width; at 640px and below span the composer's width |
 
 ## 14. Exceptions
 
@@ -287,7 +287,6 @@ list of the Web violations that remain.
 | The App daily chart formats dates with bare `.dateTime`, not the environment locale and zone | TAL-1765 |
 | Stale and unavailable meters are orange on the App (palette default) and muted on Web | Decide with TAL-1533 (server-owned presentation state) |
 | Web Settings pages not yet on the kit (§12) | TAL-2077 (Providers), TAL-2079 (Notifications, Speech), TAL-2082 (Plugins) |
-| Composer menus mark the selected row four ways, lack a heading row and open in more than one placement (§13) | TAL-2095 |
 | The Toolsets menu holds a form with a Save button (§13) | TAL-2096 |
 | The App Settings root is not grouped by scope (§11, §12) | TAL-1695 |
 

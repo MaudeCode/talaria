@@ -4,7 +4,7 @@ import { Popover } from '@base-ui/react/popover'
 import { ChevronDown, Cpu, Brain, Wrench, FolderOpen, GitBranch, Shield } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import { useContextDetailQuery, useExecutionModesQuery, useModelsQuery, useWorkspacesQuery, useToolsetsCatalogQuery } from '../../app/queries'
-import { MENU_CHOICE, Menu, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
+import { Menu, MenuChoiceItem, MenuGroup, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuSeparator, type MenuProps } from '../../ui/Menu'
 import { cn } from '../../ui/cn'
 import { POPUP_MOTION } from '../../ui/popupMotion'
 import { formatUsd } from '../../ui/States'
@@ -85,25 +85,41 @@ export function ModelChip({ model, optionId, servedModel = null, onChange, row }
   )
 }
 
+/** The composer card a chip sits in; the Auxiliary models page's Reasoning chip has none. */
+const composerCard = (trigger: HTMLElement) => trigger.closest('.composer-wrap')?.querySelector('.composer-box')
+
+/**
+ * TAL-2095: every composer menu opens upward at one width with its name as its first label, and at phone width spans the
+ * composer card from its left edge instead of hanging off its chip.
+ */
+export function ComposerMenu({ label, className, children, ...props }: Omit<MenuProps, 'side' | 'align' | 'host'> & { label: string }) {
+  return (
+    // In the composer a tall menu, such as Toolsets on a phone, scrolls in the room above rather than covering the input.
+    <Menu {...props} label={label} side="top" host={composerCard} className={cn('min-w-64', className)}>
+      <MenuGroup><MenuGroupLabel>{label}</MenuGroupLabel>{children}</MenuGroup>
+    </Menu>
+  )
+}
+
 const EFFORTS = ['default', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const
 /** `defaultLabel` names what no saved level falls back to (the auxiliary delegation slot inherits its parent's, TAL-1285). */
 export function ReasoningChip({ value, levels, onChange, row, defaultLabel = m.reasoning_default() }: { value: string | null; levels: string[] | undefined; onChange: (level: string | null) => void; row?: boolean; defaultLabel?: string }) {
   const options = levels?.length ? ['default', ...levels] : [...EFFORTS]
   return (
-    <Menu label={m.composer_control_reasoning()} side="top" trigger={<Chip id={row ? undefined : "composerReasoningChip"} icon={<Brain size={16} aria-hidden="true" />} label={value ?? defaultLabel} title={m.composer_control_reasoning()} row={row} className="composer-reasoning-chip" />}>
+    <ComposerMenu label={m.composer_control_reasoning()} trigger={<Chip id={row ? undefined : "composerReasoningChip"} icon={<Brain size={16} aria-hidden="true" />} label={value ?? defaultLabel} title={m.composer_control_reasoning()} row={row} className="composer-reasoning-chip" />}>
       <MenuRadioGroup value={value ?? 'default'} onValueChange={(v: string) => onChange(v === 'default' ? null : v)}>
-        {options.map((o) => <MenuRadioItem key={o} value={o} className={MENU_CHOICE}>{o === 'default' ? defaultLabel : o}</MenuRadioItem>)}
+        {options.map((o) => <MenuChoiceItem key={o} value={o}>{o === 'default' ? defaultLabel : o}</MenuChoiceItem>)}
       </MenuRadioGroup>
-    </Menu>
+    </ComposerMenu>
   )
 }
 
 export function ToolsetsChip({ value, onChange, row, sessionId }: { value: string[] | null; onChange: (toolsets: string[] | null) => void; row?: boolean | undefined; sessionId?: string | undefined }) {
   const [open, setOpen] = useState(false)
   return (
-    <Menu open={open} onOpenChange={setOpen} label={m.composer_control_toolsets()} side="top" className="min-w-72" trigger={<Chip icon={<Wrench size={13} aria-hidden="true" />} label={value?.length ? value.join(', ') : m.toolsets_global()} title={m.composer_control_toolsets()} row={row} size="xs" className="composer-toolsets-chip" />}>
+    <ComposerMenu open={open} onOpenChange={setOpen} label={m.composer_control_toolsets()} trigger={<Chip icon={<Wrench size={13} aria-hidden="true" />} label={value?.length ? value.join(', ') : m.toolsets_global()} title={m.composer_control_toolsets()} row={row} size="xs" className="composer-toolsets-chip" />}>
       <ToolsetsPicker value={value} sessionId={sessionId} onChange={(names) => { onChange(names); setOpen(false) }} />
-    </Menu>
+    </ComposerMenu>
   )
 }
 
@@ -145,9 +161,9 @@ export function ExecutionModeChip({ value, onChange, row }: { value: ExecutionMo
   const chip = { icon: <Shield size={13} aria-hidden="true" />, label: EXECUTION_MODE_LABEL[value](), title: m.composer_control_execution_mode(), row, size: 'xs' as const, className: 'composer-execution-mode-chip' }
   if (!onChange) return <Chip {...chip} readOnly />
   return (
-    <Menu open={open} onOpenChange={setOpen} label={m.composer_control_execution_mode()} side="top" className="min-w-64" trigger={<Chip {...chip} />}>
+    <ComposerMenu open={open} onOpenChange={setOpen} label={m.composer_control_execution_mode()} trigger={<Chip {...chip} />}>
       <ExecutionModePicker value={value} onChange={(mode) => { onChange(mode); setOpen(false) }} />
-    </Menu>
+    </ComposerMenu>
   )
 }
 
@@ -158,10 +174,10 @@ function ExecutionModePicker({ value, onChange }: { value: ExecutionMode; onChan
   return (
     <MenuRadioGroup value={value} onValueChange={(mode: ExecutionMode) => onChange(mode)}>
       {query.data.modes.map((option) => (
-        <MenuRadioItem key={option.mode} value={option.mode} disabled={!option.available} className={cn(MENU_CHOICE, 'data-[disabled]:opacity-60')}>
+        <MenuChoiceItem key={option.mode} value={option.mode} disabled={!option.available}>
           <span>{EXECUTION_MODE_LABEL[option.mode]()}</span>
           {option.reason && <span className="ms-auto text-xs text-muted">{EXECUTION_MODE_REASON[option.reason]()}</span>}
-        </MenuRadioItem>
+        </MenuChoiceItem>
       ))}
     </MenuRadioGroup>
   )
@@ -173,9 +189,9 @@ export function WorkspaceChip({ value, name, onChange, onNewWorktree, onRemoveWo
   const list = ws.data?.workspaces ?? []
   const label = (name !== undefined ? name : list.find((w) => w.path === value)?.name) || '—'
   return (
-    <Menu label={m.composer_control_workspace()} side="top" className="min-w-64" trigger={<Chip id={row ? undefined : "composerWorkspaceChip"} icon={<FolderOpen size={13} aria-hidden="true" />} label={label} title={m.composer_control_workspace()} row={row} size="xs" className="composer-workspace-chip" disabled={list.length === 0} />}>
+    <ComposerMenu label={m.composer_control_workspace()} trigger={<Chip id={row ? undefined : "composerWorkspaceChip"} icon={<FolderOpen size={13} aria-hidden="true" />} label={label} title={m.composer_control_workspace()} row={row} size="xs" className="composer-workspace-chip" disabled={list.length === 0} />}>
       <MenuRadioGroup value={value ?? ''} onValueChange={(v: string) => onChange(v)}>
-        {list.map((w) => <MenuRadioItem key={w.path} value={w.path} className={MENU_CHOICE}><span className="flex min-w-0 flex-col"><span className="truncate">{w.name}</span><span className="truncate font-mono text-xs text-muted">{w.path}</span></span></MenuRadioItem>)}
+        {list.map((w) => <MenuChoiceItem key={w.path} value={w.path}><span className="flex min-w-0 flex-col"><span className="truncate">{w.name}</span><span className="truncate font-mono text-xs text-muted">{w.path}</span></span></MenuChoiceItem>)}
       </MenuRadioGroup>
       {(onNewWorktree ?? onRemoveWorktree) && <MenuSeparator />}
       {onNewWorktree && (
@@ -186,7 +202,7 @@ export function WorkspaceChip({ value, name, onChange, onNewWorktree, onRemoveWo
       )}
       {/* A worktree chat's own removal, reachable on touch layouts that hide the sidebar row's menu. */}
       {onRemoveWorktree && <MenuItem onClick={onRemoveWorktree} className="text-error">{m.session_worktree_remove()}</MenuItem>}
-    </Menu>
+    </ComposerMenu>
   )
 }
 

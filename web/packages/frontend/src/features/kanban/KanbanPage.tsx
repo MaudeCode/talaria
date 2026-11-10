@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent, useId, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { Check, MoreHorizontal, Plus, RefreshCw, X } from 'lucide-react'
+import { MoreHorizontal, Plus, RefreshCw, X } from 'lucide-react'
 import { useDebounced } from '../../lib/useDebounced'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -16,7 +16,7 @@ import { Button, IconButton } from '../../ui/Button'
 import { Switch, FieldRow, TextInput } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { ConfirmDialog, Dialog } from '../../ui/Dialog'
-import { ContextMenu, Menu, MENU_CHOICE, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
+import { ContextMenu, Menu, MenuChoiceItem, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuSeparator } from '../../ui/Menu'
 import { Badge } from '../../ui/Badge'
 import { METER_RAIL, SectionHeader } from '../../ui/List'
 import { EmptyState, ErrorState, LoadingState, formatDate } from '../../ui/States'
@@ -505,10 +505,7 @@ function KanbanCard({ board, task, readOnly, stale, selected, onToggle, onOpen, 
                 <MenuRadioGroup value={status} disabled={provisional} onValueChange={(next: string) => { if (next !== status) card.setStatus(next) }}>
                   <MenuGroupLabel>{m.kanban_move_to()}</MenuGroupLabel>
                   {[status, ...actions.move_to.filter((s) => s !== status)].map((s) => (
-                    <MenuRadioItem key={s} value={s} closeOnClick className={MENU_CHOICE}>
-                      <span className="flex-1">{statusLabel(s)}</span>
-                      {s === status && <Check size={14} aria-hidden="true" />}
-                    </MenuRadioItem>
+                    <MenuChoiceItem key={s} value={s} closeOnClick>{statusLabel(s)}</MenuChoiceItem>
                   ))}
                 </MenuRadioGroup>
               </>

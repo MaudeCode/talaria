@@ -1,12 +1,10 @@
 // Thin wrappers over Menu rows, in the layout bundle: rerendering them costs less than the compiler's memo code.
 'use no memo'
 import type { ComponentProps, ReactNode } from 'react'
-import { Check, ListFilter } from 'lucide-react'
+import { ListFilter } from 'lucide-react'
 import { cn } from '../ui/cn'
-import { MENU_CHOICE, Menu, MenuCheckboxItem, MenuRadioItem } from '../ui/Menu'
+import { Menu, MenuChoiceCheckbox, MenuChoiceItem } from '../ui/Menu'
 import { PANEL_HEAD_BTN } from './PanelHead'
-
-const CHECK = <Check size={14} className="hidden shrink-0 group-data-[checked]:block" aria-hidden="true" />
 
 /**
  * A page's one filter control (Chats TAL-1869, Kanban TAL-2087): an icon trigger that takes the accent state while any
@@ -27,10 +25,10 @@ export function FilterMenu({ label, filtered, className, children }: { label: st
 
 /** One choice of a filter's radio group, checked when chosen. */
 export function FilterRadioItem({ value, disabled, title, children }: { value: string; disabled?: boolean; title?: string; children: ReactNode }) {
-  return <MenuRadioItem value={value} disabled={!!disabled} closeOnClick title={title} className={cn(MENU_CHOICE, 'group data-[disabled]:opacity-50')}>{children}<span className="flex-1" />{CHECK}</MenuRadioItem>
+  return <MenuChoiceItem value={value} disabled={!!disabled} closeOnClick title={title}>{children}</MenuChoiceItem>
 }
 
 /** An on/off filter row, checked while on; toggling keeps the menu open (design system §13). */
-export function FilterCheckboxItem({ children, ...props }: Omit<ComponentProps<typeof MenuCheckboxItem>, 'className' | 'closeOnClick'>) {
-  return <MenuCheckboxItem {...props} className={cn(MENU_CHOICE, 'group data-[disabled]:opacity-50')}>{children}<span className="flex-1" />{CHECK}</MenuCheckboxItem>
+export function FilterCheckboxItem(props: Omit<ComponentProps<typeof MenuChoiceCheckbox>, 'className' | 'closeOnClick'>) {
+  return <MenuChoiceCheckbox {...props} />
 }

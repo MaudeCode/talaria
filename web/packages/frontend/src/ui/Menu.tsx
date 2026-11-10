@@ -1,5 +1,5 @@
 import { Menu as BaseMenu } from '@base-ui/react/menu'
-import { ChevronRight } from 'lucide-react'
+import { Check, ChevronRight } from 'lucide-react'
 import { ContextMenu as BaseContextMenu } from '@base-ui/react/context-menu'
 import { useRef, useState, type ComponentProps, type FocusEvent, type KeyboardEvent, type PointerEvent, type ReactElement, type ReactNode, type RefObject, type SyntheticEvent } from 'react'
 import type { BaseUIEvent } from '@base-ui/react/types'
@@ -25,11 +25,24 @@ export interface MenuProps {
   header?: ReactNode
   /** How the popup keeps inside the viewport when its side lacks room; the default flips to the roomier side. */
   collisionAvoidance?: ComponentProps<typeof BaseMenu.Positioner>['collisionAvoidance']
+  /**
+   * TAL-2095: the surface the trigger sits in, found from it, such as the composer card for a composer chip. There the
+   * popup keeps `side`, scrolling in the room it has rather than flipping or moving over the host, and at phone width
+   * it spans the host from its left edge. A trigger outside any host keeps the plain behaviour.
+   */
+  host?: (trigger: HTMLElement) => Element | null | undefined
 }
 
 /** Menus share the Select popup layer above dialogs (z 1300/1301), so a menu opened inside a dialog takes clicks (TAL-1639). */
 const POSITIONER = 'z-[1400] outline-none'
 // Base UI's available height keeps a long menu inside a short viewport, where it scrolls; a caller lowers it with --menu-max-height.
+/** The phone breakpoint `max-[641px]:` matches in CSS. */
+const PHONE = '(max-width: 640px)'
+/**
+ * A hosted menu never flips, and is not `sticky`, so it never moves onto its host and Base UI caps its height to the room
+ * on its side; it still shifts along that side to stay inside the viewport.
+ */
+const HOSTED = { side: 'none', align: 'shift' } as const
 const POPUP = cn('min-w-44 max-w-[min(92vw,360px)] max-h-[min(var(--menu-max-height,100vh),var(--available-height))] rounded-lg border border-border bg-surface p-1 text-sm text-text shadow-md outline-none', POPUP_MOTION)
 
 /** Scrolls `row` into `scroller` unless it is already fully inside; `center` places it mid-list. */
@@ -116,16 +129,22 @@ function openingFocus(s: OpeningFocus, search: RefObject<HTMLElement | null> | u
 }
 
 /** Base UI menu with token styling: keyboard navigation, typeahead, focus return, and escape are provided by Base UI. */
-export function Menu({ trigger, children, side = 'bottom', align = 'start', open, onOpenChange, className, label, search, header, collisionAvoidance }: MenuProps) {
+export function Menu({ trigger, children, side = 'bottom', align = 'start', open, onOpenChange, className, label, search, header, collisionAvoidance, host: findHost }: MenuProps) {
   // One stable container for the opening's mutable focus state, read and written only by the handlers.
   const [state] = useState<OpeningFocus>(() => ({ pointer: '', search: false, row: false, popup: null }))
   const focus = openingFocus(state, search, onOpenChange)
+  // The trigger, held for `host`; the host is found once the trigger mounts.
+  const [triggerEl, setTriggerEl] = useState<HTMLElement | null>(null)
+  const host = triggerEl && findHost?.(triggerEl)
+  // Read as each opening mounts; the trigger stays the anchor above phone width.
+  const anchor = host ? () => window.matchMedia(PHONE).matches ? host : triggerEl : undefined
+  const avoid = host ? HOSTED : collisionAvoidance
   return (
     <BaseMenu.Root {...(open !== undefined ? { open } : {})} onOpenChange={focus.onOpenChange}>
-      <BaseMenu.Trigger render={trigger} onPointerDown={focus.onTriggerPointerDown} />
+      <BaseMenu.Trigger ref={findHost ? setTriggerEl : undefined} render={trigger} onPointerDown={focus.onTriggerPointerDown} />
       <BaseMenu.Portal>
-        <BaseMenu.Positioner side={side} align={align} sideOffset={6} sticky {...(collisionAvoidance ? { collisionAvoidance } : {})} className={POSITIONER}>
-          <BaseMenu.Popup ref={header ? focus.ref : revealRows} aria-label={label} onFocus={focus.onFocus} onKeyDown={focus.onKeyDown} className={cn(POPUP, header ? 'flex flex-col' : 'overflow-y-auto', className)}>
+        <BaseMenu.Positioner side={side} align={align} sideOffset={6} sticky={!host} {...(avoid ? { collisionAvoidance: avoid } : {})} {...(anchor ? { anchor } : {})} className={POSITIONER}>
+          <BaseMenu.Popup ref={header ? focus.ref : revealRows} aria-label={label} onFocus={focus.onFocus} onKeyDown={focus.onKeyDown} className={cn(POPUP, header ? 'flex flex-col' : 'overflow-y-auto', className, anchor && 'max-[641px]:w-(--anchor-width) max-[641px]:max-w-none')}>
             {header ? <>{header}<div ref={revealRows} className="min-h-0 overflow-y-auto">{children}</div></> : children}
           </BaseMenu.Popup>
         </BaseMenu.Positioner>
@@ -207,7 +226,30 @@ export const rowActionItems = (actions: RowAction[]) => actions.map(({ label, ru
 export const MENU_ROW = 'flex cursor-default select-none items-center gap-2 rounded-md px-2.5 py-1.5 text-sm outline-none data-[highlighted]:bg-hover pointer-coarse:min-h-11'
 
 /** A radio or checkbox row: the chosen one takes the accent colour. */
-export const MENU_CHOICE = cn(MENU_ROW, 'data-[checked]:text-accent-text')
+const MENU_CHOICE = cn(MENU_ROW, 'data-[checked]:text-accent-text data-[disabled]:opacity-50')
+/** A choice row's content, ahead of its trailing check. */
+const CHOICE_LABEL = 'flex min-w-0 flex-1 items-center gap-2'
+const CHOICE_CHECK = <Check size={14} aria-hidden="true" />
+
+/** A radio row (TAL-2095): the chosen one takes the accent colour and a trailing check, so colour never carries it alone. */
+export function MenuChoiceItem({ className, children, ...props }: ComponentProps<typeof BaseMenu.RadioItem>) {
+  return (
+    <BaseMenu.RadioItem {...props} className={cn(MENU_CHOICE, className as string | undefined)}>
+      <span className={CHOICE_LABEL}>{children}</span>
+      <BaseMenu.RadioItemIndicator className="flex shrink-0">{CHOICE_CHECK}</BaseMenu.RadioItemIndicator>
+    </BaseMenu.RadioItem>
+  )
+}
+
+/** An on/off row with the same accent colour and trailing check while on. */
+export function MenuChoiceCheckbox({ className, children, ...props }: ComponentProps<typeof BaseMenu.CheckboxItem>) {
+  return (
+    <BaseMenu.CheckboxItem {...props} className={cn(MENU_CHOICE, className as string | undefined)}>
+      <span className={CHOICE_LABEL}>{children}</span>
+      <BaseMenu.CheckboxItemIndicator className="flex shrink-0">{CHOICE_CHECK}</BaseMenu.CheckboxItemIndicator>
+    </BaseMenu.CheckboxItem>
+  )
+}
 
 export function MenuItem({ className, ...props }: ComponentProps<typeof BaseMenu.Item>) {
   return <BaseMenu.Item {...props} className={cn(MENU_ROW, 'data-[disabled]:opacity-50', className as string | undefined)} />
@@ -239,6 +281,5 @@ export function MenuSubmenu({ trigger, children }: { trigger: ReactNode; childre
 }
 
 export const MenuGroup = BaseMenu.Group
-export const MenuCheckboxItem = BaseMenu.CheckboxItem
 export const MenuRadioGroup = BaseMenu.RadioGroup
 export const MenuRadioItem = BaseMenu.RadioItem

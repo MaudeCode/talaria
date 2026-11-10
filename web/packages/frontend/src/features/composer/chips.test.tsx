@@ -498,6 +498,17 @@ describe('ExecutionModeChip (TAL-1040)', () => {
     expect(onChange).toHaveBeenCalledWith('safe')
   })
 
+  it('names the menu in its first label and marks only the chosen mode with a check (TAL-2095)', async () => {
+    renderMode({ value: 'normal', onChange: vi.fn() })
+    await userEvent.click(screen.getByRole('button'))
+    const menu = await screen.findByRole('menu')
+    expect(within(menu).getByRole('group', { name: 'Agent mode' }).firstElementChild).toHaveTextContent('Agent mode')
+    const chosen = await within(menu).findByRole('menuitemradio', { name: 'Normal' })
+    expect(chosen).toHaveAttribute('aria-checked', 'true')
+    expect(chosen.querySelector('svg[aria-hidden="true"]')).not.toBeNull()
+    expect(within(menu).getByRole('menuitemradio', { name: 'Safe mode' }).querySelector('svg')).toBeNull()
+  })
+
   it('shows the server reason and refuses a mode the owner cannot start', async () => {
     modes = { modes: [{ mode: 'normal', available: true, reason: null }, { mode: 'ignore_config', available: false, reason: 'agent_unsupported' }, { mode: 'safe', available: false, reason: 'agent_unsupported' }] }
     const onChange = vi.fn()
