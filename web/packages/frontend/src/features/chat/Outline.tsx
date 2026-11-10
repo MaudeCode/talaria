@@ -3,13 +3,13 @@
  * right edge; below, a symbol button beside the jump buttons opens the same list in a menu.
  */
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { List } from 'lucide-react'
 import type { SessionOutlineEntry } from '@maudecode/talaria-web-contracts'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { m } from '../../paraglide/messages.js'
-import type { LiveTurn } from '../../stream/reducer'
+import { isTerminal, type LiveTurn } from '../../stream/reducer'
 import { Menu, MenuChoiceItem, MenuRadioGroup } from '../../ui/Menu'
 import { SECTION_HEADER } from '../../ui/List'
 import { cn } from '../../ui/cn'
@@ -20,7 +20,9 @@ interface Sent { stream: string; read: number; entry: SessionOutlineEntry }
 
 /**
  * The server's outline, then each question sent here after that read, from the stream state: the user's own write, shown
- * until a later read answers for it. Only `revision` (a compaction or rename) reads the outline again.
+ * until a later read answers for it. The outline is read on open, when `revision` (a rename or compaction) changes, after
+ * a history cut (`useTranscript.refresh`) and when a turn settles, which replaces the sent question with the server's
+ * entry and adds the steers the turn consumed.
  */
 export function useOutline(sessionId: string, revision: string, live: LiveTurn | null): { entries: SessionOutlineEntry[]; shown: boolean } | undefined {
   const query = useQuery({
@@ -29,6 +31,15 @@ export function useOutline(sessionId: string, revision: string, live: LiveTurn |
     // Read again on each open of the chat and when the transcript's history is replaced (`useTranscript.refresh`).
     staleTime: 0, refetchOnWindowFocus: false, retry: 1,
   })
+  const qc = useQueryClient()
+  const settled = live?.sessionId === sessionId && isTerminal(live.status) ? live.streamId : null
+  // A turn that had already settled when the outline mounted is in its first read.
+  const lastSettled = useRef(settled)
+  useEffect(() => {
+    if (!settled || settled === lastSettled.current) return
+    lastSettled.current = settled
+    void qc.invalidateQueries({ queryKey: keys.sessionOutline(sessionId) })
+  }, [qc, sessionId, settled])
   const [sent, setSent] = useState<{ sessionId: string; items: Sent[] }>({ sessionId, items: [] })
   if (sent.sessionId !== sessionId) setSent({ sessionId, items: [] })
   const items = sent.sessionId === sessionId ? sent.items : []

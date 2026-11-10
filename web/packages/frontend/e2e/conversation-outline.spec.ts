@@ -101,24 +101,30 @@ test('the outline lists every question, jumps to loaded and unloaded ones, and f
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no horizontal overflow').toBe(true)
 
-    // A sent question joins the outline from the stream, without another read.
+    // A sent question joins the outline from the stream at once; when its turn settles, one read replaces it with the
+    // server's entry (Markdown stripped).
     expect(reads).toHaveLength(1)
-    await page.locator('#msg').fill('One more question')
+    await page.locator('#msg').fill('One **more** question')
     await page.locator('#btnSend').click()
     await expect(page.locator('#messages').getByText('Noted.').last()).toBeVisible()
-    if (desktop) await expect(page.getByRole('navigation', { name: 'Conversation outline' }).getByRole('button')).toHaveCount(QUESTIONS + 1)
-    else {
+    await expect.poll(() => reads.length).toBe(2)
+    if (desktop) {
+      const entries = page.getByRole('navigation', { name: 'Conversation outline' }).getByRole('button')
+      await expect(entries).toHaveCount(QUESTIONS + 1)
+      await expect(entries.last()).toHaveAttribute('title', 'One more question')
+    } else {
       await page.getByRole('button', { name: 'Conversation outline' }).click()
-      await expect(page.getByRole('menu', { name: 'Conversation outline' }).getByRole('menuitemradio')).toHaveCount(QUESTIONS + 1)
+      const entries = page.getByRole('menu', { name: 'Conversation outline' }).getByRole('menuitemradio')
+      await expect(entries).toHaveCount(QUESTIONS + 1)
+      await expect(entries.last()).toHaveAttribute('title', 'One more question')
       await page.keyboard.press('Escape')
     }
-    expect(reads).toHaveLength(1)
 
     // A history cut (here /undo of that question) reads the outline again and drops the question it removed.
     await page.locator('#msg').fill('/undo')
     await page.locator('#btnSend').click()
     await expect(page.locator('#messages').getByText('Noted.')).toHaveCount(0)
-    await expect.poll(() => reads.length).toBe(2)
+    await expect.poll(() => reads.length).toBe(3)
     if (desktop) await expect(page.getByRole('navigation', { name: 'Conversation outline' }).getByRole('button')).toHaveCount(QUESTIONS)
     else {
       await page.getByRole('button', { name: 'Conversation outline' }).click()
