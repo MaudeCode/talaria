@@ -10,6 +10,7 @@ from types import SimpleNamespace as NS
 sys.path.insert(0, sys.argv[1])
 from talaria_sidecar.methods import Registry, dashboard_plugins
 from talaria_sidecar.home import scoped_home
+from talaria_sidecar.errors import RpcError
 
 base = Path(os.environ['HERMES_HOME'])
 other = base / 'profiles' / 'beta'
@@ -97,6 +98,21 @@ try:
     call('toggle', other, name='board', enabled=False)
     assert not next(p for p in call('list', other)['plugins'] if p['name'] == 'board')['enabled']
     assert next(p for p in call('list', base)['plugins'] if p['name'] == 'board')['enabled']
+    # TAL-2055: the Agent's own refusal from its admission transaction is a typed refusal that writes nothing.
+    from hermes_cli import plugins_admission, plugins_cmd
+    assert set(dashboard_plugins._toggle_refusals()) == {plugins_cmd.PluginOperationError, plugins_admission.AdmissionRefused}
+    admit = plugins_admission.admit_plugin_set_change
+    def refuse(*args, **kwargs):
+        raise plugins_admission.AdmissionRefused('synthetic admission refusal')
+    plugins_admission.admit_plugin_set_change = refuse
+    try:
+        call('toggle', other, name='board', enabled=True)
+        raise AssertionError('a refused admission enabled the plugin')
+    except RpcError as exc:
+        assert exc.data == {'condition': 'plugin_toggle_refused'} and str(exc) == 'synthetic admission refusal', exc.to_json()
+    finally:
+        plugins_admission.admit_plugin_set_change = admit
+    assert not next(p for p in call('list', other)['plugins'] if p['name'] == 'board')['enabled']
     call('toggle', other, name='board', enabled=True)
     assert next(p for p in call('list', other)['plugins'] if p['name'] == 'board')['enabled']
     assert hosts[0].pid != hosts[1].pid

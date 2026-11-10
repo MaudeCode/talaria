@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
+import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { mkdirSync } from 'node:fs'
 
@@ -182,4 +183,16 @@ it.each([false, true])('revokes source and destination grants and a delayed resp
   const current = await manifest('beta')
   expect(current.id).not.toBe(destination.id)
   expect((await s.get('/' + current.panel)).status).toBe(200)
+})
+
+it('answers an Agent-refused enable with 409 and the Agent reason (TAL-2055)', async () => {
+  const fake = new FakeSidecar()
+  fake.respond('plugins.dashboard_list', () => ({ supported: true, plugins: [{ name: 'board', label: 'Board', version: '', description: '', enabled: false, panel: 'dist/index.html', has_api: false }] }))
+  fake.respond('plugins.dashboard_toggle', () => { throw new SidecarError("Plugin 'board' was removed from the Hermes plugin catalog: recalled", { condition: 'plugin_toggle_refused' }) })
+  s = await bootTestServer({ sidecar: fake })
+  const body = await (await s.get('/api/extensions/manifests')).json() as { manifests: { id: string; source: string }[] }
+  const id = body.manifests.find((m) => m.source === 'agent-plugin')!.id
+  const res = await s.get('/api/extensions/toggle', { method: 'POST', body: JSON.stringify({ id, enabled: true }), headers: { 'content-type': 'application/json' } })
+  expect(res.status).toBe(409)
+  expect(await res.json()).toMatchObject({ error: "Plugin 'board' was removed from the Hermes plugin catalog: recalled", condition: 'plugin_toggle_refused' })
 })

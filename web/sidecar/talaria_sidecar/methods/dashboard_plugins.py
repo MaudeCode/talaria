@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import importlib
 import inspect
 import json
 import os
@@ -270,6 +271,19 @@ def _request(ctx, plugin, params, *, require_panel=True, timeout=10.0):
     return _reply(status if isinstance(status, int) and 200 <= status <= 599 else 502, raw, content_type)
 
 
+def _toggle_refusals() -> tuple:
+    """The Agent's enable refusals this release defines: a recalled plugin and a refused admission transaction."""
+    refusals = []
+    for module, name in (('hermes_cli.plugins_cmd', 'PluginOperationError'), ('hermes_cli.plugins_admission', 'AdmissionRefused')):
+        try:
+            refusal = getattr(importlib.import_module(module), name)
+        except (ImportError, AttributeError):
+            continue
+        if isinstance(refusal, type) and issubclass(refusal, Exception):
+            refusals.append(refusal)
+    return tuple(refusals)
+
+
 def register(registry):
     def run(ctx, params, action):
         ctx.check_cancelled()
@@ -301,7 +315,11 @@ def register(registry):
                 if key is None:
                     raise InvalidParams('Plugin is not installed')
                 # Use the Agent admission transaction, without activate_plugin_now (in-process imports).
-                _activate_key(key, enable=params['enabled'])
+                try:
+                    _activate_key(key, enable=params['enabled'])
+                except _toggle_refusals() as exc:
+                    # A recalled plugin or a refused admission writes nothing; the Agent's reason reaches the switch.
+                    raise RpcError(str(exc), condition='plugin_toggle_refused') from exc
                 return {'ok': True}
             plugin = _named(home, name)
             if plugin is None:

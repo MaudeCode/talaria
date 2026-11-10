@@ -1,14 +1,17 @@
 """Profile-owned dashboard hosting, using synthetic files and Agent boundary fakes."""
 import contextlib
 import contextvars
+import io
 import json
+import logging
 import sys
 from types import SimpleNamespace as NS
 
 import pytest
 
 from talaria_sidecar.methods import build_methods
-from talaria_sidecar.errors import Cancelled
+from talaria_sidecar.errors import INTERNAL_ERROR, Cancelled
+from talaria_sidecar.rpc import RpcServer
 
 
 @pytest.fixture
@@ -97,6 +100,28 @@ def test_native_consent_is_profile_owned_and_only_explicit_toggles_write(dashboa
     assert d.consent[str(d.homes[0])] == set()
     assert d.call('list', d.homes[1])['plugins'][0]['enabled'] is True
 
+
+
+@pytest.mark.parametrize('refusal', ['PluginOperationError', 'AdmissionRefused'])
+def test_agent_refusing_an_enable_is_a_typed_refusal_that_writes_nothing(dashboards, monkeypatch, caplog, refusal):
+    """TAL-2055: a recalled plugin (PluginOperationError) or a refused admission reaches the client as its reason."""
+    d = dashboards
+    errors = {name: type(name, (Exception,), {}) for name in ('PluginOperationError', 'AdmissionRefused')}
+    def refuse(key, enable):
+        raise errors[refusal](f"Plugin '{key}' was recalled by the catalog")
+    monkeypatch.setitem(sys.modules, 'hermes_cli.plugins_cmd', NS(_resolve_plugin_key=lambda name: name, _activate_key=refuse,
+                                                                   PluginOperationError=errors['PluginOperationError']))
+    monkeypatch.setitem(sys.modules, 'hermes_cli.plugins_admission', NS(AdmissionRefused=errors['AdmissionRefused']))
+    output = io.BytesIO()
+    with caplog.at_level(logging.ERROR):
+        RpcServer(d.methods, stdout=output)._dispatch({'id': 1, 'method': 'plugins.dashboard_toggle',
+                                                      'params': {'profile_home': str(d.homes[1]), 'name': 'board', 'enabled': True}})
+    error = json.loads(output.getvalue())['error']
+    assert error['code'] != INTERNAL_ERROR, error
+    assert error['data'] == {'condition': 'plugin_toggle_refused'}
+    assert error['message'] == "Plugin 'board' was recalled by the catalog"
+    assert not caplog.records
+    assert d.consent[str(d.homes[1])] == set()
 
 @pytest.mark.parametrize('path', ['../manifest.json', 'dist/../manifest.json', 'dist/.env', 'dist/link.js', 'dist/api.py', 'dist/%2e%2e/secret.txt', 'static//x.js'])
 def test_untrusted_assets_and_paths_serve_nothing(dashboards, path, tmp_path):
