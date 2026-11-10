@@ -750,7 +750,16 @@ def register(reg) -> None:
             raise InvalidParams("model is required")
         base_url, provider, pin = str(params.get("base_url") or ""), str(params.get("provider") or ""), params.get("config_context_length")
         with scoped_home(profile_home_param(params)):
-            value = context_length(model, base_url=base_url, api_key=str(params.get("api_key") or ""), provider=provider, config_context_length=pin)
+            api_key = ""
+            try:
+                from hermes_cli.runtime_provider import resolve_runtime_provider
+
+                runtime = resolve_runtime_provider(requested=provider or None, target_model=model)
+                # Resolve both together; the server URL is only a keyless fallback.
+                base_url, api_key = str(runtime["base_url"] or ""), str(runtime["api_key"] or "")
+            except Exception:  # noqa: BLE001 - missing or failed resolution must never forward a key
+                log.debug("context-window runtime provider unavailable")
+            value = context_length(model, base_url=base_url, api_key=api_key, provider=provider, config_context_length=pin)
             source = context_window_source("context_window_marker", value, pin, model=model, provider=provider, base_url=base_url) if value else None
         return {"model": model, "context_length": value, "context_window_source": source}
 

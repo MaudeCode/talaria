@@ -1,5 +1,11 @@
 # Sidecar RPC (TAL-245)
 
+RPC v97 removes `api_key` from `models.context_length` (TAL-1991). Inside the
+profile's credential scope, the sidecar resolves the lookup's URL and key together
+with the Agent's chat runtime resolver. The server's `base_url` is only a keyless
+fallback when resolution is unavailable. Context-window labels use the lookup's
+resolved URL; configured context-length pins are unchanged.
+
 RPC v96 adds the `harness` toolset's `usage_read` (TAL-1973, `server.usage_read`). It takes no
 argument and reads only the calling session: the tokens, cost and model `/api/session/usage`
 answers, cache-read tokens, turns (the session's user messages), and the session row's context

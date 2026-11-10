@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Context-window lookups send provider keys only to the host used for chat.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

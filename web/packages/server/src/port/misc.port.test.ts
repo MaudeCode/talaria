@@ -253,7 +253,7 @@ describe('runtime seams from review round 10', () => {
     const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
     expect(detail.context_length).toBe(1_000_000)
     expect(s.deps.sessions.deps.contextLengthFor('big-model', 'custom')).toBe(1_000_000)
-    expect(seenInputs).toMatchObject({ model: 'big-model', provider: 'custom', base_url: 'https://llm.example/v1', api_key: 'sk-custom-1234', config_context_length: 1_000_000 })
+    expect(seenInputs).toMatchObject({ model: 'big-model', provider: 'custom', base_url: 'https://llm.example/v1', config_context_length: 1_000_000 })
   })
 
   it('the per-identity stream budget defaults to eight', () => {

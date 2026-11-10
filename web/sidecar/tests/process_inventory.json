@@ -643,6 +643,15 @@
         ""
       ]
     },
+    "tests/test_context_window_source.py::test_lookup_keeps_the_agents_runtime_key_and_url_together": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent credential routing: the real resolver pairs its key and URL for native custom, built-in legacy-name collisions and Anthropic proxy configs; only metadata network access is replaced by a recorder.",
+      "cases": [
+        "[custom-owner]",
+        "[builtin-legacy-name]",
+        "[anthropic-proxy]"
+      ]
+    },
     "tests/test_context_window_source.py::test_live_agent_and_lookup_report_the_agents_marker": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: the window's pinned or fallback marker on a live compressor and on the no-agent lookup. Uses the real installed release, not a fabricated API response.",

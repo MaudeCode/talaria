@@ -47,7 +47,7 @@ describe('native custom providers in the catalog (TAL-1654)', () => {
       expect(group!.models.map((m) => m.bare_id ?? m.id)).toEqual(cards[0]!.models.map((m) => m.bare_id ?? m.id))
     }
     expect(rows.some((r) => r.id === 'omni')).toBe(false)
-    expect(await catalog.contextLengthInputs(home, 'demo-model', 'custom:demo')).toEqual({ base_url: 'https://synthetic.invalid/v1', api_key: 'sk-synthetic-demo', config_context_length: 777777 })
+    expect(await catalog.contextLengthInputs(home, 'demo-model', 'custom:demo')).toEqual({ base_url: 'https://synthetic.invalid/v1', config_context_length: 777777 })
     const quota = await catalog.quota(home, 'custom:demo')
     expect(quota.display_name).toBe('Friendly Demo')
     expect(String(quota.message)).toContain('Friendly Demo')
@@ -58,11 +58,9 @@ describe('native custom providers in the catalog (TAL-1654)', () => {
     // A named profile never borrows the default profile's `.env` copy of the variable.
     const borrowed = build({ DEMO_KEY: 'sk-root-only', [HOME_DOTENV_KEYS_VAR]: 'DEMO_KEY' }, false)
     expect(((await borrowed.providers(home)).providers as unknown as Row[]).find((r) => r.id === 'custom:demo')).toMatchObject({ has_key: false, key_source: 'none' })
-    expect((await borrowed.contextLengthInputs(home, 'demo-model', 'custom:demo')).api_key).toBeUndefined()
     writeFileSync(join(home, '.env'), 'DEMO_KEY=sk-profile-demo\n')
     const scoped = build({ DEMO_KEY: 'sk-root-only', [HOME_DOTENV_KEYS_VAR]: 'DEMO_KEY' }, false)
     expect(((await scoped.providers(home)).providers as unknown as Row[]).find((r) => r.id === 'custom:demo')).toMatchObject({ has_key: true })
-    expect((await scoped.contextLengthInputs(home, 'demo-model', 'custom:demo')).api_key).toBe('sk-profile-demo')
     rmSync(join(home, '.env'))
     pooled = ['custom:demo']
     const pool = build({})
@@ -76,7 +74,7 @@ describe('native custom providers in the catalog (TAL-1654)', () => {
     expect(rows.find((r) => r.id === 'custom:demo')).toMatchObject({ base_url: 'https://synthetic.invalid/v1', models: [{ id: 'demo-model' }] })
     expect(rows.find((r) => r.id === 'custom:omni')).toMatchObject({ base_url: 'https://omni.invalid/v1' })
     expect((await catalog.models(home)).groups.find((g) => g.provider_id === 'custom:demo')?.models.map((m) => m.bare_id ?? m.id)).toEqual(['demo-model'])
-    expect(await catalog.contextLengthInputs(home, 'demo-model', 'custom:demo')).toEqual({ base_url: 'https://synthetic.invalid/v1', api_key: 'sk-synthetic-demo', config_context_length: 777777 })
+    expect(await catalog.contextLengthInputs(home, 'demo-model', 'custom:demo')).toEqual({ base_url: 'https://synthetic.invalid/v1', config_context_length: 777777 })
   })
 
   it.each([false, true])('keeps the built-in active endpoint and quota target with native-first=%j', async (nativeFirst) => {
@@ -88,7 +86,7 @@ describe('native custom providers in the catalog (TAL-1654)', () => {
     expect(cards.active_provider).toBe('openai')
     expect(cards.providers.find((r) => r.id === 'openai')).toMatchObject({ base_url: 'https://builtin.invalid/v1' })
     expect(cards.providers.find((r) => r.id === 'custom:openai')).toMatchObject({ base_url: 'https://proxy.invalid/v1' })
-    expect(await catalog.contextLengthInputs(home, 'gpt-4.1', String(cards.active_provider))).toMatchObject({ base_url: 'https://builtin.invalid/v1', api_key: 'sk-synthetic-openai' })
+    expect(await catalog.contextLengthInputs(home, 'gpt-4.1', String(cards.active_provider))).toEqual({ base_url: 'https://builtin.invalid/v1', config_context_length: null })
     expect(await catalog.quota(home, null)).toMatchObject({ provider: 'openai', display_name: 'OpenAI' })
     expect(sidecar.calls.filter((c) => c.method === 'usage.pool').map((c) => c.params)).toContainEqual(expect.objectContaining({ provider: 'openai' }))
   })
@@ -123,7 +121,7 @@ describe('native custom providers in the catalog (TAL-1654)', () => {
   it('keeps an underscore in a native custom slug for endpoint, key and context lookups', async () => {
     config = { model: { provider: 'anthropic' }, providers: { 'custom:my_box': { api: 'https://box.invalid/v1', api_key: 'sk-synthetic-box', models: { 'box-model': { context_length: 4242 } } } } }
     expect(modelBaseUrl(config, 'custom:my_box')).toBe('https://box.invalid/v1')
-    expect(await build({}).contextLengthInputs(home, 'box-model', 'custom:my_box')).toEqual({ base_url: 'https://box.invalid/v1', api_key: 'sk-synthetic-box', config_context_length: 4242 })
+    expect(await build({}).contextLengthInputs(home, 'box-model', 'custom:my_box')).toEqual({ base_url: 'https://box.invalid/v1', config_context_length: 4242 })
   })
 
   it.each(['custom', 'openai'])('keeps another native identity\'s window off a %s session on its URL, legacy URL matches intact (TAL-1976)', async (provider) => {
@@ -132,7 +130,7 @@ describe('native custom providers in the catalog (TAL-1654)', () => {
     config = { model: { provider, default: 'shared-model', base_url: shared }, providers: { 'custom:other': other } }
     const catalog = build({})
     expect(await catalog.contextLengthInputs(home, 'shared-model', provider)).toEqual({ base_url: shared, config_context_length: null })
-    expect(await catalog.contextLengthInputs(home, 'shared-model', 'custom:other')).toEqual({ base_url: shared, api_key: 'sk-synthetic-other', config_context_length: 777777 })
+    expect(await catalog.contextLengthInputs(home, 'shared-model', 'custom:other')).toEqual({ base_url: shared, config_context_length: 777777 })
     config = { ...config, custom_providers: [{ name: 'Legacy', base_url: shared, models: { 'shared-model': { context_length: 4242 } } }] }
     expect((await build({}).contextLengthInputs(home, 'shared-model', provider)).config_context_length).toBe(4242)
   })

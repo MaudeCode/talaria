@@ -1483,10 +1483,10 @@ export class ProviderCatalog {
   }
 
   /**
-   * Python `_resolve_model_context_length` inputs: the effective base URL, key, and any configured window for this
+   * Python `_resolve_model_context_length` inputs: the keyless fallback URL and any configured window for this
    * model under this profile (`model.context_length`, `providers.<p>.models[].context_length`, custom providers).
    */
-  async contextLengthInputs(profileHome: string, model: string, provider: string | null): Promise<{ base_url?: string; api_key?: string; config_context_length?: number | null }> {
+  async contextLengthInputs(profileHome: string, model: string, provider: string | null): Promise<{ base_url?: string; config_context_length?: number | null }> {
     // An unreadable config is an error (the caller answers with no context length), never "no custom endpoint".
     const config = await this.deps.config.read(profileHome)
     const section = modelSection(config)
@@ -1526,8 +1526,7 @@ export class ProviderCatalog {
       if (!baseUrl) baseUrl = str(cp.base_url).trim()
       configContextLength ??= fromModels(cp.models)
     }
-    const apiKey = customId ? this.apiKeyFor(customId, profileHome, config) : pid ? this.apiKeyFor(pid, profileHome, config) : null
-    return { ...(baseUrl ? { base_url: baseUrl } : {}), ...(apiKey ? { api_key: apiKey } : {}), config_context_length: configContextLength }
+    return { ...(baseUrl ? { base_url: baseUrl } : {}), config_context_length: configContextLength }
   }
 
   private apiKeyFor(pid: string, profileHome: string, config: Config): string | null {
