@@ -1,13 +1,15 @@
 import { useRef, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ConnectorOperationView, ConnectorToolsView, ConnectorView } from '@maudecode/talaria-web-contracts'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { isApiError } from '../../contracts'
+import { useDebounced } from '../../lib/useDebounced'
 import { Badge } from '../../ui/Badge'
 import { Button } from '../../ui/Button'
+import { cn } from '../../ui/cn'
 import { ConfirmDialog } from '../../ui/Dialog'
 import { TextInput } from '../../ui/Field'
 import { Row, RowList } from '../../ui/List'
@@ -169,18 +171,17 @@ function ConnectorRow({ connector, ruleBusy, onRule }: { connector: ConnectorVie
 
 function ToolList({ slug, busy, onRule }: { slug: string; busy: boolean; onRule: (rule: Rule) => void }) {
   const effects = useResourceEffects<boolean>()
-  const tools = useQuery({ queryKey: keys.connectors.tools(slug), queryFn: () => api.fetchConnectorTools(slug), staleTime: 30_000 })
   const [filter, setFilter] = useState('')
+  const q = useDebounced(filter.trim(), 250)
+  const tools = useQuery({ queryKey: keys.connectors.tools(slug, q), queryFn: () => api.fetchConnectorTools(slug, q), staleTime: 30_000, placeholderData: keepPreviousData })
   if (tools.isPending) return <LoadingState />
   if (tools.isError && !tools.data) return <ErrorState error={tools.error} onRetry={() => { void tools.refetch() }} />
-  const q = filter.trim().toLowerCase()
-  // TAL-2128 moves this name filter into the connector tools response; delete it here once that ships.
-  const shown = (tools.data?.tools ?? []).filter((tool) => !q || tool.name.toLowerCase().includes(q))
+  const shown = tools.data?.tools ?? []
   return (
     <div className="mt-1 flex flex-col gap-1">
       <TextInput type="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={m.connectors_tools_filter()} aria-label={m.connectors_tools_filter()} autoComplete="off" />
       {q && shown.length === 0 ? <EmptyState>{m.connectors_tools_filter_empty()}</EmptyState> : (
-        <RowList aria-label={m.connectors_tools()}>
+        <RowList aria-label={m.connectors_tools()} className={cn(tools.isPlaceholderData && 'opacity-60')}>
           {shown.map((tool) => (
             <Row compact key={tool.slug}>
               <span className="text-sm text-text">{tool.name}</span>

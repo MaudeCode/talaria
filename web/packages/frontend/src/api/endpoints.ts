@@ -376,7 +376,7 @@ export const toggleMcpServer = (name: string, enabled: boolean) => orpc().mcp.to
 export const fetchConnectorsAvailable = () => orpc().connectors.available()
 export const fetchConnectors = () => orpc().connectors.page()
 export const dismissConnectorOffer = (offer_id: string) => orpc().connectors.dismissOffer({ offer_id })
-export const fetchConnectorTools = (connector: string) => orpc().connectors.tools({ connector })
+export const fetchConnectorTools = (connector: string, q = '') => orpc().connectors.tools(q ? { connector, q } : { connector })
 export const setConnectorRule = (connector: string, revision: string, change: { enabled: boolean } | { tool: string; tool_enabled: boolean }) => orpc().connectors.setPolicy({ connector, revision, ...change })
 /** A connect waits for the app's authorization link (up to 31 s on the server). */
 export const connectConnector = (connector: string, nous_account_id?: string) => orpc().connectors.connect({ connector, ...(nous_account_id ? { nous_account_id } : {}) }, { signal: timeout(60_000) })

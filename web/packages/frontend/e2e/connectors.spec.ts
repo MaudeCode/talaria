@@ -22,7 +22,13 @@ const waiting: ConnectorOperationView = { op_id: 'op-page', settled: false, outc
     await page.route('**/api/connectors', (route) => route.fulfill({ json: connected
       ? { ...shared.page, connectors: shared.page.connectors.map((c) => c.slug === 'gmail' ? { ...c, connected: true, accounts: [{ connection_id: 'conn-1', name: 'me@example.test', problem: null, status_reason: null, active: true, created_at: '2026-10-14T00:00:00Z' }] } : c) }
       : shared.page }))
-    await page.route('**/api/connectors/notion/tools', (route) => route.fulfill({ json: shared.tools }))
+    // The server filters tools by `q` (connectors.test.ts); this stub answers the filters the test types.
+    const toolFilters: string[] = []
+    await page.route((url) => url.pathname === '/api/connectors/notion/tools', (route) => {
+      const q = new URL(route.request().url()).searchParams.get('q') ?? ''
+      toolFilters.push(q)
+      return route.fulfill({ json: { ...shared.tools, tools: shared.tools.tools.filter((tool) => !q || (q === 'SEND' && tool.slug === 'notion_send')) } })
+    })
     await page.route('**/api/connectors/*/policy', async (route) => { rules.push(route.request().postDataJSON()); await route.fulfill({ json: { ok: true, revision: 'rev-8' } }) })
     await page.route('**/api/connectors/gmail/connect', (route) => route.fulfill({ json: waiting }))
     await page.route('**/api/connectors/operations/op-page', (route) => route.fulfill({ json: connected
@@ -45,6 +51,7 @@ const waiting: ConnectorOperationView = { op_id: 'op-page', settled: false, outc
     const filter = notion.getByRole('searchbox', { name: 'Filter tools' })
     await filter.fill('SEND')
     await expect(tools.getByRole('listitem')).toHaveCount(1)
+    expect(toolFilters).toContain('SEND')
     await filter.fill('zzz')
     await expect(notion.getByText('No tools match')).toBeVisible()
     await filter.fill('')

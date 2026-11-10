@@ -131,16 +131,17 @@ export function connectorsPage(catalog: Catalog, accounts: Accounts, policy: Pol
 /**
  * Each tool as Hermes gets it: on only when every layer allows the app, no layer turns the tool off by name or tag, and the
  * member rules leave it on. Its switch writes the member's tool rule, so it is editable only where that rule decides.
- * Unreadable rules fail closed: every tool reads off and read-only.
+ * Unreadable rules fail closed: every tool reads off and read-only. A non-blank `q` keeps the tools whose name contains it, ignoring case.
  */
-export function connectorTools(listing: Tools, policy: Policy | null): ConnectorToolsView {
+export function connectorTools(listing: Tools, policy: Policy | null, q = ''): ConnectorToolsView {
   const { member, others } = layers(policy)
   const slug = listing.connector
   const off = new Set(member?.tools[slug] ?? [])
   const appOn = policy !== null && (member === null || allows(member, slug)) && others.every((rules) => allows(rules, slug))
+  const needle = q.trim().toLowerCase()
   return {
     connector: slug, policy_revision: member?.revision ?? null,
-    tools: listing.tools.map((tool) => {
+    tools: listing.tools.filter((tool) => tool.name.toLowerCase().includes(needle)).map((tool) => {
       // Another layer's name or tag rule locks the tool; the member's own tag rules keep it off without its switch deciding.
       const locked = others.some((rules) => (rules.tools[slug] ?? []).includes(tool.slug) || tagBlocks(rules, tool.hints))
       const memberTagOff = member !== null && tagBlocks(member, tool.hints)

@@ -106932,7 +106932,7 @@
     "/api/connectors/{connector}/tools": {
       "get": {
         "operationId": "connectors.tools",
-        "summary": "One app's tools with their member and organization rules.",
+        "summary": "One app's tools with their member and organization rules. `q` keeps the tools whose name contains it (case-insensitive).",
         "tags": [
           "tools"
         ],
@@ -106944,6 +106944,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
           }
         ],
         "responses": {
