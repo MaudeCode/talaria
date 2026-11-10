@@ -3131,6 +3131,27 @@
         },
         "single_profile_mode": {
           "type": "boolean"
+        },
+        "summary": {
+          "description": "TAL-2143: Settings › Profiles' figures, counted over profiles whose `visible` is not false.",
+          "type": "object",
+          "properties": {
+            "total": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "gateways_running": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "total",
+            "gateways_running"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [
