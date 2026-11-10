@@ -2,7 +2,7 @@ import { m } from '../../paraglide/messages.js'
 import { useSettingField } from './useSettingField'
 import { LoadingState, ErrorState } from '../../ui/States'
 import { GatewayRestart } from './GatewayRestart'
-import { SettingAction, SettingNumber, SettingSelect, SettingToggle as Toggle, SettingsGroup } from './SettingsRows'
+import { SettingAction, SettingNumber, SettingSelect, SettingToggle as Toggle, SettingsGroup, SETTINGS_PAGE } from './SettingsRows'
 
 /** TAL-1691, TAL-2075, TAL-2076: Settings > Chat, the composer's defaults and which of its controls show, how the transcript renders and scrolls, and the model's limits. */
 export function ChatSection() {
@@ -10,7 +10,7 @@ export function ChatSection() {
   if (settings.isPending) return <LoadingState />
   if (settings.isError) return <ErrorState error={settings.error} onRetry={() => { void settings.refetch() }} />
   return (
-    <div className="flex flex-col gap-7" data-section="chat">
+    <div className={SETTINGS_PAGE} data-section="chat">
       <SettingsGroup id="composer" title={m.settings_group_composer()}>
         <SettingSelect label={m.settings_label_send_key()} id="settingsSendKey" settingKey="send_key" fallback="enter" options={[
           { value: 'enter', label: m.settings_send_key_enter() },

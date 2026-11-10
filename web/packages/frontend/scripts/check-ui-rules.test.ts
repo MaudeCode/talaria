@@ -37,6 +37,10 @@ it.each([
   ['raw-control', page, '<input type="checkbox" />', 'Switch'],
   ['settings-heading', settings, '<h3 className="x">Title</h3>', 'SettingsGroup'],
   ['settings-row', settings, '<FieldRow label="x">y</FieldRow>', 'SettingsRows.tsx'],
+  ['pill', settings, '<Badge tone="border-border text-muted">Plan</Badge>', 'design-system §7'],
+  ['pill', 'src/features/profiles/Row.tsx', '<span className="rounded-full border px-2">Pro</span>', 'design-system §7'],
+  ['success-text', page, '<span className="text-success">Done</span>', 'StatusDot'],
+  ['word-button', 'src/features/connectors/Row.tsx', '<Button onClick={go}>Connect</Button>', 'design-system §12'],
 ])('a new %s fails with its file, line, rule id and message', (rule, file, line, message) => {
   const { status, stderr } = run(tree({ [file]: `export const X = () => (\n  ${line}\n)\n` }, {}))
   expect(status).toBe(1)
@@ -55,7 +59,23 @@ it('ignores the allowed text sizes, src/ui, tests, settings rules outside settin
   expect(scan(root)).toEqual([])
 })
 
+it('TAL-2131: counts a pill or word button only in the symbol folders, and spares dialog footers, dots and bars', () => {
+  const root = tree({
+    // Outside the five folders a Badge, a pill and a word button stay allowed.
+    [page]: '<Badge tone="x">a</Badge><span className="rounded-full border" /><Button>Go</Button>',
+    [settings]: [
+      '<DialogFooter className="mt-3"><Button onClick={close}>Cancel</Button>',
+      '  <Button type="submit">Save</Button></DialogFooter>',
+      '<span className="size-[7px] rounded-full bg-success" /><div className="h-1 rounded-full bg-border" />',
+      '<IconButton variant="ghost" label="Add"><Plus /></IconButton><span className="rounded-full ring-2 ring-inset" />',
+      '<Button>Word</Button>',
+    ].join('\n'),
+  })
+  expect(scan(root)).toEqual([{ rule: 'word-button', file: settings, line: 5 }])
+})
+
 it('scans src/shell and counts every hit on a line', () => {
+
   const root = tree({ 'src/shell/Bar.tsx': 'x\n<i className="text-[12px] text-[15px]" /><input type="radio" />' })
   expect(scan(root)).toEqual([
     { rule: 'raw-control', file: 'src/shell/Bar.tsx', line: 2 },

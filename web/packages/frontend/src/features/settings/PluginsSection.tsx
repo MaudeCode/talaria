@@ -4,8 +4,11 @@ import type { PluginAutoUpdateView, PluginOAuthClientView, PluginSettingView, Pl
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
-import { Button } from '../../ui/Button'
+import { Check, ChevronRight, ChevronsLeft, CircleArrowUp, Download, Info, LogOut, Search, Settings2, Store } from 'lucide-react'
+import { IconButton } from '../../ui/Button'
+import { Mark, StatusDot, type DotState } from '../../ui/Badge'
 import { RowContextMenu, type RowAction } from '../../ui/Menu'
+import { RowActionButtons } from '../../ui/RowActionsMenu'
 import { ConfirmDialog } from '../../ui/Dialog'
 import { FieldRow, Switch, TextInput } from '../../ui/Field'
 import { Select } from '../../ui/Select'
@@ -91,17 +94,17 @@ export function PluginsSection() {
   return (
     <div className="flex flex-col gap-2" data-section="plugins">
       <div className="flex justify-end gap-2">
-        {autoUpdate && installed && <Button variant="ghost" className="min-h-11" disabled={updateBusy} aria-busy={updateAll.isPending} onClick={requestUpdateAll}>{m.plugins_update_all()}</Button>}
-        <Button variant="ghost" className="min-h-11" aria-expanded={browsing} onClick={() => setBrowsing(!browsing)}>{m.plugins_catalog()}</Button>
+        {autoUpdate && installed && <IconButton variant="ghost" label={m.plugins_update_all()} disabled={updateBusy} aria-busy={updateAll.isPending} onClick={requestUpdateAll}><CircleArrowUp aria-hidden="true" /></IconButton>}
+        <IconButton variant="ghost" label={m.plugins_catalog()} active={browsing} aria-expanded={browsing} onClick={() => setBrowsing(!browsing)}><Store aria-hidden="true" /></IconButton>
       </div>
       {autoUpdate && <PluginAutoUpdateRow state={autoUpdate} />}
       {updatedAll?.context === streamContext && updatedAll.rows.length > 0 && <PluginUpdateAllResults rows={updatedAll.rows} />}
       {browsing && <PluginCatalogList updating={updateBusy} updatingKey={update.isPending ? update.variables.key : null} onUpdate={requestUpdate} />}
-      {plugins.data.read_only && <div className="text-xs text-warning">{m.plugins_read_only()}</div>}
-      {plugins.data.plugin_isolation_advisory && <div className="text-xs text-warning" data-advisory="plugin-isolation">{m.plugins_isolation_advisory()}</div>}
-      {!installed && <EmptyState>{browsing ? m.plugins_catalog_no_installed() : m.plugins_empty()}</EmptyState>}
+      {plugins.data.read_only && <div className="flex min-w-0"><StatusDot state="warning" title={m.plugins_read_only()}>{m.plugins_read_only()}</StatusDot></div>}
+      {plugins.data.plugin_isolation_advisory && <div className="flex min-w-0" data-advisory="plugin-isolation"><StatusDot state="warning" title={m.plugins_isolation_advisory()}>{m.plugins_isolation_advisory()}</StatusDot></div>}
+      {!installed && <EmptyState compact>{browsing ? m.plugins_catalog_no_installed() : m.plugins_empty()}</EmptyState>}
       {installed && <TextInput type="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={m.plugins_filter()} aria-label={m.plugins_filter()} />}
-      {installed && list.length === 0 && <EmptyState>{m.plugins_filter_empty()}</EmptyState>}
+      {installed && list.length === 0 && <EmptyState compact>{m.plugins_filter_empty()}</EmptyState>}
       <ul className="flex flex-col divide-y divide-border-subtle">
         {list.map((p) => <InstalledPluginRow key={p.key} plugin={p} editable={editable} open={open === p.key} onOpen={setOpen} updateBusy={updateBusy}
           updating={update.isPending && update.variables.key === p.key} blockedFindings={scan?.key === p.key && scan.status === 'blocked' ? scan.findings : null} onUpdate={requestUpdate} />)}
@@ -128,15 +131,15 @@ interface InstalledPluginRowProps {
 // Memoized so typing in the filter renders only the rows entering the list (TAL-1405); each filter answer is a new response.
 const InstalledPluginRow = memo(function InstalledPluginRow({ plugin: p, editable, open, onOpen, updateBusy, updating, blockedFindings, onUpdate }: InstalledPluginRowProps) {
   return (
-    <PluginRow id={p.key} title={<>{p.name ?? p.key}{p.version ? <span className="ml-1 text-[11px] text-muted">v{p.version}</span> : null}</>} description={`${p.kind ? `${p.kind} · ` : ''}${p.description ?? ''}`} status={<>
-        {p.update?.available && <span className="text-[11px] text-warning">{m.plugins_update_available()}</span>}
-        {p.is_active_provider && <span className="rounded-full bg-accent-bg px-2 py-0.5 text-xs uppercase tracking-wider text-accent-text">{m.providers_active()}</span>}
-        <span className={p.enabled !== false ? 'text-[11px] text-success' : 'text-[11px] text-muted'}>{p.enabled !== false ? m.plugins_enabled() : m.plugins_disabled()}{p.activation ? ` · ${p.activation}` : ''}</span>
+    <PluginRow id={p.key} title={<>{p.name ?? p.key}{p.version ? <span className="ml-1 text-xs font-normal tabular-nums text-muted">v{p.version}</span> : null}</>} description={`${p.kind ? `${p.kind} · ` : ''}${p.description ?? ''}`} status={<>
+        {p.update?.available && <StatusDot state="warning">{m.plugins_update_available()}</StatusDot>}
+        {p.is_active_provider && <Mark>{m.providers_active()}</Mark>}
+        <StatusDot state={p.enabled !== false ? 'ok' : 'idle'}>{p.enabled !== false ? m.plugins_enabled() : m.plugins_disabled()}{p.activation ? ` · ${p.activation}` : ''}</StatusDot>
       </>} actions={[
-        ...(editable && p.update?.available ? [{ label: m.plugins_update(), run: () => onUpdate(p.key), disabled: updateBusy, busy: updating }] : []),
-        ...(editable && p.settings?.length ? [{ label: m.settings_title(), run: () => onOpen(open ? null : p.key), expanded: open }] : []),
+        ...(editable && p.update?.available ? [{ label: m.plugins_update(), run: () => onUpdate(p.key), disabled: updateBusy, busy: updating, icon: CircleArrowUp }] : []),
+        ...(editable && p.settings?.length ? [{ label: m.settings_title(), run: () => onOpen(open ? null : p.key), expanded: open, icon: Settings2 }] : []),
       ]}>
-      {p.disabled_reason && <p className="mt-1 text-[11px] text-warning [overflow-wrap:anywhere]">{m.plugins_disabled_by_update({ reason: p.disabled_reason.reason })}</p>}
+      {p.disabled_reason && <div className="mt-1 flex min-w-0"><StatusDot state="warning" title={m.plugins_disabled_by_update({ reason: p.disabled_reason.reason })}>{m.plugins_disabled_by_update({ reason: p.disabled_reason.reason })}</StatusDot></div>}
       {p.oauth_clients?.length ? <ul className="mt-2 flex flex-col gap-2">{p.oauth_clients.map((c) => <PluginOAuthClientRow key={c.id} pluginKey={p.key} client={c} editable={editable} />)}</ul> : null}
       {blockedFindings !== null && <div role="alert" className="mt-2 whitespace-pre-line text-xs text-error [overflow-wrap:anywhere]">{blockedFindings}</div>}
       {editable && open && p.settings ? <PluginSettingsForm pluginKey={p.key} fields={p.settings} onSaved={() => onOpen(null)} /> : null}
@@ -144,7 +147,7 @@ const InstalledPluginRow = memo(function InstalledPluginRow({ plugin: p, editabl
   )
 }, sameRowProps<InstalledPluginRowProps>('plugin'))
 
-interface PluginRowAction extends RowAction { expanded?: boolean }
+type PluginRowAction = RowAction & { icon: NonNullable<RowAction['icon']> }
 
 /**
  * Installed and catalog entries share the existing Plugins row and disclosure layout; its actions show inline and in its right-click and long-press menu.
@@ -152,9 +155,9 @@ interface PluginRowAction extends RowAction { expanded?: boolean }
  */
 function PluginRow({ id, title, description, status, actions, children }: { id?: string; title: ReactNode; description: string; status: ReactNode; actions: PluginRowAction[]; children?: ReactNode }) {
   const row = <li className="py-2" data-plugin={id}><div className="flex flex-wrap items-center gap-3">
-    <div className="min-w-0 flex-1 basis-40"><div className="text-sm font-medium text-text">{title}</div><div className="truncate text-[11px] text-muted" title={description || undefined}>{description}</div></div>
+    <div className="min-w-0 flex-1 basis-40"><div className="text-sm font-medium text-text">{title}</div><div className="truncate text-xs text-muted" title={description || undefined}>{description}</div></div>
     {status}
-    {actions.map((action) => <Button key={action.label} variant="ghost" className="min-h-11 min-w-11 px-2 py-1 text-xs" disabled={action.disabled === true} aria-busy={action.busy === true} aria-expanded={action.expanded} onClick={action.run}>{action.label}</Button>)}
+    <RowActionButtons actions={actions} />
   </div>{children}</li>
   return <RowContextMenu label={m.plugins_row_menu()} actions={actions} trigger={row} />
 }
@@ -173,25 +176,25 @@ function PluginAutoUpdateRow({ state }: { state: PluginAutoUpdateView }) {
   const status = state.inactive_reason === 'no_gateway' ? m.gateway_not_running() : state.inactive_reason === 'checks_off' ? m.plugins_auto_update_checks_off() : enabled ? m.plugins_auto_update_every({ hours: state.check_hours }) : null
   return <div className="border-b border-border-subtle"><FieldRow label={m.plugins_auto_update()} htmlFor="plugins-auto-update" inline>
     <div className="flex items-center gap-3">
-      {status && <span className={state.inactive_reason ? 'text-[11px] text-warning' : 'text-[11px] tabular-nums text-muted'}>{status}</span>}
+      {status && (state.inactive_reason ? <StatusDot state="warning">{status}</StatusDot> : <span className="text-xs tabular-nums text-muted">{status}</span>)}
       <Switch id="plugins-auto-update" checked={enabled} onCheckedChange={(checked) => save.mutate(checked)} />
     </div>
   </FieldRow></div>
 }
 
-const UPDATE_ALL_STATUS: Record<PluginUpdateAllRow['status'], { label: () => string; tone: string }> = {
-  updated: { label: m.plugins_update_all_updated, tone: 'text-success' },
-  current: { label: m.plugins_update_all_current, tone: 'text-muted' },
-  failed: { label: m.plugins_update_all_failed, tone: 'text-error' },
-  needs_review: { label: m.plugins_update_all_needs_review, tone: 'text-warning' },
-  skipped: { label: m.plugins_update_all_skipped, tone: 'text-muted' },
+const UPDATE_ALL_STATUS: Record<PluginUpdateAllRow['status'], { label: () => string; state: DotState }> = {
+  updated: { label: m.plugins_update_all_updated, state: 'ok' },
+  current: { label: m.plugins_update_all_current, state: 'idle' },
+  failed: { label: m.plugins_update_all_failed, state: 'error' },
+  needs_review: { label: m.plugins_update_all_needs_review, state: 'warning' },
+  skipped: { label: m.plugins_update_all_skipped, state: 'idle' },
 }
 
 function PluginUpdateAllResults({ rows }: { rows: PluginUpdateAllRow[] }) {
   return <ul aria-label={m.plugins_update_all_results()} className="flex flex-col gap-1 border-b border-border-subtle pb-2 text-xs">
     {rows.map((row) => <li key={row.name} className="flex flex-wrap gap-x-2">
       <span className="font-medium text-text">{row.name}</span>
-      <span className={UPDATE_ALL_STATUS[row.status].tone}>{UPDATE_ALL_STATUS[row.status].label()}</span>
+      <StatusDot state={UPDATE_ALL_STATUS[row.status].state}>{UPDATE_ALL_STATUS[row.status].label()}</StatusDot>
       {row.detail && <span className="min-w-0 text-muted [overflow-wrap:anywhere]">{row.detail}</span>}
     </li>)}
   </ul>
@@ -207,18 +210,18 @@ function PluginCatalogList({ updating, updatingKey, onUpdate }: { updating: bool
   return <section aria-label={m.plugins_catalog()} className="border-b border-border-subtle pb-4">
     <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); setQuery(search); setOffset(0) }}>
       <TextInput aria-label={m.plugins_catalog_search()} value={search} maxLength={200} onChange={(event) => setSearch(event.target.value)} />
-      <Button type="submit" className="min-h-11">{m.search()}</Button>
+      <IconButton type="submit" variant="default" label={m.search()}><Search aria-hidden="true" /></IconButton>
     </form>
     {catalog.isPending ? <LoadingState /> : catalog.isError ? <ErrorState error={catalog.error} onRetry={() => { void catalog.refetch() }} /> : <>
       {!catalog.data.supported && <p className="py-2 text-xs text-muted">{m.plugins_catalog_unsupported()}</p>}
-      {catalog.data.supported && catalog.data.total === 0 && <EmptyState>{m.plugins_catalog_empty()}</EmptyState>}
+      {catalog.data.supported && catalog.data.total === 0 && <EmptyState compact>{m.plugins_catalog_empty()}</EmptyState>}
       <ul className="flex flex-col divide-y divide-border-subtle">{catalog.data.entries.map((entry) => <PluginRow key={entry.name} title={entry.title} description={entry.description} status={<>
-        <span className="text-[11px] text-muted">{entry.tier} · {entry.category}</span>
+        <span className="text-xs text-muted">{entry.tier} · {entry.category}</span>
         {entry.installed_key && <span className="text-xs text-muted">{m.plugins_catalog_on_disk()}</span>}
       </>} actions={[
-        { label: m.plugins_catalog_details(), run: () => setDetails(details === entry.name ? null : entry.name), expanded: details === entry.name },
-        ...(entry.can_update && entry.installed_key ? [{ label: m.plugins_update(), run: () => onUpdate(entry.installed_key ?? ''), disabled: updating, busy: updatingKey === entry.installed_key }] : []),
-        ...(entry.can_install ? [{ label: m.plugins_catalog_install(), run: () => install.request(entry.name), disabled: install.isInstalling(entry.name), busy: install.isInstalling(entry.name) }] : []),
+        { label: m.plugins_catalog_details(), run: () => setDetails(details === entry.name ? null : entry.name), expanded: details === entry.name, icon: Info },
+        ...(entry.can_update && entry.installed_key ? [{ label: m.plugins_update(), run: () => onUpdate(entry.installed_key ?? ''), disabled: updating, busy: updatingKey === entry.installed_key, icon: CircleArrowUp }] : []),
+        ...(entry.can_install ? [{ label: m.plugins_catalog_install(), run: () => install.request(entry.name), disabled: install.isInstalling(entry.name), busy: install.isInstalling(entry.name), icon: Download }] : []),
       ]}>
         {details === entry.name && <div className="mt-2 space-y-1 text-xs text-muted [overflow-wrap:anywhere]">
           <p>{entry.repo}</p><p>{entry.sha}</p>{entry.installed_sha && <p>{entry.installed_sha}</p>}
@@ -228,19 +231,19 @@ function PluginCatalogList({ updating, updatingKey, onUpdate }: { updating: bool
         {install.blocked(entry.name)}
       </PluginRow>)}</ul>
       <div className="flex justify-end gap-2">
-        {offset > 0 && <Button variant="ghost" className="min-h-11" onClick={() => setOffset(0)}>{m.plugins_catalog_first()}</Button>}
-        {catalog.data.next_offset !== null && <Button variant="ghost" className="min-h-11" onClick={() => setOffset(catalog.data.next_offset ?? 0)}>{m.plugins_catalog_next()}</Button>}
+        {offset > 0 && <IconButton variant="ghost" label={m.plugins_catalog_first()} onClick={() => setOffset(0)}><ChevronsLeft aria-hidden="true" /></IconButton>}
+        {catalog.data.next_offset !== null && <IconButton variant="ghost" label={m.plugins_catalog_next()} onClick={() => setOffset(catalog.data.next_offset ?? 0)}><ChevronRight aria-hidden="true" /></IconButton>}
       </div>
     </>}
     {install.consent}
   </section>
 }
 
-const OAUTH_STATE: Record<PluginOAuthClientView['state'], { label: () => string; tone: string }> = {
-  signed_in: { label: m.plugins_oauth_signed_in, tone: 'text-success' },
-  sign_in_needed: { label: m.plugins_oauth_sign_in_needed, tone: 'text-warning' },
-  revoked: { label: m.plugins_oauth_revoked, tone: 'text-warning' },
-  logged_out: { label: m.plugins_oauth_logged_out, tone: 'text-muted' },
+const OAUTH_STATE: Record<PluginOAuthClientView['state'], { label: () => string; state: DotState }> = {
+  signed_in: { label: m.plugins_oauth_signed_in, state: 'ok' },
+  sign_in_needed: { label: m.plugins_oauth_sign_in_needed, state: 'warning' },
+  revoked: { label: m.plugins_oauth_revoked, state: 'warning' },
+  logged_out: { label: m.plugins_oauth_logged_out, state: 'idle' },
 }
 
 /** TAL-1276: one OAuth client the plugin declares, its sign-in state, and its Sign in / Sign out actions for the server owner. */
@@ -257,8 +260,8 @@ function PluginOAuthClientRow({ pluginKey, client, editable }: { pluginKey: stri
     <li className="flex flex-col gap-1 text-xs" data-oauth-client={client.id}>
       <div className="flex items-center gap-3">
         <span className="min-w-0 flex-1 truncate font-medium text-text">{client.id}</span>
-        <span className={state.tone}>{state.label()}</span>
-        {editable && client.can_sign_out ? <Button variant="ghost" className="px-2 py-1 text-xs" disabled={signOut.isPending} onClick={() => signOut.mutate()}>{m.plugins_oauth_sign_out()}</Button> : null}
+        <StatusDot state={state.state}>{state.label()}</StatusDot>
+        {editable && client.can_sign_out ? <IconButton variant="ghost" label={m.plugins_oauth_sign_out()} disabled={signOut.isPending} onClick={() => signOut.mutate()}><LogOut aria-hidden="true" /></IconButton> : null}
       </div>
       {editable && (
         <OAuthSignIn provider={`plugin:${pluginKey}:${client.id}`} label={client.id} signedIn={client.state === 'signed_in'} onApproved={refresh} idPrefix={`pluginOauth-${pluginKey}-${client.id}-`} compact>
@@ -282,7 +285,7 @@ function PastedRedirect({ flowId }: { flowId: string }) {
       <label className="text-muted" htmlFor={id}>{m.oauth_plugin_paste()}</label>
       <div className="flex items-center gap-2">
         <div className="min-w-0 flex-1"><TextInput id={id} autoComplete="off" spellCheck={false} placeholder="http://127.0.0.1/…" value={url} onChange={(e) => setUrl(e.target.value)} /></div>
-        <Button type="submit" disabled={submit.isPending || !url.trim()}>{m.oauth_plugin_paste_submit()}</Button>
+        <IconButton type="submit" variant="default" label={m.oauth_plugin_paste_submit()} disabled={submit.isPending || !url.trim()}><Check aria-hidden="true" /></IconButton>
       </div>
       {submit.isError && <p className="text-warning" role="alert">{submit.error instanceof Error ? submit.error.message : String(submit.error)}</p>}
     </form>
@@ -328,7 +331,8 @@ function PluginSettingsForm({ pluginKey, fields, onSaved }: { pluginKey: string;
           </FieldRow>
         )
       })}
-      <div className="flex justify-end pt-1"><Button type="submit" variant="primary" disabled={Object.keys(drafts).length === 0}>{m.save()}</Button></div>
+      <div className="flex justify-end pt-1"><IconButton type="submit" variant="default" label={m.save()} disabled={Object.keys(drafts).length === 0}><Check aria-hidden="true" /></IconButton></div>
+
     </form>
   )
 }

@@ -5,11 +5,10 @@ import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { useWorkspacesQuery } from '../../app/queries'
 import { HubPage } from '../../shell/AppShell'
-import { PanelHeadButton } from '../../shell/PanelHead'
-import { Badge } from '../../ui/Badge'
-import { Button } from '../../ui/Button'
+import { Mark } from '../../ui/Badge'
+import { Button, IconButton } from '../../ui/Button'
 import { TextInput } from '../../ui/Field'
-import { ConfirmDialog, Dialog } from '../../ui/Dialog'
+import { ConfirmDialog, Dialog, DialogFooter } from '../../ui/Dialog'
 import { Row, RowList } from '../../ui/List'
 import { RowContextMenu, type RowAction } from '../../ui/Menu'
 import { RowActionsMenu } from '../../ui/RowActionsMenu'
@@ -46,10 +45,10 @@ export function WorkspacesPage() {
     reorder.mutate(next.map((w) => w.path).filter((path) => confirmed.has(path)))
   }
   return (
-    <HubPage title={m.tab_workspaces()} help={m.workspace_desc()} actions={<PanelHeadButton label={m.workspace_add()} className="primary" onClick={() => setAdding(true)}><Plus size={16} aria-hidden="true" /></PanelHeadButton>}>
+    <HubPage title={m.tab_workspaces()} help={m.workspace_desc()} actions={<IconButton variant="primary" tooltipSide="bottom" label={m.workspace_add()} onClick={() => setAdding(true)}><Plus aria-hidden="true" /></IconButton>}>
       {ws.isPending && <LoadingState />}
       {ws.isError && <ErrorState error={ws.error} onRetry={() => { void ws.refetch() }} />}
-      {ws.isSuccess && list.length === 0 && <EmptyState>{m.workspace_no_workspaces()}</EmptyState>}
+      {ws.isSuccess && list.length === 0 && <EmptyState compact>{m.workspace_no_workspaces()}</EmptyState>}
       <RowList id="workspacesPanel">
         {list.map((w, i) => {
           // A space still being added has no server entry to move, rename or remove yet.
@@ -63,7 +62,7 @@ export function WorkspacesPage() {
             <Row>
               <div className="flex items-center gap-2">
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline gap-2 text-sm font-semibold text-text"><span className="truncate">{w.name}</span>{ws.data?.last === w.path && <Badge tone="border-accent text-accent-text">{m.workspace_current()}</Badge>}</div>
+                  <div className="flex items-baseline gap-2 text-sm font-semibold text-text"><span className="truncate">{w.name}</span>{ws.data?.last === w.path && <Mark>{m.workspace_current()}</Mark>}</div>
                   <div className="truncate font-mono text-xs text-muted" title={w.path}>{w.path}</div>
                 </div>
                 <RowActionsMenu label={m.workspace_row_menu()} actions={actions} />
@@ -102,7 +101,8 @@ function WorkspaceDialog({ workspace, onClose, onSubmit }: { workspace?: { path:
           <datalist id="workspaceSuggestions">{suggestions.map((s) => <option key={s} value={s} />)}</datalist>
         </>}
         <TextInput autoFocus={!!workspace} value={name} onChange={(e) => setName(e.target.value)} placeholder={m.workspace_name_placeholder()} aria-label={workspace ? m.workspace_rename_prompt() : m.workspace_name_placeholder()} />
-        <div className="flex justify-end gap-2"><Button onClick={onClose}>{m.cancel()}</Button><Button type="submit" variant="primary">{workspace ? m.save() : m.add()}</Button></div>
+        <DialogFooter><Button onClick={onClose}>{m.cancel()}</Button><Button type="submit" variant="primary">{workspace ? m.save() : m.add()}</Button></DialogFooter>
+
       </form>
     </Dialog>
   )

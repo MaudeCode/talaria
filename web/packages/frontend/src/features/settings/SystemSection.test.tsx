@@ -598,7 +598,8 @@ describe('SystemSection version list (TAL-946)', () => {
       const region = await path(name)
       const update = await region.findByRole('button', { name: label })
       const row = update.parentElement!
-      expect(within(row).getAllByRole('button').map((button) => button.textContent)).toEqual([label, 'Summarize with AI'])
+      expect(within(row).getAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual([label, 'Summarize with AI'])
+
       expect(getComputedStyle(row).display === 'flex' || row.className.includes('flex')).toBe(true)
       await userEvent.click(region.getByRole('button', { name: /more version/ }))
       expect(region.getAllByRole('button', { name: 'Summarize with AI' })).toHaveLength(1)

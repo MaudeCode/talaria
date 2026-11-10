@@ -1,20 +1,22 @@
 import { useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, ChevronUp } from 'lucide-react'
+import { ChevronDown, ChevronUp, CircleArrowUp, Download, Power, RefreshCw, Sparkles } from 'lucide-react'
 import type { WebUpdateChannel } from '@maudecode/talaria-web-contracts'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { useBootstrap } from '../../app/bootstrap'
-import { Button } from '../../ui/Button'
+import { Button, IconButton } from '../../ui/Button'
 import { cn } from '../../ui/cn'
 import { Select } from '../../ui/Select'
-import { ConfirmDialog, Dialog } from '../../ui/Dialog'
+import { ConfirmDialog, Dialog, DialogFooter } from '../../ui/Dialog'
 import { ErrorState, LoadingState, formatDate } from '../../ui/States'
 import { SectionHeader } from '../../ui/List'
+import { StatusDot } from '../../ui/Badge'
+
 import { showErrorToast } from '../toast/errorToast'
 import { useSettingField } from './useSettingField'
-import { SettingAction, SettingToggle, SettingsGroup } from './SettingsRows'
+import { SettingAction, SettingToggle, SettingsGroup, SETTINGS_PAGE } from './SettingsRows'
 import type { z } from 'zod'
 import type { UpdateApplySchema, UpdateTargetSchema, UpdateVersionSchema } from '../../contracts'
 import { useUpdateProgress } from '../notifications/UpdateNotificationCenter'
@@ -86,9 +88,9 @@ export function SystemSection() {
   })
   const applyWeb = useMutation(applyTarget('webui'))
   const applyAgent = useMutation(applyTarget('agent'))
-  /** One version's Install button; the one being applied reads Updating. */
+  /** One version's Install button; the one being applied is busy. */
   const install = (apply: typeof applyWeb) => (v: UpdateVersion) => (
-    <Button onClick={() => apply.mutate({ version: v.ref })} disabled={apply.isPending} aria-label={m.system_install_version({ version: v.version })}>{apply.isPending && apply.variables.version === v.ref ? m.update_updating() : m.system_install()}</Button>
+    <IconButton variant="default" label={m.system_install_version({ version: v.version })} onClick={() => apply.mutate({ version: v.ref })} disabled={apply.isPending} aria-busy={(apply.isPending && apply.variables.version === v.ref) || undefined}><Download aria-hidden="true" /></IconButton>
   )
   if (settings.isPending) return <LoadingState />
   if (settings.isError) return <ErrorState error={settings.error} onRetry={() => { void settings.refetch() }} />
@@ -102,15 +104,15 @@ export function SystemSection() {
   const agentStatus = pathStatus(agentUpdate, AGENT, { failed: updates.isError && !cachedCurrent, pending: updates.isPending })
   const recheck = () => { void qc.invalidateQueries({ queryKey: keys.updates.check }) }
   return (
-    <div className="flex flex-col gap-7" data-section="system">
+    <div className={SETTINGS_PAGE} data-section="system">
       <SettingsGroup id="updates" title={m.system_updates()} hint={m.system_updates_intro()}
-        action={<Button onClick={() => checkNow.mutate()} disabled={checkNow.isPending}>{checkNow.isPending ? m.settings_checking() : bool('ignore_agent_updates') ? m.system_check_web() : m.system_check_both()}</Button>}>
+        action={<IconButton variant="ghost" label={checkNow.isPending ? m.settings_checking() : bool('ignore_agent_updates') ? m.system_check_web() : m.system_check_both()} onClick={() => checkNow.mutate()} disabled={checkNow.isPending}><RefreshCw aria-hidden="true" /></IconButton>}>
         <div className="grid gap-x-10 gap-y-8 py-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,19rem),1fr))]">
           <UpdatePath id="systemWebPath" title={WEB} installed={webUpdate?.current_version ?? str('webui_version', bootstrap.webui_version)} status={webStatus}
             channel={<Select id="settingsUpdateChannel" aria-label={m.settings_label_web_update_channel()} disabled={!canManage} value={channel} onValueChange={setChannel}>
               {webChannels.map((c) => <option key={c} value={c}>{CHANNEL_LABELS[c]()}</option>)}
             </Select>}
-            action={canManage && webUpdate?.can_apply ? <Button variant="primary" onClick={() => applyWeb.mutate({})} disabled={applyWeb.isPending}>{applyWeb.isPending && !applyWeb.variables.version ? m.update_updating() : webUpdate.state === 'finish' ? m.system_finish_update() : m.system_apply_web_update()}</Button> : null}
+            action={canManage && webUpdate?.can_apply ? <IconButton variant="default" label={applyWeb.isPending && !applyWeb.variables.version ? m.update_updating() : webUpdate.state === 'finish' ? m.system_finish_update() : m.system_apply_web_update()} onClick={() => applyWeb.mutate({})} disabled={applyWeb.isPending}><CircleArrowUp aria-hidden="true" /></IconButton> : null}
             folded={canManage ? webUpdate?.versions.filter((v) => v.folded) : undefined} install={install(applyWeb)}
             manualLink={webUpdate?.manual_link === true}
             summary={webUpdate?.summary_available ? <UpdateSummary target="webui" name={WEB} info={webUpdate} /> : null}>
@@ -121,7 +123,7 @@ export function SystemSection() {
               <option value="stable">{m.settings_update_channel_stable()}</option>
               <option value="experimental">{m.settings_update_channel_experimental()}</option>
             </Select>}
-            action={canManage && agentUpdate?.can_apply ? <Button variant="primary" onClick={() => applyAgent.mutate({})} disabled={applyAgent.isPending}>{applyAgent.isPending && !applyAgent.variables.version ? m.update_updating() : m.system_apply_agent_update()}</Button> : null}
+            action={canManage && agentUpdate?.can_apply ? <IconButton variant="default" label={applyAgent.isPending && !applyAgent.variables.version ? m.update_updating() : m.system_apply_agent_update()} onClick={() => applyAgent.mutate({})} disabled={applyAgent.isPending}><CircleArrowUp aria-hidden="true" /></IconButton> : null}
             folded={canManage ? agentUpdate?.versions.filter((v) => v.folded) : undefined} install={install(applyAgent)}
             /* Before TAL-946 the server sent no `support_label`; `unsupported` answers only for one that predates `support` (TAL-350). */
             support={agentUpdate?.can_apply ? agentSupport(agentUpdate) : null}
@@ -145,7 +147,7 @@ export function SystemSection() {
       </SettingsGroup>
       {canManage && (
         <SettingsGroup id="server" title={m.settings_group_server()}>
-          <SettingAction label={m.system_shutdown()} hint={m.system_shutdown_hint()}><Button variant="danger" onClick={() => setConfirmShutdown(true)}>{m.system_shutdown()}</Button></SettingAction>
+          <SettingAction label={m.system_shutdown()} hint={m.system_shutdown_hint()}><IconButton variant="danger" label={m.system_shutdown()} onClick={() => setConfirmShutdown(true)}><Power aria-hidden="true" /></IconButton></SettingAction>
         </SettingsGroup>
       )}
       <ConfirmDialog open={confirmShutdown} onOpenChange={setConfirmShutdown} title={m.system_shutdown()} description={m.system_shutdown_confirm()} confirmLabel={m.system_shutdown()} cancelLabel={m.cancel()} danger onConfirm={() => shutdown.mutate()} />
@@ -199,12 +201,12 @@ function UpdateSummary({ target, name, info }: { target: 'webui' | 'agent'; name
   const summary = useQuery({ queryKey: [...keys.updates.summary, target, info.current_sha, info.latest_sha, info.target_version, info.behind], queryFn: () => api.fetchUpdatesSummary(target), enabled: open, staleTime: Infinity, retry: false })
   return (
     <>
-      <Button onClick={() => setOpen(true)}>{m.system_summarize_with_ai()}</Button>
+      <IconButton variant="default" label={m.system_summarize_with_ai()} onClick={() => setOpen(true)}><Sparkles aria-hidden="true" /></IconButton>
       <Dialog open={open} onOpenChange={setOpen} title={m.system_summary_title({ name })} description={summary.data?.current_version && summary.data.target_version ? `${summary.data.current_version} → ${summary.data.target_version}` : undefined} maxWidth={600}>
         <div className="max-h-[60vh] overflow-y-auto text-sm">
           {summary.isPending ? <p role="status" className="text-muted">{m.system_whats_new_loading()}</p>
             : summary.isError ? (
-              <div className="flex flex-wrap items-center gap-3"><p role="alert" className="text-muted">{m.system_whats_new_failed()}</p><Button onClick={() => { void summary.refetch() }}>{m.retry()}</Button></div>
+              <div className="flex flex-wrap items-center gap-3"><p role="alert" className="text-muted">{m.system_whats_new_failed()}</p><IconButton variant="default" label={m.retry()} onClick={() => { void summary.refetch() }}><RefreshCw aria-hidden="true" /></IconButton></div>
             ) : (
               <div className="flex flex-col gap-4">
                 {summary.data.summary_sections.map((section) => (
@@ -216,31 +218,32 @@ function UpdateSummary({ target, name, info }: { target: 'webui' | 'agent'; name
               </div>
             )}
         </div>
-        <div className="mt-4 flex justify-end"><Button onClick={() => setOpen(false)}>{m.close()}</Button></div>
+        <DialogFooter className="mt-4"><Button onClick={() => setOpen(false)}>{m.close()}</Button></DialogFooter>
       </Dialog>
     </>
   )
 }
 
+// A node is a ring (inset, so it keeps its 11px), filled when it marks a version that is or will be installed.
 const NODE: Record<Tone | 'installed', string> = {
-  installed: 'border-text bg-text',
-  update: 'border-accent bg-accent',
-  ok: 'border-success bg-success',
-  warn: 'border-warning bg-transparent',
-  quiet: 'border-border2 bg-transparent',
+  installed: 'ring-text bg-text',
+  update: 'ring-accent bg-accent',
+  ok: 'ring-success bg-success',
+  warn: 'ring-warning bg-bg',
+  quiet: 'ring-border2 bg-bg',
 }
 
 function PathNode({ tone, children }: { tone: Tone | 'installed'; children: ReactNode }) {
   return (
     <li className="relative pb-4 last:pb-0">
-      <span aria-hidden="true" className={cn('absolute top-[5px] -left-[22px] size-[11px] rounded-full border-2', NODE[tone])} />
+      <span aria-hidden="true" className={cn('absolute top-[5px] -left-[22px] size-[11px] rounded-full ring-2 ring-inset', NODE[tone])} />
       {children}
     </li>
   )
 }
 
 function SupportLine({ support }: { support: Support | null }) {
-  return support ? <p className={cn('mt-0.5 text-xs', support.unchecked ? 'text-warning' : 'text-muted')}>{support.label}</p> : null
+  return support ? <p className="mt-0.5 flex min-w-0 text-xs text-muted">{support.unchecked ? <StatusDot state="warning" title={support.label}>{support.label}</StatusDot> : support.label}</p> : null
 }
 
 /**
@@ -261,16 +264,18 @@ function UpdatePath({ id, title, installed, installedNote, status, channel, acti
       </div>
       <ol className={cn('ml-[5px] self-start border-l pl-4', next && status.tone === 'update' ? 'border-accent' : 'border-border')}>
         <PathNode tone={next ? 'installed' : 'ok'}>
-          <div className="text-[11px] text-muted">{m.system_path_installed()}</div>
+          <div className="text-xs text-muted">{m.system_path_installed()}</div>
           <div className="font-mono text-sm text-text break-all">{installed}</div>
-          {installedNote ? <p className="mt-1 text-xs text-warning">{installedNote}</p> : null}
+          {installedNote ? <p className="mt-1 flex min-w-0"><StatusDot state="warning" title={installedNote}>{installedNote}</StatusDot></p> : null}
           {!next ? <p role="status" className="mt-1 text-xs text-muted">{status.text}</p> : null}
         </PathNode>
         {next && folded.length ? (
           <PathNode tone="quiet">
-            <Button variant="ghost" className="-my-3 -ml-3 min-h-11" aria-expanded={open} onClick={() => setOpen(!open)}>
-              {m.system_more_versions({ n: folded.length })}{open ? <ChevronUp size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}
-            </Button>
+            <div className="-my-2 flex items-center gap-1 text-xs text-muted">
+              <span>{m.system_more_versions({ n: folded.length })}</span>
+              <IconButton variant="ghost" label={m.system_more_versions({ n: folded.length })} aria-expanded={open} onClick={() => setOpen(!open)}>{open ? <ChevronUp aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}</IconButton>
+            </div>
+
           </PathNode>
         ) : null}
         {/* Oldest first, so the path reads down toward the newest release. */}

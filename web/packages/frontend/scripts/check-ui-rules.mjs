@@ -9,6 +9,13 @@ const ALLOWED_SIZES = new Set(['11px', '13px', '20px'])
 /** The Settings row kit, which defines its rows on `FieldRow`. */
 const SETTINGS_KIT = new Set(['src/features/settings/SettingsRows.tsx', 'src/features/settings/SettingsGroup.tsx'])
 const UPDATE = 'node scripts/check-ui-rules.mjs --update'
+/** TAL-2131: the folders that wear marks, dots and symbol buttons instead of chips, pills and words (design-system §7, §12). */
+const SYMBOL_FOLDERS = ['settings', 'profiles', 'workspaces', 'logs', 'connectors'].map((folder) => `src/features/${folder}/`)
+const inSymbolFolders = (file) => SYMBOL_FOLDERS.some((folder) => file.startsWith(folder))
+/** A class string with both `rounded-full` and a border width (`border`, `border-2`, `border-t`): a pill, not a dot or a bar. */
+const PILL = /(?<![\w-])rounded-full(?![\w-])[^"'`]*?(?<![\w-])border(?:-[0-9]+|-[xytblr])?(?![\w-])|(?<![\w-])border(?:-[0-9]+|-[xytblr])?(?![\w-])[^"'`]*?(?<![\w-])rounded-full(?![\w-])/g
+/** Blanks every `<DialogFooter>` block, keeping its line breaks, so a dialog's confirm and cancel words are not counted. */
+const withoutDialogFooters = (text) => text.replace(/<DialogFooter(?![\w$])[\s\S]*?<\/DialogFooter>/g, (block) => block.replace(/[^\n]/g, ' '))
 
 /** Each rule: the paths it scans (prefixes relative to the package), a matcher returning one entry per hit, and its message. */
 const RULES = {
@@ -21,6 +28,22 @@ const RULES = {
     scope: (file) => file.startsWith('src/features/') || file.startsWith('src/shell/'),
     match: (line) => [...line.matchAll(/type="(?:checkbox|radio|range)"/g)],
     message: 'use Switch, MenuCheckboxItem, MenuRadioItem or Slider',
+  },
+  pill: {
+    scope: inSymbolFolders,
+    match: (line) => [...line.matchAll(/<Badge(?![\w$])/g), ...line.matchAll(PILL)],
+    message: 'design-system §7: no Badge or pill here; a state is a StatusDot, a selection a Mark, a plan or kind word joins the second line',
+  },
+  'success-text': {
+    scope: (file) => file.startsWith('src/features/') || file.startsWith('src/shell/'),
+    match: (line) => [...line.matchAll(/(?<![\w-])text-success(?![\w-])/g)],
+    message: 'design-system §7: success is a StatusDot (ui/Badge.tsx) or a meter, never green text',
+  },
+  'word-button': {
+    scope: inSymbolFolders,
+    prepare: withoutDialogFooters,
+    match: (line) => [...line.matchAll(/<Button(?![\w$])/g)],
+    message: 'design-system §12: a symbol IconButton with an aria-label and tooltip; words stay only in a DialogFooter',
   },
   'settings-heading': {
     scope: (file) => file.startsWith('src/features/settings/'),
@@ -54,9 +77,13 @@ export function scan(root) {
       const file = relative(root, path).split(sep).join('/')
       const rules = Object.entries(RULES).filter(([, rule]) => rule.scope(file))
       if (!rules.length) continue
-      readFileSync(path, 'utf8').split('\n').forEach((text, i) => {
-        for (const [id, rule] of rules) for (const _ of rule.match(text)) hits.push({ rule: id, file, line: i + 1 })
-      })
+      const source = readFileSync(path, 'utf8')
+      for (const [id, rule] of rules) {
+        (rule.prepare ? rule.prepare(source) : source).split('\n').forEach((text, i) => {
+          for (const _ of rule.match(text)) hits.push({ rule: id, file, line: i + 1 })
+        })
+      }
+
     }
   }
   return hits

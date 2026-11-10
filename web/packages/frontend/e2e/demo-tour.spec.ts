@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { SettingsSectionSchema } from '@maudecode/talaria-web-contracts'
 import { ToolsTabSchema } from '../src/contracts/url'
 import type { Page, TestInfo } from '@playwright/test'
-import { DUO_VIEWPORTS, expect, expectNoOverflow, settle, test } from './fixtures'
+import { expect, expectNoOverflow, settle, test } from './fixtures'
 import { bootDemoServer, DEMO_SESSION_ID } from './demo-server'
 
 test.use({ serviceWorkers: 'block' })
@@ -103,12 +103,9 @@ test('every data page shows its seeded data in the light theme', async ({ page }
 })
 
 /** Sections whose pane scrolls sideways today, keyed `<section>-<project or Duo viewport>`, with the ticket that fixes each. Shrinks only. */
-const KNOWN_PANE_OVERFLOW: Readonly<Record<string, string>> = {
-  // A hidden centered tooltip on the trailing header action sticks out past the pane's right edge.
-  'profiles-mobile': 'TAL-2125',
-  'workspaces-mobile': 'TAL-2125',
-  ...Object.fromEntries(DUO_VIEWPORTS.flatMap(({ name }) => ['profiles', 'workspaces'].map((section) => [`${section}-${name}`, 'TAL-2125']))),
-}
+// TAL-2131 retired TAL-2125's entries: the header actions are symbol buttons with the shared Tooltip, which mounts only while shown.
+const KNOWN_PANE_OVERFLOW: Readonly<Record<string, string>> = {}
+
 
 // TAL-2103: the Settings gallery. Every section, and each Tools tab, shows its heading with no sideways scroll; with
 // `TOUR_SHOTS` each is saved as `settings-<id>-<project>.png`, the picture a Settings change is reviewed against.
@@ -136,7 +133,15 @@ async function settingsPages(page: Page, info: TestInfo, theme: Theme) {
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${name} has no horizontal overflow`).toBe(true)
       const known = KNOWN_PANE_OVERFLOW[`${name}-${info.project.name}`]
       expect(await pane.evaluate((el) => el.scrollWidth <= el.clientWidth), known ? `${name} still overflows its pane (${known}); remove its KNOWN_PANE_OVERFLOW entry` : `${name} has no horizontal overflow in its pane`).toBe(!known)
+      // TAL-2131: under a finger every symbol button is a 44px target.
+      if (info.project.name === 'mobile') {
+        const small = await page.locator('#main [data-icon-button]').evaluateAll((buttons) => buttons.filter((b) => b.getClientRects().length > 0)
+          .map((b) => ({ label: b.getAttribute('aria-label'), width: b.getBoundingClientRect().width, height: b.getBoundingClientRect().height }))
+          .filter((b) => b.width < 44 || b.height < 44))
+        expect(small, `${name} icon buttons are 44px touch targets`).toEqual([])
+      }
       await check(`settings-${name}`, true, { locator: pane, known: (viewport) => KNOWN_PANE_OVERFLOW[`${name}-${viewport}`] })
+
     }
   } finally { await page.goto('about:blank').catch(() => undefined); await server.close() }
 }

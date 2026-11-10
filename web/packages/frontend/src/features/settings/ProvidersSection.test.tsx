@@ -214,7 +214,7 @@ describe('ProvidersSection', () => {
     renderSection()
     const pace = await screen.findByTestId('provider-quota-pace', {}, { timeout: 2000 })
     expect(pace.closest('[data-provider]')).toHaveAttribute('data-provider', 'anthropic')
-    expect(within(pace.closest<HTMLElement>('[data-provider]')!).getByText('max')).toBeInTheDocument()
+    expect(within(pace.closest<HTMLElement>('[data-provider]')!).getByText(/(^| · )max( · |$)/)).toBeInTheDocument()
     expect(within(pace).getByText('Weekly')).toBeInTheDocument()
     expect(within(pace).getByText('68% remaining')).toBeInTheDocument()
     expect(within(pace).getByText(`Resets ${new Date('2026-10-03T08:00:00Z').toLocaleString('en', { dateStyle: 'medium', timeStyle: 'short' })}`)).toBeInTheDocument()
@@ -263,8 +263,8 @@ describe('ProvidersSection', () => {
     ])
     renderSection()
     const zai = (await screen.findByText('Z.AI')).closest<HTMLElement>('[data-provider="zai"]')!
-    expect(await within(zai).findByText('Remaining: Warning', {}, { timeout: 2000 })).toHaveClass('text-warning')
-    expect(within(zai).getByText('Pace: Critical')).toHaveClass('text-error')
+    expect((await within(zai).findByText('Remaining: Warning', {}, { timeout: 2000 })).closest('[data-status]')).toHaveAttribute('data-status', 'warning')
+    expect(within(zai).getByText('Pace: Critical').closest('[data-status]')).toHaveAttribute('data-status', 'error')
     const openrouter = zai.parentElement!.querySelector<HTMLElement>('[data-provider="openrouter"]')!
     expect(openrouter.querySelector('[data-quota-urgency]')).toBeNull()
   })
@@ -276,8 +276,9 @@ describe('ProvidersSection', () => {
     quotaResponse.current = onPace
     renderSection()
     const pace = await screen.findByTestId('provider-quota-pace', {}, { timeout: 2000 })
-    expect(within(pace).getByText('Remaining: Healthy')).toHaveAttribute('data-level', 'healthy')
-    expect(within(pace).getByText('Pace: Warning')).toHaveClass('text-warning')
+    expect(within(pace).getByText('Remaining: Healthy').closest('[data-quota-urgency]')).toHaveAttribute('data-level', 'healthy')
+    expect(within(pace).getByText('Pace: Warning').closest('[data-status]')).toHaveAttribute('data-status', 'warning')
+
     expect(within(pace).getByText('On pace')).toBeInTheDocument()
     expect(within(pace).queryByText(/over pace/)).not.toBeInTheDocument()
   })

@@ -84,10 +84,12 @@ describe('ConnectorsSection (TAL-818)', () => {
     renderWith(<ConnectorsSection />)
     const gmail = await screen.findByRole('switch', { name: 'Gmail available to Hermes' })
     expect(gmail).toHaveAttribute('aria-disabled', 'true')
-    expect(within(gmail.closest('li')!).getByText('Off by organization rule')).toBeInTheDocument()
+    expect(within(gmail.closest('li')!).getByText(/^Off by organization rule( · |$)/)).toBeInTheDocument()
+
     const notion = screen.getByRole('switch', { name: 'Notion available to Hermes' })
     expect(notion).not.toBeChecked()
-    expect(within(screen.getByRole('list', { name: 'Notion accounts' })).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['workDisconnect', 'old@example.testDisconnect'])
+    expect(within(screen.getByRole('list', { name: 'Notion accounts' })).getAllByRole('listitem').map((li) => `${li.textContent ?? ''}|${within(li).getByRole('button').getAttribute('aria-label') ?? ''}`)).toEqual(['work|Disconnect', 'old@example.test|Disconnect'])
+
     await userEvent.click(notion)
     expect(api.setConnectorRule).toHaveBeenCalledWith('notion', 'rev-7', { enabled: true })
   })

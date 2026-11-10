@@ -24,6 +24,14 @@
       "src/features/settings/QuotaThresholds.tsx": 1,
       "src/features/settings/SpeechSection.tsx": 6
     },
+    "success-text": {
+      "src/features/auth/LoginPage.tsx": 1,
+      "src/features/background/BackgroundWork.tsx": 1,
+      "src/features/chat/blocks/OutboundDraftResult.tsx": 2,
+      "src/features/notifications/UpdatingDialog.tsx": 2,
+      "src/features/onboarding/OAuthSignIn.tsx": 2,
+      "src/features/onboarding/OnboardingPage.tsx": 1
+    },
     "text-size": {
       "src/features/chat/ApprovalCard.tsx": 1,
       "src/features/chat/ChatView.tsx": 1,
@@ -38,7 +46,6 @@
       "src/features/meshy/MeshyItemView.tsx": 6,
       "src/features/meshy/MeshyModelCard.tsx": 3,
       "src/features/meshy/ModelViewer.tsx": 3,
-      "src/features/settings/AppearanceSection.tsx": 1,
       "src/features/settings/SettingsSection.tsx": 1,
       "src/features/share/SharePage.tsx": 2,
       "src/features/skills/SessionSkillsPage.tsx": 1,

@@ -37,7 +37,8 @@ describe('OpenRouter cost card', () => {
     expect(bars[0]).toHaveAttribute('title', '2026-09-22 · no baseline')
     expect(screen.getByText('7-day spend')).toBeInTheDocument()
     expect(screen.getByTestId('provider-cost-pace')).toHaveTextContent('Monthly pace: $33.90(80%)')
-    expect(screen.getByText('80% of $42.37 budget (monthly pace)')).toHaveClass('text-warning')
+    expect(screen.getByText('80% of $42.37 budget (monthly pace)').closest('[data-status]')).toHaveAttribute('data-status', 'warning')
+
     expect(document.querySelector('[data-budget-level="warn"] [style]')).toHaveStyle({ width: '80%' })
     expect(screen.getByRole('spinbutton', { name: 'Monthly budget' })).toHaveValue(42.37)
   })

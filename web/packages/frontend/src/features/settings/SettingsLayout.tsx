@@ -97,7 +97,8 @@ export function SectionMenu() {
                 <li key={entry.id} id={resultId(index)} role="option" aria-selected={index === highlight} data-settings-result={entry.id} onMouseDown={(e) => e.preventDefault()} onMouseEnter={() => setHighlight(index)} onClick={() => choose(entry)}
                   className={cn('flex flex-col gap-0.5 px-2.5 py-[7px] rounded-(--r-sm) cursor-pointer text-[13px]', index === highlight && 'bg-hover')}>
                   <span className="font-medium text-text">{entry.label()}</span>
-                  <span className="text-[11px] text-muted">{SECTION_LABEL[entry.section]()} · {entry.group()}</span>
+                  <span className="text-xs text-muted">{SECTION_LABEL[entry.section]()} · {entry.group()}</span>
+
                 </li>
               ))}
             </ul>)}

@@ -5,7 +5,7 @@ import { LoadingState, ErrorState } from '../../ui/States'
 import { NAV_ITEMS, FIXED_TABS } from '../../shell/nav'
 import { useProviderQuotas, useSetSidebarQuotaPins, useSidebarQuotaPins } from '../../lib/useProviderQuotas'
 import { quotaSourceName } from '../insights/QuotaMeter'
-import { SettingNumber, SettingRow, SettingSelect, SettingToggle as Toggle, SettingsGroup } from './SettingsRows'
+import { SettingNumber, SettingRow, SettingSelect, SettingToggle as Toggle, SettingsGroup, SETTINGS_PAGE } from './SettingsRows'
 
 /** TAL-1870, TAL-2075: pins the sidebar's quota sources from the server's projection, one switch row per source. */
 function SidebarQuotaSources() {
@@ -37,7 +37,7 @@ export function SidebarSection() {
   if (settings.isPending) return <LoadingState />
   if (settings.isError) return <ErrorState error={settings.error} onRetry={() => { void settings.refetch() }} />
   return (
-    <div className="flex flex-col gap-7" data-section="navigation">
+    <div className={SETTINGS_PAGE} data-section="navigation">
       <SettingsGroup id="chats" title={m.settings_group_chats_list()}>
         <SettingNumber label={m.settings_label_pinned_limit()} hint={m.settings_desc_pinned_limit()} id="settingsPinnedLimit" settingKey="pinned_sessions_limit" fallback={3} max={50} />
         <SettingSelect label={m.settings_label_sidebar_density()} id="settingsSidebarDensity" settingKey="sidebar_density" fallback="compact" options={[

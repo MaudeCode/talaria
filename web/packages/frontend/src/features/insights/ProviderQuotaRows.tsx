@@ -4,7 +4,7 @@ import { m } from '../../paraglide/messages.js'
 import { useLocale } from '../../i18n/useLocale'
 import { formatBurnRate, formatMinutes, formatPercent, resetTime } from '../../i18n/units'
 import type { ProviderQuotasSchema } from '../../contracts'
-import { Badge } from '../../ui/Badge'
+import { Badge, Mark } from '../../ui/Badge'
 import { Button } from '../../ui/Button'
 import { MetricCell, Row, RowList, SectionHeader } from '../../ui/List'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
@@ -71,7 +71,7 @@ function QuotaSourceRow({ source: s, mode, locale }: { source: QuotaSource; mode
         <span className="text-sm font-semibold text-text">{name}</span>
         {account && <span className="text-xs text-muted">{account}</span>}
         {plan && <Badge tone="border-border text-muted">{plan}</Badge>}
-        {s.is_active_provider && <Badge tone="border-accent text-accent-text">{m.provider_quota_active_provider()}</Badge>}
+        {s.is_active_provider && <Mark>{m.provider_quota_active_provider()}</Mark>}
         {status !== 'available' && <span className={cn('text-xs', stale ? 'text-warning' : 'text-error')}>{quotaStatusText(s)}</span>}
       </div>
       {(s.windows ?? []).map((w, i) => <QuotaWindowRow key={`${w.label}-${String(i)}`} window={w} source={s} mode={mode} locale={locale} />)}

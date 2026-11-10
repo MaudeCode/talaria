@@ -8,6 +8,7 @@
 import { Activity, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { RightPanel } from './RightPanel'
 import { cn } from '../ui/cn'
+import { TAB_STRIP, tabClass } from '../ui/TabStrip'
 
 export interface PanelPage {
   /** Stable id: persisted as the user's choice and used in element ids. */
@@ -77,7 +78,7 @@ export function PanelPageHost({ open, onToggle, onClose, label, pages, activeId,
     tabs.current[target]?.focus()
   }
   const tablist = (
-    <div ref={attachStrip} role="tablist" aria-label={label} className="panel-tabs flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" onKeyDown={onKeyDown}>
+    <div ref={attachStrip} role="tablist" aria-label={label} className={cn('panel-tabs', TAB_STRIP)} onKeyDown={onKeyDown}>
       {pages.map((p, i) => {
         const selected = p.id === active?.id
         return (
@@ -92,7 +93,7 @@ export function PanelPageHost({ open, onToggle, onClose, label, pages, activeId,
             tabIndex={selected ? 0 : -1}
             data-page={p.id}
             // Labels stay whole; the tab strip scrolls, so the focus ring is drawn inside the tab, never clipped by it.
-            className={cn('panel-tab shrink-0 whitespace-nowrap rounded-md px-2 py-1 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent', selected ? 'bg-surface-subtle text-text' : 'text-muted hover:text-text')}
+            className={cn('panel-tab focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent', tabClass(selected))}
             onClick={() => onSelect(p.id)}
           >
             {p.label}

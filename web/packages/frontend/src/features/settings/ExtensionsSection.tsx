@@ -1,14 +1,17 @@
 import { useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
+import { ArrowUpRight, Download, Trash2 } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { useExtensionManifests } from '../../extensions/registry'
 import type { ExtensionManifest } from '../../contracts/extension'
 import { readExtensionSettings, writeExtensionSetting, type SettingValue } from '../../extensions/host'
-import { Badge } from '../../ui/Badge'
-import { Button } from '../../ui/Button'
+import { Mark, StatusDot } from '../../ui/Badge'
+import { IconButton, iconButtonClass } from '../../ui/Button'
+import { Tooltip } from '../../ui/Tooltip'
+import { RowContextMenu, type RowAction } from '../../ui/Menu'
 import { Switch, TextInput } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { ConfirmDialog } from '../../ui/Dialog'
@@ -19,7 +22,7 @@ import { useResourceEffects, useResourceMutation, withEffects, type ResourceEffe
 import { ResourceSwitch } from '../sessions/ResourceSwitch'
 import { Row, RowList } from '../../ui/List'
 import { cn } from '../../ui/cn'
-import { SettingRow, SettingsGroup } from './SettingsGroup'
+import { SettingRow, SettingsGroup, SETTINGS_PAGE } from './SettingsGroup'
 
 const GUIDE = 'https://github.com/MaudeCode/talaria/blob/main/web/docs/architecture/extension-migration-guide.md'
 
@@ -67,9 +70,9 @@ export function ExtensionsSection() {
   const installed = new Set(list.map((e) => e.id))
   const canManage = bootstrap.auth.can_manage_server
   return (
-    <div className="flex flex-col gap-5">
+    <div className={SETTINGS_PAGE}>
       <SettingsGroup id="installed" title={m.extensions_installed()}>
-        {list.length === 0 && <EmptyState>{m.extensions_none()}</EmptyState>}
+        {list.length === 0 && <EmptyState compact>{m.extensions_none()}</EmptyState>}
         <RowList>
           {list.map((e) => <ExtensionRow key={e.id} ext={e} canManage={canManage} effect={effects[`extension:${e.id}`]} consentEffect={effects[`extension-consent:${e.id}`]} onToggle={(enabled) => toggle.mutate({ id: e.id, enabled })} onConsent={(value) => consent.mutate({ id: e.id, consent: value })} onUninstall={() => setConfirmUninstall(e.id)} />)}
         </RowList>
@@ -78,17 +81,20 @@ export function ExtensionsSection() {
         {registry.isPending && <LoadingState />}
         {(registry.isError || registry.data?.unavailable) && <p className="py-2 text-xs text-muted">{m.extensions_unavailable()}</p>}
         <RowList>
-          {gallery.map((g) => (
-            <Row key={g.id}>
-              <div className="flex items-center gap-3">
-                <div className="min-w-0 flex-1">
-                  <ExtensionName name={g.name ?? g.id ?? ''} version={g.version} />
-                  {g.description && <div className="truncate text-xs text-muted">{g.description}</div>}
+          {gallery.map((g) => {
+            const install: RowAction[] = !installed.has(g.id ?? '') && canManage ? [{ label: m.extensions_install(), run: () => act.mutate({ action: 'install', body: { id: g.id, download_url: g.download_url, sha256: g.sha256 } }), disabled: act.isPending, icon: Download }] : []
+            return (
+              <RowContextMenu key={g.id} label={m.extensions_row_menu()} actions={install} trigger={<Row>
+                <div className="flex items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <ExtensionName name={g.name ?? g.id ?? ''} version={g.version} />
+                    {g.description && <div className="truncate text-xs text-muted" title={g.description}>{g.description}</div>}
+                  </div>
+                  {installed.has(g.id ?? '') ? <Mark>{m.ext_gallery_installed()}</Mark> : canManage && <IconButton variant="default" label={m.extensions_install()} onClick={install[0]?.run} disabled={act.isPending}><Download aria-hidden="true" /></IconButton>}
                 </div>
-                {installed.has(g.id ?? '') ? <span className="text-xs text-muted">{m.extensions_installed()}</span> : canManage && <Button onClick={() => act.mutate({ action: 'install', body: { id: g.id, download_url: g.download_url, sha256: g.sha256 } })} disabled={act.isPending}>{m.extensions_install()}</Button>}
-              </div>
-            </Row>
-          ))}
+              </Row>} />
+            )
+          })}
         </RowList>
       </SettingsGroup>
       <ConfirmDialog open={confirmUninstall !== null} onOpenChange={(o) => { if (!o) setConfirmUninstall(null) }} title={m.extensions_uninstall()} description={confirmUninstall ?? ''} confirmLabel={m.extensions_uninstall()} cancelLabel={m.cancel()} danger onConfirm={() => { if (confirmUninstall) uninstall.mutate(confirmUninstall) }} />
@@ -98,23 +104,31 @@ export function ExtensionsSection() {
 
 function ExtensionRow({ ext, canManage, effect, consentEffect, onToggle, onConsent, onUninstall }: { ext: ExtensionManifest; effect: ResourceEffect<boolean> | undefined; consentEffect: ResourceEffect<boolean> | undefined; canManage: boolean; onToggle: (enabled: boolean) => void; onConsent: (consent: boolean) => void; onUninstall: () => void }) {
   const perms = Object.entries(ext.permissions ?? {}).filter(([, v]) => v).map(([k]) => k)
+  const navigate = useNavigate()
+  const openable = !!(ext.panel || ext.native_view) && ext.enabled
+  const actions: RowAction[] = [
+    ...(openable ? [{ label: m.extensions_open(), run: () => { void navigate({ to: '/ext/$extensionId', params: { extensionId: ext.id } }) } }] : []),
+    ...(canManage && ext.source === 'gallery' ? [{ label: m.extensions_uninstall(), run: onUninstall, danger: true }] : []),
+  ]
+  // TAL-2131: the source word leads the second line instead of a chip.
+  const second = [ext.agent_host ? m.tab_agent() : ext.source, ext.display_id ?? ext.id, ext.description].filter(Boolean).join(' · ')
   return (
-    <Row className={cn(!ext.enabled && 'opacity-80')} data-extension-id={ext.id} data-source={ext.source}>
+    <RowContextMenu label={m.extensions_row_menu()} actions={actions} trigger={<Row className={cn(!ext.enabled && 'opacity-80')} data-extension-id={ext.id} data-source={ext.source}>
       <div className="flex flex-wrap items-center gap-2">
         <div className="min-w-0 flex-1">
-          <ExtensionName name={ext.name} version={ext.version}><Badge tone="border-border text-muted">{ext.agent_host ? m.tab_agent() : ext.source}</Badge></ExtensionName>
-          <div className="text-xs text-muted">{ext.display_id ?? ext.id}{ext.description ? ` · ${ext.description}` : ''}</div>
+          <ExtensionName name={ext.name} version={ext.version} />
+          <div className="truncate text-xs text-muted" title={second}>{second}</div>
         </div>
-        {(ext.panel || ext.native_view) && ext.enabled && <Link to="/ext/$extensionId" params={{ extensionId: ext.id }} className="text-xs text-accent-text underline">{m.extensions_open()}</Link>}
+        {openable && <Tooltip label={m.extensions_open()} side="top"><Link to="/ext/$extensionId" params={{ extensionId: ext.id }} aria-label={m.extensions_open()} className={iconButtonClass('default')}><ArrowUpRight aria-hidden="true" /></Link></Tooltip>}
         {canManage && ext.can_toggle && (
           <ResourceSwitch effect={effect} checked={ext.enabled} onCheckedChange={(checked) => onToggle(checked)} aria-label={ext.name} stateLabel={(enabled) => enabled ? m.plugins_enabled() : m.plugins_disabled()} />
         )}
-        {canManage && ext.source === 'gallery' && <Button variant="ghost-danger" onClick={onUninstall}>{m.extensions_uninstall()}</Button>}
+        {canManage && ext.source === 'gallery' && <IconButton variant="danger" label={m.extensions_uninstall()} onClick={onUninstall}><Trash2 aria-hidden="true" /></IconButton>}
       </div>
       {(ext.capabilities.length > 0 || perms.length > 0) && (
-        <div className="flex flex-wrap gap-1">
-          {ext.capabilities.map((c) => <Badge key={c} tone="border-border text-muted">{c}</Badge>)}
-          {perms.map((p) => <Badge key={p} tone="border-warning text-warning">{p}</Badge>)}
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted" data-extension-capabilities="">
+          {ext.capabilities.length > 0 && <span className="min-w-0 truncate" title={ext.capabilities.join(' · ')}>{ext.capabilities.join(' · ')}</span>}
+          {perms.length > 0 && <StatusDot state="warning" title={perms.join(', ')}>{perms.join(', ')}</StatusDot>}
         </div>
       )}
       {ext.settings_schema.length > 0 && <ExtensionSettings ext={ext} />}
@@ -130,9 +144,10 @@ function ExtensionRow({ ext, canManage, effect, consentEffect, onToggle, onConse
           {ext.warnings.length > 0 && <ul>{ext.warnings.map((w) => <li key={w}>{w === 'web_extension_migration_required' ? m.extensions_web_migration_required() : w}</li>)}</ul>}
         </div>
       )}
-    </Row>
+    </Row>} />
   )
 }
+
 
 /** A row's header line: the name, the version in muted text, then any state badge. */
 function ExtensionName({ name, version, children }: { name: string; version?: string | undefined; children?: ReactNode }) {

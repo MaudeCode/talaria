@@ -1,19 +1,19 @@
 import { useRef, useState } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ConnectorOperationView, ConnectorToolsView, ConnectorView } from '@maudecode/talaria-web-contracts'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { ChevronDown, ChevronRight, Plug, Plus, Unplug } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { isApiError } from '../../contracts'
 import { useDebounced } from '../../lib/useDebounced'
-import { Badge } from '../../ui/Badge'
-import { Button } from '../../ui/Button'
+import { StatusDot } from '../../ui/Badge'
+import { IconButton } from '../../ui/Button'
 import { cn } from '../../ui/cn'
 import { ConfirmDialog } from '../../ui/Dialog'
 import { TextInput } from '../../ui/Field'
 import { Row, RowList } from '../../ui/List'
-import { RowContextMenu } from '../../ui/Menu'
+import { RowContextMenu, type RowAction } from '../../ui/Menu'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { useResourceEffects, useResourceMutation, withEffects } from '../sessions/useResourceMutation'
@@ -93,8 +93,8 @@ export function ConnectorsSection() {
       canStart={page.data.sign_in_required || offer?.actions.includes('sign_in')} onStart={() => setSignInContext(context)}
       onDismiss={offered && offer?.actions.includes('dismiss') ? () => { if (offer.offer_id) { setSignInContext(null); dismiss.mutate(offer.offer_id) } } : undefined}
       onApproved={() => { setSignInContext(null); refresh() }} />}
-    {!page.data.sign_in_required && page.data.rules_error && <p role="status" className="mb-2 text-xs text-error" data-connectors-rules-error>{page.data.rules_error}</p>}
-    {page.data.connectors.length === 0 && !page.data.sign_in_required && <EmptyState>{m.connectors_empty()}</EmptyState>}
+    {!page.data.sign_in_required && page.data.rules_error && <p role="status" className="mb-2 flex min-w-0" data-connectors-rules-error><StatusDot state="error" title={page.data.rules_error}>{page.data.rules_error}</StatusDot></p>}
+    {page.data.connectors.length === 0 && !page.data.sign_in_required && <EmptyState compact>{m.connectors_empty()}</EmptyState>}
     <RowList aria-label={m.settings_section_connectors_title()} data-section="connectors">
       {page.data.connectors.map((connector) => (
         <ConnectorRow key={connector.slug} connector={connector} ruleBusy={!revision}
@@ -124,22 +124,26 @@ function ConnectorRow({ connector, ruleBusy, onRule }: { connector: ConnectorVie
     onError: (error) => showToast(error instanceof Error && error.message ? error.message : m.connectors_failed(), 5000, 'error'),
   })
   const accounts = withEffects(connector.accounts, (account) => `connector-account:${account.connection_id}`, effects)
+  const actions: RowAction[] = operation ? [] : [{ label: connector.connected ? m.connectors_add_account() : m.connectors_connect(), run: () => connect.mutate(), disabled: connect.isPending }]
+  const ConnectIcon = connector.connected ? Plus : Plug
+  // TAL-2131: the org-lock word leads the second line instead of a chip.
+  const second = [connector.org_locked ? m.connectors_org_locked() : null, connector.description].filter(Boolean).join(' · ')
   return (
     <Row data-connector={connector.slug}>
-      <div className="flex items-center gap-3">
+      {/* The header line alone carries the menu, so each account row below keeps its own. */}
+      <RowContextMenu label={m.connectors_row_menu()} actions={actions} trigger={<div className="flex items-center gap-3">
         {connector.logo_url && <img src={connector.logo_url} alt="" className="size-6 shrink-0 rounded" />}
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-1.5 text-sm">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
             <span className="font-medium text-text">{connector.name}</span>
-            {connector.connected && <Badge tone="border-success/50 text-success">{m.connectors_state_connected()}</Badge>}
-            {connector.org_locked && <Badge tone="border-border text-muted">{m.connectors_org_locked()}</Badge>}
+            {connector.connected && <StatusDot state="ok">{m.connectors_state_connected()}</StatusDot>}
           </div>
-          {connector.description && <div className="line-clamp-1 text-xs text-muted">{connector.description}</div>}
+          {second && <div className="truncate text-xs text-muted" title={second}>{second}</div>}
         </div>
-        {!operation && <Button disabled={connect.isPending} onClick={() => connect.mutate()}>{connector.connected ? m.connectors_add_account() : m.connectors_connect()}</Button>}
+        {actions.map((action) => <IconButton key={action.label} variant="default" label={action.label} disabled={action.disabled} onClick={action.run}><ConnectIcon aria-hidden="true" /></IconButton>)}
         <ResourceSwitch effect={effects[ruleResource(connector.slug, { enabled: connector.enabled })]} checked={connector.enabled} disabled={!connector.rules_editable || ruleBusy} onCheckedChange={(enabled) => onRule({ enabled })}
           aria-label={m.connectors_enabled_aria({ name: connector.name })} />
-      </div>
+      </div>} />
       {operation && <PageConnect initial={operation} name={connector.name} onDone={() => { setOperation(null); void qc.invalidateQueries({ queryKey: keys.connectors.page }) }} />}
       {accounts.length > 0 && (
         <RowList className="pl-9" aria-label={m.connectors_accounts_aria({ name: connector.name })}>
@@ -148,17 +152,18 @@ function ConnectorRow({ connector, ruleBusy, onRule }: { connector: ConnectorVie
             return <RowContextMenu key={account.connection_id} label={m.connectors_account_row_menu()} actions={[disconnect]} trigger={<Row compact>
               <span className="min-w-0 flex-1 truncate text-text">{account.name}</span>
               {account.problem && <span className="text-muted" title={account.status_reason ?? undefined}>{PROBLEM[account.problem]()}</span>}
-              <Button variant="ghost" className="px-2 py-1 text-xs" onClick={disconnect.run}>{disconnect.label}</Button>
+              <IconButton variant="danger" label={disconnect.label} onClick={disconnect.run}><Unplug aria-hidden="true" /></IconButton>
             </Row>} />
           })}
         </RowList>
       )}
       {connector.connected && (
         <div className="pl-9">
-          <button type="button" className="inline-flex items-center gap-1 text-xs text-muted hover:text-text" aria-expanded={toolsOpen} onClick={() => setToolsOpen((open) => !open)}>
-            {toolsOpen ? <ChevronDown size={13} aria-hidden="true" /> : <ChevronRight size={13} aria-hidden="true" />}
-            {m.connectors_tools()}{connector.tools_off > 0 && ` · ${m.connectors_tools_off({ count: String(connector.tools_off) })}`}
-          </button>
+          <div className="flex items-center gap-1 text-xs text-muted">
+            <span>{m.connectors_tools()}{connector.tools_off > 0 && ` · ${m.connectors_tools_off({ count: String(connector.tools_off) })}`}</span>
+            <IconButton variant="ghost" label={m.connectors_tools()} aria-expanded={toolsOpen} onClick={() => setToolsOpen((open) => !open)}>{toolsOpen ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}</IconButton>
+          </div>
+
           {toolsOpen && <ToolList slug={connector.slug} busy={ruleBusy} onRule={onRule} />}
         </div>
       )}
@@ -166,6 +171,7 @@ function ConnectorRow({ connector, ruleBusy, onRule }: { connector: ConnectorVie
         title={m.connectors_disconnect_title({ name: removing?.name ?? '' })} description={m.connectors_disconnect_desc({ app: connector.name })}
         confirmLabel={m.connectors_disconnect()} cancelLabel={m.cancel()} onConfirm={() => { if (removing) remove.mutate(removing.id) }} />
     </Row>
+
   )
 }
 
@@ -180,16 +186,17 @@ function ToolList({ slug, busy, onRule }: { slug: string; busy: boolean; onRule:
   return (
     <div className="mt-1 flex flex-col gap-1">
       <TextInput type="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={m.connectors_tools_filter()} aria-label={m.connectors_tools_filter()} autoComplete="off" />
-      {q && shown.length === 0 ? <EmptyState>{m.connectors_tools_filter_empty()}</EmptyState> : (
+      {q && shown.length === 0 ? <EmptyState compact>{m.connectors_tools_filter_empty()}</EmptyState> : (
         <RowList aria-label={m.connectors_tools()} className={cn(tools.isPlaceholderData && 'opacity-60')}>
           {shown.map((tool) => (
             <Row compact key={tool.slug}>
               <span className="text-sm text-text">{tool.name}</span>
-              <span className="text-[11px] text-muted">{FACET[tool.facet]()}</span>
-              {tool.locked && <span className="text-[11px] text-muted">{m.connectors_org_locked()}</span>}
+              <span className="text-xs text-muted">{FACET[tool.facet]()}</span>
+              {tool.locked && <span className="text-xs text-muted">{m.connectors_org_locked()}</span>}
               <ResourceSwitch className="ml-auto" effect={effects[ruleResource(slug, { tool: tool.slug, tool_enabled: tool.enabled })]} checked={tool.enabled} disabled={!tool.editable || busy} onCheckedChange={(on) => onRule({ tool: tool.slug, tool_enabled: on })}
                 aria-label={m.connectors_tool_aria({ name: tool.name })} />
-              {tool.description && <span className="line-clamp-1 basis-full text-[11px] text-muted">{tool.description}</span>}
+              {tool.description && <span className="line-clamp-1 basis-full text-xs text-muted">{tool.description}</span>}
+
             </Row>
           ))}
         </RowList>

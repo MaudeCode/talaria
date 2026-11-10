@@ -23,6 +23,7 @@ import { EmptyState, ErrorState, LoadingState, formatDate } from '../../ui/State
 import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
 import { cn } from '../../ui/cn'
+import { TAB_STRIP, tabClass } from '../../ui/TabStrip'
 import { newResource, useResourceEffects, useResourceMutation, withCreated, withEffect, withEffects, type ResourceEffect } from '../sessions/useResourceMutation'
 import { getStreamContext, useStreamContext } from '../../stream/connection'
 import { isDefiniteRefusal } from '../../contracts/common'
@@ -253,14 +254,14 @@ export function KanbanPage() {
             {boardWrites && <MenuItem disabled={readOnly} onClick={() => setCreatingBoard(true)}>{m.kanban_new_board()}</MenuItem>}
             {boardWrites && currentBoard?.removable && <><MenuSeparator /><MenuItem disabled={readOnly} className="text-error" onClick={() => setArchivingBoard(true)}>{m.kanban_archive_board_title()}</MenuItem></>}
           </Menu>}
-          {pinned.length > 0 && <div role="tablist" aria-label={m.kanban_pinned_boards()} className="flex min-w-0 max-w-full gap-1 overflow-x-auto">
+          {pinned.length > 0 && <div role="tablist" aria-label={m.kanban_pinned_boards()} className={TAB_STRIP}>
             {pinned.map((slug, index) => {
               const item = boardList.find(b => b.slug === slug)
               if (!item) return null
               const label = item.name ?? item.slug
               const menuLabel = m.kanban_board_actions_named({ a0: label })
               return <ContextMenu key={slug} label={menuLabel} trigger={<span className="inline-flex shrink-0 items-center">
-                <Button role="tab" id={`${panelId}-${slug}`} aria-selected={current === slug} aria-controls={panelId} variant="ghost" className="max-w-52 truncate pointer-coarse:min-h-11 aria-selected:bg-accent-bg aria-selected:text-accent-text" title={label} onClick={() => selectBoard(slug)}
+                <button type="button" role="tab" id={`${panelId}-${slug}`} aria-selected={current === slug} aria-controls={panelId} className={cn(tabClass(current === slug), 'max-w-52 truncate pointer-coarse:min-h-11')} title={label} onClick={() => selectBoard(slug)}
                   draggable onDragStart={e => { e.dataTransfer.setData('application/x-talaria-kanban-pin', slug); e.dataTransfer.effectAllowed = 'move' }}
                   onDragOver={e => { if (e.dataTransfer.types.includes('application/x-talaria-kanban-pin')) e.preventDefault() }}
                   onDrop={e => { const source = e.dataTransfer.getData('application/x-talaria-kanban-pin'); if (pinned.includes(source)) { e.preventDefault(); movePin(source, index) } }}
@@ -273,7 +274,7 @@ export function KanbanPage() {
                       const next = e.key === 'Home' ? 0 : e.key === 'End' ? pinned.length - 1 : (index + direction + pinned.length) % pinned.length
                       tabs?.[next]?.focus()
                     }
-                  }}><span className="truncate">{label}</span></Button>
+                  }}><span className="truncate">{label}</span></button>
                 <Menu label={menuLabel} trigger={<IconButton label={menuLabel} className="h-8 w-8 pointer-coarse:min-h-11 pointer-coarse:min-w-11"><MoreHorizontal size={14} aria-hidden="true" /></IconButton>}>{pinItems(slug)}</Menu>
               </span>}>{pinItems(slug)}</ContextMenu>
             })}

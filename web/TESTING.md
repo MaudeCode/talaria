@@ -206,7 +206,10 @@ The frontend `lint` ends with `node scripts/check-ui-rules.mjs`, which counts pa
 in non-test `.tsx` under `src/features` and `src/shell` (`src/ui` defines the primitives and is not scanned): card
 containers (`card`), bracket text sizes other than 11px, 13px and 20px (`text-size`), raw checkbox, radio and range
 inputs (`raw-control`), and, in `src/features/settings`, page-local `<h2>`–`<h6>` (`settings-heading`) and
-`<FieldRow` outside `SettingsRows.tsx` and `SettingsGroup.tsx` (`settings-row`). `scripts/ui-rules-baseline.json` holds today's count per rule
+`<FieldRow` outside `SettingsRows.tsx` and `SettingsGroup.tsx` (`settings-row`). TAL-2131 adds `text-success` outside
+`StatusDot` and meters (`success-text`), and, under `features/settings`, `profiles`, `workspaces`, `logs` and
+`connectors`, any `Badge` or `rounded-full` element with a border (`pill`) and any `<Button` outside a `<DialogFooter>`
+(`word-button`). `scripts/ui-rules-baseline.json` holds today's count per rule
 and file. A count above it fails with each `file:line`; a count below it fails until
 `node scripts/check-ui-rules.mjs --update` lowers the baseline, which never raises a count. The only way to allow a
 new instance is a hand-written entry in the baseline's `exceptions` array,

@@ -181,7 +181,8 @@ describe('profile detail (TAL-2085)', () => {
     const router = await renderPage(DEFAULT_BOOTSTRAP, '/settings/profiles?name=ghost')
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent('No profile named "ghost".')
-    await userEvent.click(within(alert).getByRole('link', { name: 'Back to Profiles' }))
+    await userEvent.click(within(alert).getByRole('button', { name: 'Back to Profiles' }))
+
     await vi.waitFor(() => { expect(router.state.location.search).toEqual({}) })
     expect(await screen.findByText('scout')).toBeVisible()
   })

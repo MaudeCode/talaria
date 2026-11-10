@@ -2,7 +2,7 @@ import { m } from '../../paraglide/messages.js'
 import { useSetting } from '../../app/queries'
 import { openWhatsNew, useWhatsNewState } from '../whats-new/WhatsNew'
 import { openFeedback } from './FeedbackDialog'
-import { SettingLink, SettingValue, SettingValues, SettingsGroup } from './SettingsRows'
+import { SettingLink, SettingValue, SettingValues, SettingsGroup, SETTINGS_PAGE } from './SettingsRows'
 
 /** TAL-1691, TAL-2081: Settings > About, the installed versions, What's New, help links and shortcuts. */
 export function AboutSection() {
@@ -11,7 +11,7 @@ export function AboutSection() {
   const agent = useSetting('agent_version')
   const whatsNew = useWhatsNewState().state?.announcement
   return (
-    <div className="flex flex-col gap-7" data-section="about">
+    <div className={SETTINGS_PAGE} data-section="about">
       {(web || agent) && (
         <SettingsGroup id="versions" title={m.settings_group_versions()}>
           <SettingValues>

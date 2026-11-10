@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Settings in Talaria Web use stronger group headings, a narrower column, check marks and status dots instead of pills, and symbol buttons with tooltips; tab strips across the app are underlined.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { m } from '../../paraglide/messages.js'
-import { Button } from '../../ui/Button'
+import { Play, Trash2 } from 'lucide-react'
+import { IconButton } from '../../ui/Button'
 import { FieldRow, Slider, Switch, TextInput } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { audioPreferences, saveAudioPreferences, previewSound, readLocalAudio, SOUND_CHOICES, type AudioPreferences } from '../voice/completionAudio'
@@ -25,7 +26,7 @@ export function CompletionAudioSettings() {
     <FieldRow label={m.settings_audio_sound()} hint={m.settings_audio_device()} htmlFor="completionSound">
       <div className="flex flex-wrap items-center gap-2">
         <Select id="completionSound" value={preferences.sound} onValueChange={(sound) => change({ sound: sound as AudioPreferences['sound'] })}>{options}</Select>
-        <Button onClick={() => { void previewSound(preferences).catch(() => setError(m.settings_audio_error())) }}>{m.settings_audio_preview()}</Button>
+        <IconButton variant="default" label={m.settings_audio_preview()} onClick={() => { void previewSound(preferences).catch(() => setError(m.settings_audio_error())) }}><Play aria-hidden="true" /></IconButton>
       </div>
     </FieldRow>
     <FieldRow label={m.settings_audio_volume()} htmlFor="completionVolume" inline>
@@ -39,7 +40,8 @@ export function CompletionAudioSettings() {
           if (file) void readLocalAudio(file).then((custom) => { if (generation === fileGeneration.current) change({ custom }) }, () => { if (generation === fileGeneration.current) setError(m.settings_audio_invalid()) })
           e.target.value = ''
         }} />
-        {preferences.custom && <Button onClick={() => { fileGeneration.current++; change({ custom: null }) }}>{m.settings_audio_remove()}</Button>}
+        {preferences.custom && <IconButton variant="danger" label={m.settings_audio_remove()} onClick={() => { fileGeneration.current++; change({ custom: null }) }}><Trash2 aria-hidden="true" /></IconButton>}
+
       </div>
     </FieldRow>}
     <FieldRow label={m.settings_audio_quiet()} htmlFor="completionQuiet" inline><Switch id="completionQuiet" checked={preferences.quiet} onCheckedChange={(quiet) => change({ quiet })} /></FieldRow>
