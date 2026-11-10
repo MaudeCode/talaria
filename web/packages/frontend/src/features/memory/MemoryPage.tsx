@@ -118,7 +118,8 @@ export function MemoryPage() {
   const editing = draft[section] !== undefined
   const text = draft[section]?.text ?? shown
   const path = data ? (section === 'memory' ? data.memory_path : section === 'user' ? data.user_path : section === 'soul' ? data.soul_path : data.project_context_path) : ''
-  // The file name is the last segment of the path as the server sent it.
+  // The file name is the last segment of the path as the server sent it. TAL-2126 ships a name field for every file and
+  // deletes this client derivation.
   const name = (section === 'project_context' ? data?.project_context_name : undefined) || path?.split(/[\\/]/).pop() || current?.label()
   const disabled = (section === 'memory' && !data?.memory_path) || (section === 'user' && !data?.user_path)
   const mtime = data ? (section === 'memory' ? data.memory_mtime : section === 'user' ? data.user_mtime : section === 'soul' ? data.soul_mtime : data.project_context_mtime) : null
