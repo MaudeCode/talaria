@@ -105,9 +105,9 @@ export function SettingNumber({ label, hint, settingKey, field, id: givenId, fal
  * One text server setting with a Save button, enabled while the draft differs from the stored value. Save writes `parse(draft)`
  * and drops the draft once the write confirms, so a refused save keeps it. It stacks: the field needs the row's width.
  * With `summary` (TAL-2143) the row is closed by default: its `id` is the button that opens the field under it, showing
- * `summary(stored)` before its chevron; a save leaves it open.
+ * `summary` (words for a server field, such as a count) before its chevron; a save leaves it open.
  */
-export function SettingText({ label, hint, settingKey, id: givenId, fallback = '', maxLength, multiline, placeholder, parse = trimmed, format, disabled, icon, summary }: SettingProps & { fallback?: string; maxLength?: number; multiline?: boolean; placeholder?: string; parse?: (draft: string) => unknown; format?: (stored: unknown) => string; summary?: (stored: unknown) => string }) {
+export function SettingText({ label, hint, settingKey, id: givenId, fallback = '', maxLength, multiline, placeholder, parse = trimmed, format, disabled, icon, summary }: SettingProps & { fallback?: string; maxLength?: number; multiline?: boolean; placeholder?: string; parse?: (draft: string) => unknown; format?: (stored: unknown) => string; summary?: string }) {
   const id = rowId(givenId, settingKey)
   const { settings, str, set } = useSettingField([settingKey])
   const [draft, setDraft] = useState<string | null>(null)
@@ -115,9 +115,9 @@ export function SettingText({ label, hint, settingKey, id: givenId, fallback = '
   const stored = format ? format(settings.data?.[settingKey]) : str(settingKey, fallback)
   const value = draft ?? stored
   // Behind a disclosure the label names the button, so the field takes the label as its own name.
-  const field = { ...(summary ? { 'aria-label': label } : { id }), value, disabled, maxLength, placeholder }
+  const field = { ...(summary !== undefined ? { 'aria-label': label } : { id }), value, disabled, maxLength, placeholder }
   const editor = (
-    <form className={cn('flex gap-2', summary ? 'flex-col items-end' : multiline && 'items-start')} onSubmit={(e) => {
+    <form className={cn('flex gap-2', summary !== undefined ? 'flex-col items-end' : multiline && 'items-start')} onSubmit={(e) => {
       e.preventDefault()
       if (draft === null || draft === stored) return
       const submitted = draft
@@ -129,13 +129,13 @@ export function SettingText({ label, hint, settingKey, id: givenId, fallback = '
       <IconButton type="submit" variant="default" label={m.save()} disabled={disabled || value === stored}><Check aria-hidden="true" /></IconButton>
     </form>
   )
-  if (!summary) return <FieldRow label={label} htmlFor={id} hint={hint} icon={icon}>{editor}</FieldRow>
+  if (summary === undefined) return <FieldRow label={label} htmlFor={id} hint={hint} icon={icon}>{editor}</FieldRow>
   const Chevron = open ? ChevronDown : ChevronRight
   return (
     <div>
       <FieldRow label={label} htmlFor={id} hint={hint} icon={icon} inline>
         <button id={id} type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)} className="flex min-h-9 items-center gap-2 text-xs text-muted transition-colors hover:text-text focus-visible:outline-2 focus-visible:outline-accent">
-          {summary(settings.data?.[settingKey])}<Chevron size={14} aria-hidden="true" />
+          {summary}<Chevron size={14} aria-hidden="true" />
         </button>
       </FieldRow>
       {open && <div className={cn('pb-2', icon && 'ps-7')}>{editor}</div>}

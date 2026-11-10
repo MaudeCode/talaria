@@ -3133,7 +3133,7 @@
           "type": "boolean"
         },
         "summary": {
-          "description": "TAL-2143: Settings › Profiles' figures, counted over profiles whose `visible` is not false.",
+          "description": "TAL-2143: Settings › Profiles' figures, counted over profiles whose `visible` is not false, and the active profile's display name, else its name.",
           "type": "object",
           "properties": {
             "total": {
@@ -3145,11 +3145,15 @@
               "type": "integer",
               "minimum": -9007199254740991,
               "maximum": 9007199254740991
+            },
+            "active_name": {
+              "type": "string"
             }
           },
           "required": [
             "total",
-            "gateways_running"
+            "gateways_running",
+            "active_name"
           ],
           "additionalProperties": false
         }

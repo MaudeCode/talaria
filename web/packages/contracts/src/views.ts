@@ -775,6 +775,7 @@ export const SettingsSchema = z.looseObject({
   dictation_append: z.boolean().optional(), persisted_speech_keys: z.array(z.string()).optional(),
   /** TAL-279: ask before opening external chat links; `trusted_link_hosts` are exact, server-normalized hostnames that skip the ask. */
   confirm_external_links: z.boolean().optional(), trusted_link_hosts: z.array(z.string()).optional(),
+  trusted_link_hosts_count: z.number().int().optional().describe('TAL-2143: how many normalized `trusted_link_hosts` there are; load and save both answer it.'),
   provider_quota_thresholds: QuotaThresholdsSchema.optional(),
   agent_approvals: z.boolean().nullable().optional().describe('TAL-1169: the profile\'s `talaria.agent_approvals` (default false): whether an agent with the talaria toolset may approve once or deny another session\'s pending command. Null when the profile config cannot be read.'),
   compression_prepare_ahead: z.boolean().nullable().optional().describe('TAL-1825: the profile\'s `compression.prepare_ahead`; null when the Agent does not offer it.'),
@@ -802,7 +803,7 @@ export const ProfileSchema = z.looseObject({
 })
 export const ProfilesSchema = z.looseObject({
   profiles: z.array(ProfileSchema), active: z.string(), single_profile_mode: z.boolean().optional(),
-  summary: z.object({ total: z.number().int(), gateways_running: z.number().int() }).optional().describe('TAL-2143: Settings › Profiles\' figures, counted over profiles whose `visible` is not false.'),
+  summary: z.object({ total: z.number().int(), gateways_running: z.number().int(), active_name: z.string() }).optional().describe('TAL-2143: Settings › Profiles\' figures, counted over profiles whose `visible` is not false, and the active profile\'s display name, else its name.'),
 })
 export type Profiles = z.infer<typeof ProfilesSchema>
 export const ActiveProfileSchema = z.looseObject({ name: z.string(), path: z.string().optional(), is_default: z.boolean().optional(), default_workspace: NullableString.optional() })

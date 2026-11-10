@@ -51,7 +51,7 @@ export function AccessSection() {
         <SettingsGroup id="sign-in" title={m.settings_group_sign_in()} action={authEnabled ? <IconButton variant="ghost" label={m.system_logout()} onClick={() => { void logout() }}><LogOut aria-hidden="true" /></IconButton> : undefined}>
           {canManage && (bool('password_env_var')
             ? <SettingRow label={m.settings_label_password()} hint={m.password_env_var_locked()} icon={Lock} detail={<StatusDot state="ok">{m.password_env_var_set()}</StatusDot>}>{null}</SettingRow>
-            : <PasswordRow passwordSet={bool('password_auth_enabled')} warning={bootstrap.auth.no_password_warning !== null} />)}
+            : <PasswordRow passwordSet={bool('password_auth_enabled')} warning={bootstrap.auth.no_password_warning} />)}
           {canManage && !bool('auth_enabled') && <SettingToggle label={m.settings_label_auth_acknowledged()} hint={m.auth_acknowledged_label()} id="settingsAuthAck" settingKey="auth_disabled_acknowledged" icon={BellOff} onSaved={() => { void loadBootstrap() }} />}
           {passkeysOn && <>
             <SettingAction label={m.system_passkeys()}>{passkeysSupported() && <IconButton variant="default" label={m.system_passkey_register()} onClick={() => registerPasskey.mutate()} disabled={registerPasskey.isPending}><Plus aria-hidden="true" /></IconButton>}</SettingAction>
@@ -70,12 +70,12 @@ export function AccessSection() {
 
 /**
  * TAL-2143: whether a password is set, and one button that opens the password form under the row; Escape or a saved
- * password closes it. Without a password the server's no-password warning, when it reports one, is the row's state.
+ * password closes it. Without a password the server's no-password warning level, when it reports one, is the row's state.
  */
-function PasswordRow({ passwordSet, warning }: { passwordSet: boolean; warning: boolean }) {
+function PasswordRow({ passwordSet, warning }: { passwordSet: boolean; warning: 'error' | 'warning' | null }) {
   const [open, setOpen] = useState(false)
   const state = passwordSet ? <StatusDot state="ok">{m.settings_password_state_set()}</StatusDot>
-    : warning ? <StatusDot state="warning" title={m.auth_disabled_warning_message()}>{m.auth_disabled_warning_message()}</StatusDot>
+    : warning ? <StatusDot state={warning} title={m.auth_disabled_warning_message()}>{m.auth_disabled_warning_message()}</StatusDot>
     : <StatusDot state="idle">{m.settings_password_state_not_set()}</StatusDot>
   return (
     <div>

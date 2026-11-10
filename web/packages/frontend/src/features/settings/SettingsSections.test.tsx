@@ -10,7 +10,7 @@ vi.mock('../../api/endpoints', async (importOriginal) => {
   const real = await importOriginal<Record<string, unknown>>()
   return {
     ...Object.fromEntries(Object.entries(real).map(([name, value]) => [name, typeof value === 'function' ? vi.fn(() => new Promise(() => undefined)) : value])),
-    fetchSettings: vi.fn(() => Promise.resolve({ default_model: 'claude-sonnet-4-6', confirm_external_links: true, trusted_link_hosts: ['docs.example.com'] })),
+    fetchSettings: vi.fn(() => Promise.resolve({ default_model: 'claude-sonnet-4-6', confirm_external_links: true, trusted_link_hosts: ['docs.example.com'], trusted_link_hosts_count: 1 })),
     saveSettings: vi.fn((patch: Record<string, unknown>) => Promise.resolve(patch)),
     fetchModels: vi.fn(() => Promise.resolve({ groups: [] })),
     setDefaultModel: vi.fn(),
@@ -191,8 +191,8 @@ describe('settings pages', () => {
     const hosts = screen.getByRole('textbox', { name: 'Trusted link hosts' })
     expect(hosts).toHaveValue('docs.example.com')
     await userEvent.type(hosts, '\nAPI.Example.com')
-    // The server answers its normalized hosts on the reread that follows the save.
-    vi.mocked(fetchSettings).mockResolvedValueOnce({ default_model: 'claude-sonnet-4-6', confirm_external_links: false, trusted_link_hosts: ['docs.example.com', 'api.example.com'] })
+    // The server answers its normalized hosts and their count on the reread that follows the save.
+    vi.mocked(fetchSettings).mockResolvedValueOnce({ default_model: 'claude-sonnet-4-6', confirm_external_links: false, trusted_link_hosts: ['docs.example.com', 'api.example.com'], trusted_link_hosts_count: 2 })
     await userEvent.click(within(hosts.closest('form')!).getByRole('button', { name: 'Save' }))
     expect(saveSettings).toHaveBeenLastCalledWith({ trusted_link_hosts: ['docs.example.com', 'API.Example.com'] })
     await waitFor(() => expect(disclosure).toHaveTextContent('2 hosts'))
@@ -216,8 +216,8 @@ describe('settings pages', () => {
     expect(saveSettings).toHaveBeenLastCalledWith({ agent_approvals: false })
   })
 
-  it('TAL-2143: without a password the row says so, or carries the server\'s warning, and Escape closes the form Set password opens', async () => {
-    const access = (warning: 'warning' | null) => <BootstrapContext.Provider value={{ ...DEFAULT_BOOTSTRAP, auth: { ...DEFAULT_BOOTSTRAP.auth, auth_enabled: false, no_password_warning: warning } }}><AccessSection /></BootstrapContext.Provider>
+  it('TAL-2143: without a password the row says so, or carries the server\'s warning level, and Escape closes the form Set password opens', async () => {
+    const access = (warning: 'error' | 'warning' | null) => <BootstrapContext.Provider value={{ ...DEFAULT_BOOTSTRAP, auth: { ...DEFAULT_BOOTSTRAP.auth, auth_enabled: false, no_password_warning: warning } }}><AccessSection /></BootstrapContext.Provider>
     vi.mocked(fetchSettings).mockResolvedValueOnce({ password_auth_enabled: false, auth_enabled: false })
     const view = await renderSection(access(null))
     const signIn = await screen.findByRole('region', { name: 'Sign-in' })
@@ -231,10 +231,13 @@ describe('settings pages', () => {
     expect(screen.queryByText(/assistant name/i)).toBeNull()
     expect(screen.queryByRole('switch', { name: /approve/i })).toBeNull()
     view.unmount()
-    vi.mocked(fetchSettings).mockResolvedValueOnce({ password_auth_enabled: false, auth_enabled: false })
-    await renderSection(access('warning'))
-    const warned = within(await screen.findByRole('region', { name: 'Sign-in' })).getByText('This instance is accessible without authentication.')
-    expect(warned.closest('[data-status]')).toHaveAttribute('data-status', 'warning')
+    for (const level of ['warning', 'error'] as const) {
+      vi.mocked(fetchSettings).mockResolvedValueOnce({ password_auth_enabled: false, auth_enabled: false })
+      const warnedView = await renderSection(access(level))
+      const warned = within(await screen.findByRole('region', { name: 'Sign-in' })).getByText('This instance is accessible without authentication.')
+      expect(warned.closest('[data-status]')).toHaveAttribute('data-status', level)
+      warnedView.unmount()
+    }
   })
 
   it('lets only a server owner change link safety and redaction (TAL-279, TAL-1880)', async () => {

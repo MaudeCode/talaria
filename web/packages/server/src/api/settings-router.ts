@@ -137,6 +137,8 @@ async function settingsPayload(ctx: RequestContext): Promise<Dict> {
 async function derivedFields(ctx: RequestContext, into: Dict): Promise<void> {
   const deps = ctx.deps
   into.password_env_var = Boolean((deps.config.env.HERMES_WEBUI_PASSWORD ?? '').trim())
+  // TAL-2143: Settings › Access shows the normalized host count on its closed Trusted link hosts row.
+  into.trusted_link_hosts_count = Array.isArray(into.trusted_link_hosts) ? into.trusted_link_hosts.length : 0
   into.webui_version = deps.version
   into.agent_version = deps.agentVersion()
   into.update_channel = str(into.update_channel) || 'stable'
@@ -390,9 +392,10 @@ async function importProfile(ctx: RequestContext, input: Omit<SidecarParams<'pro
 export async function profileList(deps: AppDeps) {
   const active = deps.activeProfile()
   const profiles = await deps.profiles.list(active)
-  // TAL-2143: Settings › Profiles' figures, over the profiles the Agent has not hidden.
+  // TAL-2143: Settings › Profiles' figures, over the profiles the Agent has not hidden, and the active profile's shown name.
   const visible = profiles.filter((p) => p.visible !== false)
-  const summary = { total: visible.length, gateways_running: visible.filter((p) => p.gateway_running === true).length }
+  const current = profiles.find((p) => p.name === active)
+  const summary = { total: visible.length, gateways_running: visible.filter((p) => p.gateway_running === true).length, active_name: str(current?.display_name) || active }
   return { profiles: profiles as never[], active, single_profile_mode: deps.isolatedProfileMode(), summary }
 }
 

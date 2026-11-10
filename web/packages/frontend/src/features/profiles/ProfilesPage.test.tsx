@@ -120,7 +120,7 @@ describe('ProfilesPage', () => {
         { name: 'default', is_default: true, display_name: 'Writer', model: 'claude-sonnet-4-6', provider: 'anthropic', gateway_running: true, has_env: false },
         { name: 'scratch', gateway_running: false },
       ],
-      active: 'default', single_profile_mode: false, summary: { total: 2, gateways_running: 1 },
+      active: 'default', single_profile_mode: false, summary: { total: 2, gateways_running: 1, active_name: 'Writer' },
     })
     const router = await renderPage()
     await screen.findByText('Uses the default model')

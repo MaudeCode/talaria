@@ -87744,6 +87744,12 @@
                         "type": "string"
                       }
                     },
+                    "trusted_link_hosts_count": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "description": "TAL-2143: how many normalized `trusted_link_hosts` there are; load and save both answer it."
+                    },
                     "provider_quota_thresholds": {
                       "type": "object",
                       "properties": {
@@ -88132,6 +88138,12 @@
                       "items": {
                         "type": "string"
                       }
+                    },
+                    "trusted_link_hosts_count": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "description": "TAL-2143: how many normalized `trusted_link_hosts` there are; load and save both answer it."
                     },
                     "provider_quota_thresholds": {
                       "type": "object",
@@ -89234,13 +89246,17 @@
                           "type": "integer",
                           "minimum": -9007199254740991,
                           "maximum": 9007199254740991
+                        },
+                        "active_name": {
+                          "type": "string"
                         }
                       },
                       "required": [
                         "total",
-                        "gateways_running"
+                        "gateways_running",
+                        "active_name"
                       ],
-                      "description": "TAL-2143: Settings › Profiles' figures, counted over profiles whose `visible` is not false."
+                      "description": "TAL-2143: Settings › Profiles' figures, counted over profiles whose `visible` is not false, and the active profile's display name, else its name."
                     }
                   },
                   "required": [
@@ -89462,13 +89478,17 @@
                           "type": "integer",
                           "minimum": -9007199254740991,
                           "maximum": 9007199254740991
+                        },
+                        "active_name": {
+                          "type": "string"
                         }
                       },
                       "required": [
                         "total",
-                        "gateways_running"
+                        "gateways_running",
+                        "active_name"
                       ],
-                      "description": "TAL-2143: Settings › Profiles' figures, counted over profiles whose `visible` is not false."
+                      "description": "TAL-2143: Settings › Profiles' figures, counted over profiles whose `visible` is not false, and the active profile's display name, else its name."
                     },
                     "is_default": {
                       "type": "boolean"

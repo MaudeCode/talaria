@@ -72,8 +72,6 @@ export function ProfilesPage({ name }: { name?: string | undefined } = {}) {
   const list = withCreated(withEffects(profiles.data?.profiles ?? [], (p) => `profile:${p.name}`, effects), 'profile', effects)
   const active = profiles.data?.active
   const summary = profiles.data?.summary
-  const activeRow = list.find((p) => p.name === active)
-  const activeName = activeRow ? activeRow.display_name || activeRow.name : active
   // TAL-213: opening a Bot Chat always reasserts its profile (another tab may have moved the shared cookie).
   const openBotChat = (name: string) => switchProfile.mutate({ name, botChat: true })
   // TAL-2143: a click anywhere on a profile's block opens its detail; its name stays the link keyboards and the browser's link menu use.
@@ -125,7 +123,7 @@ export function ProfilesPage({ name }: { name?: string | undefined } = {}) {
       {profiles.isSuccess && list.length === 0 && <EmptyState compact>{m.profile_no_configuration()}</EmptyState>}
       {summary && <SettingsStats label={m.tab_profiles()} stats={[
         { id: 'profiles', label: m.tab_profiles(), value: String(summary.total) },
-        ...(activeName ? [{ id: 'active', label: m.profile_stat_active_here(), value: activeName, title: activeName }] : []),
+        { id: 'active', label: m.profile_stat_active_here(), value: summary.active_name, title: summary.active_name },
         { id: 'gateways', label: m.profile_stat_gateways_running(), value: String(summary.gateways_running), mode: m.profile_stat_gateways_of({ total: summary.total }) },
       ]} />}
       {/* `@container`: the gateway state shows once the list, not the window, is 601px wide (the Settings list may sit beside it). */}

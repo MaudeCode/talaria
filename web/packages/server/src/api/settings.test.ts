@@ -487,6 +487,17 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(await check('https://anything.test/')).toBe(false)
   })
 
+  it('TAL-2143: load and save answer the count of normalized trusted link hosts', async () => {
+    try {
+      const saved = await json(await post(s, '/api/settings', { trusted_link_hosts: [' Docs.Example.com ', 'docs.example.com', 'b.example', 'not a host'] }))
+      expect(saved).toMatchObject({ trusted_link_hosts: ['docs.example.com', 'b.example'], trusted_link_hosts_count: 2 })
+      expect((await json(await s.get('/api/settings'))).trusted_link_hosts_count).toBe(2)
+    } finally {
+      await post(s, '/api/settings', { trusted_link_hosts: [] })
+    }
+    expect((await json(await s.get('/api/settings'))).trusted_link_hosts_count).toBe(0)
+  })
+
   it('first password setup from loopback enables auth and logs the caller in with a session cookie', async () => {
     const res = await post(s, '/api/settings', { _set_password: 'correct horse battery' })
     expect(res.status).toBe(200)
@@ -1606,7 +1617,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     }
   })
 
-  it('TAL-2143: the profile list counts its visible profiles and their running gateways', async () => {
+  it('TAL-2143: the profile list counts its visible profiles and their running gateways, and names the active one', async () => {
     const restore = sidecar.responderFor('profiles.list')
     const row = (name: string, visible: boolean, gateway_running: boolean) => ({ name, path: join(s.state, 'profiles', name), is_default: false, gateway_running, model: null, provider: null, has_env: false, visible, skill_count: 0, enabled_skills: 0, total_skills: 0 })
     sidecar.respond('profiles.list', () => ({ profiles: [
@@ -1616,7 +1627,10 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     ] }))
     s.deps.profiles.invalidate()
     try {
-      expect((await json(await s.get('/api/profiles'))).summary).toEqual({ total: 2, gateways_running: 1 })
+      expect((await json(await s.get('/api/profiles'))).summary).toEqual({ total: 2, gateways_running: 1, active_name: 'default' })
+      sidecar.respond('profiles.list', () => ({ profiles: [{ ...row('default', true, true), path: s.state, is_default: true, display_name: 'Writer' }] }))
+      s.deps.profiles.invalidate()
+      expect((await json(await s.get('/api/profiles'))).summary).toMatchObject({ active_name: 'Writer' })
     } finally {
       sidecar.respond('profiles.list', restore)
       s.deps.profiles.invalidate()
