@@ -212,6 +212,21 @@ describe('shared optimistic settings', () => {
     expect(stale()).toEqual([true, false])
   })
 
+  it('re-reads open transcripts once the reread settles an unknown Worklog default write (TAL-2149)', async () => {
+    const reread = deferred<Settings>()
+    vi.mocked(api.saveSettings).mockRejectedValue(new ApiError({ kind: 'timeout', path: '/api/settings', message: 'timed out' }))
+    vi.mocked(api.fetchSettings).mockReturnValue(reread.promise)
+    const { result, qc } = setup()
+    qc.setQueryData(keys.sessions.detail('s1'), { session: {} })
+    const stale = () => qc.getQueryState(keys.sessions.detail('s1'))?.isInvalidated
+    act(() => result.current.save.mutate({ worklog_details_expanded_default: true }))
+    await waitFor(() => expect(api.fetchSettings).toHaveBeenCalled())
+    expect(stale()).toBe(false)
+    reread.resolve({ ...initial, worklog_details_expanded_default: true })
+    await waitFor(() => expect(result.current.save.error?.message).toBe('timed out'))
+    await waitFor(() => expect(stale()).toBe(true))
+  })
+
   it('keeps an unknown outcome shown until the reread decides it', async () => {
     const reread = deferred<Settings>()
     vi.mocked(api.saveSettings).mockRejectedValue(new ApiError({ kind: 'timeout', path: '/api/settings', message: 'timed out' }))
