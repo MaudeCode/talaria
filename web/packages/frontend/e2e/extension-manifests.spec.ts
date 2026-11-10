@@ -60,9 +60,9 @@ test('a gallery extension theme is offered in Appearance, applies only its allow
     const pick = page.locator('[data-skin-val="dusk:dusk"]')
     await expect(pick).toBeVisible()
     // TAL-2083: extension skins follow the built-ins under their own header, named by the skin with the extension in the title.
-    const extGrid = page.locator('[data-group="this-device"] [data-skin-grid="extensions"]')
-    await expect(page.locator('[data-group="this-device"]').getByRole('heading', { name: 'From extensions' })).toBeVisible()
-    await expect(extGrid.locator('.skin-pick-btn')).toHaveCount(1)
+    const extGrid = page.locator('[data-group="skin"] [data-skin-grid="extensions"]')
+    await expect(page.locator('[data-group="skin"]').getByRole('heading', { name: 'From extensions' })).toBeVisible()
+    await expect(extGrid.locator('[data-skin-val]')).toHaveCount(1)
     await expect(extGrid.locator('[data-skin-val="dusk:dusk"]')).toHaveText('Dusk')
     await expect(pick).toHaveAttribute('title', 'from dusk')
     await expect(page.locator('#skinPickerGrid [data-skin-val="dusk:dusk"]')).toHaveCount(0)

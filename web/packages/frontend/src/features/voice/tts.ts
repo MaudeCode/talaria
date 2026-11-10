@@ -29,19 +29,20 @@ export function stopSpeaking(): void {
   if ('speechSynthesis' in window && (window.speechSynthesis.speaking || window.speechSynthesis.pending)) window.speechSynthesis.cancel()
 }
 
-export async function speak(text: string): Promise<void> {
+/** `onEnd` (TAL-2146) runs when this text stops sounding: it finished, a later stop or speak cut it, or nothing played. A rejection may skip it, so a caller also ends on one. */
+export async function speak(text: string, onEnd?: () => void): Promise<void> {
   stopSpeaking()
   const turn = generation
   // A server without `speech.prepare` (a Stable channel switch) or a dropped request speaks the reply as written.
   const spoken = await prepareSpeech(text).then((r) => r.spoken_text, () => text.trim().slice(0, 4000))
-  if (turn !== generation || !spoken) return
+  if (turn !== generation || !spoken) return onEnd?.()
   const engine = readPersisted(TTS_PREF.engine) ?? 'browser'
   const ext = ttsEngine(engine)
   if (ext) {
     const rate = parseFloat(readPersisted(TTS_PREF.rate) ?? '')
     const pitch = parseFloat(readPersisted(TTS_PREF.pitch) ?? '')
     const audioBuf = await ext.synthesize(spoken, { voice: readPersisted(TTS_PREF.voice), rate: Number.isNaN(rate) ? null : rate, pitch: Number.isNaN(pitch) ? null : pitch })
-    if (turn !== generation) return
+    if (turn !== generation) return onEnd?.()
     const url = URL.createObjectURL(new Blob([audioBuf]))
     const audio = new Audio(url)
     let released = false
@@ -51,6 +52,7 @@ export async function speak(text: string): Promise<void> {
       audio.pause()
       URL.revokeObjectURL(url)
       if (current === playback) current = null
+      onEnd?.()
     } }
     current = playback
     audio.onended = audio.onerror = playback.release
@@ -58,7 +60,7 @@ export async function speak(text: string): Promise<void> {
     try { await audio.play() } catch (err) { playback.release(); if (turn === generation) throw err }
     return
   }
-  if (!('speechSynthesis' in window)) return
+  if (!('speechSynthesis' in window)) return onEnd?.()
   const utter = new SpeechSynthesisUtterance(spoken)
   const voiceName = readPersisted(TTS_PREF.voice)
   if (voiceName) {
@@ -70,5 +72,6 @@ export async function speak(text: string): Promise<void> {
   if (!Number.isNaN(rate)) utter.rate = rate
   if (!Number.isNaN(pitch)) utter.pitch = pitch
   utter.lang = document.documentElement.lang || 'en-US'
+  if (onEnd) utter.onend = utter.onerror = () => { onEnd() }
   window.speechSynthesis.speak(utter)
 }

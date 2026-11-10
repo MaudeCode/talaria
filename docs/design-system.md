@@ -150,7 +150,7 @@ Both clients follow the same chart contract (the `dataviz` rules):
 | Element | App | Web |
 | --- | --- | --- |
 | Plan or kind chip | `.caption2.weight(.medium)` secondary in a row, `.caption.weight(.medium)` in a detail header, padding 7/3, `Capsule().fill(Color(.tertiarySystemFill))` | `Badge tone="border-border text-muted"`, outside Settings, Profiles, Spaces, Logs and Connectors; there the word leads the row's second line instead |
-| Active or selected mark | `checkmark.circle.fill` `.caption.weight(.semibold)` green with an accessibility label in a row; a `Label` with the same icon in a detail header | `Mark` (`ui/Badge.tsx`): a 13px check and one or two words in `text-accent-text`, no border, no fill |
+| Active or selected mark | `checkmark.circle.fill` `.caption.weight(.semibold)` green with an accessibility label in a row; a `Label` with the same icon in a detail header | `Mark` (`ui/Badge.tsx`): a 13px check and one or two words in `text-accent-text`, no border, no fill; without words, the bare check on a control whose `aria-pressed` already names the choice (a theme tile, a skin row) |
 | Status text | `.footnote` secondary beside a 7pt dot (green available, orange stale, red failed); retry notes `.caption` orange | `StatusDot` (`ui/Badge.tsx`): a 7px dot (`ok`, `warning`, `error`, `idle`) and its words in `text-xs text-muted`; the dot alone takes the state colour. Words truncate to one line; `wrap` keeps words that must be read whole (what an extension can access) on more lines. Green text is never a state (`success-text` rule) |
 | Second line | `.footnote` secondary under the name | `text-xs text-muted`, one truncated line with the full text in `title`; a state leads it as a `StatusDot`. No `text-[11px]` and no coloured state text without a dot in Settings, Profiles, Spaces, Logs and Connectors |
 | Freshness | "Updated 3 min ago" `.caption2` secondary, clamped so a future timestamp reads as now | `As of … · Last checked …` `text-xs text-muted`, `text-warning` when stale |
@@ -211,7 +211,7 @@ Decide an item's home before building it:
 | A top-level destination is content the user works in: Chat, Tasks, Kanban, Skills, Memory, Insights, Discussions, Todos, Decisions. Configuration, credentials and diagnostics are Settings sections | The sidebar lists places to work; setup and diagnostics are visited rarely and belong together |
 | Settings sections are grouped by scope, and the grouping is a contract (`SETTINGS_SECTION_GROUPS` in `web/packages/contracts/src/settings-sections.ts`): **Interface** is how Talaria looks and behaves (the server's `settings.json` or the browser); **Profile** is read from or written to the active profile's home (its `config.yaml`, `.env`, or a per-profile setting); **Server** applies to every profile on the server | The group says what a change affects before the user makes it, and both clients read the same grouping |
 | A setting has exactly one home. The same control never appears on two pages | Two copies drift apart and leave the user unsure which one wins |
-| A setting stored only in this browser sits in a group titled "This device" | The user can tell it will not follow them to another browser |
+| A group is titled for what its rows control ("Theme", "When a reply finishes", "Voice on this device"); where a setting is stored is its `scope` in `settingsIndex.ts` | The approved Settings designs (TAL-2146) group by subject; storage follows the §11 section group |
 | A per-chat composer control whose default is configurable has that default in Settings (Chat when it is an interface setting, the Profile group when it is profile configuration), never only in the composer | The composer changes one chat; the default needs a home that outlasts it |
 | A new setting goes in an existing group of an existing section. A new group needs at least two rows. A new section needs at least five rows that fit no existing section, and is added to `SettingsSectionSchema` with its group | Small groups and sections fragment Settings into pages that hold one switch |
 | A group holds at most eight rows; a longer one is split by what the rows affect | A long group hides the row the user came for |
@@ -229,23 +229,26 @@ Logs keeps the wider column its lines need.
 | --- | --- | --- |
 | A titled group of rows | Pending the App sync (TAL-1695) | `SettingsGroup` (title is a noun; optional live `detail`, optional `action`) |
 | On or off, server setting | Pending the App sync (TAL-1695) | `SettingToggle` |
-| One of two to four values, each label 12 characters or fewer | Pending the App sync (TAL-1695) | `SettingSegmented` (`ui/Segmented.tsx`: a `radiogroup`, one Tab stop, arrow keys move the selection, the selected option filled) |
+| One of two to four values, each label 12 characters or fewer | Pending the App sync (TAL-1695) | `SettingSegmented` (`ui/Segmented.tsx`: a `radiogroup`, one Tab stop, arrow keys move the selection, the selected option filled); a browser-stored choice is a `Segmented` in a `SettingRow`. An option may be drawn (`display`, "Aa" at a font size) with its words as its name |
 | One of a few named values | Pending the App sync (TAL-1695) | `SettingSelect` |
 | An integer in a range | Pending the App sync (TAL-1695) | `SettingNumber` |
 | Free text or a list of lines | Pending the App sync (TAL-1695) | `SettingText` (the only row with a Save button, shown while the draft differs) |
 | A control stored in this browser | Pending the App sync (TAL-1695) | `SettingRow` wrapping the control |
 | A row whose control is a button | Pending the App sync (TAL-1695) | `SettingAction` (danger styling on the button, never on the row) |
 | A row that opens a page or dialog | Pending the App sync (TAL-1695) | `SettingLink` (external pages open in a new tab) |
-| Read-only values (versions, shortcuts) | Pending the App sync (TAL-1695) | `SettingValue` rows in one `SettingValues` list |
+| Installed versions | Pending the App sync (TAL-1695) | `SettingsStats` figures |
+| Read-only values (keyboard shortcuts) | Pending the App sync (TAL-1695) | `SettingValue` rows with an `icon` in one `SettingValues` list; keys as `Keys` (`ui/Keys.tsx`) keycaps, the modifier ⌘ on Apple platforms and Ctrl elsewhere |
 | A continuous value | Pending the App sync (TAL-1695) | `Slider` in a `SettingRow`, with its value shown in tabular digits |
-| A visual choice (theme, skin, font size, width) | Pending the App sync (TAL-1695) | Picker tiles in a `SettingRow`; these tiles are the only bordered shapes on a Settings page |
+| A visual choice (theme) | Pending the App sync (TAL-1695) | Preview tiles, the selected one with the accent border and a bare `Mark`; these tiles are the only bordered shapes on a Settings page |
+| One of many named looks (skins) | Pending the App sync (TAL-1695) | Rows in a column grid (three columns from 601px, two below): colour dots, name, a bare `Mark` on the selected one |
 | A list of things with their own actions (providers, plugins, profiles) | Pending the App sync (TAL-1695) | `RowList` and `Row` (`ui/List.tsx`) with a `ContextMenu`, per §3 |
 | More than twelve list items | Pending the App sync (TAL-1695) | One filter input above the list; the filter is device-local state |
 | A provider or profile in a row or header | Pending the App sync (TAL-1695) | `Monogram` (`ui/Monogram.tsx`): its first letter on a 30px square (24px `sm`) on `bg-hover` |
 
 - A label names the thing controlled (§9).
 - An explanation goes in `hint`, which renders a `HelpTip`, never as text
-  under the row.
+  under the row. A row's state (a permission, a subscription) is its
+  `detail`, the one-line second line, led by a `StatusDot` (§7).
 - A row may take an `icon` (a lucide component), drawn 18px in `text-muted`
   before its label; every kit row accepts it.
 - Every write is optimistic with rollback through `useSettingField`; no page
@@ -259,8 +262,7 @@ Logs keeps the wider column its lines need.
   `web/packages/frontend/src/features/settings/settingsIndex.ts` (its control
   id, label and group message functions, and storage scope), which the
   sidebar search lists. `settingsIndex.test.tsx` fails when a row has no entry,
-  when its scope does not match the section's §11 group, or when a setting
-  stored only in this browser sits outside "This device".
+  or when its scope does not match the section's §11 group.
 
 ### Buttons are symbols
 
@@ -304,6 +306,7 @@ action not in it gets a row here in the same change:
 | Continue | `arrow-right` | Skip | `skip-forward` |
 | Summarize | `sparkles` | Attach | `paperclip` |
 | Show more | `chevron-down` | Show less | `chevron-up` |
+| Stop playing | `square` | | |
 
 ## 13. Menus
 

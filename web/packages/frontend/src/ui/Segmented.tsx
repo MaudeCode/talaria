@@ -1,7 +1,8 @@
-import { useRef, type KeyboardEvent } from 'react'
+import { useRef, type KeyboardEvent, type ReactNode } from 'react'
 import { cn } from './cn'
 
-export interface SegmentedOption { value: string; label: string }
+/** `display` (TAL-2146) draws the option, such as "Aa" at a font size; `label` stays its accessible name. */
+export interface SegmentedOption { value: string; label: string; display?: ReactNode }
 
 /**
  * TAL-2131 (§12): two to four short options side by side, the selected one filled. A `radiogroup` with one Tab stop:
@@ -24,9 +25,9 @@ export function Segmented({ id, label, options, value, onChange, disabled }: { i
       {options.map((o, i) => {
         const checked = i === selected
         return (
-          <button key={o.value} ref={(el) => { buttons.current[i] = el }} type="button" role="radio" aria-checked={checked} tabIndex={checked ? 0 : -1} disabled={disabled} onClick={() => { if (!checked) onChange(o.value) }}
+          <button key={o.value} ref={(el) => { buttons.current[i] = el }} type="button" role="radio" aria-checked={checked} aria-label={o.display ? o.label : undefined} tabIndex={checked ? 0 : -1} disabled={disabled} onClick={() => { if (!checked) onChange(o.value) }}
             className={cn('min-h-7 whitespace-nowrap rounded px-2.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 pointer-coarse:min-h-11', checked ? 'bg-accent-bg text-accent-text' : 'text-muted hover:text-text')}>
-            {o.label}
+            {o.display ?? o.label}
           </button>
         )
       })}

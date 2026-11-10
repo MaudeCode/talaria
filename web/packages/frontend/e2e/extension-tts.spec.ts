@@ -33,11 +33,11 @@ test('an extension TTS engine is picked in Settings > Speech and reads replies w
   try {
     await page.goto('/settings/speech')
     await settle(page)
-    await page.locator('#settingsTtsEngine').click()
-    const option = page.getByRole('option', { name: 'Voice Box' })
+    // TAL-2146: two engines sit side by side as a segmented control.
+    const option = page.locator('#settingsTtsEngine').getByRole('radio', { name: 'Voice Box' })
     await expect(option).toBeVisible()
     await option.click()
-    await expect(page.locator('#settingsTtsEngine')).toHaveText(/Voice Box/)
+    await expect(option).toHaveAttribute('aria-checked', 'true')
     expect(await page.evaluate(() => localStorage.getItem('hermes-tts-engine'))).toBe('voicebox')
 
     await page.goto('/session/voicebox-chat')

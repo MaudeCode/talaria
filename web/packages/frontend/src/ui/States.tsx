@@ -29,8 +29,11 @@ export function EmptyState({ children, compact = false, action }: { children: Re
  * Typed error surface: never a blank pane. Malformed payloads and HTTP errors both land here with a retry.
  * An alert with its own wording and actions passes them as `children` in place of `error`.
  */
+/** An error's own words, as `ErrorState` shows them. */
+export const errorText = (error: unknown): string => isApiError(error) ? error.message : error instanceof Error ? error.message : String(error)
+
 export function ErrorState({ error, onRetry, children }: { error?: unknown; onRetry?: () => void; children?: ReactNode }) {
-  const detail = isApiError(error) ? error.message : error instanceof Error ? error.message : String(error)
+  const detail = errorText(error)
   const kind = isApiError(error) ? error.kind : 'unknown'
   return (
     <div role="alert" className="flex flex-col gap-2 rounded-lg border border-error/40 bg-surface p-3 text-sm">

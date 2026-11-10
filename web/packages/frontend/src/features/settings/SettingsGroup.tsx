@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { ChevronRight, ExternalLink, type LucideIcon } from 'lucide-react'
+import { ArrowUpRight, ChevronRight, type LucideIcon } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import { FieldRow, HelpTip } from '../../ui/Field'
 import { Figure, SectionHeader, StatLabel, type FigureTone } from '../../ui/List'
@@ -11,8 +11,8 @@ export const SETTINGS_PAGE = 'flex flex-col gap-7.5'
 // loading the settings store (TAL-2106: the Extensions chunk reaching it split the static Menu chunk past the layout budget).
 
 /** A labelled control that is not a server setting (device-local preferences, lists of switches). `stacked` puts a multi-control body under its label. */
-export function SettingRow({ label, hint, htmlFor, stacked, icon, children }: { label: string; hint?: string | undefined; htmlFor?: string; stacked?: boolean; icon?: LucideIcon; children: ReactNode }) {
-  return <FieldRow label={label} hint={hint} htmlFor={htmlFor} icon={icon} inline={!stacked}>{children}</FieldRow>
+export function SettingRow({ label, hint, htmlFor, stacked, icon, detail, children }: { label: string; hint?: string | undefined; htmlFor?: string; stacked?: boolean; icon?: LucideIcon; detail?: ReactNode; children: ReactNode }) {
+  return <FieldRow label={label} hint={hint} htmlFor={htmlFor} icon={icon} detail={detail} inline={!stacked}>{children}</FieldRow>
 }
 
 /** A label with action button(s) at the right; the button's own `variant` carries any danger styling. */
@@ -25,23 +25,23 @@ export function SettingValues({ children }: { children: ReactNode }) {
   return <dl className="flex flex-col divide-y divide-border-subtle">{children}</dl>
 }
 
-/** One row of `SettingValues`: the label at the left, the value at the right in muted text. */
-export function SettingValue({ label, children }: { label: string; children: ReactNode }) {
+/** One row of `SettingValues`: the label at the left, after its optional row `icon` (§12), the value at the right in muted text. */
+export function SettingValue({ label, icon: Icon, children }: { label: string; icon?: LucideIcon; children: ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-3 py-2 text-sm">
-      <dt className="shrink-0 text-text">{label}</dt>
+      <dt className="flex min-w-0 shrink-0 items-center gap-2.5 text-text">{Icon && <Icon size={18} strokeWidth={1.75} aria-hidden="true" data-row-icon="" className="shrink-0 text-muted" />}{label}</dt>
       <dd className="min-w-0 break-all text-right text-muted">{children}</dd>
     </div>
   )
 }
 
-/** TAL-2081: a row that is itself the control: an external page in a new tab (`href`) or a dialog (`onClick`). */
+/** TAL-2081: a row that is itself the control: an external page in a new tab (`href`, ending in §12's Open symbol) or a dialog (`onClick`, a chevron). */
 export function SettingLink({ label, icon: Icon, ...target }: { label: string; icon?: LucideIcon } & ({ href: string } | { onClick: () => void })) {
   const className = 'flex min-h-11 w-full items-center justify-between gap-3 py-2 text-left text-sm text-text transition-colors hover:text-accent-text focus-visible:outline-2 focus-visible:outline-accent'
   const icon = { size: 14, 'aria-hidden': true, className: 'shrink-0 text-muted' } as const
   const text = Icon ? <span className="flex min-w-0 items-center gap-2.5"><Icon size={18} strokeWidth={1.75} aria-hidden="true" data-row-icon="" className="shrink-0 text-muted" />{label}</span> : label
   return 'href' in target
-    ? <a className={className} href={target.href} target="_blank" rel="noopener noreferrer">{text}<ExternalLink {...icon} /></a>
+    ? <a className={className} href={target.href} target="_blank" rel="noopener noreferrer">{text}<ArrowUpRight {...icon} /></a>
     : <button type="button" className={className} onClick={target.onClick}>{text}<ChevronRight {...icon} /></button>
 }
 

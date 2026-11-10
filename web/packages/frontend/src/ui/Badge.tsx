@@ -7,10 +7,13 @@ export function Badge({ tone, title, children }: { tone: string; title?: string 
   return <span title={title} className={cn('rounded-full border px-1.5 text-xs uppercase tracking-wider', tone)}>{children}</span>
 }
 
-/** TAL-2131: the active or selected mark (§7): a check and one or two words in the accent, no border and no fill, so colour never carries it alone. */
-export function Mark({ title, children }: { title?: string | undefined; children: string }) {
+/**
+ * TAL-2131: the active or selected mark (§7): a check and one or two words in the accent, no border and no fill, so colour
+ * never carries it alone. TAL-2146: without words it is the bare check on a control whose own state (`aria-pressed`) names it.
+ */
+export function Mark({ title, children }: { title?: string | undefined; children?: string }) {
   return (
-    <span title={title} data-mark="" className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-accent-text">
+    <span title={title} data-mark="" aria-hidden={children ? undefined : true} className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-accent-text">
       <Check size={13} strokeWidth={2.25} aria-hidden="true" />{children}
     </span>
   )

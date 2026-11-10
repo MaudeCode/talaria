@@ -34,7 +34,7 @@ afterEach(() => {
 })
 
 const render = (ui: ReactElement) => renderUi(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{ui}</QueryClientProvider>)
-const main = () => screen.getByRole('switch', { name: 'Notify this browser' })
+const main = () => screen.getByRole('switch', { name: 'Push to this browser' })
 
 it('is hidden when the browser has no Push API', () => {
   vi.stubGlobal('PushManager', undefined)
@@ -48,8 +48,8 @@ it('subscribes this browser with the server key, then shows the four alert kinds
   vi.mocked(api.fetchWebPushStatus).mockResolvedValue({ public_key: KEY, subscription: null })
   vi.mocked(api.subscribeWebPush).mockResolvedValue({ ok: true, preferences: ALL })
   render(<WebPushSection />)
-  expect(await screen.findByRole('switch', { name: 'Notify this browser' })).not.toBeChecked()
-  expect(main().closest('[data-group="web-push"]')).toHaveAccessibleName('Push to this browser')
+  expect(await screen.findByRole('switch', { name: 'Push to this browser' })).not.toBeChecked()
+  expect(main().closest('[data-group="web-push"]')).toHaveAccessibleName('Push')
   expect(screen.queryByRole('switch', { name: 'Approval requests' })).toBeNull()
   await userEvent.click(main())
   expect(main()).toBeChecked()
@@ -64,7 +64,7 @@ it('rolls the switch back when notification permission is refused', async () => 
   vi.mocked(api.fetchWebPushStatus).mockResolvedValue({ public_key: KEY, subscription: null })
   vi.stubGlobal('Notification', { requestPermission: vi.fn(() => Promise.resolve('denied')) })
   render(<WebPushSection />)
-  await userEvent.click(await screen.findByRole('switch', { name: 'Notify this browser' }))
+  await userEvent.click(await screen.findByRole('switch', { name: 'Push to this browser' }))
   await waitFor(() => { expect(main()).not.toBeChecked() })
   expect(showErrorToast).toHaveBeenCalled()
   expect(manager.subscribe).not.toHaveBeenCalled()
@@ -112,7 +112,7 @@ it('keeps the latest choice when the browser is switched off while turning on', 
   const permission = Promise.withResolvers<NotificationPermission>()
   vi.stubGlobal('Notification', { requestPermission: vi.fn(() => permission.promise) })
   render(<WebPushSection />)
-  await userEvent.click(await screen.findByRole('switch', { name: 'Notify this browser' }))
+  await userEvent.click(await screen.findByRole('switch', { name: 'Push to this browser' }))
   await userEvent.click(main())
   expect(main()).not.toBeChecked()
   permission.resolve('granted')

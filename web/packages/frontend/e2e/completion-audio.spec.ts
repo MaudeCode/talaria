@@ -15,7 +15,7 @@ test('completion sound settings stay local and preview uses browser audio', asyn
   await sound.scrollIntoViewIfNeeded()
   if (!baseline) {
     if (await sound.getAttribute('aria-checked') !== 'true') await sound.click()
-    const choice = page.getByRole('combobox', { name: 'Completion sound', exact: true })
+    const choice = page.getByRole('combobox', { name: 'Sound', exact: true })
     await choice.click()
     await page.getByRole('option', { name: 'Bell', exact: true }).click()
     await page.getByRole('button', { name: 'Preview sound', exact: true }).click()
@@ -64,7 +64,7 @@ test('live completions play once across tabs, while history and replay stay quie
   }
   const count = async () => (await Promise.all([page, peer].map((tab) => tab.evaluate(() => (window as unknown as { audioAttempts: string[] }).audioAttempts.length)))).reduce((a, b) => a + b, 0)
   await Promise.all([page.goto('/settings/notifications'), peer.goto('/settings/notifications')])
-  for (const tab of [page, peer]) await expect(tab.getByRole('combobox', { name: 'Completion sound', exact: true })).toBeVisible()
+  for (const tab of [page, peer]) await expect(tab.getByRole('combobox', { name: 'Sound', exact: true })).toBeVisible()
   const completion = { identity: 'browser-run', scope: 'server-profile-a', profile: 'default', eligible: true, expires_at: Date.now() + 60_000 }
   await emit('initial', { web_audio: [completion] })
   await emit('sessions_changed', { reason: 'history', session_id: 'synthetic' })
@@ -77,7 +77,7 @@ test('live completions play once across tabs, while history and replay stay quie
   await expect.poll(count).toBe(2)
   for (const tab of [page, peer]) {
     await tab.reload()
-    await expect(tab.getByRole('combobox', { name: 'Completion sound', exact: true })).toBeVisible()
+    await expect(tab.getByRole('combobox', { name: 'Sound', exact: true })).toBeVisible()
   }
   await emit('sessions_changed', { web_audio: [completion] })
   await emit('sessions_changed', { web_audio: [{ ...completion, identity: 'second-live-run' }] })

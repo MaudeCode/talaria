@@ -1,39 +1,65 @@
-import { Moon, Monitor, Sun } from 'lucide-react'
+import { Languages, Moon, Monitor, MoveHorizontal, PilcrowRight, Sun, Type, type LucideIcon } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
-import { FieldRow, Switch } from '../../ui/Field'
+import { Switch } from '../../ui/Field'
 import { Select } from '../../ui/Select'
+import { Segmented } from '../../ui/Segmented'
+import { Mark } from '../../ui/Badge'
 import { setChatWidth, setFontSize, setLanguage, setRtl, setSkin, setTheme, useAppearance } from '../../app/appearance'
 import { SKINS } from '../../theme/skins'
-import { FontSizeSchema, SkinSchema } from '../../contracts/persisted'
+import { ChatWidthSchema, FontSizeSchema, SkinSchema, type ChatWidth, type Theme } from '../../contracts/persisted'
 import { LOCALE_INFO } from '@maudecode/talaria-web-contracts'
 import { useLocale } from '../../i18n/useLocale'
 import { useSaveSettings } from '../../app/queries'
 import { useExtensionSkins } from '../../extensions/registry'
 import { cn } from '../../ui/cn'
 import { SectionHeader } from '../../ui/List'
-import { SettingsGroup, SETTINGS_PAGE } from './SettingsRows'
+import { SettingRow, SettingsGroup, SETTINGS_PAGE } from './SettingsRows'
 
-/** Swatch colours per skin, carried forward from the legacy picker catalogue. */
+/** The three theme previews: a page colour and two text bars. System splits light and dark down the middle. */
+const THEMES: readonly { value: Theme; label: () => string; Icon: LucideIcon; page: string; bar: string }[] = [
+  { value: 'light', label: m.theme_light, Icon: Sun, page: '#fff', bar: '#d4d4d8' },
+  { value: 'dark', label: m.theme_dark, Icon: Moon, page: '#1c1c22', bar: '#3f3f46' },
+  { value: 'system', label: m.theme_system, Icon: Monitor, page: 'linear-gradient(to right,#fff 50%,#1c1c22 50%)', bar: '#a1a1aa' },
+]
 
-const PICK_PREVIEW = 'flex w-full h-10 rounded-[6px] mb-1.5 items-center justify-center'
+/** Font sizes with the pixel size their "Aa" is drawn at. */
+const FONT_SIZES = [['small', 10, m.font_size_small], ['default', 13, m.font_size_default], ['large', 16, m.font_size_large], ['xlarge', 19, m.font_size_xlarge]] as const
+const CHAT_WIDTHS: readonly [ChatWidth, () => string][] = [['comfortable', m.chat_width_comfortable], ['wide', m.chat_width_wide], ['full', m.chat_width_full]]
 
-function PickButton({ active, onClick, className, children, label, title, ...rest }: { active: boolean; onClick: () => void; className: string; children: React.ReactNode; label: string; title?: string } & Record<`data-${string}`, string>) {
-  // Skin tiles are denser than the theme and font-size tiles (legacy inline styles).
-  const skin = className === 'skin-pick-btn'
+/**
+ * A theme is a visual choice, so it keeps a bordered preview tile (§12), the one bordered shape on a Settings page; the
+ * selected tile has the accent border (`settings.css`) and a check.
+ */
+function ThemeTile({ theme, active }: { theme: typeof THEMES[number]; active: boolean }) {
   return (
-    <button type="button" className={cn(className, 'flex flex-col items-center text-center cursor-pointer bg-transparent border border-border2 rounded-[10px] transition-all duration-150', skin ? 'py-2 px-1' : 'py-2.5 px-2', active && 'active')} title={title} aria-pressed={active} onClick={onClick} {...rest}>
-      {children}
-      <span className="text-xs font-medium text-text">{label}</span>
-
+    <button type="button" className={cn('theme-pick-btn flex flex-col gap-2 rounded-[10px] border border-border2 p-2 text-left', active && 'active')} aria-pressed={active} data-theme-val={theme.value} onClick={() => setTheme(theme.value)}>
+      <span aria-hidden="true" className="flex h-12 w-full flex-col justify-center gap-1.5 rounded-md border border-border px-2.5" style={{ background: theme.page }}>
+        <span className="block h-1.5 w-3/5 rounded-full" style={{ background: theme.bar }} />
+        <span className="block h-1.5 w-2/5 rounded-full" style={{ background: theme.bar }} />
+      </span>
+      <span className="flex min-w-0 items-center gap-1.5 px-0.5 text-xs font-medium text-text">
+        <theme.Icon size={13} aria-hidden="true" className="shrink-0 text-muted" />
+        <span className="min-w-0 flex-1 truncate">{theme.label()}</span>
+        {active && <Mark />}
+      </span>
     </button>
   )
 }
 
-function SkinDots({ colors }: { colors: readonly string[] }) {
-  return <div className="flex gap-[3px] justify-center mb-1">{colors.map((c, i) => <span key={i} className="inline-block size-2.5 rounded-full" style={{ background: c }} />)}</div>
+/** One skin as a row: its colour dots, its name, and a check when selected. */
+function SkinRow({ skin, name, colors, active, title, onPick }: { skin: string; name: string; colors: readonly string[]; active: boolean; title?: string; onPick: () => void }) {
+  return (
+    <button type="button" className="flex min-h-11 min-w-0 items-center gap-2.5 border-t border-border-subtle py-2 text-left text-sm text-text transition-colors hover:text-accent-text" aria-pressed={active} title={title} data-skin-val={skin} onClick={onPick}>
+      <span aria-hidden="true" className="flex shrink-0 gap-[3px]">{colors.map((c, i) => <span key={i} className="inline-block size-2.5 rounded-full" style={{ background: c }} />)}</span>
+      <span className="min-w-0 flex-1 truncate">{name}</span>
+      {active && <Mark />}
+    </button>
+  )
 }
 
-/** TAL-2083, TAL-2086: Settings > Appearance; theme, skin and direction stay in this browser, so they sit under This device. */
+const SKIN_GRID = 'grid grid-cols-2 gap-x-6 min-[601px]:grid-cols-3'
+
+/** TAL-2083, TAL-2086, TAL-2146: Settings > Appearance; theme, skin and direction stay in this browser, text size, width and language are saved. */
 export function AppearanceSection() {
   const appearance = useAppearance()
   const locale = useLocale()
@@ -42,67 +68,43 @@ export function AppearanceSection() {
   const pickSkin = (key: string) => { const v = SkinSchema.safeParse(key); if (v.success) setSkin(v.data); else if (extSkins.some((s) => s.key === key)) setSkin(key) }
   return (
     <div className={cn('settings-section', SETTINGS_PAGE)} data-section="appearance">
-      <SettingsGroup id="this-device" title={m.settings_group_this_device()}>
-        <FieldRow label={m.settings_label_theme()}>
-          <div id="themePickerGrid" role="group" aria-label={m.settings_label_theme()} className="grid gap-2 grid-cols-3">
-            <PickButton className="theme-pick-btn" data-theme-val="light" active={appearance.theme === 'light'} onClick={() => setTheme('light')} label={m.theme_light()}>
-              <div className={PICK_PREVIEW} style={{ background: '#fff', border: '1px solid rgba(0,0,0,.12)' }}><Sun size={16} color="#999" aria-hidden="true" /></div>
-            </PickButton>
-            <PickButton className="theme-pick-btn" data-theme-val="dark" active={appearance.theme === 'dark'} onClick={() => setTheme('dark')} label={m.theme_dark()}>
-              <div className={PICK_PREVIEW} style={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,.1)' }}><Moon size={16} color="#666" aria-hidden="true" /></div>
-            </PickButton>
-            <PickButton className="theme-pick-btn" data-theme-val="system" active={appearance.theme === 'system'} onClick={() => setTheme('system')} label={m.theme_system()}>
-              <div className={PICK_PREVIEW} style={{ background: 'linear-gradient(to right,#fff,#1a1a2e)', border: '1px solid rgba(0,0,0,.12)' }}><Monitor size={16} color="#888" aria-hidden="true" /></div>
-            </PickButton>
+      <SettingsGroup id="theme" title={m.settings_label_theme()}>
+        <div id="themePickerGrid" role="group" aria-label={m.settings_label_theme()} className="grid grid-cols-3 gap-2 pt-1">
+          {THEMES.map((t) => <ThemeTile key={t.value} theme={t} active={appearance.theme === t.value} />)}
+        </div>
+      </SettingsGroup>
+      <SettingsGroup id="skin" title={m.settings_label_skin()} detail={SKINS.length + extSkins.length}>
+        <div id="skinPickerGrid" role="group" aria-label={m.settings_label_skin()} className={SKIN_GRID}>
+          {SKINS.map((sk) => <SkinRow key={sk.key} skin={sk.key} name={sk.name} colors={sk.colors} active={appearance.skin === sk.key} onPick={() => pickSkin(sk.key)} />)}
+        </div>
+        {extSkins.length > 0 && <>
+          <SectionHeader className="mt-3">{m.settings_group_skins_from_extensions()}</SectionHeader>
+          <div role="group" aria-label={m.settings_group_skins_from_extensions()} className={SKIN_GRID} data-skin-grid="extensions">
+            {extSkins.map((s) => <SkinRow key={s.key} skin={s.key} name={s.name} colors={(s.colors ?? []).slice(0, 3)} active={appearance.skin === s.key} title={m.extensions_skin_from({ name: s.extensionId })} onPick={() => pickSkin(s.key)} />)}
           </div>
-        </FieldRow>
-        <FieldRow label={m.settings_label_skin()}>
-          <div id="skinPickerGrid" role="group" aria-label={m.settings_label_skin()} className="grid gap-1.5 grid-cols-4">
-            {SKINS.map((sk) => (
-              <PickButton key={sk.key} className="skin-pick-btn" data-skin-val={sk.key} active={appearance.skin === sk.key} onClick={() => pickSkin(sk.key)} label={sk.name}>
-                <SkinDots colors={sk.colors} />
-              </PickButton>
-            ))}
-          </div>
-          {extSkins.length > 0 && <>
-            <SectionHeader className="mt-3 mb-1.5">{m.settings_group_skins_from_extensions()}</SectionHeader>
-            <div className="grid gap-1.5 grid-cols-4" data-skin-grid="extensions">
-              {extSkins.map((s) => (
-                <PickButton key={s.key} className="skin-pick-btn" data-skin-val={s.key} active={appearance.skin === s.key} onClick={() => pickSkin(s.key)} label={s.name} title={m.extensions_skin_from({ name: s.extensionId })}>
-                  <SkinDots colors={(s.colors ?? []).slice(0, 3)} />
-                </PickButton>
-              ))}
-            </div>
-          </>}
-        </FieldRow>
-        <FieldRow label={m.settings_label_rtl()} htmlFor="settingsRtl" inline>
-          <Switch id="settingsRtl" checked={appearance.rtl} onCheckedChange={(checked) => setRtl(checked)} />
-        </FieldRow>
+        </>}
       </SettingsGroup>
       <SettingsGroup id="text-layout" title={m.settings_group_text_layout()}>
-        <FieldRow label={m.settings_label_font_size()}>
-          <div id="fontSizePickerGrid" role="group" aria-label={m.settings_label_font_size()} className="grid gap-2 grid-cols-[repeat(auto-fit,minmax(96px,1fr))]">
-            {([['small', 10, m.font_size_small()], ['default', 13, m.font_size_default()], ['large', 17, m.font_size_large()], ['xlarge', 20, m.font_size_xlarge()]] as const).map(([size, px, label]) => (
-              <PickButton key={size} className="font-size-pick-btn" data-font-size-val={size} active={appearance.fontSize === size} onClick={() => { const v = FontSizeSchema.safeParse(size); if (v.success) { setFontSize(v.data); save.mutate({ font_size: v.data }) } }} label={label}>
-                <div className={PICK_PREVIEW + ' bg-surface border border-border'}><span className="font-semibold text-muted" style={{ fontSize: px }}>Aa</span></div>
-              </PickButton>
-            ))}
-          </div>
-        </FieldRow>
-        <FieldRow label={m.settings_label_chat_width()}>
-          <div id="chatWidthPickerGrid" role="group" aria-label={m.settings_label_chat_width()} className="grid gap-2 grid-cols-3">
-            {([['comfortable', '45%', m.chat_width_comfortable()], ['wide', '70%', m.chat_width_wide()], ['full', '100%', m.chat_width_full()]] as const).map(([width, bar, label]) => (
-              <PickButton key={width} className="chat-width-pick-btn" data-chat-width-val={width} active={appearance.chatWidth === width} onClick={() => { setChatWidth(width); save.mutate({ chat_width: width, full_width_chat: width === 'full' }) }} label={label}>
-                <div className={PICK_PREVIEW + ' bg-surface border border-border px-2'}><span className="block h-2 rounded-full bg-muted opacity-40" style={{ width: bar }} /></div>
-              </PickButton>
-            ))}
-          </div>
-        </FieldRow>
-        <FieldRow label={m.settings_label_language()} htmlFor="settingsLanguage" inline>
+        <SettingRow label={m.settings_label_font_size()} htmlFor="fontSizePickerGrid" icon={Type}>
+          <Segmented id="fontSizePickerGrid" label={m.settings_label_font_size()} value={appearance.fontSize}
+            options={FONT_SIZES.map(([value, px, label]) => ({ value, label: label(), display: <span className="font-semibold" style={{ fontSize: px }}>Aa</span> }))}
+            onChange={(size) => { const v = FontSizeSchema.safeParse(size); if (v.success) { setFontSize(v.data); save.mutate({ font_size: v.data }) } }} />
+        </SettingRow>
+        <SettingRow label={m.settings_label_chat_width()} htmlFor="chatWidthPickerGrid" icon={MoveHorizontal}>
+          <Segmented id="chatWidthPickerGrid" label={m.settings_label_chat_width()} value={appearance.chatWidth}
+            options={CHAT_WIDTHS.map(([value, label]) => ({ value, label: label() }))}
+            onChange={(width) => { const w = ChatWidthSchema.safeParse(width); if (w.success) { setChatWidth(w.data); save.mutate({ chat_width: w.data, full_width_chat: w.data === 'full' }) } }} />
+        </SettingRow>
+      </SettingsGroup>
+      <SettingsGroup id="language" title={m.settings_label_language()}>
+        <SettingRow label={m.settings_label_language()} htmlFor="settingsLanguage" icon={Languages}>
           <Select id="settingsLanguage" value={locale} onValueChange={(v) => { setLanguage(v); save.mutate({ language: v }) }}>
             {LOCALE_INFO.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
           </Select>
-        </FieldRow>
+        </SettingRow>
+        <SettingRow label={m.settings_label_rtl()} htmlFor="settingsRtl" icon={PilcrowRight}>
+          <Switch id="settingsRtl" checked={appearance.rtl} onCheckedChange={(checked) => setRtl(checked)} />
+        </SettingRow>
       </SettingsGroup>
     </div>
   )

@@ -17,7 +17,6 @@ vi.mock('../../api/endpoints', async (importOriginal) => {
   }
 })
 import { SETTINGS_SECTION_GROUPS, SettingsSectionSchema } from '@maudecode/talaria-web-contracts'
-import { m } from '../../paraglide/messages.js'
 import { keys } from '../../api/queryKeys'
 import { BootstrapContext } from '../../app/bootstrap'
 import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
@@ -91,14 +90,12 @@ it('indexes every Settings row once, each where it renders, under its group, in 
   expect(SETTINGS_INDEX.filter((e) => e.shownWith && !SETTINGS_INDEX.some((o) => o.id === e.shownWith && o.section === e.section && o.tab === e.tab)).map((e) => e.id)).toEqual([])
   // (b) Placement (design-system §11): a section's contract group matches the scope of every row on it.
   expect(SETTINGS_INDEX.filter((e) => SETTINGS_SECTION_GROUPS[e.section] !== GROUP_OF_SCOPE[e.scope]).map((e) => `${e.id}: ${e.scope} on ${e.section}`)).toEqual([])
-  // (c) A setting stored only in this browser sits in a group titled This device.
-  expect(SETTINGS_INDEX.filter((e) => e.scope === 'device' && e.group() !== m.settings_group_this_device()).map((e) => e.id)).toEqual([])
 }, 30_000)
 
 it('matches the localized label or group title, ignoring case and surrounding space (TAL-2086)', () => {
   expect(searchSettings('  ')).toEqual([])
   expect(searchSettings('SEND KEY').map((e) => e.id)).toEqual(['settingsSendKey'])
-  expect(searchSettings('this device').map((e) => e.section)).toEqual(SETTINGS_INDEX.filter((e) => e.scope === 'device').map((e) => e.section))
+  expect(searchSettings('voice on this').map((e) => e.id)).toEqual(['settingsTtsEngine', 'settingsTtsVoice', 'settingsTtsRate', 'settingsTtsPitch'])
   expect(searchSettings('no such setting')).toEqual([])
 })
 
