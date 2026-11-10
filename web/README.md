@@ -24,6 +24,7 @@ individual operations report missing capabilities. Operator config and SSO remai
 - [Daemon control](#daemon-control)
 - [Configuration](#configuration)
 - [Docker](#docker)
+- [Settings](#settings)
 - [Updates](#updates)
 - [MCP server](#mcp-server)
 - [Development](#development)
@@ -263,7 +264,7 @@ applies in that profile's gateway on its check interval, so the row says when no
 checks are off. With it on, Agent Importers can move past the pin Talaria reviewed; profile import then
 reports itself unavailable until the install is back on a reviewed pin.
 
-**Catalog** in Plugins settings browses the Agent's bounded, cached reviewed catalog by name,
+**Catalog** in Settings → Tools → Plugins browses the Agent's bounded, cached reviewed catalog by name,
 description, tier or category. Details show the source, reviewed pin, requirements and installed
 identity. **Install disabled** previews the exact staged tree, then asks the server owner to confirm.
 Confirmation expires or becomes invalid when the profile, entry, pin or tree changes. The native
@@ -337,6 +338,19 @@ runtime for the Agent venv). At startup the entrypoint aligns the container user
 `hermes-agent-src` volume in the two- and three-container variants), builds the sidecar's Agent venv, and
 starts the server. `docker-compose.two-container.yml` and `docker-compose.three-container.yml` add the
 Agent gateway and the dashboard. Details, GPU images, and failure modes: [docs/docker.md](docs/docker.md).
+
+## Settings
+
+Settings lists its sections in three groups, by what a change affects, in the order of `SETTINGS_SECTION_GROUPS`
+in `packages/contracts/src/settings-sections.ts`:
+
+- **Interface** (this interface): Appearance, Chat, Navigation, Notifications, Speech
+- **Profile** (the active profile): Models, Providers, Tools
+- **Server** (every profile): Profiles, Spaces, Extensions, Access, System, Logs, About
+
+Each section opens at `/settings/<id>`, its name in lowercase, except Spaces at `/settings/workspaces`. Older
+Settings links, and those to the former top-level Profiles, Spaces and Logs pages, redirect to the section that
+replaced them.
 
 ## Updates
 
@@ -414,7 +428,7 @@ bucket stops startup. To move existing attachments, stop the server and run
 `talaria-web storage copy-blobs --from local --to s3`; it verifies every object, skips ones already copied, and never
 deletes the source.
 
-Server owners use Settings → **Auxiliary Models → Delegation** to select Default or an
+Server owners use Settings → Models → **Auxiliary Models → Delegation** to select Default or an
 available registered mode and edit named model/profile routes and their default.
 Unavailable saved modes show the Agent's recovery reason and **Restore Default**.
 The fixed-model picker is available only when the Agent says that mode uses it.

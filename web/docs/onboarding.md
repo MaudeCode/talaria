@@ -159,7 +159,7 @@ Talaria Web serves every profile from one Agent process. With the Agent's
 default `plugins.isolation: in_process`, a profile's third-party plugins run in
 that process beside every other profile's credentials. When more than one
 profile has plugins installed under its `$HERMES_HOME/plugins/` and any of them
-runs `in_process`, Settings -> Plugins recommends host isolation.
+runs `in_process`, Settings -> Tools -> Plugins recommends host isolation.
 
 Set it in each such profile's `config.yaml` (Hermes Agent v0.21.6 or later),
 then restart Talaria Web:

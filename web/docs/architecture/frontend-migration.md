@@ -113,12 +113,10 @@ file-based under `packages/frontend/src/routes/`:
 | `/kanban` | Kanban board; board and filter state in validated search params | required |
 | `/skills`, `/skills/$name` | Skills | required |
 | `/memory` | Memory, notes | required |
-| `/workspaces`, `/workspaces/$index` | Workspaces | required |
-| `/profiles`, `/profiles/$name` | Profiles | required |
 | `/todos` | Current task list | required |
 | `/insights` | Insights; `days` search param | required |
-| `/logs` | Logs; `file`, `tail` search params | required |
-| `/settings`, `/settings/$section` | Settings; section is an enum guard | required |
+| `/settings`, `/settings/$section` | Settings; `section` is a `SettingsSectionSchema` id, Profiles, Spaces (`workspaces`) and Logs included. Validated search: `tab` (Tools), `name` (Profiles). Retired ids, and `/settings/agent`, redirect to the section that replaced them | required |
+| `/profiles`, `/workspaces`, `/logs` | Redirect to `/settings/profiles`, `/settings/workspaces` and `/settings/logs`, search kept | required |
 | `/ext/$extensionId` | Sandboxed extension panel | required |
 | `/onboarding` | First-run wizard | required (server) |
 | `/login` | Login | none |
