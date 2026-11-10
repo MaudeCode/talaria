@@ -84,11 +84,12 @@ test.describe('password auth under a subpath mount', () => {
   })
 
   test('a page-issued prefixed target lands under the mount once', async ({ page }) => {
-    await page.goto(`${proxy.url}/login?next=${encodeURIComponent('/mount/settings/appearance?tab=1')}`)
+    await page.goto(`${proxy.url}/login?next=${encodeURIComponent('/mount/settings/agent?tab=plugins')}`)
     await settle(page)
     await page.locator('#pw').fill(E2E_PASSWORD)
     await page.getByRole('button', { name: /sign in/i }).click()
-    await expect(page).toHaveURL(`${proxy.url}/settings/appearance?tab=1`)
+    await expect(page).toHaveURL(`${proxy.url}/settings/agent?tab=plugins`)
     await settle(page)
+    await expect(page).toHaveURL(`${proxy.url}/settings/agent?tab=plugins`)
   })
 })
