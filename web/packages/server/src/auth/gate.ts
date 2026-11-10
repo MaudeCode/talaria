@@ -419,6 +419,8 @@ export async function authStatusPayload(ctx: RequestContext): Promise<AuthStatus
   const passkeyFlag = auth.passkeyFeatureFlagEnabled()
   const passkeys = passkeyFlag ? (await ctx.deps.passkeys.registered()).length : 0
   const passwordAuthEnabled = (await auth.getPasswordHash()) !== null
+  const acknowledged = authEnabled ? false : Boolean((await ctx.deps.settings.load()).auth_disabled_acknowledged)
+  const canManageServer = await sessionCanManageServer(ctx, sessionInfo)
   const payload: AuthStatus = {
     auth_enabled: authEnabled,
     logged_in: loggedIn,
@@ -430,8 +432,10 @@ export async function authStatusPayload(ctx: RequestContext): Promise<AuthStatus
     passkeys_enabled: passkeys > 0,
     passkeys_count: passkeys,
     passkey_feature_flag: passkeyFlag,
-    auth_disabled_acknowledged: authEnabled ? false : Boolean((await ctx.deps.settings.load()).auth_disabled_acknowledged),
-    can_manage_server: await sessionCanManageServer(ctx, sessionInfo),
+    auth_disabled_acknowledged: acknowledged,
+    can_manage_server: canManageServer,
+    // TAL-2158: who sees the sidebar's no-password warning, and how loudly.
+    no_password_warning: authEnabled || !canManageServer ? null : acknowledged ? 'warning' : 'error',
   }
   if (auth.isTrustedAuthEnabled() || sessionInfo?.auth_type === 'trusted') payload.trusted_auth_enabled = true
   // Isolation needs a sign-in to tell people apart; a server without auth stays single-user.

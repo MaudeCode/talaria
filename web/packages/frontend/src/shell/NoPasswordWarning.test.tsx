@@ -19,7 +19,7 @@ type Layout = 'expanded' | 'rail' | 'drawer'
 const MESSAGE = 'This instance is accessible without authentication.'
 
 function bootstrap(auth: Partial<Bootstrap['auth']>): Bootstrap {
-  return { ...DEFAULT_BOOTSTRAP, auth: { ...DEFAULT_BOOTSTRAP.auth, auth_enabled: false, logged_in: false, password_auth_enabled: false, ...auth } }
+  return { ...DEFAULT_BOOTSTRAP, auth: { ...DEFAULT_BOOTSTRAP.auth, auth_enabled: false, logged_in: false, password_auth_enabled: false, no_password_warning: 'error', ...auth } }
 }
 
 // The app's provider (client.tsx): a bootstrap reload re-renders the shell without a page load.
@@ -61,7 +61,7 @@ it.each<Layout>(['expanded', 'rail', 'drawer'])('TAL-2158: the %s sidebar warns 
 })
 
 it.each<Layout>(['expanded', 'rail', 'drawer'])('TAL-2158: once acknowledged, the %s sidebar keeps the warning as a warning-coloured icon with its tooltip', async (layout) => {
-  await renderSidebar(layout, bootstrap({ auth_disabled_acknowledged: true }))
+  await renderSidebar(layout, bootstrap({ no_password_warning: 'warning' }))
   const link = await screen.findByRole('link', { name: 'No password' })
   expect(link).toHaveAttribute('data-tone', 'warning')
   expect(link).toHaveClass('sidebar-icon-row', 'has-tooltip')
@@ -69,16 +69,16 @@ it.each<Layout>(['expanded', 'rail', 'drawer'])('TAL-2158: once acknowledged, th
   expect(link).toHaveAccessibleDescription(MESSAGE)
 })
 
-it('TAL-2158: the Access switch quietens the warning as soon as it flips, before bootstrap reloads', async () => {
-  await renderSidebar('expanded', bootstrap({ auth_disabled_acknowledged: false }), { auth_disabled_acknowledged: true })
-  expect(await screen.findByRole('link', { name: 'No password' })).toHaveAttribute('data-tone', 'warning')
+it.each([
+  { flipped: true, server: 'error', shown: 'warning' },
+  { flipped: false, server: 'warning', shown: 'error' },
+] as const)('TAL-2158: flipping the Access switch to $flipped shows $shown at once, over the server level $server until bootstrap rereads', async ({ flipped, server, shown }) => {
+  await renderSidebar('expanded', bootstrap({ no_password_warning: server }), { auth_disabled_acknowledged: flipped })
+  expect(await screen.findByRole('link', { name: 'No password' })).toHaveAttribute('data-tone', shown)
 })
 
-it.each([
-  { name: 'auth is on', auth: { auth_enabled: true, password_auth_enabled: true } },
-  { name: 'the session cannot manage the server', auth: { can_manage_server: false } },
-])('TAL-2158: no warning when $name', async ({ auth }) => {
-  await renderSidebar('expanded', bootstrap(auth))
+it('TAL-2158: no warning when the server reports none, whatever the raw auth fields say', async () => {
+  await renderSidebar('expanded', bootstrap({ auth_enabled: false, can_manage_server: true, no_password_warning: null }))
   await screen.findByRole('navigation', { name: 'Primary navigation' })
   expect(warning()).toBeNull()
 })
@@ -86,6 +86,6 @@ it.each([
 it('TAL-2158: setting a password removes the warning when bootstrap is reread, without a reload', async () => {
   await renderSidebar('expanded', bootstrap({}))
   await screen.findByRole('link', { name: 'No password' })
-  act(() => { setBootstrapForTests(bootstrap({ auth_enabled: true, password_auth_enabled: true })) })
+  act(() => { setBootstrapForTests(bootstrap({ auth_enabled: true, password_auth_enabled: true, no_password_warning: null })) })
   expect(warning()).toBeNull()
 })

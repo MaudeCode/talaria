@@ -102,19 +102,21 @@ function SidebarNav({ panel }: { panel: ReactNode }) {
 }
 
 /**
- * TAL-2158: a server without a password says so to whoever can set one, above the footer in every sidebar state. The Access
- * switch `auth_disabled_acknowledged` quietens it from an error row to a warning icon; it stays while auth is off.
+ * TAL-2158: the server's `no_password_warning` level, above the footer in every sidebar state: an error row, or a warning
+ * icon once the Access switch `auth_disabled_acknowledged` is on. Null (auth on, or no server management) draws nothing.
  */
 function NoPasswordWarning() {
-  const { auth } = useBootstrap()
-  // The setting carries the switch's optimistic value; bootstrap holds the same server field until settings load.
-  const acknowledged = useSetting('auth_disabled_acknowledged') ?? auth.auth_disabled_acknowledged
+  const level = useBootstrap().auth.no_password_warning
+  // The switch's own write shows at once; the server's level takes over when its save rereads bootstrap.
+  const acknowledged = useSetting('auth_disabled_acknowledged')
   const descriptionId = useId()
-  if (auth.auth_enabled || !auth.can_manage_server) return null
+  if (!level) return null
+  const tone = acknowledged === undefined || acknowledged === (level === 'warning') ? level : acknowledged ? 'warning' : 'error'
+  const quiet = tone === 'warning'
   const label = m.auth_no_password()
   return (
     <div className="sidebar-alert flex flex-none">
-      <Link to="/settings/$section" params={{ section: 'access' }} className={cn(SIDEBAR_ROW, acknowledged && 'sidebar-icon-row has-tooltip')} data-tone={acknowledged ? 'warning' : 'error'} data-tooltip={acknowledged ? label : undefined} aria-label={label} aria-describedby={descriptionId} onClick={closeMobileSidebar}>
+      <Link to="/settings/$section" params={{ section: 'access' }} className={cn(SIDEBAR_ROW, quiet && 'sidebar-icon-row has-tooltip')} data-tone={tone} data-tooltip={quiet ? label : undefined} aria-label={label} aria-describedby={descriptionId} onClick={closeMobileSidebar}>
         <SidebarRowContent icon={ShieldAlert} label={label} />
       </Link>
       <span id={descriptionId} hidden>{m.auth_disabled_warning_message()}</span>

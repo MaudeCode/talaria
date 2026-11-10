@@ -51,7 +51,7 @@ export function AccessSection() {
           {canManage && (bool('password_env_var')
             ? <SettingRow label={m.settings_label_password()} hint={m.password_env_var_locked()}><span className="text-sm text-muted">{m.password_env_var_set()}</span></SettingRow>
             : <SettingRow label={m.settings_label_password()} htmlFor="settingsPassword"><PasswordForm passwordAuthEnabled={bool('password_auth_enabled')} /></SettingRow>)}
-          {canManage && !bool('auth_enabled') && <SettingToggle label={m.settings_label_auth_acknowledged()} hint={m.auth_acknowledged_label()} id="settingsAuthAck" settingKey="auth_disabled_acknowledged" />}
+          {canManage && !bool('auth_enabled') && <SettingToggle label={m.settings_label_auth_acknowledged()} hint={m.auth_acknowledged_label()} id="settingsAuthAck" settingKey="auth_disabled_acknowledged" onSaved={() => { void loadBootstrap() }} />}
           {passkeysOn && <>
             <SettingAction label={m.system_passkeys()}>{passkeysSupported() && <IconButton variant="default" label={m.system_passkey_register()} onClick={() => registerPasskey.mutate()} disabled={registerPasskey.isPending}><Plus aria-hidden="true" /></IconButton>}</SettingAction>
             {withEffects(passkeys.data?.credentials ?? [], (k) => `passkey:${k.id}`, effects).map((k) => (

@@ -204,6 +204,14 @@ describe('input render isolation (TAL-1405)', () => {
     expect(loadBootstrap).toHaveBeenCalledTimes(1)
   })
 
+  it('TAL-2158: the Quieter no-password warning switch rereads bootstrap once its save lands, so the sidebar converges on the server level', async () => {
+    vi.mocked(api.saveSettings).mockResolvedValue({ ok: true })
+    mount(<AccessSection />)
+    await userEvent.click(await screen.findByRole('switch', { name: /Quieter no-password warning/ }))
+    await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ auth_disabled_acknowledged: true }))
+    await waitFor(() => expect(loadBootstrap).toHaveBeenCalledTimes(1))
+  })
+
   it('preserves the skill search when returning from a detail', async () => {
     mount(<SkillsPage />)
     await screen.findByText('3 uses')

@@ -4,6 +4,7 @@
     "auth_enabled": false,
     "can_manage_server": true,
     "logged_in": false,
+    "no_password_warning": "error",
     "oidc_enabled": false,
     "oidc_native_handoff_enabled": false,
     "oidc_unavailable": false,
