@@ -169,10 +169,10 @@ describe('TAL-1914', () => {
     const plain = (await screen.findByText('Plain')).closest('li')!
     expect(plain).not.toHaveAttribute('data-context-menu')
     const row = (await screen.findByText('Behind')).closest('li')!
-    expect(within(row).getByRole('button', { name: 'Details' })).toBeVisible()
+    expect(within(row).getByRole('button', { name: 'Update' })).toBeVisible()
     fireEvent.contextMenu(row)
     const menu = await screen.findByRole('menu', { name: 'Plugin actions' })
-    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Details', 'Update'])
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Update', 'Details'])
     fireEvent.click(within(menu).getByRole('menuitem', { name: 'Update' }))
     await waitFor(() => expect(api.updatePlugin).toHaveBeenCalledWith('catalog-key', false, undefined))
   })

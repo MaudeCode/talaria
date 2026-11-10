@@ -1,16 +1,16 @@
-import { memo, useContext, useRef, useState, type ReactNode } from 'react'
+import { memo, useContext, useId, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { PluginAutoUpdateView, PluginOAuthClientView, PluginSettingView, PluginUpdateAllRow, PluginUpdateResult } from '@maudecode/talaria-web-contracts'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
-import { Box, Brain, Check, ChevronDown, ChevronRight, ChevronsLeft, CircleArrowUp, Clock, Cpu, Download, Ellipsis, Globe, Image, Info, Lock, LogOut, MessageSquare, Plus, Search, Settings2, Video, type LucideIcon } from 'lucide-react'
+import { Box, Brain, Check, ChevronDown, ChevronRight, ChevronsLeft, CircleArrowUp, Clock, Cpu, Download, Ellipsis, Globe, Image, Lock, LogOut, MessageSquare, Plus, Search, Settings2, Video, type LucideIcon } from 'lucide-react'
 import { IconButton } from '../../ui/Button'
 import { Mark, StatusDot, type DotState } from '../../ui/Badge'
 import { RowContextMenu, type RowAction } from '../../ui/Menu'
 import { RowActionButtons } from '../../ui/RowActionsMenu'
-import { ConfirmDialog } from '../../ui/Dialog'
+import { ConfirmDialog, Dialog } from '../../ui/Dialog'
 import { FieldRow, Switch, TextInput } from '../../ui/Field'
 import { cn } from '../../ui/cn'
 import { HubHeadSlotsContext } from '../../shell/hubHeadSlots'
@@ -92,13 +92,21 @@ export function PluginsSection() {
     onError: (e) => showToast(e instanceof Error ? e.message : String(e), 5000, 'error'),
   })
   const [open, setOpen] = useState<string | null>(null)
-  const [browsing, setBrowsing] = useState(false)
+  const [adding, setAdding] = useState(false)
   const head = useContext(HubHeadSlotsContext)
-  // TAL-2132: "Add plugin" opens the catalog; it is the section heading's primary action.
-  const add = <IconButton variant="primary" label={m.plugins_add()} active={browsing} aria-expanded={browsing} onClick={() => setBrowsing(!browsing)}><Plus aria-hidden="true" /></IconButton>
-  const addButton = head?.actions ? createPortal(add, head.actions) : <div className="flex justify-end">{add}</div>
-  if (plugins.isPending) return <>{addButton}<LoadingState /></>
-  if (plugins.isError) return <>{addButton}<ErrorState error={plugins.error} onRetry={() => { void plugins.refetch() }} /></>
+  // TAL-2132: "Add plugin" is the section heading's primary action. TAL-2134: it opens the catalog in a dialog, which returns focus to it on close.
+  // Safari does not focus a clicked button, so the dialog is told where to return.
+  const addRef = useRef<HTMLButtonElement | null>(null)
+  const add = <IconButton variant="primary" label={m.plugins_add()} aria-haspopup="dialog" onClick={(event) => { addRef.current = event.currentTarget; setAdding(true) }}><Plus aria-hidden="true" /></IconButton>
+  const addButton = <>
+    {head?.actions ? createPortal(add, head.actions) : <div className="flex justify-end">{add}</div>}
+    <Dialog open={adding} onOpenChange={setAdding} title={m.plugins_add()} finalFocus={addRef} maxWidth={600} className="max-[641px]:w-[calc(100%-16px)]">
+      <PluginCatalogList updating={update.isPending || updateAll.isPending} updatingKey={update.isPending ? update.variables.key : null} onUpdate={requestUpdate} />
+    </Dialog>
+  </>
+  // One page element in every state keeps "Add plugin" and its open dialog mounted while the list loads.
+  if (plugins.isPending) return <div className={SETTINGS_PAGE} data-section="plugins">{addButton}<LoadingState /></div>
+  if (plugins.isError) return <div className={SETTINGS_PAGE} data-section="plugins">{addButton}<ErrorState error={plugins.error} onRetry={() => { void plugins.refetch() }} /></div>
   // Saved non-secret values show at once until the reread; secrets never show.
   const list = plugins.data.plugins.map((p) => {
     const saved = effects[`plugin:${p.key}`]?.value
@@ -118,7 +126,6 @@ export function PluginsSection() {
   return (
     <div className={SETTINGS_PAGE} data-section="plugins">
       {addButton}
-      {browsing && <PluginCatalogList updating={updateBusy} updatingKey={update.isPending ? update.variables.key : null} onUpdate={requestUpdate} />}
       {groups && summary && <SettingsStats label={m.settings_section_plugins_title()} stats={[
         { id: 'installed', label: m.plugins_group_installed(), value: String(summary.installed) },
         { id: 'bundled', label: m.plugins_builtin(), value: String(summary.bundled) },
@@ -131,11 +138,11 @@ export function PluginsSection() {
       {installed && <TextInput type="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={m.plugins_filter()} aria-label={m.plugins_filter()} />}
       {installed && list.length === 0 && <EmptyState compact>{m.plugins_filter_empty()}</EmptyState>}
       {groups && summary
-        ? <PluginGroups groups={groups} bundled={summary.bundled} plugins={list} filtering={q !== ''} browsing={browsing} rowProps={rowProps} updateAll={updateAllButton} autoUpdate={autoUpdate} />
+        ? <PluginGroups groups={groups} bundled={summary.bundled} plugins={list} filtering={q !== ''} adding={adding} rowProps={rowProps} updateAll={updateAllButton} autoUpdate={autoUpdate} />
         : <div className="flex flex-col gap-2">
           {updateAllButton && <div className="flex justify-end">{updateAllButton}</div>}
           {autoUpdate && <PluginAutoUpdateRow state={autoUpdate} />}
-          {!installed && <EmptyState compact>{browsing ? m.plugins_catalog_no_installed() : m.plugins_empty()}</EmptyState>}
+          {!installed && <EmptyState compact>{adding ? m.plugins_catalog_no_installed() : m.plugins_empty()}</EmptyState>}
           <ul className="flex flex-col divide-y divide-border-subtle">{list.map((p) => <InstalledPluginRow key={p.key} {...rowProps(p)} />)}</ul>
         </div>}
       <ConfirmDialog open={scan?.status === 'needs_consent'} onOpenChange={(isOpen) => { if (!isOpen) setScan((current) => current === scan && current?.status === 'needs_consent' ? null : current) }}
@@ -169,7 +176,7 @@ const GROUP: Record<PluginGroup['id'], { icon: LucideIcon; label: () => string }
  * TAL-2132: the profile's own plugins, then the Agent's in one collapsible row per group. Groups open on a click and start
  * closed; while the filter has text the server lists only the groups with a match, and each is open.
  */
-function PluginGroups({ groups, bundled, plugins, filtering, browsing, rowProps, updateAll, autoUpdate }: { groups: PluginGroup[]; bundled: number; plugins: InstalledPlugin[]; filtering: boolean; browsing: boolean; rowProps: (p: InstalledPlugin) => RowProps; updateAll: ReactNode; autoUpdate: PluginAutoUpdateView | undefined }) {
+function PluginGroups({ groups, bundled, plugins, filtering, adding, rowProps, updateAll, autoUpdate }: { groups: PluginGroup[]; bundled: number; plugins: InstalledPlugin[]; filtering: boolean; adding: boolean; rowProps: (p: InstalledPlugin) => RowProps; updateAll: ReactNode; autoUpdate: PluginAutoUpdateView | undefined }) {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
   const byKey = new Map(plugins.map((p) => [p.key, p]))
   const rows = (group: PluginGroup) => group.plugin_keys.flatMap((key) => byKey.get(key) ?? [])
@@ -179,7 +186,7 @@ function PluginGroups({ groups, bundled, plugins, filtering, browsing, rowProps,
   const toggle = (id: string) => setExpanded((cur) => { const next = new Set(cur); if (!next.delete(id)) next.add(id); return next })
   return <>
     {mine && <SettingsGroup id="installed" title={m.plugins_group_installed()} detail={mine.total_count} action={updateAll}>
-      {!filtering && mine.total_count === 0 && <EmptyState compact>{browsing ? m.plugins_catalog_no_installed() : m.plugins_empty()}</EmptyState>}
+      {!filtering && mine.total_count === 0 && <EmptyState compact>{adding ? m.plugins_catalog_no_installed() : m.plugins_empty()}</EmptyState>}
       {installedRows.map((p) => <InstalledPluginRow key={p.key} {...rowProps(p)} />)}
       {autoUpdate && !filtering && <PluginAutoUpdateRow state={autoUpdate} />}
     </SettingsGroup>}
@@ -259,14 +266,21 @@ type PluginRowAction = RowAction & { icon: NonNullable<RowAction['icon']> }
  * TAL-2132: `note` takes the description's line (an update waiting); `icon` leads the row, and a `nested` row is indented under its group.
  * TAL-2133: `control` (the on/off switch) ends the row after its actions; on a narrow row both wrap together to the right. `menuOnly` adds
  * the control's move to the row menu, which has no inline button for it.
+ * TAL-2134: with `disclosure` the whole row opens its `children` (a catalog entry's details): the name is the button, stretched over the row
+ * under its actions, and a chevron ends the row.
  */
-function PluginRow({ id, icon: Icon, nested, title, description, note, status, actions, control, menuOnly = [], children }: { id?: string; icon?: LucideIcon | undefined; nested?: boolean | undefined; title: ReactNode; description: string; note?: ReactNode; status: ReactNode; actions: PluginRowAction[]; control?: ReactNode; menuOnly?: RowAction[]; children?: ReactNode }) {
-  const row = <li className={cn('list-none py-2', nested && 'pl-7')} data-plugin={id}><div className="flex flex-wrap items-center gap-3">
+function PluginRow({ id, icon: Icon, nested, title, description, note, status, actions, control, menuOnly = [], disclosure, children }: { id?: string; icon?: LucideIcon | undefined; nested?: boolean | undefined; title: ReactNode; description: string; note?: ReactNode; status: ReactNode; actions: PluginRowAction[]; control?: ReactNode; menuOnly?: RowAction[]; disclosure?: { open: boolean; onToggle: () => void; controls: string } | undefined; children?: ReactNode }) {
+  const text = <><div className="flex min-w-0 items-baseline text-sm font-medium text-text">{title}</div>
+    {note ? <div className="flex min-w-0">{note}</div> : <div className="truncate text-xs text-muted" title={description || undefined}>{description}</div>}</>
+  const Chevron = disclosure?.open ? ChevronDown : ChevronRight
+  const row = <li className={cn('list-none py-2', nested && 'pl-7')} data-plugin={id}><div className={cn('flex flex-wrap items-center gap-3', disclosure && 'relative')}>
     {Icon && <Icon size={18} strokeWidth={1.75} aria-hidden="true" data-row-icon="" className="shrink-0 text-muted" />}
-    <div className="min-w-0 flex-1 basis-40"><div className="flex min-w-0 items-baseline text-sm font-medium text-text">{title}</div>
-      {note ? <div className="flex min-w-0">{note}</div> : <div className="truncate text-xs text-muted" title={description || undefined}>{description}</div>}</div>
+    {disclosure
+      ? <button type="button" aria-expanded={disclosure.open} aria-controls={disclosure.controls} onClick={disclosure.onToggle} className="min-w-0 flex-1 basis-40 text-left after:absolute after:inset-0 [&:hover>div:first-child]:text-accent-text focus-visible:outline-2 focus-visible:outline-accent">{text}</button>
+      : <div className="min-w-0 flex-1 basis-40">{text}</div>}
     {status}
-    {control ? <div className="ml-auto flex shrink-0 items-center gap-3"><RowActionButtons actions={actions} />{control}</div> : <RowActionButtons actions={actions} />}
+    {control ? <div className="ml-auto flex shrink-0 items-center gap-3"><RowActionButtons actions={actions} />{control}</div> : <div className={cn(disclosure && 'relative z-10')}><RowActionButtons actions={actions} /></div>}
+    {disclosure && <Chevron size={14} aria-hidden="true" className="shrink-0 text-muted" />}
   </div>{children}</li>
   return <RowContextMenu label={m.plugins_row_menu()} actions={[...actions, ...menuOnly]} trigger={row} />
 }
@@ -309,43 +323,51 @@ function PluginUpdateAllResults({ rows }: { rows: PluginUpdateAllRow[] }) {
   </ul>
 }
 
+/**
+ * TAL-2134: the catalog inside the "Add plugin" dialog: a search that queries as the user types, then one row per entry ending in its one
+ * action (Install or Update) or the word Installed. The row opens its details in place; the list scrolls under the search.
+ */
 function PluginCatalogList({ updating, updatingKey, onUpdate }: { updating: boolean; updatingKey: string | null; onUpdate: (key: string) => void }) {
   const [search, setSearch] = useState('')
-  const [query, setQuery] = useState('')
-  const [offset, setOffset] = useState(0)
+  const query = useDebounced(search.trim(), 250)
+  // A new query starts at its first page.
+  const [page, setPage] = useState({ query: '', offset: 0 })
+  const offset = page.query === query ? page.offset : 0
   const [details, setDetails] = useState<string | null>(null)
+  const detailsId = useId()
   const install = usePluginInstall()
-  const catalog = useQuery({ queryKey: [...keys.pluginCatalog, query, offset], queryFn: () => api.fetchPluginCatalog(query, offset), retry: false })
-  return <section aria-label={m.plugins_catalog()} className="border-b border-border-subtle pb-4">
-    <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); setQuery(search); setOffset(0) }}>
-      <TextInput aria-label={m.plugins_catalog_search()} value={search} maxLength={200} onChange={(event) => setSearch(event.target.value)} />
-      <IconButton type="submit" variant="default" label={m.search()}><Search aria-hidden="true" /></IconButton>
-    </form>
-    {catalog.isPending ? <LoadingState /> : catalog.isError ? <ErrorState error={catalog.error} onRetry={() => { void catalog.refetch() }} /> : <>
-      {!catalog.data.supported && <p className="py-2 text-xs text-muted">{m.plugins_catalog_unsupported()}</p>}
+  const catalog = useQuery({ queryKey: [...keys.pluginCatalog, query, offset], queryFn: () => api.fetchPluginCatalog(query, offset), retry: false, placeholderData: keepPreviousData })
+  return <div className="flex flex-col gap-2">
+    <TextInput type="search" aria-label={m.plugins_catalog_search()} placeholder={m.plugins_catalog_search()} value={search} maxLength={200} onChange={(event) => setSearch(event.target.value)} />
+    {catalog.isPending ? <LoadingState /> : catalog.isError ? <ErrorState error={catalog.error} onRetry={() => { void catalog.refetch() }} /> : <div className="max-h-[60dvh] overflow-y-auto">
+      {!catalog.data.supported && <EmptyState compact>{m.plugins_catalog_unsupported()}</EmptyState>}
       {catalog.data.supported && catalog.data.total === 0 && <EmptyState compact>{m.plugins_catalog_empty()}</EmptyState>}
-      <ul className="flex flex-col divide-y divide-border-subtle">{catalog.data.entries.map((entry) => <PluginRow key={entry.name} title={entry.title} description={entry.description} status={<>
-        <span className="text-xs text-muted">{entry.tier} · {entry.category}</span>
-        {entry.installed_key && <span className="text-xs text-muted">{m.plugins_catalog_on_disk()}</span>}
-      </>} actions={[
-        { label: m.plugins_catalog_details(), run: () => setDetails(details === entry.name ? null : entry.name), expanded: details === entry.name, icon: Info },
-        ...(entry.can_update && entry.installed_key ? [{ label: m.plugins_update(), run: () => onUpdate(entry.installed_key ?? ''), disabled: updating, busy: updatingKey === entry.installed_key, icon: CircleArrowUp }] : []),
-        ...(entry.can_install ? [{ label: m.plugins_catalog_install(), run: () => install.request(entry.name), disabled: install.isInstalling(entry.name), busy: install.isInstalling(entry.name), icon: Download }] : []),
-      ]}>
-        {details === entry.name && <div className="mt-2 space-y-1 text-xs text-muted [overflow-wrap:anywhere]">
-          <p>{entry.repo}</p><p>{entry.sha}</p>{entry.installed_sha && <p>{entry.installed_sha}</p>}
-          {entry.requirements.map((requirement) => <p key={requirement}>{requirement}</p>)}
-          <p>{m.plugins_catalog_desktop()}</p>{entry.refusal && <p role="alert" className="text-warning">{entry.refusal}</p>}
-        </div>}
-        {install.blocked(entry.name)}
-      </PluginRow>)}</ul>
-      <div className="flex justify-end gap-2">
-        {offset > 0 && <IconButton variant="ghost" label={m.plugins_catalog_first()} onClick={() => setOffset(0)}><ChevronsLeft aria-hidden="true" /></IconButton>}
-        {catalog.data.next_offset !== null && <IconButton variant="ghost" label={m.plugins_catalog_next()} onClick={() => setOffset(catalog.data.next_offset ?? 0)}><ChevronRight aria-hidden="true" /></IconButton>}
-      </div>
-    </>}
+      <ul aria-label={m.plugins_catalog()} className="flex flex-col divide-y divide-border-subtle">{catalog.data.entries.map((entry, index) => {
+        const open = details === entry.name
+        const toggle = () => setDetails(open ? null : entry.name)
+        const id = `${detailsId}-${index}`
+        return <PluginRow key={entry.name} icon={Box} title={entry.title} description={entry.description} disclosure={{ open, onToggle: toggle, controls: id }}
+          status={!entry.can_install && !(entry.can_update && entry.installed_key) && entry.installed_key ? <span className="text-xs text-muted">{m.plugins_catalog_on_disk()}</span> : null}
+          menuOnly={[{ label: m.plugins_catalog_details(), run: toggle }]} actions={[
+            ...(entry.can_install ? [{ label: m.plugins_catalog_install(), run: () => install.request(entry.name), disabled: install.isInstalling(entry.name), busy: install.isInstalling(entry.name), icon: Download }]
+              : entry.can_update && entry.installed_key ? [{ label: m.plugins_update(), run: () => onUpdate(entry.installed_key ?? ''), disabled: updating, busy: updatingKey === entry.installed_key, icon: CircleArrowUp }] : []),
+          ]}>
+          {open && <div id={id} className="mt-2 space-y-1 pl-[30px] text-xs text-muted [overflow-wrap:anywhere]">
+            <p>{entry.tier} · {entry.category}</p>
+            <p>{entry.repo}</p><p>{entry.sha}</p>{entry.installed_sha && <p>{entry.installed_sha}</p>}
+            {entry.requirements.map((requirement) => <p key={requirement}>{requirement}</p>)}
+            <p>{m.plugins_catalog_desktop()}</p>{entry.refusal && <p role="alert" className="text-warning">{entry.refusal}</p>}
+          </div>}
+          {install.blocked(entry.name)}
+        </PluginRow>
+      })}</ul>
+    </div>}
+    {catalog.data && (offset > 0 || catalog.data.next_offset !== null) && <div className="flex justify-end gap-2">
+      {offset > 0 && <IconButton variant="ghost" label={m.plugins_catalog_first()} onClick={() => setPage({ query, offset: 0 })}><ChevronsLeft aria-hidden="true" /></IconButton>}
+      {catalog.data.next_offset !== null && <IconButton variant="ghost" label={m.plugins_catalog_next()} onClick={() => setPage({ query, offset: catalog.data.next_offset ?? 0 })}><ChevronRight aria-hidden="true" /></IconButton>}
+    </div>}
     {install.consent}
-  </section>
+  </div>
 }
 
 const OAUTH_STATE: Record<PluginOAuthClientView['state'], { label: () => string; state: DotState }> = {

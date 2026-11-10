@@ -127,7 +127,7 @@ test('TAL-1914: the switch, Update all and a behind catalog row work and fit the
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 
   await page.getByRole('button', { name: 'Add plugin', exact: true }).click()
-  const catalog = section.getByRole('region', { name: 'Catalog' })
+  const catalog = page.getByRole('dialog', { name: 'Add plugin' })
   await catalog.getByRole('button', { name: 'Update', exact: true }).click()
   const consent = page.getByRole('alertdialog')
   await expect(consent).toContainText('adds tools: forecast')

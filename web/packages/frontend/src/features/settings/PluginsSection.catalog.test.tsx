@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, expect, it, vi } from 'vitest'
 import * as api from '../../api/endpoints'
 import { PluginsSection } from './PluginsSection'
@@ -20,7 +21,7 @@ async function setup(installAvailable = true) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   render(<QueryClientProvider client={qc}><PluginsSection /></QueryClientProvider>)
   fireEvent.click(await screen.findByRole('button', { name: 'Add plugin' }))
-  return installAvailable ? screen.findByRole('button', { name: 'Install disabled' }) : screen.findByRole('region', { name: 'Catalog' })
+  return installAvailable ? screen.findByRole('button', { name: 'Install disabled' }) : screen.findByRole('dialog', { name: 'Add plugin' })
 }
 
 it('distinguishes an empty installed list from the available catalog', async () => {
@@ -68,4 +69,49 @@ it('reads the installed identity after lost acknowledgment without replaying the
   await waitFor(() => expect(api.fetchPluginCatalog).toHaveBeenCalledTimes(2))
   expect(api.installPlugin).toHaveBeenCalledTimes(1)
   expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+})
+
+it('opens the catalog in a dialog and returns focus to Add plugin on Escape', async () => {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(<QueryClientProvider client={qc}><PluginsSection /></QueryClientProvider>)
+  const add = await screen.findByRole('button', { name: 'Add plugin' })
+  expect(screen.queryByText('Probe')).not.toBeInTheDocument()
+  await userEvent.click(add)
+  const dialog = await screen.findByRole('dialog', { name: 'Add plugin' })
+  expect(await within(dialog).findByText('Probe')).toBeVisible()
+  expect(within(dialog).queryByRole('button', { name: 'Search' })).not.toBeInTheDocument()
+  await waitFor(() => expect(dialog).toContainElement(document.activeElement as HTMLElement))
+  await userEvent.keyboard('{Escape}')
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  await waitFor(() => expect(add).toHaveFocus())
+})
+
+it('queries as the user types and shows the first page again when cleared', async () => {
+  vi.mocked(api.fetchPluginCatalog).mockImplementation((query) => Promise.resolve(query === 'syn'
+    ? { supported: true, read_only: false, entries: [{ ...entry, name: 'synth', title: 'Synth' }], total: 1, next_offset: null }
+    : { supported: true, read_only: false, entries: [entry], total: 1, next_offset: null }))
+  await setup()
+  const search = screen.getByRole('searchbox', { name: 'Search plugins' })
+  fireEvent.change(search, { target: { value: 'syn' } })
+  expect(await screen.findByText('Synth')).toBeVisible()
+  expect(api.fetchPluginCatalog).toHaveBeenLastCalledWith('syn', 0)
+  fireEvent.change(search, { target: { value: '' } })
+  expect(await screen.findByText('Probe')).toBeVisible()
+  expect(screen.queryByText('Synth')).not.toBeInTheDocument()
+})
+
+it('ends each row in one action or the word Installed, and opens details from the row', async () => {
+  vi.mocked(api.fetchPluginCatalog).mockResolvedValue({ supported: true, read_only: false, total: 2, next_offset: null, entries: [entry, { ...entry, name: 'held', title: 'Held', installed_key: 'held', installed_sha: 'b'.repeat(40), can_install: false }] })
+  await setup()
+  const dialog = screen.getByRole('dialog', { name: 'Add plugin' })
+  expect(within(dialog).queryByRole('button', { name: 'Details' })).not.toBeInTheDocument()
+  const held = within(dialog).getByRole('button', { name: /Held/ })
+  expect(held).toHaveAttribute('aria-expanded', 'false')
+  expect(within(dialog).getAllByRole('button', { name: 'Install disabled' })).toHaveLength(1)
+  expect(within(dialog).getByText('Installed')).toBeVisible()
+  expect(within(dialog).queryByText('verified · tools')).not.toBeInTheDocument()
+  fireEvent.click(held)
+  expect(held).toHaveAttribute('aria-expanded', 'true')
+  expect(within(dialog).getByText('verified · tools')).toBeVisible()
+  expect(within(dialog).getByText('b'.repeat(40))).toBeVisible()
 })
