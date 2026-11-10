@@ -206,11 +206,13 @@ test.describe('shell', () => {
     try {
       await page.goto('/settings/appearance')
       await settle(page)
-      await expect(page.getByText('Language', { exact: true })).toBeVisible()
+      const label = page.locator('label[for="settingsLanguage"]')
+      await expect(label).toHaveText('Language')
       await page.locator('#settingsLanguage').click()
       await page.getByRole('option', { name: 'Deutsch' }).click()
       await expect(page.locator('html')).toHaveAttribute('lang', 'de-DE')
-      await expect(page.getByText('Sprache', { exact: true })).toBeVisible()
+      await expect(label).toHaveText('Sprache')
+      await expect(page.getByRole('heading', { name: 'Sprache', exact: true })).toBeVisible()
       await expect(page.getByText('Language', { exact: true })).toHaveCount(0)
       expect(errors).toEqual([])
     } finally {

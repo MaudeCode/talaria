@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web Settings groups Appearance into Theme, Text and layout, and Language, and lists extension skins under their own From extensions heading after the built-in skins.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}
