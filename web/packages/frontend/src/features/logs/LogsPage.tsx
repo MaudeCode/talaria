@@ -106,8 +106,8 @@ export function LogsPage() {
             <>
               {data.counts && (
                 <SettingsStats label={m.logs_title()} stats={[
-                  { id: 'errors', label: m.logs_severity_errors(), value: data.counts.error.toLocaleString(), tone: data.counts.error > 0 ? 'error' : undefined },
-                  { id: 'warnings', label: m.logs_warnings(), value: data.counts.warning.toLocaleString(), tone: data.counts.warning > 0 ? 'warning' : undefined },
+                  { id: 'errors', label: m.logs_severity_errors(), value: data.counts.error.toLocaleString(), tone: data.count_tones?.error ?? undefined },
+                  { id: 'warnings', label: m.logs_warnings(), value: data.counts.warning.toLocaleString(), tone: data.count_tones?.warning ?? undefined },
                   { id: 'lines', label: m.logs_tail_label(), value: data.counts.lines.toLocaleString() },
                   { id: 'updated', label: m.logs_updated(), value: read },
                 ]} />
@@ -126,8 +126,9 @@ export function LogsPage() {
                 <div className="border-b border-border-subtle">
                   <SettingRow label={m.logs_follow()} htmlFor="logs-follow" icon={ArrowDownToLine}><Switch id="logs-follow" checked={follow} onCheckedChange={onFollow} /></SettingRow>
                 </div>
-                {/* The log scrolls sideways at wide widths; at phone width its lines wrap and a dated time puts its date over its time. */}
-                <div className="overflow-x-auto max-[641px]:overflow-x-visible">
+                {/* The log scrolls sideways at wide widths; at phone width its lines wrap and a dated time puts its date over its time.
+                    `overflow-y-hidden` keeps the browser from computing `overflow-x-auto` as a vertical scroller, which Follow would take for the page's. */}
+                <div className="overflow-x-auto overflow-y-hidden max-[641px]:overflow-visible">
                   <ol ref={setList} aria-label={FILE_LABEL[file]?.() ?? file} data-log-lines=""
                     className="grid w-max min-w-full grid-cols-[auto_auto_minmax(0,1fr)] gap-x-3 font-mono text-xs leading-relaxed text-pre-text max-[641px]:w-full max-[641px]:grid-cols-[min-content_auto_minmax(0,1fr)]">
                     {entries

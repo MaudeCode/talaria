@@ -104015,6 +104015,41 @@
                       "type": "integer",
                       "minimum": -9007199254740991,
                       "maximum": 9007199254740991
+                    },
+                    "count_tones": {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "error"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "warning": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "warning"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "warning"
+                      ]
                     }
                   },
                   "required": [

@@ -47,6 +47,11 @@ describe('classifyLog', () => {
     expect(matched).toBe(8)
   })
 
+  it('marks a count for attention only while the tail holds one', () => {
+    expect(classifyLog(TAIL).count_tones).toEqual({ error: 'error', warning: 'warning' })
+    expect(classifyLog(TAIL.slice(0, 1)).count_tones).toEqual({ error: null, warning: null })
+  })
+
   it('keeps errors and their continuation lines for level error, warnings too for level warning', () => {
     const errors = classifyLog(TAIL, { level: 'error' })
     expect(errors.entries.map((e) => e.text)).toEqual(['tools.mcp: server "linear" failed to connect: 401', 'Traceback (most recent call last):', '  File "mcp/client.py", line 88, in connect', 'ConnectionError: 401'])

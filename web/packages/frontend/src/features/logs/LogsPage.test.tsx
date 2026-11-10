@@ -19,7 +19,7 @@ const ENTRIES: LogEntry[] = [
   { time: '12:04:19', level: 'warning', text: 'plugin web-exa missing EXA_API_KEY' },
 ]
 const answer = (entries: LogEntry[], extra: Partial<Logs> = {}): Logs => ({
-  file: 'agent', tail: 500, lines: entries.map((e) => e.text), hint: '', files: FILES, entries, counts: { error: 2, warning: 1, lines: 4 }, matched: entries.length, ...extra,
+  file: 'agent', tail: 500, lines: entries.map((e) => e.text), hint: '', files: FILES, entries, counts: { error: 2, warning: 1, lines: 4 }, count_tones: { error: 'error', warning: null }, matched: entries.length, ...extra,
 })
 const fetchLogs = vi.mocked(api.fetchLogs)
 
@@ -80,6 +80,8 @@ it('sends the level and search to the server and shows its matches, count and fi
   await screen.findByText('gateway connected to telegram')
   const stats = container.querySelector('[data-settings-stats]')!
   expect([...stats.querySelectorAll('[data-stat]')].map((s) => [s.getAttribute('data-stat'), s.querySelector('dd')?.textContent])).toEqual([['errors', '2'], ['warnings', '1'], ['lines', '4'], ['updated', expect.any(String)]])
+  // The server's tones colour the figures: here it marked errors and not warnings.
+  expect([...stats.querySelectorAll('[data-stat] dd .text-error, [data-stat] dd .text-warning')].map((el) => el.closest('[data-stat]')?.getAttribute('data-stat'))).toEqual(['errors'])
   // Level tokens tell warning and error lines apart without colour.
   expect([...container.querySelectorAll('[data-log-lines] li')].map((li) => li.children[1]?.textContent)).toEqual(['INFO', 'ERROR', 'ERROR', 'WARN'])
   expect(screen.getByRole('status').textContent).toContain('Last 4 lines')

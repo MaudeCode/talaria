@@ -1079,12 +1079,14 @@ export const LogEntrySchema = z.object({ text: z.string(), level: LogLevelSchema
 export const LogFileSchema = z.object({ id: z.string(), exists: z.boolean(), total_bytes: z.number().nullable() })
 /**
  * `lines` is the raw tail. `entries` are those lines classified and filtered by `q` and `level`; `counts` cover the tail
- * before the filters and `matched` counts what they keep.
+ * before the filters, `count_tones` mark the counts that need attention, and `matched` counts what the filters keep.
  */
 export const LogsSchema = z.looseObject({
   file: z.string(), tail: z.number().optional(), lines: z.array(z.string()), truncated: z.boolean().optional(), total_bytes: z.number().optional(), mtime: NullableNumber.optional(), hint: z.string().optional(),
   entries: z.array(LogEntrySchema).optional(), files: z.array(LogFileSchema).optional(),
   counts: z.object({ error: z.number().int(), warning: z.number().int(), lines: z.number().int() }).optional(), matched: z.number().int().optional(),
+  /** The tone the page gives each count's figure: `error` or `warning` while the tail holds one, else null. */
+  count_tones: z.object({ error: z.enum(['error']).nullable(), warning: z.enum(['warning']).nullable() }).optional(),
 })
 export type Logs = z.infer<typeof LogsSchema>
 export type LogEntry = z.infer<typeof LogEntrySchema>

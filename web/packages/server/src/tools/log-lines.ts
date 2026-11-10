@@ -11,6 +11,7 @@ const TOKEN_WINDOW = 80
 export interface ClassifiedLog {
   entries: LogEntry[]
   counts: { error: number; warning: number; lines: number }
+  count_tones: { error: 'error' | null; warning: 'warning' | null }
   matched: number
 }
 
@@ -60,5 +61,7 @@ export function classifyLog(lines: readonly string[], filter: { q?: string | und
     if (pattern) entry.matches = [...entry.text.matchAll(pattern)].map((hit) => [hit.index, hit.index + hit[0].length])
     entries.push(entry)
   }
-  return { entries, counts, matched: entries.length }
+  // Any error or warning in the tail marks its count; the page colours what is marked.
+  const countTones = { error: counts.error > 0 ? 'error' as const : null, warning: counts.warning > 0 ? 'warning' as const : null }
+  return { entries, counts, count_tones: countTones, matched: entries.length }
 }
