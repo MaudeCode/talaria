@@ -347,8 +347,9 @@ previous detail selection. The shared fixture is
 
 `GET /api/models` carries `favorites`, the active profile's starred
 `{ provider_id, model }` pairs in starred order, and stamps `favorite` on every
-entry whose `provider_id` and `bare_id` match one. `null` means the profile has
-never saved favorites. `POST /api/models/favorite` stars or unstars one model
+entry whose `provider_id` and `bare_id` match one. `favorite_option_ids` lists
+those entries' ids in starred order, which is the order the picker's Favorites
+show. `null` means the profile has never saved favorites. `POST /api/models/favorite` stars or unstars one model
 under the settings queue, so concurrent writes for different models all
 persist; a new star goes last and at most 200 are kept. `POST
 /api/models/favorites/import` writes a client's list only while the stored value

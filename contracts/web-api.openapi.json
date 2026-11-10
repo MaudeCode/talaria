@@ -90641,6 +90641,13 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "favorite_option_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "TAL-1858: the ids of the entries `favorites` marks, in starred order; the picker lists Favorites in this order."
                     }
                   },
                   "required": [
@@ -91413,6 +91420,13 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "favorite_option_ids": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "TAL-1858: the ids of the entries `favorites` marks, in starred order; the picker lists Favorites in this order."
                         }
                       },
                       "required": [
@@ -96010,6 +96024,13 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "favorite_option_ids": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "TAL-1858: the ids of the entries `favorites` marks, in starred order; the picker lists Favorites in this order."
                         }
                       },
                       "required": [
@@ -96830,6 +96851,13 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "favorite_option_ids": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "TAL-1858: the ids of the entries `favorites` marks, in starred order; the picker lists Favorites in this order."
                         }
                       },
                       "required": [

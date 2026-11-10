@@ -102,7 +102,14 @@ export function ModelPickerContent({ selectedId, searchInput, onSelect, onCustom
   const groups = models.data?.groups ?? []
   const q = query.trim()
   const searching = q !== ''
-  const favorites = groups.flatMap((group) => group.models.filter(shown).map((entry) => ({ entry, group })))
+  // Favorites in the server's starred order, as the user's pending stars show them: an unstar drops its row, a new star
+  // goes last, where the server puts it.
+  const byId = new Map(groups.flatMap((group) => group.models.map((entry) => [entry.id, { entry, group }] as const)))
+  const starredIds = models.data?.favorite_option_ids ?? []
+  const favorites = [
+    ...starredIds.flatMap((id) => { const row = byId.get(id); return row && shown(row.entry) ? [row] : [] }),
+    ...[...byId.values()].filter(({ entry }) => shown(entry) && !starredIds.includes(entry.id)),
+  ]
   // Opens on Favorites when any exist, else on the selected model's provider, as T3 Code does.
   const opening = favorites.length ? FAVORITES : groups.find((g) => g.models.some((e) => e.id === selectedId)) ?? groups[0]
   const fallback = opening === FAVORITES || !opening ? FAVORITES : groupKey(opening)

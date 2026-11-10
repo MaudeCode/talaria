@@ -103,7 +103,7 @@ export function repairSessionModel(catalog: ModelsCatalog, model: string, provid
   return defaultModel && defaultProvider && (defaultModel !== model || defaultProvider !== pid) ? [defaultModel, defaultProvider] : null
 }
 
-export interface ModelsCatalog { availability?: CatalogAvailability; active_provider: string | null; default_model: string; default_provider_id?: string | null; default_bare_id?: string; default_option_id?: string | null; groups: ModelGroup[]; aliases: Record<string, string>; configured_model_badges: Record<string, { role: string; label: string; provider: string }>; favorites?: ModelFavorite[] | null }
+export interface ModelsCatalog { availability?: CatalogAvailability; active_provider: string | null; default_model: string; default_provider_id?: string | null; default_bare_id?: string; default_option_id?: string | null; groups: ModelGroup[]; aliases: Record<string, string>; configured_model_badges: Record<string, { role: string; label: string; provider: string }>; favorites?: ModelFavorite[] | null; favorite_option_ids?: string[] }
 
 /**
  * TAL-388: stamp each auxiliary slot with its display value and the catalog entry whose provider/model pair equals the
@@ -1337,8 +1337,17 @@ export class ProviderCatalog {
     catalog.groups.forEach((g, i) => { const level = levels[i]; if (level) g.quota_level = level })
     // TAL-1857: a favorite whose model left the catalog stays in `favorites` and marks no row.
     catalog.favorites = (await this.deps.modelFavorites?.(profile)) ?? null
-    const starred = new Set((catalog.favorites ?? []).map((f) => `${f.provider_id}\0${f.model}`))
-    for (const g of catalog.groups) for (const e of entries(g)) e.favorite = starred.has(`${str(e.provider_id).toLowerCase()}\0${e.bare_id ?? e.id}`)
+    const rank = new Map((catalog.favorites ?? []).map((f, i) => [`${f.provider_id}\0${f.model}`, i]))
+    const starred: [number, string][] = []
+    for (const g of catalog.groups) {
+      for (const e of entries(g)) {
+        const at = rank.get(`${str(e.provider_id).toLowerCase()}\0${e.bare_id ?? e.id}`)
+        e.favorite = at !== undefined
+        if (at !== undefined) starred.push([at, e.id])
+      }
+    }
+    // TAL-1858: the starred rows' ids in starred order; a stable sort keeps catalog order between rows of one favorite.
+    catalog.favorite_option_ids = starred.sort((a, b) => a[0] - b[0]).map(([, id]) => id)
     return catalog
   }
 

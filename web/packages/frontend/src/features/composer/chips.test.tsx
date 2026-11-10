@@ -41,7 +41,9 @@ const FAVORITES_CATALOG = {
     { provider: 'OpenRouter', provider_id: 'openrouter', models: [{ id: '@openrouter:qwen/qwen3', label: 'Qwen3', provider_id: 'openrouter', bare_id: 'qwen/qwen3', favorite: true }] },
     { provider: 'Acme Cloud', provider_id: 'acme-cloud', models: [{ id: '@anthropic:claude-opus-4.7', label: 'Acme Opus', provider_id: 'acme-cloud', bare_id: '@anthropic:claude-opus-4.7', favorite: false }] },
   ],
-  favorites: [{ provider_id: 'anthropic', model: 'claude-haiku-4.5' }, { provider_id: 'openrouter', model: 'qwen/qwen3' }],
+  // Starred OpenRouter first, so the starred order differs from the catalog's.
+  favorites: [{ provider_id: 'openrouter', model: 'qwen/qwen3' }, { provider_id: 'anthropic', model: 'claude-haiku-4.5' }],
+  favorite_option_ids: ['@openrouter:qwen/qwen3', 'claude-haiku-4.5'],
 }
 let catalog: unknown = PLUGIN_CATALOG
 
@@ -127,9 +129,9 @@ describe('ModelChip', () => {
     await userEvent.click(screen.getByRole('button'))
     await picker()
     expect(within(rail()).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(['Favorites', 'Anthropic', 'OpenRouter', 'Acme Cloud'])
-    // Favorites exist, so the picker opens on them: one per provider, each row naming its provider.
+    // Favorites exist, so the picker opens on them in the server's starred order, each row naming its provider.
     expect(within(rail()).getByRole('button', { name: 'Favorites' })).toHaveAttribute('aria-pressed', 'true')
-    expect(optionNames()).toEqual(['Claude Haiku 4.5 · Anthropic', 'Qwen3 · OpenRouter'])
+    expect(optionNames()).toEqual(['Qwen3 · OpenRouter', 'Claude Haiku 4.5 · Anthropic'])
 
     await userEvent.click(within(rail()).getByRole('button', { name: 'Anthropic' }))
     expect(within(rail()).getByRole('button', { name: 'Anthropic' })).toHaveAttribute('aria-pressed', 'true')
@@ -162,17 +164,18 @@ describe('ModelChip', () => {
     expect(onChange).not.toHaveBeenCalled()
     expect(opus).toHaveAttribute('aria-selected', 'true')
     await userEvent.click(within(rail()).getByRole('button', { name: 'Favorites' }))
-    expect(optionNames()).toEqual(['Claude Opus 4.7 · Anthropic', 'Claude Haiku 4.5 · Anthropic', 'Qwen3 · OpenRouter'])
+    // A new star goes last, where the server puts it.
+    expect(optionNames()).toEqual(['Qwen3 · OpenRouter', 'Claude Haiku 4.5 · Anthropic', 'Claude Opus 4.7 · Anthropic'])
 
     const refused = new ApiError({ kind: 'http', status: 400, path: '/api/models/favorite', message: 'At most 200 favorites' })
     await act(async () => { refuse(refused); await Promise.resolve() })
-    await waitFor(() => { expect(optionNames()).toEqual(['Claude Haiku 4.5 · Anthropic', 'Qwen3 · OpenRouter']) })
+    await waitFor(() => { expect(optionNames()).toEqual(['Qwen3 · OpenRouter', 'Claude Haiku 4.5 · Anthropic']) })
     expect(showErrorToast).toHaveBeenCalledWith(refused)
     expect(onChange).not.toHaveBeenCalled()
 
     // Right-click offers the same star; an unstar the server confirms leaves Favorites and stays gone after the reread.
     vi.mocked(setModelFavorite).mockImplementationOnce(() => {
-      catalog = { ...FAVORITES_CATALOG, groups: FAVORITES_CATALOG.groups.map((g) => ({ ...g, models: g.models.map((e) => e.id === '@openrouter:qwen/qwen3' ? { ...e, favorite: false } : e) })) }
+      catalog = { ...FAVORITES_CATALOG, favorite_option_ids: ['claude-haiku-4.5'], groups: FAVORITES_CATALOG.groups.map((g) => ({ ...g, models: g.models.map((e) => e.id === '@openrouter:qwen/qwen3' ? { ...e, favorite: false } : e) })) }
       return Promise.resolve({ ok: true as const, favorites: [{ provider_id: 'anthropic', model: 'claude-haiku-4.5' }] })
     })
     const reads = vi.mocked(fetchModels).mock.results.length
@@ -199,12 +202,12 @@ describe('ModelChip', () => {
     for (const option of screen.getAllByRole('option')) expect(within(option).getByRole('button')).toHaveAccessibleName(/favorites/)
     await userEvent.keyboard('{ArrowDown}')
     const highlighted = () => screen.getAllByRole('option').find((el) => el.hasAttribute('data-highlighted'))?.getAttribute('aria-label')
-    expect(highlighted()).toBe('Claude Haiku 4.5 · Anthropic')
-    await userEvent.keyboard('{ArrowDown}')
     expect(highlighted()).toBe('Qwen3 · OpenRouter')
+    await userEvent.keyboard('{ArrowDown}')
+    expect(highlighted()).toBe('Claude Haiku 4.5 · Anthropic')
     expect(search).toHaveFocus()
     await userEvent.keyboard('{Enter}')
-    expect(onChange).toHaveBeenCalledWith('@openrouter:qwen/qwen3', 'openrouter')
+    expect(onChange).toHaveBeenCalledWith('claude-haiku-4.5', 'anthropic')
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
 
     await userEvent.click(trigger)

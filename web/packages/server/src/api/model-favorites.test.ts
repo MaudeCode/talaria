@@ -10,7 +10,7 @@ useJsonStorage()
 
 type Json = Record<string, unknown>
 interface Entry { id: string; provider_id: string; bare_id: string; favorite?: boolean }
-interface Catalog { favorites?: { provider_id: string; model: string }[] | null; groups: { provider_id: string; models: Entry[] }[] }
+interface Catalog { favorites?: { provider_id: string; model: string }[] | null; favorite_option_ids?: string[]; groups: { provider_id: string; models: Entry[] }[] }
 
 const profileRow = (name: string, path: string) => ({ name, path, is_default: name === 'default', gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 })
 
@@ -78,6 +78,19 @@ describe('model favorites', () => {
     expect(starred(after)).toEqual(['anthropic/claude-opus-4-7'])
     await star('anthropic', 'claude-opus-4-7', false)
     expect((await catalog()).favorites).toEqual([])
+  })
+
+  it('lists the starred rows\' ids in starred order, not catalog order (TAL-1858)', async () => {
+    const before = await catalog()
+    const id = (provider: string, bare: string) => before.groups.find((g) => g.provider_id === provider)?.models.find((m) => m.bare_id === bare)?.id
+    // Anthropic's group comes first in the catalog; the OpenRouter star is older, so it leads.
+    expect(before.groups.findIndex((g) => g.provider_id === 'anthropic')).toBeLessThan(before.groups.findIndex((g) => g.provider_id === 'openrouter'))
+    await star('openrouter', 'shared-model', true)
+    await star('anthropic', 'claude-opus-4-7', true)
+    expect((await catalog()).favorite_option_ids).toEqual([id('openrouter', 'shared-model'), id('anthropic', 'claude-opus-4-7')])
+    await star('openrouter', 'shared-model', false)
+    await star('anthropic', 'claude-opus-4-7', false)
+    expect((await catalog()).favorite_option_ids).toEqual([])
   })
 
   it('keeps both of two concurrent single-model writes', async () => {
