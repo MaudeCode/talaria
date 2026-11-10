@@ -308,7 +308,8 @@ A connected-app sighting may set Hermes' existing guest flag; it never creates o
 refreshes credentials. Sign-in starts only when chosen, and its account and app
 transfer result stays readable until **Continue**.
 
-The Memory page offers **Preview compaction** for saved Memory and User profile entries. It uses the configured
+The Memory page shows each file as formatted Markdown; **Edit** opens its text in an editor, and **Save** or
+**Cancel** returns to the formatted view. Project context is read-only. The page also offers **Preview compaction** for saved Memory and User profile entries. It uses the configured
 Compression auxiliary model, shows the source, proposal and diff, and saves only after **Apply compaction**.
 The preview expires after 30 minutes and is bound to the profile and saved revision. A changed source requires a
 new preview; a refusal keeps the review visible. Secret-bearing and explicitly protected entries stay unchanged

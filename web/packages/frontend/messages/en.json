@@ -1365,8 +1365,6 @@
 	"memory_compaction_source": "Source",
 	"memory_disabled_hint": "Disabled by configuration",
 	"memory_notes_label": "memory (notes)",
-	"memory_path": "Path",
-	"memory_readonly_project": "Project context is read from the workspace file.",
 	"memory_saved": "Memory saved",
 	"memory_section_memory": "Memory",
 	"memory_section_project": "Project context",

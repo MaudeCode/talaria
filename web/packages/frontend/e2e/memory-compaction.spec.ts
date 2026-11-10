@@ -31,8 +31,8 @@ test('reviews memory compaction, keeps a refused review, and applies a fresh pre
   }
   try {
     await page.goto(`${server.base}/memory`)
-    const editor = page.getByRole('textbox', { name: 'Memory', exact: true })
-    await expect(editor).toHaveValue(source)
+    const view = page.locator('[data-memory-view="memory"]')
+    await expect(view).toContainText('Prefers brief answers.')
     if (process.env.TALARIA_COMPACTION_BASELINE) { await screenshot('before'); return }
     await screenshot('saved-source')
     await page.getByRole('button', { name: 'Preview compaction' }).click()
@@ -53,13 +53,14 @@ test('reviews memory compaction, keeps a refused review, and applies a fresh pre
     errors.splice(0, errors.length, ...errors.filter((e) => !e.includes('409 POST') && !e.includes('status of 409')))
     await screenshot('refused-review')
     await page.getByRole('button', { name: 'Cancel', exact: true }).first().click()
-    await expect(editor).toHaveValue(source + '\n§\nNew knowledge learned during review.')
+    await expect(view).toContainText('New knowledge learned during review.')
     sidecar.respond('aux.complete', () => ({ model: 'synthetic-compression', text: JSON.stringify({ entries: [proposed, 'New knowledge learned during review.'] }), usage: null }))
     await page.getByRole('button', { name: 'Preview compaction' }).click()
     await expect(review).toBeVisible()
     await page.getByRole('button', { name: 'Apply compaction' }).click()
     await expect(review).toBeHidden()
-    await expect(editor).toHaveValue(proposed + '\n§\nNew knowledge learned during review.')
+    await expect(view).toContainText(proposed)
+    await expect(view).not.toContainText('Prefers brief answers.')
     expect(readFileSync(file, 'utf8')).toBe(proposed + '\n§\nNew knowledge learned during review.')
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await screenshot('applied')
