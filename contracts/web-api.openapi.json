@@ -90484,7 +90484,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-2161: the routes the configured mode holds (`model_map` options or `profile_routes` profiles) as shown to this session; null for a mode without named routes."
+                          "description": "TAL-2161: the routes the configured mode holds (`model_map` options or `profile_routes` profiles), counted even where a non-owner's session lists none; null for a mode without named routes."
                         }
                       },
                       "required": [
@@ -92671,7 +92671,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-2161: the routes the configured mode holds (`model_map` options or `profile_routes` profiles) as shown to this session; null for a mode without named routes."
+                          "description": "TAL-2161: the routes the configured mode holds (`model_map` options or `profile_routes` profiles), counted even where a non-owner's session lists none; null for a mode without named routes."
                         }
                       },
                       "required": [
@@ -93372,7 +93372,7 @@
                                   "type": "null"
                                 }
                               ],
-                              "description": "TAL-2161: the routes the configured mode holds (`model_map` options or `profile_routes` profiles) as shown to this session; null for a mode without named routes."
+                              "description": "TAL-2161: the routes the configured mode holds (`model_map` options or `profile_routes` profiles), counted even where a non-owner's session lists none; null for a mode without named routes."
                             }
                           },
                           "required": [
