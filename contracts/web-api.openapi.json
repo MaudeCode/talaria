@@ -107910,8 +107910,20 @@
     "/api/plugins": {
       "get": {
         "operationId": "plugins",
+        "summary": "`q` keeps rows whose name (or key when it has none) or description contains it, case-insensitively; `total` and `empty` describe the whole install.",
         "tags": [
           "tools"
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
         ],
         "responses": {
           "200": {
@@ -108087,6 +108099,12 @@
                         ],
                         "additionalProperties": {}
                       }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "description": "Installed plugins before the `q` filter (TAL-2129)."
                     },
                     "empty": {
                       "type": "boolean"

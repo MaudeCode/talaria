@@ -2,8 +2,9 @@ import { ModelOptionContent } from '../../lib/modelEntry'
 import { useProviderQuotas } from '../../lib/useProviderQuotas'
 import { memo, useRef, useState, type ReactNode } from 'react'
 import { useDebounced } from '../../lib/useDebounced'
+import { sameRowProps } from '../../lib/sameRowProps'
 import type { z } from 'zod'
-import { keepPreviousData, replaceEqualDeep, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { RefreshCw } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -133,7 +134,6 @@ interface ProviderRowProps {
 
 // Memoized so typing in the filter renders only the rows entering the list (TAL-1405). Each filter answer is a new
 // response (TAL-2127), so `p` compares by value.
-const sameRow = (a: ProviderRowProps, b: ProviderRowProps) => (Object.keys(b) as (keyof ProviderRowProps)[]).every((k) => k === 'p' ? replaceEqualDeep(a.p, b.p) === a.p : Object.is(a[k], b[k]))
 const ProviderRow = memo(function ProviderRow({ p, compact, quotaSources, quotaNotice, catalogUnavailable, defaultModel, editing, onEdit, onInvalidate, onSetDefault, onRefresh, refreshBusy, refreshing, onSaveKey, keySaving, onSaveHosted, hostedSaving, onInstall, installing, installBlocked }: ProviderRowProps) {
   const sources = quotaSources?.filter((s) => s.provider_id === p.id) ?? []
   const quota = sources[0]
@@ -195,7 +195,7 @@ const ProviderRow = memo(function ProviderRow({ p, compact, quotaSources, quotaN
       </div>
     </Row>} />
   )
-}, sameRow)
+}, sameRowProps<ProviderRowProps>('p'))
 
 function ProviderKeyForm({ label, hasKey, saving, onSubmit }: { label: string; hasKey: boolean; saving: boolean; onSubmit: (key: string) => void }) {
   const [value, setValue] = useState('')

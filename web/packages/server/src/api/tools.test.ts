@@ -692,7 +692,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     try {
       const expected = {
         plugins: [{ ...row, settings: [], oauth_clients: [{ ...oauthClient, can_sign_out: false }] }],
-        empty: false, supported_hooks: ['pre_tool_call'], read_only: false, plugin_isolation_advisory: true,
+        total: 1, empty: false, supported_hooks: ['pre_tool_call'], read_only: false, plugin_isolation_advisory: true,
         auto_update: { auto_apply: false, check_hours: 24, inactive_reason: 'no_gateway' },
       }
       expect(await json(await s.get('/api/plugins'))).toEqual(expected)
@@ -731,6 +731,24 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       expect(body.unavailable).toBeUndefined()
     } finally {
       sidecar.respond('plugins.isolation', undefined)
+    }
+  })
+
+  it('TAL-2129: q keeps plugins whose name (else key) or description contains it; total counts the install', async () => {
+    const row = { version: '1', enabled: true, kind: 'standalone', activation: 'enabled', hooks: [] }
+    sidecar.respond('plugins.list', () => ({ supported_hooks: [], plugins: [
+      { ...row, key: 'inbox', name: 'Gmail Inbox', description: 'Reads messages' },
+      { ...row, key: 'notes', name: 'Notes', description: 'Files MAIL digests' },
+      { ...row, key: 'mailbox', name: '', description: 'Keyed only' },
+      { ...row, key: 'calendar', name: 'Calendar', description: 'Events' },
+    ] }))
+    try {
+      const keysFor = async (path: string) => { const body = await json(await s.get(path)); return { keys: (body.plugins as Json[]).map((p) => p.key), total: body.total, empty: body.empty } }
+      expect(await keysFor('/api/plugins?q=%20mAiL%20')).toEqual({ keys: ['inbox', 'notes', 'mailbox'], total: 4, empty: false })
+      expect(await keysFor('/api/plugins?q=nothing')).toEqual({ keys: [], total: 4, empty: false })
+      for (const path of ['/api/plugins', '/api/plugins?q=', '/api/plugins?q=%20']) expect(await keysFor(path)).toEqual({ keys: ['inbox', 'notes', 'mailbox', 'calendar'], total: 4, empty: false })
+    } finally {
+      sidecar.respond('plugins.list', undefined)
     }
   })
 

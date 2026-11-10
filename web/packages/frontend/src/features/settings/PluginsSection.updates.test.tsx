@@ -11,7 +11,7 @@ vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
 
 beforeEach(() => vi.resetAllMocks())
 function setup(readOnly = false) {
-  vi.mocked(api.fetchPlugins).mockResolvedValue({ read_only: readOnly, plugins: [{ key: 'probe', name: 'Probe', update: { available: true } }, { key: 'legacy', name: 'Legacy' }] })
+  vi.mocked(api.fetchPlugins).mockResolvedValue({ read_only: readOnly, total: 2, plugins: [{ key: 'probe', name: 'Probe', update: { available: true } }, { key: 'legacy', name: 'Legacy' }] })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   render(<QueryClientProvider client={client}><PluginsSection /></QueryClientProvider>)
 }
@@ -34,7 +34,7 @@ it('asks for scan consent, suppresses duplicate requests, and refreshes after a 
 })
 
 it('TAL-1829: says why an update turned a plugin off, on that row only', async () => {
-  vi.mocked(api.fetchPlugins).mockResolvedValue({ plugins: [{ key: 'probe', name: 'Probe', enabled: false, disabled_reason: { kind: 'update', reason: 'its dependencies could not be prepared' } }, { key: 'legacy', name: 'Legacy', enabled: false }] })
+  vi.mocked(api.fetchPlugins).mockResolvedValue({ total: 2, plugins: [{ key: 'probe', name: 'Probe', enabled: false, disabled_reason: { kind: 'update', reason: 'its dependencies could not be prepared' } }, { key: 'legacy', name: 'Legacy', enabled: false }] })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(<QueryClientProvider client={client}><PluginsSection /></QueryClientProvider>)
   const row = (await screen.findByText('Probe')).closest('li')!
@@ -72,7 +72,7 @@ it('re-prompts with the replacement token when the Agent reports changed scan fi
 })
 
 describe('TAL-1914', () => {
-  const plugins = (auto_update?: { auto_apply: boolean; check_hours: number; inactive_reason: 'no_gateway' | 'checks_off' | null }, read_only = false) => ({ read_only, plugins: [{ key: 'probe', name: 'Probe' }], ...(auto_update ? { auto_update } : {}) })
+  const plugins = (auto_update?: { auto_apply: boolean; check_hours: number; inactive_reason: 'no_gateway' | 'checks_off' | null }, read_only = false) => ({ read_only, total: 1, plugins: [{ key: 'probe', name: 'Probe' }], ...(auto_update ? { auto_update } : {}) })
   const show = () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
     render(<QueryClientProvider client={client}><PluginsSection /></QueryClientProvider>)
@@ -161,7 +161,7 @@ describe('TAL-1914', () => {
 
   it('a row menu offers the same actions as the row, and a row without actions has none', async () => {
     const entry = { title: 'Behind', description: '', repo: 'https://example.invalid/p', sha: 'b'.repeat(40), tier: 'verified', category: 'tools', requirements: [], installed_sha: 'a'.repeat(40), can_install: false, refusal: null }
-    vi.mocked(api.fetchPlugins).mockResolvedValue({ plugins: [{ key: 'probe', name: 'Probe', update: { available: true } }, { key: 'plain', name: 'Plain' }] })
+    vi.mocked(api.fetchPlugins).mockResolvedValue({ total: 2, plugins: [{ key: 'probe', name: 'Probe', update: { available: true } }, { key: 'plain', name: 'Plain' }] })
     vi.mocked(api.fetchPluginCatalog).mockResolvedValue({ supported: true, total: 1, next_offset: null, entries: [{ ...entry, name: 'behind', installed_key: 'catalog-key', can_update: true }] })
     vi.mocked(api.updatePlugin).mockResolvedValue({ key: 'catalog-key', status: 'updated' })
     show()

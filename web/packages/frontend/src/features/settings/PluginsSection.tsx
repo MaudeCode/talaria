@@ -1,5 +1,5 @@
 import { memo, useRef, useState, type ReactNode } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { PluginAutoUpdateView, PluginOAuthClientView, PluginSettingView, PluginUpdateAllRow, PluginUpdateResult } from '@maudecode/talaria-web-contracts'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -15,6 +15,8 @@ import { OAuthSignIn } from '../onboarding/OAuthSignIn'
 import { useResourceEffects, useResourceMutation } from '../sessions/useResourceMutation'
 import { getStreamContext, useStreamContext } from '../../stream/connection'
 import { usePluginInstall } from './usePluginInstall'
+import { useDebounced } from '../../lib/useDebounced'
+import { sameRowProps } from '../../lib/sameRowProps'
 
 export function PluginsSection() {
   const qc = useQueryClient()
@@ -68,11 +70,12 @@ export function PluginsSection() {
     setScan(null)
     mutateUpdate({ key, accept, ...(token ? { token } : {}) })
   }
-  const plugins = useQuery({ queryKey: keys.plugins, queryFn: api.fetchPlugins, staleTime: 30_000 })
+  const [filter, setFilter] = useState('')
+  const q = useDebounced(filter.trim(), 250)
+  const plugins = useQuery({ queryKey: [...keys.plugins, { q }], queryFn: () => api.fetchPlugins(q), staleTime: 30_000, placeholderData: keepPreviousData })
   const effects = useResourceEffects<Record<string, unknown>>()
   const [open, setOpen] = useState<string | null>(null)
   const [browsing, setBrowsing] = useState(false)
-  const [filter, setFilter] = useState('')
   if (plugins.isPending) return <LoadingState />
   if (plugins.isError) return <ErrorState error={plugins.error} onRetry={() => { void plugins.refetch() }} />
   // Saved non-secret values show at once until the reread; secrets never show.
@@ -83,13 +86,12 @@ export function PluginsSection() {
   const editable = !plugins.data.read_only
   const autoUpdate = editable ? plugins.data.auto_update : undefined
   const updateBusy = update.isPending || updateAll.isPending
-  const q = filter.trim().toLowerCase()
-  // TAL-2082: TAL-2129 moves this filter into the `/api/plugins` response; delete it here once that ships.
-  const shown = q ? list.filter((p) => [p.name ?? p.key, p.description ?? ''].some((text) => text.toLowerCase().includes(q))) : list
+  // TAL-2129: `plugins` is the server's filter answer; `total` counts the whole install.
+  const installed = (plugins.data.total ?? 0) > 0
   return (
     <div className="flex flex-col gap-2" data-section="plugins">
       <div className="flex justify-end gap-2">
-        {autoUpdate && list.length > 0 && <Button variant="ghost" className="min-h-11" disabled={updateBusy} aria-busy={updateAll.isPending} onClick={requestUpdateAll}>{m.plugins_update_all()}</Button>}
+        {autoUpdate && installed && <Button variant="ghost" className="min-h-11" disabled={updateBusy} aria-busy={updateAll.isPending} onClick={requestUpdateAll}>{m.plugins_update_all()}</Button>}
         <Button variant="ghost" className="min-h-11" aria-expanded={browsing} onClick={() => setBrowsing(!browsing)}>{m.plugins_catalog()}</Button>
       </div>
       {autoUpdate && <PluginAutoUpdateRow state={autoUpdate} />}
@@ -97,11 +99,11 @@ export function PluginsSection() {
       {browsing && <PluginCatalogList updating={updateBusy} updatingKey={update.isPending ? update.variables.key : null} onUpdate={requestUpdate} />}
       {plugins.data.read_only && <div className="text-xs text-warning">{m.plugins_read_only()}</div>}
       {plugins.data.plugin_isolation_advisory && <div className="text-xs text-warning" data-advisory="plugin-isolation">{m.plugins_isolation_advisory()}</div>}
-      {list.length === 0 && <EmptyState>{browsing ? m.plugins_catalog_no_installed() : m.plugins_empty()}</EmptyState>}
-      {list.length > 0 && <TextInput type="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={m.plugins_filter()} aria-label={m.plugins_filter()} />}
-      {list.length > 0 && shown.length === 0 && <EmptyState>{m.plugins_filter_empty()}</EmptyState>}
+      {!installed && <EmptyState>{browsing ? m.plugins_catalog_no_installed() : m.plugins_empty()}</EmptyState>}
+      {installed && <TextInput type="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={m.plugins_filter()} aria-label={m.plugins_filter()} />}
+      {installed && list.length === 0 && <EmptyState>{m.plugins_filter_empty()}</EmptyState>}
       <ul className="flex flex-col divide-y divide-border-subtle">
-        {shown.map((p) => <InstalledPluginRow key={p.key} plugin={p} editable={editable} open={open === p.key} onOpen={setOpen} updateBusy={updateBusy}
+        {list.map((p) => <InstalledPluginRow key={p.key} plugin={p} editable={editable} open={open === p.key} onOpen={setOpen} updateBusy={updateBusy}
           updating={update.isPending && update.variables.key === p.key} blockedFindings={scan?.key === p.key && scan.status === 'blocked' ? scan.findings : null} onUpdate={requestUpdate} />)}
       </ul>
       <ConfirmDialog open={scan?.status === 'needs_consent'} onOpenChange={(isOpen) => { if (!isOpen) setScan((current) => current === scan && current?.status === 'needs_consent' ? null : current) }}
@@ -123,7 +125,7 @@ interface InstalledPluginRowProps {
   onUpdate: (key: string) => void
 }
 
-// Memoized so typing in the filter renders only the rows entering the list (TAL-1405).
+// Memoized so typing in the filter renders only the rows entering the list (TAL-1405); each filter answer is a new response.
 const InstalledPluginRow = memo(function InstalledPluginRow({ plugin: p, editable, open, onOpen, updateBusy, updating, blockedFindings, onUpdate }: InstalledPluginRowProps) {
   return (
     <PluginRow id={p.key} title={<>{p.name ?? p.key}{p.version ? <span className="ml-1 text-[11px] text-muted">v{p.version}</span> : null}</>} description={`${p.kind ? `${p.kind} · ` : ''}${p.description ?? ''}`} status={<>
@@ -140,7 +142,7 @@ const InstalledPluginRow = memo(function InstalledPluginRow({ plugin: p, editabl
       {editable && open && p.settings ? <PluginSettingsForm pluginKey={p.key} fields={p.settings} onSaved={() => onOpen(null)} /> : null}
     </PluginRow>
   )
-})
+}, sameRowProps<InstalledPluginRowProps>('plugin'))
 
 interface PluginRowAction extends RowAction { expanded?: boolean }
 
