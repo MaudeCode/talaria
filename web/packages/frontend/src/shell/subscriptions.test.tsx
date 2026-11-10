@@ -12,7 +12,7 @@ const { rendered } = vi.hoisted(() => ({ rendered: vi.fn() }))
 vi.mock('../i18n/useLocale', () => ({ useLocale: () => { rendered(); return 'en' } }))
 vi.mock('../app/bootstrap', () => ({ useBootstrap: () => { rendered(); return { bot_name: 'Fixture', features: {} } } }))
 vi.mock('../features/sessions/useNewChat', () => ({ useNewChat: () => vi.fn() }))
-vi.mock('./ProfileMenu', () => ({ ProfileMenu: () => null }))
+vi.mock('./ProfileMenu', () => ({ ProfileMenu: () => <span data-testid="titlebar-profile" /> }))
 vi.mock('../features/notifications/UpdateNotificationCenter', () => ({ UpdateNotificationCenterButton: () => null }))
 vi.mock('../extensions/registry', () => ({ useExtensionManifests: () => ({ data: { manifests: [{ id: 'fixture', enabled: true, name: 'Fixture', panel: {}, nav: {} }] } }) }))
 vi.mock('../app/queries', async (original) => ({ ...await original<object>(), useDashboardStatusQuery: () => ({ data: {} }) }))
@@ -23,9 +23,9 @@ beforeEach(() => {
   vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('min-width'), media: query, addEventListener: () => undefined, removeEventListener: () => undefined }))
 })
 
-async function setup(Component: ComponentType) {
+async function setup(Component: ComponentType, settings: Record<string, unknown> = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  client.setQueryData(keys.settings, { hidden_tabs: [] })
+  client.setQueryData(keys.settings, { hidden_tabs: [], ...settings })
   const root = createRootRoute({ component: () => <QueryClientProvider client={client}><Component /><Outlet /></QueryClientProvider> })
   const paths = ['/', '/session/$sessionId', '/settings', '/ext/$extensionId'] as const
   const routeTree = root.addChildren(paths.map((path) => createRoute({ getParentRoute: () => root, path, component: () => <p>Route content</p> })))
@@ -46,6 +46,11 @@ it.each([{ name: 'Sidebar', Component: FixtureSidebar }, { name: 'Titlebar', Com
   expect(rendered).toHaveBeenCalledTimes(before)
   await act(async () => { await router.navigate({ to: '/settings' }) })
   expect(rendered.mock.calls.length).toBeGreaterThan(before)
+})
+
+it.each([{ show: true, chips: 1 }, { show: false, chips: 0 }])('TAL-2099: the titlebar shows the profile chip only with show_titlebar_profile $show', async ({ show, chips }) => {
+  await setup(Titlebar, { show_titlebar_profile: show })
+  expect(screen.queryAllByTestId('titlebar-profile')).toHaveLength(chips)
 })
 
 it('keeps the titlebar session control scoped to session routes', async () => {

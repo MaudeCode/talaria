@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { expect, test } from './fixtures'
+import { expect, showTitlebarProfile, test } from './fixtures'
 import { bootTestServer } from '../../server/dist/test/harness.js'
 import { FakeSidecar } from '../../server/dist/sidecar/fake.js'
 import { groupFixture } from '../../server/dist/test/group-fixture.js'
@@ -45,9 +45,23 @@ async function expectTitleUncut(page: Page) {
 test.describe('phone titlebar', () => {
   test.skip(({ viewport }) => (viewport?.width ?? 0) > 640, 'the titlebar only shows at phone width')
 
+  test('shows no profile chip by default, so the chat page shows the profile once, in the composer strip (TAL-2099)', async ({ page }, info) => {
+    const server = await phoneServer(PROFILES['two profiles'])
+    try {
+      await page.goto(`${server.base}/`)
+      await expect(page.locator('#appTitlebarTitle')).toBeVisible()
+      await page.locator('#msg').click()
+      await expect(page.locator('.composer-strip').getByRole('button', { name: 'Switch to this profile: default' })).toBeVisible()
+      await expect(page.locator('.app-titlebar-left .composer-chip')).toHaveCount(0)
+      await expect(page.getByTitle('Switch to this profile').filter({ visible: true })).toHaveCount(1)
+      await page.screenshot({ path: info.outputPath('default-setting.png') })
+    } finally { await page.goto('about:blank').catch(() => undefined); await server.close() }
+  })
+
   for (const [name, profiles] of Object.entries(PROFILES)) {
     test(`keeps its controls clear of the brand and title with ${name}`, async ({ page }, info) => {
       const server = await phoneServer(profiles)
+      await showTitlebarProfile(page)
       try {
         for (const path of ['/groups', '/', '/tasks']) {
           await page.goto(`${server.base}${path}`)
@@ -62,6 +76,7 @@ test.describe('phone titlebar', () => {
 
   test('truncates a title too long for the bar and keeps the right-hand buttons on screen', async ({ page }, info) => {
     const server = await phoneServer(PROFILES['two profiles'])
+    await showTitlebarProfile(page)
     try {
       await page.goto(`${server.base}/groups`)
       const title = page.locator('#appTitlebarTitle')
@@ -79,6 +94,7 @@ test.describe('phone titlebar', () => {
   test('a long profile name truncates in its chip instead of pushing the bar off screen', async ({ page }, info) => {
     const server = await phoneServer(PROFILES['two profiles'])
     const longName = 'a-profile-name-at-the-limit-of-what-the-agent-allows-for-a-name'
+    await showTitlebarProfile(page)
     try {
       await page.route('**/api/profiles', (route) => route.fulfill({ json: { active: longName, profiles: [{ name: longName, is_default: true }, { name: 'helper' }] } }))
       await page.goto(`${server.base}/groups`)
@@ -94,6 +110,7 @@ test.describe('phone titlebar', () => {
 
   test('a long extension name truncates beside the title instead of running under the bell', async ({ page }, info) => {
     const server = await phoneServer(PROFILES['two profiles'])
+    await showTitlebarProfile(page)
     try {
       await page.goto(`${server.base}/ext/an-extension-with-a-name-too-long-for-a-phone-titlebar`)
       const subtitle = page.locator('#appTitlebarSub')

@@ -45,6 +45,15 @@ export const test = base.extend<{ errors: string[] }>({
 
 export { expect }
 
+/** TAL-2099: the titlebar shows its profile chip only with Settings > Navigation's "Show profile switcher in titlebar" on. */
+export async function showTitlebarProfile(page: Page): Promise<void> {
+  await page.route('**/api/settings', async (route) => {
+    if (route.request().method() !== 'GET') return route.fallback()
+    const response = await route.fetch()
+    return route.fulfill({ response, json: { ...await response.json(), show_titlebar_profile: true } })
+  })
+}
+
 /** Opens the Chats filter menu; on a phone the drawer must already be open. */
 export async function openChatFilters(page: Page) {
   await page.getByRole('button', { name: /^Chat filters/ }).click()

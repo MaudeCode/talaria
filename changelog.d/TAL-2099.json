@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Switching profile in Talaria Web no longer reloads the page: a draft in a new chat and open panels stay, and the titlebar shows a profile switcher only when Show profile switcher in titlebar is on.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

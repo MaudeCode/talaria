@@ -2,7 +2,7 @@ import { createServer, type ServerResponse } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Page, Route } from '@playwright/test'
-import { expect, test } from './fixtures'
+import { expect, showTitlebarProfile, test } from './fixtures'
 
 test.use({ serviceWorkers: 'block' })
 
@@ -930,6 +930,7 @@ test('the composer menus open upward under their name, check the chosen row, and
 
 test('the titlebar profile menu still opens downward (TAL-2095)', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'mobile', 'The titlebar shows at phone width.')
+  await showTitlebarProfile(page)
   await page.route('**/api/profiles', (route) => route.fulfill({ json: { profiles: [{ name: 'default', is_default: true }, { name: 'research' }], active: 'default' } }))
   await page.goto('/')
   const trigger = page.locator('.app-titlebar-left').getByRole('button', { name: /default/ })
