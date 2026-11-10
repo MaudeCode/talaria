@@ -68,13 +68,13 @@ export function ExtensionsSection() {
   const canManage = bootstrap.auth.can_manage_server
   return (
     <div className="flex flex-col gap-5">
-      <SettingsGroup id="installed" title={m.extensions_installed()} detail={list.length}>
+      <SettingsGroup id="installed" title={m.extensions_installed()}>
         {list.length === 0 && <EmptyState>{m.extensions_none()}</EmptyState>}
         <RowList>
           {list.map((e) => <ExtensionRow key={e.id} ext={e} canManage={canManage} effect={effects[`extension:${e.id}`]} consentEffect={effects[`extension-consent:${e.id}`]} onToggle={(enabled) => toggle.mutate({ id: e.id, enabled })} onConsent={(value) => consent.mutate({ id: e.id, consent: value })} onUninstall={() => setConfirmUninstall(e.id)} />)}
         </RowList>
       </SettingsGroup>
-      <SettingsGroup id="gallery" title={m.extensions_gallery()} detail={registry.data ? gallery.length : undefined}>
+      <SettingsGroup id="gallery" title={m.extensions_gallery()}>
         {registry.isPending && <LoadingState />}
         {(registry.isError || registry.data?.unavailable) && <p className="py-2 text-xs text-muted">{m.extensions_unavailable()}</p>}
         <RowList>
