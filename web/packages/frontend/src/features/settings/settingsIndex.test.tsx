@@ -2,6 +2,8 @@ import { afterAll, beforeAll, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { createMemoryHistory, createRootRoute, createRouter, RouterProvider } from '@tanstack/react-router'
+import type { ReactNode } from 'react'
 
 // Every endpoint stays pending unless a section needs its answer to show every static row.
 vi.mock('../../api/endpoints', async (importOriginal) => {
@@ -28,6 +30,12 @@ import { SETTINGS_INDEX, searchSettings, type SettingScope } from './settingsInd
 const SETTINGS = {
   compression_prepare_ahead: false, group_discussion_max_rounds: 3, group_discussion_max_messages: 10, agent_approvals: false, hidden_tabs: [], trusted_link_hosts: [], auth_enabled: false,
   provider_quota_thresholds: { warning_remaining_percent: 20, critical_remaining_percent: 5, pace_tolerance_percent: 5, pace_warning_burn_rate_percent: 120, pace_critical_burn_rate_percent: 150, pace_minimum_elapsed_hours: 6 },
+}
+/** `ui` as the router's one page: Providers' pages navigate (TAL-2135, TAL-2136). */
+async function inRouter(ui: ReactNode) {
+  const router = createRouter({ routeTree: createRootRoute({ component: () => ui }), history: createMemoryHistory({ initialEntries: ['/'] }) })
+  await router.load()
+  return <RouterProvider router={router} />
 }
 const GROUP_OF_SCOPE: Record<SettingScope, string> = { device: 'interface', interface: 'interface', profile: 'profile', server: 'server' }
 
@@ -65,24 +73,29 @@ const groupTitle = (row: HTMLElement) => row.closest('section[data-group]')?.get
 it('indexes every Settings row once, each where it renders, under its group, in the group its scope belongs to (TAL-2086)', async () => {
   const ids = SETTINGS_INDEX.map((entry) => entry.id)
   expect(ids.filter((id, i) => ids.indexOf(id) !== i), 'duplicate index ids').toEqual([])
-  const pages = SettingsSectionSchema.options.flatMap((section) => [undefined, ...new Set(SETTINGS_INDEX.filter((e) => e.section === section && e.tab).map((e) => e.tab))].map((tab) => ({ section, tab })))
+  // Each section, each Tools tab, and each page under a section (TAL-2136).
+  const pages = SettingsSectionSchema.options.flatMap((section) => [
+    ...[undefined, ...new Set(SETTINGS_INDEX.filter((e) => e.section === section && e.tab).map((e) => e.tab))].map((tab) => ({ section, tab, page: undefined })),
+    ...[...new Set(SETTINGS_INDEX.filter((e) => e.section === section && e.page).map((e) => e.page))].map((page) => ({ section, tab: undefined, page })),
+  ])
+  const pageOf = (e: { section: string; tab?: string | undefined; page?: string | undefined }) => e.page ? `${e.section}/${e.page}` : e.tab ? `${e.section}?tab=${e.tab}` : e.section
   const rendered: Record<string, string[]> = {}
   const placed: Record<string, string | null | undefined> = {}
-  for (const { section, tab } of pages) {
+  for (const { section, tab, page } of pages) {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     qc.setQueryData(keys.settings, SETTINGS)
-    const view = render(<QueryClientProvider client={qc}><BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><SettingsSection section={section} tab={tab} /></BootstrapContext.Provider></QueryClientProvider>)
-    const expected = SETTINGS_INDEX.filter((e) => e.section === section && e.tab === tab && !e.item)
+    const view = render(await inRouter(<QueryClientProvider client={qc}><BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><SettingsSection section={section} tab={tab} page={page} /></BootstrapContext.Provider></QueryClientProvider>))
+    const expected = SETTINGS_INDEX.filter((e) => e.section === section && e.tab === tab && e.page === page && !e.item)
     // Each page's indexed rows load lazily and wait for their data.
     await waitFor(() => {
       expect(view.container.querySelector(`[data-section="${section}"]`)).not.toBeNull()
       for (const entry of expected) expect(document.getElementById(entry.id), `${section} ${entry.id}`).not.toBeNull()
     })
-    rendered[tab ? `${section}?tab=${tab}` : section] = renderedRows(view.container, tab).sort()
+    rendered[pageOf({ section, tab, page })] = renderedRows(view.container, tab).sort()
     for (const entry of expected) placed[entry.id] = groupTitle(document.getElementById(entry.id)!)
     view.unmount()
   }
-  const indexed = Object.fromEntries(Object.keys(rendered).map((page) => [page, SETTINGS_INDEX.filter((e) => !e.item && (e.tab ? `${e.section}?tab=${e.tab}` : e.section) === page).map((e) => e.id).sort()]))
+  const indexed = Object.fromEntries(Object.keys(rendered).map((page) => [page, SETTINGS_INDEX.filter((e) => !e.item && pageOf(e) === page).map((e) => e.id).sort()]))
   // (a) Drift: a row on a page without an entry, or an entry for a row its page does not render.
   expect(indexed).toEqual(rendered)
   // Each entry's group is the title of the group its row renders in.
@@ -95,6 +108,8 @@ it('indexes every Settings row once, each where it renders, under its group, in 
 
 it('leads quota and sidebar searches to Providers, where each provider pins its quota (TAL-2135)', () => {
   for (const query of ['quota', 'sidebar']) expect(searchSettings(query).find((e) => e.id === 'providerSidebarQuota')).toMatchObject({ section: 'providers', item: true })
+  // TAL-2136: the thresholds lead to Providers › Quota alerts.
+  expect(searchSettings('burn rate').map((e) => [e.id, e.page])).toEqual([['quotaThreshold-pace_warning_burn_rate_percent', 'quota-alerts'], ['quotaThreshold-pace_critical_burn_rate_percent', 'quota-alerts']])
   expect(searchSettings('quota').filter((e) => e.section === 'navigation')).toEqual([])
 })
 
