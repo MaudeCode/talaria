@@ -120,6 +120,26 @@ if [[ "${selectors[1]:-}" == *NeverConnects* ]] || [[ "${selectors[1]:-}" == *Co
     exec sleep 30
 fi
 # Xcode acknowledges the connected test host before bundle warm-up finishes and the first suite is reported.
+if [[ "${selectors[1]:-}" == *InstallThen* || "${selectors[1]:-}" == *InstallNeverLaunches* || "${selectors[1]:-}" == *LaunchRequestNeverRuns* || "${selectors[1]:-}" == *LaunchedNeverConnects* ]]; then
+    session_log="$result_bundle/Staging/1_Test/Diagnostics/TalariaTests/Runner/Session-Preparation.log"
+    mkdir -p "${session_log:h}"
+    if [[ "${selectors[1]:-}" != *LaunchedNeverConnects* ]]; then
+        print -r -- 'Installing app at path: /fixture/Talaria.app' > "$session_log"
+    fi
+    if [[ "${selectors[1]:-}" == *LaunchRequestNeverRuns* ]]; then
+        print -r -- 'Launching app with identifier: dev.kil.talaria.xctest and options: {' >> "$session_log"
+    fi
+    if [[ "${selectors[1]:-}" == *LaunchedNeverConnects* ]]; then
+        print -r -- 'Launched app with identifier: dev.kil.talaria.xctest (pid = 1234)' >> "$session_log"
+    fi
+    if [[ "${selectors[1]:-}" == *InstallNeverLaunches* || "${selectors[1]:-}" == *LaunchRequestNeverRuns* || "${selectors[1]:-}" == *LaunchedNeverConnects* ]]; then
+        print -r -- "$destination|$result_bundle|${(j: :)selectors}|$parallel" >> "$state/runs"
+        exec sleep 30
+    fi
+    sleep 2
+    print -r -- 'Launched app with identifier: dev.kil.talaria.xctest (pid = 1234)' >> "$session_log"
+    print -r -- 'Test runner is ready with capabilities: <XCTCapabilities: fixture>' >> "$session_log"
+fi
 if [[ "${selectors[1]:-}" == *ConnectedBeforeSuite* || "${selectors[1]:-}" == *ReadyBeforeExecution* ]]; then
     mkdir -p "$result_bundle/Staging/1_Test/Diagnostics/TalariaTests/Runner"
     acknowledgement='Test runner started executing tests.'
@@ -270,6 +290,32 @@ for selector expected_status in ConnectedBeforeSuite 0 ConnectedBeforeSuiteFailu
     }
     [[ $(runs_for "TalariaTests/$selector|") == 1 ]]
     grep -q 'The test runner connected after' "$state/$selector.log"
+done
+
+# App installation is preparation, not time a running host spent failing to connect.
+for selector expected_status in InstallThenConnect 0 InstallThenFailure 42; do
+    if TALARIA_RUNNER_CONNECT_TIMEOUT=1 TALARIA_RUNNER_PREPARATION_TIMEOUT=3 "$repo/scripts/test-ios" "TalariaTests/$selector" > "$state/$selector.log" 2>&1; then
+        observed_status=0
+    else
+        observed_status=$?
+    fi
+    [[ "$observed_status" == "$expected_status" ]] || {
+        print -u2 "Installation consumed the connection budget: $selector returned $observed_status instead of $expected_status."
+        exit 1
+    }
+    [[ $(runs_for "TalariaTests/$selector|") == 1 ]]
+done
+
+for selector in InstallNeverLaunches LaunchRequestNeverRuns LaunchedNeverConnects; do
+    started=$SECONDS
+    if TALARIA_RUNNER_CONNECT_TIMEOUT=1 TALARIA_RUNNER_PREPARATION_TIMEOUT=1 "$repo/scripts/test-ios" "TalariaTests/$selector" > "$state/$selector.log" 2>&1; then
+        print -u2 "A stalled $selector unexpectedly passed."
+        exit 1
+    else
+        [[ $? == 70 ]]
+    fi
+    [[ $(runs_for "TalariaTests/$selector|") == 2 ]]
+    (( SECONDS - started < 15 )) || { print -u2 "A stalled $selector exceeded its bounded relaunches."; exit 1; }
 done
 
 # A runner that never connects gets one relaunch on a rebooted simulator, then stops the run with its name, without

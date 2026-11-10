@@ -6,6 +6,7 @@ if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
     print 'Set IOS_SIMULATOR_ID to lease a specific disposable simulator.'
     print 'A test runner that does not connect within TALARIA_RUNNER_CONNECT_TIMEOUT seconds (default 30) gets one'
     print 'relaunch on a rebooted simulator, then stops the run.'
+    print 'Explicit app installation has its own TALARIA_RUNNER_PREPARATION_TIMEOUT budget (default 30).'
     exit 0
 fi
 
@@ -110,11 +111,15 @@ fi
 # never reaches the foreground, and reports a hang only after minutes. Stop a host that never connects and reboot
 # once (TAL-1547). A connected host can warm its bundle before the first suite, so use Xcode's acknowledgement too.
 connect_timeout=${TALARIA_RUNNER_CONNECT_TIMEOUT:-30}
-runner_connected() {
-    grep -q testSuiteStarted "$result_stream" && return 0
+preparation_timeout=${TALARIA_RUNNER_PREPARATION_TIMEOUT:-30}
+runner_session_matches() {
     local -a session_logs=("$result_bundle"/Staging/1_Test/Diagnostics/**/Session-*.log(N))
     (( ${#session_logs} )) || return 1
-    grep -Fq -e 'Test runner is ready with capabilities:' -e 'Test runner started executing tests.' "${session_logs[@]}"
+    grep -Eq -- "$1" "${session_logs[@]}"
+}
+runner_connected() {
+    grep -q testSuiteStarted "$result_stream" && return 0
+    runner_session_matches 'Test runner is ready with capabilities:|Test runner started executing tests[.]'
 }
 attempt=1
 while true; do
@@ -138,8 +143,24 @@ while true; do
         "${filters[@]}" &
     xcodebuild_pid=$!
     connect_started=$SECONDS
+    preparation_started=0
+    runner_phase=connecting
+    host_launched=0
     while kill -0 "$xcodebuild_pid" 2>/dev/null && ! runner_connected; do
-        (( SECONDS - connect_started < connect_timeout )) || break
+        if (( ! host_launched )) && runner_session_matches 'Launched app with identifier: .*[(]pid = [0-9]+[)]'; then
+            host_launched=1
+            runner_phase=connecting
+            connect_started=$SECONDS
+        elif (( ! host_launched )) && [[ "$runner_phase" != preparing ]] && runner_session_matches 'Installing app at path:'; then
+            # Xcode can spend the connection budget installing an app whose host has not launched yet.
+            runner_phase=preparing
+            preparation_started=$SECONDS
+        fi
+        if [[ "$runner_phase" == preparing ]]; then
+            (( SECONDS - preparation_started < preparation_timeout )) || break
+        else
+            (( SECONDS - connect_started < connect_timeout )) || break
+        fi
         sleep 1
     done
     if ! kill -0 "$xcodebuild_pid" 2>/dev/null || runner_connected; then
@@ -151,11 +172,16 @@ while true; do
     kill -TERM "$xcodebuild_pid" 2>/dev/null || true
     wait "$xcodebuild_pid" 2>/dev/null || true
     xcodebuild_pid=""
+    if [[ "$runner_phase" == preparing ]]; then
+        timeout_reason="The test runner preparation on $simulator_name ($simulator_id) did not finish within ${preparation_timeout}s"
+    else
+        timeout_reason="The test runner on $simulator_name ($simulator_id) did not connect within ${connect_timeout}s"
+    fi
     if (( attempt == 2 )); then
-        print -u2 "The test runner on $simulator_name ($simulator_id) did not connect within ${connect_timeout}s after a reboot; stopping the run."
+        print -u2 "$timeout_reason after a reboot; stopping the run."
         exit 70
     fi
-    print -u2 "The test runner on $simulator_name ($simulator_id) did not connect within ${connect_timeout}s; rebooting it for one more launch."
+    print -u2 "$timeout_reason; rebooting it for one more launch."
     ios_pool_release
     ios_pool_acquire || exit $?
     destination="platform=iOS Simulator,id=$simulator_id"
