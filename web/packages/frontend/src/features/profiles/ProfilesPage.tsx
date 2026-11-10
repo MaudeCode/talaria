@@ -203,7 +203,11 @@ function ProfileDetail({ profile: p, isActive, actions }: { profile: Profile; is
             {p.has_env !== undefined && <SettingValue label={m.profile_detail_api_keys()}>{p.has_env ? m.profile_detail_api_keys_set() : m.profile_detail_api_keys_unset()}</SettingValue>}
             {pending !== undefined && <SettingValue label={m.profile_detail_pending_writes()}><span className="tabular-nums">{pending}</span></SettingValue>}
           </SettingValues>
-          {pending !== undefined && pending > 0 && <SettingLink label={m.profile_detail_review_skills()} onClick={() => { void navigate({ to: '/skills' }) }} />}
+          {/* Reviews resolve against the active profile, and the count sums skill and memory writes, so both pages are offered there only. */}
+          {isActive && pending !== undefined && pending > 0 && <>
+            <SettingLink label={m.profile_detail_review_skills()} onClick={() => { void navigate({ to: '/skills' }) }} />
+            <SettingLink label={m.profile_detail_review_memory()} onClick={() => { void navigate({ to: '/memory' }) }} />
+          </>}
         </SettingsGroup>
       )}
       {p.path && (

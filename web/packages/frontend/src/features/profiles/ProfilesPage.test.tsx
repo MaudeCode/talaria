@@ -37,7 +37,8 @@ async function renderPage(bootstrap = DEFAULT_BOOTSTRAP, path = '/settings/profi
     return id === 'profiles' ? <ProfilesPage name={name} /> : <p>Section {id}</p>
   } })
   const skills = createRoute({ getParentRoute: () => root, path: '/skills', component: () => <p>Skills page</p> })
-  const router = createRouter({ routeTree: root.addChildren([section, skills]), history: createMemoryHistory({ initialEntries: [path] }) })
+  const memory = createRoute({ getParentRoute: () => root, path: '/memory', component: () => <p>Memory page</p> })
+  const router = createRouter({ routeTree: root.addChildren([section, skills, memory]), history: createMemoryHistory({ initialEntries: [path] }) })
   await router.load()
   render(<RouterProvider router={router} />)
   return router
@@ -141,9 +142,8 @@ describe('profile detail (TAL-2085)', () => {
     // Not the active profile: no Models link; its actions sit beside the name.
     expect(within(detail).queryByRole('button', { name: 'Models settings' })).toBeNull()
     for (const name of ['Open Bot Chat', 'Use', 'Delete this profile']) expect(within(detail).getByRole('button', { name })).toBeVisible()
-    await userEvent.click(within(detail).getByRole('button', { name: 'Review on Skills' }))
-    await vi.waitFor(() => { expect(router.state.location.pathname).toBe('/skills') })
-    router.history.back()
+    // Reviews open against the active profile, so an inactive profile's count has no review link.
+    expect(within(detail).queryByRole('button', { name: 'Review on Skills' })).toBeNull()
     await userEvent.click(await screen.findByRole('button', { name: 'Back' }))
     await vi.waitFor(() => { expect(router.state.location.search).toEqual({}) })
     expect(await screen.findByRole('list')).toBeVisible()
@@ -159,6 +159,14 @@ describe('profile detail (TAL-2085)', () => {
     expect(within(detail).queryByRole('button', { name: 'Use' })).toBeNull()
     await userEvent.click(within(detail).getByRole('button', { name: 'Models settings' }))
     await vi.waitFor(() => { expect(router.state.location.pathname).toBe('/settings/models') })
+  })
+
+  it('offers the active profile its pending-write reviews on Skills and on Memory', async () => {
+    vi.mocked(api.fetchProfiles).mockResolvedValueOnce({ profiles: [{ name: 'default', is_default: true, pending_writes: 1 }], active: 'default', single_profile_mode: false })
+    const router = await renderPage(DEFAULT_BOOTSTRAP, '/settings/profiles?name=default')
+    expect(await screen.findByRole('button', { name: 'Review on Skills' })).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: 'Review on Memory' }))
+    await vi.waitFor(() => { expect(router.state.location.pathname).toBe('/memory') })
   })
 
   it('shows an error with a way back for an unknown profile name', async () => {

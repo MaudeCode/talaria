@@ -1842,6 +1842,7 @@
 	"profile_detail_path": "Path",
 	"profile_detail_pending_writes": "Pending writes",
 	"profile_detail_provider": "Provider",
+	"profile_detail_review_memory": "Review on Memory",
 	"profile_detail_review_skills": "Review on Skills",
 	"profile_detail_skills": "Skills",
 	"profile_detail_skills_of": "{enabled} of {total}",
