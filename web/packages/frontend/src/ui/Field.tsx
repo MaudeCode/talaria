@@ -58,8 +58,10 @@ export function Switch({ className, ...props }: Omit<BaseSwitch.Root.Props, 'cla
   )
 }
 
+const oneDecimal = (n: number) => n.toFixed(1)
+
 /** A range control with its value beside it in tabular digits; `format` adds a unit or scale. */
-export function Slider({ id, value, min, max, step = 0.1, onChange, format = (n) => n.toFixed(1) }: { id: string; value: string; min: number; max: number; step?: number; onChange: (value: string) => void; format?: (value: number) => string }) {
+export function Slider({ id, value, min, max, step = 0.1, onChange, format = oneDecimal }: { id: string; value: string; min: number; max: number; step?: number; onChange: (value: string) => void; format?: (value: number) => string }) {
   const n = Number.parseFloat(value)
   return (
     <span className="flex items-center gap-3">
