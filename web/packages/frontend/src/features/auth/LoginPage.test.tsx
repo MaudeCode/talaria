@@ -13,7 +13,7 @@ import { LoginPage } from './LoginPage'
 
 const bootstrap = {
   webui_version: 'test', max_upload_bytes: 1, csrf_token: '', language: 'en', bot_name: 'Hermes',
-  auth: { auth_enabled: true, logged_in: false, oidc_enabled: true, password_auth_enabled: true, passkeys_enabled: false, passkeys_count: 0, passkey_feature_flag: false, auth_disabled_acknowledged: false, can_manage_server: false },
+  auth: { auth_enabled: true, logged_in: false, oidc_enabled: true, password_auth_enabled: true, passkeys_enabled: false, passkeys_count: 0, passkey_feature_flag: false, auth_disabled_acknowledged: false, can_manage_server: false, no_password_warning: null },
   profile: { name: 'default', is_default: true }, onboarding: null,
 } as unknown as Bootstrap
 

@@ -43,7 +43,6 @@
 	"auth_status_passkey_only": "Nur Passkey",
 	"auth_status_password": "Passwort-Authentifizierung",
 	"auth_status_unauthenticated": "Nicht authentifiziert",
-	"auth_warning_badge": "Auth deaktiviert",
 	"auto_compress_label": "Automatische Komprimierung",
 	"available_commands": "Verfügbare Befehle:",
 	"available_personalities": "Verfügbare Persönlichkeiten:",

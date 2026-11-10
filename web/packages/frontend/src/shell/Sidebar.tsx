@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from '@tanstack/react-router'
-import { ChevronDown, ChevronLeft, ChevronRight, Menu as MenuIcon, MessageSquareWarning, Puzzle, Search, SquarePen, X } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, Menu as MenuIcon, MessageSquareWarning, Puzzle, Search, ShieldAlert, SquarePen, X } from 'lucide-react'
 import { m } from '../paraglide/messages.js'
 import { useBootstrap } from '../app/bootstrap'
 import { useDashboardStatusQuery, useSetting } from '../app/queries'
+import { useSettingIntent } from '../app/settings'
 import { useExtensionManifests } from '../extensions/registry'
 import { SidebarQuotas } from '../features/insights/SidebarQuotas'
 import { UpdateNotificationCenterButton } from '../features/notifications/UpdateNotificationCenter'
@@ -91,12 +92,42 @@ function SidebarNav({ panel }: { panel: ReactNode }) {
         </div>
         <div className="sidebar-panel flex min-h-0 flex-col" inert={rail}>{panel}</div>
       </div>
+      <NoPasswordWarning />
       <div className="sidebar-footer flex flex-none items-center gap-0.5">
         {destinationRow('settings')}
         {showsFeedback && <button type="button" className={cn(SIDEBAR_ROW, 'sidebar-icon-row has-tooltip')} data-panel="feedback" data-tooltip={m.feedback_rail_label()} aria-label={m.feedback_send_open()} onClick={openFeedback}><SidebarRowContent icon={MessageSquareWarning} label={m.feedback_rail_label()} /></button>}
         <UpdateNotificationCenterButton placement="sidebar" />
       </div>
     </nav>
+  )
+}
+
+/**
+ * TAL-2158: the server's `no_password_warning` level, above the footer in every sidebar state: an error row, or a warning
+ * icon once the Access switch `auth_disabled_acknowledged` is on. Null (auth on, or no server management) draws nothing.
+ */
+function NoPasswordWarning() {
+  const { auth } = useBootstrap()
+  const level = auth.no_password_warning
+  // This tab's Access switch write shows at once and holds after its save until that save's bootstrap reread lands; a
+  // refusal rolls the setting back, which drops it. Every other change (another tab, the server) is the server's level.
+  const pending = useSettingIntent('auth_disabled_acknowledged')
+  const confirmed = useSetting('auth_disabled_acknowledged')
+  const [held, setHeld] = useState<{ value: boolean; auth: typeof auth } | null>(null)
+  if (pending !== undefined && (held?.value !== pending || held.auth !== auth)) setHeld({ value: pending, auth })
+  const own = pending ?? (held?.auth === auth && held.value === confirmed ? held.value : undefined)
+  const descriptionId = useId()
+  if (!level) return null
+  const tone = own === undefined ? level : own ? 'warning' : 'error'
+  const quiet = tone === 'warning'
+  const label = m.auth_no_password()
+  return (
+    <div className="sidebar-alert flex flex-none">
+      <Link to="/settings/$section" params={{ section: 'access' }} className={cn(SIDEBAR_ROW, quiet && 'sidebar-icon-row has-tooltip')} data-tone={tone} data-tooltip={quiet ? label : undefined} aria-label={label} aria-describedby={descriptionId} onClick={closeMobileSidebar}>
+        <SidebarRowContent icon={ShieldAlert} label={label} />
+      </Link>
+      <span id={descriptionId} hidden>{m.auth_disabled_warning_message()}</span>
+    </div>
   )
 }
 

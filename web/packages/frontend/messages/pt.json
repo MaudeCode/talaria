@@ -40,7 +40,6 @@
 	"auth_status_passkey_only": "Somente passkey",
 	"auth_status_password": "Autenticação por senha",
 	"auth_status_unauthenticated": "Sem autenticação",
-	"auth_warning_badge": "Auth desativada",
 	"auto_compress_label": "Compressão automática",
 	"available_commands": "Comandos disponíveis:",
 	"available_personalities": "Personalidades disponíveis:",

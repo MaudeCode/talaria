@@ -43,7 +43,6 @@
 	"auth_status_passkey_only": "Chỉ dùng passkey",
 	"auth_status_password": "Xác thực bằng mật khẩu",
 	"auth_status_unauthenticated": "Chưa xác thực",
-	"auth_warning_badge": "Xác thực đã tắt",
 	"auto_compress_label": "Tự động nén",
 	"available_commands": "Các lệnh khả dụng:",
 	"available_personalities": "Các personality khả dụng:",

@@ -27,6 +27,11 @@ export const AuthStatusSchema = z.object({
   passkey_feature_flag: z.boolean(),
   auth_disabled_acknowledged: z.boolean(),
   can_manage_server: z.boolean(),
+  /**
+   * TAL-2158: the sidebar's no-password warning for this session. `error` while auth is off and unacknowledged,
+   * `warning` once `auth_disabled_acknowledged` is on, null when auth is on or the session cannot manage the server.
+   */
+  no_password_warning: z.enum(['error', 'warning']).nullable(),
   trusted_auth_enabled: z.boolean().optional(),
   auth_type: z.string().optional(),
   user: NullableString.optional(),

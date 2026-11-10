@@ -111,6 +111,16 @@ describe('open server (no auth)', () => {
     for (const forbidden of ['password_hash', 'api_key', 'cookie']) expect(text).not.toContain(forbidden)
   })
 
+  it('TAL-2158: an open server reports the no-password warning, and the acknowledgement softens it to a warning', async () => {
+    const level = async () => ((await (await s.get('/api/bootstrap')).json()) as { auth?: { no_password_warning?: unknown } }).auth?.no_password_warning
+    expect(await level()).toBe('error')
+    const write = (on: boolean) => s.get('/api/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ auth_disabled_acknowledged: on }) })
+    expect((await write(true)).status).toBe(200)
+    expect(await level()).toBe('warning')
+    expect((await write(false)).status).toBe(200)
+    expect(await level()).toBe('error')
+  })
+
   it('bootstrap auth block equals /api/auth/status', async () => {
     const boot = BootstrapSchema.parse(await (await s.get('/api/bootstrap')).json())
     const auth = AuthStatusSchema.parse(await (await s.get('/api/auth/status')).json())
@@ -417,7 +427,7 @@ describe('password auth', () => {
   it('public paths stay reachable', async () => {
     for (const path of ['/login', '/health', '/api/bootstrap', '/api/auth/status', '/sw.js', '/manifest.webmanifest']) expect((await s.get(path)).status, path).toBe(200)
     const boot = BootstrapSchema.parse(await (await s.get('/api/bootstrap')).json())
-    expect(boot.auth).toMatchObject({ auth_enabled: true, logged_in: false, password_auth_enabled: true, can_manage_server: false })
+    expect(boot.auth).toMatchObject({ auth_enabled: true, logged_in: false, password_auth_enabled: true, can_manage_server: false, no_password_warning: null })
     expect(boot.profile).toBeNull()
     expect(boot.bot_name).toBe('Hermes')
   })

@@ -56,7 +56,6 @@
 	"auth_status_passkey_only": "Yalnızca passkey",
 	"auth_status_password": "Şifre kimlik doğrulaması",
 	"auth_status_unauthenticated": "Kimlik doğrulaması yok",
-	"auth_warning_badge": "Kimlik doğrulaması devre dışı",
 	"auto_compress_label": "Otomatik sıkıştırma",
 	"available_commands": "Mevcut komutlar:",
 	"available_personalities": "Mevcut kişilikler:",

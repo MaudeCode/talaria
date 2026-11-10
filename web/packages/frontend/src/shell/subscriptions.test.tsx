@@ -10,7 +10,7 @@ import { Tabbar } from './Tabbar'
 
 const { rendered } = vi.hoisted(() => ({ rendered: vi.fn() }))
 vi.mock('../i18n/useLocale', () => ({ useLocale: () => { rendered(); return 'en' } }))
-vi.mock('../app/bootstrap', () => ({ useBootstrap: () => { rendered(); return { bot_name: 'Fixture', features: {} } } }))
+vi.mock('../app/bootstrap', () => ({ useBootstrap: () => { rendered(); return { bot_name: 'Fixture', features: {}, auth: { auth_enabled: true } } } }))
 vi.mock('../features/sessions/useNewChat', () => ({ useNewChat: () => vi.fn() }))
 vi.mock('./ProfileMenu', () => ({ ProfileMenu: () => <span data-testid="titlebar-profile" /> }))
 vi.mock('../features/notifications/UpdateNotificationCenter', () => ({ UpdateNotificationCenterButton: () => null }))

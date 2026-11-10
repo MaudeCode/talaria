@@ -322,6 +322,20 @@
                         "can_manage_server": {
                           "type": "boolean"
                         },
+                        "no_password_warning": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "error",
+                                "warning"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "trusted_auth_enabled": {
                           "type": "boolean"
                         },
@@ -400,7 +414,8 @@
                         "passkeys_count",
                         "passkey_feature_flag",
                         "auth_disabled_acknowledged",
-                        "can_manage_server"
+                        "can_manage_server",
+                        "no_password_warning"
                       ]
                     },
                     "profile": {
@@ -803,6 +818,20 @@
                     "can_manage_server": {
                       "type": "boolean"
                     },
+                    "no_password_warning": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "error",
+                            "warning"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "trusted_auth_enabled": {
                       "type": "boolean"
                     },
@@ -881,7 +910,8 @@
                     "passkeys_count",
                     "passkey_feature_flag",
                     "auth_disabled_acknowledged",
-                    "can_manage_server"
+                    "can_manage_server",
+                    "no_password_warning"
                   ]
                 }
               }

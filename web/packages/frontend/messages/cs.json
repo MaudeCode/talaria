@@ -56,7 +56,6 @@
 	"auth_status_passkey_only": "Pouze passkey",
 	"auth_status_password": "Heslová autentifikace",
 	"auth_status_unauthenticated": "Neautentifikováno",
-	"auth_warning_badge": "Auth zakázáno",
 	"auto_compress_label": "Automatická komprese",
 	"available_commands": "Dostupné příkazy",
 	"available_personalities": "Dostupné osobnosti:",

@@ -43,7 +43,6 @@
 	"auth_status_passkey_only": "仅通行密钥",
 	"auth_status_password": "密码认证",
 	"auth_status_unauthenticated": "未认证",
-	"auth_warning_badge": "认证已禁用",
 	"auto_compress_label": "自动压缩",
 	"available_commands": "可用命令：",
 	"available_personalities": "可用人设：",
