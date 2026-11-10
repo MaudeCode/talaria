@@ -185,9 +185,12 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
 
   const { updateSession, updateReasoning, dialog: modelDialog, notice: modelNotice, confirming, confirmingReasoning } = useSessionUpdate(sessionId, refresh, session?.owner_attachment)
   // TAL-1647: reasoning effort is each chat's own server state, keyed on the chat and refetched when its model changes.
-  // TAL-2078: a chat not created yet reads and writes the profile default, under the key Settings uses.
-  const reasoningKey = keys.reasoning(sessionId, session?.model, session?.model_provider)
-  const reasoningQuery = useReasoningQuery(sessionId, session?.model, session?.model_provider, sessionId ? !!session && !session.owner_attachment : true)
+  // TAL-2078: a chat not created yet reads the profile default for the model it will start on; with no model of its own
+  // that is the key Settings uses.
+  const reasoningModel = sessionId ? session?.model : shownChoices.model
+  const reasoningProvider = sessionId ? session?.model_provider : shownChoices.model_provider
+  const reasoningKey = keys.reasoning(sessionId, reasoningModel, reasoningProvider)
+  const reasoningQuery = useReasoningQuery(sessionId, reasoningModel, reasoningProvider, sessionId ? !!session && !session.owner_attachment : true)
   // TAL-1319: an owner chat's level comes with its session from the owner; the profile's is never shown for it.
   const ownerReasoning = session?.owner_attachment?.reasoning_control
   const reasoningStatus = session?.owner_attachment ? ownerReasoning : reasoningQuery.data
@@ -204,7 +207,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   // answer and the optimistic value stay on the chat that was asked, whichever chat is open when it lands.
   const setReasoning = (level: string | null) => {
     if (ownerReasoning?.actions.includes(level === null ? 'reset' : 'set')) updateReasoning(level)
-    else sendReasoning({ key: keys.reasoning(sessionId, session?.model, session?.model_provider), level })
+    else sendReasoning({ key: keys.reasoning(sessionId, reasoningModel, reasoningProvider), level })
   }
   const { mutate: setReasoningDisplay } = useSetReasoningDisplay()
 

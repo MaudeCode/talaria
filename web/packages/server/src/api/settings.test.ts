@@ -532,6 +532,14 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(body.supports_thinking_toggle).toBe(false)
   })
 
+  it('reads the levels of a catalog id an unsaved chat picked, split into its model and provider (TAL-2078)', async () => {
+    const levels: { model: string; provider: string }[] = []
+    sidecar.respond('models.reasoning_efforts', (params) => { levels.push({ model: params.model, provider: params.provider }); return { efforts: params.model.startsWith('claude') ? ['low', 'high'] : [], supports_reasoning: true } })
+    const body = await json(await s.get('/api/reasoning?model=%40openrouter%3Aclaude-opus-4-7'))
+    expect(body.supported_efforts).toEqual(['low', 'high'])
+    expect(levels.at(-1)).toEqual({ model: 'claude-opus-4-7', provider: 'openrouter' })
+  })
+
   it('keeps direct-chat effort and reset on the chat and refuses stale or empty targets without config writes', async () => {
     const created = await json(await post(s, '/api/session/new', {}))
     const sid = String((created.session as Json).session_id)

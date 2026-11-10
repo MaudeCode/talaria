@@ -28,7 +28,8 @@ export function useSetReasoningEffort(onSaved?: (status: ReasoningStatus) => voi
   const qc = useQueryClient()
   return useResourceMutation({
     resource: ({ key }: { key: ReasoningKey; level: string | null }) => reasoningResource(key),
-    queryKey: ['reasoning'], readKeys: ({ key }) => [{ queryKey: key, exact: true }],
+    // Without a chat the write is the profile default, so Settings' read follows a new chat's pick.
+    queryKey: ['reasoning'], readKeys: ({ key }) => key[1] === null ? [{ queryKey: key, exact: true }, { queryKey: PROFILE_REASONING, exact: true }] : [{ queryKey: key, exact: true }],
     effect: ({ level }) => ({ value: level }),
     mutationFn: ({ key: [, sid, model, provider], level }) => api.setReasoningEffort(level ?? '', model, provider, sid ?? undefined),
     onSuccess: (status, { key }) => { qc.setQueryData(key, status); onSaved?.(status) },

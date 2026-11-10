@@ -271,6 +271,23 @@ it('shows a chat not created yet the profile default, under the key Settings wri
   }
 })
 
+it('reads a chat not created yet for the model it will start on, and follows a model pick (TAL-2078)', async () => {
+  search.mockReturnValue({ project: 'p1' })
+  projects.mockReturnValue({ data: { projects: [{ project_id: 'p1', name: 'Proj', workspaces: [], model: 'gemini-2.5-flash', model_provider: 'gemini', model_option_id: '@gemini:gemini-2.5-flash' }] } })
+  vi.mocked(api.fetchReasoning).mockImplementation((_sid, model) => Promise.resolve(model === '@openai:gpt-6' ? { reasoning_effort: 'low', supported_efforts: ['low', 'xhigh'] } : { reasoning_effort: 'medium', supported_efforts: ['minimal', 'medium'] }))
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  try {
+    render(<QueryClientProvider client={qc}><ChatView sessionId={null} /></QueryClientProvider>)
+    await waitFor(() => expect(composer.mock.lastCall![0].reasoningLevels).toEqual(['minimal', 'medium']))
+    expect(api.fetchReasoning).toHaveBeenCalledWith(undefined, '@gemini:gemini-2.5-flash', 'gemini')
+    act(() => { composer.mock.lastCall![0].onModelChange('@openai:gpt-6', 'openai') })
+    await waitFor(() => expect(composer.mock.lastCall![0].reasoningLevels).toEqual(['low', 'xhigh']))
+    expect(lastComposer().reasoning).toBe('low')
+  } finally {
+    vi.mocked(api.fetchReasoning).mockImplementation(() => Promise.resolve({ reasoning_effort: null }))
+  }
+})
+
 describe('an owner chat\'s reasoning level (TAL-1319)', () => {
   const owner = { state: 'attached' as const, reason: null, restarting: false, can_submit: true, can_interrupt: false, can_attach: false, revision: 2, execution_generation: 1, admissions: [], queued_input_count: 0 }
   const control = { reasoning_effort: 'high', supported_efforts: ['low', 'medium', 'high'], supports_reasoning_effort: true, supports_thinking_toggle: true, actions: ['set' as const, 'reset' as const], deferred: null }
