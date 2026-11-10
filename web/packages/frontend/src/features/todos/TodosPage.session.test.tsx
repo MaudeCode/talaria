@@ -35,8 +35,8 @@ it('hydrates a cold session task list and clears it on an accepted clear and a p
 
   const withoutTodos = { ...fixture.session, todo_state: undefined }
   await act(() => refresh({ ...withoutTodos, messages: [] }, true))
-  expect(await screen.findByText('This chat has no task list yet.')).toBeVisible()
   expect(screen.queryByText('Owner task')).not.toBeInTheDocument()
+  expect(screen.getByText('This chat has no task list yet.')).toBeVisible()
 
   act(() => { qc.setQueryData(keys.sessions.detail(sid), { session: fixture.session }) })
   expect(await screen.findByText('Owner task')).toBeVisible()

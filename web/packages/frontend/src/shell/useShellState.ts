@@ -22,17 +22,22 @@ export function toggleSidebarCollapsed(next?: boolean): void {
 /** TAL-373: the chat's right panel (Files, Agents); the edge tab opens it on wide screens, the titlebar on narrow ones. */
 export function setSidePanelOpen(open: boolean): void {
   writePersisted('hermes-webui-workspace-panel', open ? 'open' : 'closed')
+  if (shownChat) panelByChat.set(shownChat, open)
   set({ sidePanelOpen: open })
 }
 export function toggleSidePanel(): void { setSidePanelOpen(!state.sidePanelOpen) }
-/** TAL-2154: with "Keep workspace panel open by default" on, a chat's first visit in this tab opens the panel; the person's own open or close wins after that. */
-const panelDefaulted = new Set<string>()
+/**
+ * TAL-2154: with "Keep workspace panel open by default" on, a chat's first visit in this tab opens the panel, and a return
+ * restores that chat's last open or close in this tab. Off, the panel keeps its one device-wide state.
+ */
+const panelByChat = new Map<string, boolean>()
+let shownChat: string | null = null
 export function useWorkspacePanelDefault(sessionId: string): void {
   const on = useSetting('workspace_panel_open') === true
   useEffect(() => {
-    if (!on || panelDefaulted.has(sessionId)) return
-    panelDefaulted.add(sessionId)
-    setSidePanelOpen(true)
+    shownChat = sessionId
+    if (on) setSidePanelOpen(panelByChat.get(sessionId) ?? true)
+    return () => { if (shownChat === sessionId) shownChat = null }
   }, [on, sessionId])
 }
 export function openMobileSidebar(): void { set({ mobileOpen: true }) }

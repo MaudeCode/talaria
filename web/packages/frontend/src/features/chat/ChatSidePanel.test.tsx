@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import type { BackgroundTask } from '@maudecode/talaria-web-contracts'
+import type { Session } from '../../contracts'
 
 vi.mock('../../api/endpoints', () => ({
   fetchBackgroundTasks: vi.fn(),
@@ -38,8 +39,8 @@ const agent = (overrides: Partial<BackgroundTask>): BackgroundTask => ({
 const tasks = (list: BackgroundTask[], agent_available = true) => ({ session_id: 's1', agent_available, tasks: list, pinned_count: list.filter((t) => t.pinned).length, agents_working: list.some((t) => t.status === 'running' || t.status === 'attention') })
 
 let qc: QueryClient
-function Panel({ workspace = '/repo', sessionId = 's1', open = true }: { workspace?: string | null; sessionId?: string; open?: boolean }) {
-  return <QueryClientProvider client={qc}><ChatSidePanel key={sessionId} sessionId={sessionId} workspace={workspace} open={open} onToggle={() => undefined} onClose={() => undefined} /></QueryClientProvider>
+function Panel({ workspace = '/repo', sessionId = 's1', open = true, todoState }: { workspace?: string | null; sessionId?: string; open?: boolean; todoState?: Session['todo_state'] }) {
+  return <QueryClientProvider client={qc}><ChatSidePanel key={sessionId} sessionId={sessionId} workspace={workspace} todoState={todoState} open={open} onToggle={() => undefined} onClose={() => undefined} /></QueryClientProvider>
 }
 
 beforeEach(() => {
@@ -50,6 +51,7 @@ beforeEach(() => {
   vi.mocked(api.listDir).mockReset().mockResolvedValue({ entries: [{ name: 'src', is_dir: true }, { name: 'README.md', size: 10 }] })
   vi.mocked(api.fetchGitInfo).mockReset().mockResolvedValue({ git: null })
   vi.mocked(api.fetchSettings).mockReset().mockResolvedValue({})
+  vi.mocked(useTranscript).mockReset().mockReturnValue({ session: null, query: { isError: false, isPending: true } } as unknown as ReturnType<typeof useTranscript>)
 })
 
 describe('chat side panel (TAL-373)', () => {
@@ -301,11 +303,11 @@ describe('chat side panel settings (TAL-2154)', () => {
   // The panel reads its open state from the shell, as ChatView passes it.
   function ShellPanel({ sessionId }: { sessionId: string }) {
     const { sidePanelOpen } = useShellState()
-    return <QueryClientProvider client={qc}><ChatSidePanel key={sessionId} sessionId={sessionId} workspace="/repo" open={sidePanelOpen} onToggle={() => undefined} onClose={() => undefined} /></QueryClientProvider>
+    return <QueryClientProvider client={qc}><ChatSidePanel key={sessionId} sessionId={sessionId} workspace="/repo" todoState={undefined} open={sidePanelOpen} onToggle={() => undefined} onClose={() => undefined} /></QueryClientProvider>
   }
   const panelOpen = () => document.documentElement.dataset.workspacePanel === 'open'
 
-  it('opens the panel on a chat\'s first visit while "Keep open by default" is on, and keeps a hand close for that chat', async () => {
+  it('opens the panel on a chat\'s first visit while "Keep open by default" is on, and restores each chat\'s own choice on return', async () => {
     act(() => { setSidePanelOpen(false) })
     settings({ workspace_panel_open: true })
     const { rerender } = render(<ShellPanel sessionId="first" />)
@@ -314,12 +316,13 @@ describe('chat side panel settings (TAL-2154)', () => {
     rerender(<ShellPanel sessionId="first" />)
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(panelOpen()).toBe(false)
+    // A new chat opens it, and returning to the first chat without touching the second restores the first chat's close.
     rerender(<ShellPanel sessionId="second" />)
     await waitFor(() => { expect(panelOpen()).toBe(true) })
-    act(() => { setSidePanelOpen(false) })
     rerender(<ShellPanel sessionId="first" />)
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(panelOpen()).toBe(false)
+    await waitFor(() => { expect(panelOpen()).toBe(false) })
+    rerender(<ShellPanel sessionId="second" />)
+    await waitFor(() => { expect(panelOpen()).toBe(true) })
   })
 
   it('leaves the panel as it was while "Keep open by default" is off', async () => {
@@ -331,18 +334,18 @@ describe('chat side panel settings (TAL-2154)', () => {
     expect(panelOpen()).toBe(false)
   })
 
-  it('adds a Todos tab with this chat\'s todos only while the setting is on', async () => {
-    vi.mocked(useTranscript).mockReturnValue({ session: { session_id: 's1', title: 'Plan', todo_state: todosFixture.public }, query: { isError: false, isPending: false } } as unknown as ReturnType<typeof useTranscript>)
+  it('adds a Todos tab listing the chat\'s todos only while the setting is on, without opening a transcript reader of its own', async () => {
     settings({ workspace_todos_tab: false })
     const { unmount } = render(<Panel />)
     await screen.findByRole('tab', { name: 'Files' })
     expect(screen.queryByRole('tab', { name: 'Todos' })).not.toBeInTheDocument()
     unmount()
     settings({ workspace_todos_tab: true })
-    render(<Panel />)
+    render(<Panel todoState={todosFixture.public as Session['todo_state']} />)
     await userEvent.click(await screen.findByRole('tab', { name: 'Todos' }))
+    // A second transcript reader would tear down the chat's live stream when its tab is hidden.
+    expect(useTranscript).not.toHaveBeenCalled()
     const rows = within(screen.getByRole('list', { name: 'Current task list' })).getAllByRole('listitem')
     expect(rows.map((r) => r.textContent)).toEqual(['Owner taskWorking', '✓Finished taskDone'])
-    expect(useTranscript).toHaveBeenCalledWith('s1')
   })
 })
