@@ -52,11 +52,11 @@ import * as browserDictation from '../voice/dictation'
 const noop = (): void => undefined
 function renderComposer(session: Session | null, live: LiveTurn | null = null, onQueue: (entry: QueuedTurn) => void = noop, settings?: Settings, onEnsureSession: () => Promise<Session> = () => Promise.resolve(session!), onLocalCommand: ComposerProps['onLocalCommand'] = () => Promise.resolve(false), overrides: Partial<ComposerProps> = {}, bootstrap = DEFAULT_BOOTSTRAP) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const tree = (turn: LiveTurn | null, record = session) => (
+  const tree = (turn: LiveTurn | null, record = session, shown = settings) => (
     <QueryClientProvider client={qc}>
       <BootstrapContext.Provider value={bootstrap}>
         <Composer
-          sessionId={record?.session_id ?? null} session={record} busy={!!turn && !isTerminal(turn.status)} streamId={turn?.streamId ?? null} settings={settings} onEnsureSession={onEnsureSession} onLocalCommand={onLocalCommand}
+          sessionId={record?.session_id ?? null} session={record} busy={!!turn && !isTerminal(turn.status)} streamId={turn?.streamId ?? null} settings={shown} onEnsureSession={onEnsureSession} onLocalCommand={onLocalCommand}
           terminalOpen={false} onToggleTerminal={noop} onModelChange={noop} onWorkspaceChange={noop} onToolsetsChange={noop} onReasoningChange={noop} reasoning={null}
           yolo={false} onToggleYolo={noop} queued={[]} onQueue={onQueue} onQueueChange={noop} {...overrides}
         />
@@ -64,7 +64,7 @@ function renderComposer(session: Session | null, live: LiveTurn | null = null, o
     </QueryClientProvider>
   )
   const view = render(tree(live))
-  return { ...view, rerenderWith: (turn: LiveTurn | null) => view.rerender(tree(turn)), rerenderSession: (record: Session) => view.rerender(tree(live, record)) }
+  return { ...view, rerenderWith: (turn: LiveTurn | null) => view.rerender(tree(turn)), rerenderSession: (record: Session) => view.rerender(tree(live, record)), rerenderSettings: (next: Settings) => view.rerender(tree(live, session, next)) }
 }
 
 describe('Composer', () => {
@@ -87,6 +87,16 @@ describe('Composer', () => {
     renderComposer(null, null, noop, undefined, onEnsureSession, undefined, { onExecutionModeChange: vi.fn(), pendingChoices: { execution_mode: 'normal' } })
     await waitFor(() => { expect(document.querySelector('#btnAttach')).not.toBeNull() })
     expect(onEnsureSession).not.toHaveBeenCalled()
+  })
+
+  it('drops a control the settings hide and brings it back when they show it, without remounting (TAL-2076)', () => {
+    const view = renderComposer(writable, null, noop, { hide_composer_attach: false })
+    const attach = () => view.container.querySelector('#btnAttach')
+    expect(attach()).not.toBeNull()
+    view.rerenderSettings({ hide_composer_attach: true })
+    expect(attach()).toBeNull()
+    view.rerenderSettings({ hide_composer_attach: false })
+    expect(attach()).not.toBeNull()
   })
 
   it('keeps the fresh-chat Agent mode reachable when the other strip controls are hidden (TAL-1040)', () => {

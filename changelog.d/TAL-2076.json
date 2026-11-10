@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Talaria Web Settings › Chat has switches to show or hide each composer control: the Model, Reasoning, Profile, Workspace and Toolsets chips, the Attach button, Microphone, Context ring and YOLO mode notice.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

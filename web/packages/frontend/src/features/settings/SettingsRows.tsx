@@ -13,13 +13,16 @@ interface SettingProps { label: string; hint?: string; settingKey: string; id?: 
 const rowId = (id: string | undefined, settingKey: string) => id ?? `settings-${settingKey}`
 const trimmed = (draft: string) => draft.trim()
 
-/** One boolean server setting as a switch row; `onSaved` runs once the server confirms a write. */
-export function SettingToggle({ label, hint, settingKey, id: givenId, fallback = false, disabled, onSaved }: SettingProps & { fallback?: boolean; onSaved?: () => void }) {
+/**
+ * One boolean server setting as a switch row; `onSaved` runs once the server confirms a write. `inverted` shows the switch on
+ * while the stored value is false, for a `hide_*` key labelled as the thing shown; `fallback` stays the stored value's default.
+ */
+export function SettingToggle({ label, hint, settingKey, id: givenId, fallback = false, inverted = false, disabled, onSaved }: SettingProps & { fallback?: boolean; inverted?: boolean; onSaved?: () => void }) {
   const id = rowId(givenId, settingKey)
   const { bool, set } = useSettingField([settingKey])
   return (
     <FieldRow label={label} htmlFor={id} hint={hint} inline>
-      <Switch id={id} disabled={disabled} checked={bool(settingKey, fallback)} onCheckedChange={(checked) => set({ [settingKey]: checked }, onSaved)} />
+      <Switch id={id} disabled={disabled} checked={bool(settingKey, fallback) !== inverted} onCheckedChange={(checked) => set({ [settingKey]: checked !== inverted }, onSaved)} />
     </FieldRow>
   )
 }

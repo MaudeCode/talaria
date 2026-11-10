@@ -94,11 +94,13 @@ it('edits every retired Preferences, Conversation, System and Models & Providers
   expect(found).toEqual(Object.fromEntries(Object.entries(PLACEMENT).map(([key, section]) => [key, [section]])))
 })
 
-/** TAL-2075: every Chat and Navigation row by its label, in page order, with the `data-group` it sits in. */
+/** TAL-2075, TAL-2076: every Chat and Navigation row by its label, in page order, with the `data-group` it sits in. */
 const GROUPS: Record<'chat' | 'navigation', [string, string][]> = {
   chat: [
     ['Send Key', 'composer'], ['Default message mode', 'composer'], ['Attach large pasted text as file', 'composer'], ['Show busy placeholder hint', 'composer'],
     ['Show provider quota chip in composer', 'composer'],
+    ['Model', 'composer-chips'], ['Reasoning', 'composer-chips'], ['Profile', 'composer-chips'], ['Workspace', 'composer-chips'], ['Toolsets', 'composer-chips'],
+    ['Attach button', 'composer-controls'], ['Microphone', 'composer-controls'], ['Context ring', 'composer-controls'], ['YOLO mode notice', 'composer-controls'],
     ['Activity display', 'transcript'], ['Show Transparent Stream event timestamps', 'transcript'], ['Open Worklog details automatically', 'transcript'],
     ['Render markdown in user messages', 'transcript'], ['Fade text effect', 'transcript'], ['Show token usage', 'transcript'], ['Show token speed (TPS)', 'transcript'],
     ['Auto-follow new content', 'scrolling'], ['Virtualize long transcripts (experimental)', 'scrolling'], ['Load older messages while scrolling up', 'scrolling'],
