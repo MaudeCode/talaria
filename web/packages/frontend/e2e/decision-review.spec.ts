@@ -4,27 +4,14 @@ import { bootTestServer } from '../../server/dist/test/harness.js'
 import { FakeSidecar } from '../../server/dist/sidecar/fake.js'
 import { Session } from '../../server/dist/sessions/session.js'
 import type { Page, TestInfo } from '@playwright/test'
-import { expect, settle, test } from './fixtures'
+import { expect, expectNoOverflow, settle, test } from './fixtures'
 import { decisionItem as item } from './demo-server'
 
 test.use({ serviceWorkers: 'block' })
 
-/** Phone, the Duo outer display and split view, and the Duo inner display (foldable-web viewports). */
-const WIDTHS = [[382, 580], [385, 571], [669, 867]] as const
-
-/** `shot` saves a full-page screenshot when DECISION_SHOTS names a folder; `noOverflow` also checks every foldable width. */
+/** `shot` saves a full-page screenshot when DECISION_SHOTS names a folder. */
 function shooter(page: Page, testInfo: TestInfo) {
-  const shot = async (name: string) => { if (process.env.DECISION_SHOTS) await page.screenshot({ path: `${process.env.DECISION_SHOTS}/${name}-${testInfo.project.name}.png`, fullPage: true }) }
-  const noOverflow = async (name: string) => {
-    const original = page.viewportSize()
-    for (const [width, height] of WIDTHS) {
-      await page.setViewportSize({ width, height })
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `no horizontal scroll at ${String(width)}px`).toBe(true)
-      await shot(`${name}-${String(width)}`)
-    }
-    if (original) await page.setViewportSize(original)
-  }
-  return { shot, noOverflow }
+  return async (name: string) => { if (process.env.DECISION_SHOTS) await page.screenshot({ path: `${process.env.DECISION_SHOTS}/${name}-${testInfo.project.name}.png`, fullPage: true }) }
 }
 
 // TAL-1964: the agent opens a review through the harness toolset; the user answers it on its page and hands it back.
@@ -41,7 +28,7 @@ test('answers, defers, reviews and submits a decision review the agent opened', 
   const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' } })
   const sid = '20261108_120000_decide'
   const now = Math.floor(Date.now() / 1000)
-  const { shot, noOverflow } = shooter(page, testInfo)
+  const shot = shooter(page, testInfo)
   try {
     const workspace = join(server.state, 'workspace')
     mkdirSync(workspace, { recursive: true })
@@ -63,7 +50,7 @@ test('answers, defers, reviews and submits a decision review the agent opened', 
     await expect(page.getByRole('heading', { name: 'Retention policy' })).toBeVisible()
     await expect(decide.locator('[data-recommended]')).toHaveAttribute('data-choice', 'keep')
     await shot('decide')
-    await noOverflow('decide')
+    await expectNoOverflow(page, 'decide', shot)
     await page.getByRole('radio', { name: /Change Retention/ }).check()
     await page.getByRole('textbox', { name: 'Notes' }).fill('Thirty days is enough')
     await page.getByRole('button', { name: 'Save & next' }).click()
@@ -84,7 +71,7 @@ test('answers, defers, reviews and submits a decision review the agent opened', 
     await expect(row('autosave')).toHaveAttribute('data-answer', 'deferred')
     await expect(page.locator('[data-review-status]')).toContainText('Open · 2 of 3 answered')
     await shot('answers')
-    await noOverflow('answers')
+    await expectNoOverflow(page, 'answers', shot)
 
     await page.getByRole('button', { name: 'Submit' }).click()
     await expect(page.locator('[data-review-status]')).toHaveAttribute('data-review-status', 'submitted')
@@ -109,7 +96,7 @@ test('answers, defers, reviews and submits a decision review the agent opened', 
 test('lists the profile\'s reviews on Decisions and opens a review and its chat', async ({ page }, testInfo) => {
   const sidecar = new FakeSidecar()
   const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' } })
-  const { shot, noOverflow } = shooter(page, testInfo)
+  const shot = shooter(page, testInfo)
   const now = Math.floor(Date.now() / 1000)
   try {
     const workspace = join(server.state, 'workspace')
@@ -132,7 +119,7 @@ test('lists the profile\'s reviews on Decisions and opens a review and its chat'
     await expect(rows.first()).toContainText('Plan the release')
     await expect(rows.first()).toContainText('0 of 2 answered')
     await shot('decisions')
-    await noOverflow('decisions')
+    await expectNoOverflow(page, 'decisions', shot)
 
     await rows.first().getByRole('link', { name: 'Release choices' }).click()
     await expect(page).toHaveURL(new RegExp(`/decisions/${ids[1]!}$`))
