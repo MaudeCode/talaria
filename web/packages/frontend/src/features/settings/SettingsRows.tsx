@@ -106,4 +106,4 @@ export function SettingText({ label, hint, settingKey, id: givenId, fallback = '
   )
 }
 
-export { SETTINGS_PAGE, SettingAction, SettingLink, SettingRow, SettingsGroup, SettingsStats, SettingValue, SettingValues } from './SettingsGroup'
+export { SETTINGS_PAGE, SettingAction, SettingHeadline, SettingLink, SettingRow, SettingsGroup, SettingsStats, SettingValue, SettingValues } from './SettingsGroup'

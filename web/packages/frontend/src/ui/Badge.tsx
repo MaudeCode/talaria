@@ -19,9 +19,15 @@ export function Mark({ title, children }: { title?: string | undefined; children
   )
 }
 
-export type DotState = 'ok' | 'warning' | 'error' | 'idle'
+/** `changed` (TAL-2137) marks a value the user set apart from its default, such as a task model off Auto. */
+export type DotState = 'ok' | 'warning' | 'error' | 'idle' | 'changed'
 /** A state's dot fill; the System update path's nodes (TAL-2140) use it too. */
-export const DOT_FILL: Record<DotState, string> = { ok: 'bg-success', warning: 'bg-warning', error: 'bg-error', idle: 'bg-muted' }
+export const DOT_FILL: Record<DotState, string> = { ok: 'bg-success', warning: 'bg-warning', error: 'bg-error', idle: 'bg-muted', changed: 'bg-accent' }
+
+/** The 7px dot alone, before words that keep their own colour (a task's name); `StatusDot` pairs it with muted words. */
+export function Dot({ state, className }: { state: DotState; className?: string | undefined }) {
+  return <span aria-hidden="true" data-dot={state} className={cn('size-[7px] shrink-0 rounded-full', className, DOT_FILL[state])} />
+}
 
 /**
  * TAL-2131: a state as a 7px dot and its words (§7); the words stay muted, the dot alone takes the server's state colour.
@@ -30,7 +36,7 @@ export const DOT_FILL: Record<DotState, string> = { ok: 'bg-success', warning: '
 export function StatusDot({ state, title, wrap, children }: { state: DotState; title?: string | undefined; wrap?: boolean; children: ReactNode }) {
   return (
     <span title={title} data-status={state} className={cn('inline-flex min-w-0 gap-1.5 text-xs text-muted', wrap ? 'items-baseline' : 'items-center')}>
-      <span aria-hidden="true" className={cn('size-[7px] shrink-0 rounded-full', wrap && 'translate-y-[-1px]', DOT_FILL[state])} />
+      <Dot state={state} className={wrap ? 'translate-y-[-1px]' : undefined} />
       <span className={cn('min-w-0', wrap ? '[overflow-wrap:anywhere]' : 'truncate')}>{children}</span>
     </span>
   )

@@ -1608,7 +1608,6 @@
 	"settings_label_api_redact": "API 응답에서 민감한 데이터 가리기",
 	"settings_label_auto_scroll_follow": "새 내용 자동 따라가기",
 	"settings_label_auto_title_refresh": "적응형 제목 새로고침",
-	"settings_label_auxiliary_models": "보조 모델",
 	"settings_label_busy_placeholder_hint": "Show busy placeholder hint",
 	"settings_label_chat_activity_display_mode": "Activity display",
 	"settings_label_check_updates": "업데이트 확인",

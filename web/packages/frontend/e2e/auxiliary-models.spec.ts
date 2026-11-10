@@ -37,8 +37,10 @@ const models = {
   ],
 }
 
-/** The expanded task's inline editor: its list row. */
-const taskRow = (page: Page, name: RegExp) => page.getByRole('list', { name: 'Auxiliary Models' }).getByRole('listitem').filter({ has: page.getByRole('button', { name }) })
+/** The task table (TAL-2137). */
+const taskTable = (page: Page) => page.getByRole('table', { name: 'Task models' })
+/** The expanded task's inline editor: the table row under its row (one editor is open at a time). */
+const taskRow = (page: Page, task: string) => taskTable(page).locator(`tr[data-task-editor="${task}"]`)
 
 for (const width of [1280, 390]) {
   test(`auxiliary models page, inline picker and reasoning fit at ${width}px`, async ({ page }, testInfo) => {
@@ -56,19 +58,20 @@ for (const width of [1280, 390]) {
     await page.goto('/settings/models')
     await settle(page)
     await expect(page.getByRole('heading', { level: 1, name: 'Models' })).toBeVisible()
-    const list = page.getByRole('list', { name: 'Auxiliary Models' })
-    await expect(list).toHaveAttribute('data-row-list', '')
+    const list = taskTable(page)
     await expect(list.getByRole('button')).toHaveCount(15)
+    // TAL-2137: 15 one-line rows, the group well under the 1,300px three-line list it replaced.
+    if (width > 600) expect((await list.boundingBox())!.height).toBeLessThan(720)
     await expect(list.getByRole('button', { name: /Voice chat/ })).toBeVisible()
-    await expect(list.getByRole('button', { name: /Side model/ })).toContainText('Anthropic · Claude Opus 4.7')
-    await expect(list.getByRole('button', { name: /Title generation/ })).toContainText('OpenRouter · Claude Haiku 4.5')
-    await expect(list.getByRole('button', { name: /Compression/ })).toContainText('Claude Opus 4.7 · Medium')
-    await expect(list.getByRole('button', { name: /Vision/ })).toContainText('Not in catalog')
+    await expect(list.getByRole('row', { name: /Side model/ })).toContainText('Auto · Claude Opus 4.7')
+    await expect(list.getByRole('row', { name: /Title generation/ })).toContainText('Claude Haiku 4.5')
+    await expect(list.getByRole('row', { name: /Compression/ })).toContainText('Claude Opus 4.7 · Medium')
+    await expect(list.getByRole('row', { name: /Vision/ })).toContainText('Not in catalog')
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await page.screenshot({ path: testInfo.outputPath(`auxiliary-list-${String(width)}.png`) })
 
     await list.getByRole('button', { name: /Title generation/ }).click()
-    const editor = taskRow(page, /Title generation/)
+    const editor = taskRow(page, 'title_generation')
     await expect(editor.getByRole('region', { name: 'OpenRouter' }).getByRole('button', { name: 'Claude Haiku 4.5' })).toHaveAttribute('aria-pressed', 'true')
     await expect(editor.getByRole('region', { name: 'Anthropic' }).getByRole('button', { name: 'Claude Haiku 4.5' })).toHaveAttribute('aria-pressed', 'false')
     await expect(editor.getByRole('button', { name: 'Reasoning effort: Default' })).toBeVisible()
@@ -79,7 +82,7 @@ for (const width of [1280, 390]) {
     await page.screenshot({ path: testInfo.outputPath(`auxiliary-reasoning-${String(width)}.png`) })
     await page.getByRole('menuitemradio', { name: 'High' }).click()
     await page.getByRole('menu').press('Escape')
-    await expect(list.getByRole('button', { name: /Title generation/ })).toContainText('Claude Haiku 4.5 · High')
+    await expect(list.getByRole('row', { name: /Title generation/ })).toContainText('Claude Haiku 4.5 · High')
     // An effort-only write keeps the route: it names neither model nor provider.
     expect(writes).toEqual([{ scope: 'auxiliary', task: 'title_generation', reasoning_effort: 'high' }])
     await editor.getByRole('searchbox').fill('gemini')
@@ -88,7 +91,7 @@ for (const width of [1280, 390]) {
     await page.screenshot({ path: testInfo.outputPath(`auxiliary-search-${String(width)}.png`) })
     // A slot the Agent says ignores an effort offers no control.
     await list.getByRole('button', { name: /Review/ }).click()
-    await expect(taskRow(page, /Review/).getByRole('button', { name: /Reasoning effort/ })).toHaveCount(0)
+    await expect(taskRow(page, 'review').getByRole('button', { name: /Reasoning effort/ })).toHaveCount(0)
   })
 }
 
@@ -106,11 +109,43 @@ for (const width of [1280, 390]) {
     await page.screenshot({ path: testInfo.outputPath(`auxiliary-sidebar-${String(width)}.png`) })
     await entry.click()
     await expect(page).toHaveURL(/\/settings\/models$/)
-    await expect(page.getByRole('list', { name: 'Auxiliary Models' })).toBeVisible()
+    await expect(taskTable(page)).toBeVisible()
     if (await hamburger.isVisible()) await hamburger.click()
     await expect(page.getByRole('navigation', { name: 'Settings' }).getByRole('link', { name: 'Models', exact: true })).toHaveAttribute('aria-current', 'page')
     await page.goBack()
     await expect(page).toHaveURL(/\/settings\/appearance$/)
+  })
+}
+
+for (const width of [1280, 390]) {
+  test(`the main model headline opens the model picker and saves the pick, at ${String(width)}px (TAL-2137)`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: width > 600 ? 900 : 844 })
+    // The server's main model follows the write, so the headline keeps the pick once the reread lands.
+    let state = auxiliary
+    let defaultOption = 'claude-sonnet-4-6'
+    await page.route('**/api/model/auxiliary', (route) => route.fulfill({ json: state }))
+    await page.route('**/api/models', (route) => route.fulfill({ json: { ...models, default_option_id: defaultOption } }))
+    const writes: unknown[] = []
+    await page.route('**/api/default-model', async (route) => {
+      writes.push(route.request().postDataJSON())
+      state = { ...auxiliary, main: { provider: 'anthropic', model: 'claude-opus-4-7' } }
+      defaultOption = 'claude-opus-4-7'
+      await route.fulfill({ json: { ok: true, model: 'claude-opus-4-7', provider: 'anthropic' } })
+    })
+    await page.goto('/settings/models')
+    await settle(page)
+    const headline = page.locator('[data-setting-headline]')
+    await expect(headline).toContainText('Claude Sonnet 4.6')
+    await expect(headline).toContainText('Anthropic')
+    await headline.getByRole('button', { name: 'Change model' }).click()
+    const picker = page.getByRole('dialog', { name: 'Default Model' })
+    await expect(picker.getByRole('option', { name: 'Claude Opus 4.7' })).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.screenshot({ path: testInfo.outputPath(`main-model-picker-${String(width)}.png`) })
+    await picker.getByRole('option', { name: 'Claude Opus 4.7' }).click()
+    await expect(picker).toHaveCount(0)
+    await expect(headline).toContainText('Claude Opus 4.7')
+    expect(writes).toEqual([{ model: 'claude-opus-4-7' }])
   })
 }
 
@@ -122,20 +157,20 @@ test('the task list, Auto and a custom id do not wait for a held catalog, and sw
   await page.route('**/api/models', async (route) => { catalogReads += 1; await held; await route.fulfill({ json: models }) })
   // No network-idle wait: the held catalog keeps the network busy by design.
   await page.goto('/settings/models')
-  const list = page.getByRole('list', { name: 'Auxiliary Models' })
-  await expect(list.getByRole('button', { name: /Vision/ })).toContainText('legacy/vision-model')
+  const list = taskTable(page)
+  await expect(list.getByRole('row', { name: /Vision/ })).toContainText('legacy/vision-model')
   await list.getByRole('button', { name: /Title generation/ }).click()
-  await expect(taskRow(page, /Title generation/).getByRole('button', { name: /^Auto/ })).toBeEnabled()
-  await expect(taskRow(page, /Title generation/).getByRole('textbox', { name: /Custom model ID/ })).toBeEditable()
+  await expect(taskRow(page, 'title_generation').getByRole('button', { name: /^Auto/ })).toBeEnabled()
+  await expect(taskRow(page, 'title_generation').getByRole('textbox', { name: /Custom model ID/ })).toBeEditable()
   await list.getByRole('button', { name: /Compression/ }).click()
   await expect(list.getByRole('button', { name: /Title generation/ })).toHaveAttribute('aria-expanded', 'false')
   releaseCatalog()
-  await expect(taskRow(page, /Compression/).getByRole('region', { name: 'Anthropic' })).toBeVisible()
+  await expect(taskRow(page, 'compression').getByRole('region', { name: 'Anthropic' })).toBeVisible()
   const reads = catalogReads
   await list.getByRole('button', { name: /Vision/ }).click()
-  await expect(taskRow(page, /Vision/).getByRole('region', { name: 'Anthropic' })).toBeVisible()
+  await expect(taskRow(page, 'vision').getByRole('region', { name: 'Anthropic' })).toBeVisible()
   await list.getByRole('button', { name: /Title generation/ }).click()
-  await expect(taskRow(page, /Title generation/).getByRole('region', { name: 'Anthropic' })).toBeVisible()
+  await expect(taskRow(page, 'title_generation').getByRole('region', { name: 'Anthropic' })).toBeVisible()
   expect(catalogReads).toBe(reads)
 })
 
@@ -155,8 +190,8 @@ for (const width of [1280, 390]) {
     })
     await page.goto('/settings/models')
     await settle(page)
-    await page.getByRole('list', { name: 'Auxiliary Models' }).getByRole('button', { name: /Delegation/ }).click()
-    await expect(taskRow(page, /Delegation/).getByRole('status')).toContainText('Install or enable')
+    await taskTable(page).getByRole('button', { name: /Delegation/ }).click()
+    await expect(taskRow(page, 'delegation').getByRole('status')).toContainText('Install or enable')
     await expect(page.getByRole('button', { name: 'Fixed model' })).toHaveCount(0)
     await page.screenshot({ path: testInfo.outputPath(`delegation-unavailable-${String(width)}.png`) })
     await page.getByRole('button', { name: 'Restore Default' }).click()
@@ -196,7 +231,7 @@ for (const width of [1280, 390]) {
     await page.reload()
     await settle(page)
     await expect(page.getByRole('button', { name: 'Reset all to auto' })).toBeDisabled()
-    await page.getByRole('list', { name: 'Auxiliary Models' }).getByRole('button', { name: /Delegation/ }).click()
+    await taskTable(page).getByRole('button', { name: /Delegation/ }).click()
     await expect(page.getByRole('combobox', { name: 'Mode', exact: true })).toBeDisabled()
     await expect(page.getByRole('button', { name: 'Profile routes', exact: true })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Restore Default' })).toHaveCount(0)

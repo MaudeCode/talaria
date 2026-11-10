@@ -3,6 +3,7 @@ import { ArrowUpRight, ChevronRight, type LucideIcon } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import { FieldRow, HelpTip, RowIcon } from '../../ui/Field'
 import { Figure, SectionHeader, StatLabel, type FigureTone } from '../../ui/List'
+import { Monogram } from '../../ui/Monogram'
 
 /** TAL-2131: a Settings page's column of groups, 30px between one group and the next header (§4). */
 export const SETTINGS_PAGE = 'flex flex-col gap-7.5'
@@ -31,6 +32,23 @@ export function SettingValue({ label, icon: Icon, children }: { label: string; i
     <div className="flex items-center justify-between gap-3 py-2 text-sm">
       <dt className="flex min-w-0 shrink-0 items-center gap-2.5 text-text">{Icon && <Icon size={18} strokeWidth={1.75} aria-hidden="true" data-row-icon="" className="shrink-0 text-muted" />}{label}</dt>
       <dd className="min-w-0 break-all text-right text-muted">{children}</dd>
+    </div>
+  )
+}
+
+/**
+ * TAL-2137: the one choice a page is about (the main model) as its headline: the provider's `Monogram`, the name in
+ * `text-xl`, a muted second line, and the action that changes it at the right.
+ */
+export function SettingHeadline({ monogram, title, detail, action }: { monogram: string; title: string; detail?: string | undefined; action: ReactNode }) {
+  return (
+    <div className="flex items-center gap-3 py-2" data-setting-headline="">
+      <Monogram name={monogram} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-xl font-semibold text-strong" title={title}>{title}</p>
+        {detail && <p className="truncate text-xs text-muted" title={detail}>{detail}</p>}
+      </div>
+      {action}
     </div>
   )
 }

@@ -1,7 +1,7 @@
 import delegationFixtures from '../../../../../../contracts/fixtures/delegation-settings.json'
 import { teardownAll } from '../../stream/connection'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -46,15 +46,18 @@ function renderSetting() {
 }
 
 async function openList() {
-  return within(await screen.findByRole('list', { name: 'Auxiliary Models' }))
+  return within(await screen.findByRole('table', { name: 'Task models' }))
 }
 
-/** Expands one task's inline editor and scopes queries to its list row. */
+/** The table row a task's button controls, which holds its open editor. */
+const editorOf = (button: HTMLElement) => within(document.getElementById(button.getAttribute('aria-controls')!)!)
+
+/** Expands one task's inline editor and scopes queries to its editor row. */
 async function openTask(name: RegExp) {
   const row = (await openList()).getByRole('button', { name })
   await userEvent.click(row)
   expect(row).toHaveAttribute('aria-expanded', 'true')
-  return within(row.closest('li')!)
+  return editorOf(row)
 }
 
 function deferred<T>() {
@@ -82,18 +85,43 @@ describe('Auxiliary models settings', () => {
     expect(api.setAuxiliaryModel).toHaveBeenCalledWith('title_generation', { model: 'custom-model', provider: null })
   })
 
-  it('lists every server task in server order with Auto, pinned, and off-catalog values', async () => {
+  it('lists every server task in server order, one line each, with changed tasks marked and counted (TAL-2137)', async () => {
     renderSetting()
-    expect(await screen.findByRole('list', { name: 'Auxiliary Models' })).toHaveAttribute('data-row-list')
     const list = await openList()
-    const rows = list.getAllByRole('button')
-    expect(rows.map((r) => r.firstElementChild?.firstElementChild?.textContent)).toEqual(TASKS.map(label))
-    expect(rows[0]).toHaveTextContent('Vision')
-    expect(rows[0]).toHaveTextContent('OpenRouter · legacy/gone-model')
-    expect(rows[0]).toHaveTextContent('Not in catalog')
-    const title = list.getByRole('button', { name: /Title generation/ })
-    expect(title).toHaveTextContent('Auto · Anthropic · Claude Sonnet 4.6')
-    expect(title).not.toHaveTextContent('Not in catalog')
+    expect(list.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Task', 'Model'])
+    expect(list.getAllByRole('button').map((b) => b.textContent)).toEqual(TASKS.map(label))
+    const vision = list.getByRole('row', { name: /Vision/ })
+    expect(vision.querySelector('[data-dot]')).toHaveAttribute('data-dot', 'changed')
+    expect(within(vision).getByTitle('OpenRouter')).toHaveClass('text-text')
+    expect(within(vision).getByTitle('OpenRouter')).toHaveTextContent(/^legacy\/gone-modelNot in catalog$/)
+    // The description is the row's title, never a line of the closed row.
+    expect(vision).toHaveAttribute('title', 'vision description')
+    expect(vision).not.toHaveTextContent('vision description')
+    const title = list.getByRole('row', { name: /Title generation/ })
+    expect(title.querySelector('[data-dot]')).toHaveAttribute('data-dot', 'idle')
+    expect(within(title).getByTitle('Anthropic')).toHaveClass('text-muted')
+    expect(within(title).getByTitle('Anthropic')).toHaveTextContent(/^Auto · Claude Sonnet 4.6$/)
+    expect(screen.getByText('1 of 10 changed')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reset all to auto' })).toBeInTheDocument()
+    // The open editor's first line is the description.
+    const editor = await openTask(/Title generation/)
+    expect(editor.getByText('title_generation description')).toBeInTheDocument()
+  })
+
+  it('counts a saved effort as a change and offers no Reset all while nothing is changed (TAL-2137)', async () => {
+    vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue(auxState())
+    renderSetting()
+    await openList()
+    expect(screen.getByText('0 of 10 changed')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reset all to auto' })).not.toBeInTheDocument()
+    cleanup()
+    vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue(auxState({ mcp: { reasoning: { ...inherited('mcp'), saved: 'high', inherited: false } } }))
+    renderSetting()
+    const mcp = (await openList()).getByRole('row', { name: /MCP/ })
+    expect(mcp.querySelector('[data-dot]')).toHaveAttribute('data-dot', 'changed')
+    expect(within(mcp).getByTitle('Anthropic')).toHaveTextContent(/^Auto · Claude Sonnet 4.6 · High$/)
+    expect(screen.getByText('1 of 10 changed')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reset all to auto' })).toBeInTheDocument()
   })
 
   it('searches the catalog, shows the pick in the list at once, and adopts the server state', async () => {
@@ -106,12 +134,12 @@ describe('Auxiliary models settings', () => {
     expect(dialog.queryByRole('region', { name: 'Anthropic' })).not.toBeInTheDocument()
     await userEvent.click(within(dialog.getByRole('region', { name: 'beta' })).getByRole('button', { name: 'Llama3' }))
     expect(api.setAuxiliaryModel).toHaveBeenCalledWith('title_generation', { model: '@custom:beta:llama3', provider: 'custom:beta' })
-    const after = within(await screen.findByRole('list', { name: 'Auxiliary Models' }))
-    expect(after.getByRole('button', { name: /Title generation/ })).toHaveTextContent('beta · Llama3')
+    const after = within(await screen.findByRole('table', { name: 'Task models' }))
+    expect(after.getByRole('row', { name: /Title generation/ })).toHaveTextContent('Llama3')
     vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue(auxState({ title_generation: pinnedBeta }))
     answer({ ok: true, auxiliary: auxState({ title_generation: pinnedBeta }) })
     await waitFor(() => expect(api.fetchAuxiliaryModels).toHaveBeenCalledTimes(2))
-    expect(after.getByRole('button', { name: /Title generation/ })).toHaveTextContent('beta · Llama3')
+    expect(after.getByRole('row', { name: /Title generation/ })).toHaveTextContent('Llama3')
   })
 
   // TAL-1625: opening a slot's picker never pulls focus into its search, by touch or keyboard; the list stays in view.
@@ -120,13 +148,13 @@ describe('Auxiliary models settings', () => {
     const user = userEvent.setup()
     const row = (await openList()).getByRole('button', { name: /Title generation/ })
     await user.pointer({ keys: '[TouchA]', target: row })
-    const touched = within(row.closest('li')!)
+    const touched = editorOf(row)
     await touched.findByRole('region', { name: 'Anthropic' })
     expect(touched.getByRole('searchbox')).not.toHaveFocus()
     const vision = (await openList()).getByRole('button', { name: /Vision/ })
     act(() => vision.focus())
     await user.keyboard('{Enter}')
-    const typed = within(vision.closest('li')!)
+    const typed = editorOf(vision)
     await typed.findByRole('region', { name: 'Anthropic' })
     expect(typed.getByRole('searchbox')).not.toHaveFocus()
     expect(vision).toHaveFocus()
@@ -154,10 +182,10 @@ describe('Auxiliary models settings', () => {
     await userEvent.type(dialog.getByRole('textbox', { name: /Custom model ID/ }), '@openai:')
     await userEvent.click(dialog.getByRole('button', { name: 'Save' }))
     expect(api.setAuxiliaryModel).toHaveBeenCalledWith('title_generation', { model: '@openai:', provider: null })
-    const list = await screen.findByRole('list', { name: 'Auxiliary Models' })
-    expect(within(list).getByRole('button', { name: /Title generation/ })).toHaveTextContent('@openai:')
+    const list = await screen.findByRole('table', { name: 'Task models' })
+    expect(within(list).getByRole('row', { name: /Title generation/ })).toHaveTextContent('@openai:')
     refuse(error)
-    await waitFor(() => expect(within(list).getByRole('button', { name: /Title generation/ })).toHaveTextContent('Auto · Anthropic · Claude Sonnet 4.6'))
+    await waitFor(() => expect(within(list).getByRole('row', { name: /Title generation/ })).toHaveTextContent('Auto · Claude Sonnet 4.6'))
     expect(toast).toHaveBeenCalledWith(error.message, 4000, 'error')
   })
 
@@ -173,9 +201,9 @@ describe('Auxiliary models settings', () => {
     await userEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Reset all to auto' }))
     expect(api.setAuxiliaryModel).toHaveBeenCalledWith('__reset__', { model: '' })
     // Every slot reads Auto with its default effort at once, including the off-catalog pin and the saved effort.
-    const list = await screen.findByRole('list', { name: 'Auxiliary Models' })
+    const list = await screen.findByRole('table', { name: 'Task models' })
     expect(list).not.toHaveTextContent('Not in catalog')
-    expect(within(list).getByRole('button', { name: /Compression/ })).not.toHaveTextContent('High')
+    expect(within(list).getByRole('row', { name: /Compression/ })).not.toHaveTextContent('High')
   })
 })
 
@@ -245,7 +273,8 @@ it('reconciles an unknown outcome before allowing another delegation save', asyn
 })
 
 it('renders server-denied delegation management read-only while retaining the local fixed-model picker', async () => {
-  vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue({ ...auxState(), delegation: delegationFixtures.readonly })
+  // A pinned task, so Reset all is offered (TAL-2137).
+  vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue({ ...auxState({ title_generation: pinnedBeta }), delegation: delegationFixtures.readonly })
   renderSetting()
   const list = await openList()
   expect(screen.getByRole('button', { name: 'Reset all to auto' })).toBeDisabled()
@@ -255,6 +284,21 @@ it('renders server-denied delegation management read-only while retaining the lo
   expect(screen.queryByRole('button', { name: 'Model routes' })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: 'Restore Default' })).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Fixed model' })).toBeEnabled()
+})
+
+it('shows the Delegation row\'s route count in route mode and its mode name otherwise (TAL-2137)', async () => {
+  const routes = [{ name: 'one', description: '' }, { name: 'two', description: '' }]
+  vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue({ ...auxState(), delegation: { ...delegationFixtures.default, configured: 'model_map', model_map: { options: routes, default: null } } })
+  renderSetting()
+  const row = (await openList()).getByRole('row', { name: /Delegation/ })
+  expect(within(row).getAllByRole('cell')[1]).toHaveTextContent(/^2 routes$/)
+  expect(row.querySelector('[data-dot]')).toHaveAttribute('data-dot', 'changed')
+  cleanup()
+  vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue({ ...auxState(), delegation: delegationFixtures.default })
+  renderSetting()
+  const plain = (await openList()).getByRole('row', { name: /Delegation/ })
+  expect(within(plain).getAllByRole('cell')[1]).toHaveTextContent(/^Default$/)
+  expect(plain.querySelector('[data-dot]')).toHaveAttribute('data-dot', 'idle')
 })
 
 it.each(['model_map', 'profile_routes'] as const)('preserves No default when creating a named route with %s', async (backend) => {
@@ -286,7 +330,7 @@ describe('Auxiliary models page loading and reasoning (TAL-1285)', () => {
     vi.mocked(api.setAuxiliaryModel).mockReturnValue(new Promise(() => undefined))
     renderSetting()
     const list = await openList()
-    expect(list.getByRole('button', { name: /Vision/ })).toHaveTextContent('OpenRouter · legacy/gone-model')
+    expect(list.getByRole('row', { name: /Vision/ })).toHaveTextContent('legacy/gone-model')
     let editor = await openTask(/Title generation/)
     expect(editor.getByRole('status')).toHaveTextContent('Loading')
     expect(editor.getByRole('textbox', { name: /Custom model ID/ })).toBeEnabled()
@@ -309,7 +353,7 @@ describe('Auxiliary models page loading and reasoning (TAL-1285)', () => {
     expect(await editor.findByRole('alert')).toHaveTextContent('catalog unreachable')
     expect(editor.queryByRole('status')).not.toBeInTheDocument()
     // The task list keeps every saved value while the catalog is unavailable.
-    expect((await openList()).getByRole('button', { name: /Vision/ })).toHaveTextContent('legacy/gone-model')
+    expect((await openList()).getByRole('row', { name: /Vision/ })).toHaveTextContent('legacy/gone-model')
     vi.mocked(api.fetchModels).mockResolvedValueOnce({ groups: [] })
     await userEvent.click(editor.getByRole('button', { name: 'Retry' }))
     expect(await editor.findByText('No models found')).toBeInTheDocument()
@@ -332,8 +376,8 @@ describe('Auxiliary models page loading and reasoning (TAL-1285)', () => {
     }))
     renderSetting()
     const list = await openList()
-    expect(list.getByRole('button', { name: /Compression/ })).toHaveTextContent('Anthropic · Claude Opus 4.7 · Medium')
-    expect(list.getByRole('button', { name: /Title generation/ })).not.toHaveTextContent('Medium')
+    expect(list.getByRole('row', { name: /Compression/ })).toHaveTextContent('Claude Opus 4.7 · Medium')
+    expect(list.getByRole('row', { name: /Title generation/ })).not.toHaveTextContent('Medium')
     expect((await openTask(/Compression/)).getByRole('button', { name: 'Reasoning effort: Medium' })).toBeInTheDocument()
     expect((await openTask(/MCP/)).queryByRole('button', { name: /Reasoning effort/ })).not.toBeInTheDocument()
     const editor = await openTask(/Title generation/)
@@ -343,13 +387,13 @@ describe('Auxiliary models page loading and reasoning (TAL-1285)', () => {
     expect(api.setAuxiliaryModel).toHaveBeenCalledWith('title_generation', { reasoning_effort: 'high' })
     expect(vi.mocked(api.setAuxiliaryModel).mock.calls[0]![1].model).toBeUndefined()
     // The pick shows at once in the row and the control, before the server answers.
-    expect(list.getByRole('button', { name: /Title generation/ })).toHaveTextContent('Auto · Anthropic · Claude Sonnet 4.6 · High')
+    expect(list.getByRole('row', { name: /Title generation/ })).toHaveTextContent('Auto · Claude Sonnet 4.6 · High')
     expect(editor.getByRole('button', { name: 'Reasoning effort: High' })).toBeInTheDocument()
     const confirmed = auxState({ title_generation: { reasoning: { ...inherited('title_generation'), options: ['low', 'high', 'none'], saved: 'high', inherited: false } } })
     vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue(confirmed)
     answer({ ok: true, auxiliary: confirmed })
     await waitFor(() => expect(api.fetchAuxiliaryModels).toHaveBeenCalledTimes(2))
-    expect(list.getByRole('button', { name: /Title generation/ })).toHaveTextContent('· High')
+    expect(list.getByRole('row', { name: /Title generation/ })).toHaveTextContent('· High')
   })
 
   it('names the parent default on the delegation slot', async () => {
@@ -367,7 +411,7 @@ describe('Auxiliary models page loading and reasoning (TAL-1285)', () => {
     await userEvent.click(editor.getByRole('button', { name: 'Reasoning effort: Default' }))
     await userEvent.click(await screen.findByRole('menuitemradio', { name: 'High' }))
     await waitFor(() => expect(editor.getByRole('button', { name: 'Reasoning effort: Default' })).toBeInTheDocument())
-    expect((await openList()).getByRole('button', { name: /Title generation/ })).not.toHaveTextContent('High')
+    expect((await openList()).getByRole('row', { name: /Title generation/ })).not.toHaveTextContent('High')
     expect(toast).toHaveBeenCalledWith(refusal.message, 4000, 'error')
   })
 

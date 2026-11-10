@@ -47,13 +47,14 @@ afterAll(() => {
 })
 
 /**
- * The id of every labelled control and picker grid inside a Settings group: the rows the page renders. A page with tabs
+ * The id of every labelled control, picker grid and headline action (TAL-2137) inside a Settings group: the rows the page renders. A page with tabs
  * counts its tab panel's rows under that tab and the rest under the page.
  */
 const renderedRows = (page: HTMLElement, tab: string | undefined) => {
   const rows = [
     ...[...page.querySelectorAll<HTMLLabelElement>('[data-group] label[for]')].map((label) => page.ownerDocument.getElementById(label.htmlFor)),
     ...page.querySelectorAll<HTMLElement>('[data-group] [id][aria-label]:is([role="group"], [role="combobox"], [role="switch"], input, select, textarea)'),
+    ...page.querySelectorAll<HTMLElement>('[data-group] [data-setting-headline] [id]'),
   ]
   return [...new Set(rows.filter((row): row is HTMLElement => !!row && !!row.closest('[role="tabpanel"]') === !!tab).map((row) => row.id))]
 }

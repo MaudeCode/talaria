@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactElement } from 'react'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -178,6 +178,11 @@ describe('settings pages', () => {
   })
 })
 
+// jsdom lays nothing out; the model picker's scroller gets a height so the virtualized list renders its rows (TAL-2137).
+const offsetHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')
+beforeAll(() => { Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, get(this: HTMLElement) { return this.hasAttribute('data-model-picker-list') ? 100_000 : 0 } }) })
+afterAll(() => { if (offsetHeight) Object.defineProperty(HTMLElement.prototype, 'offsetHeight', offsetHeight) })
+
 it('renders and saves only the server-provided speed tiers (TAL-788)', async () => {
   vi.mocked(fetchAuxiliaryModels).mockResolvedValue({ main: { model: 'gpt-6-astra', provider: 'openai-codex', service_tier: 'priority', supported_speed_tiers: [
     { id: 'standard', service_tier: 'default' }, { id: 'priority', service_tier: 'priority' }, { id: 'ultrafast', service_tier: 'ultrafast' },
@@ -198,13 +203,15 @@ it('shows a chosen speed and default model at once, sending the shown model with
   ] }, tasks: [] })
   vi.mocked(fetchModels).mockResolvedValue({ groups: [{ provider: 'OpenAI Codex', provider_id: 'openai-codex', models: [{ id: '@openai-codex:gpt-6-astra', label: 'GPT-6 Astra', provider_id: 'openai-codex' }, { id: '@openai-codex:gpt-5.6-sol', label: 'GPT-5.6 Sol', provider_id: 'openai-codex', supported_speed_tiers: [{ id: 'standard', service_tier: 'default' }, { id: 'priority', service_tier: 'priority' }] }] }] })
   vi.mocked(setDefaultModel).mockReturnValue(new Promise(() => undefined))
-  renderSection(<ModelsSection />)
-  const model = await screen.findByRole('combobox', { name: 'Default Model' })
-  await userEvent.click(model)
+  const view = renderSection(<ModelsSection />)
+  const change = await screen.findByRole('button', { name: 'Change model' })
+  await userEvent.click(change)
   await userEvent.click(await screen.findByRole('option', { name: 'GPT-5.6 Sol' }))
   expect(setDefaultModel).toHaveBeenLastCalledWith('@openai-codex:gpt-5.6-sol', 'openai-codex', undefined)
-  expect(model).toHaveTextContent('GPT-5.6 Sol')
-  expect(model).not.toHaveAttribute('data-disabled')
+  // TAL-2137: the headline names the model and its provider; Change stays usable while the write runs.
+  const model = view.container.querySelector('[data-setting-headline]')
+  expect(model).toHaveTextContent('GPT-5.6 SolOpenAI Codex')
+  expect(change).toBeEnabled()
   const speed = screen.getByRole('combobox', { name: 'Speed' })
   await userEvent.click(speed)
   await userEvent.click(await screen.findByRole('option', { name: 'Standard' }))
@@ -220,7 +227,7 @@ it('rereads the auxiliary slots after the default model changes (TAL-1383)', asy
   renderSection(<ModelsSection />)
   await waitFor(() => expect(fetchAuxiliaryModels).toHaveBeenCalled())
   const before = vi.mocked(fetchAuxiliaryModels).mock.calls.length
-  await userEvent.click(await screen.findByRole('combobox', { name: 'Default Model' }))
+  await userEvent.click(await screen.findByRole('button', { name: 'Change model' }))
   await userEvent.click(await screen.findByRole('option', { name: 'GPT-5.6 Sol' }))
   await waitFor(() => expect(vi.mocked(fetchAuxiliaryModels).mock.calls.length).toBeGreaterThan(before))
 })
@@ -235,7 +242,7 @@ it('offers the chosen model\'s own speed tiers before the server answers (TAL-13
   ] }] })
   vi.mocked(setDefaultModel).mockReturnValue(new Promise(() => undefined))
   renderSection(<ModelsSection />)
-  await userEvent.click(await screen.findByRole('combobox', { name: 'Default Model' }))
+  await userEvent.click(await screen.findByRole('button', { name: 'Change model' }))
   await userEvent.click(await screen.findByRole('option', { name: 'GPT-5.6 Sol' }))
   await userEvent.click(screen.getByRole('combobox', { name: 'Speed' }))
   expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['Standard', 'Fast'])
@@ -245,7 +252,7 @@ describe('the profile reasoning defaults (TAL-2078)', () => {
   const status = { show_reasoning: true, reasoning_effort: 'medium', supported_efforts: ['low', 'medium', 'high'], supports_reasoning_effort: true, supports_thinking_toggle: true }
   const refusal = () => new ApiError({ kind: 'http', status: 409, path: '/api/reasoning', message: 'config.yaml is package-managed.' })
   const held = () => { let reject!: (e: unknown) => void; const promise = new Promise<never>((_, r) => { reject = r }); return { promise, reject } }
-  const effortRow = () => screen.queryByRole('combobox', { name: 'Default reasoning effort' })
+  const effortRow = () => screen.queryByRole('radiogroup', { name: 'Reasoning effort' }) ?? screen.queryByRole('combobox', { name: 'Reasoning effort' })
   const thinkingRow = () => screen.queryByRole('switch', { name: 'Show thinking' })
   beforeEach(() => { vi.mocked(fetchAuxiliaryModels).mockResolvedValue({ main: {}, tasks: [] }) })
 
@@ -258,20 +265,31 @@ describe('the profile reasoning defaults (TAL-2078)', () => {
     expect(!!thinkingRow()).toBe(toggle)
   })
 
-  it('offers exactly the server\'s efforts with the provider default and saves the profile default without a chat', async () => {
+  it('offers exactly the server\'s efforts with the provider default side by side and saves the profile default without a chat (TAL-2137)', async () => {
     vi.mocked(fetchReasoning).mockResolvedValue(status)
     vi.mocked(setReasoningEffort).mockImplementation((effort) => {
       vi.mocked(fetchReasoning).mockResolvedValue({ ...status, reasoning_effort: effort })
       return Promise.resolve({ ...status, reasoning_effort: effort })
     })
     renderSection(<ModelsSection />)
-    const select = await screen.findByRole('combobox', { name: 'Default reasoning effort' })
-    expect(select).toHaveTextContent('Medium')
-    await userEvent.click(select)
-    expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['Default', 'Low', 'Medium', 'High'])
-    await userEvent.click(screen.getByRole('option', { name: 'High' }))
+    const group = within(await screen.findByRole('radiogroup', { name: 'Reasoning effort' }))
+    expect(group.getAllByRole('radio').map((o) => o.textContent)).toEqual(['Default', 'Low', 'Medium', 'High'])
+    expect(group.getByRole('radio', { name: 'Medium' })).toBeChecked()
+    await userEvent.click(group.getByRole('radio', { name: 'High' }))
     expect(setReasoningEffort).toHaveBeenCalledWith('high', null, null, undefined)
-    await waitFor(() => expect(select).toHaveTextContent('High'))
+    await waitFor(() => expect(group.getByRole('radio', { name: 'High' })).toBeChecked())
+  })
+
+  it('offers more than three server efforts in a select (TAL-2137)', async () => {
+    vi.mocked(fetchReasoning).mockResolvedValue({ ...status, supported_efforts: ['minimal', 'low', 'medium', 'high'] })
+    vi.mocked(setReasoningEffort).mockResolvedValue({ ...status, reasoning_effort: 'minimal' })
+    renderSection(<ModelsSection />)
+    const select = await screen.findByRole('combobox', { name: 'Reasoning effort' })
+    expect(screen.queryByRole('radiogroup', { name: 'Reasoning effort' })).not.toBeInTheDocument()
+    await userEvent.click(select)
+    expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['Default', 'Minimal', 'Low', 'Medium', 'High'])
+    await userEvent.click(screen.getByRole('option', { name: 'Minimal' }))
+    expect(setReasoningEffort).toHaveBeenCalledWith('minimal', null, null, undefined)
   })
 
   it('moves the effort at once and rolls it back with the error toast when the server refuses', async () => {
@@ -279,13 +297,12 @@ describe('the profile reasoning defaults (TAL-2078)', () => {
     const write = held()
     vi.mocked(setReasoningEffort).mockReturnValue(write.promise)
     renderSection(<ModelsSection />)
-    const select = await screen.findByRole('combobox', { name: 'Default reasoning effort' })
-    await userEvent.click(select)
-    await userEvent.click(await screen.findByRole('option', { name: 'Default' }))
+    const group = within(await screen.findByRole('radiogroup', { name: 'Reasoning effort' }))
+    await userEvent.click(group.getByRole('radio', { name: 'Default' }))
     expect(setReasoningEffort).toHaveBeenLastCalledWith('', null, null, undefined)
-    expect(select).toHaveTextContent('Default')
+    expect(group.getByRole('radio', { name: 'Default' })).toBeChecked()
     write.reject(refusal())
-    await waitFor(() => expect(select).toHaveTextContent('Medium'))
+    await waitFor(() => expect(group.getByRole('radio', { name: 'Medium' })).toBeChecked())
     expect(showToast).toHaveBeenCalledWith('config.yaml is package-managed.', 4000, 'error')
   })
 
