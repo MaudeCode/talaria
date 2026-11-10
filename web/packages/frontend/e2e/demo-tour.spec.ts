@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { SettingsSectionSchema } from '@maudecode/talaria-web-contracts'
 import { ToolsTabSchema } from '../src/contracts/url'
 import type { Page, TestInfo } from '@playwright/test'
-import { expect, expectNoOverflow, settle, test } from './fixtures'
+import { DUO_VIEWPORTS, expect, expectNoOverflow, settle, test } from './fixtures'
 import { bootDemoServer, DEMO_SESSION_ID } from './demo-server'
 
 test.use({ serviceWorkers: 'block' })
@@ -34,7 +34,7 @@ function tour(page: Page, info: TestInfo, theme: Theme) {
   return {
     desktop: info.project.name === 'desktop',
     /** Checks the page as it stands: the theme took, then the Duo viewports and screenshots. */
-    check: async (name: string, full = true) => {
+    check: async (name: string, full = true, pane?: Parameters<typeof expectNoOverflow>[3]) => {
       const html = expect(page.locator('html'), `${name} renders in the ${theme} theme`)
       await (theme === 'dark' ? html : html.not).toHaveClass(/\bdark\b/)
       const save = async (file: string) => {
@@ -43,7 +43,7 @@ function tour(page: Page, info: TestInfo, theme: Theme) {
         else await page.screenshot({ path: `${shots}/${file}.png` })
       }
       await save(`${name}-${suffix}`)
-      if (duo) await expectNoOverflow(page, name, shots ? save : undefined)
+      if (duo) await expectNoOverflow(page, name, shots ? save : undefined, pane)
     },
   }
 }
@@ -92,11 +92,12 @@ test('every data page shows its seeded data in the light theme', async ({ page }
   await dataPages(page, info, 'light')
 })
 
-/** Sections whose pane scrolls sideways today, keyed `<section>-<project>`, with the ticket that fixes each. Shrinks only. */
+/** Sections whose pane scrolls sideways today, keyed `<section>-<project or Duo viewport>`, with the ticket that fixes each. Shrinks only. */
 const KNOWN_PANE_OVERFLOW: Readonly<Record<string, string>> = {
   // A hidden centered tooltip on the trailing header action sticks out past the pane's right edge.
   'profiles-mobile': 'TAL-2125',
   'workspaces-mobile': 'TAL-2125',
+  ...Object.fromEntries(DUO_VIEWPORTS.flatMap(({ name }) => ['profiles', 'workspaces'].map((section) => [`${section}-${name}`, 'TAL-2125']))),
 }
 
 // TAL-2103: the Settings gallery. Every section, and each Tools tab, shows its heading with no sideways scroll; with
@@ -123,7 +124,7 @@ async function settingsPages(page: Page, info: TestInfo, theme: Theme) {
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${name} has no horizontal overflow`).toBe(true)
       const known = KNOWN_PANE_OVERFLOW[`${name}-${info.project.name}`]
       expect(await pane.evaluate((el) => el.scrollWidth <= el.clientWidth), known ? `${name} still overflows its pane (${known}); remove its KNOWN_PANE_OVERFLOW entry` : `${name} has no horizontal overflow in its pane`).toBe(!known)
-      await check(`settings-${name}`)
+      await check(`settings-${name}`, true, { locator: pane, known: (viewport) => KNOWN_PANE_OVERFLOW[`${name}-${viewport}`] })
     }
   } finally { await page.goto('about:blank').catch(() => undefined); await server.close() }
 }

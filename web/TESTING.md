@@ -192,7 +192,8 @@ Settings has no sideways scroll, in three passes:
 1. Dark, on the desktop (1280×800) and mobile (390×844) projects.
 2. Duo, on the desktop project only: each page at the five iPhone Duo viewports in `DUO_VIEWPORTS`
    (`e2e/fixtures.ts`: outer portrait 382×580, outer landscape 594×368, inner portrait 669×867, inner landscape
-   951×585, inner split 385×571), where `expectNoOverflow` asserts the document has no sideways scroll.
+   951×585, inner split 385×571), where `expectNoOverflow` asserts the document, and for Settings the section's
+   scrolling pane, has no sideways scroll.
 3. Light, on both projects, after picking Light in Settings › Appearance.
 
 From `packages/frontend`, `TOUR_SHOTS=<dir> npx playwright test e2e/demo-tour.spec.ts` also saves a full-height
