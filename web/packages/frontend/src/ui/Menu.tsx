@@ -27,7 +27,7 @@ export interface MenuProps {
   collisionAvoidance?: ComponentProps<typeof BaseMenu.Positioner>['collisionAvoidance']
   /**
    * TAL-2095: the surface the trigger sits in, found from it, such as the composer card for a composer chip. There the
-   * popup keeps `side`, scrolling in the room it has rather than flipping or shifting over the host, and at phone width
+   * popup keeps `side`, scrolling in the room it has rather than flipping or moving over the host, and at phone width
    * it spans the host from its left edge. A trigger outside any host keeps the plain behaviour.
    */
   host?: (trigger: HTMLElement) => Element | null | undefined
@@ -38,8 +38,11 @@ const POSITIONER = 'z-[1400] outline-none'
 // Base UI's available height keeps a long menu inside a short viewport, where it scrolls; a caller lowers it with --menu-max-height.
 /** The phone breakpoint `max-[641px]:` matches in CSS. */
 const PHONE = '(max-width: 640px)'
-/** A hosted menu neither flips nor shifts, so it never covers its host; Base UI then caps its height to the room on its side. */
-const HOSTED = { side: 'none', align: 'none' } as const
+/**
+ * A hosted menu never flips, and is not `sticky`, so it never moves onto its host and Base UI caps its height to the room
+ * on its side; it still shifts along that side to stay inside the viewport.
+ */
+const HOSTED = { side: 'none', align: 'shift' } as const
 const POPUP = cn('min-w-44 max-w-[min(92vw,360px)] max-h-[min(var(--menu-max-height,100vh),var(--available-height))] rounded-lg border border-border bg-surface p-1 text-sm text-text shadow-md outline-none', POPUP_MOTION)
 
 /** Scrolls `row` into `scroller` unless it is already fully inside; `center` places it mid-list. */
@@ -140,7 +143,7 @@ export function Menu({ trigger, children, side = 'bottom', align = 'start', open
     <BaseMenu.Root {...(open !== undefined ? { open } : {})} onOpenChange={focus.onOpenChange}>
       <BaseMenu.Trigger ref={findHost ? setTriggerEl : undefined} render={trigger} onPointerDown={focus.onTriggerPointerDown} />
       <BaseMenu.Portal>
-        <BaseMenu.Positioner side={side} align={align} sideOffset={6} sticky {...(avoid ? { collisionAvoidance: avoid } : {})} {...(anchor ? { anchor } : {})} className={POSITIONER}>
+        <BaseMenu.Positioner side={side} align={align} sideOffset={6} sticky={!host} {...(avoid ? { collisionAvoidance: avoid } : {})} {...(anchor ? { anchor } : {})} className={POSITIONER}>
           <BaseMenu.Popup ref={header ? focus.ref : revealRows} aria-label={label} onFocus={focus.onFocus} onKeyDown={focus.onKeyDown} className={cn(POPUP, header ? 'flex flex-col' : 'overflow-y-auto', className, anchor && 'max-[641px]:w-(--anchor-width) max-[641px]:max-w-none')}>
             {header ? <>{header}<div ref={revealRows} className="min-h-0 overflow-y-auto">{children}</div></> : children}
           </BaseMenu.Popup>

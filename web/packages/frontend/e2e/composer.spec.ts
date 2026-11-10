@@ -937,3 +937,23 @@ test('the titlebar profile menu still opens downward (TAL-2095)', async ({ page 
   await menu.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)))
   expect((await menu.boundingBox())!.y).toBeGreaterThanOrEqual((await trigger.boundingBox())!.y + (await trigger.boundingBox())!.height - 1)
 })
+
+test('a composer menu whose chip sits near the right edge stays inside a narrow desktop viewport (TAL-2095)', async ({ page, request }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'Above phone width the menu anchors to its chip.')
+  await page.setViewportSize({ width: 650, height: 800 })
+  // A long workspace name pushes the Profile chip toward the strip's right end.
+  const settings = { ...await (await request.get('/api/settings')).json(), default_workspace: '/tmp/tal2095-long' }
+  await page.route('**/api/settings', (route) => route.request().method() === 'GET' ? route.fulfill({ json: settings }) : route.fallback())
+  await page.route('**/api/workspaces', (route) => route.fulfill({ json: { workspaces: [{ name: 'a-workspace-with-a-very-long-name-indeed', path: '/tmp/tal2095-long' }] } }))
+  await page.route('**/api/profiles', (route) => route.fulfill({ json: { profiles: [{ name: 'default', is_default: true }, { name: 'research' }], active: 'default' } }))
+  await page.goto('/')
+  await page.locator('#msg').click()
+  const trigger = page.locator('.composer-strip').getByRole('button', { name: /default/ })
+  await trigger.click()
+  const menu = page.getByRole('menu')
+  await expect(menu.getByRole('menuitemradio', { name: 'default', exact: true })).toBeVisible()
+  await menu.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)))
+  const popup = (await menu.boundingBox())!
+  expect(popup.x + popup.width).toBeLessThanOrEqual(650)
+  expect(popup.y + popup.height).toBeLessThanOrEqual((await trigger.boundingBox())!.y + 1)
+})
