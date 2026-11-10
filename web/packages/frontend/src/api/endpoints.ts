@@ -80,7 +80,8 @@ export const fetchProviders = (q = '') => orpc().providers.list(q ? { q } : {})
 export const saveSelfHostedProvider = (body: { provider: string; base_url: string; model: string; api_key?: string }) => orpc().providers.selfHosted(body)
 /** Evicts one provider's live model cache; answers the rebuilt `/api/models` catalog. */
 export const refreshModels = (provider: string) => orpc().models.refresh({ provider })
-export const fetchProviderQuotas = (refresh = false) => orpc().providers.quotas(refresh ? { refresh: '1' } : {}, { signal: timeout(45_000) })
+/** TAL-2151: `provider` adds the composer chip's `composer` quota for that provider. */
+export const fetchProviderQuotas = (refresh = false, provider?: string) => orpc().providers.quotas({ ...(refresh ? { refresh: '1' } : {}), ...(provider ? { provider } : {}) }, { signal: timeout(45_000) })
 export const fetchOpenRouterCostHistory = () => orpc().providers.costHistory({ provider: 'openrouter' }, { signal: timeout(45_000) })
 export const fetchPersonalities = () => orpc().personalities.list()
 /** The server reads `none`, `default`, or `clear` (when no personality has that name) as clearing it. */

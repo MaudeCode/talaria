@@ -42,14 +42,17 @@ export function useSidebarQuotaPins(quotas: Quotas | undefined) {
 /**
  * The provider quota list every surface reads (Settings › Providers, Insights, the sidebar's pinned rows): one cache entry, one minute of
  * freshness, and a forced refresh that also rereads the OpenRouter cost history. The server recomputes pace on
- * every read (provider calls are cached 45 s), so a reset replaces an expired pace within a minute.
+ * every read (provider calls are cached 45 s), so a reset replaces an expired pace within a minute. `provider` (TAL-2151,
+ * the composer chip) reads the same list with that provider's `composer` quota, one entry per provider under the same key.
  */
-export function useProviderQuotas({ enabled = true }: { enabled?: UseQueryOptions<Quotas, Error, Quotas, typeof keys.providerQuotas>['enabled'] } = {}) {
+export function useProviderQuotas({ enabled = true, provider }: { enabled?: UseQueryOptions<Quotas, Error, Quotas, readonly string[]>['enabled']; provider?: string | undefined } = {}) {
   const qc = useQueryClient()
-  const fetchQuotas = async (refresh = false) => reconcileProviderQuotas(qc.getQueryData(keys.providerQuotas), await api.fetchProviderQuotas(refresh))
-  const quotas = useQuery({ queryKey: keys.providerQuotas, queryFn: () => fetchQuotas(), staleTime: 60_000, refetchInterval: 60_000, enabled })
-  const refresh = () => qc.cancelQueries({ queryKey: keys.providerQuotas })
-    .then(() => qc.query({ queryKey: keys.providerQuotas, queryFn: () => fetchQuotas(true), staleTime: 0 }))
+  const queryKey: readonly string[] = provider ? [...keys.providerQuotas, provider] : keys.providerQuotas
+  const read = (refresh: boolean) => (provider ? api.fetchProviderQuotas(refresh, provider) : api.fetchProviderQuotas(refresh))
+  const fetchQuotas = async (refresh = false) => reconcileProviderQuotas(qc.getQueryData(queryKey), await read(refresh))
+  const quotas = useQuery({ queryKey, queryFn: () => fetchQuotas(), staleTime: 60_000, refetchInterval: 60_000, enabled })
+  const refresh = () => qc.cancelQueries({ queryKey, exact: true })
+    .then(() => qc.query({ queryKey, queryFn: () => fetchQuotas(true), staleTime: 0 }))
     .then(() => { void qc.invalidateQueries({ queryKey: keys.providerCostHistory }) })
     .catch(() => undefined)
   return { quotas, refresh }

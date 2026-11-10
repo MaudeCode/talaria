@@ -938,6 +938,10 @@ export const ProviderQuotasSchema = z.looseObject({ availability: CatalogAvailab
   retained_display_level: QuotaLevelSchema.nullable().optional().describe('TAL-1870: the level of a cached row this read does not carry, shown with `availability.unavailable_reason`; null when `availability.authoritative`.'),
   sidebar_source_ids: z.array(z.string()).optional().describe('TAL-1870: the `sidebar_quota_sources` pins this read lists, in pinned order; the rows the expanded Web sidebar shows. Every pin while `availability.authoritative` is false.'),
   sidebar_can_pin: z.boolean().optional().describe('TAL-1870: whether another source can be pinned; a pin this read does not list does not count.'),
+  composer: z.object({
+    source_id: z.string(), label: z.string().describe('The chip text: "21% left", else the window\'s detail, else the credit balance.'),
+    percent_remaining: z.number().nullable(), level: QuotaLevelSchema.describe('The window\'s `display_level`.'),
+  }).nullable().optional().describe('TAL-2151: the composer chip\'s quota for `?provider=`: that provider\'s `provider_headline` source and its headline window; null when it has no source or no figure. Absent without `?provider=`.'),
   summary: z.object({
     connected: z.number().int().describe('Configured providers.'),
     lowest: z.object({ source_id: z.string(), percent_remaining: z.number(), level: QuotaLevelSchema.describe('The window\'s `display_level`.') }).nullable().describe('The quota window with the least remaining across every source; null without a remaining percent.'),

@@ -21,7 +21,7 @@ import { agentApprovals, auxiliaryModels, auxiliaryReasoning, compressionPrepare
 import { ProfileError, validateProfileName } from '../profiles/profiles.js'
 import { OnboardingError } from '../onboarding.js'
 import { EnvWriteError } from '../providers/env-file.js'
-import { displayName, providerEnvVar, providerListing, stampAuxiliarySelections } from '../providers/catalog.js'
+import { composerQuota, displayName, providerEnvVar, providerListing, stampAuxiliarySelections, type QuotaSourceRow } from '../providers/catalog.js'
 import { OAUTH_PROVIDERS, SUPPORTED_PROVIDER_SETUPS } from '../providers/tables.js'
 import { displayBotName, KANBAN_PINS_BY_PROFILE_KEY, MODEL_FAVORITES_BY_PROFILE_KEY, QUOTA_THRESHOLDS_BY_PROFILE_KEY, SETTINGS_SPEECH_KEYS, pyBool, sidebarQuotaProjection } from '../settings.js'
 import { str } from '../util.js'
@@ -194,10 +194,13 @@ async function saveGroupDiscussionLimits(ctx: RequestContext, patch: Partial<Dis
   }, { profileFile: true, afterWrite: async () => { await ctx.deps.settings.save({ group_discussion_restart_baseline: { limits: loaded, saved_at: Date.now() } }) } })
 }
 
-/** TAL-1870: a quota read with the sidebar's pins projected over its rows. */
-async function quotasWithSidebar(ctx: RequestContext, opts: { sourceId?: string | null; refresh?: boolean }) {
+/** TAL-1870: a quota read with the sidebar's pins projected over its rows; TAL-2151: with `provider`, also the composer chip's quota for it. */
+async function quotasWithSidebar(ctx: RequestContext, opts: { sourceId?: string | null; refresh?: boolean; provider?: string | null }) {
   const body = await ctx.deps.catalog.quotas(home(ctx), activeProfileName(ctx), opts)
-  return { ...body, ...sidebarQuotaProjection((await ctx.deps.settings.load()).sidebar_quota_sources, body.sources, (body.availability as { authoritative: boolean }).authoritative) }
+  return {
+    ...body, ...sidebarQuotaProjection((await ctx.deps.settings.load()).sidebar_quota_sources, body.sources, (body.availability as { authoritative: boolean }).authoritative),
+    ...(opts.provider ? { composer: composerQuota(body.sources as QuotaSourceRow[], opts.provider) } : {}),
+  }
 }
 
 async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
@@ -547,7 +550,7 @@ export const settingsRouter = os.router({
     })),
     selfHosted: os.providers.selfHosted.handler(({ input, context: { ctx } }) => run(async () => { const r = await ctx.deps.onboarding.selfHosted(input); ctx.deps.catalog.invalidate(); return r })),
     quota: os.providers.quota.handler(({ input, context: { ctx } }) => run(() => ctx.deps.catalog.quota(home(ctx), str(input.provider).trim() || null, { refresh: truthy(input.refresh) }))),
-    quotas: os.providers.quotas.handler(({ input, context: { ctx } }) => run(() => quotasWithSidebar(ctx, { sourceId: str(input.source).trim() || null, refresh: truthy(input.refresh) }) as never)),
+    quotas: os.providers.quotas.handler(({ input, context: { ctx } }) => run(() => quotasWithSidebar(ctx, { sourceId: str(input.source).trim() || null, refresh: truthy(input.refresh), provider: str(input.provider).trim() || null }) as never)),
     costHistory: os.providers.costHistory.handler(({ input, context: { ctx } }) => run(() => {
       const parsed = Number.parseInt(str(input.days ?? '7').trim() || '7', 10)
       const days = Number.isFinite(parsed) ? Math.max(1, Math.min(parsed, 365)) : 7

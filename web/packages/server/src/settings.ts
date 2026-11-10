@@ -111,7 +111,6 @@ export function settingsDefaults(opts: { defaultWorkspace: string; botName: stri
     hide_composer_workspace: false,
     hide_composer_mobile_config: false,
     hide_composer_model: false,
-    hide_composer_quota_chip: false,
     hide_composer_reasoning: false,
     hide_composer_toolsets: false,
     hide_composer_status: false,

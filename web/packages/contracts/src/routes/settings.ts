@@ -107,7 +107,7 @@ export const settingsContract = {
     delete: oc.route({ method: 'POST', path: '/api/providers/delete', tags }).input(z.object({ provider: z.string().optional() })).output(z.object({ ok: z.literal(true), provider: z.string(), display_name: z.string(), action: z.string() })),
     selfHosted: oc.route({ method: 'POST', path: '/api/providers/self-hosted', tags, summary: 'Save an Ollama or LM Studio endpoint (optional key) and make `model` the default; an endpoint whose `/models` does not answer is refused with 400 and nothing is saved.' }).input(Loose).output(Loose),
     quota: oc.route({ method: 'GET', path: '/api/provider/quota', tags }).input(z.object({ provider: z.string().optional(), refresh: z.string().optional() })).output(ProviderQuotaSchema),
-    quotas: oc.route({ method: 'GET', path: '/api/provider/quotas', tags }).input(z.object({ source: z.string().optional(), refresh: z.string().optional() })).output(ProviderQuotasSchema),
+    quotas: oc.route({ method: 'GET', path: '/api/provider/quotas', tags }).input(z.object({ source: z.string().optional(), refresh: z.string().optional(), provider: z.string().optional().describe('TAL-2151: the chat\'s provider id; the read then carries `composer`.') })).output(ProviderQuotasSchema),
     costHistory: oc.route({ method: 'GET', path: '/api/provider/cost-history', tags }).input(z.object({ provider: z.string().optional(), days: z.string().optional() })).output(ProviderCostHistorySchema),
   },
   reasoning: {

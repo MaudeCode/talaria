@@ -165,6 +165,14 @@ describe('load', () => {
     expect([s.theme, s.skin]).toEqual(expected)
   })
 
+  it('keeps a retired key\'s stored value through other saves and refuses new writes to it (TAL-2151)', async () => {
+    write({ hide_composer_quota_chip: true, onboarding_completed: true })
+    const s = store()
+    await s.save({ send_key: 'ctrl+enter', hide_composer_quota_chip: false })
+    expect(onDisk()).toMatchObject({ hide_composer_quota_chip: true, send_key: 'ctrl+enter' })
+    expect(s.defaults()).not.toHaveProperty('hide_composer_quota_chip')
+  })
+
   it('applies the legacy-key migrations', async () => {
     write({ activity_feed_expanded_default: 1, busy_input_mode: 'queue', simplified_tool_calling: false, assistant_language: 'fr', virtualize_transcript: true, onboarding_completed: true })
     const s = (await store().load())

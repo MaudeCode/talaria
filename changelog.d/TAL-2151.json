@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "With Show provider quota chip in composer on, the composer shows how much quota is left on the chat's provider; pressing it opens that provider in Settings.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announcement": {
+        "title": "Provider quota in the composer",
+        "description": "See how much of your provider's quota is left while you type.",
+        "icon": "model"
+      }
+    }
+  ]
+}

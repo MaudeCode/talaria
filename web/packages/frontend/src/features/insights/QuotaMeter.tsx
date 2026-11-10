@@ -13,8 +13,11 @@ export const QUOTA_PERCENT_MODES: QuotaPercentMode[] = ['used', 'remaining']
 /** A stored or selected value as a mode; anything else is the default. */
 export const toQuotaPercentMode = (value: string | null): QuotaPercentMode => (value === 'remaining' ? 'remaining' : 'used')
 
-/** The meter fill per server level; `healthy` wears the accent like the App's rail, state colours are state only. */
-const LEVEL_FILL: Record<QuotaLevel, string> = { healthy: 'bg-accent', warning: 'bg-warning', critical: 'bg-error', stale: 'bg-muted', unavailable: 'bg-muted' }
+/** The colour per server level, as a meter fill and as an icon's text colour (TAL-2151's composer chip); `healthy` wears the accent like the App's rail, state colours are state only. */
+export const LEVEL_COLOR: Record<QuotaLevel, { fill: string; text: string }> = {
+  healthy: { fill: 'bg-accent', text: 'text-accent' }, warning: { fill: 'bg-warning', text: 'text-warning' }, critical: { fill: 'bg-error', text: 'text-error' },
+  stale: { fill: 'bg-muted', text: 'text-muted' }, unavailable: { fill: 'bg-muted', text: 'text-muted' },
+}
 /** TAL-2162: the figure colour beside a meter per server level; only warning and critical tint it. */
 export const LEVEL_TONE: Partial<Record<QuotaLevel, FigureTone>> = { warning: 'warning', critical: 'error' }
 
@@ -54,7 +57,7 @@ const clamp = (n: number) => `${String(Math.min(100, Math.max(0, n)))}%`
 export function QuotaMeter({ level, percent, marker, label, thin }: { level: QuotaLevel; percent: number; marker: number | null; label: string; thin?: boolean }) {
   return (
     <div className={thin ? METER_RAIL_THIN : METER_RAIL} data-meter={thin ? 'thin' : undefined} role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(percent)} aria-label={label}>
-      <div className={cn('h-full rounded-full', LEVEL_FILL[level])} style={{ width: clamp(percent) }} />
+      <div className={cn('h-full rounded-full', LEVEL_COLOR[level].fill)} style={{ width: clamp(percent) }} />
       {marker !== null && <div aria-hidden="true" className="absolute inset-y-0 w-px bg-text" style={{ left: clamp(marker) }} />}
     </div>
   )

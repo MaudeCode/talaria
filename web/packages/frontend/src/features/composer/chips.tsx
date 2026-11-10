@@ -1,7 +1,8 @@
 import { ProviderQuotaPace } from '../settings/ProviderQuotaPace'
 import { useRef, useState } from 'react'
 import { Popover } from '@base-ui/react/popover'
-import { ChevronDown, Cpu, Brain, Wrench, FolderOpen, GitBranch, Shield } from 'lucide-react'
+import { ChevronDown, Cpu, Brain, Gauge, Wrench, FolderOpen, GitBranch, Shield } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
 import { m } from '../../paraglide/messages.js'
 import { useContextDetailQuery, useExecutionModesQuery, useModelsQuery, useWorkspacesQuery, useToolsetsCatalogQuery } from '../../app/queries'
 import { Menu, MenuChoiceCheckbox, MenuChoiceItem, MenuGroup, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuSeparator, type MenuProps } from '../../ui/Menu'
@@ -12,6 +13,8 @@ import { catalogEntryById } from '../../lib/modelEntry'
 import { ProviderIcon } from '../../lib/providerIcon'
 import { lockBackgroundScroll, ModelPickerContent } from './ModelPicker'
 import { useDebounced } from '../../lib/useDebounced'
+import { useProviderQuotas } from '../../lib/useProviderQuotas'
+import { LEVEL_COLOR } from '../insights/QuotaMeter'
 import type { ContextWindowSource, ExecutionMode, ExecutionModes } from '@maudecode/talaria-web-contracts'
 
 /**
@@ -19,9 +22,10 @@ import type { ContextWindowSource, ExecutionMode, ExecutionModes } from '@maudec
  * footer, `xs` in the context strip under it; `row` is a labelled row for the composer overflow panel. Also the render
  * target of `Menu`'s trigger, so every other prop (Base UI's aria attributes, handlers, ref) is spread onto the button.
  * `readOnly` shows a value the server froze: the same chip as text, with no chevron or hover. `tooltip` replaces `title` as
- * the hover text only, such as a full name the chip truncates; the accessible name stays `title: label`.
+ * the hover text only, such as a full name the chip truncates; the accessible name stays `title: label`. `chevron={false}`
+ * is a chip that navigates rather than opening a menu.
  */
-export function Chip({ icon, label, title, tooltip = title, className, disabled, row, size = 'sm', id, readOnly, ...rest }: { icon: React.ReactNode; label: string; title: string; tooltip?: string; className?: string; disabled?: boolean; row?: boolean | undefined; size?: 'sm' | 'xs'; id?: string | undefined; readOnly?: boolean } & Omit<React.ComponentProps<'button'>, 'title' | 'className' | 'disabled' | 'id'>) {
+export function Chip({ icon, label, title, tooltip = title, className, disabled, row, size = 'sm', id, readOnly, chevron = true, ...rest }: { icon: React.ReactNode; label: string; title: string; tooltip?: string; className?: string; disabled?: boolean; row?: boolean | undefined; size?: 'sm' | 'xs'; id?: string | undefined; readOnly?: boolean; chevron?: boolean } & Omit<React.ComponentProps<'button'>, 'title' | 'className' | 'disabled' | 'id'>) {
   const sized = size === 'sm' ? 'h-7 max-w-[240px] gap-1.5 px-2.5 text-[13px] font-medium' : 'h-6 max-w-[220px] gap-1 px-1.5 text-xs font-normal'
   if (readOnly) {
     return (
@@ -43,9 +47,15 @@ export function Chip({ icon, label, title, tooltip = title, className, disabled,
     <button type="button" {...rest} id={id} disabled={disabled} title={tooltip} aria-label={`${title}: ${label}`} className={cn('composer-chip inline-flex shrink-0 items-center whitespace-nowrap rounded-(--control-radius) border border-(--chip-border) bg-(--chip-bg) text-(--chip-fg) outline-none hover:border-(--chip-hover-border) hover:bg-(--chip-hover-bg) hover:text-(--chip-hover-fg) data-[popup-open]:bg-(--chip-hover-bg) data-[popup-open]:text-(--chip-hover-fg) focus-visible:ring-2 focus-visible:ring-(--focus-ring) disabled:pointer-events-none disabled:opacity-60', sized, className)}>
       {icon}
       <span className="truncate">{label}</span>
-      <ChevronDown size={12} className="-me-0.5 shrink-0 opacity-50" aria-hidden="true" />
+      {chevron && <ChevronDown size={12} className="-me-0.5 shrink-0 opacity-50" aria-hidden="true" />}
     </button>
   )
+}
+
+/** The catalog entry a chat's model selects: the server's `model_option_id` (TAL-301), else the catalog default for a chat without a model. */
+function useChatModelEntry(model: string | null, optionId: string | null) {
+  const models = useModelsQuery()
+  return { models, selected: catalogEntryById(models.data, model ? optionId : models.data?.default_option_id) }
 }
 
 /**
@@ -55,8 +65,7 @@ export function Chip({ icon, label, title, tooltip = title, className, disabled,
  * answered after a fallback while the picker keeps the configured one ticked.
  */
 export function ModelChip({ model, optionId, servedModel = null, onChange, row }: { model: string | null; optionId: string | null; servedModel?: string | null; onChange: (model: string, provider: string | null) => void; row?: boolean }) {
-  const models = useModelsQuery()
-  const selected = catalogEntryById(models.data, model ? optionId : models.data?.default_option_id)
+  const { models, selected } = useChatModelEntry(model, optionId)
   const configured = selected ? selected.label ?? selected.id : (model ?? models.data?.default_model) || '—'
   const label = servedModel ?? configured
   const title = servedModel && !row ? m.composer_model_served({ configured, served: servedModel }) : m.composer_control_model()
@@ -64,6 +73,22 @@ export function ModelChip({ model, optionId, servedModel = null, onChange, row }
   const icon = group ? <ProviderIcon icon={group.icon} className={row ? 'size-5' : undefined} /> : <Cpu size={16} aria-hidden="true" />
   return <ModelPickerPopover selectedId={selected?.id ?? ''} onPick={onChange}
     trigger={<Chip id={row ? undefined : 'composerModelChip'} icon={icon} label={label} title={title} tooltip={servedModel && !row ? title : `${title}: ${label}`} row={row} className="composer-model-chip" />} />
+}
+
+/**
+ * TAL-2151: the remaining quota of the provider the chat's model routes to, as the server's `composer` words and levels it,
+ * opening that provider's Settings page. Mounted only while `show_quota_chip` is on, so nothing is read while it is off;
+ * renders nothing while the server has no figure for the provider.
+ */
+export function QuotaChip({ model, optionId, row }: { model: string | null; optionId: string | null; row?: boolean }) {
+  const provider = useChatModelEntry(model, optionId).selected?.provider_id
+  const { quotas } = useProviderQuotas({ provider, enabled: !!provider })
+  const navigate = useNavigate()
+  const quota = provider ? quotas.data?.composer : null
+  if (!provider || !quota) return null
+  return <Chip id={row ? undefined : 'composerQuotaChip'} className="composer-quota-chip" row={row} chevron={false} data-level={quota.level} label={quota.label} title={m.composer_quota_chip_title()}
+    icon={<Gauge size={16} className={cn('shrink-0', LEVEL_COLOR[quota.level].text)} aria-hidden="true" />}
+    onClick={() => { void navigate({ to: '/settings/providers/$providerId', params: { providerId: provider } }) }} />
 }
 
 /**

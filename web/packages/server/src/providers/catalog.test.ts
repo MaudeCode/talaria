@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { AgentConfig, parseProviderQualifiedModel } from '../config/agent-config.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, WEB_ROOT, type TestServer } from '../test/harness.js'
-import { ProviderCatalog, quotaSummary, repairSessionModel, withProviderHeadlines, type ModelEntry, type ModelGroup, type ModelsCatalog } from './catalog.js'
+import { composerQuota, ProviderCatalog, quotaSummary, repairSessionModel, withProviderHeadlines, type ModelEntry, type ModelGroup, type ModelsCatalog } from './catalog.js'
 import { OAUTH_PROVIDERS, PROVIDER_MODELS } from './tables.js'
 import { writeEnvFile } from '../test/env-file.js'
 import { SIDECAR_METHODS, type SidecarResult } from '@maudecode/talaria-web-contracts'
@@ -936,6 +936,21 @@ describe('Settings › Providers figures (TAL-2135)', () => {
     const account = (id: string, provider: string, remaining: number | null, headline: number | null = 0) => ({ ...source(id, [window(remaining, 'healthy')]), provider_id: provider, headline_window_index: headline })
     const rows = withProviderHeadlines([account('a-personal', 'anthropic', 62), account('a-work', 'anthropic', 21), account('codex', 'codex', null), account('codex-2', 'codex', 50, null), account('zai', 'zai', 80)])
     expect(Object.fromEntries(rows.map((r) => [r.source_id, r.provider_headline]))).toEqual({ 'a-personal': false, 'a-work': true, codex: true, 'codex-2': false, zai: true })
+  })
+
+  it('gives the composer chip the provider\'s headline account and window, and nothing for a provider without a figure (TAL-2151)', () => {
+    const account = (id: string, provider: string, windows: Json[], extra: Json = {}) => ({ ...source(id, windows), provider_id: provider, headline_window_index: windows.length ? 0 : null, ...extra })
+    const rows = withProviderHeadlines([
+      account('a-personal', 'anthropic', [window(62, 'healthy')]), account('a-work', 'anthropic', [window(21.4, 'warning')]),
+      account('codex', 'openai-codex', [window(8, 'stale')], { status: 'stale', display_level: 'stale' }),
+      account('or', 'openrouter', [], { quota: { limit_remaining: 12.345 }, display_level: 'healthy' }),
+      account('glm', 'zai', [], { supported: false, display_level: 'unavailable' }),
+    ])
+    expect(composerQuota(rows, 'anthropic')).toEqual({ source_id: 'a-work', label: '21% left', percent_remaining: 21.4, level: 'warning' })
+    expect(composerQuota(rows, 'openai-codex')).toEqual({ source_id: 'codex', label: '8% left', percent_remaining: 8, level: 'stale' })
+    expect(composerQuota(rows, 'openrouter')).toEqual({ source_id: 'or', label: '12.35 credits left', percent_remaining: null, level: 'healthy' })
+    expect(composerQuota(rows, 'zai')).toBeNull()
+    expect(composerQuota(rows, 'deepseek')).toBeNull()
   })
 
   it('carries the month\'s OpenRouter spend with its currency', () => {
