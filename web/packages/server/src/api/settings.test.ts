@@ -718,6 +718,21 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(providerListing(payload, 'zzz')).toMatchObject({ providers: [], groups: [] })
   })
 
+  it('providerListing names how each provider is set up, first match winning (TAL-2136)', () => {
+    const rows: Record<string, unknown>[] = [
+      { id: 'plugin-llm', install_hint: 'llm-plugin', is_self_hosted: true, device_login: true },
+      { id: 'lmstudio', is_self_hosted: true, device_login: true },
+      { id: 'copilot', device_login: true, configurable: true },
+      { id: 'nous', is_oauth: true },
+      { id: 'deepseek' },
+      { id: 'openai-codex', is_oauth: true },
+      { id: 'bedrock', configurable: false },
+    ]
+    expect(providerListing({ providers: rows }).providers.map((p): unknown[] => [p.id, p.setup])).toEqual([
+      ['plugin-llm', 'plugin'], ['lmstudio', 'self_hosted'], ['copilot', 'oauth'], ['nous', 'oauth'], ['deepseek', 'key'], ['openai-codex', 'cli'], ['bedrock', 'cli'],
+    ])
+  })
+
   it('POST /api/providers refuses a key the Agent writer would rewrite and leaves no runtime copy (TAL-797)', async () => {
     const res = await post(s, '/api/providers', { provider: 'deepseek', api_key: 'sk-caf\u00e9-12345' })
     expect(res.status).toBe(400)

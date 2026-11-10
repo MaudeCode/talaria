@@ -870,6 +870,7 @@ export const ProviderSchema = z.looseObject({
   is_custom: z.boolean().optional(), key_source: z.string().optional(), base_url: NullableString.optional(), auth_error: NullableString.optional(), env_var: NullableString.optional(), models: z.array(ModelEntrySchema).optional(), models_total: z.number().optional(),
   nous_account: NousAccountSchema.nullable().optional(), nous_account_error: NullableString.optional(),
   is_active: z.boolean().optional(), key_source_kind: KeySourceKindSchema.nullable().optional(), removable: z.boolean().optional(), install_hint: z.string().optional(), device_login: z.boolean().optional().describe('Offer the existing device-code sign-in for this provider.'),
+  setup: z.enum(['key', 'oauth', 'self_hosted', 'plugin', 'cli']).optional().describe('TAL-2136, `/api/providers`: the one way to set this provider up; `cli` when only the Agent CLI can.'),
 })
 /** TAL-2127: one Settings › Providers group; `provider_ids` keeps the server's row order and its length is the header count. */
 export const ProviderGroupSchema = z.looseObject({ id: z.enum(['configured', 'available']), provider_ids: z.array(z.string()) })
