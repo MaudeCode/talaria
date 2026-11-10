@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Skill names stay readable on a phone: the category moves to the description line, and the Skills search, pending approvals and list now start at the same edge as the page heading on every hub page.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

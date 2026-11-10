@@ -40,6 +40,27 @@ test.describe('shell', () => {
     for (const path of HUBS) expect(visited, path).toContain(path)
   })
 
+  // TAL-2088: a hub page's header, toolbar and body share one left and right edge, so the toolbar lines up with the list.
+  test('hub header, toolbar and body share one gutter', async ({ page }) => {
+    for (const path of ['/skills', '/memory', '/kanban', '/insights']) {
+      await page.goto(path)
+      await settle(page)
+      const pads = await page.locator('#main .hub-page').evaluate((hub) => ['.main-view-header', '.hub-toolbar', '.main-view-body']
+        .map((part) => { const style = getComputedStyle(hub.querySelector(part)!); return `${style.paddingLeft} ${style.paddingRight}` }))
+      expect(new Set(pads).size, `${path} header / toolbar / body padding: ${pads.join(' / ')}`).toBe(1)
+    }
+    // Skills: the heading, the search field and the first row start at one edge.
+    await page.route('**/api/skills', (route) => route.fulfill({ json: { skills: [{ name: 'demo', description: 'Example', category: 'apple', disabled: false }] } }))
+    await page.goto('/skills')
+    await settle(page)
+    const left = async (selector: string) => Math.round((await page.locator(selector).first().boundingBox())!.x)
+    expect([await left('#main .main-view-title'), await left('#skillsSearch'), await left('#skillsList > li')]).toEqual(Array(3).fill(await left('#main .main-view-title')))
+    // Logs sits in a Settings section, whose heading is its header: the toolbar starts at that heading's edge.
+    await page.goto('/settings/logs')
+    await settle(page)
+    expect(await left('#main .hub-toolbar')).toBe(await left('#main .settings-section-title'))
+  })
+
   test('settings route renders and navigates between sections', async ({ page }) => {
     await page.goto('/settings')
     await settle(page)

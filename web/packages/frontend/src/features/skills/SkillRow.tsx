@@ -32,7 +32,13 @@ export const SkillRow = memo(function SkillRow({ skill: s, uses, effect, lockEff
   const label = (
     <>
       <div className={cn('truncate text-sm font-medium', s.disabled ? 'text-muted' : 'text-text')}>{s.name}</div>
-      {s.description && <div className="truncate text-xs text-muted">{s.description}</div>}
+      {/* TAL-2088: a narrow row shows the category here instead of as a chip, so the name keeps its width. */}
+      {(s.description || s.category) && (
+        <div className={cn('truncate text-xs text-muted', !s.description && '@min-[641px]:hidden')}>
+          {s.category && <span className="@min-[641px]:hidden">{s.category}{s.description && ' · '}</span>}
+          {s.description}
+        </div>
+      )}
     </>
   )
   const locked = onLock && s.locked != null ? (lockEffect?.value ?? s.locked) : null
@@ -40,9 +46,9 @@ export const SkillRow = memo(function SkillRow({ skill: s, uses, effect, lockEff
   const line = (
     <div className="flex items-center gap-3">
       {onSelect
-        ? <button type="button" className="min-h-11 min-w-0 flex-1 text-left" aria-expanded={expanded} onClick={() => onSelect(s.name)}>{label}</button>
-        : <div className="min-w-0 flex-1">{label}</div>}
-      {s.category && <span className="rounded-full border border-border px-2 py-0.5 text-xs uppercase tracking-wider text-muted">{s.category}</span>}
+        ? <button type="button" className="min-h-11 min-w-0 flex-1 text-left @min-[641px]:min-w-1/2" aria-expanded={expanded} onClick={() => onSelect(s.name)}>{label}</button>
+        : <div className="min-w-0 flex-1 @min-[641px]:min-w-1/2">{label}</div>}
+      {s.category && <span className="min-w-0 max-w-1/3 truncate rounded-full border border-border px-2 py-0.5 text-xs uppercase tracking-wider text-muted @max-[641px]:hidden">{s.category}</span>}
       {uses > 0 && <span className="shrink-0 text-[11px] text-muted">{m.skill_uses({ n: uses })}</span>}
       {locked !== null && (
         <IconButton label={m.skill_lock_named({ name: s.name })} title={locked ? m.skill_locked_hint() : m.skill_unlocked_hint()} aria-pressed={locked} active={locked} onClick={() => onLock?.({ name: s.name, locked: !locked })}>
@@ -57,7 +63,7 @@ export const SkillRow = memo(function SkillRow({ skill: s, uses, effect, lockEff
     </div>
   )
   return (
-    <li className="py-2.5">
+    <li className="@container py-2.5">
       {locked === null || !onToggle ? line : (
         <ContextMenu label={s.name} trigger={line}>
           <MenuItem onClick={() => onToggle({ name: s.name, enabled: !enabled })}>{enabled ? m.disable() : m.skill_enable()}</MenuItem>

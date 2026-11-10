@@ -53,6 +53,9 @@ extended if it lacks something; a second copy of its layout is a review finding.
 
 A page is, top to bottom: the title, an optional segmented control or tab
 strip, an optional toolbar row, the list body, an optional footnote.
+On the Web, `HubPage` gives the header, toolbar and body one horizontal
+gutter (`HUB_GUTTER`), so each part starts at the heading's edge; content
+inside them adds no horizontal inset of its own.
 
 | Part | App | Web |
 | --- | --- | --- |
@@ -151,6 +154,8 @@ Both clients follow the same chart contract (the `dataviz` rules):
 
 Chips carry one or two words. A chip never carries a sentence or a number
 that belongs in a figure.
+A chip never squeezes a row's name: in a row narrower than 641px the chip
+text moves to the start of the description line (`SkillRow`).
 
 ## 8. States
 
