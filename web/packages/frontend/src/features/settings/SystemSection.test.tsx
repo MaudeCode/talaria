@@ -52,7 +52,7 @@ describe('automatic update summaries (TAL-1008)', () => {
   it('defaults on and saves the owner choice', async () => {
     settingsState = { ...SERVER_FIELDS, check_for_updates: true }
     renderSystem()
-    const control = await screen.findByRole('switch', { name: 'Summarize updates with AI automatically' })
+    const control = await screen.findByRole('switch', { name: 'Summarize updates with AI' })
     expect(control).toBeChecked()
     await userEvent.click(control)
     await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ summarize_updates_automatically: false }))
@@ -60,7 +60,7 @@ describe('automatic update summaries (TAL-1008)', () => {
   it('is disabled when update checks are off', async () => {
     settingsState = { ...SERVER_FIELDS, check_for_updates: false }
     renderSystem()
-    const control = await screen.findByRole('switch', { name: 'Summarize updates with AI automatically' })
+    const control = await screen.findByRole('switch', { name: 'Summarize updates with AI' })
     await waitFor(() => expect(control).toHaveAttribute('aria-disabled', 'true'))
     await userEvent.click(control)
     expect(api.saveSettings).not.toHaveBeenCalled()
@@ -319,7 +319,7 @@ describe('SystemSection "Check now"', () => {
     await userEvent.click(trigger)
     await userEvent.click(await screen.findByRole('option', { name: /stable/i }))
     expect(trigger).toHaveTextContent(/stable/i)
-    await userEvent.click(screen.getByRole('switch', { name: /ignore agent updates/i }))
+    await userEvent.click(screen.getByRole('switch', { name: /skip agent updates/i }))
     expect(trigger).toHaveTextContent(/stable/i)
     await userEvent.click(screen.getByRole('button', { name: /^check web (and agent )?now$/i }))
     expect(screen.getByRole('button', { name: /checking/i })).toBeDisabled()
@@ -358,7 +358,7 @@ describe('SystemSection "Check now"', () => {
     settingsState.check_for_updates = true
     vi.mocked(api.saveSettings).mockResolvedValue({ ...settingsState, auto_apply_updates: true })
     renderSystem()
-    const toggle = await screen.findByRole('switch', { name: /automatically apply web updates/i })
+    const toggle = await screen.findByRole('switch', { name: /install web updates automatically/i })
     expect(toggle).not.toBeChecked()
     await userEvent.click(toggle)
     await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ auto_apply_updates: true }))
@@ -425,7 +425,9 @@ describe('SystemSection update paths', () => {
     expect(within(path('Hermes Agent')).getByText('Hermes Agent is 3 commits behind')).toBeInTheDocument()
     expect(within(path('Talaria Web')).getByText('Talaria Web update check failed')).toBeInTheDocument()
     expect(within(path('Talaria Web')).getByRole('link', { name: /install updates manually/i })).toBeInTheDocument()
-    expect(within(path('Talaria Web')).getByRole('switch', { name: /automatically apply web updates/i })).toBeInTheDocument()
+    // TAL-2140: the update switches sit in the Updates group, never inside a path.
+    expect(within(path('Talaria Web')).queryByRole('switch')).toBeNull()
+    expect(within(path('Hermes Agent')).queryByRole('switch')).toBeNull()
     expect(within(path('Hermes Agent')).queryByText(/Talaria Web/)).not.toBeInTheDocument()
     expect(within(path('Talaria Web')).queryByText(/Hermes Agent/)).not.toBeInTheDocument()
   })
@@ -472,7 +474,7 @@ describe('SystemSection update paths', () => {
     renderSystem()
     const agent = await screen.findByRole('region', { name: 'Hermes Agent' })
     expect(await within(agent).findByRole('button', { name: /update agent/i })).toBeInTheDocument()
-    await userEvent.click(within(agent).getByRole('switch', { name: 'Ignore Agent updates' }))
+    await userEvent.click(screen.getByRole('switch', { name: 'Skip Agent updates' }))
     expect(await within(agent).findByText('Hermes Agent is not being checked for updates')).toBeInTheDocument()
     expect(within(agent).queryByRole('button', { name: /update agent/i })).not.toBeInTheDocument()
   })
@@ -534,7 +536,7 @@ describe('SystemSection update paths', () => {
 
   it('opens a setting explanation from its help button', async () => {
     renderSystem()
-    await userEvent.click(await screen.findByRole('button', { name: 'About Automatically apply Web updates' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'About Install Web updates automatically' }))
     expect(await screen.findByText(/Hermes Agent is never updated automatically/)).toBeVisible()
   })
 })
@@ -640,7 +642,7 @@ describe('Gateway restart capability (TAL-1627)', () => {
     await waitFor(() => { expect(restartButton()).toBeNull() })
     await userEvent.click(await why())
     expect(await screen.findByText('This gateway runs outside Talaria. Start, stop, or restart it where it runs.')).toBeInTheDocument()
-    expect(screen.getAllByText('ok')).toHaveLength(2)
+    expect(screen.getAllByText('Running normally')).toHaveLength(2)
   })
 
   it('shows the server\'s start command for a stopped unproven loopback Gateway', async () => {
@@ -664,7 +666,7 @@ describe('Gateway restart capability (TAL-1627)', () => {
   it('offers nothing when an older server sends no capability', async () => {
     vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true })
     renderSystem()
-    expect(await screen.findAllByText('ok')).toHaveLength(2)
+    expect(await screen.findAllByText('Running normally')).toHaveLength(2)
     expect(restartButton()).toBeNull()
     expect(screen.queryByRole('button', { name: 'Why restart is unavailable' })).toBeNull()
   })

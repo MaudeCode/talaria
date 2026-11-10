@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { ArrowUpRight, ChevronRight, type LucideIcon } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
-import { FieldRow, HelpTip } from '../../ui/Field'
+import { FieldRow, HelpTip, RowIcon } from '../../ui/Field'
 import { Figure, SectionHeader, StatLabel, type FigureTone } from '../../ui/List'
 
 /** TAL-2131: a Settings page's column of groups, 30px between one group and the next header (§4). */
@@ -39,7 +39,7 @@ export function SettingValue({ label, icon: Icon, children }: { label: string; i
 export function SettingLink({ label, icon: Icon, ...target }: { label: string; icon?: LucideIcon } & ({ href: string } | { onClick: () => void })) {
   const className = 'flex min-h-11 w-full items-center justify-between gap-3 py-2 text-left text-sm text-text transition-colors hover:text-accent-text focus-visible:outline-2 focus-visible:outline-accent'
   const icon = { size: 14, 'aria-hidden': true, className: 'shrink-0 text-muted' } as const
-  const text = Icon ? <span className="flex min-w-0 items-center gap-2.5"><Icon size={18} strokeWidth={1.75} aria-hidden="true" data-row-icon="" className="shrink-0 text-muted" />{label}</span> : label
+  const text = Icon ? <span className="flex min-w-0 items-center gap-2.5"><RowIcon icon={Icon} />{label}</span> : label
   return 'href' in target
     ? <a className={className} href={target.href} target="_blank" rel="noopener noreferrer">{text}<ArrowUpRight {...icon} /></a>
     : <button type="button" className={className} onClick={target.onClick}>{text}<ChevronRight {...icon} /></button>

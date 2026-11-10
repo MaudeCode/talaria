@@ -105,10 +105,10 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
     [key('sync_to_insights'), m.settings_label_sync_insights], [key('api_redact_enabled'), m.settings_label_api_redact],
     [key('confirm_external_links'), m.settings_label_confirm_external_links], ['settingsTrustedLinkHosts', m.settings_label_trusted_link_hosts],
   ]),
+  ...rows('system', m.system_software, 'server', [['settingsUpdateChannel', m.settings_label_web_update_channel], ['settingsAgentUpdateChannel', m.settings_label_agent_update_channel]]),
   ...rows('system', m.system_updates, 'server', [
-    ['settingsUpdateChannel', m.settings_label_web_update_channel], ['settingsAutoApplyUpdates', m.settings_label_auto_apply_updates],
-    ['settingsAgentUpdateChannel', m.settings_label_agent_update_channel], ['settingsIgnoreAgentUpdates', m.settings_label_ignore_agent_updates],
-    ['settingsSummarizeUpdatesAutomatically', m.settings_label_summarize_updates_automatically], ['settingsCheckUpdates', m.settings_label_check_updates],
+    ['settingsCheckUpdates', m.settings_label_check_updates], ['settingsAutoApplyUpdates', m.settings_label_auto_apply_updates],
+    ['settingsIgnoreAgentUpdates', m.settings_label_ignore_agent_updates], ['settingsSummarizeUpdatesAutomatically', m.settings_label_summarize_updates_automatically],
   ]),
   ...rows('logs', m.view, 'server', [['logs-file', m.logs_file_label], ['logs-tail', m.logs_tail_label]]),
 ]

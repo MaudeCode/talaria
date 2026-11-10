@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, ChevronUp, CircleArrowUp, Download, Power, RefreshCw, Sparkles } from 'lucide-react'
+import { Bot, ChevronDown, ChevronUp, CircleArrowUp, Download, LayoutDashboard, Pause, Power, RefreshCw, RotateCw, Sparkles, type LucideIcon } from 'lucide-react'
 import type { WebUpdateChannel } from '@maudecode/talaria-web-contracts'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -10,13 +10,18 @@ import { Button, IconButton } from '../../ui/Button'
 import { cn } from '../../ui/cn'
 import { Select } from '../../ui/Select'
 import { ConfirmDialog, Dialog, DialogFooter } from '../../ui/Dialog'
-import { ErrorState, LoadingState, formatDate } from '../../ui/States'
-import { SectionHeader } from '../../ui/List'
-import { StatusDot } from '../../ui/Badge'
+import { ErrorState, LoadingState } from '../../ui/States'
+import { Figure, SectionHeader } from '../../ui/List'
+import { DOT_FILL, StatusDot, type DotState } from '../../ui/Badge'
+import { RowIcon } from '../../ui/Field'
+import { HubHeadActions } from '../../shell/hubHeadSlots'
+import { useLocale } from '../../i18n/useLocale'
+import { formatPercent, resetTime } from '../../i18n/units'
+import { QuotaMeter } from '../insights/QuotaMeter'
 
 import { showErrorToast } from '../toast/errorToast'
 import { useSettingField } from './useSettingField'
-import { SettingAction, SettingToggle, SettingsGroup, SETTINGS_PAGE } from './SettingsRows'
+import { SettingAction, SettingRow, SettingToggle, SettingsGroup, SettingsStats, SETTINGS_PAGE } from './SettingsRows'
 import type { z } from 'zod'
 import type { UpdateApplySchema, UpdateTargetSchema, UpdateVersionSchema } from '../../contracts'
 import { useUpdateProgress } from '../notifications/UpdateNotificationCenter'
@@ -27,6 +32,7 @@ const CHANNEL_LABELS: Record<WebUpdateChannel, () => string> = { stable: m.setti
 
 export function SystemSection() {
   const bootstrap = useBootstrap()
+  const locale = useLocale()
   const qc = useQueryClient()
   const { settings, save, str, bool } = useSettingField(['update_channel', 'update_channels', 'agent_update_channel', 'ignore_agent_updates', 'webui_version', 'check_for_updates', 'auto_apply_updates', 'agent_version', 'summarize_updates_automatically'])
   const health = useQuery({ queryKey: keys.health.system, queryFn: api.fetchSystemHealth, staleTime: 30_000 })
@@ -103,22 +109,34 @@ export function SystemSection() {
   const webStatus = pathStatus(webUpdate, WEB, { failed: updates.isError && !cachedCurrent, pending: updates.isPending })
   const agentStatus = pathStatus(agentUpdate, AGENT, { failed: updates.isError && !cachedCurrent, pending: updates.isPending })
   const recheck = () => { void qc.invalidateQueries({ queryKey: keys.updates.check }) }
+  const webInstalled = webUpdate?.current_version ?? str('webui_version', bootstrap.webui_version)
+  const agentInstalled = agentUpdate?.current_version ?? str('agent_version', '—')
+  const disk = health.data?.disk?.percent
+  const webHealth = webHealthState(health.data?.status)
+  const agentHealth = agentHealthState(agent.data)
+  const checkLabel = checkNow.isPending ? m.settings_checking() : bool('ignore_agent_updates') ? m.system_check_web() : m.system_check_both()
   return (
     <div className={SETTINGS_PAGE} data-section="system">
-      <SettingsGroup id="updates" title={m.system_updates()} hint={m.system_updates_intro()}
-        action={<IconButton variant="ghost" label={checkNow.isPending ? m.settings_checking() : bool('ignore_agent_updates') ? m.system_check_web() : m.system_check_both()} onClick={() => checkNow.mutate()} disabled={checkNow.isPending}><RefreshCw aria-hidden="true" /></IconButton>}>
-        <div className="grid gap-x-10 gap-y-8 py-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,19rem),1fr))]">
-          <UpdatePath id="systemWebPath" title={WEB} installed={webUpdate?.current_version ?? str('webui_version', bootstrap.webui_version)} status={webStatus}
+      <HubHeadActions><IconButton variant="ghost" label={checkLabel} onClick={() => checkNow.mutate()} disabled={checkNow.isPending}><RefreshCw aria-hidden="true" /></IconButton></HubHeadActions>
+      <SettingsStats label={m.settings_section_system_title()} stats={[
+        { id: 'web', label: WEB, value: webInstalled },
+        // TAL-2162 moves this tone to the server's `figure_tone`.
+        { id: 'agent', label: AGENT, value: agentInstalled, tone: agentStatus.tone === 'update' || agent.data?.alive === false ? 'warning' : undefined },
+        ...(disk !== undefined ? [{ id: 'disk', label: m.system_stat_disk_used(), value: formatPercent(locale, disk, 0) }] : []),
+        ...(health.data?.checked_at ? [{ id: 'checked', label: m.system_stat_checked(), value: resetTime(locale, health.data.checked_at) }] : []),
+      ]} />
+      <SettingsGroup id="software" title={m.system_software()} hint={m.system_updates_intro()}>
+        {/* Two paths side by side once the column is 601px wide, stacked in a narrower one (a phone, a split view). */}
+        <div className="@container"><div className="grid gap-x-10 gap-y-8 py-3 @min-[601px]:grid-cols-2">
+          <UpdatePath id="systemWebPath" title={WEB} icon={LayoutDashboard} installed={webInstalled} status={webStatus}
             channel={<Select id="settingsUpdateChannel" aria-label={m.settings_label_web_update_channel()} disabled={!canManage} value={channel} onValueChange={setChannel}>
               {webChannels.map((c) => <option key={c} value={c}>{CHANNEL_LABELS[c]()}</option>)}
             </Select>}
             action={canManage && webUpdate?.can_apply ? <IconButton variant="default" label={applyWeb.isPending && !applyWeb.variables.version ? m.update_updating() : webUpdate.state === 'finish' ? m.system_finish_update() : m.system_apply_web_update()} onClick={() => applyWeb.mutate({})} disabled={applyWeb.isPending}><CircleArrowUp aria-hidden="true" /></IconButton> : null}
             folded={canManage ? webUpdate?.versions.filter((v) => v.folded) : undefined} install={install(applyWeb)}
             manualLink={webUpdate?.manual_link === true}
-            summary={webUpdate?.summary_available ? <UpdateSummary target="webui" name={WEB} info={webUpdate} /> : null}>
-            <SettingToggle label={m.settings_label_auto_apply_updates()} hint={m.system_auto_apply_hint()} id="settingsAutoApplyUpdates" settingKey="auto_apply_updates" disabled={!canManage || !bool('check_for_updates', true)} />
-          </UpdatePath>
-          <UpdatePath id="systemAgentPath" title={AGENT} installed={agentUpdate?.current_version ?? str('agent_version', '—')} status={agentStatus}
+            summary={webUpdate?.summary_available ? <UpdateSummary target="webui" name={WEB} info={webUpdate} /> : null} />
+          <UpdatePath id="systemAgentPath" title={AGENT} icon={Bot} installed={agentInstalled} status={agentStatus}
             channel={<Select id="settingsAgentUpdateChannel" aria-label={m.settings_label_agent_update_channel()} disabled={!canManage} value={agentChannel} onValueChange={setAgentChannel}>
               <option value="stable">{m.settings_update_channel_stable()}</option>
               <option value="experimental">{m.settings_update_channel_experimental()}</option>
@@ -128,26 +146,34 @@ export function SystemSection() {
             /* Before TAL-946 the server sent no `support_label`; `unsupported` answers only for one that predates `support` (TAL-350). */
             support={agentUpdate?.can_apply ? agentSupport(agentUpdate) : null}
             installedNote={agentUpdate?.current_support === 'unchecked' ? m.system_agent_installed_unchecked() : null}
-            summary={agentUpdate?.summary_available ? <UpdateSummary target="agent" name={AGENT} info={agentUpdate} /> : null}>
-            <SettingToggle label={m.settings_label_ignore_agent_updates()} hint={m.system_agent_manual_hint()} id="settingsIgnoreAgentUpdates" settingKey="ignore_agent_updates" onSaved={recheck} />
-          </UpdatePath>
-        </div>
-        <SettingToggle label={m.settings_label_summarize_updates_automatically()} id="settingsSummarizeUpdatesAutomatically" settingKey="summarize_updates_automatically" fallback disabled={!canManage || !bool('check_for_updates', true)} />
-        <SettingToggle label={m.settings_label_check_updates()} hint={m.system_check_updates_hint()} id="settingsCheckUpdates" settingKey="check_for_updates" fallback disabled={!canManage} />
+            summary={agentUpdate?.summary_available ? <UpdateSummary target="agent" name={AGENT} info={agentUpdate} /> : null} />
+        </div></div>
+      </SettingsGroup>
+      <SettingsGroup id="updates" title={m.system_updates()}>
+        <SettingToggle label={m.settings_label_check_updates()} hint={m.system_check_updates_hint()} icon={RefreshCw} id="settingsCheckUpdates" settingKey="check_for_updates" fallback disabled={!canManage} />
+        <SettingToggle label={m.settings_label_auto_apply_updates()} hint={m.system_auto_apply_hint()} icon={Download} id="settingsAutoApplyUpdates" settingKey="auto_apply_updates" disabled={!canManage || !bool('check_for_updates', true)} />
+        <SettingToggle label={m.settings_label_ignore_agent_updates()} hint={m.system_agent_manual_hint()} icon={Pause} id="settingsIgnoreAgentUpdates" settingKey="ignore_agent_updates" onSaved={recheck} />
+        <SettingToggle label={m.settings_label_summarize_updates_automatically()} icon={Sparkles} id="settingsSummarizeUpdatesAutomatically" settingKey="summarize_updates_automatically" fallback disabled={!canManage || !bool('check_for_updates', true)} />
       </SettingsGroup>
       <SettingsGroup id="health" title={m.settings_group_health()}>
-        <dl className="grid grid-cols-[auto_1fr_auto] items-center gap-x-4 gap-y-2 py-2 text-sm">
-          <dt className="text-muted">{WEB}</dt>
-          <dd className="text-text">{health.data?.status ?? '—'}{health.data?.disk?.percent !== undefined ? <span className="text-muted">{', '}{m.system_disk_used({ n: health.data.disk.percent.toFixed(0) })}</span> : null}</dd>
-          <dd className="text-xs text-muted">{health.data?.checked_at ? formatDate(health.data.checked_at) : null}</dd>
-          <dt className="text-muted">{AGENT}</dt>
-          <dd className="text-text">{agent.data?.alive === true ? 'ok' : agent.data?.alive === false ? (agent.data.details?.reason ?? 'down') : agent.data?.details?.state ?? '—'}</dd>
-          <dd>{canManage && <GatewayRestart />}</dd>
-        </dl>
+        <SettingRow label={WEB} icon={LayoutDashboard}><StatusDot state={webHealth.state}>{webHealth.text}</StatusDot></SettingRow>
+        <SettingRow label={AGENT} icon={Bot}><StatusDot state={agentHealth.state}>{agentHealth.text}</StatusDot></SettingRow>
+        {disk !== undefined ? (
+          <div className="flex flex-col gap-2 py-3" data-disk="">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-sm font-medium text-text">{m.system_server_disk()}</span>
+              <Figure value={formatPercent(locale, disk, 0)} mode={m.provider_quota_metric_used()} />
+            </div>
+            {/* ponytail: the server sends no disk level yet (TAL-2162), so the meter keeps the healthy fill. */}
+            <QuotaMeter level="healthy" percent={disk} marker={null} label={`${m.system_server_disk()}: ${formatPercent(locale, disk, 0)} ${m.provider_quota_metric_used()}`} />
+          </div>
+        ) : null}
       </SettingsGroup>
       {canManage && (
         <SettingsGroup id="server" title={m.settings_group_server()}>
-          <SettingAction label={m.system_shutdown()} hint={m.system_shutdown_hint()}><IconButton variant="danger" label={m.system_shutdown()} onClick={() => setConfirmShutdown(true)}><Power aria-hidden="true" /></IconButton></SettingAction>
+          {/* An older server sends no gateway capability and offers no restart (TAL-1627). */}
+          {agent.data?.gateway_lifecycle ? <SettingAction label={m.system_restart_agent()} icon={RotateCw}><GatewayRestart /></SettingAction> : null}
+          <SettingAction label={m.system_shutdown()} hint={m.system_shutdown_hint()} icon={Power}><IconButton variant="danger" label={m.system_shutdown()} onClick={() => setConfirmShutdown(true)}><Power aria-hidden="true" /></IconButton></SettingAction>
         </SettingsGroup>
       )}
       <ConfirmDialog open={confirmShutdown} onOpenChange={setConfirmShutdown} title={m.system_shutdown()} description={m.system_shutdown_confirm()} confirmLabel={m.system_shutdown()} cancelLabel={m.cancel()} danger onConfirm={() => shutdown.mutate()} />
@@ -163,7 +189,7 @@ const AGENT = 'Hermes Agent'
 type Target = z.infer<typeof UpdateTargetSchema>
 type UpdateVersion = z.infer<typeof UpdateVersionSchema>
 interface ApplyRequest { refreshToken?: string; version?: string; confirmedRevision?: string; agentChannel?: 'stable' | 'experimental'; interruptToken?: string }
-type Tone = 'update' | 'ok' | 'warn' | 'quiet'
+type Tone = 'update' | 'ok' | 'warn' | 'error' | 'quiet'
 interface Support { label: string; unchecked: boolean }
 
 /** The newest Agent target's one-line support status. */
@@ -178,13 +204,13 @@ interface PathStatus { tone: Tone; text: string; target?: string | undefined; de
 /** One component's update state in the words its channel uses: Stable names releases, Experimental counts commits. */
 function pathStatus(t: Target | null | undefined, name: string, { failed, pending }: { failed: boolean; pending: boolean }): PathStatus {
   if (pending && !t) return { tone: 'quiet', text: m.system_checking_named({ name }) }
-  if (failed) return { tone: 'warn', text: m.system_check_failed_named({ name }), detail: t?.error }
+  if (failed) return { tone: 'error', text: m.system_check_failed_named({ name }), detail: t?.error }
   if (!t) return { tone: 'quiet', text: m.system_status_unknown_named({ name }) }
   const target = t.target_version ?? undefined
   const detail = typeof t.message === 'string' ? t.message : undefined
   switch (t.state) {
     case 'off': return { tone: 'quiet', text: m.system_checks_off({ name }) }
-    case 'check_failed': return { tone: 'warn', text: m.system_check_failed_named({ name }), detail: t.error }
+    case 'check_failed': return { tone: 'error', text: m.system_check_failed_named({ name }), detail: t.error }
     case 'local_changes': return { tone: 'warn', text: m.system_local_changes_named({ name }), detail }
     case 'finish': return { tone: 'update', text: m.system_finish_named({ name }), target, detail }
     case 'manual': return { tone: 'warn', text: m.system_manual_named({ name }), target, detail }
@@ -193,6 +219,21 @@ function pathStatus(t: Target | null | undefined, name: string, { failed, pendin
     case 'up_to_date': return { tone: 'ok', text: m.system_up_to_date_named({ name }) }
     case 'unknown': return { tone: 'quiet', text: m.system_status_unknown_named({ name }) }
   }
+}
+
+// TAL-2162 replaces both classifications below with the server's `display_state` and `display_reason`.
+interface Health { state: DotState; text: string }
+/** Web's health in words: the server's `status`, with `ok` worded and every state given its dot. */
+function webHealthState(status: string | undefined): Health {
+  if (status === undefined) return { state: 'idle', text: '—' }
+  if (status === 'ok') return { state: 'ok', text: m.system_running_normally() }
+  return { state: status === 'unavailable' ? 'error' : 'warning', text: status }
+}
+/** The Agent gateway's liveness in words: the server's reason when it is down, its state while unknown. */
+function agentHealthState(health: { alive?: boolean | null | undefined; details?: { state?: string | undefined; reason?: string | undefined } | undefined } | undefined): Health {
+  if (health?.alive === true) return { state: 'ok', text: m.system_running_normally() }
+  if (health?.alive === false) return { state: 'error', text: health.details?.reason ?? m.system_not_responding() }
+  return { state: 'idle', text: health?.details?.state ?? '—' }
 }
 
 /** "Summarize with AI" and its dialog: the server's summary of this target's pending update, requested only once the dialog opens. */
@@ -224,19 +265,15 @@ function UpdateSummary({ target, name, info }: { target: 'webui' | 'agent'; name
   )
 }
 
-// A node is a ring (inset, so it keeps its 11px), filled when it marks a version that is or will be installed.
+// TAL-2140: a node is a dot in the `StatusDot` colours; the installed version is the neutral one.
 const NODE: Record<Tone | 'installed', string> = {
-  installed: 'ring-text bg-text',
-  update: 'ring-accent bg-accent',
-  ok: 'ring-success bg-success',
-  warn: 'ring-warning bg-bg',
-  quiet: 'ring-border2 bg-bg',
+  installed: 'bg-text', update: DOT_FILL.warning, ok: DOT_FILL.ok, warn: DOT_FILL.warning, error: DOT_FILL.error, quiet: DOT_FILL.idle,
 }
 
 function PathNode({ tone, children }: { tone: Tone | 'installed'; children: ReactNode }) {
   return (
     <li className="relative pb-4 last:pb-0">
-      <span aria-hidden="true" className={cn('absolute top-[5px] -left-[22px] size-[11px] rounded-full ring-2 ring-inset', NODE[tone])} />
+      <span aria-hidden="true" className={cn('absolute top-[5px] -left-[21px] size-[9px] rounded-full', NODE[tone])} />
       {children}
     </li>
   )
@@ -247,28 +284,28 @@ function SupportLine({ support }: { support: Support | null }) {
 }
 
 /**
- * A component's update path: installed version, then where its channel leads, with its own controls underneath.
- * Older installable releases (TAL-946) fold into one node between them; opening it is this device's choice.
+ * A component's update path: installed version, then where its channel leads. Older installable releases (TAL-946)
+ * fold into one node between them; opening it is this device's choice.
  */
-function UpdatePath({ id, title, installed, installedNote, status, channel, action, folded = [], install, support, manualLink, summary, children }: {
-  id: string; title: string; installed: string; installedNote?: string | null; status: PathStatus; channel: ReactNode; action: ReactNode
-  folded?: UpdateVersion[] | undefined; install: (version: UpdateVersion) => ReactNode; support?: Support | null; manualLink?: unknown; summary?: ReactNode; children: ReactNode
+function UpdatePath({ id, title, icon, installed, installedNote, status, channel, action, folded = [], install, support, manualLink, summary }: {
+  id: string; title: string; icon: LucideIcon; installed: string; installedNote?: string | null; status: PathStatus; channel: ReactNode; action: ReactNode
+  folded?: UpdateVersion[] | undefined; install: (version: UpdateVersion) => ReactNode; support?: Support | null; manualLink?: unknown; summary?: ReactNode
 }) {
   const [open, setOpen] = useState(false)
   const next = status.tone !== 'ok'
   return (
-    <section aria-labelledby={`${id}Heading`} data-update-path={id} className="row-span-3 grid min-w-0 grid-rows-subgrid gap-y-3">
+    <section aria-labelledby={`${id}Heading`} data-update-path={id} className="row-span-2 grid min-w-0 grid-rows-subgrid gap-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span id={`${id}Heading`} className="text-sm font-semibold text-text">{title}</span>
+        <span id={`${id}Heading`} className="flex min-w-0 items-center gap-2.5 text-sm font-semibold text-text"><RowIcon icon={icon} />{title}</span>
         {channel}
       </div>
-      <ol className={cn('ml-[5px] self-start border-l pl-4', next && status.tone === 'update' ? 'border-accent' : 'border-border')}>
-        <PathNode tone={next ? 'installed' : 'ok'}>
+      <ol className="ml-[5px] self-start border-l border-border pl-4">
+        <PathNode tone="installed">
           <div className="text-xs text-muted">{m.system_path_installed()}</div>
           <div className="font-mono text-sm text-text break-all">{installed}</div>
           {installedNote ? <p className="mt-1 flex min-w-0"><StatusDot state="warning" title={installedNote}>{installedNote}</StatusDot></p> : null}
-          {!next ? <p role="status" className="mt-1 text-xs text-muted">{status.text}</p> : null}
         </PathNode>
+        {!next ? <PathNode tone="ok"><p role="status" className="text-xs text-muted">{status.text}</p></PathNode> : null}
         {next && folded.length ? (
           <PathNode tone="quiet">
             <div className="-my-2 flex items-center gap-1 text-xs text-muted">
@@ -289,7 +326,7 @@ function UpdatePath({ id, title, installed, installedNote, status, channel, acti
         {next ? (
           <PathNode tone={status.tone}>
             {status.target ? <div className="font-mono text-sm text-text break-all">{status.target}</div> : null}
-            <p role="status" className={cn('text-xs', status.tone === 'update' ? 'text-accent-text' : status.tone === 'warn' ? 'text-warning' : 'text-muted')}>{status.text}</p>
+            <p role="status" className="text-xs text-muted">{status.text}</p>
             {status.detail ? <p className="mt-0.5 text-xs text-muted">{status.detail}</p> : null}
             {manualLink ? <a className="inline-flex min-h-11 items-center text-xs text-accent-text underline" href="https://github.com/MaudeCode/talaria/releases" target="_blank" rel="noreferrer">{m.system_manual_updates()}</a> : null}
             <SupportLine support={support ?? null} />
@@ -297,7 +334,6 @@ function UpdatePath({ id, title, installed, installedNote, status, channel, acti
           </PathNode>
         ) : null}
       </ol>
-      <div className="self-end border-t border-border-subtle">{children}</div>
     </section>
   )
 }
