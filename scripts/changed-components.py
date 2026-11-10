@@ -96,15 +96,18 @@ def path_suites(path):
     # Runtime resources and test fixtures can be Markdown too; never classify
     # them as documentation just because of their extension.
     if (component == "app" and local.startswith(("Talaria", "Packages/", "Config/"))):
+        # Web's provider icon test holds web/static/brand/providers to the App's registry and SVGs (TAL-1858).
+        icons = {"web_frontend"} if (local == "Talaria/Models/ProviderIconRegistry.swift"
+                                     or local.startswith("Talaria/Resources/ProviderIcons.xcassets/")) else set()
         # The live Web fixture test runs only in PR CI's contracts step, so it selects contracts too. TalariaKit
         # (TAL-399) holds the networking and models, and its package job runs that test.
-        return {"app", "contracts"} if local.startswith(("Talaria/Networking/", "Talaria/Models/", "Talaria/LiveActivities/",
+        return icons | ({"app", "contracts"} if local.startswith(("Talaria/Networking/", "Talaria/Models/", "Talaria/LiveActivities/",
                                                           "TalariaTests/APIClientSessionListTests.swift", "TalariaKit/Package.",
                                                           "TalariaKit/Sources/TalariaKit/Networking/",
                                                           "TalariaKit/Sources/TalariaKit/Models/",
                                                           "TalariaKit/Sources/TalariaKit/LiveActivities/",
                                                           "TalariaKit/Tests/TalariaKitTests/APIClientSessionListTests.swift",
-                                                          "TalariaKit/Tests/TalariaKitTests/Support/")) else {"app"}
+                                                          "TalariaKit/Tests/TalariaKitTests/Support/")) else {"app"})
     # Server tests read these fixtures, and the server job regenerates schemas.json from the contracts.
     if path.startswith("web/sidecar/tests/fixtures/"):
         return {"web_server", "web_sidecar"}

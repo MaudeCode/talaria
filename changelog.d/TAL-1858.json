@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "The Web composer's model picker has a provider rail with Favorites, provider icons, search across every provider, and stars that keep favorite models one tap away.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announcement": {
+        "title": "New model picker",
+        "description": "Browse every model by provider, star favorites, and find them again on any device.",
+        "icon": "model"
+      }
+    }
+  ]
+}

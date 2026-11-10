@@ -1,25 +1,26 @@
 import { ProviderQuotaPace } from '../settings/ProviderQuotaPace'
-import { Fragment, memo, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { Popover } from '@base-ui/react/popover'
 import { ChevronDown, Cpu, Brain, Wrench, FolderOpen, GitBranch, Shield } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import { useContextDetailQuery, useExecutionModesQuery, useModelsQuery, useWorkspacesQuery, useToolsetsCatalogQuery } from '../../app/queries'
-import { MENU_CHOICE, Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
+import { MENU_CHOICE, Menu, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
 import { cn } from '../../ui/cn'
 import { POPUP_MOTION } from '../../ui/popupMotion'
 import { formatUsd } from '../../ui/States'
-import { catalogEntryById, catalogGroupLabel, catalogModelSections, ModelOptionContent, type ModelEntry } from '../../lib/modelEntry'
-import { useLocale } from '../../i18n/useLocale'
-import { resetTime } from '../../i18n/units'
-import type { ContextWindowSource, ExecutionMode, ExecutionModes, Models } from '@maudecode/talaria-web-contracts'
+import { catalogEntryById } from '../../lib/modelEntry'
+import { ProviderIcon } from '../../lib/providerIcon'
+import { lockBackgroundScroll, ModelPickerContent } from './ModelPicker'
+import type { ContextWindowSource, ExecutionMode, ExecutionModes } from '@maudecode/talaria-web-contracts'
 
 /**
  * T3 Code's composer control (TAL-429): borderless and muted until hovered, with a faded chevron. `sm` sits in the card's
  * footer, `xs` in the context strip under it; `row` is a labelled row for the composer overflow panel. Also the render
  * target of `Menu`'s trigger, so every other prop (Base UI's aria attributes, handlers, ref) is spread onto the button.
- * `readOnly` shows a value the server froze: the same chip as text, with no chevron or hover.
+ * `readOnly` shows a value the server froze: the same chip as text, with no chevron or hover. `tooltip` replaces `title` as
+ * the hover text only, such as a full name the chip truncates; the accessible name stays `title: label`.
  */
-export function Chip({ icon, label, title, className, disabled, row, size = 'sm', id, readOnly, ...rest }: { icon: React.ReactNode; label: string; title: string; className?: string; disabled?: boolean; row?: boolean | undefined; size?: 'sm' | 'xs'; id?: string | undefined; readOnly?: boolean } & Omit<React.ComponentProps<'button'>, 'title' | 'className' | 'disabled' | 'id'>) {
+export function Chip({ icon, label, title, tooltip = title, className, disabled, row, size = 'sm', id, readOnly, ...rest }: { icon: React.ReactNode; label: string; title: string; tooltip?: string; className?: string; disabled?: boolean; row?: boolean | undefined; size?: 'sm' | 'xs'; id?: string | undefined; readOnly?: boolean } & Omit<React.ComponentProps<'button'>, 'title' | 'className' | 'disabled' | 'id'>) {
   const sized = size === 'sm' ? 'h-7 max-w-[240px] gap-1.5 px-2.5 text-[13px] font-medium' : 'h-6 max-w-[220px] gap-1 px-1.5 text-xs font-normal'
   if (readOnly) {
     return (
@@ -38,7 +39,7 @@ export function Chip({ icon, label, title, className, disabled, row, size = 'sm'
     )
   }
   return (
-    <button type="button" {...rest} id={id} disabled={disabled} title={title} aria-label={`${title}: ${label}`} className={cn('composer-chip inline-flex shrink-0 items-center whitespace-nowrap rounded-(--control-radius) border border-(--chip-border) bg-(--chip-bg) text-(--chip-fg) outline-none hover:border-(--chip-hover-border) hover:bg-(--chip-hover-bg) hover:text-(--chip-hover-fg) data-[popup-open]:bg-(--chip-hover-bg) data-[popup-open]:text-(--chip-hover-fg) focus-visible:ring-2 focus-visible:ring-(--focus-ring) disabled:pointer-events-none disabled:opacity-60', sized, className)}>
+    <button type="button" {...rest} id={id} disabled={disabled} title={tooltip} aria-label={`${title}: ${label}`} className={cn('composer-chip inline-flex shrink-0 items-center whitespace-nowrap rounded-(--control-radius) border border-(--chip-border) bg-(--chip-bg) text-(--chip-fg) outline-none hover:border-(--chip-hover-border) hover:bg-(--chip-hover-bg) hover:text-(--chip-hover-fg) data-[popup-open]:bg-(--chip-hover-bg) data-[popup-open]:text-(--chip-hover-fg) focus-visible:ring-2 focus-visible:ring-(--focus-ring) disabled:pointer-events-none disabled:opacity-60', sized, className)}>
       {icon}
       <span className="truncate">{label}</span>
       <ChevronDown size={12} className="-me-0.5 shrink-0 opacity-50" aria-hidden="true" />
@@ -46,81 +47,43 @@ export function Chip({ icon, label, title, className, disabled, row, size = 'sm'
   )
 }
 
-const SEARCH_LIST_KEYS = new Set(['Escape', 'ArrowDown', 'ArrowUp'])
-
-/** TAL-807: the server's rate-limit state for a provider group: its account limit or a low quota level (never both). */
-function GroupLimitBadge({ group, locale }: { group: Models['groups'][number]; locale: string }) {
-  const badge = 'shrink-0 text-[11px] font-medium normal-case tracking-normal'
-  if (group.limit?.scope === 'account') return <span data-model-limit="account" className={cn(badge, 'text-error')}>{m.model_limited_until({ time: resetTime(locale, group.limit.resets_at) })}</span>
-  if (group.quota_level === 'critical') return <span data-quota-level="critical" className={cn(badge, 'text-error')}>{m.model_quota_critical()}</span>
-  if (group.quota_level === 'warning') return <span data-quota-level="warning" className={cn(badge, 'text-warning')}>{m.model_quota_warning()}</span>
-  return null
-}
-
 /**
- * Conversation model picker: grouped by provider with a search field and a custom id entry. `optionId` is the entry the
- * server says `model` selects (or a just-picked id); with no `model`, the catalog default is ticked. `servedModel` is the
- * session's `served_model` (TAL-978): the chip names the model that answered after a fallback while the picker keeps
- * the configured one ticked.
+ * Conversation model picker (TAL-1858, T3 Code's): a provider rail with Favorites, search across every provider, a custom
+ * id entry and stars. `optionId` is the entry the server says `model` selects (or a just-picked id); with no `model`,
+ * the catalog default is ticked. `servedModel` is the session's `served_model` (TAL-978): the chip names the model that
+ * answered after a fallback while the picker keeps the configured one ticked.
  */
 export function ModelChip({ model, optionId, servedModel = null, onChange, row }: { model: string | null; optionId: string | null; servedModel?: string | null; onChange: (model: string, provider: string | null) => void; row?: boolean }) {
   const models = useModelsQuery()
   const [open, setOpen] = useState(false)
-  const [query, setQuery] = useState('')
   const searchInput = useRef<HTMLInputElement>(null)
-  const onSelect = (id: string) => onChange(id, catalogEntryById(models.data, id)?.provider_id ?? null)
+  const popup = useRef<HTMLDivElement | null>(null)
   const selected = catalogEntryById(models.data, model ? optionId : models.data?.default_option_id)
   const configured = selected ? selected.label ?? selected.id : (model ?? models.data?.default_model) || '—'
   const label = servedModel ?? configured
   const title = servedModel && !row ? m.composer_model_served({ configured, served: servedModel }) : m.composer_control_model()
+  const group = selected && models.data?.groups.find((g) => g.models.includes(selected))
+  const icon = group ? <ProviderIcon providerId={group.provider_id} label={group.provider} className={row ? 'size-5' : undefined} /> : <Cpu size={16} aria-hidden="true" />
+  const pick = (id: string, provider: string | null) => { setOpen(false); onChange(id, provider) }
   return (
     // TAL-807: opening the picker reads the catalog again, so a rate limit or quota level reflects the server now.
-    // TAL-1131: search is the menu's pinned header; ArrowUp/ArrowDown reach Base UI's list navigation, other keys stay typing.
-    // TAL-1625: Menu decides when search takes focus, so a touch opening keeps the software keyboard down.
-    <Menu open={open} search={searchInput} label={m.composer_control_model()} side="top" className="min-w-72 max-w-[calc(100vw-2rem)] [--menu-max-height:60vh]" onOpenChange={(open) => { setOpen(open); if (open) void models.refetch() }} trigger={<Chip id={row ? undefined : "composerModelChip"} icon={<Cpu size={16} aria-hidden="true" />} label={label} title={title} row={row} className="composer-model-chip" />}
-      header={<div className="p-1"><input ref={searchInput} type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={m.model_search_placeholder()} aria-label={m.model_search_placeholder()} className="h-8 w-full rounded-md border border-border bg-input px-2 text-sm text-text" onKeyDown={(e) => { if (!SEARCH_LIST_KEYS.has(e.key)) e.stopPropagation() }} /></div>}>
-      <ModelMenuRows query={query} selectedId={selected?.id ?? ''} onSelect={onSelect} onCustom={(id) => onChange(id, null)} />
-    </Menu>
+    <Popover.Root open={open} onOpenChange={(next) => { setOpen(next); if (next) void models.refetch() }}>
+      <Popover.Trigger render={<Chip id={row ? undefined : 'composerModelChip'} icon={icon} label={label} title={title} tooltip={servedModel && !row ? title : `${title}: ${label}`} row={row} className="composer-model-chip" />} />
+      <Popover.Portal>
+        <Popover.Positioner side="top" align="start" sideOffset={6} sticky className="z-[1400] outline-none">
+          {/* TAL-1625: a touch or pen opening focuses the popup, so no software keyboard covers the list; a printable key then goes to search. */}
+          <Popover.Popup aria-label={m.composer_control_model()} initialFocus={(type) => type === 'touch' || type === 'pen' ? popup.current : searchInput.current}
+            ref={(node: HTMLDivElement | null) => { popup.current = node; return node ? lockBackgroundScroll(node) : undefined }}
+            onKeyDown={(event) => { if (event.target !== searchInput.current && event.key.length === 1 && event.key !== ' ' && !event.ctrlKey && !event.metaKey && !event.altKey) searchInput.current?.focus() }}
+            className={cn('rounded-lg border border-border bg-surface text-sm text-text shadow-md outline-none', POPUP_MOTION)}>
+            <ModelPickerContent selectedId={selected?.id ?? ''} searchInput={searchInput} onClose={() => setOpen(false)}
+              onSelect={(id) => pick(id, catalogEntryById(models.data, id)?.provider_id ?? null)} onCustom={(id) => pick(id, null)} />
+          </Popover.Popup>
+        </Popover.Positioner>
+      </Popover.Portal>
+    </Popover.Root>
   )
 }
-
-/** Inside the menu's portal: the catalog is filtered only while the menu shows, and its rows last through the exit (TAL-1784). */
-function ModelMenuRows({ query, selectedId, onSelect, onCustom }: { query: string; selectedId: string; onSelect: (id: string) => void; onCustom: (id: string) => void }) {
-  const models = useModelsQuery()
-  const locale = useLocale()
-  const groups = (models.data?.groups ?? []).map((g) => ({ ...g, displaySections: catalogModelSections(g, query) })).filter((g) => g.displaySections.some((section) => section.models.length))
-  return <>
-      <MenuRadioGroup value={selectedId} onValueChange={onSelect}>
-        {groups.map((g) => (
-          <MenuGroup key={g.provider}>
-            <MenuGroupLabel><span className="flex items-center justify-between gap-2"><span className="truncate">{catalogGroupLabel(g)}</span><GroupLimitBadge group={g} locale={locale} /></span></MenuGroupLabel>
-            <ProviderQuotaPace plan={g.plan_usage} planStale={g.plan_stale} compact />
-            {g.displaySections.map((section) => {
-              const rows = section.models.map((entry) => <ModelMenuRow key={entry.id} entry={entry} locale={locale} />)
-              return section.label ? <MenuGroup key={section.label}>
-                <MenuGroupLabel>{section.label}</MenuGroupLabel>{rows}
-              </MenuGroup> : <Fragment key={section.label}>{rows}</Fragment>
-            })}
-          </MenuGroup>
-        ))}
-      </MenuRadioGroup>
-      {query.trim() && !groups.some((g) => g.models.some((mm) => mm.id === query.trim())) && (
-        <>
-          <MenuSeparator />
-          <MenuItem onClick={() => onCustom(query.trim())}><span className="font-mono text-xs">{query.trim()}</span> <span className="text-xs text-muted">{m.model_custom_placeholder()}</span></MenuItem>
-        </>
-      )}
-  </>
-}
-
-/** Search changes membership; surviving catalog rows keep their rendered label and cooldown. */
-const ModelMenuRow = memo(function ModelMenuRow({ entry, locale }: { entry: ModelEntry; locale: string }) {
-  const resetsAt = entry.limit?.resets_at
-  return <MenuRadioItem value={entry.id} className={MENU_CHOICE}>
-    <ModelOptionContent entry={entry} />
-    {resetsAt && <span data-model-limit="model" className="ms-auto shrink-0 text-xs text-warning">{m.model_limited_until({ time: resetTime(locale, resetsAt) })}</span>}
-  </MenuRadioItem>
-})
 
 const EFFORTS = ['default', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const
 /** `defaultLabel` names what no saved level falls back to (the auxiliary delegation slot inherits its parent's, TAL-1285). */

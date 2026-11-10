@@ -32,6 +32,27 @@ export function useDefaultModelChoice() {
   return useResourceEffects<{ model: string; provider: string | null; service_tier?: string | undefined }>()['default-model']?.value
 }
 
+/** TAL-1858: one catalog entry's star; the server pairs it by `provider_id` and `bare_id`, so both are required. */
+export interface ModelFavoriteWrite { id: string; provider_id: string; bare_id: string; favorite: boolean }
+const favoriteResource = (id: string) => `model-favorite:${id}`
+
+/** Stars or unstars a model: the row and Favorites show it at once, and the catalog reread confirms or rolls it back. */
+export function useSetModelFavorite() {
+  return useResourceMutation({
+    resource: ({ id }: ModelFavoriteWrite) => favoriteResource(id),
+    queryKey: keys.models, readKeys: () => [{ queryKey: keys.models, exact: true }],
+    effect: ({ favorite }) => ({ value: favorite }),
+    mutationFn: ({ provider_id, bare_id, favorite }) => api.setModelFavorite({ provider_id, model: bare_id, favorite }),
+    onError: toastError,
+  })
+}
+
+/** Whether a catalog entry shows as starred: the user's pending star, else the server's `favorite`. */
+export function useModelFavoriteShown(): (entry: { id: string; favorite?: boolean | undefined }) => boolean {
+  const effects = useResourceEffects<boolean>()
+  return (entry) => effects[favoriteResource(entry.id)]?.value ?? entry.favorite === true
+}
+
 /** TAL-802: whether this profile offers live dictation. */
 /** TAL-818: the server's connectors gate; Connectors stay hidden unless it answers true. */
 export function useConnectorsAvailable() {
