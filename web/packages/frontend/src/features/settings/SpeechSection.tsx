@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { m } from '../../paraglide/messages.js'
-import { Switch, FieldRow } from '../../ui/Field'
+import { Switch, FieldRow, Slider } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { LoadingState, ErrorState } from '../../ui/States'
 import { readPersisted, writePersisted } from '../../lib/persisted'
@@ -23,16 +23,6 @@ function useBrowserVoices(): SpeechSynthesisVoice[] {
     return () => window.speechSynthesis.removeEventListener('voiceschanged', update)
   }, [])
   return voices
-}
-
-function Slider({ id, value, min, max, onChange, unit = '' }: { id: string; value: string; min: number; max: number; onChange: (value: string) => void; unit?: string }) {
-  const n = Number.parseFloat(value)
-  return (
-    <span className="flex items-center gap-3">
-      <input id={id} type="range" min={min} max={max} step={0.1} value={Number.isNaN(n) ? 1 : n} onChange={(e) => onChange(e.target.value)} className="w-40" />
-      <output htmlFor={id} className="w-10 text-right text-xs tabular-nums text-muted">{(Number.isNaN(n) ? 1 : n).toFixed(1)}{unit}</output>
-    </span>
-  )
 }
 
 /** Read-aloud and auto-read are server settings; engine, voice, rate and pitch belong to this device. */

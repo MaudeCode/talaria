@@ -6,7 +6,7 @@ import type { ReactNode } from 'react'
 import { BootstrapContext } from '../../app/bootstrap'
 import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
 
-const renders = vi.hoisted(() => ({ workspace: vi.fn(), provider: vi.fn(), passkey: vi.fn(), skill: vi.fn(), server: vi.fn(), tool: vi.fn() }))
+const renders = vi.hoisted(() => ({ workspace: vi.fn(), provider: vi.fn(), passkey: vi.fn(), skill: vi.fn(), server: vi.fn(), tool: vi.fn(), privacy: vi.fn() }))
 // Count one existing piece of output per real row, without replacing the rows or their controls.
 vi.mock('../../paraglide/messages.js', async (original) => {
   const actual = await original<typeof import('../../paraglide/messages.js')>()
@@ -32,7 +32,11 @@ vi.mock('react', async (original) => {
   } }
 })
 vi.mock('../../api/client', async (original) => ({ ...await original<typeof import('../../api/client')>(), post: vi.fn() }))
-vi.mock('../../app/bootstrap', async (original) => ({ ...await original<typeof import('../../app/bootstrap')>(), loadBootstrap: vi.fn() }))
+// PrivacySettings reads the bootstrap once per page render; its rows do not.
+vi.mock('../../app/bootstrap', async (original) => {
+  const actual = await original<typeof import('../../app/bootstrap')>()
+  return { ...actual, loadBootstrap: vi.fn(), useBootstrap: () => { renders.privacy(); return actual.useBootstrap() } }
+})
 const skills = ['abcdefghij one', 'abcdefghij two', 'zebra'].map((name) => ({ name, description: name, category: 'test' }))
 const tools = skills.map((s) => ({ name: s.name, server: 'test', status: 'active' }))
 vi.mock('../../api/endpoints', async (original) => ({
@@ -62,6 +66,7 @@ import { ProvidersSection } from './ProvidersSection'
 import { AccessSection } from './AccessSection'
 import { SkillsPage } from '../skills/SkillsPage'
 import { McpSection } from './McpSection'
+import { PrivacySettings } from './PrivacySettings'
 
 const clients: QueryClient[] = []
 const unexpectedRequest = vi.fn<Transport>(() => Promise.reject(new Error('Unexpected HTTP request in input isolation test')))
@@ -114,6 +119,15 @@ describe('input render isolation (TAL-1405)', () => {
       expect(input).toHaveValue('abcdefghij')
     }
     expect(renders.passkey).not.toHaveBeenCalled()
+  })
+
+  it.each(['Default assistant name', 'Trusted link hosts'])('typing ten characters in %s does not re-render the Privacy page (TAL-2102)', async (label) => {
+    mount(<PrivacySettings />)
+    const input = await screen.findByLabelText(label)
+    reset(renders.privacy)
+    await userEvent.type(input, 'abcdefghij')
+    expect((input as HTMLInputElement).value).toMatch(/abcdefghij$/)
+    expect(renders.privacy).not.toHaveBeenCalled()
   })
 
   it('submits the isolated key draft and discards it when the form is reopened', async () => {
