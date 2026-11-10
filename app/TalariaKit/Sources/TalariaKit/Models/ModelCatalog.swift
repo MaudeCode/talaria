@@ -6,7 +6,6 @@ public struct ModelCatalogGroup: Identifiable, Equatable, Sendable {
     public let name: String
     public let providerID: String?
     public let models: [ModelCatalogOption]
-    public let extraModels: [ModelCatalogOption]
     /// TAL-807: every account in the provider's credential pool is rate-limited
     /// until then (`limit.scope == "account"`).
     public let accountLimitResetsAt: Date?
@@ -19,7 +18,6 @@ public struct ModelCatalogGroup: Identifiable, Equatable, Sendable {
         name: String,
         providerID: String?,
         models: [ModelCatalogOption],
-        extraModels: [ModelCatalogOption] = [],
         accountLimitResetsAt: Date? = nil,
         quotaLevel: ProviderQuotaUrgency? = nil,
         availability: CatalogAvailability? = nil
@@ -29,7 +27,6 @@ public struct ModelCatalogGroup: Identifiable, Equatable, Sendable {
         self.name = name
         self.providerID = providerID
         self.models = models
-        self.extraModels = extraModels
         self.accountLimitResetsAt = accountLimitResetsAt
         self.quotaLevel = quotaLevel
     }
@@ -41,18 +38,10 @@ public struct ModelCatalogGroup: Identifiable, Equatable, Sendable {
             name: name,
             providerID: providerID,
             models: models,
-            extraModels: extraModels,
             accountLimitResetsAt: accountLimitResetsAt,
             quotaLevel: quotaLevel,
             availability: availability
         )
-    }
-}
-
-extension ModelCatalogGroup {
-    public var slashAutocompleteModels: [ModelCatalogOption] {
-        var seen = Set<String>()
-        return (models + extraModels).filter { seen.insert($0.id).inserted }
     }
 }
 
@@ -106,7 +95,7 @@ extension ModelsResponse {
     func displayName(for modelID: String?) -> String? {
         guard let modelID else { return nil }
         return catalogGroups
-            .flatMap(\.slashAutocompleteModels)
+            .flatMap(\.models)
             .first(where: { $0.id == modelID })?
             .displayName
     }
@@ -173,7 +162,7 @@ extension Array where Element == ModelCatalogGroup {
             guard group.providerID == provider else { return group }
             // The live list carries no rate limits; a model keeps the one the catalog gave it.
             var limits: [String: Date] = [:]
-            for option in group.models + group.extraModels {
+            for option in group.models {
                 guard let resetsAt = option.limitResetsAt else { continue }
                 limits[option.id] = resetsAt
                 if let bareID = option.bareID { limits[bareID] = resetsAt }
@@ -202,7 +191,6 @@ private enum ModelCatalogParser {
             let providerID = stringValue(from: groupDict["provider_id"])
             let name = stringValue(from: groupDict["name"]) ?? providerID ?? String(localized: "Models")
             let models = parseModelOptions(from: groupDict["models"], providerID: providerID)
-            let extraModels = parseModelOptions(from: groupDict["extra_models"], providerID: providerID)
             guard !models.isEmpty else { return nil }
 
             let limit = objectValue(from: groupDict["limit"])
@@ -211,7 +199,6 @@ private enum ModelCatalogParser {
                 name: name,
                 providerID: providerID,
                 models: models,
-                extraModels: extraModels,
                 accountLimitResetsAt: stringValue(from: limit?["scope"]) == "account"
                     ? ProviderQuotaDateParser.date(from: stringValue(from: limit?["resets_at"]))
                     : nil,

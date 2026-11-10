@@ -282,6 +282,17 @@ describe('ModelChip', () => {
     }
   })
 
+  it('lists, ticks and finds every model of a long provider list (TAL-1864)', async () => {
+    const models = Array.from({ length: 40 }, (_, i) => ({ id: `vendor/model-${String(i + 1)}`, label: `Model ${String(i + 1)}`, provider_id: 'openrouter', bare_id: `vendor/model-${String(i + 1)}` }))
+    catalog = { ...PLUGIN_CATALOG, default_model: 'vendor/model-30', default_option_id: 'vendor/model-30', groups: [{ provider: 'OpenRouter', provider_id: 'openrouter', models }] }
+    renderChip({ model: 'vendor/model-30', optionId: 'vendor/model-30' })
+    await userEvent.click(screen.getByRole('button'))
+    expect(await screen.findAllByRole('menuitemradio')).toHaveLength(40)
+    expect(screen.getByRole('menuitemradio', { name: 'Model 30' })).toHaveAttribute('aria-checked', 'true')
+    await userEvent.type(screen.getByRole('searchbox'), 'model 40')
+    expect(screen.getAllByRole('menuitemradio').map((el) => el.textContent)).toEqual(['Model 40'])
+  })
+
   it('a stored model the server pairs with no entry ticks nothing and keeps its own name (TAL-301)', async () => {
     catalog = COLON_CATALOG
     renderChip({ model: 'qwen3:32b', optionId: null })

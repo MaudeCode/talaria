@@ -101,7 +101,7 @@ struct CreateProfileSheet: View {
 
             ForEach(modelGroups) { group in
                 Section(group.name) {
-                    ForEach(pickerOptions(for: group)) { option in
+                    ForEach(group.models) { option in
                         Text(option.displayName)
                             .tag(Optional(option))
                     }
@@ -109,13 +109,6 @@ struct CreateProfileSheet: View {
             }
         }
         .pickerStyle(.menu)
-    }
-
-    /// The webui form lists `models` + `extra_models`; the parser doesn't
-    /// dedupe across the two, so drop repeats to keep ForEach identity unique.
-    private func pickerOptions(for group: ModelCatalogGroup) -> [ModelCatalogOption] {
-        var seen = Set<ModelCatalogOption>()
-        return (group.models + group.extraModels).filter { seen.insert($0).inserted }
     }
 
     // The webui lowercases the typed name before validating/submitting —

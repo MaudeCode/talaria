@@ -6,14 +6,14 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { AgentConfig, parseProviderQualifiedModel } from '../config/agent-config.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, WEB_ROOT, type TestServer } from '../test/harness.js'
-import { ProviderCatalog, repairSessionModel, splitPickerOverflow, type ModelEntry, type ModelGroup, type ModelsCatalog } from './catalog.js'
+import { ProviderCatalog, repairSessionModel, type ModelEntry, type ModelGroup, type ModelsCatalog } from './catalog.js'
 import { OAUTH_PROVIDERS, PROVIDER_MODELS } from './tables.js'
 import { writeEnvFile } from '../test/env-file.js'
 import { SIDECAR_METHODS, type SidecarResult } from '@maudecode/talaria-web-contracts'
 
 type Json = Record<string, unknown>
 interface Entry { id: string; provider_id?: string; bare_id?: string }
-interface Group { provider_id: string; models: Entry[]; extra_models?: Entry[] }
+interface Group { provider_id: string; models: Entry[] }
 
 describe('shared admission catalog discovery (TAL-1196)', () => {
   let home: string
@@ -426,11 +426,11 @@ describe('parseProviderQualifiedModel, the one `@provider:model` splitter', () =
 })
 
 describe('stale session model repair (TAL-542)', () => {
-  const catalog = (active: string, defaultModel: string, groups: Record<string, string[]>, extra: Record<string, string[]> = {}): ModelsCatalog => {
+  const catalog = (active: string, defaultModel: string, groups: Record<string, string[]>): ModelsCatalog => {
     const entries = (pid: string, ids: string[]): ModelEntry[] => ids.map((id) => { const [bare, provider] = parseProviderQualifiedModel(id) ?? [id, pid]; return { id, label: id, bare_id: bare, provider_id: provider } })
     return {
       active_provider: active, default_model: defaultModel, default_provider_id: active, default_bare_id: defaultModel, aliases: {}, configured_model_badges: {},
-      groups: Object.entries(groups).map(([pid, ids]) => ({ provider: pid, provider_id: pid, models: entries(pid, ids), ...(extra[pid] ? { extra_models: entries(pid, extra[pid]) } : {}) })),
+      groups: Object.entries(groups).map(([pid, ids]) => ({ provider: pid, provider_id: pid, models: entries(pid, ids) })),
     }
   }
   const kilo = 'kilo/minimax/minimax-m3'
@@ -457,12 +457,11 @@ describe('stale session model repair (TAL-542)', () => {
     expect(repairSessionModel(catalog('kilocode', 'kilo/auto', { ollama: ['llama3.2'], kilocode: ['lmstudio-community/Qwen2.5-Coder'] }), 'Qwen2.5-Coder', 'ollama')).toBeNull()
   })
 
-  it('keeps the pair without one clear owner or when its provider lists it, in models or extra_models', () => {
+  it('keeps the pair without one clear owner or when its provider lists it', () => {
     expect(repairSessionModel(catalog('kilocode', 'kilo/auto', { ollama: ['llama3.2'], kilocode: [kilo], other: [kilo] }), kilo, 'ollama')).toBeNull()
     expect(repairSessionModel(catalog('kilocode', 'kilo/auto', { ollama: ['llama3.2'] }), kilo, 'ollama')).toBeNull()
     expect(repairSessionModel(catalog('kilocode', 'kilo/auto', { kilocode: [kilo] }), kilo, 'ollama')).toBeNull()
     expect(repairSessionModel(catalog('kilocode', 'kilo/auto', { ollama: [kilo], kilocode: [kilo] }), kilo, 'ollama')).toBeNull()
-    expect(repairSessionModel(catalog('kilocode', 'kilo/auto', { ollama: ['llama3.2'], kilocode: [kilo] }, { ollama: [kilo] }), kilo, 'ollama')).toBeNull()
   })
 
   it('keeps the pair when its provider\'s or the only owner\'s live lookup failed, or it is the profile\'s own provider', () => {
@@ -666,7 +665,7 @@ describe('model_catalog.excluded_providers (TAL-911)', () => {
     try {
       const built = await catalog.models(home)
       const groups = built.groups.map((g) => g.provider_id)
-      const entries = built.groups.flatMap((g) => [...g.models, ...(g.extra_models ?? [])])
+      const entries = built.groups.flatMap((g) => g.models)
       return { groups, entries, geminiOption: catalog.modelOptionFor(home, 'gemini-2.5-flash', 'gemini'), anthropicOption: catalog.modelOptionFor(home, 'claude-sonnet-4.6', 'anthropic') }
     } finally {
       rmSync(home, { recursive: true, force: true })
@@ -739,12 +738,31 @@ describe('live model ids after an Agent account switch (TAL-542)', () => {
   })
 })
 
-describe('the picker overflow split', () => {
-  it('keeps a colon-bearing selected model visible', () => {
-    const models = Array.from({ length: 30 }, (_, i) => ({ id: `m${String(i)}`, label: `M${String(i)}` }))
-    const [visible, extras] = splitPickerOverflow(models, '@custom:localhost:8080:m20', 'custom:localhost:8080')
-    expect(visible.map((m) => m.id)).toContain('m20')
-    expect(extras.map((m) => m.id)).not.toContain('m20')
+describe('long provider model lists (TAL-1864)', () => {
+  it('lists every model in catalog order with no overflow split or count label, and the live list keeps them all', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'talaria-catalog-'))
+    const sidecar = new FakeSidecar()
+    const ids = Array.from({ length: 40 }, (_, i) => `vendor/model-${String(i + 1).padStart(2, '0')}`)
+    const config = { model: { provider: 'openrouter', default: 'vendor/model-30' }, providers: { openrouter: { api_key: 'sk-or-12345678' }, nous: { api_key: 'nous-12345678' } } }
+    sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
+    sidecar.respond('providers.auth_status', (p) => ({ status: { logged_in: false, provider: p.provider ?? '' } }))
+    sidecar.respond('plugins.providers', () => ({ providers: [] }))
+    sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: p.provider === 'openrouter' || p.provider === 'nous' ? ids : [] }))
+    writeFileSync(join(home, 'config.yaml'), '# cfg\n')
+    const catalog = new ProviderCatalog({ sidecar: () => sidecar, config: new AgentConfig({ sidecar: () => sidecar, env: {} }), env: {}, now: () => 1_800_000_000, log: () => undefined, costBudget: () => null, isRootProfileHome: () => true })
+    try {
+      const built = await catalog.models(home)
+      for (const pid of ['openrouter', 'nous']) {
+        const group = built.groups.find((g) => g.provider_id === pid)!
+        expect(group.models.map((m) => m.bare_id)).toEqual(ids)
+        expect(group).not.toHaveProperty('extra_models')
+        expect(group.provider).not.toMatch(/\d+ of \d+/)
+      }
+      const live = await catalog.liveModels(home, 'openrouter')
+      expect((live.models as ModelEntry[]).map((m) => m.bare_id)).toEqual(ids)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
   })
 })
 
@@ -772,7 +790,7 @@ describe('catalog entries carry their routing provider and bare id', () => {
   it('stamps /api/models entries and the default with `parseProviderQualifiedModel` output', async () => {
     const catalog = (await (await s.get('/api/models')).json()) as Json
     const groups = catalog.groups as Group[]
-    const entries = groups.flatMap((g) => [...g.models, ...(g.extra_models ?? [])].map((e) => ({ group: g.provider_id, ...e })))
+    const entries = groups.flatMap((g) => g.models.map((e) => ({ group: g.provider_id, ...e })))
     for (const e of entries) {
       const [bare, provider] = parseProviderQualifiedModel(e.id) ?? [e.id, e.group]
       expect({ id: e.id, provider_id: e.provider_id, bare_id: e.bare_id }).toEqual({ id: e.id, provider_id: provider, bare_id: bare })

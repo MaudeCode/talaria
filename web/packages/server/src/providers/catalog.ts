@@ -35,19 +35,8 @@ interface CatalogLookup<T> { value: T | null; authoritative: boolean }
 export interface ModelGroup {
   availability?: CatalogAvailability
   plan_usage?: PlanUsage | null; plan_stale?: boolean; sections?: { kind: 'recommended' | 'other'; model_ids: string[] }[]
-  provider: string; provider_id: string; models: ModelEntry[]; extra_models?: ModelEntry[]
+  provider: string; provider_id: string; models: ModelEntry[]
   limit?: { scope: 'account'; resets_at: string } | { scope: 'models'; models: Record<string, string> }; quota_level?: QuotaLevel
-}
-
-/** Python `_model_matches_picker_selection`: same bare id, and the routing hints agree when the selection names one. */
-function modelMatchesPickerSelection(modelId: string, selected: string, providerId: string): boolean {
-  const candidate = modelId.trim()
-  const sel = selected.trim()
-  if (!sel || !candidate) return false
-  if (candidate === sel) return true
-  const [candBare, candProvider] = parseProviderQualifiedModel(candidate) ?? [candidate, providerId.trim()]
-  const [selBare, selProvider] = parseProviderQualifiedModel(sel) ?? [sel, '']
-  return selBare === candBare && (!selProvider || selProvider.toLowerCase() === candProvider.toLowerCase())
 }
 
 /** TAL-301: every entry names its routing provider and bare id, split once by `parseProviderQualifiedModel`. */
@@ -63,7 +52,7 @@ export function catalogOptionId(catalog: ModelsCatalog, model: string | null, pr
   const bare = str(model).trim()
   const pid = str(provider).trim().toLowerCase()
   if (!bare || !pid) return null
-  for (const g of catalog.groups) for (const e of [...g.models, ...(g.extra_models ?? [])]) if (e.bare_id === bare && str(e.provider_id).toLowerCase() === pid) return e.id
+  for (const g of catalog.groups) for (const e of g.models) if (e.bare_id === bare && str(e.provider_id).toLowerCase() === pid) return e.id
   return null
 }
 
@@ -88,7 +77,7 @@ export function repairSessionModel(catalog: ModelsCatalog, model: string, provid
   if (!model.trim() || !pid || unlisted.has(pid) || !catalog.groups.some((g) => canonicaliseProviderId(g.provider_id) === pid)) return null
   const loose = (id: string): string => id.trim().toLowerCase().replaceAll('-', '.')
   const want = loose(model)
-  const entries = catalog.groups.flatMap((g) => [...g.models, ...(g.extra_models ?? [])])
+  const entries = catalog.groups.flatMap((g) => g.models)
   const tail = (id: string): string => loose(id.slice(id.indexOf('/') + 1))
   const own = entries.filter((e) => canonicaliseProviderId(e.provider_id) === pid).map((e) => str(e.bare_id))
   if (own.some((bare) => loose(bare) === want)) return null
@@ -114,16 +103,6 @@ export function repairSessionModel(catalog: ModelsCatalog, model: string, provid
   return defaultModel && defaultProvider && (defaultModel !== model || defaultProvider !== pid) ? [defaultModel, defaultProvider] : null
 }
 
-/** Python `_split_picker_overflow_models`: past 25 rows the picker shows 15, keeping the selected model visible. */
-export function splitPickerOverflow(models: ModelEntry[], selected: string, providerId: string): [ModelEntry[], ModelEntry[]] {
-  if (models.length <= MODEL_PICKER_OVERFLOW_THRESHOLD) return [models, []]
-  const visible = models.slice(0, MODEL_PICKER_VISIBLE_TARGET)
-  const extras = models.slice(MODEL_PICKER_VISIBLE_TARGET)
-  if (!selected || visible.some((m) => modelMatchesPickerSelection(m.id, selected, providerId))) return [visible, extras]
-  const idx = extras.findIndex((m) => modelMatchesPickerSelection(m.id, selected, providerId))
-  if (idx >= 0) { const displaced = visible[visible.length - 1]!; visible[visible.length - 1] = extras[idx]!; extras[idx] = displaced }
-  return [visible, extras]
-}
 export interface ModelsCatalog { availability?: CatalogAvailability; active_provider: string | null; default_model: string; default_provider_id?: string | null; default_bare_id?: string; default_option_id?: string | null; groups: ModelGroup[]; aliases: Record<string, string>; configured_model_badges: Record<string, { role: string; label: string; provider: string }> }
 
 /**
@@ -131,7 +110,7 @@ export interface ModelsCatalog { availability?: CatalogAvailability; active_prov
  * saved one, so clients tick exactly one option (a bare id listed under two providers matches only its own provider).
  */
 export function stampAuxiliarySelections(aux: { tasks: Dict[]; main: Dict }, catalog: ModelsCatalog): { tasks: Dict[]; main: Dict } {
-  const options = catalog.groups.flatMap((g) => [...g.models, ...(g.extra_models ?? [])].map((m) => {
+  const options = catalog.groups.flatMap((g) => g.models.map((m) => {
     const parsed = parseProviderQualifiedModel(m.id)
     return { id: m.id, label: m.label, group: g.provider, provider: canonicaliseProviderId(parsed?.[1] ?? g.provider_id), bare: parsed?.[0] ?? m.id }
   }))
@@ -191,9 +170,6 @@ const keySourceKind = (row: Dict): KeySourceKind | null => row.has_key === true 
 const selfHostedEndpoint = (pid: string, config: Config): boolean => SELF_HOSTED_PROVIDER_IDS.has(pid) && Boolean(configuredBaseUrl(pid, config))
 /** Python `_unqualified_model_id`: strip a picker routing hint (`@provider:`). */
 const unqualifiedModelId = (id: string): string => parseProviderQualifiedModel(id)?.[0] ?? id.trim()
-/** Python `_MODEL_PICKER_OVERFLOW_THRESHOLD` / `_MODEL_PICKER_VISIBLE_TARGET`. */
-const MODEL_PICKER_OVERFLOW_THRESHOLD = 25
-const MODEL_PICKER_VISIBLE_TARGET = 15
 const ACCOUNT_USAGE_CACHE_TTL_S = 45
 /** TAL-807: the oldest account-usage read the picker still shows a quota level from. */
 const PICKER_USAGE_MAX_AGE_S = 600
@@ -1238,16 +1214,6 @@ export class ProviderCatalog {
       this.applyPlanAllowance(profileHome, g, source)
     }
     deduplicateModelIds(groups)
-    // Python: every group is split into visible rows plus `extra_models`; Nous decorates its label with "(15 of N)".
-    const selectedId = str(model.model).trim() || defaultModel
-    for (const g of groups) {
-      const [visible, extras] = splitPickerOverflow(g.models, selectedId, g.provider_id)
-      g.models = visible
-      if (extras.length) {
-        g.extra_models = extras
-        if (g.provider_id === 'nous') g.provider = `${g.provider} (${String(visible.length)} of ${String(visible.length + extras.length)})`
-      }
-    }
     const kept = groups.filter((g) => g.models.length || g.provider_id.startsWith('custom:'))
     const withKeys = new Set<string>()
     for (const [k, v] of Object.entries(providersCfg)) if (isDict(v) && (v.api_key || v.key_env || v.base_url)) { const c = canonicaliseProviderId(k); if (c) withKeys.add(c) }
@@ -1270,11 +1236,11 @@ export class ProviderCatalog {
       const providerId = active ?? 'default'
       return this.remember(profileHome, { source, generation, unconfirmed, attempt }, { ...defaults, groups: [{ provider: 'Default', provider_id: providerId, models: stampModelEntries([{ id: defaultModel, label: labelForModel(defaultModel, []) }], providerId) }], aliases: {}, configured_model_badges: {} })
     }
-    const stamped = kept.map((g) => ({ ...g, models: stampModelEntries(g.models, g.provider_id), ...(g.extra_models ? { extra_models: stampModelEntries(g.extra_models, g.provider_id) } : {}) }))
+    const stamped = kept.map((g) => ({ ...g, models: stampModelEntries(g.models, g.provider_id) }))
     for (const g of stamped) if (g.plan_usage) {
       const featured = new Set(g.plan_usage.featured_model_ids)
       g.sections = (['recommended', 'other'] as const).map((kind) => ({ kind,
-        model_ids: [...g.models, ...(g.extra_models ?? [])].filter((m) => featured.has(m.bare_id ?? m.id) === (kind === 'recommended')).map((m) => m.id),
+        model_ids: g.models.filter((m) => featured.has(m.bare_id ?? m.id) === (kind === 'recommended')).map((m) => m.id),
       })).filter((section) => section.model_ids.length)
     }
     return this.remember(profileHome, { source, generation, unconfirmed, attempt }, { ...defaults, groups: stamped, aliases, configured_model_badges: this.badges(kept, active, defaultModel, fallbackCfg) })
@@ -1346,7 +1312,7 @@ export class ProviderCatalog {
   /** TAL-807: the picker adds pool limits and quota levels without storing them in the model catalog. */
   async pickerModels(profileHome: string, profile: string): Promise<ModelsCatalog> {
     const catalog = await this.models(profileHome)
-    const entries = (g: ModelGroup): ModelEntry[] => [...g.models, ...(g.extra_models ?? [])]
+    const entries = (g: ModelGroup): ModelEntry[] => g.models
     const providers = catalog.groups.map((g) => ({ slug: g.provider_id, models: entries(g).map((e) => e.bare_id ?? e.id) }))
     const limits = await this.pickerLimits(profileHome, providers)
     const active = (resetsAt: string): boolean => Date.parse(resetsAt) / 1000 > this.deps.now()
@@ -1408,7 +1374,7 @@ export class ProviderCatalog {
   /** Stamps the default's entry id and keeps the catalog for `modelOptionFor`. */
   private async remember(profileHome: string, meta: { source: string; generation: number; unconfirmed: ReadonlySet<string>; attempt: number }, catalog: ModelsCatalog): Promise<ModelsCatalog> {
     if (catalog.availability) for (const group of catalog.groups) group.availability ??= catalog.availability
-    await this.stampSpeedTiers(profileHome, catalog.groups.flatMap((g) => [...g.models, ...(g.extra_models ?? [])]))
+    await this.stampSpeedTiers(profileHome, catalog.groups.flatMap((g) => g.models))
     if (meta.generation !== this.modelGenerations.get(profileHome) || meta.source !== this.sourceFingerprint(profileHome)) {
       if (meta.attempt === 0) return this.models(profileHome, 1)
       throw new Error('Provider configuration changed during catalog lookup. Try again.')
@@ -1464,7 +1430,6 @@ export class ProviderCatalog {
       if (fromConfig.length) { ids = [...new Set(fromConfig)]; source = 'config' }
       else if (source === 'fallback') { ids = (PROVIDER_MODELS[provider] ?? []).map((m) => m.id); source = 'static' }
     }
-    if (provider !== 'nous' && ids.length > MODEL_PICKER_OVERFLOW_THRESHOLD) ids = ids.slice(0, MODEL_PICKER_VISIBLE_TARGET)
     const models = stampModelEntries(ids.filter(Boolean).map((id) => ({ id, label: labelForModel(id, []) })), provider)
     await this.stampSpeedTiers(profileHome, models)
     if (fingerprint !== this.sourceFingerprint(profileHome)) return attempt === 0 ? this.liveModels(profileHome, providerRaw, 1) : { availability: this.availability(this.sourceFingerprint(profileHome), false, false), provider, source: 'unavailable', models: [], count: 0 }

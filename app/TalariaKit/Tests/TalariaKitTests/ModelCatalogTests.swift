@@ -80,10 +80,7 @@ final class ModelCatalogTests: XCTestCase {
                 providerID: "anthropic",
                 models: [
                     ModelCatalogOption(id: "claude-opus-4.1", displayName: "Claude Opus 4.1", providerID: "anthropic", bareID: "claude-opus-4.1", limitResetsAt: resetsAt),
-                    ModelCatalogOption(id: "claude-sonnet-4.5", displayName: "Claude Sonnet 4.5", providerID: "anthropic", bareID: "claude-sonnet-4.5")
-                ],
-                // An entry the server moved out of the visible list keeps its limit when the live list shows it.
-                extraModels: [
+                    ModelCatalogOption(id: "claude-sonnet-4.5", displayName: "Claude Sonnet 4.5", providerID: "anthropic", bareID: "claude-sonnet-4.5"),
                     ModelCatalogOption(id: "claude-haiku-4.5", displayName: "Claude Haiku 4.5", providerID: "anthropic", bareID: "claude-haiku-4.5", limitResetsAt: resetsAt)
                 ],
                 accountLimitResetsAt: nil,
@@ -106,40 +103,20 @@ final class ModelCatalogTests: XCTestCase {
         XCTAssertEqual(merged.first?.quotaLevel, .warning)
     }
 
-    func testModelsResponseKeepsExtraModelsForSlashAutocompleteOnly() throws {
+    func testModelsResponseKeepsEveryModelOfALongProviderList() throws {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let rows = (1...40).map { #"{"id": "@nous:vendor/model-\#($0)", "label": "Model \#($0)"}"# }.joined(separator: ",")
         let response = try decoder.decode(
             ModelsResponse.self,
-            from: Data("""
-            {
-              "default_model": "@nous:anthropic/claude-opus-4.7",
-              "active_provider": "nous",
-              "groups": [
-                {
-                  "name": "Nous (15 of 397)",
-                  "provider_id": "nous",
-                  "models": [
-                    {"id": "@nous:anthropic/claude-opus-4.7", "label": "Claude Opus 4.7 (via Nous)"}
-                  ],
-                  "extra_models": [
-                    {"id": "@nous:qwen/qwen3-coder", "label": "Qwen3 Coder (via Nous)"}
-                  ]
-                }
-              ]
-            }
-            """.utf8)
+            from: Data(#"{"default_model": "@nous:vendor/model-30", "active_provider": "nous", "groups": [{"name": "Nous", "provider_id": "nous", "models": [\#(rows)]}]}"#.utf8)
         )
 
         let group = try XCTUnwrap(response.catalogGroups.first)
 
-        XCTAssertEqual(group.models.map(\.id), ["@nous:anthropic/claude-opus-4.7"])
-        XCTAssertEqual(group.extraModels.map(\.id), ["@nous:qwen/qwen3-coder"])
-        XCTAssertEqual(
-            group.slashAutocompleteModels.map(\.id),
-            ["@nous:anthropic/claude-opus-4.7", "@nous:qwen/qwen3-coder"]
-        )
-        XCTAssertEqual(response.displayName(for: "@nous:qwen/qwen3-coder"), "Qwen3 Coder (via Nous)")
+        XCTAssertEqual(group.models.count, 40)
+        XCTAssertEqual(group.models.last?.id, "@nous:vendor/model-40")
+        XCTAssertEqual(response.displayName(for: "@nous:vendor/model-40"), "Model 40")
     }
 
     // MARK: - /api/models/live (issue #236)
@@ -188,9 +165,6 @@ final class ModelCatalogTests: XCTestCase {
                 models: [
                     ModelCatalogOption(id: "kept-model", displayName: "Kept Model", providerID: "opencode-go"),
                     ModelCatalogOption(id: "stale-model", displayName: "Stale Model", providerID: "opencode-go")
-                ],
-                extraModels: [
-                    ModelCatalogOption(id: "extra-model", displayName: "Extra Model", providerID: "opencode-go")
                 ]
             ),
             ModelCatalogGroup(
@@ -220,7 +194,6 @@ final class ModelCatalogTests: XCTestCase {
         XCTAssertEqual(merged.first?.models.last?.providerID, "opencode-go")
         XCTAssertEqual(merged.first?.id, "opencode-go")
         XCTAssertEqual(merged.first?.name, "OpenCode Go")
-        XCTAssertEqual(merged.first?.extraModels.map(\.id), ["extra-model"])
         XCTAssertEqual(merged.last, groups.last)
     }
 

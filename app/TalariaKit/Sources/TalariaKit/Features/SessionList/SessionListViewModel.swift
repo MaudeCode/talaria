@@ -1507,7 +1507,7 @@ public final class SessionListViewModel {
                let models = try? await client.models() {
                 requestedModel = models.catalogGroups
                     .first(where: { $0.providerID == requestedProvider })?
-                    .slashAutocompleteModels.first
+                    .models.first
             } else {
                 requestedModel = nil
             }
