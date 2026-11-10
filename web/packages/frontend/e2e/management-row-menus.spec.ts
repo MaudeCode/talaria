@@ -23,7 +23,7 @@ test('a workspace row offers its buttons, with the same disabled ends, and Renam
     workspaces = workspaces.map((w) => w.path === write.path ? { ...w, name: write.name } : w)
     await route.fulfill({ json: { ok: true, workspaces, last: null } })
   })
-  await page.goto('/workspaces')
+  await page.goto('/settings/workspaces')
   await settle(page)
 
   const menu = rowMenu(page, 'Workspace actions')
@@ -57,7 +57,7 @@ test('a profile row offers Delete only when its button shows, and Delete keeps i
   ] } }))
   const deletes: unknown[] = []
   await page.route('**/api/profile/delete', async (route) => { deletes.push(route.request().postDataJSON()); await route.fulfill({ json: { ok: true } }) })
-  await page.goto('/profiles')
+  await page.goto('/settings/profiles')
   await settle(page)
 
   const menu = rowMenu(page, 'Profile actions')

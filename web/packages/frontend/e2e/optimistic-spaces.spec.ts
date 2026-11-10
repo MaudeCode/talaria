@@ -13,7 +13,7 @@ test('a space moves at once while the reorder is held', async ({ page }, info) =
     await route.fulfill({ json: { ok: true, workspaces, last: null } })
   })
   try {
-    await page.goto('/workspaces')
+    await page.goto('/settings/workspaces')
     await settle(page)
     const names = page.locator('#workspacesPanel li .truncate:not(.font-mono)')
     await expect(names).toHaveText(['Alpha', 'Beta', 'Gamma'])

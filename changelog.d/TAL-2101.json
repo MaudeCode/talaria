@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Web Profiles, Spaces and Logs moved from the sidebar into Settings under Server; their old addresses open the new pages.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

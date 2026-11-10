@@ -62,7 +62,7 @@ test('every route has the one column, and the page starts at its stored width', 
   desktopOnly(info.project.name)
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.route('**/api/extensions/manifests', (route) => route.fulfill({ json: { protocol_version: 1, manifests: [{ id: 'demo', name: 'Demo Extension', version: '1.0.0', enabled: false, can_toggle: true, source: 'manifest', panel: null, nav: null, capabilities: [], permissions: {}, settings_schema: [], theme: null, tts: null, sidecar: null, legacy_injection: false, warnings: [] }] } }))
-  const moreRows = ['Spaces', 'Discussions', 'Todos', 'Decisions', 'Profiles', 'Logs']
+  const moreRows = ['Discussions', 'Todos', 'Decisions']
   for (const [path, more] of [['/', []], ['/skills', []], ['/tasks', []], ['/groups', moreRows], ['/ext/demo', moreRows]] as const) {
     await page.goto(path)
     await settle(page)
@@ -90,8 +90,8 @@ test('collapsed, the column is the labelled icon rail, and first paint draws the
   await collapsedOn(page, '/skills')
   expect(await width(page, 'aside.sidebar')).toBe(64)
   expect(await left(page, '#main')).toBe(64)
-  expect(await controls(page)).toEqual(['New conversation', 'Search', 'Chat', 'Tasks', 'Kanban', 'Skills', 'Memory', 'Insights', 'Spaces', 'Discussions', 'Todos', 'Decisions', 'Profiles', 'Logs', 'Settings', 'Notifications'])
-  for (const name of ['Chat', 'Spaces', 'Discussions', 'Tasks', 'Kanban', 'Todos', 'Decisions', 'Skills', 'Memory', 'Profiles', 'Insights', 'Logs', 'Settings']) await expect(row(page, name), name).toBeInViewport({ ratio: 1 })
+  expect(await controls(page)).toEqual(['New conversation', 'Search', 'Chat', 'Tasks', 'Kanban', 'Skills', 'Memory', 'Insights', 'Discussions', 'Todos', 'Decisions', 'Settings', 'Notifications'])
+  for (const name of ['Chat', 'Discussions', 'Tasks', 'Kanban', 'Todos', 'Decisions', 'Skills', 'Memory', 'Insights', 'Settings']) await expect(row(page, name), name).toBeInViewport({ ratio: 1 })
   for (const name of ['Search', 'Notifications']) await expect(button(page, name), name).toBeInViewport({ ratio: 1 })
   await expect(sidebar(page).locator('[aria-current="page"]:visible')).toHaveAttribute('aria-label', 'Skills')
   await page.locator('aside.sidebar').screenshot({ path: info.outputPath('rail.png') })
@@ -206,7 +206,7 @@ for (const viewport of [
       if (more) await button(page, 'More').click()
       await page.screenshot({ path: info.outputPath(`destinations-${more ? 'more' : 'primary'}.png`) })
       if (more) {
-        for (const name of ['Spaces', 'Discussions', 'Todos', 'Decisions', 'Profiles', 'Logs']) {
+        for (const name of ['Discussions', 'Todos', 'Decisions']) {
           await row(page, name).scrollIntoViewIfNeeded()
           await expect(row(page, name)).toBeInViewport({ ratio: 1 })
         }
@@ -233,37 +233,46 @@ test('More holds the rest and opens itself on a page inside it', async ({ page }
   await settle(page)
   const more = button(page, 'More')
   await expect(more).toHaveAttribute('aria-expanded', 'false')
-  await expect(row(page, 'Logs')).toBeHidden()
+  await expect(row(page, 'Todos')).toBeHidden()
   await more.click()
-  for (const name of ['Spaces', 'Discussions', 'Todos', 'Decisions', 'Profiles', 'Logs']) await expect(row(page, name), name).toBeVisible()
+  for (const name of ['Discussions', 'Todos', 'Decisions']) await expect(row(page, name), name).toBeVisible()
+  for (const name of ['Spaces', 'Profiles', 'Logs']) await expect(row(page, name), name).toHaveCount(0)
   expect(await stored(page, 'hermes-webui-sidebar-more-open')).toBe('1')
   await more.click()
-  await expect(row(page, 'Logs')).toBeHidden()
+  await expect(row(page, 'Todos')).toBeHidden()
   expect(await stored(page, 'hermes-webui-sidebar-more-open')).toBe('0')
 
-  await page.goto('/logs')
+  await page.goto('/todos')
   await settle(page)
   await expect(more).toHaveAttribute('aria-expanded', 'true')
-  await expect(row(page, 'Logs')).toHaveAttribute('aria-current', 'page')
+  await expect(row(page, 'Todos')).toHaveAttribute('aria-current', 'page')
   await page.goto('/skills')
   await settle(page)
   await expect(more).toHaveAttribute('aria-expanded', 'false')
 
 })
 
-test('hidden tabs leave both states', async ({ page }, info) => {
+test('hidden tabs leave both states', async ({ page, errors }, info) => {
   desktopOnly(info.project.name)
-  expect((await page.request.post('/api/settings', { data: { hidden_tabs: ['logs', 'kanban', 'decisions'] } })).ok()).toBe(true)
+  // TAL-2101: `logs`, `profiles` and `workspaces` are Settings sections now; a stored entry naming one is ignored and kept.
+  const hidden = ['logs', 'kanban', 'decisions', 'profiles', 'workspaces']
+  expect((await page.request.post('/api/settings', { data: { hidden_tabs: hidden } })).ok()).toBe(true)
   try {
     await page.goto('/skills')
     await settle(page)
     await button(page, 'More').click()
     await expect(row(page, 'Todos')).toBeVisible()
-    for (const name of ['Logs', 'Kanban', 'Decisions']) await expect(row(page, name), name).toHaveCount(0)
+    for (const name of ['Kanban', 'Decisions', 'Logs', 'Profiles', 'Spaces']) await expect(row(page, name), name).toHaveCount(0)
     await page.locator('#btnSidebarEdgeToggle').click()
     await expect(row(page, 'Chat')).toBeVisible()
     await expect(row(page, 'Todos')).toBeVisible()
-    for (const name of ['Logs', 'Kanban', 'Decisions']) await expect(row(page, name), name).toHaveCount(0)
+    for (const name of ['Kanban', 'Decisions', 'Logs', 'Profiles', 'Spaces']) await expect(row(page, name), name).toHaveCount(0)
+    await page.goto('/settings/navigation')
+    await settle(page)
+    await expect(page.locator('#settingsHiddenTabs')).toContainText('Todos')
+    for (const name of ['Logs', 'Profiles', 'Spaces']) await expect(page.locator('#settingsHiddenTabs'), name).not.toContainText(name)
+    expect((await (await page.request.get('/api/settings')).json() as { hidden_tabs?: string[] }).hidden_tabs).toEqual(hidden)
+    expect(errors).toEqual([])
   } finally {
     await page.request.post('/api/settings', { data: { hidden_tabs: [] } })
   }
@@ -746,7 +755,7 @@ test('once the motion settles, rows the state hides take no focus', async ({ pag
   await collapsedOn(page, '/skills')
   const newChat = page.locator('#btnNewChat')
   const chat = page.locator('aside.sidebar [data-panel="chat"]')
-  const logs = page.locator('aside.sidebar [data-panel="logs"]')
+  const logs = page.locator('aside.sidebar [data-panel="todos"]')
   const takesFocus = (control: typeof chat) => control.evaluate((el) => { (el as HTMLElement).focus(); return document.activeElement === el })
   await expect(newChat).toBeHidden()
   expect(await takesFocus(newChat)).toBe(false)

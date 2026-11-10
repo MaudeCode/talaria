@@ -13,8 +13,8 @@ const TABS: Tab[] = [
   { key: 'chat', label: () => m.tab_chat(), panel: 'chat' },
   { key: 'tasks', label: () => m.tab_tasks(), panel: 'tasks' },
   { key: 'kanban', label: () => m.tab_kanban(), panel: 'kanban' },
-  { key: 'agent', label: () => m.tab_agent(), items: ['skills', 'memory', 'profiles', 'workspaces'] },
-  { key: 'more', label: () => m.tab_more(), items: ['todos', 'groups', 'insights', 'logs', 'settings'] },
+  { key: 'agent', label: () => m.tab_agent(), items: ['skills', 'memory'] },
+  { key: 'more', label: () => m.tab_more(), items: ['todos', 'groups', 'insights', 'settings'] },
 ]
 
 export function Tabbar() {

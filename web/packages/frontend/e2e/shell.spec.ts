@@ -8,7 +8,7 @@ test.describe('shell', () => {
     expect(errors).toEqual([])
   })
 
-  const HUBS = ['/tasks', '/kanban', '/skills', '/memory', '/workspaces', '/groups', '/profiles', '/todos', '/insights', '/logs']
+  const HUBS = ['/tasks', '/kanban', '/skills', '/memory', '/groups', '/todos', '/insights']
 
   test('every hub renders', async ({ page }, testInfo) => {
     await page.goto('/')
@@ -24,7 +24,7 @@ test.describe('shell', () => {
     }
     // The icon rail shows every destination at once.
     await page.locator('#btnSidebarEdgeToggle').click()
-    await expect(page.locator('aside.sidebar [data-panel="logs"]')).toBeVisible()
+    await expect(page.locator('aside.sidebar [data-panel="todos"]')).toBeVisible()
     const rail = page.locator('nav[aria-label="Primary navigation"] a[href]:visible')
     const count = await rail.count()
     expect(count).toBeGreaterThanOrEqual(HUBS.length)

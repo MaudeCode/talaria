@@ -136233,9 +136233,12 @@
           "models",
           "providers",
           "tools",
+          "profiles",
+          "workspaces",
           "extensions",
           "access",
           "system",
+          "logs",
           "about"
         ]
       },

@@ -42,7 +42,7 @@ export function ProfileMenu({ row }: { row?: boolean } = {}) {
         ))}
       </MenuRadioGroup>
       <MenuSeparator />
-      <MenuItem render={<Link to="/profiles" />}>{m.tab_profiles()}</MenuItem>
+      <MenuItem render={<Link to="/settings/$section" params={{ section: 'profiles' }} />}>{m.tab_profiles()}</MenuItem>
     </Menu>
   )
 }

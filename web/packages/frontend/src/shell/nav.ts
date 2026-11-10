@@ -1,7 +1,7 @@
-import { CalendarCheck, Columns3, Scale, FileText, GraduationCap, LayoutDashboard, ListChecks, MessageSquare, Settings, TrendingUp, UserRound, Users, FolderOpen, Brain, type LucideIcon } from 'lucide-react'
+import { CalendarCheck, Columns3, Scale, GraduationCap, LayoutDashboard, ListChecks, MessageSquare, Settings, TrendingUp, Users, Brain, type LucideIcon } from 'lucide-react'
 import { m } from '../paraglide/messages.js'
 
-export type PanelId = 'chat' | 'tasks' | 'kanban' | 'skills' | 'memory' | 'workspaces' | 'groups' | 'profiles' | 'todos' | 'decisions' | 'insights' | 'logs' | 'settings'
+export type PanelId = 'chat' | 'tasks' | 'kanban' | 'skills' | 'memory' | 'groups' | 'todos' | 'decisions' | 'insights' | 'settings'
 
 export interface NavItem {
   id: PanelId
@@ -10,20 +10,20 @@ export interface NavItem {
   label: () => string
 }
 
-/** Every destination the sidebar and Settings know. `chat` and `settings` are fixed; the rest can be hidden. */
+/**
+ * Every destination the sidebar and Settings know. `chat` and `settings` are fixed; the rest can be hidden. TAL-2101: Profiles,
+ * Spaces and Logs are Settings sections now; a stored order or hidden entry naming them is ignored like any unknown id.
+ */
 export const NAV_ITEMS: readonly NavItem[] = [
   { id: 'chat', to: '/', icon: MessageSquare, label: () => m.tab_chat() },
   { id: 'tasks', to: '/tasks', icon: CalendarCheck, label: () => m.tab_tasks() },
   { id: 'kanban', to: '/kanban', icon: Columns3, label: () => m.tab_kanban() },
   { id: 'skills', to: '/skills', icon: GraduationCap, label: () => m.tab_skills() },
   { id: 'memory', to: '/memory', icon: Brain, label: () => m.tab_memory() },
-  { id: 'workspaces', to: '/workspaces', icon: FolderOpen, label: () => m.tab_workspaces() },
   { id: 'groups', to: '/groups', icon: Users, label: () => m.group_discussions() },
-  { id: 'profiles', to: '/profiles', icon: UserRound, label: () => m.tab_profiles() },
   { id: 'todos', to: '/todos', icon: ListChecks, label: () => m.tab_todos() },
   { id: 'decisions', to: '/decisions', icon: Scale, label: () => m.tab_decisions() },
   { id: 'insights', to: '/insights', icon: TrendingUp, label: () => m.tab_insights() },
-  { id: 'logs', to: '/logs', icon: FileText, label: () => m.tab_logs() },
   { id: 'settings', to: '/settings', icon: Settings, label: () => m.tab_settings() },
 ]
 export const DASHBOARD_ICON = LayoutDashboard
@@ -33,7 +33,7 @@ export const FIXED_TABS: ReadonlySet<PanelId> = new Set(['chat', 'settings'])
 export type SidebarSlot = PanelId | 'dashboard' | 'extensions'
 /** Expanded: the App's order, above the `More` disclosure. */
 export const SIDEBAR_PRIMARY: readonly SidebarSlot[] = ['tasks', 'kanban', 'skills', 'memory', 'insights']
-export const SIDEBAR_MORE: readonly SidebarSlot[] = ['workspaces', 'groups', 'todos', 'decisions', 'profiles', 'logs', 'extensions', 'dashboard']
+export const SIDEBAR_MORE: readonly SidebarSlot[] = ['groups', 'todos', 'decisions', 'extensions', 'dashboard']
 /** One row in both states: `shell.css` lays it out as a labelled row, or as an icon over its caption on the rail. */
 export const SIDEBAR_ROW = 'sidebar-row relative flex w-full min-h-8 flex-none items-center gap-2.5 rounded-(--rail-btn-radius) border-0 bg-transparent px-2.5 text-left text-sm text-muted no-underline cursor-pointer transition-[color,background] duration-(--dur) ease-(--ease) max-[641px]:min-h-11 hover:text-text hover:bg-hover [&.active]:text-(--rail-active-fg) [&.active]:bg-(--rail-active-bg) [&.active]:shadow-(--rail-active-shadow) [&.active]:[font-weight:var(--rail-active-weight)] [&.active_svg]:text-(--rail-active-icon-fg) [&_svg]:shrink-0 [&_svg]:size-[18px]'
 
