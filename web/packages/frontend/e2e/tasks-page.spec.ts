@@ -24,6 +24,9 @@ test('the task list is the page and a task opens as a detail with a way back', a
   const row = page.locator('#main [data-job-id="digest"]')
   await expect(row).toBeVisible()
   await expect(row).toHaveAttribute('data-state', 'active')
+  // The second line carries what the server sent: schedule and next run, no last run; the exact time is the title.
+  await expect(row.locator('[data-job-runs]')).toHaveText('0 9 * * * · Next Oct 18, 9:00 AM')
+  await expect(row.locator('[data-run="next"]')).toHaveAttribute('title', '10/18/2026, 9:00:00 AM')
   // The list is the page: no drawer opened over it on a phone.
   if (!desktop) await expect(page.locator('.sidebar.mobile-open')).toHaveCount(0)
   for (const name of ['Refresh', 'New queue', 'New job']) await expect(page.locator('.main-view-actions').getByRole('button', { name, exact: true })).toBeVisible()

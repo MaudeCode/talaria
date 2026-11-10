@@ -3,7 +3,7 @@
  * opens as a detail with a way back (or the create/edit form). Selection lives in
  * `?job=` so a task can be linked and the browser back button works; the editor is transient.
  */
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useMutationState, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { Copy, ListOrdered, Pause, Play, Plus, RefreshCw, Square, Trash2, type LucideIcon } from 'lucide-react'
@@ -22,7 +22,8 @@ import { RightPanel } from '../../shell/RightPanel'
 import { ConfirmDialog } from '../../ui/Dialog'
 import { Row as ListRow, RowList } from '../../ui/List'
 import { ContextMenu, MenuItem } from '../../ui/Menu'
-import { EmptyState, ErrorState, LoadingState, formatBytes, formatDate } from '../../ui/States'
+import { EmptyState, ErrorState, LoadingState, epochMs, formatBytes, formatDate } from '../../ui/States'
+import { resetTime } from '../../i18n/units'
 import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
 import { cn } from '../../ui/cn'
@@ -229,7 +230,7 @@ function TaskList({ queues, onNewQueue, jobs, pending, error, otherProfileCount,
   // Paused jobs are folded away so they do not drown the live ones (legacy #4026).
   const live = rows.filter((r) => r.state !== 'paused' && r.state !== 'off')
   const parked = rows.filter((r) => r.state === 'paused' || r.state === 'off')
-  const item = ({ job, id, state }: typeof rows[number]) => <AutomationListItem key={id} id={id} title={job.name || m.untitled()} state={state} status={statusLabel(state)} onSelect={onSelect} disabled={id.includes(':new:')} readOnly={job.read_only} details={job.schedule_display} actions={jobActions(job)} />
+  const item = ({ job, id, state }: typeof rows[number]) => <AutomationListItem key={id} id={id} title={job.name || m.untitled()} state={state} status={statusLabel(state)} onSelect={onSelect} disabled={id.includes(':new:')} readOnly={job.read_only} schedule={job.schedule_display} next={nextRunAt(job)} last={lastRunAt(job)} actions={jobActions(job)} />
   return (
     <HubPage title={m.tab_tasks()} actions={
       <>
@@ -265,12 +266,18 @@ function TaskList({ queues, onNewQueue, jobs, pending, error, otherProfileCount,
 }
 
 /** One automation row for scheduled jobs and explicit prompt runs. */
-function AutomationListItem({ id, title, state, status, onSelect, disabled = false, readOnly = false, details, actions = [] }: { id: string; title: string; state: string; status: { label: string; tone: string }; onSelect: (id: string) => void; disabled?: boolean; readOnly?: boolean | undefined; details?: string; actions?: JobAction[] }) {
+function AutomationListItem({ id, title, state, status, onSelect, disabled = false, readOnly = false, schedule, next = null, last = null, actions = [] }: { id: string; title: string; state: string; status: { label: string; tone: string }; onSelect: (id: string) => void; disabled?: boolean; readOnly?: boolean | undefined; schedule?: string; next?: string | number | null; last?: string | number | null; actions?: JobAction[] }) {
+  const locale = useLocale()
+  // Each part shows only when the server sent it; the exact time sits in `title`.
+  const parts = [
+    schedule && <span key="schedule" className="font-mono">{schedule}</span>,
+    ...([['next', next, m.cron_next()], ['last', last, m.cron_last()]] as const).map(([key, at, label]) => at !== null && at !== '' && <span key={key} data-run={key} title={formatDate(at)}>{label} {resetTime(locale, epochMs(at))}</span>),
+  ].filter(Boolean)
   // -my-4 stretches the button over the row's padding so the whole row is the target.
   const row = (
     <button type="button" disabled={disabled} onClick={() => onSelect(id)} data-job-id={id} data-state={state} className={cn('-my-4 flex w-full flex-col gap-1.5 border-0 bg-transparent py-4 text-left text-text hover:bg-hover', readOnly && 'opacity-75')}>
       <span className="flex w-full min-w-0 items-baseline gap-2"><span className="min-w-0 flex-1 truncate text-sm font-semibold">{title}</span><span className={cn('shrink-0 text-xs', status.tone)}>{status.label}</span></span>
-      {details && <span className="w-full truncate font-mono text-xs text-muted">{details}</span>}
+      {parts.length > 0 && <span className="w-full truncate text-xs text-muted" data-job-runs>{parts.map((part, i) => <Fragment key={i}>{i > 0 && ' · '}{part}</Fragment>)}</span>}
     </button>
   )
   return <ListRow>

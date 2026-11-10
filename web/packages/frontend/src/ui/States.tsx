@@ -40,9 +40,14 @@ export function ErrorState({ error, onRetry, children }: { error?: unknown; onRe
 
 export function formatDate(ts: number | string | null | undefined): string {
   if (ts === null || ts === undefined || ts === '') return ''
-  const n = typeof ts === 'number' ? (ts > 1e12 ? ts : ts * 1000) : Date.parse(ts)
+  const n = epochMs(ts)
   if (!Number.isFinite(n)) return String(ts)
   return new Date(n).toLocaleString()
+}
+
+/** A server timestamp (epoch seconds or ms, or an ISO string) as epoch ms; NaN when unparseable. */
+export function epochMs(ts: number | string): number {
+  return typeof ts === 'number' ? (ts > 1e12 ? ts : ts * 1000) : Date.parse(ts)
 }
 
 /**

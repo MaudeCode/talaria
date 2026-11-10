@@ -179,13 +179,19 @@ test('the discussion list is the page, a primary nav entry, and a room opens wit
     const offset = new URL(route.request().url()).searchParams.get('offset') ?? '0'
     offsets.push(offset)
     const response = await route.fetch()
-    await route.fulfill({ response, json: { ...await response.json() as object, next_offset: offset === '0' ? 5 : null } })
+    const catalog = await response.json() as { rooms: { members: { phase: string; stalled: boolean }[] }[] }
+    // The row shows a busy member's server phase; a stalled one takes the warning tone.
+    const [first] = catalog.rooms[0]?.members ?? []
+    if (first) Object.assign(first, { phase: 'running', stalled: true })
+    await route.fulfill({ response, json: { ...catalog, next_offset: offset === '0' ? 5 : null } })
   })
   try {
     await page.goto(`${server.base}/groups`)
     const room = page.locator('#main [data-group-room="discussion"]').getByRole('link', { name: 'Design review', exact: true })
     await expect(room).toBeVisible()
     await expect(page.locator('#main').getByRole('heading', { level: 1, name: 'Discussions', exact: true })).toBeVisible()
+    await expect(page.locator('#main [data-group-room="discussion"] [data-group-members]')).toHaveText('Writer · Stalled, Reviewer')
+    await expect(page.locator('#main [data-group-room="discussion"] [data-group-members] .text-warning')).toHaveText('Writer · Stalled')
     await expect(page.locator('#main .main-view-actions').getByRole('button', { name: 'New discussion', exact: true })).toBeEnabled()
     if (!desktop) await expect(page.locator('.sidebar.mobile-open')).toHaveCount(0)
     await page.screenshot({ path: info.outputPath('list.png') })

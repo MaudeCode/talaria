@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { Fragment, useEffect, useRef, useState, type RefObject } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { Plus, SlidersHorizontal, Square } from 'lucide-react'
@@ -13,6 +13,7 @@ import { BackButton, Button } from '../../ui/Button'
 import { Dialog } from '../../ui/Dialog'
 import { TextInput } from '../../ui/Field'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
+import { Row, RowList } from '../../ui/List'
 import { Transcript } from '../chat/Transcript'
 import { RunElapsed } from '../chat/LiveTurnView'
 import { pausedNotice } from '../chat/MessageRow'
@@ -34,6 +35,8 @@ const phaseLabel: Record<GroupRoom['members'][number]['phase'], () => string> = 
   idle: () => m.group_idle(), queued: () => m.group_queued(), running: () => m.group_running(), stopping: () => m.group_stopping(),
   unknown: () => m.group_unknown_phase(), failed: () => m.group_failed(), approval: () => m.group_approval(),
 }
+/** A member's server phase wording, the room header's and the list row's. */
+const memberPhase = (member: GroupRoom['members'][number]) => member.stalled ? m.group_stalled() : phaseLabel[member.phase]()
 
 /** Rooms share the chat presentation but never its prompt-admission or single-turn state. */
 export function GroupsPage({ roomId }: { roomId: string | undefined }) {
@@ -80,7 +83,10 @@ export function GroupsPage({ roomId }: { roomId: string | undefined }) {
         {catalog.isError && <ErrorState error={catalog.error} onRetry={() => { void catalog.refetch() }} />}
         {catalog.data?.available && catalog.data.rooms.length === 0 && <EmptyState>{m.group_no_discussions()}</EmptyState>}
         <section data-section="groups">
-          <ul className="flex flex-col">{catalog.data?.rooms.map((room) => <li key={room.id} data-group-room={room.id} className="border-t border-border first:border-t-0"><Link to="/groups" search={{ room: room.id }} onClick={() => leaveFor(room.id)} className="block truncate py-4 text-sm font-semibold text-text hover:bg-hover">{room.name}</Link></li>)}</ul>
+          <RowList>{catalog.data?.rooms.map((room) => <Row key={room.id} data-group-room={room.id}><div className="flex min-w-0 flex-col gap-1.5">
+            <Link to="/groups" search={{ room: room.id }} onClick={() => leaveFor(room.id)} className="min-w-0 truncate text-sm font-semibold text-text no-underline hover:underline">{room.name}</Link>
+            {room.members.length > 0 && <span className="min-w-0 truncate text-xs text-muted" data-group-members>{room.members.map((member, i) => <Fragment key={member.member_id}>{i > 0 && ', '}<span className={member.stalled ? 'text-warning' : undefined}>{member.display_name || member.profile}{(member.stalled || member.phase !== 'idle') && ` · ${memberPhase(member)}`}</span></Fragment>)}</span>}
+          </div></Row>)}</RowList>
           {(offset > 0 || catalog.data?.next_offset != null) && <div className="mt-4 flex gap-2">{offset > 0 && <Button onClick={() => setOffset(0)}>{m.group_first_page()}</Button>}{catalog.data?.next_offset != null && <Button onClick={() => setOffset(catalog.data?.next_offset ?? 0)}>{m.group_next_page()}</Button>}</div>}
         </section>
       </HubPage>}
@@ -209,7 +215,7 @@ function Discussion({ roomId, provisionalName, onBack, onDisband }: { roomId: st
   // A Continue the user just pressed takes its notice with it, as its chip already left.
   const continuing = room ? data?.paused.filter((pause) => effects[continueResource(room, pause)]?.remove) ?? [] : []
   const rows = continuing.length ? data?.rows.filter((row) => !continuing.some((pause) => pause.event_id === row.message.message_id)) ?? [] : data?.rows ?? []
-  const phase = (member: GroupRoom['members'][number]) => stopping === room?.identity && member.phase !== 'idle' ? m.group_stopping() : member.stalled ? m.group_stalled() : phaseLabel[member.phase]()
+  const phase = (member: GroupRoom['members'][number]) => stopping === room?.identity && member.phase !== 'idle' ? m.group_stopping() : memberPhase(member)
   return <div ref={focus} tabIndex={-1} className={`${MAIN_VIEW} active`}>
     <PanelHead title={currentRename?.value ?? room?.name ?? provisionalName ?? m.group_discussions()} actions={<>
       <BackButton onClick={onBack} />
