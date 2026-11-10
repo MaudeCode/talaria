@@ -1,9 +1,8 @@
 import { mkdirSync } from 'node:fs'
 import { expect, test } from './fixtures'
-import { bootTestServer } from '../../server/dist/test/harness.js'
+import { discussionServer } from './demo-server'
 import type { Page } from '@playwright/test'
 import { FakeSidecar } from '../../server/dist/sidecar/fake.js'
-import { groupFixture } from '../../server/dist/test/group-fixture.js'
 import { SpaShell } from '../../server/dist/spa.js'
 
 test.use({ serviceWorkers: 'block', video: process.env.TALARIA_GROUP_ROUTING_EVIDENCE || process.env.TALARIA_GROUP_REPLY_EVIDENCE ? 'on' : 'off' })
@@ -55,14 +54,6 @@ test('live discussion activity shows tools, elapsed time, stalled members and th
     await shot('legacy')
   } finally { await page.goto('about:blank'); await server.close() }
 })
-
-async function discussionServer() {
-  const sidecar = new FakeSidecar(), fixture = groupFixture(sidecar)
-  const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' }, deps: (deps) => {
-    deps.profiles.list = () => Promise.resolve([{ name: 'default', is_default: true, display_name: 'Writer' }, { name: 'helper', display_name: 'Reviewer' }])
-  } })
-  return { sidecar, fixture, server }
-}
 
 test('replies in a chosen thread, retaining a refused draft and clearing a confirmed reply', async ({ page }, info) => {
   const { sidecar, fixture, server } = await discussionServer()

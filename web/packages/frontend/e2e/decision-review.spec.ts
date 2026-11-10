@@ -5,11 +5,10 @@ import { FakeSidecar } from '../../server/dist/sidecar/fake.js'
 import { Session } from '../../server/dist/sessions/session.js'
 import type { Page, TestInfo } from '@playwright/test'
 import { expect, settle, test } from './fixtures'
+import { decisionItem as item } from './demo-server'
 
 test.use({ serviceWorkers: 'block' })
 
-const choices = (topic: string) => [{ value: 'keep', label: `Keep ${topic}`, effect: 'Nothing changes.' }, { value: 'change', label: `Change ${topic}`, effect: `${topic} changes tonight.` }]
-const item = (id: string, topic: string) => ({ id, title: `${topic} policy`, question: `Should ${topic} change?`, explanation: `${topic} affects every chat.`, example: null, current: `${topic} stays as it is.`, recommendation: 'Keep it.', recommended_choice: 'keep', choices: choices(topic), technical: { detail: 'Set in config.yaml.', sources: ['https://example.com/docs'] } })
 /** Phone, the Duo outer display and split view, and the Duo inner display (foldable-web viewports). */
 const WIDTHS = [[382, 580], [385, 571], [669, 867]] as const
 
