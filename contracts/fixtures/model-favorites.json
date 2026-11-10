@@ -1,0 +1,31 @@
+{
+  "models": {
+    "active_provider": "anthropic",
+    "default_model": "claude-sonnet-4.5",
+    "groups": [
+      {
+        "provider": "Anthropic",
+        "provider_id": "anthropic",
+        "models": [
+          { "id": "claude-sonnet-4.5", "label": "Claude Sonnet 4.5", "provider_id": "anthropic", "bare_id": "claude-sonnet-4.5", "favorite": true },
+          { "id": "shared-model", "label": "Shared Model", "provider_id": "anthropic", "bare_id": "shared-model", "favorite": false }
+        ]
+      },
+      {
+        "provider": "OpenRouter",
+        "provider_id": "openrouter",
+        "models": [
+          { "id": "@openrouter:shared-model", "label": "Shared Model", "provider_id": "openrouter", "bare_id": "shared-model", "favorite": true }
+        ]
+      }
+    ],
+    "favorites": [
+      { "provider_id": "openrouter", "model": "shared-model" },
+      { "provider_id": "anthropic", "model": "claude-sonnet-4.5" },
+      { "provider_id": "openai-codex", "model": "gpt-5.5" }
+    ]
+  },
+  "never_saved": { "groups": [], "favorites": null },
+  "favorite": { "ok": true, "favorites": [{ "provider_id": "anthropic", "model": "claude-sonnet-4.5" }] },
+  "import": { "ok": true, "imported": false, "favorites": [{ "provider_id": "anthropic", "model": "claude-sonnet-4.5" }] }
+}

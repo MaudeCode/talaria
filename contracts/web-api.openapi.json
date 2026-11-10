@@ -90528,6 +90528,10 @@
                                     "scope",
                                     "resets_at"
                                   ]
+                                },
+                                "favorite": {
+                                  "type": "boolean",
+                                  "description": "TAL-1857: the profile starred this `provider_id` and `bare_id` pair."
                                 }
                               },
                               "required": [
@@ -90607,6 +90611,36 @@
                         "type": "string"
                       },
                       "additionalProperties": {}
+                    },
+                    "favorites": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "maxItems": 200,
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "provider_id": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "model": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 500
+                              }
+                            },
+                            "required": [
+                              "provider_id",
+                              "model"
+                            ]
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -90803,6 +90837,10 @@
                               "scope",
                               "resets_at"
                             ]
+                          },
+                          "favorite": {
+                            "type": "boolean",
+                            "description": "TAL-1857: the profile starred this `provider_id` and `bare_id` pair."
                           }
                         },
                         "required": [
@@ -91262,6 +91300,10 @@
                                         "scope",
                                         "resets_at"
                                       ]
+                                    },
+                                    "favorite": {
+                                      "type": "boolean",
+                                      "description": "TAL-1857: the profile starred this `provider_id` and `bare_id` pair."
                                     }
                                   },
                                   "required": [
@@ -91341,6 +91383,36 @@
                             "type": "string"
                           },
                           "additionalProperties": {}
+                        },
+                        "favorites": {
+                          "anyOf": [
+                            {
+                              "type": "array",
+                              "maxItems": 200,
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "provider_id": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 200
+                                  },
+                                  "model": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 500
+                                  }
+                                },
+                                "required": [
+                                  "provider_id",
+                                  "model"
+                                ]
+                              }
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -91353,6 +91425,183 @@
                     "ok",
                     "provider",
                     "models"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/models/favorite": {
+      "post": {
+        "operationId": "models.favorite",
+        "summary": "TAL-1857: star (`favorite: true`) or unstar one model for the request's profile and answer its favorites. A new star goes last; starring a starred model keeps its place. Refused with 400 past the profile's limit.",
+        "tags": [
+          "settings"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "provider_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "favorite": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "provider_id",
+                  "model",
+                  "favorite"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "favorites": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "provider_id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "model": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 500
+                          }
+                        },
+                        "required": [
+                          "provider_id",
+                          "model"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "favorites"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/models/favorites/import": {
+      "post": {
+        "operationId": "models.importFavorites",
+        "summary": "TAL-1857: one-time import of a client's device favorites. Writes `favorites` (deduplicated, in order) only while the profile has never saved favorites; otherwise `imported` is false and nothing changes.",
+        "tags": [
+          "settings"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "favorites": {
+                    "type": "array",
+                    "maxItems": 200,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "provider_id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "model": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        }
+                      },
+                      "required": [
+                        "provider_id",
+                        "model"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "favorites"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "imported": {
+                      "type": "boolean"
+                    },
+                    "favorites": {
+                      "type": "array",
+                      "maxItems": 200,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "provider_id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "model": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 500
+                          }
+                        },
+                        "required": [
+                          "provider_id",
+                          "model"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "imported",
+                    "favorites"
                   ]
                 }
               }
@@ -92959,6 +93208,10 @@
                                     "scope",
                                     "resets_at"
                                   ]
+                                },
+                                "favorite": {
+                                  "type": "boolean",
+                                  "description": "TAL-1857: the profile starred this `provider_id` and `bare_id` pair."
                                 }
                               },
                               "required": [
@@ -95644,6 +95897,10 @@
                                         "scope",
                                         "resets_at"
                                       ]
+                                    },
+                                    "favorite": {
+                                      "type": "boolean",
+                                      "description": "TAL-1857: the profile starred this `provider_id` and `bare_id` pair."
                                     }
                                   },
                                   "required": [
@@ -95723,6 +95980,36 @@
                             "type": "string"
                           },
                           "additionalProperties": {}
+                        },
+                        "favorites": {
+                          "anyOf": [
+                            {
+                              "type": "array",
+                              "maxItems": 200,
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "provider_id": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 200
+                                  },
+                                  "model": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 500
+                                  }
+                                },
+                                "required": [
+                                  "provider_id",
+                                  "model"
+                                ]
+                              }
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -96430,6 +96717,10 @@
                                         "scope",
                                         "resets_at"
                                       ]
+                                    },
+                                    "favorite": {
+                                      "type": "boolean",
+                                      "description": "TAL-1857: the profile starred this `provider_id` and `bare_id` pair."
                                     }
                                   },
                                   "required": [
@@ -96509,6 +96800,36 @@
                             "type": "string"
                           },
                           "additionalProperties": {}
+                        },
+                        "favorites": {
+                          "anyOf": [
+                            {
+                              "type": "array",
+                              "maxItems": 200,
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "provider_id": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 200
+                                  },
+                                  "model": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 500
+                                  }
+                                },
+                                "required": [
+                                  "provider_id",
+                                  "model"
+                                ]
+                              }
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [

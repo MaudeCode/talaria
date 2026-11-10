@@ -11,7 +11,7 @@ import { InvalidDocument, RevisionConflict, type DocumentBackend } from './sessi
 import { withDocumentQueue } from './sessions/storage/document.js'
 import { resolveDefaultWorkspace, type Env } from './config.js'
 import { normalizeTrustedLinkHosts } from './links.js'
-import { KanbanPinnedBoardsSchema, WebUpdateChannelSchema } from '@maudecode/talaria-web-contracts'
+import { KanbanPinnedBoardsSchema, MODEL_FAVORITES_MAX, ModelFavoritesSchema, WebUpdateChannelSchema, type ModelFavorite } from '@maudecode/talaria-web-contracts'
 
 export type Settings = Record<string, unknown>
 
@@ -247,6 +247,9 @@ const QUOTA_THRESHOLD_RANGES: Record<keyof QuotaThresholds, [number, number]> = 
 /** settings.json key of the per-profile sets; `/api/settings` answers the request profile's set as `provider_quota_thresholds`. */
 export const QUOTA_THRESHOLDS_BY_PROFILE_KEY = 'provider_quota_thresholds_by_profile'
 export const KANBAN_PINS_BY_PROFILE_KEY = 'kanban_pinned_boards_by_profile'
+/** TAL-1857: settings.json key of each profile's model favorites; a profile without an entry has never saved any. */
+export const MODEL_FAVORITES_BY_PROFILE_KEY = 'model_favorites_by_profile'
+const sameFavorite = (a: ModelFavorite, b: ModelFavorite): boolean => a.provider_id === b.provider_id && a.model === b.model
 
 /** `patch`'s in-range integers over `base`; critical never sits below warning (remaining) or under it (burn rate). */
 export function mergeQuotaThresholds(base: QuotaThresholds, patch: unknown): QuotaThresholds {
@@ -320,6 +323,57 @@ export class SettingsStore {
     const stored = settingsByProfile(await this.readRaw(), KANBAN_PINS_BY_PROFILE_KEY)[profile]
     const parsed = KanbanPinnedBoardsSchema.safeParse(stored)
     return parsed.success ? [...new Set(parsed.data)] : []
+  }
+
+  /** TAL-1857: the profile's favorites in starred order, or `null` while it has never saved any. */
+  async modelFavorites(profile: string): Promise<ModelFavorite[] | null> {
+    return this.favoritesIn(await this.readRaw(), profile)
+  }
+
+  /** TAL-1857: star or unstar one model; concurrent writes for other models all persist. Returns the profile's list. */
+  async setModelFavorite(profile: string, favorite: ModelFavorite, on: boolean): Promise<ModelFavorite[]> {
+    return this.updateFavorites(profile, (list) => {
+      const current = list ?? []
+      if (!on) return current.filter((f) => !sameFavorite(f, favorite))
+      if (current.some((f) => sameFavorite(f, favorite))) return current
+      if (current.length >= MODEL_FAVORITES_MAX) throw new RangeError(`A profile keeps at most ${String(MODEL_FAVORITES_MAX)} favorite models`)
+      return [...current, { provider_id: favorite.provider_id, model: favorite.model }]
+    })
+  }
+
+  /** TAL-1857: write `favorites` only while the profile has never saved any; a later import changes nothing. */
+  async importModelFavorites(profile: string, favorites: ModelFavorite[]): Promise<{ imported: boolean; favorites: ModelFavorite[] }> {
+    let imported = false
+    const result = await this.updateFavorites(profile, (list) => {
+      if (list !== null) return list
+      imported = true
+      return favorites.reduce<ModelFavorite[]>((out, f) => (out.some((o) => sameFavorite(o, f)) ? out : [...out, { provider_id: f.provider_id, model: f.model }]), [])
+    })
+    return { imported, favorites: result }
+  }
+
+  private favoritesIn(raw: Settings, profile: string): ModelFavorite[] | null {
+    const byProfile = settingsByProfile(raw, MODEL_FAVORITES_BY_PROFILE_KEY)
+    if (!Object.hasOwn(byProfile, profile)) return null
+    const parsed = ModelFavoritesSchema.safeParse(byProfile[profile])
+    return parsed.success ? parsed.data ?? [] : []
+  }
+
+  /** One profile's favorites, read and rewritten under the settings queue so no other key or profile changes. */
+  private updateFavorites(profile: string, next: (list: ModelFavorite[] | null) => ModelFavorite[]): Promise<ModelFavorite[]> {
+    return withDocumentQueue(this.documents, 'settings', 'settings', async () => {
+      for (let attempt = 0; ; attempt += 1) {
+        const record = await this.documents.get('settings', 'settings')
+        const raw = record?.value && typeof record.value === 'object' && !Array.isArray(record.value) ? { ...(record.value as Settings) } : {}
+        const before = this.favoritesIn(raw, profile)
+        const list = next(before)
+        if (before !== null && list === before) return list
+        raw[MODEL_FAVORITES_BY_PROFILE_KEY] = { ...settingsByProfile(raw, MODEL_FAVORITES_BY_PROFILE_KEY), [profile]: list }
+        try { await this.writeSettings(raw, record?.revision ?? null) }
+        catch (error) { if (error instanceof RevisionConflict && attempt < 1) continue; throw error }
+        return list
+      }
+    })
   }
 
   /** Sync policies use the last loaded server snapshot; request handlers and writes refresh through the async port. */
