@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Support Hermes Agent 0.23.1 and install it by default, retaining compatibility with 0.22.7 and 0.23.0. Agent 0.22.6 is no longer supported.",
+      "highlight": false,
+      "announce": false,
+      "components": ["web"]
+    }
+  ]
+}
