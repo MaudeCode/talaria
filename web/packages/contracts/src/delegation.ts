@@ -29,6 +29,7 @@ const PublicBlock = DelegationBlockSchema.extend({ options: z.array(PublicRoute)
 export const DelegationSettingsSchema = DelegationRegistrySchema.extend({
   can_edit: z.boolean().describe('Only server owners may edit delegation modes and named routes.'),
   model_map: PublicBlock, profile_routes: PublicBlock,
+  route_count: z.number().int().nullable().describe('TAL-2161: the routes the configured mode holds (`model_map` options or `profile_routes` profiles), counted even where a non-owner\'s session lists none; null for a mode without named routes.'),
 })
 export type DelegationSettings = z.infer<typeof DelegationSettingsSchema>
 export type DelegationWrite = z.infer<typeof DelegationWriteSchema>

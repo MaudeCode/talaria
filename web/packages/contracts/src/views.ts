@@ -992,6 +992,8 @@ export const AuxiliaryTaskSchema = z.looseObject({
   base_url: z.string().optional(), api_key_set: z.boolean().optional(),
   /** No override is saved: the task falls back to the main chat model. */
   is_auto: z.boolean(),
+  /** TAL-2161: the slot differs from what Reset All restores: a pinned model, a saved effort, or (for `delegation`) a mode other than `default`. */
+  changed: z.boolean(),
   /** Display of the model the task uses (the main chat model when `is_auto`): catalog label, else the saved model id, and its provider name. */
   value_label: z.string().nullable(), provider_label: z.string().nullable(),
   /** The `/api/models` entry id matching the saved provider/model pair; null for Auto or a model absent from the catalog. */

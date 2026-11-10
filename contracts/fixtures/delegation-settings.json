@@ -51,7 +51,8 @@
       "profiles": [],
       "default": null
     },
-    "can_edit": true
+    "can_edit": true,
+    "route_count": null
   },
   "missing": {
     "supported": true,
@@ -112,7 +113,8 @@
       "profiles": [],
       "default": null
     },
-    "can_edit": true
+    "can_edit": true,
+    "route_count": null
   },
   "older": {
     "supported": false,
@@ -152,7 +154,8 @@
       "profiles": [],
       "default": null
     },
-    "can_edit": true
+    "can_edit": true,
+    "route_count": null
   },
   "readonly": {
     "supported": true,
@@ -193,6 +196,7 @@
       "profiles": [],
       "default": null
     },
-    "can_edit": false
+    "can_edit": false,
+    "route_count": null
   }
 }

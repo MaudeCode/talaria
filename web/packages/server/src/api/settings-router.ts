@@ -72,7 +72,10 @@ const auxiliaryState = async (ctx: RequestContext): Promise<Dict> => {
   ])
   // Native profile identities and lending routes are owner-only configuration.
   const visible = canEdit ? delegation : { ...delegation, profiles: [], model_map: { options: [], default: null }, profile_routes: { profiles: [], default: null } }
-  return { ...stampAuxiliarySelections(auxiliaryModels(config, tiers, slots, reasoning), catalog), delegation: { ...visible, can_edit: canEdit }, unlisted_overrides: unlistedAuxiliaryOverrides(config, slots, reserved) }
+  // TAL-2161: how many routes the configured mode holds, counted for every session though only owners see them listed;
+  // null for a mode without named routes.
+  const routes = delegation.configured === 'model_map' ? delegation.model_map.options : delegation.configured === 'profile_routes' ? delegation.profile_routes.profiles : null
+  return { ...stampAuxiliarySelections(auxiliaryModels(config, tiers, slots, reasoning), catalog, delegation.configured), delegation: { ...visible, can_edit: canEdit, route_count: routes ? routes.length : null }, unlisted_overrides: unlistedAuxiliaryOverrides(config, slots, reserved) }
 }
 const CLEAR_PERSONALITY = new Set(['none', 'default', 'clear'])
 const truthy = (v: string | undefined): boolean => ['1', 'true', 'yes', 'on'].includes((v ?? '').trim().toLowerCase())

@@ -91,14 +91,14 @@ export function useSetAuxiliaryModel() {
   })
 }
 
-/** Backend and whole-block saves share the delegation slot's optimistic owner. */
+/** Backend and whole-block saves share the delegation slot's optimistic owner; `task` patches the delegation row (TAL-2161). */
 export function useSetDelegation() {
   const qc = useQueryClient()
   return useResourceMutation({
     resource: () => auxResource('delegation'),
     exclusive: true,
     queryKey: keys.auxiliaryModels, readKeys: () => [{ queryKey: keys.auxiliaryModels, exact: true }],
-    effect: ({ shown }: { write: DelegationWrite; shown: DelegationSettings }) => ({ value: shown }),
+    effect: ({ shown, task }: { write: DelegationWrite; shown: DelegationSettings; task?: Record<string, unknown> }) => ({ value: shown, ...(task ? { fields: task } : {}) }),
     mutationFn: ({ write }) => api.setDelegation(write),
     onSuccess: (res) => qc.setQueryData(keys.auxiliaryModels, res),
     onError: toastError,

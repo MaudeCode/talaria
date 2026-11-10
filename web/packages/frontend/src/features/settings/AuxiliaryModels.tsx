@@ -25,7 +25,18 @@ type ModelsQuery = ReturnType<typeof useModelsQuery>
 /** How a slot reads once set to Auto, until the server names the model Auto resolves to. */
 const AUTO = { is_auto: true, in_catalog: true, selected_option_id: null, provider_label: '', value_label: '' }
 /** Reset All's overlay: every slot shows Auto and its default effort until the server's state replaces it. */
-const RESET = { ...AUTO, reasoning_reset: true }
+const RESET = { ...AUTO, changed: false, reasoning_reset: true }
+
+/**
+ * The slot's `changed` after the user's own write to one of its parts, shown until the server's field replaces it
+ * (TAL-2161). The model and effort editors of the delegation slot are reachable only in its `default` mode.
+ */
+const changedAfter = (task: AuxTask, write: { pinned?: boolean; effort?: boolean; mode?: boolean }): boolean =>
+  (write.pinned ?? !task.is_auto) || (write.effort ?? !task.reasoning.inherited) || (write.mode ?? false)
+
+/** The delegation `route_count` once `state` holds its mode and routes, shown until the server's field replaces it (TAL-2161). */
+const routeCount = (state: DelegationSettings): number | null =>
+  state.configured === 'model_map' ? state.model_map.options?.length ?? 0 : state.configured === 'profile_routes' ? state.profile_routes.profiles?.length ?? 0 : null
 
 /**
  * Settings > Auxiliary Models (TAL-1285): the server-owned task slots (TAL-388), each edited inline. The task list and
@@ -42,9 +53,8 @@ export function AuxiliaryModelsSection() {
   const effects = useResourceEffects<DelegationSettings>()
   const tasks = withEffects(aux.data?.tasks ?? [], (t) => auxResource(t.task), effects).map((t) => 'reasoning_reset' in t ? { ...t, reasoning: { ...t.reasoning, saved: null, inherited: true } } : t)
   const delegation = effects[auxResource('delegation')]?.value ?? aux.data?.delegation
-  // Counted from the shown slots, so a pick or Reset All moves the count at once (TAL-2161 moves it to a server `changed` field).
-  const changed = (t: AuxTask) => !t.is_auto || !t.reasoning.inherited || (t.task === 'delegation' && !!delegation && delegation.configured !== 'default')
-  const count = tasks.filter(changed).length
+  // The server's `changed`, with each pending write's overlay, so a pick or Reset All moves the count at once (TAL-2161).
+  const count = tasks.filter((t) => t.changed).length
   // Reset All also clears a removed plugin's leftover override, which no listed task shows; a pending reset hides it at once.
   const resettable = count > 0 || (aux.data?.unlisted_overrides === true && !tasks.some((t) => 'reasoning_reset' in t))
   const title = m.settings_group_task_models()
@@ -70,12 +80,12 @@ export function AuxiliaryModelsSection() {
                   <tr title={t.description} data-task={t.task} className="cursor-pointer border-t border-border-subtle hover:bg-hover" onClick={toggle}>
                     <td className="py-0">
                       <button type="button" aria-expanded={open} aria-controls={`aux-editor-${t.task}`} className="flex min-h-10 w-full min-w-0 items-center gap-2 text-left text-text outline-none focus-visible:outline-2 focus-visible:outline-accent">
-                        <Dot state={changed(t) ? 'changed' : 'idle'} />
+                        <Dot state={t.changed ? 'changed' : 'idle'} />
                         <span className="truncate">{t.label}</span>
                       </button>
                     </td>
                     <td className="py-0 pl-3 text-right">
-                      {t.task === 'delegation' && delegation ? <DelegationValue state={delegation} /> : <TaskValue task={t} changed={changed(t)} />}
+                      {t.task === 'delegation' && delegation ? <DelegationValue state={delegation} /> : <TaskValue task={t} />}
                     </td>
                   </tr>
                   {open && (
@@ -102,7 +112,7 @@ export function AuxiliaryModelsSection() {
         confirmLabel={m.settings_btn_reset_aux_models()}
         cancelLabel={m.cancel()}
         danger
-        onConfirm={() => reset.mutate({ task: '__reset__', model: '', tasks: tasks.map((t) => t.task), shown: RESET, delegation: delegation ? { ...delegation, configured: 'default', fixed_model_active: true } : undefined })}
+        onConfirm={() => reset.mutate({ task: '__reset__', model: '', tasks: tasks.map((t) => t.task), shown: RESET, delegation: delegation ? { ...delegation, configured: 'default', fixed_model_active: true, route_count: null } : undefined })}
       />
     </SettingsGroup>
   )
@@ -112,21 +122,20 @@ export function AuxiliaryModelsSection() {
  * The Model cell: a changed slot's model in the text colour, else "Auto · model" muted; then a saved effort. The provider
  * moves to `title`; the server flags a pinned model missing from the catalog.
  */
-function TaskValue({ task, changed }: { task: AuxTask; changed: boolean }) {
+function TaskValue({ task }: { task: AuxTask }) {
   const effort = task.reasoning.inherited || task.reasoning.saved === null ? null : reasoningLevelLabel(task.reasoning.saved)
   const value = [task.is_auto ? m.auxiliary_models_auto() : null, task.value_label, effort].filter(Boolean).join(' · ')
   return (
-    <span className={cn('flex min-w-0 items-center justify-end gap-2', changed ? 'text-text' : 'text-muted')} title={task.provider_label || undefined}>
+    <span className={cn('flex min-w-0 items-center justify-end gap-2', task.changed ? 'text-text' : 'text-muted')} title={task.provider_label || undefined}>
       <span className="truncate">{value}</span>
       {!task.in_catalog && <span className="shrink-0 text-xs text-muted">{m.auxiliary_models_not_in_catalog()}</span>}
     </span>
   )
 }
 
-/** The Delegation row's Model cell: how many routes its route mode holds, else the mode's name ("Default"); TAL-2161 moves it to the server. */
+/** The Delegation row's Model cell: the server's count of the route mode's routes, else the mode's name ("Default"). */
 function DelegationValue({ state }: { state: DelegationSettings }) {
-  const routes = state.configured === 'model_map' ? state.model_map.options ?? [] : state.configured === 'profile_routes' ? state.profile_routes.profiles ?? [] : null
-  const label = routes ? m.delegation_routes_count({ count: routes.length }) : state.backends.find((b) => b.name === state.configured)?.label ?? state.configured
+  const label = state.route_count !== null ? m.delegation_routes_count({ count: state.route_count }) : state.backends.find((b) => b.name === state.configured)?.label ?? state.configured
   return <span className="block truncate text-muted">{label}</span>
 }
 
@@ -138,7 +147,7 @@ function ReasoningControl({ task }: { task: AuxTask }) {
   return (
     <SettingRow label={m.composer_control_reasoning()}>
       <ReasoningChip value={reasoning.saved} levels={reasoning.options} defaultLabel={reasoning.default_source === 'parent' ? m.delegation_inherit() : m.reasoning_default()}
-        onChange={(level) => save.mutate({ task: task.task, reasoning_effort: level, shown: { reasoning: { ...reasoning, saved: level, inherited: level === null } } })} />
+        onChange={(level) => save.mutate({ task: task.task, reasoning_effort: level, shown: { changed: changedAfter(task, { effort: level !== null }), reasoning: { ...reasoning, saved: level, inherited: level === null } } })} />
     </SettingRow>
   )
 }
@@ -162,7 +171,7 @@ function AuxiliaryModelPicker({ task, models, onDone, onPick }: { task: AuxTask;
   // The list shows the pick at once with the labels the user chose from; the server's state replaces them.
   const pick = (model: string, provider?: string, labels: { provider_label?: string; value_label?: string } = {}): void => {
     if (onPick) { onPick(model, provider ?? ''); return }
-    save.mutate({ task: task.task, model, provider: provider ?? null, shown: provider === 'auto' ? AUTO : { is_auto: false, in_catalog: true, selected_option_id: model, provider_label: labels.provider_label ?? '', value_label: labels.value_label ?? model } })
+    save.mutate({ task: task.task, model, provider: provider ?? null, shown: provider === 'auto' ? { ...AUTO, changed: changedAfter(task, { pinned: false }) } : { is_auto: false, changed: true, in_catalog: true, selected_option_id: model, provider_label: labels.provider_label ?? '', value_label: labels.value_label ?? model } })
     onDone?.()
   }
   const q = query.trim().toLowerCase()
@@ -227,7 +236,12 @@ function DelegationEditor({ task, state, models, onDone }: { task: AuxTask; stat
   const writeRows = (next: DelegationRoute[], defaultName: string | null) => {
     if (section !== 'model_map' && section !== 'profile_routes') return
     const nextBlock = { [section === 'model_map' ? 'options' : 'profiles']: next, default: defaultName }
-    save.mutate({ write: { action: 'routes', backend: section, block: nextBlock }, shown: { ...state, [section]: nextBlock } })
+    const shown = { ...state, [section]: nextBlock }
+    save.mutate({ write: { action: 'routes', backend: section, block: nextBlock }, shown: { ...shown, route_count: routeCount(shown) } })
+  }
+  const selectMode = (backend: string) => {
+    const shown = { ...state, configured: backend }
+    save.mutate({ write: { action: 'backend', backend }, shown: { ...shown, route_count: routeCount(shown) }, task: { changed: changedAfter(task, { mode: backend !== 'default' }) } })
   }
   if (section === 'fixed') return <AuxiliaryModelPicker task={task} models={models} onDone={() => setSection(null)} />
   if (editing && section) return <DelegationRouteEditor key={original ?? 'new'} task={task} models={models} route={editing} profiles={section === 'profile_routes' ? state.profiles : null} onCancel={() => setEditing(null)} onSave={(route) => {
@@ -260,12 +274,12 @@ function DelegationEditor({ task, state, models, onDone }: { task: AuxTask; stat
       <div><IconButton variant="default" label={m.delegation_add_route()} onClick={() => { setOriginal(null); setEditing({ name: '', description: '' }) }}><Plus aria-hidden="true" /></IconButton></div>
     </SettingsGroup> : <>
       <SettingRow label={m.delegation_mode()} hint={state.can_edit ? undefined : m.delegation_owner_required()} htmlFor="delegationMode">
-        <Select id="delegationMode" value={state.configured} disabled={!state.supported || !state.can_edit} onValueChange={(backend) => save.mutate({ write: { action: 'backend', backend }, shown: { ...state, configured: backend } })}>
+        <Select id="delegationMode" value={state.configured} disabled={!state.supported || !state.can_edit} onValueChange={selectMode}>
           {state.backends.map((backend) => <option key={backend.name} value={backend.name} disabled={!backend.available}>{backend.label}</option>)}
         </Select>
       </SettingRow>
       {state.blocked_reason && <p role="status" className="break-words text-sm text-muted">{state.blocked_reason}</p>}
-      {state.supported && state.can_edit && <div><IconButton variant="default" label={m.delegation_restore()} onClick={() => save.mutate({ write: { action: 'backend', backend: 'default' }, shown: { ...state, configured: 'default' } })}><RotateCcw aria-hidden="true" /></IconButton></div>}
+      {state.supported && state.can_edit && <div><IconButton variant="default" label={m.delegation_restore()} onClick={() => selectMode('default')}><RotateCcw aria-hidden="true" /></IconButton></div>}
       {state.fixed_model_active ? <>
         <SettingLink label={m.delegation_fixed()} onClick={() => setSection('fixed')} />
         <ReasoningControl task={task} />

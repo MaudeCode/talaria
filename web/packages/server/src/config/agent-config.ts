@@ -221,7 +221,7 @@ export class AgentConfig {
     return listed ? { slots: listed.tasks, reserved: listed.reserved } : { slots: AUXILIARY_TASK_CATALOG.map((slot) => ({ ...slot, inherit_from: null, reasoning_effort: null, effective: null, takes_reasoning: null })), reserved: null }
   }
 
-  async delegation(profileHome: string, config: Config): Promise<Omit<DelegationSettings, 'can_edit'>> {
+  async delegation(profileHome: string, config: Config): Promise<Omit<DelegationSettings, 'can_edit' | 'route_count'>> {
     const section = dict(config.delegation)
     const configured = str(section.backend).trim().toLowerCase() || 'default'
     const sidecar = this.deps.sidecar()

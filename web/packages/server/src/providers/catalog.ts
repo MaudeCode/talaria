@@ -110,8 +110,10 @@ export interface ModelsCatalog { availability?: CatalogAvailability; active_prov
 /**
  * TAL-388: stamp each auxiliary slot with its display value and the catalog entry whose provider/model pair equals the
  * saved one, so clients tick exactly one option (a bare id listed under two providers matches only its own provider).
+ * TAL-2161: `changed` marks a slot Reset All would change: a pinned model, a saved effort, or a delegation mode other than
+ * `default` (`delegationMode`) on the `delegation` slot.
  */
-export function stampAuxiliarySelections(aux: { tasks: Dict[]; main: Dict }, catalog: ModelsCatalog): { tasks: Dict[]; main: Dict } {
+export function stampAuxiliarySelections(aux: { tasks: Dict[]; main: Dict }, catalog: ModelsCatalog, delegationMode = 'default'): { tasks: Dict[]; main: Dict } {
   const options = catalog.groups.flatMap((g) => g.models.map((m) => {
     const parsed = parseProviderQualifiedModel(m.id)
     return { id: m.id, label: m.label, group: g.provider, provider: canonicaliseProviderId(parsed?.[1] ?? g.provider_id), bare: parsed?.[0] ?? m.id }
@@ -133,10 +135,11 @@ export function stampAuxiliarySelections(aux: { tasks: Dict[]; main: Dict }, cat
     if (isAuto(t)) {
       // TAL-800: an Auto task that inherits another slot runs on that slot's route, the main model only when it is Auto too.
       const base = isDict(effective) && !isAuto(effective) ? describe(effective.provider, effective.model) : main
-      return { ...t, is_auto: true, value_label: base.value_label, provider_label: base.provider_label, selected_option_id: null, in_catalog: true }
+      const changed = (isDict(t.reasoning) && t.reasoning.inherited === false) || (t.task === 'delegation' && delegationMode !== 'default')
+      return { ...t, is_auto: true, changed, value_label: base.value_label, provider_label: base.provider_label, selected_option_id: null, in_catalog: true }
     }
     const pinned = describe(t.provider, t.model)
-    return { ...t, is_auto: false, value_label: pinned.value_label, provider_label: pinned.provider_label, selected_option_id: pinned.option_id, in_catalog: pinned.option_id !== null }
+    return { ...t, is_auto: false, changed: true, value_label: pinned.value_label, provider_label: pinned.provider_label, selected_option_id: pinned.option_id, in_catalog: pinned.option_id !== null }
   })
   return { ...aux, tasks }
 }

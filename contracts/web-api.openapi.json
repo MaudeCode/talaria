@@ -90472,6 +90472,19 @@
                           "required": [
                             "default"
                           ]
+                        },
+                        "route_count": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-2161: the routes the configured mode holds (`model_map` options or `profile_routes` profiles) as shown to this session; null for a mode without named routes."
                         }
                       },
                       "required": [
@@ -90485,7 +90498,8 @@
                         "profiles",
                         "can_edit",
                         "model_map",
-                        "profile_routes"
+                        "profile_routes",
+                        "route_count"
                       ]
                     },
                     "main": {
@@ -90573,6 +90587,9 @@
                             "type": "boolean"
                           },
                           "is_auto": {
+                            "type": "boolean"
+                          },
+                          "changed": {
                             "type": "boolean"
                           },
                           "value_label": {
@@ -90707,6 +90724,7 @@
                           "provider",
                           "model",
                           "is_auto",
+                          "changed",
                           "value_label",
                           "provider_label",
                           "selected_option_id",
@@ -92641,6 +92659,19 @@
                           "required": [
                             "default"
                           ]
+                        },
+                        "route_count": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-2161: the routes the configured mode holds (`model_map` options or `profile_routes` profiles) as shown to this session; null for a mode without named routes."
                         }
                       },
                       "required": [
@@ -92654,7 +92685,8 @@
                         "profiles",
                         "can_edit",
                         "model_map",
-                        "profile_routes"
+                        "profile_routes",
+                        "route_count"
                       ]
                     },
                     "main": {
@@ -92742,6 +92774,9 @@
                             "type": "boolean"
                           },
                           "is_auto": {
+                            "type": "boolean"
+                          },
+                          "changed": {
                             "type": "boolean"
                           },
                           "value_label": {
@@ -92876,6 +92911,7 @@
                           "provider",
                           "model",
                           "is_auto",
+                          "changed",
                           "value_label",
                           "provider_label",
                           "selected_option_id",
@@ -93324,6 +93360,19 @@
                               "required": [
                                 "default"
                               ]
+                            },
+                            "route_count": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "TAL-2161: the routes the configured mode holds (`model_map` options or `profile_routes` profiles) as shown to this session; null for a mode without named routes."
                             }
                           },
                           "required": [
@@ -93337,7 +93386,8 @@
                             "profiles",
                             "can_edit",
                             "model_map",
-                            "profile_routes"
+                            "profile_routes",
+                            "route_count"
                           ]
                         },
                         "main": {
@@ -93425,6 +93475,9 @@
                                 "type": "boolean"
                               },
                               "is_auto": {
+                                "type": "boolean"
+                              },
+                              "changed": {
                                 "type": "boolean"
                               },
                               "value_label": {
@@ -93559,6 +93612,7 @@
                               "provider",
                               "model",
                               "is_auto",
+                              "changed",
                               "value_label",
                               "provider_label",
                               "selected_option_id",
