@@ -55,6 +55,9 @@ async function twoProfiles(page: Page) {
   }
 }
 
+/** The composer strip's profile chip; other strip chips can name a profile default too. */
+const stripProfile = (page: Page, name: string) => page.locator('.composer-strip').getByRole('button', { name: `Switch to this profile: ${name}` })
+
 async function openSidebar(page: Page) {
   if (await page.locator('#btnHamburger').isVisible()) await page.locator('#btnHamburger').click()
 }
@@ -77,7 +80,7 @@ test('switching from the composer strip keeps a new chat and its draft, and show
   await expect(mode).toContainText('Safe mode')
   await page.keyboard.press('Escape')
   await msg.click()
-  await page.locator('.composer-strip').getByRole('button', { name: /default/ }).click()
+  await stripProfile(page, 'default').click()
   await page.getByRole('menuitemradio', { name: /research/ }).click()
   await expect(page.getByText('Switched to profile: research')).toBeVisible()
   await profiles.expectInPlace('research')
@@ -97,7 +100,7 @@ test('switching from an open chat leaves the previous profile\'s chat for a new 
   await expect(page.getByText('Hello from default-chat')).toBeVisible()
   await profiles.arm()
   await page.locator('#msg').click()
-  await page.locator('.composer-strip').getByRole('button', { name: /default/ }).click()
+  await stripProfile(page, 'default').click()
   await page.getByRole('menuitemradio', { name: /research/ }).click()
   await expect(page).toHaveURL((url) => url.pathname === '/')
   await profiles.expectInPlace('research')
@@ -164,10 +167,10 @@ test('a refused switch shows the error and keeps the previous profile', async ({
   await page.goto('/')
   await profiles.arm()
   await page.locator('#msg').click()
-  await page.locator('.composer-strip').getByRole('button', { name: /default/ }).click()
+  await stripProfile(page, 'default').click()
   await page.getByRole('menuitemradio', { name: /research/ }).click()
   await expect(page.getByText('A run is still going in this profile')).toBeVisible()
-  await expect(page.locator('.composer-strip').getByRole('button', { name: /default/ })).toBeVisible()
+  await expect(stripProfile(page, 'default')).toBeVisible()
   await openSidebar(page)
   await expect(page.getByText("The default profile's chat")).toBeVisible()
   expect(await page.evaluate(() => (window as { tal2099?: boolean }).tal2099)).toBe(true)

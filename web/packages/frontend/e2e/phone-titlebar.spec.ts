@@ -51,7 +51,7 @@ test.describe('phone titlebar', () => {
       await page.goto(`${server.base}/`)
       await expect(page.locator('#appTitlebarTitle')).toBeVisible()
       await page.locator('#msg').click()
-      await expect(page.locator('.composer-strip').getByRole('button', { name: /default/ })).toBeVisible()
+      await expect(page.locator('.composer-strip').getByRole('button', { name: 'Switch to this profile: default' })).toBeVisible()
       await expect(page.locator('.app-titlebar-left .composer-chip')).toHaveCount(0)
       await expect(page.getByTitle('Switch to this profile').filter({ visible: true })).toHaveCount(1)
       await page.screenshot({ path: info.outputPath('default-setting.png') })
