@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The model picker now lists every model a provider offers, and search finds all of them, instead of stopping at 15 for providers with long lists.",
+      "highlight": false,
+      "components": [
+        "web",
+        "app"
+      ]
+    }
+  ]
+}

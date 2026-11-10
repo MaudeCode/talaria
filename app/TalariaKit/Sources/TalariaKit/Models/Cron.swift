@@ -750,7 +750,7 @@ public struct CronJobEditorDraft: Equatable, Sendable {
     public func modelSelection(in groups: [ModelCatalogGroup]) -> ModelCatalogOption? {
         guard let modelID = trimmedModel else { return nil }
         return groups
-            .flatMap(\.slashAutocompleteModels)
+            .flatMap(\.models)
             .firstSelected(optionID: modelOptionID, modelID: modelID, providerID: trimmedProvider)
             ?? ModelCatalogOption(id: modelID, displayName: modelID, providerID: trimmedProvider)
     }

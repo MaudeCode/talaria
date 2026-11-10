@@ -938,7 +938,7 @@ public final class ChatViewModel {
     /// entry id (TAL-301) holds only the server's bare pair, which the stamped
     /// entry carries as `bareID`/`providerID`.
     private func draftModelOption(_ settings: ChatDraftSettings, modelID: String) -> ModelCatalogOption? {
-        let options = modelCatalogGroups.flatMap(\.slashAutocompleteModels)
+        let options = modelCatalogGroups.flatMap(\.models)
         guard settings.modelOptionID == nil else {
             return options.firstSelected(optionID: settings.modelOptionID, modelID: modelID, providerID: settings.modelProviderID)
         }
@@ -4931,7 +4931,7 @@ public final class ChatViewModel {
 
     private func modelOption(matching query: String) -> ModelCatalogOption? {
         let normalizedQuery = query.lowercased()
-        let options = modelCatalogGroups.flatMap(\.slashAutocompleteModels)
+        let options = modelCatalogGroups.flatMap(\.models)
 
         if let exact = options.first(where: { $0.id.lowercased() == normalizedQuery }) {
             return exact

@@ -10,7 +10,7 @@ export type ModelEntry = Models['groups'][number]['models'][number]
 export function catalogEntryById(catalog: Models | undefined, id: string | null | undefined): ModelEntry | undefined {
   if (!id) return undefined
   for (const g of catalog?.groups ?? []) {
-    const hit = [...g.models, ...(g.extra_models ?? [])].find((e) => e.id === id)
+    const hit = g.models.find((e) => e.id === id)
     if (hit) return hit
   }
   return undefined
@@ -50,8 +50,8 @@ export function ModelOptionContent({ entry }: { entry: ModelEntry }) {
 }
 
 /** Join the server's section membership to its rows; search only filters this display list. */
-export function catalogModelSections(group: Models['groups'][number], query = '', includeExtras = false) {
-  const rows = [...group.models, ...(includeExtras ? group.extra_models ?? [] : [])]
+export function catalogModelSections(group: Models['groups'][number], query = '') {
+  const rows = group.models
   const q = query.trim().toLowerCase()
   const matches = (entry: ModelEntry) => !q || `${entry.label ?? ''} ${entry.id} ${group.provider}`.toLowerCase().includes(q)
   if (!group.sections) return [{ label: '', models: rows.filter(matches) }]

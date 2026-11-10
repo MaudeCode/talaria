@@ -67,11 +67,11 @@ public final class AuxiliaryModelsViewModel {
         isLoadingCatalog = false
     }
 
-    /// Catalog groups whose models (including overflow rows) match the search text.
+    /// Catalog groups whose models match the search text.
     public func pickerGroups(matching query: String) -> [ModelCatalogGroup] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return catalogGroups.compactMap { group in
-            let rows = (group.models + group.extraModels).filter { model in
+            let rows = group.models.filter { model in
                 needle.isEmpty
                     || model.displayName.lowercased().contains(needle)
                     || model.id.lowercased().contains(needle)

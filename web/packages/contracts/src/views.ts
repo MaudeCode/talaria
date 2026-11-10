@@ -824,7 +824,7 @@ export type CatalogAvailability = z.infer<typeof CatalogAvailabilitySchema>
 export const ModelGroupSchema = z.looseObject({
   plan_usage: PlanUsageSchema.nullable().optional(), plan_stale: z.boolean().optional(), sections: ModelSectionsSchema.optional(),
   availability: CatalogAvailabilitySchema.optional(),
-  provider: z.string(), provider_id: z.string().optional(), models: z.array(ModelEntrySchema), extra_models: z.array(ModelEntrySchema).optional(),
+  provider: z.string(), provider_id: z.string().optional(), models: z.array(ModelEntrySchema),
   limit: ModelGroupLimitSchema.optional(), quota_level: QuotaLevelSchema.optional(),
 })
 export const ModelsSchema = z.looseObject({ availability: CatalogAvailabilitySchema.optional(), active_provider: NullableString.optional(), default_model: z.string().optional(), default_provider_id: NullableString.optional(), default_bare_id: z.string().optional(), default_option_id: NullableString.optional(), groups: z.array(ModelGroupSchema), aliases: z.record(z.string(), Json).optional(), configured_model_badges: z.record(z.string(), Json).optional() })

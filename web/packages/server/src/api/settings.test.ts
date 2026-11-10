@@ -2379,7 +2379,7 @@ describe('Agent speed tiers (TAL-788)', () => {
     expect((await post(server, '/api/default-model', { ...selection, advanced: { service_tier: 'default' } })).status).toBe(200)
     expect(saved.get(server.state)?.model).not.toHaveProperty('service_tier')
   })
-  it('stamps catalog, overflow, and live entries with the resolved route tiers', async () => {
+  it('stamps catalog and live entries with the resolved route tiers', async () => {
     const ids = ['gpt-6-astra', ...Array.from({ length: 29 }, (_, i) => `gpt-6-sol-${String(i)}`)]
     fake.respond('providers.model_ids', (params) => ({ provider: params.provider, model_ids: params.provider === 'openai' ? ids : [] }))
     saved.set(server.state, { model: { default: 'gpt-6-astra', provider: 'openai' }, providers: { openai: { api_key: 'synthetic-key' } } })
@@ -2387,8 +2387,7 @@ describe('Agent speed tiers (TAL-788)', () => {
     server.deps.catalog.invalidate()
     const catalog = await server.deps.catalog.models(server.state)
     const group = catalog.groups.find((g) => g.provider_id === 'openai')!
-    expect(group.extra_models?.length).toBeGreaterThan(0)
-    for (const entry of [...group.models, ...group.extra_models!]) {
+    for (const entry of group.models) {
       expect(entry.supported_speed_tiers).toContainEqual({ id: 'priority', service_tier: 'priority' })
     }
     expect(group.models.find((e) => e.bare_id === 'gpt-6-astra')?.supported_speed_tiers).toContainEqual({ id: 'ultrafast', service_tier: 'ultrafast' })
