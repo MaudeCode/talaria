@@ -34,10 +34,11 @@ function AppLayout() {
   useEffect(() => startPresence(), [])
   // Signed-in chat Markdown asks the server whether a link skips the warning.
   // Extension TTS engines stay registered on every page, not only while their panel is open.
-  // TAL-2099: a profile switch remounts the page, so no editor or form keeps the previous profile's state. A new chat
-  // stays mounted: its unsent draft carries over to the new profile.
+  // TAL-2099: a profile switch remounts the page, so no editor or form keeps the previous profile's state. The chat
+  // routes share one key: a switch moves an open chat to `/`, `ChatPage` remounts per session, and a new chat's draft
+  // carries over to the new profile and on into the session its first send creates.
   const profile = useBootstrap().profile?.name ?? ''
   // The rendered page, not a pending navigation: keying on the target would remount the page being left.
-  const newChat = useRouterState({ select: (state) => (state.resolvedLocation ?? state.location).pathname === '/' })
-  return <LinkCheckContext value={checkExternalLink}><AppShell><Outlet key={newChat ? 'new-chat' : `profile:${profile}`} /></AppShell><ExtensionTtsHosts /></LinkCheckContext>
+  const chat = useRouterState({ select: (state) => /^\/(session\/|$)/.test((state.resolvedLocation ?? state.location).pathname) })
+  return <LinkCheckContext value={checkExternalLink}><AppShell><Outlet key={chat ? 'chat' : `profile:${profile}`} /></AppShell><ExtensionTtsHosts /></LinkCheckContext>
 }
