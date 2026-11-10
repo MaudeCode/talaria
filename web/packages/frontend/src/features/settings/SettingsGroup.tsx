@@ -1,6 +1,9 @@
 import type { ReactNode } from 'react'
+import { Link, useLocation, useNavigate, useRouter, type LinkProps } from '@tanstack/react-router'
 import { ArrowUpRight, ChevronRight, type LucideIcon } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
+import type { SettingsSection } from '../../contracts/url'
+import { BackButton } from '../../ui/Button'
 import { FieldRow, HelpTip, RowIcon } from '../../ui/Field'
 import { Figure, SectionHeader, StatLabel, type FigureTone } from '../../ui/List'
 import { Monogram } from '../../ui/Monogram'
@@ -55,18 +58,36 @@ export function SettingHeadline({ monogram, title, detail, action }: { monogram:
   )
 }
 
+declare module '@tanstack/react-router' {
+  interface HistoryState {
+    /** TAL-2135, TAL-2138: this page was opened from a row on its parent page, so Back returns there where it was scrolled. */
+    settingsParent?: true
+  }
+}
+
 /**
- * TAL-2081: a row that is itself the control: an external page in a new tab (`href`, ending in §12's Open symbol) or a dialog
- * or page (`onClick`, a chevron). `detail` (TAL-2136) is muted text before the chevron, such as the value the page holds.
+ * TAL-2081: a row that is itself the control: an external page in a new tab (`href`, ending in §12's Open symbol), a dialog
+ * (`onClick`, a chevron), or a Settings sub-page (`link`, a chevron; TAL-2138). `detail` (TAL-2136) is muted text before the symbol, such as the value the page holds.
  */
-export function SettingLink({ label, icon: Icon, detail, ...target }: { label: string; icon?: LucideIcon; detail?: string } & ({ href: string } | { onClick: () => void })) {
+export function SettingLink({ label, icon: Icon, detail, ...target }: { label: string; icon?: LucideIcon; detail?: string } & ({ href: string } | { onClick: () => void } | { link: LinkProps })) {
   const className = 'flex min-h-11 w-full items-center justify-between gap-3 py-2 text-left text-sm text-text transition-colors hover:text-accent-text focus-visible:outline-2 focus-visible:outline-accent'
   const icon = { size: 14, 'aria-hidden': true, className: 'shrink-0 text-muted' } as const
   const text = Icon ? <span className="flex min-w-0 items-center gap-2.5"><RowIcon icon={Icon} />{label}</span> : label
   const end = (symbol: ReactNode) => detail ? <span className="flex min-w-0 items-center gap-3"><span className="truncate text-xs text-muted">{detail}</span>{symbol}</span> : symbol
-  return 'href' in target
-    ? <a className={className} href={target.href} target="_blank" rel="noopener noreferrer">{text}{end(<ArrowUpRight {...icon} />)}</a>
-    : <button type="button" className={className} onClick={target.onClick}>{text}{end(<ChevronRight {...icon} />)}</button>
+  if ('href' in target) return <a className={className} href={target.href} target="_blank" rel="noopener noreferrer">{text}{end(<ArrowUpRight {...icon} />)}</a>
+  if ('link' in target) return <Link {...target.link} state={{ settingsParent: true }} className={className}>{text}{end(<ChevronRight {...icon} />)}</Link>
+  return <button type="button" className={className} onClick={target.onClick}>{text}{end(<ChevronRight {...icon} />)}</button>
+}
+
+/**
+ * TAL-2135, TAL-2138: a sub-page's link back to its parent section. Opened from the parent's row, it goes back in history,
+ * so the parent returns where it was scrolled; opened directly, it navigates to the parent.
+ */
+export function SettingsBack({ label, section }: { label: string; section: SettingsSection }) {
+  const navigate = useNavigate()
+  const router = useRouter()
+  const fromParent = useLocation({ select: (l) => l.state.settingsParent === true })
+  return <div><BackButton label={label} onClick={() => { if (fromParent) router.history.back(); else void navigate({ to: '/settings/$section', params: { section } }) }} /></div>
 }
 
 export interface SettingsStat { id: string; label: string; value: string; mode?: string | undefined; title?: string | undefined; tone?: FigureTone | undefined }

@@ -4,14 +4,14 @@ import { useDebounced } from '../../lib/useDebounced'
 import { sameRowProps } from '../../lib/sameRowProps'
 import type { z } from 'zod'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useLocation, useNavigate, useRouter } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { Bell, Check, ChevronRight, Download, KeyRound, LogIn, RefreshCw, Wrench, type LucideIcon } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { post } from '../../api/client'
 import { OkSchema, type ProviderSchema, type QuotaLevel } from '../../contracts'
-import { BackButton, IconButton } from '../../ui/Button'
+import { IconButton } from '../../ui/Button'
 import { RowContextMenu, type RowAction } from '../../ui/Menu'
 import { FieldRow, TextInput } from '../../ui/Field'
 import { EmptyState, ErrorState, LoadingState, formatUsd } from '../../ui/States'
@@ -96,22 +96,6 @@ export function QuotaSourceStatus({ source }: { source: QuotaSource }) {
   return <div className="flex min-w-0"><StatusDot state={source.status === 'stale' ? 'warning' : 'error'} title={text}>{text}</StatusDot></div>
 }
 
-declare module '@tanstack/react-router' {
-  interface HistoryState {
-    /** TAL-2135: this page (a provider's, or Quota alerts) was opened from the Providers list, so Back returns to it where it was scrolled. */
-    providersList?: true
-  }
-}
-
-/** TAL-2135: a page under Providers goes back to the list: through history when the list opened it, else to the list. */
-export function ProvidersBack() {
-  const navigate = useNavigate()
-  const router = useRouter()
-  const fromList = useLocation({ select: (l) => l.state.providersList === true })
-  const toList = () => { if (fromList) router.history.back(); else void navigate({ to: '/settings/$section', params: { section: 'providers' } }) }
-  return <div><BackButton label={m.settings_section_providers_title()} onClick={toList} /></div>
-}
-
 /** TAL-2100, TAL-2135, TAL-2136: Settings › Providers: the server's figures, the configured providers as blocks that open their own page and the Quota alerts link, then the providers to add. */
 export function ProvidersPage() {
   const { quotas, refresh } = useProviderQuotas()
@@ -151,7 +135,7 @@ export function ProvidersSection() {
   // TAL-2136: a key set from Add a provider opens that provider's own page once the server confirms it. It reads only the
   // stable `mutate`, so typing in the filter leaves the memoized rows alone.
   const mutateKey = saveKey.mutate
-  const onSaveKey = (value: { id: string; key: string | null }) => mutateKey(value, { onSuccess: () => { if (value.key) void navigate({ to: '/settings/providers/$providerId', params: { providerId: value.id }, state: { providersList: true } }) } })
+  const onSaveKey = (value: { id: string; key: string | null }) => mutateKey(value, { onSuccess: () => { if (value.key) void navigate({ to: '/settings/providers/$providerId', params: { providerId: value.id }, state: { settingsParent: true } }) } })
   if (providers.isPending || all.isPending) return <LoadingState />
   if (providers.isError && !providers.data) return <ErrorState error={providers.error} onRetry={() => { void providers.refetch() }} />
   const quotaNotice = quotas.data?.availability?.unavailable_reason ?? providers.data.availability?.unavailable_reason
@@ -175,7 +159,7 @@ export function ProvidersSection() {
                 onRefresh={refreshModels.mutate} refreshBusy={refreshModels.isPending} />
             })}
             {thresholds && <Row className="py-1"><SettingLink label={m.providers_quota_alerts()} icon={Bell} detail={m.providers_quota_alerts_warn_at({ percent: formatPercent(locale, thresholds.warning_remaining_percent) })}
-              onClick={() => { void navigate({ to: '/settings/providers/quota-alerts', state: { providersList: true } }) }} /></Row>}
+              link={{ to: '/settings/providers/quota-alerts' }} /></Row>}
           </RowList>
         </SettingsGroup>
       )}
@@ -234,7 +218,7 @@ function ConfiguredProvider({ p, catalogUnavailable, sources, cost, spend, onRef
         <Monogram name={name} />
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-baseline gap-2">
-            <Link to="/settings/providers/$providerId" params={{ providerId: p.id }} state={{ providersList: true }} className="truncate text-sm font-semibold text-text outline-none after:absolute after:inset-0 after:rounded-md focus-visible:after:outline-2 focus-visible:after:outline-accent">{name}</Link>
+            <Link to="/settings/providers/$providerId" params={{ providerId: p.id }} state={{ settingsParent: true }} className="truncate text-sm font-semibold text-text outline-none after:absolute after:inset-0 after:rounded-md focus-visible:after:outline-2 focus-visible:after:outline-accent">{name}</Link>
             {p.is_active && <Mark>{m.providers_default()}</Mark>}
           </div>
           <div className="flex min-w-0"><ProviderStatus p={p} catalogUnavailable={catalogUnavailable} extra={quotaSourcePlan(source)} /></div>

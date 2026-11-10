@@ -349,7 +349,7 @@ describe('ProvidersSection', () => {
     vi.mocked(api.fetchSettings).mockResolvedValue({ provider_quota_thresholds: DEFAULTS })
     vi.mocked(api.saveSettings).mockResolvedValue({ provider_quota_thresholds: { ...DEFAULTS, pace_minimum_elapsed_hours: 6 } })
     const router = await renderAt()
-    const link = await within(await found('[data-section="providers-configured"]')).findByRole('button', { name: /Quota alerts/ })
+    const link = await within(await found('[data-section="providers-configured"]')).findByRole('link', { name: /Quota alerts/ })
     expect(link).toHaveTextContent('warn at 25% left')
     expect(screen.queryByRole('spinbutton')).toBeNull()
     await userEvent.click(link)

@@ -2,8 +2,6 @@ import { afterAll, beforeAll, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { createMemoryHistory, createRootRoute, createRouter, RouterProvider } from '@tanstack/react-router'
-import type { ReactNode } from 'react'
 
 // Every endpoint stays pending unless a section needs its answer to show every static row.
 vi.mock('../../api/endpoints', async (importOriginal) => {
@@ -25,17 +23,13 @@ import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
 import { AUDIO_KEY, DEFAULT_AUDIO } from '../voice/completionAudio'
 import { SettingsSection } from './SettingsSection'
 import { SETTINGS_INDEX, searchSettings, type SettingScope } from './settingsIndex'
+import { FIXED_TABS, NAV_ITEMS } from '../../shell/nav'
+import { renderRouted } from '../../test/router'
 
 /** Rows whose settings fields the server sends, so each conditional row shows. */
 const SETTINGS = {
   compression_prepare_ahead: false, group_discussion_max_rounds: 3, group_discussion_max_messages: 10, agent_approvals: false, hidden_tabs: [], trusted_link_hosts: [], auth_enabled: false,
   provider_quota_thresholds: { warning_remaining_percent: 20, critical_remaining_percent: 5, pace_tolerance_percent: 5, pace_warning_burn_rate_percent: 120, pace_critical_burn_rate_percent: 150, pace_minimum_elapsed_hours: 6 },
-}
-/** `ui` as the router's one page: Providers' pages navigate (TAL-2135, TAL-2136). */
-async function inRouter(ui: ReactNode) {
-  const router = createRouter({ routeTree: createRootRoute({ component: () => ui }), history: createMemoryHistory({ initialEntries: ['/'] }) })
-  await router.load()
-  return <RouterProvider router={router} />
 }
 const GROUP_OF_SCOPE: Record<SettingScope, string> = { device: 'interface', interface: 'interface', profile: 'profile', server: 'server' }
 
@@ -61,7 +55,7 @@ afterAll(() => {
 const renderedRows = (page: HTMLElement, tab: string | undefined) => {
   const rows = [
     ...[...page.querySelectorAll<HTMLLabelElement>('[data-group] label[for]')].map((label) => page.ownerDocument.getElementById(label.htmlFor)),
-    ...page.querySelectorAll<HTMLElement>('[data-group] [id][aria-label]:is([role="group"], [role="combobox"], [role="switch"], input, select, textarea)'),
+    ...page.querySelectorAll<HTMLElement>('[data-group] [id][aria-label]:is([role="group"], [role="radiogroup"], [role="combobox"], [role="switch"], input, select, textarea, button[aria-pressed])'),
     ...page.querySelectorAll<HTMLElement>('[data-group] [data-setting-headline] [id]'),
   ]
   return [...new Set(rows.filter((row): row is HTMLElement => !!row && !!row.closest('[role="tabpanel"]') === !!tab).map((row) => row.id))]
@@ -73,7 +67,7 @@ const groupTitle = (row: HTMLElement) => row.closest('section[data-group]')?.get
 it('indexes every Settings row once, each where it renders, under its group, in the group its scope belongs to (TAL-2086)', async () => {
   const ids = SETTINGS_INDEX.map((entry) => entry.id)
   expect(ids.filter((id, i) => ids.indexOf(id) !== i), 'duplicate index ids').toEqual([])
-  // Each section, each Tools tab, and each page under a section (TAL-2136).
+  // Each section, each Tools tab, and each page under a section (TAL-2136, TAL-2138).
   const pages = SettingsSectionSchema.options.flatMap((section) => [
     ...[undefined, ...new Set(SETTINGS_INDEX.filter((e) => e.section === section && e.tab).map((e) => e.tab))].map((tab) => ({ section, tab, page: undefined })),
     ...[...new Set(SETTINGS_INDEX.filter((e) => e.section === section && e.page).map((e) => e.page))].map((page) => ({ section, tab: undefined, page })),
@@ -84,7 +78,7 @@ it('indexes every Settings row once, each where it renders, under its group, in 
   for (const { section, tab, page } of pages) {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     qc.setQueryData(keys.settings, SETTINGS)
-    const view = render(await inRouter(<QueryClientProvider client={qc}><BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><SettingsSection section={section} tab={tab} page={page} /></BootstrapContext.Provider></QueryClientProvider>))
+    const view = await renderRouted(<QueryClientProvider client={qc}><BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><SettingsSection section={section} tab={tab} page={page} /></BootstrapContext.Provider></QueryClientProvider>)
     const expected = SETTINGS_INDEX.filter((e) => e.section === section && e.tab === tab && e.page === page && !e.item)
     // Each page's indexed rows load lazily and wait for their data.
     await waitFor(() => {
@@ -101,7 +95,7 @@ it('indexes every Settings row once, each where it renders, under its group, in 
   // Each entry's group is the title of the group its row renders in.
   expect(placed).toEqual(Object.fromEntries(SETTINGS_INDEX.filter((e) => !e.item).map((e) => [e.id, e.group()])))
   // A hidden row lands on a row of its own page.
-  expect(SETTINGS_INDEX.filter((e) => e.shownWith && !SETTINGS_INDEX.some((o) => o.id === e.shownWith && o.section === e.section && o.tab === e.tab)).map((e) => e.id)).toEqual([])
+  expect(SETTINGS_INDEX.filter((e) => e.shownWith && !SETTINGS_INDEX.some((o) => o.id === e.shownWith && pageOf(o) === pageOf(e))).map((e) => e.id)).toEqual([])
   // (b) Placement (design-system §11): a section's contract group matches the scope of every row on it.
   expect(SETTINGS_INDEX.filter((e) => SETTINGS_SECTION_GROUPS[e.section] !== GROUP_OF_SCOPE[e.scope]).map((e) => `${e.id}: ${e.scope} on ${e.section}`)).toEqual([])
 }, 30_000)
@@ -115,9 +109,33 @@ it('leads quota and sidebar searches to Providers, where each provider pins its 
 
 it('matches the localized label or group title, ignoring case and surrounding space (TAL-2086)', () => {
   expect(searchSettings('  ')).toEqual([])
-  expect(searchSettings('SEND KEY').map((e) => e.id)).toEqual(['settingsSendKey'])
+  expect(searchSettings('SEND WITH').map((e) => e.id)).toEqual(['settingsSendKey'])
   expect(searchSettings('voice on this').map((e) => e.id)).toEqual(['settingsTtsEngine', 'settingsTtsVoice', 'settingsTtsRate', 'settingsTtsPitch'])
   expect(searchSettings('no such setting')).toEqual([])
+})
+
+/** TAL-2138: every row Chat, Navigation and Tools showed before Chat's sub-pages, by control id; a composer control kept its switch's id on the drawing. */
+const PREVIOUS_ROWS = [
+  'settingsSendKey', 'settingsDefaultMessageMode', 'settings-large_text_paste_as_attachment', 'settings-show_busy_placeholder_hint', 'settings-show_quota_chip',
+  ...['model', 'reasoning', 'profile', 'workspace', 'toolsets', 'attach', 'mic', 'context', 'yolo'].map((c) => `settings-hide_composer_${c}`),
+  'settingsChatActivityDisplayMode', 'settings-transparent_stream_event_timestamps', 'settings-worklog_details_expanded_default', 'settings-render_user_markdown',
+  'settings-fade_text_effect', 'settings-show_token_usage', 'settings-show_tps', 'settings-auto_scroll_follow', 'settings-virtualize_transcript', 'settings-session_endless_scroll',
+  'settings-session_jump_buttons', 'settings-show_conversation_outline', 'settingsMaxTokens', 'settings-compression_prepare_ahead', 'settingsAutoTitleRefresh',
+  'settings-group_discussion_max_rounds', 'settings-group_discussion_max_messages',
+  'settingsPinnedLimit', 'settingsSidebarDensity', 'settings-project_quick_create_buttons', 'settings-show_cli_sessions', 'settings-show_claude_code_sessions',
+  'settings-show_cron_sessions', 'settings-show_webhook_sessions', 'settings-show_kanban_sessions', 'settings-show_previous_messaging_sessions',
+  ...NAV_ITEMS.filter((n) => !FIXED_TABS.has(n.id)).map((n) => `settingsHiddenTab-${n.id}`), 'settings-show_sidebar_feedback', 'settings-show_titlebar_profile',
+  'settings-workspace_panel_open', 'settings-workspace_todos_tab', 'settings-new_chat_on_workspace_switch', 'settings-terminal_auto_expand_on_output', 'settings-screen_reader_mode',
+  'settings-agent_approvals', 'plugins-auto-update',
+]
+
+it('keeps one home in the index for every row Chat, Navigation and Tools showed before (TAL-2138)', () => {
+  expect(PREVIOUS_ROWS.filter((id) => SETTINGS_INDEX.filter((e) => e.id === id).length !== 1)).toEqual([])
+  const home = (id: string) => { const e = SETTINGS_INDEX.find((entry) => entry.id === id); return [e?.section, e?.page, e?.tab] }
+  expect(home('settings-hide_composer_model')).toEqual(['chat', undefined, undefined])
+  expect(home('settings-screen_reader_mode')).toEqual(['chat', 'workspace-panel', undefined])
+  expect(home('settings-show_tps')).toEqual(['chat', 'advanced', undefined])
+  expect(home('settings-agent_approvals')).toEqual(['tools', undefined, undefined])
 })
 
 it('opens a hidden row at the control that shows it, then at the row once it appears (TAL-2086)', async () => {

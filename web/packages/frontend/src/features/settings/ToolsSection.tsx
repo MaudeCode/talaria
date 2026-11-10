@@ -1,3 +1,4 @@
+import { ShieldCheck } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { ToolsTab } from '../../contracts/url'
 import { useConnectorsAvailable } from '../../app/queries'
@@ -28,7 +29,6 @@ export function ToolsSection({ tab, onTabChange }: { tab?: ToolsTab | undefined;
   const gateFailed = tab === 'connectors' && gate.isError && !gate.data
   return (
     <div className={SETTINGS_PAGE} data-section="tools">
-      {typeof settings.data?.agent_approvals === 'boolean' ? <SettingsGroup id="approvals" title={m.settings_group_approvals()}><SettingToggle label={m.settings_label_agent_approvals()} settingKey="agent_approvals" /></SettingsGroup> : null}
       {gateFailed && <ErrorState error={gate.error} onRetry={() => { void gate.refetch() }} />}
       {gating ? <LoadingState compact /> : <>
         <TabStrip label={m.settings_section_tools_title()} tabs={tabs} value={active} onChange={(next) => onTabChange?.(next)} panelPrefix="tools" />
@@ -38,6 +38,8 @@ export function ToolsSection({ tab, onTabChange }: { tab?: ToolsTab | undefined;
           {active === 'mcp' && <McpSection />}
         </div>
       </>}
+      {/* TAL-2138: below the tab panel, so the tab strip sits directly under the header on every tab. */}
+      {typeof settings.data?.agent_approvals === 'boolean' ? <SettingsGroup id="agent-permissions" title={m.settings_group_agent_permissions()}><SettingToggle icon={ShieldCheck} label={m.settings_label_agent_approvals()} settingKey="agent_approvals" /></SettingsGroup> : null}
     </div>
   )
 }

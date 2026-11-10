@@ -1,15 +1,16 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { SidebarSection } from './SidebarSection'
-import { ChatSection } from './ChatSection'
+import { ChatSection, ChatSubPage } from './ChatSection'
 import { NotificationsSection } from './NotificationsSection'
 import { PrivacySettings } from './PrivacySettings'
 import { BootstrapContext } from '../../app/bootstrap'
 import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
 import { keys } from '../../api/queryKeys'
 import { deferred } from '../../test/fixtures'
+import { renderRouted } from '../../test/router'
 import * as api from '../../api/endpoints'
 import { ApiError } from '../../contracts/common'
 import { showToast } from '../toast/toast'
@@ -29,22 +30,23 @@ beforeEach(() => {
   vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue({ main: {}, tasks: [] })
 })
 
-function setup() {
+async function setup() {
   // Browser notifications stay enabled only where the browser has notifications (TAL-2146).
   vi.stubGlobal('Notification', { permission: 'granted', requestPermission: vi.fn() })
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   qc.setQueryData(keys.settings, initial)
-  render(<QueryClientProvider client={qc}><BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><SidebarSection /><ChatSection /><NotificationsSection /><PrivacySettings /></BootstrapContext.Provider></QueryClientProvider>)
+  // TAL-2138: Chat's rarely changed rows sit on its sub-pages.
+  await renderRouted(<QueryClientProvider client={qc}><BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><SidebarSection /><ChatSection /><ChatSubPage page="workspace-panel" /><ChatSubPage page="advanced" /><NotificationsSection /><PrivacySettings /></BootstrapContext.Provider></QueryClientProvider>)
   return qc
 }
 
 it('renders actual preference and conversation controls before their writes finish', async () => {
   vi.mocked(api.saveSettings).mockReturnValue(deferred<typeof initial>().promise)
-  setup()
-  await user.click(screen.getByRole('combobox', { name: 'Send Key' }))
-  await user.click(await screen.findByRole('option', { name: /Ctrl/ }))
-  expect(screen.getByRole('combobox', { name: 'Send Key' })).toHaveTextContent(/Ctrl/)
-  for (const name of ['Show CLI and other external sessions', 'Notification sound', 'Browser notifications', 'Render markdown in user messages', 'Terminal screen reader mode']) {
+  await setup()
+  const ctrlEnter = within(screen.getByRole('radiogroup', { name: 'Send with' })).getByRole('radio', { name: 'Ctrl Enter' })
+  await user.click(ctrlEnter)
+  expect(ctrlEnter).toBeChecked()
+  for (const name of ['Show CLI and other external sessions', 'Notification sound', 'Browser notifications', 'Format Markdown in my messages', 'Terminal screen reader mode']) {
     const control = screen.getByRole('switch', { name })
     await user.click(control)
     expect(control).toBeChecked()
@@ -57,7 +59,7 @@ it('shows the prepared compaction choice at once and rolls back when the server 
   vi.mocked(api.fetchSettings).mockResolvedValue({ ...initial, compression_prepare_ahead: false })
   const held = deferred<typeof initial>()
   vi.mocked(api.saveSettings).mockReturnValue(held.promise)
-  const qc = setup()
+  const qc = await setup()
   qc.setQueryData(keys.settings, { ...initial, compression_prepare_ahead: false })
   const control = await screen.findByRole('switch', { name: 'Prepare compaction in the background' })
   await user.click(control)
@@ -69,21 +71,21 @@ it('shows the prepared compaction choice at once and rolls back when the server 
   expect(showToast).toHaveBeenCalledWith(message, 4000, 'error')
 })
 
-it('offers no prepared compaction choice when the Agent has none (TAL-1825)', () => {
-  const qc = setup()
+it('offers no prepared compaction choice when the Agent has none (TAL-1825)', async () => {
+  const qc = await setup()
   act(() => qc.setQueryData(keys.settings, { ...initial, compression_prepare_ahead: null }))
   expect(screen.queryByRole('switch', { name: 'Prepare compaction in the background' })).toBeNull()
 })
 
 const limits = { group_discussion_max_rounds: 3, group_discussion_max_messages: 10, group_discussion_restart_required: false }
 
-it('shows a Group Chat limit at once and rolls back when the server refuses it (TAL-1828)', async () => {
+it('shows a Group discussion limit at once and rolls back when the server refuses it (TAL-1828)', async () => {
   vi.mocked(api.fetchSettings).mockResolvedValue({ ...initial, ...limits })
   const held = deferred<typeof initial>()
   vi.mocked(api.saveSettings).mockReturnValue(held.promise)
-  const qc = setup()
+  const qc = await setup()
   act(() => qc.setQueryData(keys.settings, { ...initial, ...limits }))
-  const control = await screen.findByRole('spinbutton', { name: 'Group Chat rounds' })
+  const control = await screen.findByRole('spinbutton', { name: 'Rounds per discussion' })
   fireEvent.change(control, { target: { value: '5' } })
   expect(control).toHaveValue(5)
   await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ group_discussion_max_rounds: 5 }))
@@ -94,18 +96,18 @@ it('shows a Group Chat limit at once and rolls back when the server refuses it (
   await waitFor(() => expect(control).toHaveValue(3))
 })
 
-it('offers no Group Chat limits when the server reports them unavailable (TAL-1828)', () => {
-  const qc = setup()
+it('offers no Group discussion limits when the server reports them unavailable (TAL-1828)', async () => {
+  const qc = await setup()
   act(() => qc.setQueryData(keys.settings, { ...initial, group_discussion_max_rounds: null, group_discussion_max_messages: null, group_discussion_restart_required: null }))
-  expect(screen.queryByRole('spinbutton', { name: 'Group Chat rounds' })).toBeNull()
-  expect(screen.queryByRole('spinbutton', { name: 'Group Chat replies' })).toBeNull()
+  expect(screen.queryByRole('spinbutton', { name: 'Rounds per discussion' })).toBeNull()
+  expect(screen.queryByRole('spinbutton', { name: 'Messages per discussion' })).toBeNull()
 })
 
 it('offers the existing restart action only while the server requires one, and rereads settings after it (TAL-1828)', async () => {
   vi.mocked(api.fetchSettings).mockResolvedValue({ ...initial, ...limits, group_discussion_restart_required: true })
   vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true, gateway_lifecycle: { managed: true, reason: 'local_gateway', start_command: null } })
   vi.mocked(api.restartAgent).mockResolvedValue({ ok: true, message: 'restarted' })
-  const qc = setup()
+  const qc = await setup()
   act(() => qc.setQueryData(keys.settings, { ...initial, ...limits }))
   expect(screen.queryByRole('button', { name: 'Restart agent' })).toBeNull()
   act(() => qc.setQueryData(keys.settings, { ...initial, ...limits, group_discussion_restart_required: true }))
@@ -117,7 +119,7 @@ it('offers the existing restart action only while the server requires one, and r
 
 it('keeps an empty numeric draft across unrelated refreshes and restores the confirmed value on blur', async () => {
   vi.mocked(api.saveSettings).mockReturnValue(deferred<typeof initial>().promise)
-  const qc = setup()
+  const qc = await setup()
   const input = document.getElementById('settingsPinnedLimit')!
   await user.click(input)
   await user.clear(input)
@@ -134,7 +136,7 @@ it.each(['normalization', 'failure'] as const)('reconciles the focused numeric d
     if (outcome === 'failure') throw new Error('Save refused')
     return value
   }))
-  setup()
+  await setup()
   const input = document.getElementById('settingsPinnedLimit')!
   await user.click(input)
   fireEvent.change(input, { target: { value: '100' } })
@@ -148,7 +150,7 @@ it.each(['normalization', 'failure'] as const)('reconciles the focused numeric d
 it('preserves a newer incomplete numeric draft when an older save settles', async () => {
   const held = deferred<typeof initial>()
   vi.mocked(api.saveSettings).mockReturnValue(held.promise)
-  setup()
+  await setup()
   const input = document.getElementById('settingsPinnedLimit')!
   await user.click(input)
   fireEvent.change(input, { target: { value: '10' } })
@@ -163,7 +165,7 @@ it('preserves a newer incomplete numeric draft when an older save settles', asyn
 it('retains submitted and newer text drafts when a save fails and shows the existing error', async () => {
   const held = deferred<typeof initial>()
   vi.mocked(api.saveSettings).mockImplementation(() => held.promise.then(() => { throw new Error('Save refused') }))
-  setup()
+  await setup()
   const hosts = screen.getByLabelText('Trusted link hosts')
   await user.type(hosts, 'docs.example.com')
   await user.click(within(hosts.closest('form')!).getByRole('button', { name: 'Save' }))
@@ -179,7 +181,7 @@ it('rolls max output tokens back to the confirmed value after a managed config c
   const held = deferred<typeof initial>()
   const message = 'config.yaml is package-managed. Update the declarative configuration instead.'
   vi.mocked(api.saveSettings).mockReturnValue(held.promise)
-  const qc = setup()
+  const qc = await setup()
   const input = screen.getByLabelText('Max output tokens')
   await user.click(input)
   fireEvent.change(input, { target: { value: '1234' } })

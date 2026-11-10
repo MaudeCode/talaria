@@ -1,11 +1,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactElement } from 'react'
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { createMemoryHistory, createRootRoute, createRouter, RouterProvider } from '@tanstack/react-router'
 
-const titleTask = { task: 'title_generation', label: 'Title generation', description: 'session titles', provider: 'auto', model: '', is_auto: true, value_label: 'Claude Sonnet 4.6', provider_label: 'Anthropic', selected_option_id: null, in_catalog: true, inherit_from: null, reasoning_effort: '' }
+const titleTask = { task: 'title_generation', label: 'Title generation', description: 'session titles', provider: 'auto', model: '', is_auto: true, value_label: 'Claude Sonnet 4.6', provider_label: 'Anthropic', selected_option_id: null, in_catalog: true, inherit_from: null, reasoning_effort: '', reasoning: { saved: null, effective: '', inherited: true, default_source: 'provider', options: ['low', 'medium', 'high'], unavailable: null } }
 // Every other endpoint stays pending, so a page's other lists sit in their loading state.
 vi.mock('../../api/endpoints', async (importOriginal) => {
   const real = await importOriginal<Record<string, unknown>>()
@@ -50,29 +49,41 @@ import { SpeechSection } from './SpeechSection'
 import { AUDIO_KEY, DEFAULT_AUDIO, previewSound } from '../voice/completionAudio'
 import { speak, stopSpeaking } from '../voice/tts'
 import { ToolsSection } from './ToolsSection'
+import { ChatPageSchema } from '../../contracts/url'
+import type { SettingsPage } from './settingsIndex'
+import { renderRouted } from '../../test/router'
 
-const renderSection = (ui: ReactElement, canManage = true, qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })) => {
+const withProviders = (ui: ReactElement, canManage: boolean, qc: QueryClient) => {
   const bootstrap = { ...DEFAULT_BOOTSTRAP, auth: { ...DEFAULT_BOOTSTRAP.auth, can_manage_server: canManage } }
-  const page = <QueryClientProvider client={qc}><BootstrapContext.Provider value={bootstrap}>{ui}</BootstrapContext.Provider></QueryClientProvider>
-  // Providers' pages navigate (TAL-2135, TAL-2136); the router renders the page synchronously from its one root route.
-  return render(<RouterProvider router={createRouter({ routeTree: createRootRoute({ component: () => page }), history: createMemoryHistory({ initialEntries: ['/'] }) })} />)
+  return <QueryClientProvider client={qc}><BootstrapContext.Provider value={bootstrap}>{ui}</BootstrapContext.Provider></QueryClientProvider>
 }
+// Providers' and Chat's pages link and navigate (TAL-2135, TAL-2136, TAL-2138), so every page renders under a router.
+const renderSection = (ui: ReactElement, canManage = true, qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })) => renderRouted(withProviders(ui, canManage, qc))
+/** Every Settings page, with the pages under Providers (TAL-2136) and Chat (TAL-2138). */
+const PAGES: { section: SettingsSectionId; page?: SettingsPage; id: string }[] = SettingsSectionSchema.options.flatMap((section) => [
+  { section, id: section },
+  ...(section === 'chat' ? ChatPageSchema.options.map((page) => ({ section, page, id: `chat/${page}` })) : section === 'providers' ? [{ section, page: 'quota-alerts' as const, id: 'providers/quota-alerts' }] : []),
+])
+const renderPage = ({ section, page }: { section: SettingsSectionId; page?: SettingsPage | undefined }, qc: QueryClient) => renderSection(<SettingsSection section={section} page={page} />, true, qc)
 
 /**
- * TAL-1691, TAL-2100, TAL-2075: every field the retired Preferences, Conversation, System and Models & Providers pages edited, and
- * the one section that now edits it. A key is a settings field; a selector is a control with no settings field of its own.
+ * TAL-1691, TAL-2100, TAL-2075, TAL-2138: every field the retired Preferences, Conversation, System and Models & Providers pages
+ * edited, and the one page that now edits it (`chat/<page>` for a Chat sub-page). A key is a settings field; a selector is a
+ * control with no settings field of its own.
  */
-const PLACEMENT: Record<string, SettingsSectionId> = {
-  send_key: 'chat', default_message_mode: 'chat', large_text_paste_as_attachment: 'chat', chat_activity_display_mode: 'chat', transparent_stream_event_timestamps: 'chat',
-  worklog_details_expanded_default: 'chat', auto_scroll_follow: 'chat', render_user_markdown: 'chat', fade_text_effect: 'chat', virtualize_transcript: 'chat',
-  show_busy_placeholder_hint: 'chat', show_token_usage: 'chat', show_tps: 'chat',
-  max_tokens: 'chat', compression_prepare_ahead: 'chat', group_discussion_max_rounds: 'chat', group_discussion_max_messages: 'chat', auto_title_refresh_every: 'chat',
-  sidebar_density: 'navigation', pinned_sessions_limit: 'navigation', session_endless_scroll: 'chat', session_jump_buttons: 'chat', show_conversation_outline: 'chat', project_quick_create_buttons: 'navigation',
+const PLACEMENT: Record<string, string> = {
+  send_key: 'chat', default_message_mode: 'chat', large_text_paste_as_attachment: 'chat', chat_activity_display_mode: 'chat', transparent_stream_event_timestamps: 'chat/advanced',
+  worklog_details_expanded_default: 'chat', auto_scroll_follow: 'chat', render_user_markdown: 'chat', fade_text_effect: 'chat/advanced', virtualize_transcript: 'chat/advanced',
+  show_busy_placeholder_hint: 'chat/advanced', show_token_usage: 'chat', show_tps: 'chat/advanced',
+  max_tokens: 'chat/advanced', compression_prepare_ahead: 'chat/advanced', group_discussion_max_rounds: 'chat', group_discussion_max_messages: 'chat', auto_title_refresh_every: 'chat/advanced',
+  sidebar_density: 'navigation', pinned_sessions_limit: 'navigation', session_endless_scroll: 'chat/advanced', session_jump_buttons: 'chat', show_conversation_outline: 'chat', project_quick_create_buttons: 'navigation',
   show_cli_sessions: 'navigation', show_claude_code_sessions: 'navigation', show_cron_sessions: 'navigation', show_webhook_sessions: 'navigation', show_kanban_sessions: 'navigation',
   show_previous_messaging_sessions: 'navigation', hidden_tabs: 'navigation', show_titlebar_profile: 'navigation', show_sidebar_feedback: 'navigation', show_quota_chip: 'chat',
-  workspace_panel_open: 'navigation', workspace_todos_tab: 'navigation', new_chat_on_workspace_switch: 'navigation',
-  terminal_auto_expand_on_output: 'navigation', screen_reader_mode: 'navigation',
-  default_model: 'models', '#settingsModel': 'models', '[data-group="auxiliary"]': 'models', '[data-group="quota-remaining"]': 'providers',
+  hide_composer_model: 'chat', hide_composer_reasoning: 'chat', hide_composer_profile: 'chat', hide_composer_workspace: 'chat', hide_composer_toolsets: 'chat',
+  hide_composer_attach: 'chat', hide_composer_mic: 'chat', hide_composer_context: 'chat', hide_composer_yolo: 'chat',
+  workspace_panel_open: 'chat/workspace-panel', workspace_todos_tab: 'chat/workspace-panel', new_chat_on_workspace_switch: 'chat/workspace-panel',
+  terminal_auto_expand_on_output: 'chat/workspace-panel', screen_reader_mode: 'chat/workspace-panel',
+  default_model: 'models', '#settingsModel': 'models', '[data-group="auxiliary"]': 'models', '[data-group="quota-remaining"]': 'providers/quota-alerts',
   notifications_enabled: 'notifications', sound_enabled: 'notifications', '#completionSound': 'notifications',
   agent_approvals: 'tools',
   sync_to_insights: 'access', api_redact_enabled: 'access', confirm_external_links: 'access', trusted_link_hosts: 'access', auth_disabled_acknowledged: 'access',
@@ -82,41 +93,45 @@ const PLACEMENT: Record<string, SettingsSectionId> = {
 const isControl = (key: string) => key.startsWith('#') || key.startsWith('[')
 const CONTROLS = Object.keys(PLACEMENT).filter(isControl)
 
-it('edits every retired Preferences, Conversation, System and Models & Providers field on exactly its one new section (TAL-1691, TAL-2100)', async () => {
+it('edits every retired Preferences, Conversation, System and Models & Providers field on exactly its one new page (TAL-1691, TAL-2100, TAL-2138)', async () => {
   // jsdom has no matchMedia; Appearance reads the colour scheme.
   vi.stubGlobal('matchMedia', (query: string) => ({ matches: false, media: query, addEventListener: () => undefined, removeEventListener: () => undefined }))
   const settings = Object.fromEntries(Object.keys(PLACEMENT).filter((key) => !isControl(key)).map((key) => [key, false]))
   Object.assign(settings, { provider_quota_thresholds: {}, hidden_tabs: [], trusted_link_hosts: [], group_discussion_max_rounds: 3, group_discussion_max_messages: 10, auth_enabled: false })
-  const found: Record<string, SettingsSectionId[]> = {}
-  // TAL-2136: the quota thresholds sit on Providers › Quota alerts.
-  for (const [section, page] of [...SettingsSectionSchema.options.map((s) => [s, undefined] as const), ['providers', 'quota-alerts'] as const]) {
+  const found: Record<string, string[]> = {}
+  for (const page of PAGES) {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     qc.setQueryData(keys.settings, settings)
     reads.clear()
-    const view = renderSection(<SettingsSection section={section} page={page} />, true, qc)
-    await waitFor(() => expect(view.container.querySelector(`[data-section="${section}"]`)).not.toBeNull())
-    if (page) await waitFor(() => expect(view.container.querySelector('[data-group]')).not.toBeNull())
+    const view = await renderPage(page, qc)
+    await waitFor(() => expect(view.container.querySelector(`[data-section="${page.section}"]`)).not.toBeNull())
+    if (page.page) await waitFor(() => expect(view.container.querySelector('[data-group]')).not.toBeNull())
     for (const control of CONTROLS) if (view.container.querySelector(control)) reads.add(control)
-    for (const key of reads) if (key in PLACEMENT) (found[key] ??= []).push(section)
+    // Chat reads whether the Agent offers prepared compaction to count Advanced's rows; only Advanced edits it.
+    for (const key of reads) if (key in PLACEMENT && !(page.id === 'chat' && key === 'compression_prepare_ahead')) (found[key] ??= []).push(page.id)
     view.unmount()
   }
   vi.unstubAllGlobals()
   expect(found).toEqual(Object.fromEntries(Object.entries(PLACEMENT).map(([key, section]) => [key, [section]])))
+  // Every page renders in turn, as in the index placement test (TAL-2086).
 }, 30_000)
 
-/** TAL-2075, TAL-2076: every Chat and Navigation row by its label, in page order, with the `data-group` it sits in. */
-const GROUPS: Record<'chat' | 'navigation', [string, string][]> = {
+/** TAL-2075, TAL-2076, TAL-2138: every Chat, Chat sub-page and Navigation row by its label, in page order, with the `data-group` it sits in. */
+const GROUPS: Record<string, [string, string][]> = {
   chat: [
-    ['Send Key', 'composer'], ['Default message mode', 'composer'], ['Attach large pasted text as file', 'composer'], ['Show busy placeholder hint', 'composer'],
-    ['Show provider quota chip in composer', 'composer'],
-    ['Model', 'composer-chips'], ['Reasoning', 'composer-chips'], ['Profile', 'composer-chips'], ['Workspace', 'composer-chips'], ['Toolsets', 'composer-chips'],
-    ['Attach button', 'composer-controls'], ['Microphone', 'composer-controls'], ['Context ring', 'composer-controls'], ['YOLO mode notice', 'composer-controls'],
-    ['Activity display', 'transcript'], ['Show Transparent Stream event timestamps', 'transcript'], ['Open Worklog details automatically', 'transcript'],
-    ['Render markdown in user messages', 'transcript'], ['Fade text effect', 'transcript'], ['Show token usage', 'transcript'], ['Show token speed (TPS)', 'transcript'],
-    ['Auto-follow new content', 'scrolling'], ['Virtualize long transcripts (experimental)', 'scrolling'], ['Load older messages while scrolling up', 'scrolling'],
-    ['Show session jump buttons', 'scrolling'], ['Show conversation outline', 'scrolling'],
-    ['Max output tokens', 'limits'], ['Prepare compaction in the background', 'limits'], ['Adaptive title refresh', 'limits'],
-    ['Group Chat rounds', 'group-discussions'], ['Group Chat replies', 'group-discussions'],
+    ['Send with', 'composer'], ['While the agent is working', 'composer'], ['Attach long pasted text as a file', 'composer'],
+    ['Activity display', 'transcript'], ['Open worklog details automatically', 'transcript'], ['Format Markdown in my messages', 'transcript'], ['Show token usage', 'transcript'],
+    ['Follow new content', 'transcript'], ['Conversation outline', 'transcript'], ['Jump buttons', 'transcript'],
+    ['Rounds per discussion', 'group-discussions'], ['Messages per discussion', 'group-discussions'],
+  ],
+  'chat/workspace-panel': [
+    ['Keep workspace panel open by default', 'panel'], ['Show Todos tab in workspace panel', 'panel'], ['Start a new chat when switching workspace', 'panel'],
+    ['Auto-expand terminal on output', 'terminal'], ['Terminal screen reader mode', 'terminal'],
+  ],
+  'chat/advanced': [
+    ['Name the busy action in the composer', 'transcript-advanced'], ['Event timestamps', 'transcript-advanced'], ['Fade in streamed text', 'transcript-advanced'],
+    ['Show tokens per second', 'transcript-advanced'], ['Render only visible messages (experimental)', 'transcript-advanced'], ['Load earlier messages while scrolling', 'transcript-advanced'],
+    ['Max output tokens', 'limits'], ['Prepare compaction in the background', 'limits'], ['Refresh chat titles', 'limits'],
   ],
   navigation: [
     ['Pinned conversations limit', 'chats'], ['Sidebar density', 'chats'], ['Show per-project new-conversation buttons', 'chats'],
@@ -125,29 +140,43 @@ const GROUPS: Record<'chat' | 'navigation', [string, string][]> = {
     ['Tasks', 'destinations'], ['Kanban', 'destinations'], ['Skills', 'destinations'], ['Memory', 'destinations'], ['Discussions', 'destinations'], ['Todos', 'destinations'],
     ['Decisions', 'destinations'], ['Insights', 'destinations'],
     ['Sidebar feedback button', 'buttons'], ['Show profile switcher in titlebar', 'buttons'],
-    ['Keep workspace panel open by default', 'workspace'], ['Show Todos tab in workspace panel', 'workspace'], ['Start a new chat when switching workspace', 'workspace'],
-    ['Auto-expand terminal on output', 'workspace'], ['Terminal screen reader mode', 'workspace'],
   ],
 }
 
-it('puts each Chat and Navigation row in the group where it applies, each once with its own labelled control (TAL-2075)', async () => {
+it('puts each Chat and Navigation row in the group where it applies, each once with its own labelled control (TAL-2075, TAL-2138)', async () => {
   const settings = { hidden_tabs: ['kanban'], compression_prepare_ahead: true, group_discussion_max_rounds: 3, group_discussion_max_messages: 10 }
-  for (const section of ['chat', 'navigation'] as const) {
+  for (const page of PAGES.filter((p) => p.id in GROUPS)) {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     qc.setQueryData(keys.settings, settings)
-    const view = renderSection(<SettingsSection section={section} />, true, qc)
-    await waitFor(() => expect(view.container.querySelector(`[data-section="${section}"]`)).not.toBeNull())
-    const labels = [...view.container.querySelectorAll<HTMLLabelElement>(`[data-section="${section}"] label`)]
-    expect(labels.map((label) => [label.textContent, label.closest('[data-group]')?.getAttribute('data-group')]), section).toEqual(GROUPS[section])
+    const view = await renderPage(page, qc)
+    await waitFor(() => expect(view.container.querySelector(`[data-section="${page.section}"]`)).not.toBeNull())
+    const labels = [...view.container.querySelectorAll<HTMLLabelElement>(`[data-section="${page.section}"] label`)]
+    expect(labels.map((label) => [label.textContent, label.closest('[data-group]')?.getAttribute('data-group')]), page.id).toEqual(GROUPS[page.id])
     for (const label of labels) expect(document.getElementById(label.htmlFor), label.textContent ?? '').not.toBeNull()
-    for (const [name, group] of GROUPS[section]) if (group === 'destinations') expect(screen.getByRole('switch', { name })).toBeInTheDocument()
+    for (const [name, group] of GROUPS[page.id]!) if (group === 'destinations') expect(screen.getByRole('switch', { name })).toBeInTheDocument()
     view.unmount()
   }
 })
 
+it('keeps Chat to the composer drawing and at most 14 rows, with links that count their sub-pages\' rows (TAL-2138)', async () => {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  qc.setQueryData(keys.settings, { compression_prepare_ahead: null, group_discussion_max_rounds: 3, group_discussion_max_messages: 10 })
+  const view = await renderPage({ section: 'chat' }, qc)
+  const page = await waitFor(() => view.container.querySelector<HTMLElement>('[data-section="chat"]')!)
+  expect([...page.querySelectorAll('section[data-group]')].map((g) => g.getAttribute('data-group'))).toEqual(['composer', 'transcript', 'group-discussions', 'more'])
+  expect(page.querySelector('[data-group="composer"] [data-composer-preview]')).not.toBeNull()
+  expect(page.querySelectorAll('[data-group] label').length + page.querySelectorAll('[data-group="more"] a').length).toBeLessThanOrEqual(14)
+  // The Agent without a prepared-compaction choice leaves Advanced one row short.
+  expect(within(page).getByRole('link', { name: /Workspace panel/ })).toHaveTextContent('5 settings')
+  expect(within(page).getByRole('link', { name: /Advanced/ })).toHaveTextContent('8 settings')
+  for (const name of ['Send with', 'While the agent is working', 'Activity display']) expect(within(page).getByRole('radiogroup', { name })).toBeInTheDocument()
+  expect(within(page).getAllByRole('radio').map((r) => r.textContent)).toEqual(['Enter', 'Ctrl Enter', 'Steer', 'Queue', 'Interrupt', 'Compact', 'Every step', 'Final answer only'])
+  expect(page.querySelector('[role="switch"][id^="settings-hide_composer_"]')).toBeNull()
+})
+
 describe('settings pages', () => {
   it('edits the external-link confirmation and trusted hosts through settings (TAL-279)', async () => {
-    renderSection(<PrivacySettings />)
+    await renderSection(<PrivacySettings />)
     const confirm = await screen.findByRole('switch', { name: 'Confirm before opening external links' })
     expect(confirm).toBeChecked()
     await userEvent.click(confirm)
@@ -159,21 +188,25 @@ describe('settings pages', () => {
     expect(saveSettings).toHaveBeenLastCalledWith({ trusted_link_hosts: ['docs.example.com', 'API.Example.com'] })
   })
 
-  it('shows the profile\'s agent approvals setting as the server reports it and writes it (TAL-1169)', async () => {
+  it('shows the profile\'s agent approvals setting below the tabs as the server reports it and writes it (TAL-1169, TAL-2138)', async () => {
     vi.mocked(fetchSettings).mockResolvedValueOnce({ default_model: 'claude-sonnet-4-6', agent_approvals: true })
-    renderSection(<ToolsSection />)
+    await renderSection(<ToolsSection />)
     const toggle = await screen.findByRole('switch', { name: 'Let agents approve or deny other chats\' commands' })
     expect(toggle).toBeChecked()
-    const approvals = screen.getByRole('region', { name: 'Approvals' })
-    expect(within(approvals).getByRole('heading', { name: 'Approvals' })).toBeVisible()
+    const approvals = screen.getByRole('region', { name: 'Agent permissions' })
+    expect(within(approvals).getByRole('heading', { name: 'Agent permissions' })).toBeVisible()
     expect(approvals).toContainElement(toggle)
     expect(approvals.querySelector('#settings-agent_approvals')).not.toBeNull()
+    // TAL-2138: the tab strip comes first, the approvals group after the tab panel.
+    const tools = document.querySelector('[data-section="tools"]')!
+    expect(tools.firstElementChild).toContainElement(screen.getByRole('tablist'))
+    expect(screen.getByRole('tabpanel').compareDocumentPosition(approvals) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     await userEvent.click(toggle)
     expect(saveSettings).toHaveBeenLastCalledWith({ agent_approvals: false })
   })
 
   it('lets only a server owner change link safety and redaction (TAL-279, TAL-1880)', async () => {
-    renderSection(<PrivacySettings />, false)
+    await renderSection(<PrivacySettings />, false)
     expect(await screen.findByRole('switch', { name: 'Confirm before opening external links' })).toHaveAttribute('aria-disabled', 'true')
     expect(screen.getByLabelText('Trusted link hosts')).toBeDisabled()
     expect(screen.getByRole('switch', { name: 'Redact sensitive data in API responses' })).toHaveAttribute('aria-disabled', 'true')
@@ -190,7 +223,7 @@ it('renders and saves only the server-provided speed tiers (TAL-788)', async () 
     { id: 'standard', service_tier: 'default' }, { id: 'priority', service_tier: 'priority' }, { id: 'ultrafast', service_tier: 'ultrafast' },
   ] }, tasks: [] })
   vi.mocked(setDefaultModel).mockResolvedValue({ ok: true, model: 'gpt-6-astra', provider: 'openai-codex' })
-  renderSection(<ModelsSection />)
+  await renderSection(<ModelsSection />)
   const speed = await screen.findByRole('combobox', { name: 'Speed' })
   expect(speed).toHaveTextContent('Fast')
   await userEvent.click(speed)
@@ -205,7 +238,7 @@ it('shows a chosen speed and default model at once, sending the shown model with
   ] }, tasks: [] })
   vi.mocked(fetchModels).mockResolvedValue({ groups: [{ provider: 'OpenAI Codex', provider_id: 'openai-codex', models: [{ id: '@openai-codex:gpt-6-astra', label: 'GPT-6 Astra', provider_id: 'openai-codex' }, { id: '@openai-codex:gpt-5.6-sol', label: 'GPT-5.6 Sol', provider_id: 'openai-codex', supported_speed_tiers: [{ id: 'standard', service_tier: 'default' }, { id: 'priority', service_tier: 'priority' }] }] }] })
   vi.mocked(setDefaultModel).mockReturnValue(new Promise(() => undefined))
-  const view = renderSection(<ModelsSection />)
+  const view = await renderSection(<ModelsSection />)
   const change = await screen.findByRole('button', { name: 'Change model' })
   await userEvent.click(change)
   await userEvent.click(await screen.findByRole('option', { name: 'GPT-5.6 Sol' }))
@@ -226,7 +259,7 @@ it('rereads the auxiliary slots after the default model changes (TAL-1383)', asy
   vi.mocked(fetchAuxiliaryModels).mockResolvedValue({ main: {}, tasks: [] })
   vi.mocked(fetchModels).mockResolvedValue({ groups: [{ provider: 'OpenAI Codex', provider_id: 'openai-codex', models: [{ id: '@openai-codex:gpt-5.6-sol', label: 'GPT-5.6 Sol', provider_id: 'openai-codex' }] }] })
   vi.mocked(setDefaultModel).mockResolvedValue({ ok: true, model: 'gpt-5.6-sol', provider: 'openai-codex' })
-  renderSection(<ModelsSection />)
+  await renderSection(<ModelsSection />)
   await waitFor(() => expect(fetchAuxiliaryModels).toHaveBeenCalled())
   const before = vi.mocked(fetchAuxiliaryModels).mock.calls.length
   await userEvent.click(await screen.findByRole('button', { name: 'Change model' }))
@@ -243,7 +276,7 @@ it('offers the chosen model\'s own speed tiers before the server answers (TAL-13
     { id: '@openai-codex:gpt-5.6-sol', label: 'GPT-5.6 Sol', provider_id: 'openai-codex', supported_speed_tiers: [{ id: 'standard', service_tier: 'default' }, { id: 'priority', service_tier: 'priority' }] },
   ] }] })
   vi.mocked(setDefaultModel).mockReturnValue(new Promise(() => undefined))
-  renderSection(<ModelsSection />)
+  await renderSection(<ModelsSection />)
   await userEvent.click(await screen.findByRole('button', { name: 'Change model' }))
   await userEvent.click(await screen.findByRole('option', { name: 'GPT-5.6 Sol' }))
   await userEvent.click(screen.getByRole('combobox', { name: 'Speed' }))
@@ -260,7 +293,7 @@ describe('the profile reasoning defaults (TAL-2078)', () => {
 
   it.each([[true, true], [true, false], [false, true], [false, false]])('shows the effort row when effort is supported (%s) and the thinking row when the toggle is (%s)', async (effort, toggle) => {
     vi.mocked(fetchReasoning).mockResolvedValue({ ...status, supports_reasoning_effort: effort, supports_thinking_toggle: toggle })
-    renderSection(<ModelsSection />)
+    await renderSection(<ModelsSection />)
     await waitFor(() => expect(fetchReasoning).toHaveBeenCalledWith(undefined, undefined, undefined))
     await waitFor(() => expect(!!effortRow() || !!thinkingRow() || (!effort && !toggle)).toBe(true))
     expect(!!effortRow()).toBe(effort)
@@ -273,7 +306,7 @@ describe('the profile reasoning defaults (TAL-2078)', () => {
       vi.mocked(fetchReasoning).mockResolvedValue({ ...status, reasoning_effort: effort })
       return Promise.resolve({ ...status, reasoning_effort: effort })
     })
-    renderSection(<ModelsSection />)
+    await renderSection(<ModelsSection />)
     const group = within(await screen.findByRole('radiogroup', { name: 'Reasoning effort' }))
     expect(group.getAllByRole('radio').map((o) => o.textContent)).toEqual(['Default', 'Low', 'Medium', 'High'])
     expect(group.getByRole('radio', { name: 'Medium' })).toBeChecked()
@@ -285,7 +318,7 @@ describe('the profile reasoning defaults (TAL-2078)', () => {
   it('offers more than three server efforts in a select (TAL-2137)', async () => {
     vi.mocked(fetchReasoning).mockResolvedValue({ ...status, supported_efforts: ['minimal', 'low', 'medium', 'high'] })
     vi.mocked(setReasoningEffort).mockResolvedValue({ ...status, reasoning_effort: 'minimal' })
-    renderSection(<ModelsSection />)
+    await renderSection(<ModelsSection />)
     const select = await screen.findByRole('combobox', { name: 'Reasoning effort' })
     expect(screen.queryByRole('radiogroup', { name: 'Reasoning effort' })).not.toBeInTheDocument()
     await userEvent.click(select)
@@ -297,7 +330,7 @@ describe('the profile reasoning defaults (TAL-2078)', () => {
   it('shows a saved effort the model does not list and lets Default clear it (TAL-2137)', async () => {
     vi.mocked(fetchReasoning).mockResolvedValue({ ...status, reasoning_effort: 'none' })
     vi.mocked(setReasoningEffort).mockResolvedValue({ ...status, reasoning_effort: null })
-    renderSection(<ModelsSection />)
+    await renderSection(<ModelsSection />)
     const select = await screen.findByRole('combobox', { name: 'Reasoning effort' })
     expect(select).toHaveTextContent('None')
     await userEvent.click(select)
@@ -310,7 +343,7 @@ describe('the profile reasoning defaults (TAL-2078)', () => {
     vi.mocked(fetchReasoning).mockResolvedValue(status)
     const write = held()
     vi.mocked(setReasoningEffort).mockReturnValue(write.promise)
-    renderSection(<ModelsSection />)
+    await renderSection(<ModelsSection />)
     const group = within(await screen.findByRole('radiogroup', { name: 'Reasoning effort' }))
     await userEvent.click(group.getByRole('radio', { name: 'Default' }))
     expect(setReasoningEffort).toHaveBeenLastCalledWith('', null, null, undefined)
@@ -324,7 +357,7 @@ describe('the profile reasoning defaults (TAL-2078)', () => {
     vi.mocked(fetchReasoning).mockResolvedValue(status)
     const write = held()
     vi.mocked(setReasoningDisplay).mockReturnValue(write.promise)
-    renderSection(<ModelsSection />)
+    await renderSection(<ModelsSection />)
     const toggle = await screen.findByRole('switch', { name: 'Show thinking' })
     expect(toggle).toBeChecked()
     await userEvent.click(toggle)
@@ -338,7 +371,7 @@ describe('the profile reasoning defaults (TAL-2078)', () => {
 
 it('plays the selected completion sound from the Sound row (TAL-2146)', async () => {
   localStorage.setItem(AUDIO_KEY, JSON.stringify({ ...DEFAULT_AUDIO, sound: 'bell' }))
-  renderSection(<NotificationsSection />)
+  await renderSection(<NotificationsSection />)
   await screen.findByRole('combobox', { name: 'Sound' })
   await userEvent.click(screen.getByRole('button', { name: 'Preview sound' }))
   expect(previewSound).toHaveBeenCalledWith(expect.objectContaining({ sound: 'bell' }))
@@ -347,7 +380,7 @@ it('plays the selected completion sound from the Sound row (TAL-2146)', async ()
 
 it('shows the saved quiet period range beside its switch and opens to its times when on (TAL-2146)', async () => {
   localStorage.setItem(AUDIO_KEY, JSON.stringify({ ...DEFAULT_AUDIO, start: '22:00', end: '07:00' }))
-  const view = renderSection(<NotificationsSection />)
+  const view = await renderSection(<NotificationsSection />)
   const quiet = await screen.findByRole('switch', { name: 'Quiet period' })
   expect(view.container.querySelector('[data-quiet-range]')).toBeNull()
   expect(screen.queryByLabelText('Quiet period starts')).toBeNull()
@@ -365,7 +398,7 @@ describe('the browser notification permission (TAL-2146)', () => {
     ['default', 'idle', 'Not asked yet'],
   ] as const)('reads %s as a %s dot with its words', async (permission, state, words) => {
     vi.stubGlobal('Notification', { permission, requestPermission: vi.fn() })
-    renderSection(<NotificationsSection />)
+    await renderSection(<NotificationsSection />)
     const status = (await screen.findByText(words)).closest('[data-status]')
     expect(status).toHaveAttribute('data-status', state)
     expect(screen.getByRole('switch', { name: 'Browser notifications' })).not.toHaveAttribute('data-disabled')
@@ -376,7 +409,7 @@ describe('the browser notification permission (TAL-2146)', () => {
     const stub: { permission: NotificationPermission; requestPermission: () => Promise<NotificationPermission> } = { permission: 'default', requestPermission: vi.fn(() => { stub.permission = answer; return Promise.resolve(answer) }) }
     vi.stubGlobal('Notification', stub)
     vi.mocked(saveSettings).mockClear()
-    renderSection(<NotificationsSection />)
+    await renderSection(<NotificationsSection />)
     const toggle = await screen.findByRole('switch', { name: 'Browser notifications' })
     await userEvent.click(toggle)
     expect(stub.requestPermission).toHaveBeenCalledOnce()
@@ -392,7 +425,7 @@ describe('the browser notification permission (TAL-2146)', () => {
   it('says the browser has no notifications and disables the switch', async () => {
     const saved = Object.getOwnPropertyDescriptor(window, 'Notification')
     Reflect.deleteProperty(window, 'Notification')
-    renderSection(<NotificationsSection />)
+    await renderSection(<NotificationsSection />)
     expect((await screen.findByText('Not supported by this browser')).closest('[data-status]')).toHaveAttribute('data-status', 'idle')
     expect(screen.getByRole('switch', { name: 'Browser notifications' })).toHaveAttribute('data-disabled')
     if (saved) Object.defineProperty(window, 'Notification', saved)
@@ -400,7 +433,7 @@ describe('the browser notification permission (TAL-2146)', () => {
 })
 
 it('plays a sample through the read-aloud function and stops it on a second press (TAL-2146)', async () => {
-  renderSection(<SettingsSection section="speech" />)
+  await renderSection(<SettingsSection section="speech" />)
   await userEvent.click(await screen.findByRole('button', { name: 'Play a sample' }))
   expect(speak).toHaveBeenCalledExactlyOnceWith('This is how replies will sound.', expect.any(Function))
   await userEvent.click(screen.getByRole('button', { name: 'Stop the sample' }))
@@ -419,7 +452,7 @@ it('groups the Notifications and Speech rows and shows every slider value (TAL-2
     expect(element, `group ${id}`).toBeInstanceOf(HTMLElement)
     return within(element!)
   }
-  const notifications = renderSection(<NotificationsSection />)
+  const notifications = await renderSection(<NotificationsSection />)
   await screen.findByRole('combobox', { name: 'Sound' })
   const completion = group(notifications.container, 'reply-finishes')
   const open = group(notifications.container, 'while-open')
@@ -427,7 +460,7 @@ it('groups the Notifications and Speech rows and shows every slider value (TAL-2
   expect(completion.getByRole('combobox', { name: 'Sound' })).toBeInTheDocument()
   expect(completion.getByRole('slider', { name: 'Volume' }).nextElementSibling).toHaveTextContent('50%')
   notifications.unmount()
-  const speech = renderSection(<SpeechSection />)
+  const speech = await renderSection(<SpeechSection />)
   await screen.findByRole('slider', { name: 'Speed' })
   const device = group(speech.container, 'voice-device')
   const server = group(speech.container, 'read-aloud')
@@ -439,7 +472,7 @@ it('groups the Notifications and Speech rows and shows every slider value (TAL-2
 
 it('shows a failed connectors gate with a retry on the Connectors tab instead of loading forever (TAL-1691)', async () => {
   vi.mocked(fetchConnectorsAvailable).mockRejectedValueOnce(new Error('gate down'))
-  renderSection(<ToolsSection tab="connectors" />)
+  await renderSection(<ToolsSection tab="connectors" />)
   expect(await screen.findByRole('button', { name: 'Retry' })).toBeInTheDocument()
   expect(screen.getByRole('tab', { name: 'Plugins' })).toHaveAttribute('aria-selected', 'true')
   expect(screen.queryByRole('tab', { name: 'Connectors' })).toBeNull()

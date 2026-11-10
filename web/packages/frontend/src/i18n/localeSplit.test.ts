@@ -100,14 +100,14 @@ describe('locale dictionaries at runtime', () => {
     expect(settings_label_ignore_agent_updates()).toBe('Agent-Updates überspringen')
   })
 
-  it('renders the Russian profiles help and Transparent Stream timestamp setting instead of English (TAL-1127)', async () => {
+  it('renders the Russian profiles help and event timestamp setting instead of English (TAL-1127, TAL-2138)', async () => {
     await applyLocale('ru', { persist: false })
     expect(profile_concept_title()).toBe('Профили и рабочие пространства')
     expect(profile_concept_subtitle()).toBe('Профили определяют, как работает агент; рабочие пространства — с какими файлами он работает.')
     expect(profile_concept_desc_profiles()).toContain('нужен другой контекст или другие возможности')
     expect(profile_concept_desc_workspaces()).toMatch(/^Папки проектов/)
     expect(profile_concept_desc_together()).toContain('«кто работает?»')
-    expect(settings_label_transparent_stream_event_timestamps()).toBe('Показывать метки времени событий «Прозрачного потока»')
+    expect(settings_label_transparent_stream_event_timestamps()).toBe('Время событий')
     expect(settings_desc_transparent_stream_event_timestamps()).toBe('Оставляет видимым время под ответом, скрывая метки времени отдельных событий.')
   })
 

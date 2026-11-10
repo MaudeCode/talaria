@@ -4,9 +4,8 @@ import { keys } from '../../api/queryKeys'
 import { useSettingsQuery } from '../../app/queries'
 import type { QuotaThresholds } from '../../contracts'
 import { LoadingState } from '../../ui/States'
-import { SETTINGS_PAGE, SETTINGS_TITLE, SettingsGroup } from './SettingsGroup'
+import { SETTINGS_PAGE, SETTINGS_TITLE, SettingsBack, SettingsGroup } from './SettingsGroup'
 import { SettingNumber } from './SettingsRows'
-import { ProvidersBack } from './ProvidersSection'
 
 type Field = readonly [key: keyof QuotaThresholds, label: () => string, min: number, max: number, step: number, unit: () => string]
 const percent = m.providers_quota_unit_percent
@@ -40,7 +39,7 @@ export function QuotaAlertsPage() {
   return (
     <div className={SETTINGS_PAGE} data-section="providers" data-quota-alerts="">
       <div className="flex flex-col gap-2">
-        <ProvidersBack />
+        <SettingsBack label={m.settings_section_providers_title()} section="providers" />
         <h1 className={SETTINGS_TITLE}>{m.providers_quota_alerts()}</h1>
       </div>
       {settings.isPending ? <LoadingState /> : settings.data?.provider_quota_thresholds && <>

@@ -19,8 +19,8 @@ import type { QuotaSource } from '../insights/QuotaMeter'
 import { OAuthSignIn } from '../onboarding/OAuthSignIn'
 import { OpenRouterCost } from './OpenRouterCost'
 import { ProviderQuotaPace } from './ProviderQuotaPace'
-import { LEVEL_TONE, ProviderKeyForm, ProvidersBack, ProviderStatus, QuotaSourceStatus, SelfHostedForm, useProviders, useProviderWrites, type Provider } from './ProvidersSection'
-import { SETTINGS_PAGE, SETTINGS_TITLE, SettingAction, SettingRow, SettingsGroup, SettingsStats, type SettingsStat } from './SettingsGroup'
+import { LEVEL_TONE, ProviderKeyForm, ProviderStatus, QuotaSourceStatus, SelfHostedForm, useProviders, useProviderWrites, type Provider } from './ProvidersSection'
+import { SETTINGS_PAGE, SETTINGS_TITLE, SettingAction, SettingsBack, SettingRow, SettingsGroup, SettingsStats, type SettingsStat } from './SettingsGroup'
 import { useSettingField } from './useSettingField'
 
 /** The models a provider's page lists before its "more" disclosure. */
@@ -33,7 +33,7 @@ const MODELS_SHOWN = 5
 export function ProviderDetail({ id }: { id: string }) {
   const providers = useProviders()
   const { quotas, refresh } = useProviderQuotas()
-  const back = <ProvidersBack />
+  const back = <SettingsBack label={m.settings_section_providers_title()} section="providers" />
   if (providers.isPending) return <LoadingState />
   if (providers.isError && !providers.data) return <ErrorState error={providers.error} onRetry={() => { void providers.refetch() }} />
   const p = providers.data.providers.find((row) => row.id === id)

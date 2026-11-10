@@ -1,6 +1,7 @@
 import { m } from '../../paraglide/messages.js'
-import type { SettingsSection, ToolsTab } from '../../contracts/url'
+import type { ChatPage, SettingsSection, ToolsTab } from '../../contracts/url'
 import { FIXED_TABS, NAV_ITEMS } from '../../shell/nav'
+import { COMPOSER_CONTROLS, composerControlId } from './composerControls'
 
 /**
  * Where a setting is stored (`docs/design-system.md` §11): `device` in this browser, `interface` in the server's
@@ -13,14 +14,17 @@ export type SettingScope = 'device' | 'interface' | 'profile' | 'server'
  * its control's. A row shown only under a condition names in `shownWith` the control on its page that shows it, or the
  * nearest row beside it, so a jump to it while hidden lands there.
  */
-/** TAL-2136: a page under a section with its own route: Providers › Quota alerts. */
-export type SettingsPage = 'quota-alerts'
+/** TAL-2136, TAL-2138: a page under a section with its own route: Providers › Quota alerts, and Chat's sub-pages. */
+export type SettingsPage = 'quota-alerts' | ChatPage
 
-export interface SettingsIndexEntry { section: SettingsSection; tab?: ToolsTab; group: () => string; id: string; label: () => string; scope: SettingScope; shownWith?: string; /** TAL-2135: the row sits on each listed item's own page (a provider's), so a jump lands on the group that lists them. */ item?: true; /** TAL-2136: the row sits on this page under its section. */ page?: SettingsPage }
+export interface SettingsIndexEntry { section: SettingsSection; tab?: ToolsTab; group: () => string; id: string; label: () => string; scope: SettingScope; shownWith?: string; /** TAL-2135: the row sits on each listed item's own page (a provider's), so a jump lands on the group that lists them. */ item?: true; /** TAL-2136, TAL-2138: the row sits on this page under its section. */ page?: SettingsPage }
 
 type Row = readonly [id: string, label: () => string, shownWith?: string]
 const rows = (section: SettingsSection, group: () => string, scope: SettingScope, list: readonly Row[], tab?: ToolsTab): SettingsIndexEntry[] =>
   list.map(([id, label, shownWith]) => ({ section, group, id, label, scope, ...(tab ? { tab } : {}), ...(shownWith ? { shownWith } : {}) }))
+/** TAL-2136, TAL-2138: each page's title, which the link that opens it and its rows' search results name. */
+export const PAGE_TITLE: Record<SettingsPage, () => string> = { 'quota-alerts': m.providers_quota_alerts, 'workspace-panel': m.settings_group_workspace_panel, advanced: m.settings_page_advanced }
+const onPage = (page: SettingsPage, entries: SettingsIndexEntry[]) => entries.map((entry) => ({ ...entry, page }))
 /** A `SettingToggle`'s default control id. */
 const key = (settingKey: string) => `settings-${settingKey}`
 
@@ -31,35 +35,37 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
   ...rows('appearance', m.settings_group_text_layout, 'interface', [['fontSizePickerGrid', m.settings_label_font_size], ['chatWidthPickerGrid', m.settings_label_chat_width]]),
   ...rows('appearance', m.settings_label_language, 'interface', [['settingsLanguage', m.settings_label_language]]),
   ...rows('appearance', m.settings_label_language, 'device', [['settingsRtl', m.settings_label_rtl]]),
+  // TAL-2138: the composer controls are toggles on the drawing of the composer, in its order.
   ...rows('chat', m.settings_group_composer, 'interface', [
+    ...COMPOSER_CONTROLS.map((c) => [composerControlId(c.key), c.name] as const),
     ['settingsSendKey', m.settings_label_send_key], ['settingsDefaultMessageMode', m.settings_label_default_message_mode],
-    [key('large_text_paste_as_attachment'), m.settings_label_large_text_paste_as_attachment], [key('show_busy_placeholder_hint'), m.settings_label_busy_placeholder_hint],
-    [key('show_quota_chip'), m.settings_label_quota_chip],
-  ]),
-  ...rows('chat', m.settings_group_composer_chips, 'interface', [
-    [key('hide_composer_model'), m.settings_label_composer_model], [key('hide_composer_reasoning'), m.settings_label_composer_reasoning],
-    [key('hide_composer_profile'), m.settings_label_composer_profile], [key('hide_composer_workspace'), m.settings_label_composer_workspace],
-    [key('hide_composer_toolsets'), m.settings_label_composer_toolsets],
-  ]),
-  ...rows('chat', m.settings_group_composer_controls, 'interface', [
-    [key('hide_composer_attach'), m.settings_label_composer_attach], [key('hide_composer_mic'), m.settings_label_composer_mic],
-    [key('hide_composer_context'), m.settings_label_composer_context], [key('hide_composer_yolo'), m.settings_label_composer_yolo],
+    [key('large_text_paste_as_attachment'), m.settings_label_large_text_paste_as_attachment],
   ]),
   ...rows('chat', m.settings_group_transcript, 'interface', [
-    ['settingsChatActivityDisplayMode', m.settings_label_chat_activity_display_mode], [key('transparent_stream_event_timestamps'), m.settings_label_transparent_stream_event_timestamps],
-    [key('worklog_details_expanded_default'), m.settings_label_worklog_details_expanded_default], [key('render_user_markdown'), m.settings_label_render_user_markdown],
-    [key('fade_text_effect'), m.settings_label_fade_text_effect], [key('show_token_usage'), m.settings_label_token_usage], [key('show_tps'), m.settings_label_token_speed],
-  ]),
-  ...rows('chat', m.settings_group_scrolling, 'interface', [
-    [key('auto_scroll_follow'), m.settings_label_auto_scroll_follow], [key('virtualize_transcript'), m.settings_label_virtualize_transcript],
-    [key('session_endless_scroll'), m.settings_label_session_endless_scroll], [key('session_jump_buttons'), m.settings_label_session_jump_buttons],
-    [key('show_conversation_outline'), m.settings_label_conversation_outline],
-  ]),
-  ...rows('chat', m.settings_group_limits, 'interface', [
-    ['settingsMaxTokens', m.settings_label_max_tokens], [key('compression_prepare_ahead'), m.settings_label_compression_prepare_ahead, 'settingsMaxTokens'], ['settingsAutoTitleRefresh', m.settings_label_auto_title_refresh],
+    ['settingsChatActivityDisplayMode', m.settings_label_chat_activity_display_mode], [key('worklog_details_expanded_default'), m.settings_label_worklog_details_expanded_default],
+    [key('render_user_markdown'), m.settings_label_render_user_markdown], [key('show_token_usage'), m.settings_label_token_usage],
+    [key('auto_scroll_follow'), m.settings_label_auto_scroll_follow], [key('show_conversation_outline'), m.settings_label_conversation_outline],
+    [key('session_jump_buttons'), m.settings_label_session_jump_buttons],
   ]),
   ...rows('chat', m.settings_group_group_discussions, 'interface', [
     [key('group_discussion_max_rounds'), m.settings_label_group_discussion_max_rounds], [key('group_discussion_max_messages'), m.settings_label_group_discussion_max_messages],
+  ]),
+  ...onPage('workspace-panel', [
+    ...rows('chat', m.settings_group_panel, 'interface', [
+      [key('workspace_panel_open'), m.settings_label_workspace_panel_open], [key('workspace_todos_tab'), m.settings_label_workspace_todos_tab],
+      [key('new_chat_on_workspace_switch'), m.settings_label_new_chat_on_workspace_switch],
+    ]),
+    ...rows('chat', m.terminal_title, 'interface', [[key('terminal_auto_expand_on_output'), m.settings_label_terminal_auto_expand], [key('screen_reader_mode'), m.settings_label_terminal_screen_reader]]),
+  ]),
+  ...onPage('advanced', [
+    ...rows('chat', m.settings_group_transcript, 'interface', [
+      [key('show_busy_placeholder_hint'), m.settings_label_busy_placeholder_hint], [key('transparent_stream_event_timestamps'), m.settings_label_transparent_stream_event_timestamps],
+      [key('fade_text_effect'), m.settings_label_fade_text_effect], [key('show_tps'), m.settings_label_token_speed],
+      [key('virtualize_transcript'), m.settings_label_virtualize_transcript], [key('session_endless_scroll'), m.settings_label_session_endless_scroll],
+    ]),
+    ...rows('chat', m.settings_group_limits, 'interface', [
+      ['settingsMaxTokens', m.settings_label_max_tokens], [key('compression_prepare_ahead'), m.settings_label_compression_prepare_ahead, 'settingsMaxTokens'], ['settingsAutoTitleRefresh', m.settings_label_auto_title_refresh],
+    ]),
   ]),
   ...rows('navigation', m.settings_group_chats_list, 'interface', [
     ['settingsPinnedLimit', m.settings_label_pinned_limit], ['settingsSidebarDensity', m.settings_label_sidebar_density], [key('project_quick_create_buttons'), m.settings_label_project_quick_create],
@@ -72,11 +78,6 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
   ...rows('navigation', m.settings_group_destinations, 'interface', NAV_ITEMS.filter((n) => !FIXED_TABS.has(n.id)).map((n) => [`settingsHiddenTab-${n.id}`, n.label] as const)),
   ...rows('navigation', m.settings_group_buttons, 'interface', [
     [key('show_sidebar_feedback'), m.settings_label_sidebar_feedback], [key('show_titlebar_profile'), m.settings_label_show_titlebar_profile],
-  ]),
-  ...rows('navigation', m.settings_group_workspace_panel, 'interface', [
-    [key('workspace_panel_open'), m.settings_label_workspace_panel_open], [key('workspace_todos_tab'), m.settings_label_workspace_todos_tab],
-    [key('new_chat_on_workspace_switch'), m.settings_label_new_chat_on_workspace_switch], [key('terminal_auto_expand_on_output'), m.settings_label_terminal_auto_expand],
-    [key('screen_reader_mode'), m.settings_label_terminal_screen_reader],
   ]),
   ...rows('notifications', m.settings_group_while_open, 'interface', [
     [key('notifications_enabled'), m.settings_label_notifications], [key('sound_enabled'), m.settings_label_sound],
@@ -99,14 +100,14 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
   // TAL-2135: each provider's page pins its quota to the sidebar; the search leads to the providers that have one.
   { section: 'providers', group: m.providers_group_yours, id: 'providerSidebarQuota', label: m.providers_quota_in_sidebar, scope: 'profile', item: true },
   // TAL-2136: the quota thresholds sit on Providers › Quota alerts.
-  ...[...rows('providers', m.providers_quota_group_remaining, 'profile', [
+  ...onPage('quota-alerts', [...rows('providers', m.providers_quota_group_remaining, 'profile', [
     ['quotaThreshold-warning_remaining_percent', m.providers_quota_warning_remaining], ['quotaThreshold-critical_remaining_percent', m.providers_quota_critical_remaining],
   ]), ...rows('providers', m.providers_quota_group_pace, 'profile', [
     ['quotaThreshold-pace_tolerance_percent', m.providers_quota_pace_tolerance], ['quotaThreshold-pace_warning_burn_rate_percent', m.providers_quota_pace_warning_burn],
     ['quotaThreshold-pace_critical_burn_rate_percent', m.providers_quota_pace_critical_burn], ['quotaThreshold-pace_minimum_elapsed_hours', m.providers_quota_pace_minimum_hours],
-  ])].map((entry) => ({ ...entry, page: 'quota-alerts' as const })),
-  ...rows('tools', m.settings_group_approvals, 'profile', [[key('agent_approvals'), m.settings_label_agent_approvals]]),
+  ])]),
   ...rows('tools', m.settings_section_plugins_title, 'profile', [['plugins-auto-update', m.plugins_auto_update]], 'plugins'),
+  ...rows('tools', m.settings_group_agent_permissions, 'profile', [[key('agent_approvals'), m.settings_label_agent_approvals]]),
   ...rows('access', m.settings_group_sign_in, 'server', [['settingsPassword', m.settings_label_password], ['settingsAuthAck', m.settings_label_auth_acknowledged, 'settingsPassword']]),
   ...rows('access', m.settings_group_privacy, 'server', [
     [key('sync_to_insights'), m.settings_label_sync_insights], [key('api_redact_enabled'), m.settings_label_api_redact],

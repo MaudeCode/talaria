@@ -10,6 +10,7 @@ import { SETTINGS_TITLE } from './SettingsGroup'
 
 const AppearanceSection = lazy(() => import('./AppearanceSection').then((module) => ({ default: module.AppearanceSection })))
 const ChatSection = lazy(() => import('./ChatSection').then((module) => ({ default: module.ChatSection })))
+const ChatSubPage = lazy(() => import('./ChatSection').then((module) => ({ default: module.ChatSubPage })))
 const SidebarSection = lazy(() => import('./SidebarSection').then((module) => ({ default: module.SidebarSection })))
 const ModelsSection = lazy(() => import('./ModelsSection').then((module) => ({ default: module.ModelsSection })))
 const ProvidersPage = lazy(() => import('./ProvidersSection').then((module) => ({ default: module.ProvidersPage })))
@@ -28,7 +29,7 @@ const AboutSection = lazy(() => import('./AboutSection').then((module) => ({ def
 
 /**
  * `tab` and `onTabChange` reach the one section with tabs, Tools; `name` the profile Profiles shows in detail; `providerId` the
- * provider Providers shows on its own page (TAL-2135); `page` a page under the section with its own title (TAL-2136).
+ * provider Providers shows on its own page (TAL-2135); `page` a page under the section with its own title (TAL-2136, TAL-2138).
  */
 interface SectionProps { tab?: ToolsTab | undefined; onTabChange?: ((tab: ToolsTab) => void) | undefined; name?: string | undefined; providerId?: string | undefined; page?: SettingsPage | undefined }
 /** `row` is the URL's `#<row id>` and `visit` the navigation that set it. */
@@ -36,7 +37,7 @@ interface RevealProps { row?: string | undefined; visit?: string | undefined }
 
 const SECTIONS: Partial<Record<Section, (props: SectionProps) => ReactNode>> = {
   appearance: () => <AppearanceSection />,
-  chat: () => <ChatSection />,
+  chat: ({ page }) => page === undefined || page === 'quota-alerts' ? <ChatSection /> : <ChatSubPage page={page} />,
   navigation: () => <SidebarSection />,
   notifications: () => <NotificationsSection />,
   speech: () => <SpeechSection />,

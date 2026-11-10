@@ -90,3 +90,37 @@ test('Profiles, Spaces and Logs live in Settings under Server, and their old URL
     await expect(page, section).toHaveURL(/\/$/)
   }
 })
+
+// TAL-2138: Chat links to its two sub-pages; each returns to Chat by its back link and by the browser's Back button.
+test('Chat opens its sub-pages and each returns to Chat by its back link and by Back', async ({ page }) => {
+  await page.goto('/settings/chat')
+  await settle(page)
+  const more = page.getByRole('region', { name: 'More' })
+  for (const [name, path] of [['Workspace panel', 'workspace-panel'], ['Advanced', 'advanced']] as const) {
+    await more.getByRole('link', { name: new RegExp(`^${name}`) }).click()
+    await expect(page).toHaveURL(new RegExp(`/settings/chat/${path}$`))
+    await expect(page.getByRole('heading', { level: 1, name })).toBeVisible()
+    await expect(page.locator('[data-settings-section="chat"]')).toHaveAttribute('aria-current', 'page')
+    await page.locator('#mainSettings').getByRole('button', { name: 'Chat', exact: true }).click()
+    await expect(page).toHaveURL(/\/settings\/chat$/)
+    await more.getByRole('link', { name: new RegExp(`^${name}`) }).click()
+    await expect(page).toHaveURL(new RegExp(`/settings/chat/${path}$`))
+    await page.goBack()
+    await expect(page).toHaveURL(/\/settings\/chat$/)
+    await expect(page.getByRole('region', { name: 'Composer' })).toBeVisible()
+  }
+  // Opened directly, the back link still leads to Chat.
+  await page.goto('/settings/chat/advanced')
+  await page.locator('#mainSettings').getByRole('button', { name: 'Chat', exact: true }).click()
+  await expect(page).toHaveURL(/\/settings\/chat$/)
+})
+
+test('the composer drawing wraps without sideways scroll on the Duo\'s outer screen (TAL-2138)', async ({ page }) => {
+  await page.setViewportSize({ width: 382, height: 580 })
+  await page.goto('/settings/chat')
+  await settle(page)
+  const drawing = page.locator('[data-composer-preview]')
+  await expect(drawing.getByRole('button', { name: 'Show YOLO mode notice' })).toBeVisible()
+  expect(await drawing.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+})

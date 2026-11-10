@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs'
 import { SettingsSectionSchema } from '@maudecode/talaria-web-contracts'
-import { ToolsTabSchema } from '../src/contracts/url'
+import { ChatPageSchema, ToolsTabSchema } from '../src/contracts/url'
 import type { Page, TestInfo } from '@playwright/test'
 import { expect, expectNoOverflow, settle, test } from './fixtures'
 import { bootDemoServer, DEMO_SESSION_ID } from './demo-server'
@@ -124,6 +124,8 @@ async function settingsPages(page: Page, info: TestInfo, theme: Theme) {
     { name: 'providers-anthropic', path: 'providers/anthropic', tab: undefined },
     // TAL-2136: the quota alert thresholds' own page.
     { name: 'providers-quota-alerts', path: 'providers/quota-alerts', tab: undefined },
+    // TAL-2138: Chat's sub-pages.
+    ...ChatPageSchema.options.map((page) => ({ name: `chat-${page}`, path: `chat/${page}`, tab: undefined })),
   ]
   try {
     if (theme === 'light') await pickLightTheme(page, server.base)

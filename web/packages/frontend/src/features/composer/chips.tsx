@@ -322,6 +322,18 @@ function contextStats({ percent, used, window, windowSource, thresholdPercent, .
 
 const COMPRESS_CLASS = 'self-start rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-fg outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring) disabled:opacity-60'
 
+/** The ring the footer draws for a context percentage; Settings › Chat's composer drawing (TAL-2138) draws it too. */
+export function ContextRingGlyph({ pct }: { pct: number }) {
+  const r = 9.75
+  const c = 2 * Math.PI * r
+  return (
+    <svg viewBox="0 0 24 24" className="h-6 w-6 -rotate-90" aria-hidden="true">
+      <circle cx="12" cy="12" r={r} fill="none" stroke="currentColor" strokeWidth="2" opacity="0.2" />
+      <circle cx="12" cy="12" r={r} fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray={c} strokeDashoffset={c - (c * pct) / 100} strokeLinecap="round" />
+    </svg>
+  )
+}
+
 /** The footer ring; a click opens the usage figures and Compress now, as legacy's ring did. */
 export function ContextRing(figures: ContextFigures) {
   const [open, setOpen] = useState(false)
@@ -330,17 +342,12 @@ export function ContextRing(figures: ContextFigures) {
   const st = contextStats(figures)
   if (!st) return <ProviderQuotaPace gauge={figures.planGauge} compact />
   const { pct, tone: t, title } = st
-  const r = 9.75
-  const c = 2 * Math.PI * r
   const tone = t === 'high' ? 'text-error' : t === 'mid' ? 'text-warning' : 'text-accent'
   return (
     <div className="ctx-indicator-wrap relative flex items-center" id="ctxIndicatorWrap">
       <Popover.Root open={open} onOpenChange={(next) => { if (next) setOpening((n) => n + 1); setOpen(next) }}>
         <Popover.Trigger className={cn('ctx-indicator relative flex h-8 w-8 items-center justify-center rounded-full', tone)} aria-label={title} title={title} id="ctxIndicator">
-          <svg viewBox="0 0 24 24" className="h-6 w-6 -rotate-90" aria-hidden="true">
-            <circle cx="12" cy="12" r={r} fill="none" stroke="currentColor" strokeWidth="2" opacity="0.2" />
-            <circle cx="12" cy="12" r={r} fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray={c} strokeDashoffset={c - (c * pct) / 100} strokeLinecap="round" />
-          </svg>
+          <ContextRingGlyph pct={pct} />
           <span className="absolute text-[8px] font-semibold tabular-nums" id="ctxPercent">{pct}</span>
         </Popover.Trigger>
         <Popover.Portal>

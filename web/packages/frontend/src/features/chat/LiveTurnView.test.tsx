@@ -157,7 +157,7 @@ describe('live status', () => {
     expect(pills(view.container)[0]).toHaveTextContent('Reconnecting…')
   })
 
-  it('shows the rate only while "Show token speed" is on (TAL-2150)', async () => {
+  it('shows the rate only while "Show tokens per second" is on (TAL-2150)', async () => {
     vi.mocked(api.fetchSettings).mockResolvedValue({ show_tps: false })
     const run = liveRun()
     run.emit({ event: 'metering', data: { tps: 42.14 } })
