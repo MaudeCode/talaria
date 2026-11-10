@@ -2,6 +2,7 @@ import { DelegationWriteSchema } from '../delegation.js'
 import { AGENT_IMPORT_EXPORT_MAX_CHARS, AgentImportSourceSchema, AgentImportResultSchema } from '../agent-imports.js'
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
+import { PROFILE_DESCRIPTION_MAX, PROFILE_DISPLAY_NAME_MAX } from '../sidecar-shared.js'
 import { KanbanPinnedBoardsSchema, SettingsSchema, ReasoningStatusSchema, PersonalitiesSchema, ModelsSchema, ModelsLiveSchema, ModelFavoriteSchema, ModelFavoritesSchema, MODEL_FAVORITES_MAX, ProvidersSchema, ProfileSchema, ProfilesSchema, ActiveProfileSchema, ProfileSwitchSchema, AuxiliaryModelsSchema, ProviderQuotaSchema, ProviderQuotasSchema, ProviderCostHistorySchema, OnboardingStatusSchema, OnboardingProbeSchema, OnboardingOAuthSchema } from '../views.js'
 
 /** Settings, profiles, models, providers, reasoning, personalities, and onboarding. */
@@ -85,6 +86,7 @@ export const settingsContract = {
     switch: oc.route({ method: 'POST', path: '/api/profile/switch', tags, summary: 'Per-client switch: sets the profile cookie; never mutates the process-wide profile.' }).input(z.object({ name: z.string().optional(), profile: z.string().optional() })).output(ProfileSwitchSchema),
     create: oc.route({ method: 'POST', path: '/api/profile/create', tags }).input(z.object({ name: z.string().optional(), clone_from: z.string().nullable().optional(), clone_config: Json.optional(), base_url: z.string().nullable().optional(), api_key: z.string().nullable().optional(), default_model: z.string().nullable().optional(), model_provider: z.string().nullable().optional() })).output(z.object({ ok: z.literal(true), profile: ProfileSchema })),
     delete: oc.route({ method: 'POST', path: '/api/profile/delete', tags }).input(z.object({ name: z.string().optional(), profile: z.string().optional() })).output(z.object({ ok: z.literal(true), name: z.string() })),
+    update: oc.route({ method: 'POST', path: '/api/profile/update', tags, summary: `TAL-2093, owner only: write a profile's own \`display_name\` (empty clears it) and \`description\` to its profile.yaml; omitted fields stay. Each is trimmed and must be one printable line of at most ${PROFILE_DISPLAY_NAME_MAX} and ${PROFILE_DESCRIPTION_MAX} characters. Errors: invalid (400, including a name resolving outside the profiles directory), forbidden (403, also in isolated profile mode), not_found (404, including a deleted profile), conflict (409 while the profile is being deleted).` }).input(z.object({ name: z.string(), display_name: z.string().optional(), description: z.string().optional() })).output(z.object({ ok: z.literal(true), profile: ProfileSchema })),
   },
   models: {
     delegation: oc.route({ method: 'POST', path: '/api/model/auxiliary/delegation', tags, summary: 'Persist a native delegation backend or replace one complete named route block.' }).input(DelegationWriteSchema).output(AuxiliaryModelsSchema),

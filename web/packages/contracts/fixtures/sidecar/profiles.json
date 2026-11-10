@@ -20,6 +20,7 @@
             "enabled_skills": 0,
             "total_skills": 0,
             "display_name": "",
+            "display_name_overridden": false,
             "description": "",
             "has_avatar": false,
             "canonical_session": null
@@ -49,6 +50,7 @@
           "enabled_skills": 58,
           "total_skills": 58,
           "display_name": "",
+          "display_name_overridden": false,
           "description": "",
           "has_avatar": false,
           "canonical_session": null
@@ -85,6 +87,65 @@
       },
       "result": {
         "ok": true
+      }
+    }
+  ],
+  "profiles.set_meta": [
+    {
+      "params": {
+        "base_home": "<home>",
+        "name": "alpha",
+        "display_name": "Alpha Scout",
+        "description": "Reads the news."
+      },
+      "result": {
+        "profile": {
+          "name": "alpha",
+          "path": "<profile>",
+          "is_default": false,
+          "gateway_running": false,
+          "gateway_mode": "stopped",
+          "model": null,
+          "provider": null,
+          "has_env": true,
+          "visible": true,
+          "skill_count": 58,
+          "enabled_skills": 58,
+          "total_skills": 58,
+          "display_name": "Alpha Scout",
+          "display_name_overridden": false,
+          "description": "Reads the news.",
+          "has_avatar": false,
+          "canonical_session": null
+        }
+      }
+    },
+    {
+      "params": {
+        "base_home": "<home>",
+        "name": "alpha",
+        "display_name": ""
+      },
+      "result": {
+        "profile": {
+          "name": "alpha",
+          "path": "<profile>",
+          "is_default": false,
+          "gateway_running": false,
+          "gateway_mode": "stopped",
+          "model": null,
+          "provider": null,
+          "has_env": true,
+          "visible": true,
+          "skill_count": 58,
+          "enabled_skills": 58,
+          "total_skills": 58,
+          "display_name": "",
+          "display_name_overridden": false,
+          "description": "Reads the news.",
+          "has_avatar": false,
+          "canonical_session": null
+        }
       }
     }
   ],

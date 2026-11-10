@@ -1,5 +1,5 @@
 import { useJsonStorage } from '../test/storage.js'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createServer } from 'node:net'
@@ -1652,6 +1652,56 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect((await post(s, '/api/model/set', { scope: 'main', model: '@anthropic:claude-sonnet-4-6', provider: 'anthropic' }, { cookie: deltaCookie })).status).toBe(200)
   })
 
+  it('profile update validates its fields, writes through profiles.set_meta, and waits behind a delete of the same profile (TAL-2093)', async () => {
+    const row = (name: string, extra: Json = {}): Json => ({ name, path: join(s.state, 'profiles', name), is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0, ...extra })
+    const writes: Json[] = []
+    sidecar.respond('profiles.set_meta', (params) => {
+      if (params.name === 'ghost') throw new SidecarError("Profile 'ghost' does not exist.", { condition: 'not_found' })
+      writes.push(params)
+      return { profile: row(params.name, { display_name: params.display_name ?? 'Kept', description: params.description ?? 'Kept', display_name_overridden: params.name === 'botted' }) as never }
+    })
+    mkdirSync(join(s.state, 'profiles', 'zeta'), { recursive: true })
+    const res = await post(s, '/api/profile/update', { name: 'zeta', display_name: '  Zeta scout ', description: 'Reads the news.' })
+    expect(res.status).toBe(200)
+    expect(await json(res)).toMatchObject({ ok: true, profile: { name: 'zeta', display_name: 'Zeta scout', description: 'Reads the news.', is_active: false, pending_writes: 0 } })
+    expect(writes.pop()).toEqual({ base_home: s.state, name: 'zeta', display_name: 'Zeta scout', description: 'Reads the news.' })
+    // Omitted fields are not sent; an empty name is sent so the Agent clears it.
+    expect((await post(s, '/api/profile/update', { name: 'zeta', display_name: '' })).status).toBe(200)
+    expect(writes.pop()).toEqual({ base_home: s.state, name: 'zeta', display_name: '' })
+    expect((await json(await post(s, '/api/profile/update', { name: 'default', description: 'Home' }))).profile).toMatchObject({ is_active: true })
+    expect(writes.pop()).toMatchObject({ name: 'default', description: 'Home' })
+    expect((await json(await post(s, '/api/profile/update', { name: 'botted', description: 'd' }))).profile).toMatchObject({ display_name_overridden: true })
+    writes.length = 0
+    // Limits count characters, not UTF-16 units; a control character, a second line, and a bad or escaping name are refused unwritten.
+    expect((await post(s, '/api/profile/update', { name: 'zeta', display_name: '\u{1F600}'.repeat(80), description: 'é'.repeat(280) })).status).toBe(200)
+    writes.length = 0
+    const outside = mkdtempSync(join(tmpdir(), 'talaria-profile-outside-'))
+    symlinkSync(outside, join(s.state, 'profiles', 'escape'))
+    for (const [body, status] of [
+      [{ name: 'zeta', display_name: 'x'.repeat(81) }, 400], [{ name: 'zeta', description: 'x'.repeat(281) }, 400],
+      [{ name: 'zeta', display_name: 'a\u0007b' }, 400], [{ name: 'zeta', description: 'one\ntwo' }, 400],
+      [{ name: 'Bad Name', display_name: 'x' }, 400], [{ name: 'escape', display_name: 'x' }, 400], [{ name: '', display_name: 'x' }, 400],
+    ] as const) expect((await post(s, '/api/profile/update', body)).status, JSON.stringify(body)).toBe(status)
+    expect(writes).toEqual([])
+    expect((await post(s, '/api/profile/update', { name: 'ghost', display_name: 'x' })).status).toBe(404)
+    rmSync(join(s.state, 'profiles', 'escape'))
+    rmSync(outside, { recursive: true, force: true })
+    // An update issued during the same profile's delete waits for it, then is refused because the profile is gone.
+    let finishDelete: () => void = () => undefined
+    sidecar.respond('profiles.delete', (params) => new Promise((resolve) => { finishDelete = () => { rmSync(join(s.state, 'profiles', params.name), { recursive: true, force: true }); resolve({ ok: true }) } }))
+    const deleting = post(s, '/api/profile/delete', { name: 'zeta' })
+    await new Promise((r) => setTimeout(r, 50))
+    let settled = false
+    const updating = post(s, '/api/profile/update', { name: 'zeta', display_name: 'Late' }).then((r) => { settled = true; return r })
+    await new Promise((r) => setTimeout(r, 50))
+    expect(settled).toBe(false)
+    finishDelete()
+    expect((await deleting).status).toBe(200)
+    expect((await updating).status).toBe(404)
+    expect(writes).toEqual([])
+    sidecar.respond('profiles.delete', undefined)
+  })
+
   it('onboarding status reflects config.yaml and the local-origin gate protects setup/complete/probe', async () => {
     let res = await s.get('/api/onboarding/status')
     expect(res.status).toBe(200)
@@ -2341,6 +2391,8 @@ describe('isolated profile mode', () => {
     res = await post(s, '/api/profile/create', { name: 'other2' })
     expect(res.status).toBe(403)
     res = await post(s, '/api/profile/delete', { name: 'other' })
+    expect(res.status).toBe(403)
+    res = await post(s, '/api/profile/update', { name: 'tenant', display_name: 'Tenant' })
     expect(res.status).toBe(403)
     body = await json(await s.get('/api/sessions?all_profiles=1'))
     expect(body).toMatchObject({ active_profile: 'tenant', all_profiles: false })

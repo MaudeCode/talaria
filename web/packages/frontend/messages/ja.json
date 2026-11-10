@@ -1492,7 +1492,6 @@
 	"settings_label_auto_scroll_follow": "新しい内容を自動で追従",
 	"settings_label_auto_title_refresh": "タイトル自動更新",
 	"settings_label_auxiliary_models": "補助モデル",
-	"settings_label_bot_name": "デフォルトのアシスタント名",
 	"settings_label_busy_placeholder_hint": "処理中のプレースホルダーヒントを表示する",
 	"settings_label_chat_activity_display_mode": "アクティビティ表示",
 	"settings_label_check_updates": "アップデートを確認",

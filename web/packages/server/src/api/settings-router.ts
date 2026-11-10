@@ -438,6 +438,13 @@ export const settingsRouter = os.router({
       const profile = await ctx.deps.profiles.create({ name, clone_from: cloneFrom, clone_config: pyBool(input.clone_config), base_url: baseUrl, api_key: str(input.api_key).trim() || null, default_model: str(input.default_model).trim() || null, model_provider: str(input.model_provider).trim() || null })
       return { ok: true as const, profile: profile as never }
     })),
+    update: os.profiles.update.handler(({ input, context: { ctx } }) => run(async () => {
+      if (!(await canManageServer(ctx))) throw new HttpError(403, 'An owner session is required to manage profiles')
+      const name = input.name.trim()
+      if (!name) throw new HttpError(400, 'name is required')
+      const profile = await ctx.deps.profiles.update(name, { display_name: input.display_name, description: input.description }, activeProfileName(ctx))
+      return { ok: true as const, profile: profile as never }
+    })),
     delete: os.profiles.delete.handler(({ input, context: { ctx } }) => run(async () => {
       if (!(await canManageServer(ctx))) throw new HttpError(403, 'An owner session is required to manage profiles')
       const name = str(input.name ?? input.profile).trim()

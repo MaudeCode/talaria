@@ -3046,6 +3046,9 @@
               "has_avatar": {
                 "type": "boolean"
               },
+              "display_name_overridden": {
+                "type": "boolean"
+              },
               "canonical_session": {
                 "anyOf": [
                   {

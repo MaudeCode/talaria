@@ -72,6 +72,8 @@ SCENARIOS: list[tuple[str, dict]] = [
     # skill bundles (run_scenarios seeds the profile's media-kit bundle; one member is not installed)
     ("commands.bundles", {"profile_home": "{profile}"}),
     ("commands.bundle_resolve", {"profile_home": "{profile}", "command": "/media-kit find a cat"}),
+    ("profiles.set_meta", {"base_home": "{home}", "name": "alpha", "display_name": "Alpha Scout", "description": "Reads the news."}),
+    ("profiles.set_meta", {"base_home": "{home}", "name": "alpha", "display_name": ""}),
     ("profiles.delete", {"base_home": "{home}", "name": "alpha"}),
     # kanban
     ("kanban.boards", {"profile_home": "{home}"}),

@@ -2,7 +2,7 @@ import { useBootstrap } from '../../app/bootstrap'
 import { AgentImportDialog } from './AgentImportDialog'
 import { useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
-import type { GatewayMode, Profiles } from '@maudecode/talaria-web-contracts'
+import { PROFILE_DESCRIPTION_MAX, PROFILE_DISPLAY_NAME_MAX, type GatewayMode, type Profiles } from '@maudecode/talaria-web-contracts'
 import { Import, Plus, Trash2, type LucideIcon } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -26,7 +26,7 @@ import { showErrorToast } from '../toast/errorToast'
 import { cn } from '../../ui/cn'
 import { useResourceEffects, useResourceMutation, withCreated, withEffects } from '../sessions/useResourceMutation'
 import { appUrl } from '../../lib/appRoot'
-import { SettingLink, SettingValue, SettingValues, SettingsGroup } from '../settings/SettingsRows'
+import { SettingLink, SettingText, SettingValue, SettingValues, SettingsGroup } from '../settings/SettingsRows'
 
 // TAL-805: `gateway_running` labels rows from a server without `gateway_mode`; delete the fallback once every supported server ships the field.
 const GATEWAY_MODE_LABEL: Record<GatewayMode, () => string> = {
@@ -39,17 +39,19 @@ const gatewayLabel = (p: Profile): string | undefined => p.gateway_mode ? GATEWA
   : p.gateway_running === undefined ? undefined : p.gateway_running ? m.profile_gateway_running() : m.profile_gateway_stopped()
 
 type NewProfile = Record<string, unknown> & { name: string; default_model?: string | undefined }
+interface ProfileEdit { name: string; display_name?: string; description?: string }
 type ProfileAction = RowAction & { title?: string; Icon?: LucideIcon }
 
 /** Settings > Profiles: the list, or with `name` (TAL-2085) that profile's detail. */
 export function ProfilesPage({ name }: { name?: string | undefined } = {}) {
   const profiles = useProfilesQuery()
   const navigate = useNavigate()
-  const canImport = useBootstrap().auth.can_manage_server
+  const canManage = useBootstrap().auth.can_manage_server
   const switchProfile = useSwitchProfile()
   const [importing, setImporting] = useState(false)
   const [creating, setCreating] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [editing, setEditing] = useState<string | null>(null)
   const onError = (e: unknown) => showErrorToast(e)
   const del = useResourceMutation({ resource: (name: string) => `profile:${name}`, queryKey: keys.profiles, effect: () => ({ remove: true }), mutationFn: (name) => api.deleteProfile(name), onSuccess: () => showToast(m.profile_deleted_toast()), onError })
   // A new profile shows at once by its name; the server fills in the rest on its reread.
@@ -57,6 +59,12 @@ export function ProfilesPage({ name }: { name?: string | undefined } = {}) {
     resource: ({ name }: NewProfile) => `profile:new:${name}`, queryKey: keys.profiles, exclusive: true,
     effect: ({ name, default_model }) => ({ fields: { name, model: default_model } }),
     mutationFn: (body) => api.createProfile(body), onSuccess: () => showToast(m.profile_created_toast()), onError,
+  })
+  // TAL-2093: the new name and description show at once; a refused save restores the server's values.
+  const update = useResourceMutation({
+    resource: ({ name }: ProfileEdit) => `profile:${name}`, queryKey: keys.profiles,
+    effect: ({ display_name, description }) => ({ fields: { ...(display_name !== undefined ? { display_name } : {}), ...(description !== undefined ? { description } : {}) } }),
+    mutationFn: (body) => api.updateProfile(body), onError,
   })
   const effects = useResourceEffects()
   const list = withCreated(withEffects(profiles.data?.profiles ?? [], (p) => `profile:${p.name}`, effects), 'profile', effects)
@@ -82,11 +90,14 @@ export function ProfilesPage({ name }: { name?: string | undefined } = {}) {
     return [
       ...(p.canonical_session ? [{ label: m.profile_open_bot_chat(), run: () => openBotChat(p.name), disabled: switchProfile.isPending }] : []),
       ...(!isActive ? [{ label: m.profile_use(), title: m.profile_switch_title(), run: () => switchProfile.mutate(p.name, { onSuccess: () => { showToast(m.profile_switched({ name: p.name })); window.location.reload() } }) }] : []),
+      ...(canManage && !profiles.data?.single_profile_mode ? [{ label: m.profile_edit(), run: () => setEditing(p.name) }] : []),
       ...(!p.is_default && !isActive ? [{ label: m.profile_delete_title(), Icon: Trash2, run: () => setDeleting(p.name), danger: true }] : []),
     ]
   }
   // A delete from the detail returns to the list at once; a refused delete brings the row back there.
   const confirmDelete = <ConfirmDialog open={deleting !== null} onOpenChange={(o) => { if (!o) setDeleting(null) }} title={m.profile_delete_confirm_title({ name: deleting ?? '' })} description={m.profile_delete_confirm_body()} confirmLabel={m.delete()} cancelLabel={m.cancel()} danger onConfirm={() => { if (!deleting) return; if (name !== undefined) toList(); del.mutate(deleting) }} />
+  const editingProfile = editing === null ? undefined : list.find((p) => p.name === editing)
+  const editDialog = editingProfile && <EditProfileDialog profile={editingProfile} onClose={() => setEditing(null)} onSubmit={(body) => { setEditing(null); update.mutate(body) }} />
   if (name !== undefined) {
     const profile = list.find((p) => p.name === name)
     return (
@@ -102,12 +113,13 @@ export function ProfilesPage({ name }: { name?: string | undefined } = {}) {
             </ErrorState>
           ))}
         {confirmDelete}
+        {editDialog}
       </HubPage>
     )
   }
   return (
     <HubPage title={m.tab_profiles()} help={<ProfileConceptHelp />} actions={<>
-      {canImport && <PanelHeadButton label={m.profile_import()} onClick={() => setImporting(true)}><Import size={16} aria-hidden="true" /></PanelHeadButton>}
+      {canManage && <PanelHeadButton label={m.profile_import()} onClick={() => setImporting(true)}><Import size={16} aria-hidden="true" /></PanelHeadButton>}
       {!profiles.data?.single_profile_mode && <PanelHeadButton label={m.profile_create()} className="primary" onClick={() => setCreating(true)}><Plus size={16} aria-hidden="true" /></PanelHeadButton>}
     </>}>
       {importing && <AgentImportDialog key={active} onClose={() => setImporting(false)} />}
@@ -139,6 +151,7 @@ export function ProfilesPage({ name }: { name?: string | undefined } = {}) {
       </RowList>
       {creating && <CreateProfileDialog existing={list.map((p) => p.name)} onClose={() => setCreating(false)} onSubmit={(body) => { setCreating(false); create.mutate(body) }} />}
       {confirmDelete}
+      {editDialog}
     </HubPage>
   )
 }
@@ -184,6 +197,12 @@ function ProfileDetail({ profile: p, isActive, actions }: { profile: Profile; is
           </div>
         )}
       </div>} />
+      {/* TAL-2093: the root profile's assistant is named by the server-wide `bot_name` setting; a named profile goes by its own name. */}
+      {p.is_default && (
+        <SettingsGroup id="profile-identity" title={m.profile_detail_identity()}>
+          <SettingText label={m.profile_detail_assistant_name()} id="settingsBotName" settingKey="bot_name" fallback="Hermes" maxLength={64} parse={(draft) => draft.trim() || 'Hermes'} />
+        </SettingsGroup>
+      )}
       {(p.model || p.provider || isActive) && (
         <SettingsGroup id="profile-model" title={m.profile_detail_model()}>
           {(p.model || p.provider) && (
@@ -218,6 +237,27 @@ function ProfileDetail({ profile: p, isActive, actions }: { profile: Profile; is
         </SettingsGroup>
       )}
     </div>
+  )
+}
+
+/** TAL-2093: closes on Save; the header shows the new values while the server writes them. Bot Mode's roster title, when set, is the shown name, so the name field is locked. */
+function EditProfileDialog({ profile, onClose, onSubmit }: { profile: Profile; onClose: () => void; onSubmit: (body: ProfileEdit) => void }) {
+  const overridden = !!profile.display_name_overridden
+  const [displayName, setDisplayName] = useState(profile.display_name ?? '')
+  const [description, setDescription] = useState(profile.description ?? '')
+  const submit = () => onSubmit({ name: profile.name, ...(overridden ? {} : { display_name: displayName.trim() }), description: description.trim() })
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }} title={m.profile_edit_title({ name: profile.name })}>
+      <form onSubmit={(e) => { e.preventDefault(); submit() }} className="flex flex-col gap-1">
+        <FieldRow label={m.profile_edit_display_name()} hint={overridden ? m.profile_edit_display_name_overridden() : undefined} htmlFor="profileDisplayName">
+          <TextInput id="profileDisplayName" autoFocus={!overridden} value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder={profile.name} maxLength={PROFILE_DISPLAY_NAME_MAX} disabled={overridden} />
+        </FieldRow>
+        <FieldRow label={m.profile_edit_description()} htmlFor="profileDescription">
+          <TextInput id="profileDescription" autoFocus={overridden} value={description} onChange={(e) => setDescription(e.target.value)} maxLength={PROFILE_DESCRIPTION_MAX} />
+        </FieldRow>
+        <div className="mt-3 flex justify-end gap-2"><Button onClick={onClose}>{m.cancel()}</Button><Button type="submit" variant="primary">{m.save()}</Button></div>
+      </form>
+    </Dialog>
   )
 }
 

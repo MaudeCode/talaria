@@ -4,9 +4,9 @@ import { useBootstrap } from '../../app/bootstrap'
 import { useSettingField } from './useSettingField'
 import { SettingText, SettingToggle as Toggle, SettingsGroup } from './SettingsRows'
 
-/** TAL-1691: Settings › Access › Privacy, what leaves the server and how links and the assistant are presented. */
+/** TAL-1691: Settings › Access › Privacy, what leaves the server and how links are presented. */
 export function PrivacySettings() {
-  const { settings } = useSettingField(['bot_name', 'trusted_link_hosts'])
+  const { settings } = useSettingField(['trusted_link_hosts'])
   // Link safety applies to every user of the server; only an owner may change it.
   const canManage = useBootstrap().auth.can_manage_server
   if (settings.isPending) return <LoadingState compact />
@@ -17,7 +17,6 @@ export function PrivacySettings() {
       <Toggle label={m.settings_label_api_redact()} settingKey="api_redact_enabled" fallback disabled={!canManage} />
       <Toggle label={m.settings_label_confirm_external_links()} settingKey="confirm_external_links" fallback disabled={!canManage} />
       <SettingText label={m.settings_label_trusted_link_hosts()} hint={m.settings_desc_trusted_link_hosts()} id="settingsTrustedLinkHosts" settingKey="trusted_link_hosts" multiline placeholder="docs.example.com" disabled={!canManage} parse={(draft) => draft.split('\n')} format={(hosts) => (Array.isArray(hosts) ? hosts : []).join('\n')} />
-      <SettingText label={m.settings_label_bot_name()} id="settingsBotName" settingKey="bot_name" fallback="Hermes" maxLength={64} parse={(draft) => draft.trim() || 'Hermes'} />
     </SettingsGroup>
   )
 }

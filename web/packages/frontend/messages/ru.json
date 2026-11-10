@@ -1657,7 +1657,6 @@
 	"settings_label_auto_scroll_follow": "Автопрокрутка к новому содержимому",
 	"settings_label_auto_title_refresh": "Адаптивное обновление заголовка",
 	"settings_label_auxiliary_models": "Вспомогательные модели",
-	"settings_label_bot_name": "Имя помощника по умолчанию",
 	"settings_label_busy_placeholder_hint": "Показывать подсказку занятости в поле ввода",
 	"settings_label_chat_activity_display_mode": "Отображение активности",
 	"settings_label_check_updates": "Проверять обновления",

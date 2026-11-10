@@ -1,7 +1,7 @@
 import { BootstrapContext } from '../../app/bootstrap'
 import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, Outlet, RouterProvider, useParams, useSearch } from '@tanstack/react-router'
@@ -18,7 +18,8 @@ vi.mock(import('../../api/endpoints'), async (importOriginal) => ({
     active: 'default',
     single_profile_mode: false,
   })),
-  deleteProfile: vi.fn(), createProfile: vi.fn(),
+  deleteProfile: vi.fn(), createProfile: vi.fn(), updateProfile: vi.fn(),
+  fetchSettings: vi.fn(() => Promise.resolve({ bot_name: 'Maude' })), saveSettings: vi.fn((patch: Record<string, unknown>) => Promise.resolve({ bot_name: 'Maude', ...patch })),
   fetchModels: vi.fn(() => Promise.resolve({ groups: [{ provider: 'OpenAI Codex', provider_id: 'openai-codex', models: [{ id: '@openai-codex:gpt-6-astra', label: 'GPT-6 Astra', provider_id: 'openai-codex' }] }] })),
   switchProfile: vi.fn(() => Promise.resolve({ profiles: [{ name: 'scout', canonical_session: { session_id: 'scout-root', tip_session_id: 'scout-live' } }], active: 'scout', is_default: false, default_model: null, default_model_provider: null, default_workspace: null })),
 }))
@@ -94,10 +95,11 @@ describe('ProfilesPage', () => {
       const scout = (await screen.findByText('Research lead')).closest('li')!
       expect(within(scout).getByText('scout')).toBeVisible()
       expect(within(scout).getByText('Finds sources.')).toBeVisible()
-      // The active default profile has no Bot Chat and nothing to use or delete, so it offers no menu, but still opens.
+      // The active default profile has no Bot Chat and nothing to use or delete, so its menu only edits it (TAL-2093), and it still opens.
       const plain = screen.getByText('default').closest('li')!
-      expect(within(plain).queryByRole('button', { name: 'Profile actions' })).toBeNull()
       expect(within(plain).getByRole('link', { name: 'default' })).toHaveAttribute('href', '/settings/profiles?name=default')
+      expect((await rowMenuItems(plain)).map((item) => item.textContent)).toEqual(['Edit'])
+      await userEvent.keyboard('{Escape}')
       await userEvent.click((await rowMenuItems(scout)).find((item) => item.textContent === 'Open Bot Chat')!)
       expect(api.switchProfile).toHaveBeenCalledWith('scout')
       // The chat opens from the row the switch resolved, not the cached listing.
@@ -243,5 +245,79 @@ describe('profile writes show their result at once (TAL-1179)', () => {
     await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), 'writer{Enter}')
     await vi.waitFor(() => { expect(showErrorToast).toHaveBeenCalledWith(expect.objectContaining({ message: "Selected model 'x' is not available" })) })
     expect(screen.queryByText('writer')).toBeNull()
+  })
+})
+
+describe('profile edits show their result at once (TAL-2093)', () => {
+  const scoutDetail = async () => {
+    await renderPage(DEFAULT_BOOTSTRAP, '/settings/profiles?name=scout')
+    return (await screen.findByText('Finds sources.')).closest<HTMLElement>('[data-profile-detail="scout"]')!
+  }
+  const editDialog = async (detail: HTMLElement) => {
+    await userEvent.click(within(detail).getByRole('button', { name: 'Edit' }))
+    return screen.findByRole('dialog', { name: 'Edit scout' })
+  }
+
+  it('shows the saved name and description at once and keeps them after the reread', async () => {
+    let finish: () => void = () => undefined
+    vi.mocked(api.updateProfile).mockReturnValueOnce(new Promise((resolve) => { finish = () => resolve({ ok: true, profile: { name: 'scout' } }) }))
+    const detail = await scoutDetail()
+    const dialog = await editDialog(detail)
+    const name = within(dialog).getByRole('textbox', { name: 'Display name' })
+    expect(name).toHaveValue('Research lead')
+    await userEvent.clear(name)
+    await userEvent.type(name, ' Field agent ')
+    await userEvent.clear(within(dialog).getByRole('textbox', { name: 'Description' }))
+    await userEvent.type(within(dialog).getByRole('textbox', { name: 'Description' }), 'Reads the news.{Enter}')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(api.updateProfile).toHaveBeenLastCalledWith({ name: 'scout', display_name: 'Field agent', description: 'Reads the news.' })
+    expect(within(detail).getByText('Field agent')).toBeVisible()
+    expect(within(detail).getByText('Reads the news.')).toBeVisible()
+    vi.mocked(api.fetchProfiles).mockResolvedValueOnce({ profiles: [{ name: 'default', is_default: true }, { name: 'scout', display_name: 'Field agent', description: 'Reads the news.' }], active: 'default', single_profile_mode: false })
+    finish()
+    await vi.waitFor(() => { expect(api.fetchProfiles).toHaveBeenCalledTimes(2) })
+    expect(within(detail).getByText('Field agent')).toBeVisible()
+    expect(within(detail).getByText('Reads the news.')).toBeVisible()
+  })
+
+  it('restores the previous values and shows the server error when the save is refused', async () => {
+    vi.mocked(api.updateProfile).mockRejectedValueOnce(new Error('display_name must be at most 80 characters'))
+    const detail = await scoutDetail()
+    const dialog = await editDialog(detail)
+    await userEvent.type(within(dialog).getByRole('textbox', { name: 'Description' }), ' More.{Enter}')
+    await vi.waitFor(() => { expect(showErrorToast).toHaveBeenCalledWith(expect.objectContaining({ message: 'display_name must be at most 80 characters' })) })
+    expect(await within(detail).findByText('Finds sources.')).toBeVisible()
+    expect(within(detail).queryByText('Finds sources. More.')).toBeNull()
+  })
+
+  it('locks the name behind a Bot Mode title and still saves the description', async () => {
+    vi.mocked(api.updateProfile).mockReturnValueOnce(new Promise(() => undefined))
+    vi.mocked(api.fetchProfiles).mockResolvedValueOnce({ profiles: [{ name: 'scout', display_name: 'Research lead', display_name_overridden: true, description: 'Finds sources.' }], active: 'default', single_profile_mode: false })
+    const detail = await scoutDetail()
+    const dialog = await editDialog(detail)
+    expect(within(dialog).getByRole('textbox', { name: 'Display name' })).toBeDisabled()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'About Display name' }))
+    expect(await screen.findByText("Bot Mode's roster title is shown instead of this name.")).toBeVisible()
+    await userEvent.type(within(dialog).getByRole('textbox', { name: 'Description' }), ' Daily.{Enter}')
+    expect(api.updateProfile).toHaveBeenLastCalledWith({ name: 'scout', description: 'Finds sources. Daily.' })
+  })
+
+  it('offers no Edit to a non-owner', async () => {
+    await renderPage({ ...DEFAULT_BOOTSTRAP, auth: { ...DEFAULT_BOOTSTRAP.auth, can_manage_server: false } }, '/settings/profiles?name=scout')
+    expect(await screen.findByText('Finds sources.')).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull()
+  })
+
+  it('names the assistant on the default profile only', async () => {
+    await renderPage(DEFAULT_BOOTSTRAP, '/settings/profiles?name=default')
+    const field = await screen.findByRole('textbox', { name: 'Assistant name' })
+    await vi.waitFor(() => { expect(field).toHaveValue('Maude') })
+    await userEvent.clear(field)
+    await userEvent.type(field, 'Ada{Enter}')
+    await vi.waitFor(() => { expect(api.saveSettings).toHaveBeenCalledWith({ bot_name: 'Ada' }) })
+    cleanup()
+    await renderPage(DEFAULT_BOOTSTRAP, '/settings/profiles?name=scout')
+    expect(await screen.findByText('Finds sources.')).toBeVisible()
+    expect(screen.queryByRole('textbox', { name: 'Assistant name' })).toBeNull()
   })
 })

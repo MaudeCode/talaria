@@ -8,7 +8,8 @@ import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from 'node
 import type { DocumentBackend } from '../sessions/storage/backend.js'
 import { updateDocument } from '../sessions/storage/document.js'
 import { join, resolve } from 'node:path'
-import type { SidecarLike } from '../sidecar/client.js'
+import { SidecarError, type SidecarLike } from '../sidecar/client.js'
+import { PROFILE_DESCRIPTION_MAX, PROFILE_DISPLAY_NAME_MAX, RPC_ERROR_CODES } from '@maudecode/talaria-web-contracts'
 import type { AgentConfig, Dict } from '../config/agent-config.js'
 import { dict, modelSection, parseProviderQualifiedModel, providerIdentity } from '../config/agent-config.js'
 import { writeProfileEnv } from '../providers/env-file.js'
@@ -205,11 +206,7 @@ export class ProfileService {
     // a source already being deleted / deleted is refused before anything is created).
     let releaseSource: (() => void) | null = null
     if (opts.clone_from && !this.isRootProfile(opts.clone_from)) {
-      const lease = (await this.beginWrite(opts.clone_from))
-      if (lease === 'deleting') throw new ProfileError(`Profile '${opts.clone_from}' is being deleted.`, 409)
-      if (lease === 'missing') throw new ProfileError(`Profile '${opts.clone_from}' does not exist.`, 404)
-      if (lease === 'unreadable') throw new ProfileError('Profile deletion records are unreadable; retry in a moment.', 503)
-      releaseSource = lease
+      releaseSource = await this.requireWrite(opts.clone_from)
     }
     // Sidecar creation and the follow-up configuration writes are one lifecycle step: a delete of the same name
     // waits behind them instead of removing the half-configured home (and `config.set` resurrecting it).
@@ -377,6 +374,15 @@ export class ProfileService {
     }
   }
 
+  /** `beginWrite` for a named profile the request acts on: its release, or the refusal as a `ProfileError`. */
+  private async requireWrite(name: string): Promise<() => void> {
+    const lease = await this.beginWrite(name)
+    if (lease === 'deleting') throw new ProfileError(`Profile '${name}' is being deleted.`, 409)
+    if (lease === 'missing') throw new ProfileError(`Profile '${name}' does not exist.`, 404)
+    if (lease === 'unreadable') throw new ProfileError('Profile deletion records are unreadable; retry in a moment.', 503)
+    return lease
+  }
+
   private awaitWritesDrained(name: string, timeoutMs: number): Promise<void> {
     const lease = this.writeLeases.get(name)
     if (!lease || lease.count <= 0) return Promise.resolve()
@@ -384,6 +390,36 @@ export class ProfileService {
       const timer = setTimeout(() => { reject(new ProfileError(`Profile '${name}' still has requests in flight. Retry in a moment.`, 503)) }, timeoutMs)
       lease.drained.push(() => { clearTimeout(timer); resolve() })
     })
+  }
+
+  /**
+   * TAL-2093: write a profile's own display name and description. Runs on the profile's lifecycle chain under a write
+   * lease, so it waits behind an in-flight delete and is refused once that delete removed the profile.
+   */
+  async update(name: string, fields: { display_name?: string | undefined; description?: string | undefined }, active: string): Promise<Dict> {
+    if (this.deps.isolatedProfileMode()) throw new ProfileError('Profile editing is not allowed in isolated profile mode.', 403)
+    const root = this.isRootProfile(name)
+    if (!root) validateProfileName(name)
+    this.assertContained(name)
+    const params = {
+      base_home: this.deps.baseHome, name: root ? 'default' : name,
+      ...(fields.display_name !== undefined ? { display_name: profileMetaText(fields.display_name, 'display_name', PROFILE_DISPLAY_NAME_MAX) } : {}),
+      ...(fields.description !== undefined ? { description: profileMetaText(fields.description, 'description', PROFILE_DESCRIPTION_MAX) } : {}),
+    }
+    const row = await this.withLifecycle(name, async () => {
+      const lease = await this.requireWrite(name)
+      try {
+        return (await this.sidecar().call('profiles.set_meta', params)).profile
+      } catch (error) {
+        if (error instanceof SidecarError && error.condition === 'not_found') throw new ProfileError(error.message, 404)
+        if (error instanceof SidecarError && error.code === RPC_ERROR_CODES.invalidParams) throw new ProfileError(error.message, 400)
+        throw error
+      } finally {
+        lease()
+        this.invalidate()
+      }
+    })
+    return { ...row, is_active: str(row.name) === active || (root && this.isRootProfile(active)), pending_writes: pendingWrites(str(row.path)) }
   }
 
   async delete(name: string, active: string): Promise<{ ok: true; name: string }> {
@@ -435,6 +471,14 @@ export class ProfileService {
 
 function isDir(path: string): boolean {
   try { return statSync(path).isDirectory() } catch { return false }
+}
+
+/** TAL-2093: one trimmed printable line of at most `max` characters (code points, as the sidecar counts them on read). */
+export function profileMetaText(value: string, field: string, max: number): string {
+  const text = value.trim()
+  if (/[\p{C}\p{Zl}\p{Zp}]/u.test(text)) throw new ProfileError(`${field} must be one line without control characters`, 400)
+  if (Array.from(text).length > max) throw new ProfileError(`${field} must be at most ${max} characters`, 400)
+  return text
 }
 
 /** Python `_clean_profile_config_value`: a single line of at most 512 characters. */
