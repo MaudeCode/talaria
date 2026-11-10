@@ -90,6 +90,12 @@ describe('GET /api/session/outline (TAL-2152)', () => {
     expect(outlineExcerpt({ role: 'user', content: '**Done**: shipped [it](https://example.com), _mostly_.' })).toBe('Done: shipped it, mostly.')
   })
 
+  it('reads only the start of a huge one-line question', () => {
+    const started = performance.now()
+    expect(outlineExcerpt({ role: 'user', content: `**Huge** ${'b'.repeat(16_000_000)}` })).toBe(`Huge ${'b'.repeat(114)}…`)
+    expect(performance.now() - started).toBeLessThan(250)
+  })
+
   it('names the files of an attachment-only question', () => {
     expect(outlineExcerpt({ role: 'user', content: '', attachments: [{ name: 'plan.pdf' }, { name: 'shot.png' }] })).toBe('plan.pdf, shot.png')
   })

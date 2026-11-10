@@ -13,17 +13,25 @@ const FENCE = /^\s*(?:```|~~~)/
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 
-/** At most `OUTLINE_EXCERPT_MAX` characters as a reader counts them, never splitting an emoji. */
+/** At most `OUTLINE_EXCERPT_MAX` characters as a reader counts them, never splitting an emoji; reads no further than that. */
 function capped(text: string): string {
-  const chars = Array.from(graphemes.segment(text), (part) => part.segment)
-  return chars.length <= OUTLINE_EXCERPT_MAX ? text : `${chars.slice(0, OUTLINE_EXCERPT_MAX - 1).join('').trimEnd()}…`
+  const chars: string[] = []
+  for (const { segment } of graphemes.segment(text)) {
+    if (chars.length === OUTLINE_EXCERPT_MAX) return `${chars.slice(0, -1).join('').trimEnd()}…`
+    chars.push(segment)
+  }
+  return text
 }
+
+/** The excerpt reads only this much of a message, and renders only this much of its line: one stored line can be megabytes. */
+const SCAN_MAX = 65_536
+const LINE_MAX = 2_000
 
 /** The first line a reader sees, without Markdown, capped; an attachment-only message names its files. */
 export function outlineExcerpt(message: Record<string, unknown>): string {
-  for (const line of messageText(message.content).split('\n')) {
+  for (const line of messageText(message.content).slice(0, SCAN_MAX).split('\n')) {
     if (!line.trim() || FENCE.test(line)) continue
-    const plain = markdownPlainText(line)
+    const plain = markdownPlainText(line.slice(0, LINE_MAX))
     if (plain) return capped(plain)
   }
   const files = Array.isArray(message.attachments) ? message.attachments.map((a) => (isDict(a) ? str(a.name) : str(a))).filter(Boolean) : []
