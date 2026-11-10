@@ -16,6 +16,7 @@ import { motionOn, revealHeight } from '../../lib/motion'
 import { CollapsedBody } from './CollapsedBody'
 import { MediaTiles } from './blocks/MediaTiles'
 import { ArrivalScope } from './arrival'
+import { epochMs } from '../../ui/States'
 
 // The live turn's last rendered height, so the settled row that replaces it can fold from that height.
 let lastLiveTurn: { key: string; height: number } | null = null
@@ -69,6 +70,18 @@ export function SteerMessage({ text, state, actions }: { text: string; state?: P
   )
 }
 
+/** TAL-2149: when an activity row happened (the server's `created_at`), as a short local time at the row's trailing edge. */
+function EventTime({ at, children }: { at: number; children: ReactNode }) {
+  const locale = useLocale()
+  const date = new Date(epochMs(at))
+  return (
+    <div className="flex items-baseline gap-2">
+      <div className="min-w-0 flex-1">{children}</div>
+      <time dateTime={date.toISOString()} title={date.toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'medium' })} className="shrink-0 text-xs text-muted tabular-nums">{date.toLocaleTimeString(locale, { timeStyle: 'short' })}</time>
+    </div>
+  )
+}
+
 /** Live events and persisted history share ordering, nesting and final-answer boundaries. */
 export function TurnActivityView({ activity, mode, sessionId, scope }: { activity: TurnActivity; mode: ActivityMode; sessionId?: string | undefined; scope?: string | undefined }) {
   if (activity.history && sessionId && mode !== 'hide_all_activity') return <ActivityHistory key={JSON.stringify([scope, sessionId, activity.history])} activity={activity} history={activity.history} mode={mode} sessionId={sessionId} scope={scope} />
@@ -101,7 +114,13 @@ function ActivityBody({ activity, mode, earlier, sessionId }: { activity: TurnAc
   // Only the newest row of a running turn is active; live rows that continue a running scene take that over.
   const activeTail = running && !activity.continued
   const outcome = terminalOutcomeLabel(status)
+  // TAL-2149: transparent mode stamps each work row with its time under `transparent_stream_event_timestamps`.
+  const stamped = mode === 'transparent_stream' && disclosure?.eventTimestamps === true
   const render = (item: ActivityItem, last: boolean): ReactNode => {
+    const row = renderRow(item, last)
+    return stamped && item.kind !== 'steering' && item.createdAt !== undefined ? <EventTime key={item.key} at={item.createdAt}>{row}</EventTime> : row
+  }
+  const renderRow = (item: ActivityItem, last: boolean): ReactNode => {
     switch (item.kind) {
       case 'text': return <div key={item.key} className="msg-body"><Markdown text={item.display ?? item.text} streaming={activeTail && last} fade={disclosure?.fadeText === true} /><MediaTiles media={item.media} sessionId={sessionId} /></div>
       case 'reasoning': return <ReasoningBlock key={item.key} arrivalKey={item.key} text={item.text} titles={item.titles} disclosureKey={item.disclosureKey} live={activeTail && last} />

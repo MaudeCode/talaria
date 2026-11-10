@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Two Chat settings in Talaria Web now work: Open worklog details automatically opens each reply's Worked details, and Event timestamps shows when each step happened in the transparent activity view.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

@@ -99,6 +99,9 @@ async function writeSettings(qc: QueryClient, patch: Record<string, unknown>) {
     await Promise.all(predecessors)
     if (!current()) throw new Error(m.error_generic())
     const data = await api.saveSettings(patch)
+    // TAL-2149: the server opens every Worklog by this setting, so transcripts re-read their scenes once it is stored,
+    // even after the page that wrote it has closed.
+    if ('worklog_details_expanded_default' in patch && data.ok !== false && !data.error) void qc.invalidateQueries({ queryKey: [...keys.sessions.all, 'detail'] })
     if (!current()) return data
     if (typeof data.error === 'string' && data.error) throw new Error(data.error)
     if (data.ok === false) throw new Error(m.error_generic())

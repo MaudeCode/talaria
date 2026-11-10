@@ -378,6 +378,29 @@ describe('running turn scenes (TAL-374)', () => {
   })
 })
 
+describe('worklog_details_expanded_default (TAL-2149)', () => {
+  const work = { row_id: 'r', order_index: 0, role: 'reasoning', text: 'step' }
+  const transcript = withTurnIds<Json>([
+    // Built from its rows: a completed answer after tool work, which stays folded by the outcome rules.
+    { role: 'user', content: 'Read it' }, { role: 'assistant', content: 'Reading.', tool_calls: [{ id: 't1', name: 'read_file' }] }, { role: 'tool', tool_call_id: 't1', content: 'A' }, { role: 'assistant', content: 'Done.' },
+    // Stored without a disclosure decision: the stored-outcome rules decide it.
+    { role: 'user', content: 'Again' }, { role: 'assistant', content: 'Fine.', _anchor_activity_scene: { version: 'activity_scene_v1', final_answer: 'Fine.', activity_rows: [work] } },
+    // Stored answer that was only markup: the preview reads it as no reply, with no work to open.
+    { role: 'user', content: 'Think' }, { role: 'assistant', content: 'Hm', _anchor_activity_scene: { version: 'activity_scene_v1', final_answer: '<think>plan</think>', terminal_state: 'completed', expanded_by_default: false, activity_rows: [] } },
+  ])
+  const expanded = (expandWorklog?: boolean) => (hydrateAnchorActivityScenes(transcript, {}, expandWorklog === undefined ? {} : { expandWorklog }) as Json[])
+    .flatMap((m) => { const scene = m._anchor_activity_scene as Json | undefined; return scene ? [[scene.terminal_state, scene.expanded_by_default]] : [] })
+
+  it('opens every Worklog when the setting is on, at the built, stored and rewritten-outcome decisions', () => {
+    expect(expanded(true)).toEqual([['completed', true], ['completed', true], ['no_response', true]])
+  })
+
+  it('keeps the outcome rules when the setting is off', () => {
+    expect(expanded(false)).toEqual([['completed', false], ['completed', false], ['no_response', false]])
+    expect(expanded()).toEqual(expanded(false))
+  })
+})
+
 describe('hydration cost (TAL-1741)', () => {
   // Two settled turns of two assistant rows each: counting refs over every row costs twice what one ref per turn does.
   const transcript = withTurnIds<Json>([
@@ -538,6 +561,22 @@ describe('anchor scenes over HTTP', () => {
     expect(page).toMatchObject({ start: 0, end: 10, total: 90, complete: true })
     expect((page.rows as Json[]).map((r) => r.row_id)).toEqual(['i3:prose', 'tool:c0', 'i5:prose', 'tool:c1', 'i7:prose', 'tool:c2', 'i9:prose', 'tool:c3', 'i11:prose', 'tool:c4'])
     expect(readFileSync(sessionPath(s.deps.sessionStore, sid), 'utf8')).toBe(stored)
+  })
+
+  it('reads worklog_details_expanded_default on each transcript read (TAL-2149)', async () => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const session = (await s.deps.sessionStore.get(sid))
+    session.messages = [{ role: 'user', content: 'Read it' }, { role: 'assistant', content: 'Reading.', tool_calls: [{ id: 't1', name: 'read_file' }] }, { role: 'tool', tool_call_id: 't1', content: 'A' }, { role: 'assistant', content: 'Done.' }]
+    await s.deps.sessionStore.save(session)
+    const expanded = async () => (((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[])[3]?._anchor_activity_scene as Json
+    expect(await expanded()).toMatchObject({ terminal_state: 'completed', expanded_by_default: false })
+    expect((await post(s, '/api/settings', { worklog_details_expanded_default: true })).status).toBe(200)
+    try {
+      expect(await expanded()).toMatchObject({ terminal_state: 'completed', expanded_by_default: true })
+    } finally {
+      expect((await post(s, '/api/settings', { worklog_details_expanded_default: false })).status).toBe(200)
+    }
+    expect(await expanded()).toMatchObject({ expanded_by_default: false })
   })
 
   it('completes stored legacy scenes: the final answer leaves the rows, and a consumed steer is never promoted', async () => {
