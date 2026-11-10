@@ -1123,6 +1123,19 @@ final class SessionListHostedTests: XCTestCase {
         XCTAssertNil(creation, "Appearance must not create a session")
         XCTAssertEqual(creationCount, 0)
         try await typeIntoComposer(submittedDraft, in: window)
+        if withImportedFile {
+            let staged = await awaitCondition {
+                filenames.allSatisfy {
+                    HostedAccessibility.element(in: window, label: "Remove attachment \($0)") != nil
+                } && HostedAccessibility.element(in: window, label: "Send")?.accessibilityTraits.contains(.notEnabled) == false
+            }
+            XCTAssertTrue(staged, "Initial imports must finish local staging before the first send")
+            let draft = await fixture.environment.draftStore.draft(for: .newChat(server: UITestFixtureEnvironment.serverURL))
+            XCTAssertEqual(draft?.attachments.count, filenames.count, "Every initial import must be durable before sending")
+            XCTAssertTrue(draft?.attachments.allSatisfy { $0.file != nil } == true)
+            XCTAssertEqual(creationCount, 0, "Local staging must not create a session")
+            XCTAssertEqual(UITestFixtureURLProtocol.initialUploadAttemptCount, 0, "Uploads must wait for session creation")
+        }
         let send = try await requireElement(in: window, label: "Send")
         XCTAssertFalse(send.accessibilityTraits.contains(.notEnabled), "Send must accept local intent during creation")
         HostedAccessibility.activate(send)
@@ -2263,7 +2276,8 @@ extension SessionListHostedTests {
         attachHostedScreenshot(window, name: "tent-run-monitor")
         XCTAssertTrue(firstCard.accessibilityLabel?.hasPrefix("\(titles[0]), Working, running for 1 minute") == true, firstCard.accessibilityLabel ?? "")
         XCTAssertTrue(secondCard.accessibilityLabel?.hasPrefix("\(titles[1]), Working, running for 2 minutes") == true, secondCard.accessibilityLabel ?? "")
-        XCTAssertGreaterThanOrEqual(firstCard.accessibilityFrame.height, 150, "A run card reads from arm's length")
+        // Accessibility coordinate conversion can place an exact boundary one representable value below its size.
+        XCTAssertGreaterThanOrEqual(firstCard.accessibilityFrame.height.nextUp, 150, "A run card reads from arm's length")
         let stops = HostedAccessibility.elements(in: window).filter { HostedAccessibility.identifier(of: $0) == "session-run-stop" }
         XCTAssertEqual(stops.map(\.accessibilityLabel), ["Stop", "Stop"], "Each running card offers Stop")
         let firstStop = try XCTUnwrap(stops.first { firstCard.accessibilityFrame.minY...firstCard.accessibilityFrame.maxY ~= $0.accessibilityFrame.midY })
