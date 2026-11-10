@@ -37,7 +37,7 @@ it('SettingSelect writes the picked option', async () => {
 
 it.each([
   ['an in-range integer', '7', { limit: 7 }],
-  ['an integer above max', '51', null],
+  ['an integer above the stepper max, for the server to judge', '51', { limit: 51 }],
   ['an integer below min', '0', null],
   ['a fraction', '2.5', null],
   ['an empty field without allowEmpty', '', null],

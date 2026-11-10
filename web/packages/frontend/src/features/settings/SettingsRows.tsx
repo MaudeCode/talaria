@@ -36,7 +36,7 @@ export function SettingSelect({ label, hint, settingKey, id: givenId, fallback, 
   )
 }
 
-/** One integer server setting. Only an integer in `[min, max]` is written; with `allowEmpty` an empty field writes `null`. A stored 0 or unset value shows empty. */
+/** One integer server setting. An integer from `min` up goes to the server, which owns the accepted range; `max` only bounds the input's stepper. With `allowEmpty` an empty field writes `null`. A stored 0 or unset value shows empty. */
 export function SettingNumber({ label, hint, settingKey, id: givenId, fallback = 0, min = 1, max, allowEmpty, placeholder, width = 'w-20', disabled }: SettingProps & { fallback?: number; min?: number; max?: number; allowEmpty?: boolean; placeholder?: string; width?: string }) {
   const id = rowId(givenId, settingKey)
   const { num, setAsync } = useSettingField([settingKey])
@@ -46,7 +46,7 @@ export function SettingNumber({ label, hint, settingKey, id: givenId, fallback =
         const raw = e.target.value.trim()
         if (raw === '') return allowEmpty ? setAsync({ [settingKey]: null }) : undefined
         const n = Number(raw)
-        if (Number.isInteger(n) && n >= min && (max === undefined || n <= max)) return setAsync({ [settingKey]: n })
+        if (Number.isInteger(n) && n >= min) return setAsync({ [settingKey]: n })
       }} />
     </FieldRow>
   )
