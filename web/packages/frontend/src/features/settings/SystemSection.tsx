@@ -120,6 +120,7 @@ export function SystemSection() {
       <HubHeadActions><IconButton variant="ghost" label={checkLabel} onClick={() => checkNow.mutate()} disabled={checkNow.isPending}><RefreshCw aria-hidden="true" /></IconButton></HubHeadActions>
       <SettingsStats label={m.settings_section_system_title()} stats={[
         { id: 'web', label: WEB, value: webInstalled },
+        // TAL-2162 moves this tone to the server's `figure_tone`.
         { id: 'agent', label: AGENT, value: agentInstalled, tone: agentStatus.tone === 'update' || agent.data?.alive === false ? 'warning' : undefined },
         ...(disk !== undefined ? [{ id: 'disk', label: m.system_stat_disk_used(), value: formatPercent(locale, disk, 0) }] : []),
         ...(health.data?.checked_at ? [{ id: 'checked', label: m.system_stat_checked(), value: resetTime(locale, health.data.checked_at) }] : []),
@@ -220,6 +221,7 @@ function pathStatus(t: Target | null | undefined, name: string, { failed, pendin
   }
 }
 
+// TAL-2162 replaces both classifications below with the server's `display_state` and `display_reason`.
 interface Health { state: DotState; text: string }
 /** Web's health in words: the server's `status`, with `ok` worded and every state given its dot. */
 function webHealthState(status: string | undefined): Health {
