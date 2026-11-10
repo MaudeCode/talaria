@@ -87326,7 +87326,16 @@
                       "type": "string"
                     },
                     "fade_text_effect": {
-                      "type": "boolean"
+                      "type": "boolean",
+                      "description": "TAL-2148: fade the streaming reply's new words in (default false); clients skip code and honour reduced motion."
+                    },
+                    "show_busy_placeholder_hint": {
+                      "type": "boolean",
+                      "description": "TAL-2148: while a chat is busy and the draft is empty, the composer placeholder names the busy action (default true)."
+                    },
+                    "session_endless_scroll": {
+                      "type": "boolean",
+                      "description": "TAL-2148: older messages load while scrolling up (default true); off, a Load earlier messages button loads them."
                     },
                     "hidden_tabs": {
                       "type": "array",
@@ -87698,7 +87707,16 @@
                       "type": "string"
                     },
                     "fade_text_effect": {
-                      "type": "boolean"
+                      "type": "boolean",
+                      "description": "TAL-2148: fade the streaming reply's new words in (default false); clients skip code and honour reduced motion."
+                    },
+                    "show_busy_placeholder_hint": {
+                      "type": "boolean",
+                      "description": "TAL-2148: while a chat is busy and the draft is empty, the composer placeholder names the busy action (default true)."
+                    },
+                    "session_endless_scroll": {
+                      "type": "boolean",
+                      "description": "TAL-2148: older messages load while scrolling up (default true); off, a Load earlier messages button loads them."
                     },
                     "hidden_tabs": {
                       "type": "array",

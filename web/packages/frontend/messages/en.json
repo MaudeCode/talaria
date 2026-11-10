@@ -3162,6 +3162,7 @@
 	"toolsets_stripped": "Missing {tools} (disabled by {entries})",
 	"toolsets_unavailable": "Unavailable",
 	"transcript": "Transcript",
+	"transcript_load_earlier": "Load earlier messages",
 	"transcript_loading": "Loading conversation…",
 	"transcript_not_found": "This conversation could not be found.",
 	"transcript_other_profile": "This conversation belongs to profile \"{profile}\".",

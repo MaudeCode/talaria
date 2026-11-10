@@ -753,7 +753,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
   // While a clarification owns the box, the message-only controls leave the footer (docs/ui-ux clarify-card).
   const hide = (key: string) => hideComposerControl(settings, answering, key)
   const addressee = m.composer_placeholder({ name: room?.name ?? bootstrap.bot_name })
-  const placeholder = clarify ? (clarify.step.choices.length ? m.clarify_composer_placeholder_choices() : m.clarify_composer_placeholder()) : busy && !nativeOwner ? (busyMode === 'queue' ? m.composer_placeholder_busy_queue() : busyMode === 'interrupt' ? m.composer_placeholder_busy_interrupt() : m.composer_placeholder_busy_steer()) : addressee
+  const placeholder = clarify ? (clarify.step.choices.length ? m.clarify_composer_placeholder_choices() : m.clarify_composer_placeholder()) : busy && !nativeOwner && settings?.show_busy_placeholder_hint !== false ? (busyMode === 'queue' ? m.composer_placeholder_busy_queue() : busyMode === 'interrupt' ? m.composer_placeholder_busy_interrupt() : m.composer_placeholder_busy_steer()) : addressee
   const onCompress = () => { void onLocalCommand('compress', '') }
   const context: ContextFigures = ({
     planGauge: session?.plan_gauge, sessionId: sessionId ?? undefined, detailKey: session?.context_detail_key,

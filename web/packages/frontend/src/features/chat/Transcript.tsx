@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ArrowDown, ArrowUp } from 'lucide-react'
+import { ArrowDown, ArrowUp, CircleArrowUp } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import type { Attachment } from '../../contracts'
 import { m } from '../../paraglide/messages.js'
@@ -11,7 +11,7 @@ import { messageKey, type VisibleMessage } from './useTranscript'
 import { WorklogDisclosureProvider, type ActivityMode } from './blocks/Worklog'
 import { groupAssistantTurns, isReplyRow, persistedActivity, toolIdsOf } from './turnActivity'
 import { cn } from '../../ui/cn'
-import { Button } from '../../ui/Button'
+import { Button, IconButton } from '../../ui/Button'
 import { LoadingState } from '../../ui/States'
 import { onScrollRequest, requestComposerRest } from './sendMotion'
 import { QuoteSelection } from './QuoteSelection'
@@ -60,6 +60,10 @@ export interface TranscriptProps {
   showJumpButtons: boolean
   /** `virtualize_transcript` setting; off by default because variable-height rows made long chats oscillate. */
   virtualizeLongTranscripts: boolean
+  /** `fade_text_effect` setting (TAL-2148): the streaming reply's new words fade in. */
+  fadeText?: boolean
+  /** `session_endless_scroll` setting (TAL-2148): older pages load on scroll; off, only the load button loads them. */
+  endlessScroll?: boolean
 }
 
 /**
@@ -69,7 +73,7 @@ export interface TranscriptProps {
  * virtualized with TanStack Virtual.
  */
 export function Transcript(props: TranscriptProps) {
-  const { rows: rawRows, assistantName, mode, renderUserMarkdown, autoFollow, sessionId, focusKey, actions, tts, truncated, loadedFrom, onLoadOlder, loadingOlder, olderError = false, emptyState, pendingUserText, showJumpButtons, virtualizeLongTranscripts } = props
+  const { rows: rawRows, assistantName, mode, renderUserMarkdown, autoFollow, sessionId, focusKey, actions, tts, truncated, loadedFrom, onLoadOlder, loadingOlder, olderError = false, emptyState, pendingUserText, showJumpButtons, virtualizeLongTranscripts, endlessScroll = true } = props
   const subscribedLive = useLiveTurn(props.subscribeToStream ? sessionId ?? null : null)
   const live = props.subscribeToStream ? subscribedLive : props.live
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -353,13 +357,13 @@ export function Transcript(props: TranscriptProps) {
   useEffect(() => {
     const pane = scrollRef.current
     const sentinel = sentinelRef.current
-    if (!pane || !sentinel || !truncated || loadingOlder || olderError || typeof IntersectionObserver === 'undefined') return
+    if (!endlessScroll || !pane || !sentinel || !truncated || loadingOlder || olderError || typeof IntersectionObserver === 'undefined') return
     const observer = new IntersectionObserver((entries) => {
       if (entries.some((entry) => entry.isIntersecting)) requestOlder()
     }, { root: pane, rootMargin: `${pane.clientHeight}px 0px 0px 0px` })
     observer.observe(sentinel)
     return () => observer.disconnect()
-  }, [scope, truncated, loadingOlder, olderError, requestOlder])
+  }, [scope, endlessScroll, truncated, loadingOlder, olderError, requestOlder])
 
   const continuedTurn = continued ? live ?? undefined : undefined
   const renderRow = (row: VisibleMessage, i: number) => (
@@ -379,7 +383,7 @@ export function Transcript(props: TranscriptProps) {
   const renderedRows = virtualize ? null : rows.map(renderRow)
 
   return (
-    <WorklogDisclosureProvider key={scope} scope={scope ?? ""} showReasoning={props.showReasoning}>
+    <WorklogDisclosureProvider key={scope} scope={scope ?? ""} showReasoning={props.showReasoning} fadeText={props.fadeText}>
     <div className="messages-shell relative flex flex-1 min-h-0 flex-col">
       {sessionId && actions.onQuoteSelection && <QuoteSelection key={`${scope ?? ''}:${sessionId}`} transcript={scrollRef} onQuote={actions.onQuoteSelection} />}
       <div ref={scrollRef} onScroll={onScroll} onWheel={(e) => { if (e.deltaY !== 0) onReaderScroll() }} onTouchMove={onReaderScroll} onPointerDown={onReaderInput} onKeyDown={onReaderInput} className={cn('messages relative z-0 flex flex-1 flex-col min-h-0 px-5 overflow-y-auto overflow-x-hidden [-webkit-overflow-scrolling:touch] touch-pan-y overscroll-y-contain [overflow-anchor:none] max-[641px]:pl-[max(10px,env(safe-area-inset-left,0))] max-[641px]:pr-[max(10px,env(safe-area-inset-right,0))]', empty && 'messages-empty')} id="messages" role="log" aria-live="off" aria-relevant="additions">
@@ -387,7 +391,7 @@ export function Transcript(props: TranscriptProps) {
           <div ref={innerRef} className="messages-inner mx-auto w-full max-w-(--msg-max) pt-5 pb-[calc(var(--composer-h,0px)+2rem)] max-[641px]:pt-3 max-[641px]:max-w-full max-[641px]:overflow-x-clip max-[641px]:[word-break:break-word] max-[641px]:min-w-0" id="msgInner">
             {truncated && (
               <div ref={sentinelRef} className="flex h-11 shrink-0 items-center justify-center" data-history-sentinel>
-                {loadingOlder ? <LoadingState compact /> : olderError ? <div role="alert" className="flex items-center gap-2 text-sm text-muted">{m.error_generic()}<Button variant="ghost" className="min-h-11" onClick={() => requestOlder(true)}>{m.retry()}</Button></div> : null}
+                {loadingOlder ? <LoadingState compact /> : olderError ? <div role="alert" className="flex items-center gap-2 text-sm text-muted">{m.error_generic()}<Button variant="ghost" className="min-h-11" onClick={() => requestOlder(true)}>{m.retry()}</Button></div> : endlessScroll ? null : <IconButton variant="ghost" label={m.transcript_load_earlier()} onClick={() => { requestOlder() }}><CircleArrowUp aria-hidden="true" /></IconButton>}
               </div>
             )}
             {virtualize ? (

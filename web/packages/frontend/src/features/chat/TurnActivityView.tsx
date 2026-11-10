@@ -92,7 +92,8 @@ function ActivityHistory({ activity, history, mode, sessionId, scope }: { activi
 
 function ActivityBody({ activity, mode, earlier, sessionId }: { activity: TurnActivity; mode: ActivityMode; earlier?: ReactNode; sessionId?: string | undefined }) {
   const { items: receivedItems, finalAnswer, status } = activity
-  const showReasoning = useContext(WorklogDisclosureContext)?.showReasoning !== false
+  const disclosure = useContext(WorklogDisclosureContext)
+  const showReasoning = disclosure?.showReasoning !== false
   // Render the server preference, including the user's own optimistic choice, over already-received live content.
   const items = showReasoning ? receivedItems : receivedItems.filter((item) => item.kind !== 'reasoning')
   const locale = useLocale()
@@ -102,7 +103,7 @@ function ActivityBody({ activity, mode, earlier, sessionId }: { activity: TurnAc
   const outcome = terminalOutcomeLabel(status)
   const render = (item: ActivityItem, last: boolean): ReactNode => {
     switch (item.kind) {
-      case 'text': return <div key={item.key} className="msg-body"><Markdown text={item.display ?? item.text} streaming={activeTail && last} /><MediaTiles media={item.media} sessionId={sessionId} /></div>
+      case 'text': return <div key={item.key} className="msg-body"><Markdown text={item.display ?? item.text} streaming={activeTail && last} fade={disclosure?.fadeText === true} /><MediaTiles media={item.media} sessionId={sessionId} /></div>
       case 'reasoning': return <ReasoningBlock key={item.key} arrivalKey={item.key} text={item.text} titles={item.titles} disclosureKey={item.disclosureKey} live={activeTail && last} />
       case 'steering': return <SteerMessage key={item.key} text={item.text} />
       case 'tool': return <ToolCard key={item.key} arrivalKey={item.key} call={item.call} sessionId={sessionId} />

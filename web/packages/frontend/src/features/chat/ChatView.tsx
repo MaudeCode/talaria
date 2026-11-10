@@ -550,6 +550,8 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
             pendingPreviousStreamId={intent.send?.previousStreamId}
             showJumpButtons={settings.data?.session_jump_buttons !== false}
             virtualizeLongTranscripts={settings.data?.virtualize_transcript === true}
+            endlessScroll={settings.data?.session_endless_scroll !== false}
+            fadeText={settings.data?.fade_text_effect === true}
           />
         )}
         <div ref={dock} className={cn('composer-dock', hero && 'composer-dock--hero')}>

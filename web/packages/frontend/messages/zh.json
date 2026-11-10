@@ -1715,6 +1715,7 @@
 	"token_usage_on": "Token 用量显示已开启",
 	"tool_target_skill_suffix": "技能",
 	"transcript": "记录",
+	"transcript_load_earlier": "加载更早的消息",
 	"tree_view": "树形",
 	"tts_listen": "收听",
 	"tts_not_supported": "语音合成不可用",
