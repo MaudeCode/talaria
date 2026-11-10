@@ -241,7 +241,7 @@ function monthSpend(rows: CostSnapshot[], month: string): number | null {
  * TAL-2135: Settings › Providers' figures: how many providers are configured, the quota window with the least left across
  * every source (its meter level), the month's OpenRouter spend, and the name of the provider serving the default.
  */
-export function quotaSummary(providers: Dict[], active: string | null, sources: QuotaSourceRow[], spend: number | null) {
+export function quotaSummary(providers: Dict[], defaultProvider: string | null, sources: QuotaSourceRow[], spend: number | null) {
   let lowest: { source_id: string; percent_remaining: number; level: QuotaLevel } | null = null
   for (const s of sources) {
     for (const w of (s.windows ?? []) as (ClassifiedQuotaWindow & { display_level?: QuotaLevel })[]) {
@@ -249,10 +249,10 @@ export function quotaSummary(providers: Dict[], active: string | null, sources: 
       if (left !== null && (lowest === null || left < lowest.percent_remaining)) lowest = { source_id: s.source_id, percent_remaining: left, level: w.display_level ?? w.urgency.remaining }
     }
   }
-  const current = providers.find((p) => p.id === active)
+  const current = providers.find((p) => p.id === defaultProvider)
   return {
     connected: providers.filter((p) => p.configured === true).length, lowest, spend_month: spend, spend_currency: spend === null ? null : 'USD',
-    default_provider_name: active ? str(current?.display_name) || displayName(active) : null,
+    default_provider_name: defaultProvider ? str(current?.display_name) || displayName(defaultProvider) : null,
   }
 }
 
@@ -1888,7 +1888,9 @@ export class ProviderCatalog {
     const rows = withProviderHeadlines(sources.map(withQuotaDisplay))
     // A `?source=` read answers one row, so only a full read carries the page's figures.
     const openRouter = status.providers.some((p) => p.id === 'openrouter' && p.configured === true)
-    const summary = requested ? undefined : quotaSummary(status.providers, active, rows, openRouter ? monthSpend(this.readCostSnapshots(profileHome), isoAt(at).slice(0, 7)) : null)
+    // The provider the default model routes to, resolved as `buildModels` resolves `default_provider_id`.
+    const defaultProvider = requested ? null : parseProviderQualifiedModel(effectiveDefaultModel(await this.deps.config.readResolved(profileHome), this.deps.env))?.[1] ?? active
+    const summary = requested ? undefined : quotaSummary(status.providers, defaultProvider, rows, openRouter ? monthSpend(this.readCostSnapshots(profileHome), isoAt(at).slice(0, 7)) : null)
     return { availability, version: 1, ...(summary ? { summary } : {}), computed_at: isoAt(at), scope_id: scopeId, profile_id: profile, active_provider: active, requested_source_id: requested, missing_source: Boolean(requested && !poolUnknown && !latestMembership?.has(requested)), retained_display_level: availability.authoritative ? null : availability.status === 'stale' ? 'stale' : 'unavailable', sources: rows }
   }
 

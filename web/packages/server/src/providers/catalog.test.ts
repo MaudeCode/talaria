@@ -942,6 +942,25 @@ describe('Settings › Providers figures (TAL-2135)', () => {
     expect(quotaSummary(providers, 'openrouter', [], 12.4)).toMatchObject({ spend_month: 12.4, spend_currency: 'USD', default_provider_name: 'OpenRouter' })
   })
 
+  it('names the provider the default model routes to, as the model catalog resolves it', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'talaria-default-'))
+    try {
+      writeFileSync(join(home, 'config.yaml'), '# synthetic configuration\n')
+      writeEnvFile(join(home, '.env'), { OPENROUTER_API_KEY: 'sk-synthetic-plain', ANTHROPIC_API_KEY: 'sk-ant-synthetic' })
+      const sidecar = new FakeSidecar()
+      sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config: { model: { provider: 'anthropic', default: '@openrouter:openai/gpt-5.5' } } }))
+      sidecar.respond('usage.pool_providers', () => ({ providers: [], keys: {} }))
+      sidecar.respond('usage.pool', () => ({ entries: [], has_api_key: true }))
+      sidecar.respond('usage.balance', () => ({ status: 'http_error', http_status: 503, label: null, quota: null, is_available: null, balances: [], windows: [] }))
+      sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: [] }))
+      const catalog = new ProviderCatalog({ sidecar: () => sidecar, config: new AgentConfig({ sidecar: () => sidecar, env: {} }), env: {}, now: () => 1_800_000_000, log: () => undefined, costBudget: () => null, isRootProfileHome: () => true })
+      expect((await catalog.models(home)).default_provider_id).toBe('openrouter')
+      expect((await catalog.quotas(home, 'synthetic')).summary).toMatchObject({ default_provider_name: 'OpenRouter' })
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
   it('sums only this month\'s daily deltas from the cost snapshots', async () => {
     const home = mkdtempSync(join(tmpdir(), 'talaria-spend-'))
     try {
