@@ -202,6 +202,11 @@ extension XCTestCase {
             _ = windowImage(window, size: CGSize(width: 1, height: 1))
             return
         }
+        // The first drawing commits offscreen SwiftUI updates. Capture the following frame, so a newly mounted
+        // header or composer is not photographed with its previous presentation.
+        _ = windowImage(window, size: CGSize(width: 1, height: 1))
+        window.layoutIfNeeded()
+        settle()
         attachWindowImage(window, name: name, lifetime: .keepAlways)
     }
 
@@ -270,7 +275,8 @@ extension XCTestCase {
     /// Lets SwiftUI apply pending updates: a few run-loop turns, which is how long state changes and `.task` starts take
     /// to reach the hosted tree.
     @MainActor
-    func settle(_ seconds: TimeInterval = 0.05) {
+    func settle(_ seconds: TimeInterval = 0.05, window: UIWindow? = nil) {
+        if let window { _ = windowImage(window, size: CGSize(width: 1, height: 1)) }
         RunLoop.current.run(until: Date().addingTimeInterval(seconds))
     }
 

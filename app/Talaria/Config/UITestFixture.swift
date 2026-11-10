@@ -763,7 +763,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
         case "/api/session" where UITestFixtureEnvironment.hasBranchedFrom:
             return branchedSessionResponse(url)
         case "/api/session":
-            return UITestChatScenario.current == nil ? sessionResponse(url) : chatSessionResponse()
+            return sessionResponse(url)
         case "/api/media" where UITestFixtureEnvironment.hasTranscriptMedia:
             return url.query?.contains(".mp3") == true ? transcriptMediaAudio : transcriptMediaImage
         case "/api/background/tasks" where servesOwnerWork:
@@ -1059,13 +1059,22 @@ final class UITestFixtureURLProtocol: URLProtocol {
     }
 
     private static func sessionResponse(_ url: URL) -> Data {
-        if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.forkSessionArgument),
-           URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
-            .contains(where: { $0.name == "session_id" && $0.value == forkSessionID }) == true {
-            var detail = session(id: forkSessionID, title: "Fixture Session 01")
-            detail["messages"] = [["role": "assistant", "content": "Fork fixture reply", "_ts": 2_000_000_001]]
+        let requestedID = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
+            .first { $0.name == "session_id" }?.value
+        let isFork = ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.forkSessionArgument)
+            && requestedID == forkSessionID
+        let listedIndex = requestedID.flatMap { id -> Int? in
+            guard id.hasPrefix("ui-fixture-session-"),
+                  let index = Int(id.dropFirst("ui-fixture-session-".count)), (1..<18).contains(index) else { return nil }
+            return index
+        }
+        if let requestedID, isFork || listedIndex != nil {
+            let title = String(format: "Fixture Session %02d", listedIndex ?? 1)
+            var detail = session(id: requestedID, title: title)
+            detail["messages"] = [["role": "assistant", "content": isFork ? "Fork fixture reply" : "\(title) reply", "_ts": 2_000_000_001]]
             return json(["session": detail])
         }
+        if UITestChatScenario.current != nil { return chatSessionResponse() }
         if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.historyPagingArgument) {
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let end = min(2_000, Int(items.first { $0.name == "msg_before" }?.value ?? "") ?? 2_000)

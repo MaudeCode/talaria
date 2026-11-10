@@ -12,12 +12,14 @@ struct SessionRowContextMenu: View {
     private let originalSession: SessionSummary
     let actions: SessionListRowActions
     var placement: Placement = .menu
+    var openBeside: (() -> Void)?
 
-    init(viewModel: SessionListViewModel, session: SessionSummary, actions: SessionListRowActions, placement: Placement = .menu) {
+    init(viewModel: SessionListViewModel, session: SessionSummary, actions: SessionListRowActions, placement: Placement = .menu, openBeside: (() -> Void)? = nil) {
         self.viewModel = viewModel
         originalSession = session
         self.actions = actions
         self.placement = placement
+        self.openBeside = openBeside
     }
 
     // Menu metadata observes list updates here, without invalidating the enclosing chat body.
@@ -57,6 +59,7 @@ struct SessionRowContextMenu: View {
         }
 
         if placement == .menu {
+            openBesideButton
             if SessionRowActionPolicy.canDuplicate(session) {
                 Button {
                     actions.duplicate(session)
@@ -128,6 +131,13 @@ struct SessionRowContextMenu: View {
                 delete: SessionRowActionPolicy.canDelete(session) ? { actions.delete(session) } : nil,
                 isSwipe: placement == .trailingSwipe
             )
+        }
+    }
+
+    @ViewBuilder
+    var openBesideButton: some View {
+        if let openBeside {
+            Button(action: openBeside) { Label("Open Beside", systemImage: "rectangle.split.2x1") }
         }
     }
 

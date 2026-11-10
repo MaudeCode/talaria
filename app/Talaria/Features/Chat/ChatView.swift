@@ -66,8 +66,9 @@ struct SplitFilesInspector {
     let isPresented: Binding<Bool>
     var widensChat: Bool
     let reportShown: (Bool) -> Void
-    var reportSession: (SessionSummary) -> Void = { _ in }
+    var reportSession: (SessionSummary, RetainedChat?) -> Void = { _, _ in }
     var offersCompanionPage = false
+    var secondaryChat: AnyView?
     /// Hiding the sidebar column would give a companion page room beside the chat (TAL-1539).
     var widensForCompanionPage = false
     /// Counts the split's requests to hide the companion page: opening the sidebar column takes its room (TAL-1539).
@@ -140,7 +141,9 @@ struct ChatView: View {
     let restoresDraftSettings: Bool
     let onConversationStarted: () -> Void
     let splitFilesInspector: SplitFilesInspector?
-    /// What the session list keeps of this chat while its navigation is rebuilt (TAL-1477); nil for a chat it doesn't.
+    let makePrimary: (() -> Void)?
+    let closeSecondary: (() -> Void)?
+    /// This chat's owner, shared with the session list when navigation moves it between layouts or panes (TAL-1477).
     @State private var retained: RetainedChat?
     /// True while this view carries on a chat a replaced view was showing, which is still loaded and running.
     @State private var takesOverLiveChat: Bool
@@ -244,7 +247,7 @@ struct ChatView: View {
     @Environment(\.sessionActions) private var sessionActions
     @Environment(\.navigationHasVerticalToolbar) private var navigationHasVerticalToolbar
     @State private var observedVerticalToolbar = false
-    private var hasVerticalToolbar: Bool { navigationHasVerticalToolbar == true || observedVerticalToolbar }
+    private var hasVerticalToolbar: Bool { makePrimary == nil && (navigationHasVerticalToolbar == true || observedVerticalToolbar) }
 
     @Environment(\.appearedNavigationRoot) private var appearedNavigationRoot
     @State private var observedInitialAppearance = false
@@ -288,7 +291,9 @@ struct ChatView: View {
         onConversationStarted: @escaping () -> Void = {},
         sessionListOwner: SessionListViewModel? = nil,
         splitFilesInspector: SplitFilesInspector? = nil,
-        retained: RetainedChat? = nil
+        retained: RetainedChat? = nil,
+        makePrimary: (() -> Void)? = nil,
+        closeSecondary: (() -> Void)? = nil
     ) {
         _session = State(initialValue: session)
         self.startSession = startSession
@@ -303,22 +308,25 @@ struct ChatView: View {
         self.restoresDraftSettings = restoresDraftSettings
         self.onConversationStarted = onConversationStarted
         self.splitFilesInspector = splitFilesInspector
+        self.makePrimary = makePrimary
+        self.closeSecondary = closeSecondary
         _draftMessageStorage = State(initialValue: initialDraft)
         _initialAttachments = State(initialValue: initialAttachments)
-        _viewModel = State(initialValue: retained?.viewModel ?? viewModel ?? Self.makeViewModel(
+        let retained = retained ?? RetainedChat(viewModel: viewModel ?? Self.makeViewModel(
             session: session,
             server: server,
             draftAttachmentStore: resolvedDraftAttachmentStore,
             sessionListOwner: sessionListOwner
-        ))
-        _gitAvailabilityViewModel = State(initialValue: retained?.gitAvailability ?? GitWorkspaceAvailabilityViewModel(
+        ), session: session)
+        _viewModel = State(initialValue: retained.viewModel)
+        _gitAvailabilityViewModel = State(initialValue: retained.gitAvailability ?? GitWorkspaceAvailabilityViewModel(
             session: session,
             server: server
         ))
         _retained = State(initialValue: retained)
-        _takesOverLiveChat = State(initialValue: retained?.isLive ?? false)
-        _restoredReadingRowID = State(initialValue: retained?.readingRowID)
-        _followLatch = State(initialValue: ChatScrollPolicy.FollowLatch(isFollowing: retained?.readingRowID == nil))
+        _takesOverLiveChat = State(initialValue: retained.isLive)
+        _restoredReadingRowID = State(initialValue: retained.readingRowID)
+        _followLatch = State(initialValue: ChatScrollPolicy.FollowLatch(isFollowing: retained.readingRowID == nil))
     }
 
     static func makeViewModel(
@@ -863,7 +871,7 @@ struct ChatView: View {
     }
 
     private func reportFilesInspector() {
-        splitFilesInspector?.reportSession(session)
+        splitFilesInspector?.reportSession(session, splitFilesInspector?.secondaryChat != nil ? retained : nil)
         splitFilesInspector?.reportShown(showsFilesInspector)
     }
 
@@ -897,7 +905,7 @@ struct ChatView: View {
             }
             .onAppear(perform: reportFilesInspector)
             .onChange(of: splitFilesInspector != nil) { reportFilesInspector() }
-            .onChange(of: session) { _, session in splitFilesInspector?.reportSession(session) }
+            .onChange(of: session) { reportFilesInspector() }
             .navigationDestination(isPresented: $showsFilesBrowser) {
                 FileBrowserView(session: session, server: server, onAPIError: onAPIError)
             }
@@ -938,7 +946,7 @@ struct ChatView: View {
                 }
 
                 // Files creates an idle chat on demand; companion pages keep their own browser action.
-                if showsFilesButton, !companionPageOffered {
+                if showsFilesButton, secondaryChatIsBeside || !companionPageOffered {
                     ToolbarItem(placement: .topBarTrailing) {
                         filesButton
                             .disabled(viewModel.isViewingCachedData)
@@ -948,7 +956,7 @@ struct ChatView: View {
                 }
 
                 // Shows and hides the companion page where it fits (TAL-1539); on the Duo it joins the vertical bar.
-                if #available(iOS 27.1, *), companionPageOffered {
+                if #available(iOS 27.1, *), companionPageOffered, !secondaryChatIsBeside {
                     ToolbarItem(placement: .topBarTrailing) {
                         Toggle(isOn: companionPageShown) {
                             Label("Companion Page", systemImage: "sidebar.trailing")
@@ -1024,9 +1032,9 @@ struct ChatView: View {
             if case .failed = sessionStart { sessionStart = nil }
             return
         }
-        splitFilesInspector?.reportSession(session)
+        reportFilesInspector()
         dismissKeyboard()
-        if splitFilesInspector?.widensChat == true {
+        if splitFilesInspector?.widensChat == true, !secondaryChatIsBeside {
             isFilesInspectorPresented.toggle()
         } else {
             showsFilesBrowser = true
@@ -1040,7 +1048,7 @@ struct ChatView: View {
 
     /// Whether this chat shows Files beside it once it has the width. The companion page takes its place.
     private var showsFilesInspector: Bool {
-        isFilesInspectorPresented && showsFilesButton && viewModel.hasSession && !companionPageOffered
+        isFilesInspectorPresented && showsFilesButton && viewModel.hasSession && !companionPageOffered && !secondaryChatIsBeside
     }
 
     /// Whether the chat has a companion page to show beside it (TAL-1458): an iOS 27.1 arrangement at regular width,
@@ -1064,7 +1072,12 @@ struct ChatView: View {
 
     /// Whether the companion page shows beside the chat: where it fits, unless the reader hid it (TAL-1539).
     private var companionPageIsBeside: Bool {
-        companionPageFits && !viewModel.companionFocus.isHidden
+        companionPageFits && !viewModel.companionFocus.isHidden && !secondaryChatIsBeside
+    }
+
+    private var secondaryChatIsBeside: Bool {
+        splitFilesInspector?.offersCompanionPage == true && splitFilesInspector?.secondaryChat != nil
+            && RegularSplitLayout.splitsCompanionPage(width: arrangementSize.width, height: arrangementSize.height)
     }
 
     private var companionPageShown: Binding<Bool> {
@@ -1098,13 +1111,17 @@ struct ChatView: View {
     private func withCompanionPage(_ chat: some View) -> some View {
         if #available(iOS 27.1, *), splitFilesInspector?.offersCompanionPage == true {
             Group {
-                if companionPageIsBeside || companionPageFadesOut {
+                if secondaryChatIsBeside || companionPageIsBeside || companionPageFadesOut {
                     ArrangementView {
                         chat
                     } secondary: {
-                        ChatCompanionPage(viewModel: viewModel, session: session, server: server, onAPIError: onAPIError)
-                            // Reduce Motion shows the page on its first frame.
-                            .opacity(reduceMotion ? 1 : companionPageOpacity)
+                        if secondaryChatIsBeside, let secondaryChat = splitFilesInspector?.secondaryChat {
+                            secondaryChat
+                        } else {
+                            ChatCompanionPage(viewModel: viewModel, session: session, server: server, onAPIError: onAPIError)
+                                // Reduce Motion shows the page on its first frame.
+                                .opacity(reduceMotion ? 1 : companionPageOpacity)
+                        }
                     }
                     .arrangementViewStyle(.split.axes(.horizontal))
                 } else {
@@ -1125,13 +1142,48 @@ struct ChatView: View {
         }
     }
 
+    @ViewBuilder
+    private var presentedChat: some View {
+        if let makePrimary, let closeSecondary {
+            VStack(spacing: 0) {
+                HStack {
+                    ChatToolbarTitleLabel(title: displayTitle, subtitle: headerSubtitle)
+                        .accessibilityAddTraits(.isHeader)
+                    Button(action: makePrimary) {
+                        Label("Make Primary", systemImage: "arrow.left.arrow.right").frame(minWidth: 44, minHeight: 44)
+                    }
+                        .accessibilityIdentifier("chat-secondary-make-primary")
+                    Button(action: closeSecondary) {
+                        Label("Close", systemImage: "xmark").frame(minWidth: 44, minHeight: 44)
+                    }
+                        .accessibilityIdentifier("chat-secondary-close")
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .controlSize(.large)
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+                chatLayout
+            }
+            .navigationDestination(isPresented: $showsFilesBrowser) {
+                FileBrowserView(session: session, server: server, onAPIError: onAPIError)
+            }
+        } else {
+            chatWithToolbar
+        }
+    }
+
     var body: some View {
 #if DEBUG
         let _ = recordBodyEvaluation?("chat")
         // Keep invalidation reasons in XCTest's console when this test-only probe is installed.
         let _ = recordBodyEvaluation == nil ? () : Self._printChanges()
 #endif
-        withVisibility(withCompanionPage(chatWithToolbar))
+        withVisibility(withCompanionPage(presentedChat))
+            .onChange(of: splitFilesInspector?.secondaryChat != nil) { wasOpen, isOpen in
+                if wasOpen && !isOpen { viewModel.setCompanionPageHidden(false) }
+                reportFilesInspector()
+            }
             .environment(\.retryPendingAttachment) { id in Task { await viewModel.retryAttachment(id: id) } }
             .navigationDestination(item: $forkedSession) { session in
                 // A fork opens in the same column, so the same split view makes room for its Files.
@@ -1155,7 +1207,7 @@ struct ChatView: View {
                 }
             }
             .onChange(of: forkedSession) { _, fork in
-                if fork == nil { splitFilesInspector?.reportSession(session) }
+                if fork == nil { reportFilesInspector() }
             }
             .onReceive(NotificationCenter.default.publisher(for: .talariaSessionRemovalsChanged)) { notification in
                 guard let owner = sessionActions?.viewModel, notification.object as? SessionListViewModel === owner,

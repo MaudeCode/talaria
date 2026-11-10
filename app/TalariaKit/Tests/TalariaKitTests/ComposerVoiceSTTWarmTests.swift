@@ -26,11 +26,26 @@ final class ComposerVoiceSTTWarmTests: APIClientTestCase {
         await fulfillment(of: [warmed], timeout: 0.3)
     }
 
+    func testStartingVoiceInAnotherComposerCancelsTheFirstPermissionRequest() async throws {
+        var permission: CheckedContinuation<Bool, Never>?
+        let first = try makeController(capability: "unwarmable", permission: {
+            await withCheckedContinuation { permission = $0 }
+        }) {}
+        let second = try makeController(capability: "unwarmable") {}
+        let start = Task { await first.toggle(currentDraft: "First draft") }
+        while permission == nil { await Task.yield() }
+        await second.toggle(currentDraft: "Second draft")
+        XCTAssertEqual(first.state, .idle, "Starting voice in another pane must cancel the previous recorder before requesting permission")
+        permission?.resume(returning: false)
+        await start.value
+    }
+
     /// A server-first controller whose server answers the capability from the shared fixture. The
     /// microphone stays denied, so no audio hardware is touched.
     private func makeController(
         capability name: String,
         onCapability: @escaping @Sendable () -> Void = {},
+        permission: @escaping () async -> Bool = { false },
         onWarm: @escaping @Sendable () -> Void
     ) throws -> ComposerVoiceInputController {
         let fixtures = try JSONSerialization.jsonObject(with: sharedContractFixture("transcribe-capability")) as? [String: Any]
@@ -50,7 +65,7 @@ final class ComposerVoiceSTTWarmTests: APIClientTestCase {
         }
         let controller = ComposerVoiceInputController(
             speechRecognizerFactory: { nil },
-            microphonePermissionRequester: { false }
+            microphonePermissionRequester: permission
         )
         controller.apiClient = client
         controller.providerPreference = .serverFirst

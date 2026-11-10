@@ -71,9 +71,11 @@ final class ChatViewModelCache {
     var count: Int { entries.count }
 
     /// The kept chat for `session`, made with `make` on first use. A chat on another server is dropped.
-    func chat(for session: SessionSummary, server: URL, make: () -> ChatViewModel) -> RetainedChat {
+    /// A mounted fork supplies its existing owner when it first needs to move between split panes.
+    func chat(for session: SessionSummary, server: URL, retaining mountedChat: RetainedChat? = nil,
+              make: () -> ChatViewModel) -> RetainedChat {
         chat(key: Key(server: server, sessionID: session.id), matchingSessionID: session.sessionId) {
-            RetainedChat(viewModel: make(), session: session)
+            mountedChat ?? RetainedChat(viewModel: make(), session: session)
         }
     }
 

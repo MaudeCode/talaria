@@ -31,6 +31,7 @@ struct SessionInteractiveRow: View {
             }
             .contextMenu { contextMenuContent(includesSelection: canEnterSelection) }
             .accessibilityActions {
+                rowMenu(placement: .menu).openBesideButton
                 if canEnterSelection, !selectionIsDisabled {
                     Button("Select Chats…") { viewModel.beginSelectingSessions() }
                 }
@@ -124,10 +125,15 @@ struct SessionInteractiveRow: View {
         !viewModel.isViewingCachedData && SessionRowActionPolicy.isBulkSelectable(session)
     }
 
+    private func rowMenu(placement: SessionRowContextMenu.Placement) -> SessionRowContextMenu {
+        SessionRowContextMenu(viewModel: viewModel, session: session, actions: actions, placement: placement,
+            openBeside: rowStyle == .sidebar && !viewModel.isSelectingSessions ? actions.openBeside(session) : nil)
+    }
+
     @ViewBuilder
     func sessionActions(placement: SessionRowContextMenu.Placement) -> some View {
         if !viewModel.isSelectingSessions {
-            SessionRowContextMenu(viewModel: viewModel, session: session, actions: actions, placement: placement)
+            rowMenu(placement: placement)
         }
     }
 }

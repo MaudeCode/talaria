@@ -790,6 +790,67 @@ final class AppSectionLayoutTests: XCTestCase {
         XCTAssertFalse(RegularSplitLayout.splitsCompanionPage(width: 700, height: 720))
     }
 
+    func testSecondaryChatOpensSwapsClosesAndClearsOnRootReplacement() {
+        var state = SessionNavigationState()
+        let first = SessionSummary(sessionId: "split-first")
+        let second = SessionSummary(sessionId: "split-second")
+        state.openBeside(second)
+        XCTAssertNil(state.secondarySessionID, "A split needs an open primary chat")
+        state.select(first)
+        state.openBeside(first)
+        XCTAssertNil(state.secondarySessionID, "A chat cannot open beside itself")
+        state.filesInspectorPresented = true
+        state.chatShowsCompanionPage = true
+        state.openBeside(second)
+        XCTAssertEqual(state.selectedSessionID, first.sessionId)
+        XCTAssertEqual(state.secondarySessionID, second.sessionId)
+        XCTAssertFalse(state.filesInspectorPresented)
+        XCTAssertTrue(state.chatNeedsSecondaryPaneRoom)
+        state.closeSecondaryChat()
+        XCTAssertNil(state.secondarySessionID)
+        XCTAssertTrue(state.chatNeedsSecondaryPaneRoom, "The companion page still needs its room after Close")
+        state.openBeside(second)
+        state.makeSecondaryPrimary(replacing: first)
+        XCTAssertEqual(state.selectedSessionID, second.sessionId)
+        XCTAssertEqual(state.secondarySessionID, first.sessionId)
+        state.makeSecondaryPrimary(replacing: first)
+        XCTAssertEqual(state.selectedSessionID, second.sessionId, "A stale primary report must not put one chat in both panes")
+        XCTAssertEqual(state.secondarySessionID, first.sessionId)
+        state.select(PendingNewChatRoute())
+        XCTAssertNil(state.secondarySessionID)
+    }
+
+    func testRefusedSecondaryRemovalRestoresOnlyWhileTheSplitIsUnchanged() {
+        let first = SessionSummary(sessionId: "split-first")
+        let second = SessionSummary(sessionId: "split-second")
+        var state = SessionNavigationState()
+        state.select(first)
+        state.openBeside(second)
+        let previous = state
+        state.remove(sessionID: second.sessionId)
+        let revision = state.openRevision
+        XCTAssertNil(state.secondarySessionID)
+        XCTAssertEqual(state.selectedSessionID, first.sessionId)
+        state.restoreAfterRemoval(previous, ifUnchangedAt: revision)
+        XCTAssertEqual(state.secondarySessionID, second.sessionId)
+        state.remove(sessionID: second.sessionId)
+        state.closeSecondaryChat()
+        state.restoreAfterRemoval(previous, ifUnchangedAt: revision)
+        XCTAssertNil(state.secondarySessionID, "A newer user choice wins over a refused removal")
+    }
+
+    func testSecondChatUsesTheSidebarDrawerEvenAcrossABookFold() {
+        for divided in [false, true] {
+            let presentation = SidebarPresentation(isRegularWidth: true, splitSize: CGSize(width: 951, height: 669),
+                hasVerticalBar: false, storedChoice: true, hidesSidebarColumn: true,
+                hasVerticalDivision: divided, hasSecondaryChat: true)
+            XCTAssertFalse(presentation.showsColumn, "The arrangement owns both fold regions")
+            XCTAssertFalse(presentation.columnIsForced)
+            XCTAssertTrue(presentation.drawerEnabled, "Sidebar access must still work beside a second chat")
+            XCTAssertEqual(presentation.toggleTarget, .drawer)
+        }
+    }
+
     func testRootReplacementClearsFilesReportsButModalInvalidationPreservesTheRoot() {
         var state = SessionNavigationState()
         let chat = SessionSummary(sessionId: "session-1")

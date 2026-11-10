@@ -17,6 +17,7 @@ struct SessionListRowActions {
     let export: (SessionSummary, SessionExportFormat) -> Void
     /// Stops a run card's live run (TAL-1460).
     let stopRun: (SessionSummary) -> Void
+    var openBeside: (SessionSummary) -> (() -> Void)? = { _ in nil }
 }
 
 /// Reads the hinge for the session list root, the only place the App does (TAL-1460). The UI fixture's tent pose
