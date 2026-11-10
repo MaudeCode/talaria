@@ -271,7 +271,7 @@ function AutomationListItem({ id, title, state, status, onSelect, disabled = fal
   // Each part shows only when the server sent it; the exact time sits in `title`.
   const parts = [
     schedule && <span key="schedule" className="font-mono">{schedule}</span>,
-    ...([['next', next, m.cron_next()], ['last', last, m.cron_last()]] as const).map(([key, at, label]) => at !== null && at !== '' && <span key={key} data-run={key} title={formatDate(at)}>{label} {resetTime(locale, epochMs(at))}</span>),
+    ...([['next', next, m.cron_next()], ['last', last, m.cron_last()]] as const).map(([key, at, label]) => at !== null && Number.isFinite(epochMs(at)) && <span key={key} data-run={key} title={formatDate(at)}>{label} {resetTime(locale, epochMs(at))}</span>),
   ].filter(Boolean)
   // -my-4 stretches the button over the row's padding so the whole row is the target.
   const row = (

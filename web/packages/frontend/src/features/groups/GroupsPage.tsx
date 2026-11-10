@@ -83,8 +83,8 @@ export function GroupsPage({ roomId }: { roomId: string | undefined }) {
         {catalog.isError && <ErrorState error={catalog.error} onRetry={() => { void catalog.refetch() }} />}
         {catalog.data?.available && catalog.data.rooms.length === 0 && <EmptyState>{m.group_no_discussions()}</EmptyState>}
         <section data-section="groups">
-          <RowList>{catalog.data?.rooms.map((room) => <Row key={room.id} data-group-room={room.id}><div className="flex min-w-0 flex-col gap-1.5">
-            <Link to="/groups" search={{ room: room.id }} onClick={() => leaveFor(room.id)} className="min-w-0 truncate text-sm font-semibold text-text no-underline hover:underline">{room.name}</Link>
+          <RowList>{catalog.data?.rooms.map((room) => <Row key={room.id} data-group-room={room.id} className="relative hover:bg-hover"><div className="flex min-w-0 flex-col gap-1.5">
+            <Link to="/groups" search={{ room: room.id }} onClick={() => leaveFor(room.id)} className="min-w-0 truncate text-sm font-semibold text-text no-underline after:absolute after:inset-0">{room.name}</Link>
             {room.members.length > 0 && <span className="min-w-0 truncate text-xs text-muted" data-group-members>{room.members.map((member, i) => <Fragment key={member.member_id}>{i > 0 && ', '}<span className={member.stalled ? 'text-warning' : undefined}>{member.display_name || member.profile}{(member.stalled || member.phase !== 'idle') && ` · ${memberPhase(member)}`}</span></Fragment>)}</span>}
           </div></Row>)}</RowList>
           {(offset > 0 || catalog.data?.next_offset != null) && <div className="mt-4 flex gap-2">{offset > 0 && <Button onClick={() => setOffset(0)}>{m.group_first_page()}</Button>}{catalog.data?.next_offset != null && <Button onClick={() => setOffset(catalog.data?.next_offset ?? 0)}>{m.group_next_page()}</Button>}</div>}
