@@ -465,8 +465,10 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       expect((await read({ auxiliary: { title_generation: { enabled: false } } })).auto_title_refresh_available).toBe(false)
       const noSidecar = vi.spyOn(s.deps, 'sidecar').mockReturnValue(null)
       try { expect((await read({})).sync_to_insights_available).toBe(false) } finally { noSidecar.mockRestore() }
-      expect((await json(await post(s, '/api/settings', { pinned_sessions_limit: 100 }))).pinned_sessions_limit).not.toBe(100)
-      expect((await json(await post(s, '/api/settings', { pinned_sessions_limit: 99 }))).pinned_sessions_limit).toBe(99)
+      // The server owns the range: a value outside it is saved as the nearest end, for every client.
+      expect((await json(await post(s, '/api/settings', { pinned_sessions_limit: 100 }))).pinned_sessions_limit).toBe(99)
+      expect((await json(await post(s, '/api/settings', { pinned_sessions_limit: 0 }))).pinned_sessions_limit).toBe(1)
+      expect((await json(await post(s, '/api/settings', { pinned_sessions_limit: 42 }))).pinned_sessions_limit).toBe(42)
     } finally {
       configs.set(s.state, before)
       s.deps.agentConfig.invalidate(s.state)

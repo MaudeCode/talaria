@@ -66,7 +66,7 @@ export function SettingSegmented({ label, hint, settingKey, id: givenId, fallbac
 
 /**
  * One integer server setting, with `unit` (TAL-2136) after the field. An integer from `min` up goes to the server, which owns
- * the accepted range, clamped to `max` (TAL-2160); `step` only sets the input's stepper. With `allowEmpty` an empty field writes `null`. A stored 0 or unset
+ * the accepted range; `max` and `step` only bound the input's stepper. With `allowEmpty` an empty field writes `null`. A stored 0 or unset
  * value shows empty. With `field` the row edits that key of an object setting the server merges key by key: it saves the typed
  * number on blur or Enter as a `partialSetting` and shows the server's answer, which owns the range; anything but a number puts
  * the stored value back.
@@ -92,7 +92,7 @@ export function SettingNumber({ label, hint, settingKey, field, id: givenId, fal
       const raw = e.target.value.trim()
       if (raw === '') return allowEmpty ? setAsync({ [settingKey]: null }, onSaved) : undefined
       const n = Number(raw)
-      if (Number.isInteger(n) && n >= min) return setAsync({ [settingKey]: max === undefined ? n : Math.min(n, max) }, onSaved)
+      if (Number.isInteger(n) && n >= min) return setAsync({ [settingKey]: n }, onSaved)
     }} />
   return (
     <FieldRow label={label} htmlFor={id} hint={hint} icon={icon} inline>

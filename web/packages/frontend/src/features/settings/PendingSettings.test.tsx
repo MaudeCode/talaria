@@ -143,8 +143,7 @@ it.each(['normalization', 'failure'] as const)('reconciles the focused numeric d
   await user.click(input)
   fireEvent.change(input, { target: { value: '100' } })
   expect(input).toHaveValue(100)
-  // TAL-2160: above the server's maximum, the row writes the maximum.
-  await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ pinned_sessions_limit: 99 }))
+  await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ pinned_sessions_limit: 100 }))
   held.resolve(initial)
   await waitFor(() => expect(input).toHaveValue(3))
   expect(input).toHaveFocus()
