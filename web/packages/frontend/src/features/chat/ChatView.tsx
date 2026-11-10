@@ -13,6 +13,7 @@ import { keys } from '../../api/queryKeys'
 import { invalidateSessionQueries } from '../../api/sessionQueries'
 import { useBootstrap } from '../../app/bootstrap'
 import { useExecutionModesQuery, useProjectsQuery, useSettingsQuery, useWorkspacesQuery } from '../../app/queries'
+import { reasoningResource, useReasoningDisplayChoice, useReasoningQuery, useSetReasoningDisplay, useSetReasoningEffort } from '../composer/reasoning'
 import type { Session, SessionsList } from '../../contracts'
 import { configureStream, cancelTurn, getStreamContext, startTurn } from '../../stream/connection'
 import { dispatch, useTurnIntent } from '../../stream/store'
@@ -78,7 +79,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   // Edit, /clear and /undo show their cut at once; the reread of the session confirms it.
   const cutFrom = useResourceEffects<number>()[transcriptCut(sessionId ?? '')]?.value
   const reactionEffects = useResourceEffects<ReactionState>()
-  const reasoningDisplay = useResourceEffects<'show' | 'hide'>()['reasoning-display']?.value
+  const reasoningDisplay = useReasoningDisplayChoice()
   const showReasoning = reasoningDisplay ? reasoningDisplay === 'show' : session?.show_reasoning !== false
   const reactionRows = rows.map((row) => {
     const view = row.message.reaction_view
@@ -184,41 +185,31 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
 
   const { updateSession, updateReasoning, dialog: modelDialog, notice: modelNotice, confirming, confirmingReasoning } = useSessionUpdate(sessionId, refresh, session?.owner_attachment)
   // TAL-1647: reasoning effort is each chat's own server state, keyed on the chat and refetched when its model changes.
-  const reasoningKey = keys.reasoning(sessionId, session?.model, session?.model_provider)
-  const reasoningQuery = useQuery({ queryKey: reasoningKey, queryFn: () => api.fetchReasoning(sessionId ?? '', session?.model, session?.model_provider), enabled: !!session && !session.owner_attachment, staleTime: 30_000 })
+  // TAL-2078: a chat not created yet reads the profile default for the model it will start on; with no model of its own
+  // that is the key Settings uses.
+  const reasoningModel = sessionId ? session?.model : shownChoices.model
+  const reasoningProvider = sessionId ? session?.model_provider : shownChoices.model_provider
+  const reasoningKey = keys.reasoning(sessionId, reasoningModel, reasoningProvider)
+  const reasoningQuery = useReasoningQuery(sessionId, reasoningModel, reasoningProvider, sessionId ? !!session && !session.owner_attachment : true)
   // TAL-1319: an owner chat's level comes with its session from the owner; the profile's is never shown for it.
   const ownerReasoning = session?.owner_attachment?.reasoning_control
   const reasoningStatus = session?.owner_attachment ? ownerReasoning : reasoningQuery.data
   const effects = useResourceEffects<string | null>()
-  const reasoningEffect = effects[JSON.stringify(reasoningKey)]
+  const reasoningEffect = effects[reasoningResource(reasoningKey)]
   const ownerPick = effects[`session:${sessionId}`]?.fields
   // The chosen effort shows at once; the server's answer replaces it.
   const reasoning = ownerPick && 'reasoning_effort' in ownerPick ? ownerPick.reasoning_effort as string | null
     : confirmingReasoning ?? (reasoningEffect && 'value' in reasoningEffect ? reasoningEffect.value ?? null : reasoningStatus?.reasoning_effort || null)
   const reasoningLevels = reasoningStatus?.supported_efforts
   const reasoningSupported = reasoningStatus?.supports_reasoning_effort !== false || reasoningStatus.supports_thinking_toggle === true
-  const reasoningWrite = useResourceMutation({
-    resource: ({ key }: { key: typeof reasoningKey; level: string | null }) => JSON.stringify(key),
-    queryKey: ['reasoning'], readKeys: ({ key }) => [{ queryKey: key, exact: true }],
-    effect: ({ level }) => ({ value: level }),
-    mutationFn: ({ key: [, sid, model, provider], level }) => api.setReasoningEffort(level ?? '', model, provider, sid ?? undefined),
-    onSuccess: (status, { key }) => { qc.setQueryData(key, status); showToast(`${m.composer_control_reasoning()}: ${status.reasoning_effort || m.reasoning_default()}`) },
-    onError: (e) => showErrorToast(e),
-  })
-  const sendReasoning = reasoningWrite.mutate
+  const sendReasoning = useSetReasoningEffort((status) => showToast(`${m.composer_control_reasoning()}: ${status.reasoning_effort || m.reasoning_default()}`)).mutate
   // Capture the chat and model fields, not the query's escaping key array, so the compiler keeps this handler stable; the
   // answer and the optimistic value stay on the chat that was asked, whichever chat is open when it lands.
   const setReasoning = (level: string | null) => {
     if (ownerReasoning?.actions.includes(level === null ? 'reset' : 'set')) updateReasoning(level)
-    else sendReasoning({ key: keys.reasoning(sessionId, session?.model, session?.model_provider), level })
+    else sendReasoning({ key: keys.reasoning(sessionId, reasoningModel, reasoningProvider), level })
   }
-  // History is projected by the server under the same preference as the live stream.
-  const { mutate: setReasoningDisplay } = useResourceMutation({
-    resource: () => 'reasoning-display', queryKey: [], readKeys: () => [['reasoning'], keys.sessions.all, ['worklog-history'], keys.settings], effect: (display: 'show' | 'hide') => ({ value: display }),
-    mutationFn: (display) => api.setReasoningDisplay(display),
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: keys.settings }) },
-    onError: showErrorToast,
-  })
+  const { mutate: setReasoningDisplay } = useSetReasoningDisplay()
 
   // Session controls (toolsets, personality) show the choice at once; the reread of the session confirms it.
   const sessionWrite = useSessionWrite({

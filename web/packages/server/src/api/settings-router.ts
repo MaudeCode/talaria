@@ -321,6 +321,11 @@ const auxEfforts = (ctx: RequestContext): AuxEfforts => async (model, provider) 
   }
 }
 const effortsResolver = (ctx: RequestContext) => async (model: string, provider: string): Promise<string[]> => (await auxEfforts(ctx)(model, provider, '')) ?? []
+/** TAL-2078: the model a status is read for, with a picked catalog id (`@provider:model`) split as a turn splits it. */
+const requestedModel = (ctx: RequestContext, input: { model?: string | null | undefined; provider?: string | null | undefined }) => {
+  const [model, provider] = ctx.deps.sessions.deps.modelStateFromRequest(input.model ?? null, input.provider ?? null, null)
+  return { model, provider }
+}
 /** TAL-1647: a chat's reasoning status: its own effort, coerced for the model and provider its turns run on. */
 const chatReasoningStatus = (ctx: RequestContext, config: Dict, chat: Session) => {
   const [model, provider] = ctx.deps.sessions.turnModel(chat)
@@ -547,7 +552,7 @@ export const settingsRouter = os.router({
       const config = await ctx.deps.agentConfig.read(home(ctx))
       // TAL-1647: a chat answers with its own effort for the model its turns run on; a chat Web keeps no record of reads the profile's.
       const chat = input.session_id === undefined ? null : await ctx.deps.sessions.visibleSessionRecord(input.session_id)
-      return chat ? chatReasoningStatus(ctx, config, chat) : reasoningStatus(config, effortsResolver(ctx), { model: input.model ?? null, provider: input.provider ?? null, baseUrl: input.base_url ?? null })
+      return chat ? chatReasoningStatus(ctx, config, chat) : reasoningStatus(config, effortsResolver(ctx), { ...requestedModel(ctx, input), baseUrl: input.base_url ?? null })
     })),
     set: os.reasoning.set.handler(({ input, context: { ctx } }) => run(async () => {
       const h = home(ctx)
@@ -586,7 +591,7 @@ export const settingsRouter = os.router({
           else Reflect.deleteProperty(agent, 'reasoning_effort')
           c.agent = agent
         })
-        return reasoningStatus(config, effortsResolver(ctx), { model: input.model ?? null, provider: input.provider ?? null, baseUrl: input.base_url ?? null })
+        return reasoningStatus(config, effortsResolver(ctx), { ...requestedModel(ctx, input), baseUrl: input.base_url ?? null })
       }
       throw new HttpError(400, "reasoning: must supply 'display' or 'effort'")
     })),

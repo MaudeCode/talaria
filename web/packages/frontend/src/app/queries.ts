@@ -20,7 +20,7 @@ export function useSetDefaultModel() {
   return useResourceMutation({
     resource: () => 'default-model',
     // Auto auxiliary slots resolve to the default model, so their list rereads with it.
-    queryKey: [], readKeys: () => [keys.settings, keys.models, keys.auxiliaryModels],
+    queryKey: [], readKeys: () => [keys.settings, keys.models, keys.auxiliaryModels, { queryKey: keys.reasoning(null, null, null), exact: true }],
     effect: ({ model, provider, advanced }: DefaultModel) => ({ value: { model, provider: provider ?? null, service_tier: advanced?.service_tier } }),
     mutationFn: ({ model, provider, advanced }) => api.setDefaultModel(model, provider, advanced),
     onError: toastError,

@@ -230,7 +230,7 @@ it('shows toolsets, YOLO and reasoning choices to the composer before the writes
 it('reads and writes reasoning per chat, and a late answer never reaches the next chat (TAL-1647)', async () => {
   const chats = Object.fromEntries(['chat-a', 'chat-b'].map((id) => [id, sessionFixture({ session_id: id, model: 'claude-sonnet-4-6', model_provider: 'anthropic', messages: [{ id: 1, role: 'user', content: 'Persisted question' }, { id: 2, role: 'assistant', content: `Answer ${id}` }] })]))
   const stored: Record<string, string> = { 'chat-a': 'low', 'chat-b': 'high' }
-  vi.mocked(api.fetchReasoning).mockImplementation((sid) => Promise.resolve({ reasoning_effort: stored[sid] ?? null }))
+  vi.mocked(api.fetchReasoning).mockImplementation((sid) => Promise.resolve({ reasoning_effort: stored[sid ?? ''] ?? null }))
   vi.mocked(api.fetchSession).mockImplementation(((sid: string) => Promise.resolve({ session: chats[sid] })) as never)
   let answer!: (status: object) => void
   vi.mocked(api.setReasoningEffort).mockReturnValue(new Promise((resolve) => { answer = resolve }) as never)
@@ -252,6 +252,37 @@ it('reads and writes reasoning per chat, and a late answer never reaches the nex
     expect(lastComposer().reasoning).toBe('high')
     view.rerender(<QueryClientProvider client={qc}><ChatView sessionId="chat-a" /></QueryClientProvider>)
     await waitFor(() => expect(lastComposer().reasoning).toBe('medium'))
+  } finally {
+    vi.mocked(api.fetchReasoning).mockImplementation(() => Promise.resolve({ reasoning_effort: null }))
+  }
+})
+
+it('shows a chat not created yet the profile default, under the key Settings writes (TAL-2078)', async () => {
+  vi.mocked(api.fetchReasoning).mockResolvedValue({ reasoning_effort: 'high', supported_efforts: ['low', 'high'], supports_reasoning_effort: true })
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  try {
+    render(<QueryClientProvider client={qc}><ChatView sessionId={null} /></QueryClientProvider>)
+    await waitFor(() => expect(lastComposer().reasoning).toBe('high'))
+    expect(api.fetchReasoning).toHaveBeenCalledWith(undefined, undefined, undefined)
+    act(() => { qc.setQueryData(keys.reasoning(null, null, null), { reasoning_effort: 'low', supported_efforts: ['low', 'high'], supports_reasoning_effort: true }) })
+    await waitFor(() => expect(lastComposer().reasoning).toBe('low'))
+  } finally {
+    vi.mocked(api.fetchReasoning).mockImplementation(() => Promise.resolve({ reasoning_effort: null }))
+  }
+})
+
+it('reads a chat not created yet for the model it will start on, and follows a model pick (TAL-2078)', async () => {
+  search.mockReturnValue({ project: 'p1' })
+  projects.mockReturnValue({ data: { projects: [{ project_id: 'p1', name: 'Proj', workspaces: [], model: 'gemini-2.5-flash', model_provider: 'gemini', model_option_id: '@gemini:gemini-2.5-flash' }] } })
+  vi.mocked(api.fetchReasoning).mockImplementation((_sid, model) => Promise.resolve(model === '@openai:gpt-6' ? { reasoning_effort: 'low', supported_efforts: ['low', 'xhigh'] } : { reasoning_effort: 'medium', supported_efforts: ['minimal', 'medium'] }))
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  try {
+    render(<QueryClientProvider client={qc}><ChatView sessionId={null} /></QueryClientProvider>)
+    await waitFor(() => expect(composer.mock.lastCall![0].reasoningLevels).toEqual(['minimal', 'medium']))
+    expect(api.fetchReasoning).toHaveBeenCalledWith(undefined, '@gemini:gemini-2.5-flash', 'gemini')
+    act(() => { composer.mock.lastCall![0].onModelChange('@openai:gpt-6', 'openai') })
+    await waitFor(() => expect(composer.mock.lastCall![0].reasoningLevels).toEqual(['low', 'xhigh']))
+    expect(lastComposer().reasoning).toBe('low')
   } finally {
     vi.mocked(api.fetchReasoning).mockImplementation(() => Promise.resolve({ reasoning_effort: null }))
   }
