@@ -363,7 +363,7 @@ with the decision for one tab. The tab sends its `loaded_build` and the opaque
   other dialog or menu is open, no navigation is pending, and no focused field
   holds a draft. Continue, Escape and the backdrop close it at once and store
   the acknowledgement; other tabs of the browser close their copy. Settings >
-  System > What's New replays the full announcement; a replay never re-enables
+  About > What's New replays the full announcement; a replay never re-enables
   the automatic prompt.
   A failed read stays quiet and is retried at the next launch or Settings visit.
 - An unreadable token counts as no observation. Tokens are only compared, never

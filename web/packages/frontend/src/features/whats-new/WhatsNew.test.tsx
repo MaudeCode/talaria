@@ -9,12 +9,13 @@ import type { WhatsNewState } from '@maudecode/talaria-web-contracts'
 
 const routerStatus = vi.hoisted(() => ({ value: 'idle' }))
 vi.mock('@tanstack/react-router', () => ({ useRouterState: ({ select }: { select: (s: { status: string }) => unknown }) => select({ status: routerStatus.value }) }))
-vi.mock('../../api/endpoints', () => ({ fetchWhatsNew: vi.fn() }))
+vi.mock('../../api/endpoints', () => ({ fetchWhatsNew: vi.fn(), fetchSettings: vi.fn(() => Promise.resolve({})) }))
 import { fetchWhatsNew } from '../../api/endpoints'
 import { BootstrapContext } from '../../app/bootstrap'
 import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
 import { Dialog } from '../../ui/Dialog'
-import { WhatsNew, WhatsNewReplay, whatsNewScope } from './WhatsNew'
+import { AboutSection } from '../settings/AboutSection'
+import { WhatsNew, whatsNewScope } from './WhatsNew'
 
 // The shared Web/App fixture the server suite composes (contracts/fixtures/whats-new.json).
 const shared = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/whats-new.json'), 'utf8')) as { state: WhatsNewState }
@@ -53,16 +54,16 @@ describe("What's New (TAL-1617)", () => {
     await waitFor(() => { expect(dialog).toContainElement(document.activeElement as HTMLElement) })
   })
 
-  it('presents only the unseen rows automatically and the full announcement from Settings (TAL-1981)', async () => {
+  it('presents only the unseen rows automatically and the full announcement from Settings › About (TAL-1981, TAL-2081)', async () => {
     const presentation = { ...announcement, rows: announcement.rows.slice(1) }
     fetchMock.mockResolvedValue({ ...eligible, presentation })
-    renderShell(<><WhatsNewReplay /><WhatsNew /></>)
+    renderShell(<><AboutSection /><WhatsNew /></>)
     const titles = (dialog: HTMLElement) => within(dialog).getAllByRole('listitem').map((row) => row.textContent)
     const prompt = await screen.findByRole('dialog', { name: TITLE })
     expect(titles(prompt)).toEqual(presentation.rows.map((row) => row.title + row.description))
     await userEvent.click(within(prompt).getByRole('button', { name: 'Continue' }))
     await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
-    await userEvent.click(screen.getByRole('button', { name: "What's New" }))
+    await userEvent.click(screen.getByRole('button', { name: TITLE }))
     expect(titles(await screen.findByRole('dialog', { name: TITLE }))).toEqual(announcement.rows.map((row) => row.title + row.description))
   })
 
@@ -185,11 +186,11 @@ describe("What's New (TAL-1617)", () => {
     expect(window.localStorage.getItem(SCOPE)).toBeNull()
   })
 
-  it('replays the same dialog from Settings without recording or re-enabling the prompt', async () => {
+  it('replays the same dialog from Settings › About without recording or re-enabling the prompt', async () => {
     fetchMock.mockResolvedValue(quiet)
-    renderShell(<><WhatsNewReplay /><WhatsNew /></>)
+    renderShell(<><AboutSection /><WhatsNew /></>)
     await waitFor(() => { expect(window.localStorage.getItem(SCOPE)).toBe(ACK) })
-    await userEvent.click(await screen.findByRole('button', { name: "What's New" }))
+    await userEvent.click(await screen.findByRole('button', { name: TITLE }))
     const dialog = await screen.findByRole('dialog', { name: "What's New in Talaria Web" })
     expect(within(dialog).getAllByRole('listitem')).toHaveLength(announcement.rows.length)
     await userEvent.click(within(dialog).getByRole('button', { name: 'Continue' }))

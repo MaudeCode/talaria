@@ -19,7 +19,6 @@
       "src/features/tasks/JobForm.tsx": 1
     },
     "settings-heading": {
-      "src/features/settings/AboutSection.tsx": 3,
       "src/features/settings/AuxiliaryModels.tsx": 3,
       "src/features/settings/ExtensionsSection.tsx": 2,
       "src/features/settings/McpSection.tsx": 2

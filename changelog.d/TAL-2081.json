@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Settings › About uses the shared group headers and plain rows: Versions, What's New (moved here from System), Help with README, Troubleshooting and Send feedback, and Keyboard shortcuts.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}
