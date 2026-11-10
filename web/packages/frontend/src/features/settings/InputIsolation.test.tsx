@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
-import { BootstrapContext } from '../../app/bootstrap'
+import { BootstrapContext, loadBootstrap } from '../../app/bootstrap'
 import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
 
 const renders = vi.hoisted(() => ({ workspace: vi.fn(), provider: vi.fn(), passkey: vi.fn(), skill: vi.fn(), server: vi.fn(), tool: vi.fn(), privacy: vi.fn(), plugin: vi.fn() }))
@@ -200,6 +200,8 @@ describe('input render isolation (TAL-1405)', () => {
     await waitFor(() => expect(api.saveSettings).toHaveBeenLastCalledWith({ _set_password: 'next-password', _current_password: ' current-password ' }))
     await waitFor(() => expect(next).toHaveValue(''))
     expect(current).toHaveValue('')
+    // TAL-2158: the saved password rereads bootstrap, so the sidebar's no-password warning goes without a reload.
+    expect(loadBootstrap).toHaveBeenCalledTimes(1)
   })
 
   it('preserves the skill search when returning from a detail', async () => {

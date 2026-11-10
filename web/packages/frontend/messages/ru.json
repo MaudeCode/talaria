@@ -59,7 +59,6 @@
 	"auth_status_passkey_only": "Только ключи доступа",
 	"auth_status_password": "Парольная авторизация",
 	"auth_status_unauthenticated": "Без авторизации",
-	"auth_warning_badge": "Авторизация отключена",
 	"auto_compress_label": "Автосжатие",
 	"available_commands": "Доступные команды:",
 	"available_personalities": "Доступные личности:",

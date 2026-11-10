@@ -56,7 +56,6 @@
 	"auth_status_passkey_only": "패스키 전용",
 	"auth_status_password": "비밀번호 인증",
 	"auth_status_unauthenticated": "미인증",
-	"auth_warning_badge": "인증 비활성화됨",
 	"auto_compress_label": "자동 압축",
 	"available_commands": "사용 가능한 명령:",
 	"available_personalities": "Available personalities:",

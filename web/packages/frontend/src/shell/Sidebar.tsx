@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from '@tanstack/react-router'
-import { ChevronDown, ChevronLeft, ChevronRight, Menu as MenuIcon, MessageSquareWarning, Puzzle, Search, SquarePen, X } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, Menu as MenuIcon, MessageSquareWarning, Puzzle, Search, ShieldAlert, SquarePen, X } from 'lucide-react'
 import { m } from '../paraglide/messages.js'
 import { useBootstrap } from '../app/bootstrap'
 import { useDashboardStatusQuery, useSetting } from '../app/queries'
@@ -91,12 +91,34 @@ function SidebarNav({ panel }: { panel: ReactNode }) {
         </div>
         <div className="sidebar-panel flex min-h-0 flex-col" inert={rail}>{panel}</div>
       </div>
+      <NoPasswordWarning />
       <div className="sidebar-footer flex flex-none items-center gap-0.5">
         {destinationRow('settings')}
         {showsFeedback && <button type="button" className={cn(SIDEBAR_ROW, 'sidebar-icon-row has-tooltip')} data-panel="feedback" data-tooltip={m.feedback_rail_label()} aria-label={m.feedback_send_open()} onClick={openFeedback}><SidebarRowContent icon={MessageSquareWarning} label={m.feedback_rail_label()} /></button>}
         <UpdateNotificationCenterButton placement="sidebar" />
       </div>
     </nav>
+  )
+}
+
+/**
+ * TAL-2158: a server without a password says so to whoever can set one, above the footer in every sidebar state. The Access
+ * switch `auth_disabled_acknowledged` quietens it from an error row to a warning icon; it stays while auth is off.
+ */
+function NoPasswordWarning() {
+  const { auth } = useBootstrap()
+  // The setting carries the switch's optimistic value; bootstrap holds the same server field until settings load.
+  const acknowledged = useSetting('auth_disabled_acknowledged') ?? auth.auth_disabled_acknowledged
+  const descriptionId = useId()
+  if (auth.auth_enabled || !auth.can_manage_server) return null
+  const label = m.auth_no_password()
+  return (
+    <div className="sidebar-alert flex flex-none">
+      <Link to="/settings/$section" params={{ section: 'access' }} className={cn(SIDEBAR_ROW, acknowledged && 'sidebar-icon-row has-tooltip')} data-tone={acknowledged ? 'warning' : 'error'} data-tooltip={acknowledged ? label : undefined} aria-label={label} aria-describedby={descriptionId} onClick={closeMobileSidebar}>
+        <SidebarRowContent icon={ShieldAlert} label={label} />
+      </Link>
+      <span id={descriptionId} hidden>{m.auth_disabled_warning_message()}</span>
+    </div>
   )
 }
 

@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "When the server has no password, the sidebar says so to anyone who can set one, and the Quieter no-password warning switch in Settings › Access softens it to an amber icon.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

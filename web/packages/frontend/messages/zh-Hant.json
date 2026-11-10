@@ -43,7 +43,6 @@
 	"auth_status_passkey_only": "僅限通行金鑰",
 	"auth_status_password": "密碼驗證",
 	"auth_status_unauthenticated": "未驗證",
-	"auth_warning_badge": "驗證已停用",
 	"auto_compress_label": "自動壓縮",
 	"available_commands": "可用命令：",
 	"available_personalities": "可用角色：",

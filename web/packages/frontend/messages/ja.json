@@ -43,7 +43,6 @@
 	"auth_status_passkey_only": "パスキーのみ",
 	"auth_status_password": "パスワード認証",
 	"auth_status_unauthenticated": "未認証",
-	"auth_warning_badge": "認証無効",
 	"auto_compress_label": "自動圧縮",
 	"available_commands": "利用可能なコマンド:",
 	"available_personalities": "利用可能なパーソナリティ:",
