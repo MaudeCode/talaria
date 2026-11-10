@@ -7,6 +7,7 @@
 import { accessSync, constants, existsSync, mkdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
+import { resolvePathLikePython } from './workspace/paths.js'
 
 export type Env = Record<string, string | undefined>
 
@@ -123,7 +124,8 @@ export function resolveDefaultWorkspace(raw: string | null | undefined, opts: { 
   if (existsSync(homeWork)) add(homeWork)
   add(homeWorkspace)
   add(resolve(opts.stateDir, 'workspace'))
-  for (const candidate of candidates) if (ensureWorkspaceDir(candidate)) return candidate
+  // TAL-2098: the canonical spelling the workspace list uses, so clients can match the two by string.
+  for (const candidate of candidates) if (ensureWorkspaceDir(candidate)) return resolvePathLikePython(candidate, home)
   throw new Error('Could not create or access any usable workspace directory. Set HERMES_WEBUI_DEFAULT_WORKSPACE to a writable path.')
 }
 

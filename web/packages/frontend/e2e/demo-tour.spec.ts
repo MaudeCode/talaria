@@ -68,6 +68,15 @@ async function dataPages(page: Page, info: TestInfo, theme: Theme) {
   }
   try {
     if (theme === 'light') await pickLightTheme(page, server.base)
+    if (desktop) {
+      // TAL-2098: a fresh new chat's chip names the default workspace and its menu row is the selected one.
+      await page.goto(`${server.base}/`)
+      await expect(page.locator('#composerWorkspaceChip')).toHaveText('Home')
+      await page.locator('#composerWorkspaceChip').click()
+      await expect(page.getByRole('menuitemradio', { checked: true })).toContainText('Home')
+      await check('workspace-menu', false)
+      await page.keyboard.press('Escape')
+    }
     await visit('chat', `/session/${DEMO_SESSION_ID}`, 'Filed two tickets and ordered them so they cannot conflict.')
     if (desktop) {
       await page.locator('#composerModelChip').click()
