@@ -3,7 +3,10 @@ import { act, cleanup, renderHook } from '@testing-library/react'
 import { QueryClient, QueryClientProvider, QueryObserver } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { keys } from '../../api/queryKeys'
+import { fetchWebPushStatus } from '../../api/endpoints'
 import { useSessionListStream } from './SessionListPanel'
+
+vi.mock('../../api/endpoints', async (importOriginal) => ({ ...await importOriginal<typeof import('../../api/endpoints')>(), fetchWebPushStatus: vi.fn() }))
 
 let sources: { readyState: number; close: () => void; emit: (name: string, data: unknown) => void }[] = []
 
@@ -122,7 +125,7 @@ describe('useSessionListStream completion notifications (TAL-2157)', () => {
   const completion = { identity: 'run-1', scope: 'scope', profile: 'default', eligible: true, expires_at: Date.now() + 60_000, notification }
   let shown: { title: string; options: NotificationOptions; onclick: (() => void) | null }[]
   const showNotification = vi.fn()
-  let subscription: object | null
+  let subscription: { endpoint: string } | null
   let active: object | null
 
   beforeEach(() => {
@@ -159,11 +162,20 @@ describe('useSessionListStream completion notifications (TAL-2157)', () => {
     expect(showNotification).toHaveBeenCalledExactlyOnceWith('Release', { body: 'Shipped it', tag: 'a', data: { url: '/session/a' } })
   })
 
-  it("leaves the completion to Web Push when this browser is subscribed", async () => {
-    subscription = {}
+  it('leaves the completion to Web Push only when the server sends it to this browser', async () => {
+    subscription = { endpoint: 'https://push.example/1' }
+    const all = { notify_on_approval: true, notify_on_input: true, notify_on_failure: true }
+    vi.mocked(fetchWebPushStatus).mockResolvedValue({ public_key: 'k', subscription: { preferences: { ...all, notify_on_completion: true } } })
     await finish('hidden')
+    expect(fetchWebPushStatus).toHaveBeenLastCalledWith('https://push.example/1')
     expect(showNotification).not.toHaveBeenCalled()
-    expect(shown).toHaveLength(0)
+    // Another profile's or a signed-out login's subscription, or completions turned off: Web Push sends nothing.
+    for (const status of [null, { preferences: { ...all, notify_on_completion: false } }]) {
+      vi.mocked(fetchWebPushStatus).mockResolvedValue({ public_key: 'k', subscription: status })
+      showNotification.mockClear()
+      await finish('hidden')
+      expect(showNotification).toHaveBeenCalledOnce()
+    }
   })
 
   it('falls back to a page notification without an active worker; clicking it focuses the tab on the chat', async () => {
