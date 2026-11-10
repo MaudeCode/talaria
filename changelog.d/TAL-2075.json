@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web Settings groups Chat into Composer, Transcript, Scrolling, Limits and Group discussions, and Navigation lists each sidebar destination and quota source as its own switch row, with Sidebar density moved there from Appearance.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}
