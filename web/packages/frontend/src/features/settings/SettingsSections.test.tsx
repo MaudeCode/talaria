@@ -116,7 +116,7 @@ it('edits every retired Preferences, Conversation, System and Models & Providers
   // Every page renders in turn, as in the index placement test (TAL-2086).
 }, 30_000)
 
-/** TAL-2075, TAL-2076, TAL-2138: every Chat, Chat sub-page and Navigation row by its label, in page order, with the `data-group` it sits in. */
+/** TAL-2075, TAL-2076, TAL-2138, TAL-2145: every Chat, Chat sub-page and Navigation row by its label, in page order, with the `data-group` it sits in. */
 const GROUPS: Record<string, [string, string][]> = {
   chat: [
     ['Send with', 'composer'], ['While the agent is working', 'composer'], ['Attach long pasted text as a file', 'composer'],
@@ -134,12 +134,9 @@ const GROUPS: Record<string, [string, string][]> = {
     ['Max output tokens', 'limits'], ['Prepare compaction in the background', 'limits'], ['Refresh chat titles', 'limits'],
   ],
   navigation: [
-    ['Pinned conversations limit', 'chats'], ['Sidebar density', 'chats'], ['Show per-project new-conversation buttons', 'chats'],
-    ['Show CLI and other external sessions', 'sessions'], ['Show Claude Code sessions', 'sessions'], ['Show cron sessions', 'sessions'], ['Show webhook sessions', 'sessions'],
-    ['Show kanban sessions', 'sessions'], ['Show previous messaging sessions', 'sessions'],
-    ['Tasks', 'destinations'], ['Kanban', 'destinations'], ['Skills', 'destinations'], ['Memory', 'destinations'], ['Discussions', 'destinations'], ['Todos', 'destinations'],
-    ['Decisions', 'destinations'], ['Insights', 'destinations'],
-    ['Sidebar feedback button', 'buttons'], ['Show profile switcher in titlebar', 'buttons'],
+    ['Density', 'sidebar'], ['Pinned chats shown', 'sidebar'], ['New-chat button per project', 'sidebar'],
+    ['Show CLI and other external sessions', 'outside-chats'], ['Show Claude Code sessions', 'outside-chats'], ['Show previous messaging sessions', 'outside-chats'],
+    ['Show cron sessions', 'outside-chats'], ['Show webhook sessions', 'outside-chats'], ['Show kanban sessions', 'outside-chats'],
   ],
 }
 
@@ -153,7 +150,6 @@ it('puts each Chat and Navigation row in the group where it applies, each once w
     const labels = [...view.container.querySelectorAll<HTMLLabelElement>(`[data-section="${page.section}"] label`)]
     expect(labels.map((label) => [label.textContent, label.closest('[data-group]')?.getAttribute('data-group')]), page.id).toEqual(GROUPS[page.id])
     for (const label of labels) expect(document.getElementById(label.htmlFor), label.textContent ?? '').not.toBeNull()
-    for (const [name, group] of GROUPS[page.id]!) if (group === 'destinations') expect(screen.getByRole('switch', { name })).toBeInTheDocument()
     view.unmount()
   }
 })

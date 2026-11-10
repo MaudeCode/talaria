@@ -45,7 +45,7 @@ export const test = base.extend<{ errors: string[] }>({
 
 export { expect }
 
-/** TAL-2099: the titlebar shows its profile chip only with Settings > Navigation's "Show profile switcher in titlebar" on. */
+/** TAL-2099: the titlebar shows its profile chip only with Settings > Navigation's Profile switcher shown. */
 export async function showTitlebarProfile(page: Page): Promise<void> {
   await page.route('**/api/settings', async (route) => {
     if (route.request().method() !== 'GET') return route.fallback()
