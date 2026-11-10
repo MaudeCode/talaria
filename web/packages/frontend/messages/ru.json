@@ -1069,7 +1069,7 @@
 	"primary_navigation": "Основная навигация",
 	"process_wakeup_label": "Фоновое пробуждение",
 	"process_wakeup_matched": "Совпадение с шаблоном наблюдения",
-	"profile_active": "АКТИВЕН",
+	"profile_active": "Активен",
 	"profile_api_key_label": "API-ключ",
 	"profile_api_key_placeholder": "API-ключ (необязательно)",
 	"profile_api_keys_configured": "API-ключи настроены",

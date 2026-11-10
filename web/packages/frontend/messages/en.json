@@ -1803,7 +1803,7 @@
 	"primary_navigation": "Primary navigation",
 	"process_wakeup_label": "Background wakeup",
 	"process_wakeup_matched": "Watch pattern matched",
-	"profile_active": "ACTIVE",
+	"profile_active": "Active",
 	"profile_api_key_label": "API key",
 	"profile_api_key_placeholder": "API key (optional)",
 	"profile_api_keys_configured": "API keys configured",

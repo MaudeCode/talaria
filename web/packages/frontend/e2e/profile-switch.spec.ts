@@ -153,7 +153,7 @@ test('Use on the Profiles page switches in place and confirms the switch', async
   // The switch remounts the page that started it; the confirmation still shows.
   await expect(page.getByText('Switched to profile: research')).toBeVisible()
   await profiles.expectInPlace('research', ['/api/bootstrap', '/api/settings'])
-  await expect(research.getByText('ACTIVE')).toBeVisible()
+  await expect(research.getByText('Active')).toBeVisible()
   await page.screenshot({ path: info.outputPath('profiles-use.png') })
 })
 

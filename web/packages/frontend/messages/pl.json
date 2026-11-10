@@ -1073,7 +1073,7 @@
 	"primary_navigation": "Nawigacja główna",
 	"process_wakeup_label": "Wybudzenie w tle",
 	"process_wakeup_matched": "Dopasowano wzorzec obserwacji",
-	"profile_active": "AKTYWNY",
+	"profile_active": "Aktywny",
 	"profile_api_key_label": "Klucz API",
 	"profile_api_key_placeholder": "Klucz API (opcjonalnie)",
 	"profile_api_keys_configured": "Klucze API skonfigurowane",
