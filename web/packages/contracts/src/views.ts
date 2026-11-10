@@ -803,6 +803,10 @@ export const ProfileSchema = z.looseObject({
   canonical_session: CanonicalBotChatSchema.nullable().optional(),
   /** TAL-2143, `/api/profiles` only: the gateway's status dot, `ok` while it runs and `idle` while it does not; absent with `gateway_running`. */
   gateway_state: z.enum(['ok', 'idle']).optional(),
+  /** TAL-2143, `/api/profiles` only: the profile names no model or provider of its own, so it runs on the default model. */
+  uses_default_model: z.boolean().optional(),
+  /** TAL-2143, `/api/profiles` only: the profile has a display name other than its name, so the name shows muted after it. */
+  name_differs: z.boolean().optional(),
   /** TAL-819: skill and memory writes the Agent staged for approval, reviewed on the Skills and Memory pages. */
   pending_writes: z.number().int().optional(),
 })

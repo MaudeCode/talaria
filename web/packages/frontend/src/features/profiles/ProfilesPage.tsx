@@ -34,8 +34,8 @@ const GATEWAY_MODE_LABEL: Record<GatewayMode, () => string> = {
 
 type Profile = Profiles['profiles'][number]
 
-/** TAL-2143: the profile's own model and provider, else that it runs on the default model. */
-const modelLine = (p: Profile): string => [p.model, p.provider].filter(Boolean).join(' · ') || m.profile_uses_default_model()
+/** TAL-2143: the profile's own model and provider, or, as the server reports, that it runs on the default model. */
+const modelLine = (p: Profile): string => p.uses_default_model ? m.profile_uses_default_model() : [p.model, p.provider].filter(Boolean).join(' · ')
 
 const gatewayLabel = (p: Profile): string | undefined => p.gateway_mode ? GATEWAY_MODE_LABEL[p.gateway_mode]()
   : p.gateway_running === undefined ? undefined : p.gateway_running ? m.profile_gateway_running() : m.profile_gateway_stopped()
@@ -157,12 +157,14 @@ export function ProfilesPage({ name }: { name?: string | undefined } = {}) {
   )
 }
 
-/** A profile's name line: the display name, else the name, then the name muted where it differs, and its Default and Active marks. `link` opens its detail. */
+/**
+ * A profile's name line: the display name, else the name, then the name muted where the server says it differs, and its
+ * Default and Active marks. `link` opens its detail.
+ */
 function ProfileHeading({ profile: p, isActive, link, className }: { profile: Profile; isActive: boolean; link: boolean; className: string }) {
-  const shown = p.display_name || p.name
   const names = <>
-    <span className="truncate">{shown}</span>
-    {shown !== p.name && <span className="truncate text-xs font-normal text-muted">{p.name}</span>}
+    <span className="truncate">{p.display_name || p.name}</span>
+    {p.name_differs && <span className="truncate text-xs font-normal text-muted">{p.name}</span>}
   </>
   return (
     <div className={cn('flex min-w-0 items-baseline gap-2 font-semibold text-text', className)}>

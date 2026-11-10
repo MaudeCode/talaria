@@ -3121,6 +3121,12 @@
                   "idle"
                 ]
               },
+              "uses_default_model": {
+                "type": "boolean"
+              },
+              "name_differs": {
+                "type": "boolean"
+              },
               "pending_writes": {
                 "type": "integer",
                 "minimum": -9007199254740991,

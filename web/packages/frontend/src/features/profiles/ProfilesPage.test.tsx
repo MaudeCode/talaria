@@ -11,8 +11,8 @@ vi.mock(import('../../api/endpoints'), async (importOriginal) => ({
   ...(await importOriginal()),
   fetchProfiles: vi.fn(() => Promise.resolve({
     profiles: [
-      { name: 'default', is_default: true, display_name: '', description: '', has_avatar: false, canonical_session: null },
-      { name: 'scout', is_default: false, display_name: 'Research lead', description: 'Finds sources.', has_avatar: true, canonical_session: { session_id: 'scout-root', tip_session_id: 'scout-tip' },
+      { name: 'default', is_default: true, display_name: '', description: '', has_avatar: false, canonical_session: null, uses_default_model: true, name_differs: false },
+      { name: 'scout', is_default: false, display_name: 'Research lead', description: 'Finds sources.', has_avatar: true, canonical_session: { session_id: 'scout-root', tip_session_id: 'scout-tip' }, uses_default_model: false, name_differs: true,
         path: '/home/u/.hermes/profiles/scout', model: 'gpt-6-astra', provider: 'openai-codex', enabled_skills: 3, total_skills: 7, gateway_mode: 'parked' as const, has_env: true, pending_writes: 2 },
     ],
     active: 'default',
@@ -117,8 +117,8 @@ describe('ProfilesPage', () => {
   it('TAL-2143: shows the server\'s figures and, per profile, its monogram, marks, model line and gateway state', async () => {
     vi.mocked(api.fetchProfiles).mockResolvedValueOnce({
       profiles: [
-        { name: 'default', is_default: true, display_name: 'Writer', model: 'claude-sonnet-4-6', provider: 'anthropic', gateway_running: true, gateway_state: 'ok', has_env: false },
-        { name: 'scratch', gateway_running: false, gateway_state: 'idle' },
+        { name: 'default', is_default: true, display_name: 'Writer', model: 'claude-sonnet-4-6', provider: 'anthropic', gateway_running: true, gateway_state: 'ok', has_env: false, uses_default_model: false, name_differs: true },
+        { name: 'scratch', gateway_running: false, gateway_state: 'idle', uses_default_model: true, name_differs: false },
       ],
       active: 'default', single_profile_mode: false, summary: { total: 2, gateways_running: 1, active_name: 'Writer' },
     })

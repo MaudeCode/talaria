@@ -400,8 +400,14 @@ export async function profileList(deps: AppDeps) {
   const visible = profiles.filter((p) => p.visible !== false)
   const current = profiles.find((p) => p.name === active)
   const summary = { total: visible.length, gateways_running: visible.filter((p) => p.gateway_running === true).length, active_name: str(current?.display_name) || active }
-  // TAL-2143: each row's gateway dot; a row without `gateway_running` draws none.
-  const rows = profiles.map((p) => typeof p.gateway_running === 'boolean' ? { ...p, gateway_state: p.gateway_running ? 'ok' : 'idle' } : p)
+  // TAL-2143: each row's gateway dot (none without `gateway_running`), whether it runs on the default model, and whether
+  // its name differs from the display name shown before it.
+  const rows = profiles.map((p) => ({
+    ...p,
+    ...(typeof p.gateway_running === 'boolean' ? { gateway_state: p.gateway_running ? 'ok' : 'idle' } : {}),
+    uses_default_model: !str(p.model) && !str(p.provider),
+    name_differs: !!str(p.display_name) && str(p.display_name) !== str(p.name),
+  }))
   return { profiles: rows as never[], active, single_profile_mode: deps.isolatedProfileMode(), summary }
 }
 

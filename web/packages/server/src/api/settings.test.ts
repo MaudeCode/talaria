@@ -1655,6 +1655,15 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       const body = await json(await s.get('/api/profiles'))
       expect(body.summary).toEqual({ total: 2, gateways_running: 1, active_name: 'default' })
       expect((body.profiles as Json[]).map((p) => [p.name, p.gateway_state])).toEqual([['default', 'ok'], ['scout', 'idle'], ['ghost', 'ok']])
+      // Each row says whether it runs on the default model and whether its name differs from the name shown.
+      sidecar.respond('profiles.list', () => ({ profiles: [
+        { ...row('default', true, true), path: s.state, is_default: true, display_name: 'Writer', model: 'claude-sonnet-4-6', provider: null },
+        { ...row('scout', true, false), display_name: 'scout' },
+        { ...row('plain', true, false), provider: 'anthropic' },
+      ] }))
+      s.deps.profiles.invalidate()
+      const rows = (await json(await s.get('/api/profiles'))).profiles as Json[]
+      expect(rows.map((p) => [p.name, p.uses_default_model, p.name_differs])).toEqual([['default', false, true], ['scout', true, false], ['plain', false, false]])
       sidecar.respond('profiles.list', () => ({ profiles: [{ ...row('default', true, true), path: s.state, is_default: true, display_name: 'Writer' }] }))
       s.deps.profiles.invalidate()
       expect((await json(await s.get('/api/profiles'))).summary).toMatchObject({ active_name: 'Writer' })
