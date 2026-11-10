@@ -21,8 +21,8 @@ const WorkspacesPage = lazy(() => import('../workspaces/WorkspacesPage').then((m
 const LogsPage = lazy(() => import('../logs/LogsPage').then((module) => ({ default: module.LogsPage })))
 const AboutSection = lazy(() => import('./AboutSection').then((module) => ({ default: module.AboutSection })))
 
-/** `tab` and `onTabChange` reach the one section with tabs, Tools. */
-interface SectionProps { tab?: ToolsTab | undefined; onTabChange?: ((tab: ToolsTab) => void) | undefined }
+/** `tab` and `onTabChange` reach the one section with tabs, Tools; `name` the profile Profiles shows in detail. */
+interface SectionProps { tab?: ToolsTab | undefined; onTabChange?: ((tab: ToolsTab) => void) | undefined; name?: string | undefined }
 
 const SECTIONS: Partial<Record<Section, (props: SectionProps) => ReactNode>> = {
   appearance: () => <AppearanceSection />,
@@ -33,7 +33,7 @@ const SECTIONS: Partial<Record<Section, (props: SectionProps) => ReactNode>> = {
   models: () => <ModelsSection />,
   providers: () => <ProvidersPage />,
   tools: (props) => <ToolsSection {...props} />,
-  profiles: () => <div data-section="profiles"><ProfilesPage /></div>,
+  profiles: ({ name }) => <div data-section="profiles"><ProfilesPage name={name} /></div>,
   workspaces: () => <div data-section="workspaces"><WorkspacesPage /></div>,
   extensions: () => <div data-section="extensions"><ExtensionsSection /></div>,
   access: () => <AccessSection />,

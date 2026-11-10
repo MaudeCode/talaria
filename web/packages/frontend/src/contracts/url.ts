@@ -41,7 +41,8 @@ export type { SettingsSectionId as SettingsSection, SettingsSectionGroup } from 
 /** TAL-1691, TAL-2100: Settings > Tools keeps each of its lists on a `?tab=`. */
 export const ToolsTabSchema = z.enum(['plugins', 'connectors', 'mcp'])
 export type ToolsTab = z.infer<typeof ToolsTabSchema>
-export const SettingsSearchSchema = z.object({ tab: ToolsTabSchema.optional().catch(undefined) })
+/** TAL-2085: `name` opens one profile's detail on Settings > Profiles. */
+export const SettingsSearchSchema = z.object({ tab: ToolsTabSchema.optional().catch(undefined), name: z.string().min(1).max(64).optional().catch(undefined) })
 
 /**
  * TAL-1691, TAL-2100: where each retired `/settings/<id>` now lives, so bookmarks and older deep links keep working.

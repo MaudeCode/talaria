@@ -19,8 +19,8 @@ export const Route = createFileRoute('/_app/settings/$section')({
 
 function SettingsSectionPage() {
   const { section } = Route.useParams()
-  const { tab } = Route.useSearch()
+  const { tab, name } = Route.useSearch()
   const navigate = Route.useNavigate()
   const setTab = (next: ToolsTab) => { void navigate({ search: { tab: next }, replace: true }) }
-  return <SettingsSection section={section} tab={tab} onTabChange={setTab} />
+  return <SettingsSection section={section} tab={tab} onTabChange={setTab} name={name} />
 }

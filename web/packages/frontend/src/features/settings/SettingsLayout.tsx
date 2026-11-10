@@ -55,7 +55,7 @@ export function SectionMenu() {
         <div className="settings-menu-items flex flex-col gap-4 min-h-0 flex-1 overflow-y-auto">
           {GROUPS.map(({ group, sections }) => (
             <div key={group} role="group" aria-labelledby={`settingsGroup-${group}`} data-settings-group={group} className="flex flex-col gap-0.5">
-              <SectionHeader className="px-2.5 pb-1" detail={group === 'profile' ? profile : undefined}><span id={`settingsGroup-${group}`}>{GROUP_LABEL[group]()}</span></SectionHeader>
+              <SectionHeader className="px-2.5 pb-1" detail={group === 'profile' && profile ? <Link to="/settings/$section" params={{ section: 'profiles' }} search={{ name: profile }} onClick={closeMobileSidebar} data-settings-profile-link="" className="hover:text-text hover:underline">{profile}</Link> : undefined}><span id={`settingsGroup-${group}`}>{GROUP_LABEL[group]()}</span></SectionHeader>
               {sections.map((section) => {
                 const active = params.section === section
                 const Icon = SECTION_ICON[section]
