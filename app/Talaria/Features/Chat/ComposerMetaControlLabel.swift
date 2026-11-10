@@ -69,6 +69,10 @@ struct ComposerChipContent<Icon: View, Trailing: View>: View {
     private func row(showsTitle: Bool) -> some View {
         HStack(spacing: spacing) {
             icon
+                // An SF Symbol can stand taller than the title's line (the toolsets wrench: 18 pt against 15.67 pt at
+                // footnote). Centred on the line without setting its height, every titled chip keeps one height, so
+                // a selector the session load adds does not grow the strip and move the composer (TAL-1998).
+                .frame(height: showsTitle ? 0 : nil)
 
             if showsTitle {
                 Text(title)
