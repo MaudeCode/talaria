@@ -90,6 +90,7 @@ async function dataPages(page: Page, info: TestInfo, theme: Theme) {
     await visit('decision-review', `/decisions/${reviewId}`, 'Retention policy')
     await visit('discussions', '/groups', 'Design review')
     await visit('discussion', '/groups?room=discussion', 'Review this proposal before Friday.')
+    await visit('memory', '/memory', 'Deploys go through the staging host first.')
   } finally { await page.goto('about:blank').catch(() => undefined); await server.close() }
 }
 

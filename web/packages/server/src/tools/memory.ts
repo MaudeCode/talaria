@@ -126,6 +126,18 @@ async function readText(path: string | null): Promise<[Buffer, number | null]> {
  */
 export const memoryRevision = (key: Buffer, raw: Buffer): string => createHmac('sha256', key).update('memory-revision\0').update(raw).digest('hex')
 
+/** The Agent's MemoryStore entries of a MEMORY.md / USER.md body, split on its `\n§\n` delimiter line. */
+const entriesOf = (raw: string): string[] => raw.split(/\n§\n/).filter((entry) => entry.trim())
+/** More entries than a page renders as blocks; past it the read sends no entries and the page shows the text as written. */
+export const MAX_SHOWN_ENTRIES = 1000
+/**
+ * TAL-2126: the entries the Agent holds for a body (stripped, first occurrence of each kept, as MemoryStore loads them),
+ * each masked as the page shows it. A save is checked on these unique entries, so a file of repeated entries stays one block each.
+ */
+function shownEntries(raw: string, mask: (text: string) => string): string[] | undefined {
+  const unique = [...new Set(entriesOf(raw).map((entry) => entry.trim()))]
+  return unique.length > MAX_SHOWN_ENTRIES ? undefined : unique.map(mask)
+}
 export async function readMemory(profileHome: string, config: Config, workspace: string | null, env: Record<string, string | undefined>, redact: boolean, key: Buffer, git: GitRunner): Promise<Dict> {
   const mem = dict(config.memory)
   const memoryEnabled = mem.memory_enabled === undefined ? true : truthy(mem.memory_enabled)
@@ -138,6 +150,8 @@ export async function readMemory(profileHome: string, config: Config, workspace:
   const r = (t: Buffer | string): string => redactString(t.toString(), redact)
   return {
     memory: r(memory), user: r(user), soul: r(soul), project_context: r(str(context.content)),
+    memory_entries: shownEntries(memory.toString(), r), user_entries: shownEntries(user.toString(), r),
+    memory_name: memFile ? basename(memFile) : '', user_name: userFile ? basename(userFile) : '', soul_name: basename(soulFile),
     memory_revision: memoryRevision(key, memory), user_revision: memoryRevision(key, user), soul_revision: memoryRevision(key, soul),
     memory_path: memFile ?? '', user_path: userFile ?? '', soul_path: soulFile, project_context_path: str(context.path), project_context_name: str(context.name), project_context_workspace: str(context.workspace),
     memory_mtime: memoryMtime, user_mtime: userMtime, soul_mtime: soulMtime, project_context_mtime: context.mtime ?? null, project_context_shadowed: context.shadowed, external_notes_enabled: externalNotesEnabled(env, config),
@@ -254,7 +268,6 @@ const compactConflict = (): HttpFailure => new HttpFailure(409, 'Memory or previ
 const compactInvalid = (): HttpFailure => new HttpFailure(422, 'The auxiliary model did not produce a valid, shorter memory. Nothing was saved.', { code: 'memory_compaction_invalid' })
 // Memory files have no per-entry history provenance. Keep both connector restrictions rather than lose source data_use.
 const MEMORY_DATA_USE = ['no_training', 'zero_retention']
-const entriesOf = (raw: string): string[] => raw.split(/\n§\n/).filter((entry) => entry.trim())
 const protectedEntry = (entry: string): boolean => redactString(entry) !== entry || /<protected>|\[protected\]/i.test(entry)
 function compactBody(raw: string, content: string): string {
   return [content, ...entriesOf(raw).filter(protectedEntry)].filter(Boolean).join(DELIMITER)

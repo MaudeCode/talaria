@@ -57,6 +57,9 @@ async function seed(server: Awaited<ReturnType<typeof discussionServer>>['server
   server.deps.catalog.invalidate()
   const workspace = join(server.state, 'workspace')
   mkdirSync(workspace, { recursive: true })
+  // The Agent's MemoryStore separates entries with a `§` line; the Memory page shows each as its own block.
+  mkdirSync(join(server.state, 'memories'), { recursive: true })
+  writeFileSync(join(server.state, 'memories', 'MEMORY.md'), 'Uses **TypeScript** for Web projects.\n§\nDeploys go through the `staging` host first.\n§\nRelease checklist:\n- Run the full suite\n- Tag `vX.Y.Z`\n')
   const now = Math.floor(Date.now() / 1000)
   const saveSession = (data: Record<string, unknown>) => server.deps.sessionStore.save(new Session({ profile: 'default', workspace, ...data }, { workspace, model: null }))
 

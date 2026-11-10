@@ -101974,6 +101974,27 @@
                     },
                     "soul_revision": {
                       "type": "string"
+                    },
+                    "memory_name": {
+                      "type": "string"
+                    },
+                    "user_name": {
+                      "type": "string"
+                    },
+                    "soul_name": {
+                      "type": "string"
+                    },
+                    "memory_entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "user_entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     }
                   },
                   "required": [

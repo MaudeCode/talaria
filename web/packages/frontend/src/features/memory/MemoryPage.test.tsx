@@ -12,11 +12,12 @@ import { MemoryPage } from './MemoryPage'
 // Loaded up front, so the read view's lazy renderer chunk resolves within a query's timeout.
 import '../chat/render/MarkdownRenderer'
 
-const memory = (text: string, revision: string) => ({ memory: text, user: '', soul: '', memory_path: '/h/memories/MEMORY.md', user_path: '/h/memories/USER.md', soul_path: '/h/SOUL.md', memory_revision: revision, user_revision: 'u1', soul_revision: 's1' })
+const memory = (text: string, revision: string) => ({ memory: text, user: '', soul: '', memory_path: '/h/memories/MEMORY.md', user_path: '/h/memories/USER.md', soul_path: '/h/SOUL.md', memory_name: 'MEMORY.md', user_name: 'USER.md', soul_name: 'SOUL.md', memory_revision: revision, user_revision: 'u1', soul_revision: 's1' })
 const CONFLICT = 'MEMORY.md changed after you opened it. Not saved.'
 
 beforeEach(() => {
-  vi.mocked(api.fetchMemory).mockReset().mockResolvedValue(memory('Entry A', 'r1'))
+  // The server's entries of the first read; a save or compaction shown before its read must not show these.
+  vi.mocked(api.fetchMemory).mockReset().mockResolvedValue({ ...memory('Entry A', 'r1'), memory_entries: ['Entry A'] })
   vi.mocked(api.writeMemory).mockReset()
   vi.mocked(api.previewMemoryCompaction).mockReset()
   vi.mocked(api.applyMemoryCompaction).mockReset()
@@ -65,6 +66,46 @@ describe('Memory page read view (TAL-2091)', () => {
     expect(await screen.findByRole('heading', { name: 'Repo rules' })).toBeInTheDocument()
     expect(screen.getByText('AGENTS.md')).toHaveAttribute('title', '/w/AGENTS.md')
     expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull()
+  })
+})
+
+describe('Memory page names and entries (TAL-2126)', () => {
+  const header = () => screen.getByTitle('/h/memories/MEMORY.md')
+  const blocks = () => Array.from(document.querySelectorAll('[data-memory-view="memory"] [data-memory-entry]'), (el) => el.textContent)
+
+  it('shows the name the server sent, and the section label without one', async () => {
+    vi.mocked(api.fetchMemory).mockResolvedValue({ ...memory('Entry A', 'r1'), memory_name: 'NOTES.md' })
+    const qc = renderPage()
+    await waitFor(() => expect(header()).toHaveTextContent(/^NOTES\.md$/))
+    const { memory_name: _, ...old } = memory('Entry A', 'r1')
+    vi.mocked(api.fetchMemory).mockResolvedValue(old)
+    await qc.refetchQueries()
+    await waitFor(() => expect(header()).toHaveTextContent(/^Memory$/))
+  })
+
+  it('renders each server entry as its own block, and the raw text without the field', async () => {
+    const text = 'Uses tabs.\n§\nDeploys go to staging.'
+    vi.mocked(api.fetchMemory).mockResolvedValue({ ...memory(text, 'r1'), memory_entries: ['Uses tabs.', 'Deploys go to staging.'] })
+    const qc = renderPage()
+    await waitFor(() => expect(blocks()).toEqual(['Uses tabs.', 'Deploys go to staging.']))
+    expect(screen.queryByText(/§/)).toBeNull()
+    vi.mocked(api.fetchMemory).mockResolvedValue(memory(text, 'r1'))
+    await qc.refetchQueries()
+    await waitFor(() => expect(blocks()).toEqual([]))
+    expect(screen.getByText(/Uses tabs\.\s+§\s+Deploys go to staging\./)).toBeInTheDocument()
+  })
+
+  it('shows a save in flight as written, not as the entries it replaces', async () => {
+    vi.mocked(api.fetchMemory).mockResolvedValue({ ...memory('Old A\n§\nOld B', 'r1'), memory_entries: ['Old A', 'Old B'] })
+    renderPage()
+    await waitFor(() => expect(blocks()).toEqual(['Old A', 'Old B']))
+    vi.mocked(api.writeMemory).mockReturnValue(new Promise(() => undefined))
+    const box = await edit()
+    await userEvent.clear(box)
+    await userEvent.type(box, 'New A')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText('New A')).toBeInTheDocument()
+    expect(screen.queryByText('Old B')).toBeNull()
   })
 })
 

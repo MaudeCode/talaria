@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "The Memory page shows each MEMORY.md and USER.md entry as its own block instead of running entries together.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}
