@@ -1,6 +1,7 @@
 import { ModelOptionContent } from '../../lib/modelEntry'
 import { useProviderQuotas } from '../../lib/useProviderQuotas'
-import { useRef, useState } from 'react'
+import { memo, useRef, useState, type ReactNode } from 'react'
+import type { z } from 'zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { RefreshCw } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
@@ -8,17 +9,17 @@ import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { useDefaultModelChoice, useSetDefaultModel } from '../../app/queries'
 import { post } from '../../api/client'
-import { OkSchema } from '../../contracts'
+import { OkSchema, type ProviderSchema } from '../../contracts'
 import { Button, IconButton } from '../../ui/Button'
 import { RowContextMenu, type RowAction } from '../../ui/Menu'
 import { FieldRow, TextInput } from '../../ui/Field'
-import { ErrorState, LoadingState } from '../../ui/States'
+import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
 import { cn } from '../../ui/cn'
 import { Badge } from '../../ui/Badge'
-import { Row, RowList } from '../../ui/List'
-import { quotaSourcePlan } from '../insights/QuotaMeter'
+import { Row, RowList, SectionHeader } from '../../ui/List'
+import { quotaSourcePlan, type QuotaSource } from '../insights/QuotaMeter'
 import { useSettingField } from './useSettingField'
 import { OpenRouterCost } from './OpenRouterCost'
 import { ProviderQuotaPace } from './ProviderQuotaPace'
@@ -29,7 +30,7 @@ import { QuotaThresholdsForm } from './QuotaThresholds'
 const setProviderKey = (provider: string, api_key: string | null) => post('api/providers', { provider, api_key }, OkSchema, { retries: 0 })
 
 
-/** TAL-2100: Settings > Providers, one row per provider the Agent knows, then the quota thresholds. */
+/** TAL-2100: Settings > Providers, one row per provider the Agent knows, then the quota thresholds. TAL-2077: configured providers first, then the rest, under one name filter. */
 export function ProvidersPage() {
   return (
     <div className="flex flex-col gap-7" data-section="providers">
@@ -51,6 +52,7 @@ export function ProvidersSection() {
   const setDefault = useSetDefaultModel()
   const chosenModel = useDefaultModelChoice()?.model
   const [editing, setEditing] = useState<string | null>(null)
+  const [filter, setFilter] = useState('')
   const invalidate = () => { void qc.invalidateQueries({ queryKey: keys.providers }); void qc.invalidateQueries({ queryKey: keys.models }) }
   const toastError = (e: unknown) => showErrorToast(e)
   const saveKey = useMutation({ mutationFn: ({ id, key }: { id: string; key: string | null }) => setProviderKey(id, key), onSuccess: (_r, v) => { showToast(v.key ? m.providers_key_saved() : m.providers_key_removed()); setEditing(null); invalidate() }, onError: toastError })
@@ -67,6 +69,11 @@ export function ProvidersSection() {
   const active = providers.data.active_provider
   const defaultModel = chosenModel ?? str('default_model')
   const quotaNotice = quotas.data?.availability?.unavailable_reason ?? providers.data.availability?.unavailable_reason
+  const q = filter.trim().toLowerCase()
+  const shown = q ? providers.data.providers.filter((p) => (p.display_name ?? p.id).toLowerCase().includes(q)) : providers.data.providers
+  // TAL-2077: the server's `configured` field alone places a row; each group keeps the server order.
+  const groups = [{ name: 'configured', title: m.providers_group_configured(), rows: shown.filter((p) => p.configured === true) }, { name: 'available', title: m.providers_group_available(), rows: shown.filter((p) => p.configured !== true) }]
+  const catalogUnavailable = providers.data.availability?.authoritative === false
   return (
     <div className="flex flex-col gap-3" data-group="providers">
       <div className="flex items-center justify-between text-xs text-muted">
@@ -75,70 +82,116 @@ export function ProvidersSection() {
       </div>
       {providers.isError && <p role="alert" className="text-warning">{m.oauth_result_unavailable()}</p>}
       {quotaNotice && <p role="status" className="text-xs text-muted">{quotaNotice}</p>}
-      <RowList>
-        {providers.data.providers.map((p) => {
-          const sources = quotas.data?.sources.filter((s) => s.provider_id === p.id) ?? []
-          const quota = sources[0]
-          const plan = quotaSourcePlan(quota)
-          const isEditing = editing === p.id
-          const hint = p.install_hint
-          // One list for the visible controls and the right-click and long-press menu.
-          const refresh: RowAction = { label: m.providers_refresh_models(), run: () => refreshModels.mutate(p.id), busy: refreshModels.isPending }
-          const actions: RowAction[] = [
-            ...(hint ? [{ label: m.providers_install_plugin(), run: () => install.request(hint), busy: install.isInstalling(hint) }] : []),
-            ...(p.is_self_hosted ? [{ label: m.providers_self_hosted_setup(), run: () => setEditing(isEditing ? null : p.id) }]
-              : p.configurable !== false && !p.is_oauth ? [{ label: m.providers_key_set(), run: () => setEditing(isEditing ? null : p.id) }] : []),
-            ...(p.removable === true ? [{ label: m.providers_key_remove(), run: () => saveKey.mutate({ id: p.id, key: null }), danger: true }] : []),
-          ]
-          return (
-            <RowContextMenu key={p.id} label={m.providers_row_menu()} actions={[refresh, ...actions]} trigger={<Row data-provider={p.id}>
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="min-w-0 flex-1 basis-48">
-                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                    <span className="text-sm font-semibold text-text">{p.display_name ?? p.id}</span>
-                    {plan && <Badge tone="border-border text-muted">{plan}</Badge>}
-                    {p.is_active && <Badge tone="border-accent text-accent-text">{m.provider_quota_active_provider()}</Badge>}
-                  </div>
-                  <div className="text-[11px] text-muted">
-                    {providers.data.availability?.authoritative === false ? m.catalog_unavailable() : (p.configured ?? p.has_key) ? m.providers_configured() : m.providers_not_configured()}{p.key_source_kind ? ` · ${p.key_source_kind === 'other' ? p.key_source : p.key_source_kind}` : ''}{p.base_url ? ` · ${p.base_url}` : ''}{p.models_total !== undefined ? ` · ${m.providers_models_count({ n: p.models_total })}` : ''}
-                    {!quotaNotice && quota?.message ? ` · ${quota.message}` : ''}
-                  </div>
-                  {p.auth_error && <div className="text-[11px] text-error">{p.auth_error}</div>}
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <IconButton label={refresh.label} disabled={refresh.busy} onClick={refresh.run}>
-                    <RefreshCw size={14} aria-hidden="true" className={cn(refreshModels.isPending && refreshModels.variables === p.id && 'animate-spin')} />
-                  </IconButton>
-                  {actions.map(({ label, run, busy, danger }) => <Button key={label} {...(danger ? { variant: 'ghost-danger' as const } : {})} {...(busy ? { 'aria-busy': true, disabled: true } : {})} onClick={run}>{label}</Button>)}
-                </div>
-              </div>
-              {hint && install.blocked(hint)}
-              {p.id === 'nous' && <OAuthSignIn provider={p.id} label={p.display_name ?? p.id} signedIn={p.has_key === true} account={p.nous_account ?? null} accountError={p.nous_account_error ?? null} resultOnly compact idPrefix="providersNousOauth" onApproved={invalidate} />}
-              {p.device_login && <OAuthSignIn provider={p.id} label={p.display_name ?? p.id} signedIn={p.has_key === true} idPrefix={`providerOauth-${p.id}`} onApproved={invalidate} />}
-              {isEditing && p.is_self_hosted && <SelfHostedForm key={p.id} id={p.id} baseUrl={p.base_url ?? ''} saving={saveHosted.isPending} onSubmit={(body) => saveHosted.mutate({ id: p.id, name: p.display_name ?? p.id, ...body })} />}
-              {isEditing && !p.is_self_hosted && <ProviderKeyForm key={p.id} label={`${p.display_name ?? p.id} API key`} hasKey={p.has_key === true} saving={saveKey.isPending} onSubmit={(key) => saveKey.mutate({ id: p.id, key })} />}
-              {sources.map((s) => <ProviderQuotaPace key={s.source_id} source={s} showAccount={sources.length > 1} />)}
-              {p.id === 'openrouter' && p.has_key && <OpenRouterCost />}
-              {p.models && p.models.length > 0 && (
-                <details>
-                  <summary className="cursor-pointer text-xs text-muted">{m.providers_models_count({ n: p.models.length })}</summary>
-                  <ul className="mt-1 flex flex-wrap gap-1">
-                    {p.models.map((mm) => (
-                      <li key={mm.id}>
-                        <button type="button" onClick={() => setDefault.mutate({ model: mm.id, provider: p.id })} className={cn('rounded-full border px-2 py-0.5 text-[11px]', mm.id === defaultModel ? 'border-accent bg-accent-bg text-accent-text' : 'border-border text-muted hover:text-text')} title={m.providers_set_default()}><ModelOptionContent entry={mm} /></button>
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              )}
-            </Row>} />
-          )
-        })}
-      </RowList>
+      <TextInput type="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={m.providers_filter()} aria-label={m.providers_filter()} />
+      {shown.length === 0 && <EmptyState>{q ? m.providers_filter_empty() : m.providers_empty()}</EmptyState>}
+      {groups.map(({ name, title, rows }) => rows.length > 0 && (
+        <section key={name} className="flex flex-col gap-1" data-section={`providers-${name}`}>
+          <SectionHeader detail={rows.length}>{title}</SectionHeader>
+          <RowList>
+            {rows.map((p) => {
+              const hint = p.install_hint
+              return <ProviderRow key={p.id} p={p} compact={name === 'available'} quotaSources={quotas.data?.sources} quotaNotice={quotaNotice} catalogUnavailable={catalogUnavailable} defaultModel={defaultModel}
+                editing={editing === p.id} onEdit={setEditing} onInvalidate={invalidate} onSetDefault={setDefault.mutate}
+                onRefresh={refreshModels.mutate} refreshBusy={refreshModels.isPending} refreshing={refreshModels.isPending && refreshModels.variables === p.id}
+                onSaveKey={saveKey.mutate} keySaving={saveKey.isPending} onSaveHosted={saveHosted.mutate} hostedSaving={saveHosted.isPending}
+                onInstall={install.request} installing={hint ? install.isInstalling(hint) : false} installBlocked={hint ? install.blocked(hint) : null} />
+            })}
+          </RowList>
+        </section>
+      ))}
       {install.consent}
     </div>
   )
 }
+
+type Provider = z.infer<typeof ProviderSchema>
+interface ProviderRowProps {
+  p: Provider
+  /** The Available group's one-line row (§3 Grouping). */
+  compact: boolean
+  quotaSources: QuotaSource[] | undefined
+  quotaNotice: string | null | undefined
+  catalogUnavailable: boolean
+  defaultModel: string | undefined
+  editing: boolean
+  onEdit: (id: string | null) => void
+  onInvalidate: () => void
+  onSetDefault: (choice: { model: string; provider: string }) => void
+  onRefresh: (id: string) => void
+  refreshBusy: boolean
+  refreshing: boolean
+  onSaveKey: (value: { id: string; key: string | null }) => void
+  keySaving: boolean
+  onSaveHosted: (value: { id: string; name: string; base_url: string; model: string; api_key?: string }) => void
+  hostedSaving: boolean
+  onInstall: (name: string) => void
+  installing: boolean
+  installBlocked: ReactNode
+}
+
+// Memoized so typing in the filter renders only the rows entering the list (TAL-1405).
+const ProviderRow = memo(function ProviderRow({ p, compact, quotaSources, quotaNotice, catalogUnavailable, defaultModel, editing, onEdit, onInvalidate, onSetDefault, onRefresh, refreshBusy, refreshing, onSaveKey, keySaving, onSaveHosted, hostedSaving, onInstall, installing, installBlocked }: ProviderRowProps) {
+  const sources = quotaSources?.filter((s) => s.provider_id === p.id) ?? []
+  const quota = sources[0]
+  const plan = quotaSourcePlan(quota)
+  const hint = p.install_hint
+  const name = p.display_name ?? p.id
+  // One list for the visible controls and the right-click and long-press menu.
+  const refresh: RowAction = { label: m.providers_refresh_models(), run: () => onRefresh(p.id), busy: refreshBusy }
+  const actions: RowAction[] = [
+    ...(hint ? [{ label: m.providers_install_plugin(), run: () => onInstall(hint), busy: installing }] : []),
+    ...(p.is_self_hosted ? [{ label: m.providers_self_hosted_setup(), run: () => onEdit(editing ? null : p.id) }]
+      : p.configurable !== false && !p.is_oauth ? [{ label: m.providers_key_set(), run: () => onEdit(editing ? null : p.id) }] : []),
+    ...(p.removable === true ? [{ label: m.providers_key_remove(), run: () => onSaveKey({ id: p.id, key: null }), danger: true }] : []),
+  ]
+  const status = <>
+    {catalogUnavailable ? m.catalog_unavailable() : (p.configured ?? p.has_key) ? m.providers_configured() : m.providers_not_configured()}{p.key_source_kind ? ` · ${p.key_source_kind === 'other' ? p.key_source : p.key_source_kind}` : ''}{p.base_url ? ` · ${p.base_url}` : ''}{p.models_total !== undefined ? ` · ${m.providers_models_count({ n: p.models_total })}` : ''}
+    {!quotaNotice && quota?.message ? ` · ${quota.message}` : ''}
+  </>
+  return (
+    <RowContextMenu label={m.providers_row_menu()} actions={[refresh, ...actions]} trigger={<Row compact={compact} data-provider={p.id}>
+      <div className={cn('flex w-full flex-col', compact ? 'gap-2' : 'gap-4')}>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="min-w-0 flex-1 basis-48">
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <span className={compact ? 'font-medium text-text' : 'text-sm font-semibold text-text'}>{name}</span>
+              {plan && <Badge tone="border-border text-muted">{plan}</Badge>}
+              {p.is_active && <Badge tone="border-accent text-accent-text">{m.provider_quota_active_provider()}</Badge>}
+              {compact && <span className="text-muted">{status}</span>}
+            </div>
+            {!compact && <div className="text-[11px] text-muted">{status}</div>}
+            {p.auth_error && <div className="text-[11px] text-error">{p.auth_error}</div>}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <IconButton label={refresh.label} disabled={refresh.busy} onClick={refresh.run}>
+              <RefreshCw size={14} aria-hidden="true" className={cn(refreshing && 'animate-spin')} />
+            </IconButton>
+            {actions.map(({ label, run, busy, danger }) => <Button key={label} {...(danger ? { variant: 'ghost-danger' as const } : {})} {...(busy ? { 'aria-busy': true, disabled: true } : {})} onClick={run}>{label}</Button>)}
+          </div>
+        </div>
+        {installBlocked}
+        {p.id === 'nous' && <OAuthSignIn provider={p.id} label={name} signedIn={p.has_key === true} account={p.nous_account ?? null} accountError={p.nous_account_error ?? null} resultOnly compact idPrefix="providersNousOauth" onApproved={onInvalidate} />}
+        {p.device_login && <OAuthSignIn provider={p.id} label={name} signedIn={p.has_key === true} idPrefix={`providerOauth-${p.id}`} onApproved={onInvalidate} />}
+        {editing && p.is_self_hosted && <SelfHostedForm key={p.id} id={p.id} baseUrl={p.base_url ?? ''} saving={hostedSaving} onSubmit={(body) => onSaveHosted({ id: p.id, name, ...body })} />}
+        {editing && !p.is_self_hosted && <ProviderKeyForm key={p.id} label={`${name} API key`} hasKey={p.has_key === true} saving={keySaving} onSubmit={(key) => onSaveKey({ id: p.id, key })} />}
+        {sources.map((s) => <ProviderQuotaPace key={s.source_id} source={s} showAccount={sources.length > 1} />)}
+        {p.id === 'openrouter' && p.has_key && <OpenRouterCost />}
+        {p.models && p.models.length > 0 && (
+          <details>
+            <summary className="cursor-pointer text-xs text-muted">{m.providers_models_count({ n: p.models.length })}</summary>
+            <ul className="mt-1 flex flex-wrap gap-1">
+              {p.models.map((mm) => (
+                <li key={mm.id}>
+                  <button type="button" onClick={() => onSetDefault({ model: mm.id, provider: p.id })} className={cn('rounded-full border px-2 py-0.5 text-[11px]', mm.id === defaultModel ? 'border-accent bg-accent-bg text-accent-text' : 'border-border text-muted hover:text-text')} title={m.providers_set_default()}><ModelOptionContent entry={mm} /></button>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+      </div>
+    </Row>} />
+  )
+})
 
 function ProviderKeyForm({ label, hasKey, saving, onSubmit }: { label: string; hasKey: boolean; saving: boolean; onSubmit: (key: string) => void }) {
   const [value, setValue] = useState('')

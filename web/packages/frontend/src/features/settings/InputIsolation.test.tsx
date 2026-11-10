@@ -109,6 +109,20 @@ describe('input render isolation (TAL-1405)', () => {
     expect(renders.provider).not.toHaveBeenCalled()
   })
 
+  it('provider filtering renders only rows entering the visible list (TAL-2077)', async () => {
+    mount(<ProvidersSection />)
+    await screen.findByText('one')
+    const input = screen.getByRole('searchbox', { name: 'Filter providers' })
+    reset(renders.provider)
+    await userEvent.type(input, 'one')
+    expect(document.querySelector('[data-provider="two"]')).toBeNull()
+    expect(document.querySelector('[data-provider="one"]')).not.toBeNull()
+    expect(renders.provider).not.toHaveBeenCalled()
+    await userEvent.clear(input)
+    expect(document.querySelector('[data-provider="two"]')).not.toBeNull()
+    expect(renders.provider).toHaveBeenCalledTimes(2)
+  })
+
   it('typing ten characters in each password renders no passkey rows', async () => {
     mount(<AccessSection />)
     await screen.findByText('Laptop')

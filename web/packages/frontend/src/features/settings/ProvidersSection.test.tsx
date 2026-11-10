@@ -44,6 +44,40 @@ describe('ProvidersSection', () => {
 
   afterEach(() => { quotaResponse.current = null; providersResponse.current = null; vi.useRealTimers() })
 
+  it('lists configured providers first by the server field, counts each group and filters both by name (TAL-2077)', async () => {
+    providersResponse.current = { active_provider: 'zai', providers: [
+      { id: 'openai', display_name: 'OpenAI', has_key: false, configured: false },
+      { id: 'zai', display_name: 'Z.AI', has_key: true, configured: true },
+      { id: 'openrouter', display_name: 'OpenRouter', has_key: true, configured: false },
+      { id: 'anthropic', display_name: 'Anthropic', has_key: true, configured: true },
+    ] }
+    renderSection()
+    await screen.findByText('Z.AI')
+    const group = (name: string) => document.querySelector<HTMLElement>(`[data-section="providers-${name}"]`)
+    const ids = (name: string) => [...group(name)?.querySelectorAll('[data-provider]') ?? []].map((row) => row.getAttribute('data-provider'))
+    const header = (name: string) => within(group(name)!).getByRole('heading').parentElement!
+    expect(ids('configured')).toEqual(['zai', 'anthropic'])
+    expect(ids('available')).toEqual(['openai', 'openrouter'])
+    expect(header('configured')).toHaveTextContent(/^Configured2$/)
+    expect(header('available')).toHaveTextContent(/^Available2$/)
+    expect(group('configured')!.compareDocumentPosition(group('available')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const filter = screen.getByRole('searchbox', { name: 'Filter providers' })
+    await userEvent.type(filter, 'OPEN')
+    expect(group('configured')).toBeNull()
+    expect(ids('available')).toEqual(['openai', 'openrouter'])
+    await userEvent.clear(filter)
+    await userEvent.type(filter, 'a')
+    expect(ids('configured')).toEqual(['zai', 'anthropic'])
+    expect(ids('available')).toEqual(['openai'])
+    expect(header('available')).toHaveTextContent(/^Available1$/)
+    await userEvent.type(filter, 'zzz')
+    expect(screen.getByText('No providers match')).toBeInTheDocument()
+    expect(document.querySelector('[data-provider]')).toBeNull()
+    await userEvent.clear(filter)
+    expect(ids('configured')).toEqual(['zai', 'anthropic'])
+    expect(ids('available')).toEqual(['openai', 'openrouter'])
+  })
+
   it('renders the server-offered device code and signed-in result (TAL-1827)', async () => {
     providersResponse.current = { active_provider: 'device-test', providers: [{ id: 'device-test', display_name: 'Device Test', configurable: false, is_plugin_provider: true, has_key: false, device_login: true }, { id: 'no-hooks', display_name: 'No Hooks', configurable: false, is_plugin_provider: true }] }
     vi.mocked(api.onboardingOauthStart).mockResolvedValue({ ok: true, provider: 'device-test', flow_id: 'flow-test', status: 'pending', user_code: 'TEST-1827', verification_url: 'https://device.example.test/login', expires_in: 90, interval: 1 })
