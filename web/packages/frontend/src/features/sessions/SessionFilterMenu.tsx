@@ -1,13 +1,16 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
+import { Plus } from 'lucide-react'
 import type { z } from 'zod'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
+import { useSetting } from '../../app/queries'
 import type { ProjectSchema } from '../../contracts'
 import { FilterCheckboxItem, FilterMenu, FilterRadioItem } from '../../shell/FilterMenu'
 import { MenuGroupLabel, MenuItem, MenuRadioGroup, MenuSeparator, MenuSubmenu } from '../../ui/Menu'
 import { showErrorToast } from '../toast/errorToast'
 import { ProjectDialogs, ProjectMenuItems, type ProjectDialog } from './ProjectMenuItems'
 import { useResourceEffects, useResourceMutation } from './useResourceMutation'
+import { useNewChat } from './useNewChat'
 
 /** The Unassigned choice of the project filter. */
 export const NO_PROJECT = '__none__'
@@ -33,6 +36,8 @@ export function SessionFilterMenu({ source, onSource, webuiCount, cliCount, proj
   onImport: () => void
 }) {
   const [dialog, setDialog] = useState<{ id: string; kind: ProjectDialog } | null>(null)
+  const quickCreate = useSetting('project_quick_create_buttons') === true
+  const newChat = useNewChat()
   const createProject = useResourceMutation({
     resource: () => 'project:new',
     effect: (name: string) => ({ fields: { name } }),
@@ -64,7 +69,14 @@ export function SessionFilterMenu({ source, onSource, webuiCount, cliCount, proj
           <FilterRadioItem value="">{m.project_all()}</FilterRadioItem>
           {hasUnprojected && <FilterRadioItem value={NO_PROJECT} title={m.project_unassigned_hint()}>{m.project_unassigned()}</FilterRadioItem>}
           {newProject && <FilterRadioItem value="project:new" disabled><ProjectName color={null} name={newProject} /></FilterRadioItem>}
-          {projects.map((p) => <FilterRadioItem key={p.project_id} value={p.project_id}><ProjectName color={p.color} name={p.name} /></FilterRadioItem>)}
+          {projects.map((p) => {
+            const item = <FilterRadioItem value={p.project_id}><ProjectName color={p.color} name={p.name} /></FilterRadioItem>
+            // TAL-2153: `project_quick_create_buttons` ends each project row in its own New chat item.
+            return quickCreate ? <div key={p.project_id} role="none" className="grid grid-cols-[minmax(0,1fr)_auto] items-center">
+              {item}
+              <MenuItem aria-label={m.project_new_chat_in({ project: p.name })} title={m.project_new_chat_in({ project: p.name })} className="size-7 justify-center p-0 pointer-coarse:size-11" onClick={() => { void newChat(p.project_id) }}><Plus size={14} className="shrink-0" aria-hidden="true" /></MenuItem>
+            </div> : <Fragment key={p.project_id}>{item}</Fragment>
+          })}
         </MenuRadioGroup>
         <MenuItem onClick={() => { const name = window.prompt(m.project_new_prompt()); if (name?.trim()) createProject.mutate(name.trim()) }}>{m.project_new()}</MenuItem>
         {selected && <MenuSubmenu trigger={m.project_selected()}><ProjectMenuItems project={selected} onDialog={(kind) => setDialog({ id: selected.project_id, kind })} /></MenuSubmenu>}

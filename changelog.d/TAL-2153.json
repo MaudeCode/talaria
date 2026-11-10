@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Two Navigation settings now work in Talaria Web: Detailed density adds a line under each chat with its model, message count, source and profile, and New-chat button per project adds a New chat button to each project in the Chats filter menu.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

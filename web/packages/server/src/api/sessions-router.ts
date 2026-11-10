@@ -148,6 +148,7 @@ export function sidebarListSelection(settings: Settings, input: SessionsListQuer
     sidebarSource: sidebarSourceRaw === 'webui' || sidebarSourceRaw === 'cli' ? sidebarSourceRaw : null,
     archivedLimit: queryPositiveInt(input.archived_limit, null, 2000),
     archivedOffset: queryPositiveInt(input.archived_offset, 0, 200000) ?? 0,
+    detailedRows: settings.sidebar_density === 'detailed',
   }
 }
 

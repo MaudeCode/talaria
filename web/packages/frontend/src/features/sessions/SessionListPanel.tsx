@@ -135,6 +135,8 @@ export const SessionListItem = memo(function SessionListItem({ row, active, proj
   const id = useId()
   const item = useRef<HTMLDivElement>(null)
   const displayTitle = row.title || m.untitled()
+  // TAL-2153: the server sends `meta` only for detailed density; the message count is the one part formatted here.
+  const meta = row.meta?.map((part) => typeof part === 'number' ? m.session_meta_messages({ n: part }) : part).join(' · ')
   const content = (<>
       <div className="session-text" id={`${id}-text`}>
         <div className="session-title-row">
@@ -143,6 +145,7 @@ export const SessionListItem = memo(function SessionListItem({ row, active, proj
           {proj && <span className="session-project-dot" style={{ background: proj.color ?? 'var(--blue)' }} title={proj.name} />}
           <span className="session-time">{timeLabel}</span>
         </div>
+        {meta && <div className="truncate text-xs text-muted" title={meta}>{meta}</div>}
         {preview && <div className="session-search-preview truncate text-[11px] text-muted" title={m.session_search_content_matches()}>{preview}</div>}
       </div>
   </>)

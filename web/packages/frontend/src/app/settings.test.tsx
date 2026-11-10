@@ -200,7 +200,7 @@ describe('shared optimistic settings', () => {
     expect(result.current.settings.data).not.toHaveProperty('_set_password')
   })
 
-  it('re-reads open transcripts only when the Worklog default changes (TAL-2149)', async () => {
+  it('re-reads open transcripts only when the Worklog default changes (TAL-2149), and the chat list only when density does (TAL-2153)', async () => {
     vi.mocked(api.saveSettings).mockImplementation((patch) => Promise.resolve({ ...initial, ...patch }))
     const { result, qc } = setup()
     qc.setQueryData(keys.sessions.detail('s1'), { session: {} })
@@ -210,6 +210,9 @@ describe('shared optimistic settings', () => {
     expect(stale()).toEqual([false, false])
     await act(async () => { await result.current.save.mutateAsync({ worklog_details_expanded_default: true }) })
     expect(stale()).toEqual([true, false])
+    qc.setQueryData(keys.sessions.detail('s1'), { session: {} })
+    await act(async () => { await result.current.save.mutateAsync({ sidebar_density: 'detailed' }) })
+    expect(stale()).toEqual([false, true])
   })
 
   it('re-reads open transcripts once the reread settles an unknown Worklog default write (TAL-2149)', async () => {

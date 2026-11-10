@@ -686,6 +686,20 @@ describe('session lifecycle over HTTP', () => {
     expect((await row())?.share_url).toBeNull()
   })
 
+  it('ships each list and sidebar-search row its meta line only while sidebar_density is detailed (TAL-2153)', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const stored = await s.deps.sessionStore.get(sid)
+    stored.model = 'anthropic/claude-opus-5-5'
+    stored.messages = [{ role: 'user', content: 'meta line' }, { role: 'assistant', content: 'ok' }]
+    await s.deps.sessionStore.save(stored)
+    const rows = async () => Promise.all(['/api/sessions', '/api/sessions/search?q=meta&exclude_hidden=1'].map(async (path) => ((await json(await s.get(path))).sessions as Json[]).find((r) => r.session_id === sid)))
+    for (const row of await rows()) expect(row).not.toHaveProperty('meta')
+    await s.deps.settings.save({ sidebar_density: 'detailed' })
+    try {
+      for (const row of await rows()) expect(row?.meta).toEqual(['Claude Opus 5.5', 2])
+    } finally { await s.deps.settings.save({ sidebar_density: 'compact' }) }
+  })
+
   it('revokes a session share when the session is deleted', async () => {
     const a = await newSession(s)
     const sid = String(a.session_id)
