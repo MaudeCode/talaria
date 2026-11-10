@@ -1315,6 +1315,8 @@ export const PluginSchema = z.looseObject({ key: z.string(), name: z.string().op
   category: z.string().optional(),
   /** TAL-2132: `installed` when the plugin's directory sits directly in the profile's `plugins/`, else `bundled` (shipped with the Agent). */
   source: z.enum(['installed', 'bundled']).optional(),
+  /** TAL-2133: `POST /api/plugins/enabled` can turn this plugin on or off; false for an `exclusive` backend and on an Agent before v0.22.7. */
+  can_toggle: z.boolean().optional(),
   /** Stored Agent check, absent when the installed Agent lacks cached update support. */
   update: z.object({ available: z.boolean(), latest_revision: z.string().optional() }).optional(),
   /** TAL-1829: an Agent update turned this plugin off and later updates retry it; absent otherwise and on Agents before v0.22.6. */

@@ -831,6 +831,8 @@ export const toolsRouter = os.router({
       const settings = new Map(declared.map((entry) => [entry.key, entry.fields]))
       const plugins = result.plugins.map(({ update_available, latest_revision, disabled_reason, ...plugin }) => ({
         ...plugin,
+        // TAL-2133: only a session that may manage the server gets the switch.
+        can_toggle: editable && plugin.can_toggle === true,
         ...(disabled_reason ? { disabled_reason: { ...disabled_reason, reason: pluginDisabledReason(disabled_reason.reason) } } : {}),
         ...(update_available === undefined ? {} : { update: { available: update_available, ...(latest_revision ? { latest_revision } : {}) } }),
         ...(settings.has(plugin.key) ? { settings: settings.get(plugin.key) } : {}),
@@ -867,6 +869,18 @@ export const toolsRouter = os.router({
   })),
   pluginUpdateAll: os.pluginUpdateAll.handler(({ context: { ctx } }) => run(() => runningSidecar(ctx).call('plugins.update_all', { profile_home: home(ctx) }, { timeoutMs: 0 }).catch(throwPluginUpdateError))),
   pluginAutoUpdate: os.pluginAutoUpdate.handler(({ input, context: { ctx } }) => run(async () => pluginAutoUpdateView(ctx, await runningSidecar(ctx).call('plugins.auto_update_set', { profile_home: home(ctx), enabled: input.enabled }).catch(throwPluginUpdateError)))),
+  pluginEnabled: os.pluginEnabled.handler(({ input, context: { ctx } }) => run(async () => {
+    let result
+    try {
+      result = await runningSidecar(ctx).call('plugins.set_enabled', { profile_home: home(ctx), key: input.key, enabled: input.enabled }, { timeoutMs: 0 })
+    } catch (error) {
+      if (error instanceof SidecarError && error.condition === 'plugin_enable_managed') throw new HttpError(403, error.message, { condition: error.condition })
+      throw error
+    }
+    if (!result.supported) throw new HttpError(503, 'This Hermes Agent cannot turn plugins on or off from Web', { condition: 'plugin_enable_unsupported' })
+    if (!result.ok) throw new HttpError(409, result.error ?? `Plugin '${input.key}' could not be changed`, { condition: 'plugin_enable_refused' })
+    return { key: result.name ?? input.key, enabled: input.enabled, restart_required: result.restart_required === true }
+  })),
   pluginSettings: os.pluginSettings.handler(({ input, context: { ctx } }) => run(() => serializePluginSettingsSave(async () => {
     const sidecar = runningSidecar(ctx)
     const fields = (await pluginSettingsList(ctx)).find((entry) => entry.key === input.key)?.fields

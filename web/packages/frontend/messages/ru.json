@@ -1082,6 +1082,7 @@
 	"plugins_stat_enabled": "Включено",
 	"plugins_stat_of": "из {total}",
 	"plugins_stat_updates": "Обновления",
+	"plugins_toggle_restart_required": "Перезапустите шлюз, чтобы завершить изменение плагина.",
 	"plugins_unnamed": "Плагин без названия",
 	"preserved_task_list_label": "Сохранённый список задач",
 	"primary_navigation": "Основная навигация",

@@ -202,6 +202,8 @@ UNEXERCISED = {"plugins.catalog", "plugins.install", "plugins.update", "plugins.
 
 # Enabling a plugin is covered with synthetic profile fixtures by test_dashboard_plugins.py and test_dashboard_host_compat.py.
 UNEXERCISED.add("plugins.dashboard_toggle")
+# Turning a plugin on and off is covered with a synthetic profile plugin by test_plugin_set_enabled.py.
+UNEXERCISED.add("plugins.set_enabled")
 
 # A replay case sends a provider request; test_skill_replay.py covers it with a fake transport.
 UNEXERCISED.add("skills.replay_case")

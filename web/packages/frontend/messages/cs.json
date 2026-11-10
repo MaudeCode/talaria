@@ -1060,6 +1060,7 @@
 	"plugins_stat_enabled": "Zapnuto",
 	"plugins_stat_of": "z {total}",
 	"plugins_stat_updates": "Aktualizace",
+	"plugins_toggle_restart_required": "Dokončete změnu pluginu restartováním brány.",
 	"plugins_unnamed": "Nepojmenovaný plugin",
 	"preserved_task_list_label": "Zachovaný seznam úkolů",
 	"primary_navigation": "Hlavní navigace",

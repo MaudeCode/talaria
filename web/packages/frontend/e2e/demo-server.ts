@@ -27,15 +27,15 @@ const BUNDLED_PLUGINS: Record<string, string> = {
   web: 'brave_free ddgs exa firecrawl keenable openai_native parallel perplexity searxng tavily xai',
   '': 'disk-cleanup google_meet security-guidance teams_pipeline',
 }
-const plugin = (key: string, name: string, extra: object) => ({ key, name, version: '1.0.0', description: `${name}: synthetic description`, enabled: true, kind: 'backend', activation: 'enabled', hooks: [], ...extra })
-/** `plugins.list` rows: the Agent's own plugins (its four standalone ones off, as shipped) and the profile's `meshy` and `team-notes`. */
+const plugin = (key: string, name: string, extra: object) => ({ key, name, version: '1.0.0', description: `${name}: synthetic description`, enabled: true, kind: 'backend', activation: 'enabled', hooks: [], can_toggle: true, ...extra })
+/** `plugins.list` rows: the Agent's own plugins (its four standalone ones off, as shipped) and the profile's `meshy` and `team-notes`; an exclusive backend has no switch. */
 const DEMO_PLUGINS = [
   plugin('meshy', 'meshy', { version: '1.2.0', category: '', source: 'installed', kind: 'standalone', update_available: true, latest_revision: '1.3.0' }),
   plugin('team-notes', 'team-notes', { version: '0.3.1', description: 'Shared notes the agent can read and append to', category: '', source: 'installed', kind: 'standalone', enabled: false, activation: 'disabled' }),
   ...Object.entries(BUNDLED_PLUGINS).flatMap(([category, names]) => names.split(' ').map((name) => plugin(category ? `${category}/${name}` : name, name, {
     category, source: 'bundled',
     ...(category ? {} : { kind: 'standalone', enabled: false, activation: 'disabled' }),
-    ...(category === 'image_gen' && name === 'fal' ? { kind: 'exclusive', activation: 'exclusive', is_active_provider: true, description: 'flux-2-klein, flux-2-pro, nano-banana-2' } : {}),
+    ...(category === 'image_gen' && name === 'fal' ? { kind: 'exclusive', activation: 'exclusive', is_active_provider: true, can_toggle: false, description: 'flux-2-klein, flux-2-pro, nano-banana-2' } : {}),
   }))),
 ]
 

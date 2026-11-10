@@ -1042,6 +1042,7 @@
 	"plugins_stat_enabled": "Activados",
 	"plugins_stat_of": "de {total}",
 	"plugins_stat_updates": "Actualizaciones",
+	"plugins_toggle_restart_required": "Reinicia el gateway para completar el cambio del plugin.",
 	"plugins_unnamed": "Plugin sin nombre",
 	"preserved_task_list_label": "Lista de tareas conservada",
 	"primary_navigation": "Navegación principal",

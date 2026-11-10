@@ -1826,6 +1826,7 @@
 	"plugins_stat_enabled": "Turned on",
 	"plugins_stat_of": "of {total}",
 	"plugins_stat_updates": "Updates",
+	"plugins_toggle_restart_required": "Restart the gateway to finish this plugin change.",
 	"plugins_unnamed": "Unnamed plugin",
 	"plugins_update": "Update",
 	"plugins_update_all": "Update all",

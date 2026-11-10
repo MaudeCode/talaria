@@ -1018,6 +1018,7 @@
 	"plugins_stat_enabled": "已開啟",
 	"plugins_stat_of": "/ {total}",
 	"plugins_stat_updates": "更新",
+	"plugins_toggle_restart_required": "重新啟動閘道以完成外掛程式變更。",
 	"plugins_unnamed": "未命名外掛",
 	"preserved_task_list_label": "保留的任務清單",
 	"primary_navigation": "主導覽",

@@ -1018,6 +1018,7 @@
 	"plugins_stat_enabled": "Đang bật",
 	"plugins_stat_of": "/ {total}",
 	"plugins_stat_updates": "Bản cập nhật",
+	"plugins_toggle_restart_required": "Khởi động lại gateway để hoàn tất thay đổi plugin.",
 	"plugins_unnamed": "Plugin chưa đặt tên",
 	"preserved_task_list_label": "Danh sách tác vụ được giữ lại",
 	"primary_navigation": "Điều hướng chính",

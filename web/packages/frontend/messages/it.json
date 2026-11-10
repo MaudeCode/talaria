@@ -1065,6 +1065,7 @@
 	"plugins_stat_enabled": "Attivi",
 	"plugins_stat_of": "di {total}",
 	"plugins_stat_updates": "Aggiornamenti",
+	"plugins_toggle_restart_required": "Riavvia il gateway per completare la modifica del plugin.",
 	"plugins_unnamed": "Plugin senza nome",
 	"preserved_task_list_label": "Lista task preservata",
 	"primary_navigation": "Navigazione principale",

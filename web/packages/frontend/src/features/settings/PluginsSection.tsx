@@ -20,7 +20,8 @@ import { Select } from '../../ui/Select'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { OAuthSignIn } from '../onboarding/OAuthSignIn'
-import { useResourceEffects, useResourceMutation } from '../sessions/useResourceMutation'
+import { useResourceEffects, useResourceMutation, type ResourceEffect } from '../sessions/useResourceMutation'
+import { ResourceSwitch } from '../sessions/ResourceSwitch'
 import { getStreamContext, useStreamContext } from '../../stream/connection'
 import { usePluginInstall } from './usePluginInstall'
 import { useDebounced } from '../../lib/useDebounced'
@@ -82,6 +83,14 @@ export function PluginsSection() {
   const q = useDebounced(filter.trim(), 250)
   const plugins = useQuery({ queryKey: [...keys.plugins, { q }], queryFn: () => api.fetchPlugins(q), staleTime: 30_000, placeholderData: keepPreviousData })
   const effects = useResourceEffects<Record<string, unknown>>()
+  const enabledEffects = useResourceEffects<boolean>()
+  // TAL-2133: the switch moves at once; the group meters and figures follow from the reread, and a refusal rolls it back.
+  const setEnabled = useResourceMutation({
+    resource: ({ key }: { key: string; enabled: boolean }) => enabledResource(key), effect: ({ enabled }) => ({ value: enabled }), queryKey: keys.plugins,
+    mutationFn: ({ key, enabled }: { key: string; enabled: boolean }) => api.setPluginEnabled(key, enabled),
+    onSuccess: (result) => { if (result.restart_required) showToast(m.plugins_toggle_restart_required(), 10000) },
+    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 5000, 'error'),
+  })
   const [open, setOpen] = useState<string | null>(null)
   const [browsing, setBrowsing] = useState(false)
   const head = useContext(HubHeadSlotsContext)
@@ -102,7 +111,7 @@ export function PluginsSection() {
   const installed = (plugins.data.total ?? 0) > 0
   const { groups, summary } = plugins.data
   const rowProps = (p: InstalledPlugin) => ({ plugin: p, editable, open: open === p.key, onOpen: setOpen, updateBusy, updating: update.isPending && update.variables.key === p.key,
-    blockedFindings: scan?.key === p.key && scan.status === 'blocked' ? scan.findings : null, onUpdate: requestUpdate })
+    blockedFindings: scan?.key === p.key && scan.status === 'blocked' ? scan.findings : null, onUpdate: requestUpdate, enabledEffect: enabledEffects[enabledResource(p.key)], onSetEnabled: setEnabled.mutate })
   // TAL-2132: with the server's groups, Update all shows only while a plugin has an update; an older server keeps the install-wide button.
   const updateAllButton = autoUpdate && (summary ? summary.updates > 0 : installed)
     ? <IconButton variant="ghost" label={m.plugins_update_all()} disabled={updateBusy} aria-busy={updateAll.isPending} onClick={requestUpdateAll}><CircleArrowUp aria-hidden="true" /></IconButton> : null
@@ -140,6 +149,7 @@ type PluginsView = Awaited<ReturnType<typeof api.fetchPlugins>>
 type InstalledPlugin = PluginsView['plugins'][number]
 type PluginGroup = NonNullable<PluginsView['groups']>[number]
 type RowProps = Omit<InstalledPluginRowProps, 'nested'>
+const enabledResource = (key: string) => `plugin-enabled:${key}`
 
 /** TAL-2132: each group's symbol and name (layout only; the server decides the groups). */
 const GROUP: Record<PluginGroup['id'], { icon: LucideIcon; label: () => string }> = {
@@ -211,16 +221,22 @@ interface InstalledPluginRowProps {
   updating: boolean
   blockedFindings: string | null
   onUpdate: (key: string) => void
+  enabledEffect: ResourceEffect<boolean> | undefined
+  onSetEnabled: (value: { key: string; enabled: boolean }) => void
   /** Inside a built-in group: indented, without the row symbol. */
   nested?: boolean
 }
 
 // Memoized so typing in the filter renders only the rows entering the list (TAL-1405); each filter answer is a new response.
-const InstalledPluginRow = memo(function InstalledPluginRow({ plugin: p, editable, open, onOpen, updateBusy, updating, blockedFindings, onUpdate, nested }: InstalledPluginRowProps) {
+const InstalledPluginRow = memo(function InstalledPluginRow({ plugin: p, editable, open, onOpen, updateBusy, updating, blockedFindings, onUpdate, enabledEffect, onSetEnabled, nested }: InstalledPluginRowProps) {
+  const name = p.name ?? p.key
+  const control = p.can_toggle
+    ? <ResourceSwitch effect={enabledEffect} checked={p.enabled === true} onCheckedChange={(enabled) => onSetEnabled({ key: p.key, enabled })} aria-label={name} stateLabel={(on) => on ? m.plugins_enabled() : m.plugins_disabled()} />
+    : undefined
   return (
-    <PluginRow id={p.key} icon={nested ? undefined : Box} nested={nested} title={<>{p.name ?? p.key}{p.version ? <span className="ml-1 text-xs font-normal tabular-nums text-muted">{p.version}</span> : null}{p.is_active_provider && <span className="ml-2"><Mark>{m.plugins_in_use()}</Mark></span>}</>}
+    <PluginRow id={p.key} icon={nested ? undefined : Box} nested={nested} title={<>{name}{p.version ? <span className="ml-1 text-xs font-normal tabular-nums text-muted">{p.version}</span> : null}{p.is_active_provider && <span className="ml-2"><Mark>{m.plugins_in_use()}</Mark></span>}</>}
       description={p.description ?? ''} note={p.update?.available ? <StatusDot state="warning">{m.plugins_update_available()}</StatusDot> : undefined}
-      status={p.enabled === false ? <span className="text-xs text-muted">{m.plugins_off()}</span> : null} actions={[
+      status={!control && p.enabled === false ? <span className="text-xs text-muted">{m.plugins_off()}</span> : null} control={control} actions={[
         ...(editable && p.update?.available ? [{ label: m.plugins_update(), run: () => onUpdate(p.key), disabled: updateBusy, busy: updating, icon: CircleArrowUp }] : []),
         ...(editable && p.settings?.length ? [{ label: m.settings_title(), run: () => onOpen(open ? null : p.key), expanded: open, icon: Settings2 }] : []),
       ]}>
@@ -238,14 +254,15 @@ type PluginRowAction = RowAction & { icon: NonNullable<RowAction['icon']> }
  * Installed and catalog entries share the existing Plugins row and disclosure layout; its actions show inline and in its right-click and long-press menu.
  * TAL-2082: the description keeps to one truncated line, with the full text in its `title` and the DOM for screen readers.
  * TAL-2132: `note` takes the description's line (an update waiting); `icon` leads the row, and a `nested` row is indented under its group.
+ * TAL-2133: `control` (the on/off switch) ends the row after its actions; on a narrow row both wrap together to the right.
  */
-function PluginRow({ id, icon: Icon, nested, title, description, note, status, actions, children }: { id?: string; icon?: LucideIcon | undefined; nested?: boolean | undefined; title: ReactNode; description: string; note?: ReactNode; status: ReactNode; actions: PluginRowAction[]; children?: ReactNode }) {
+function PluginRow({ id, icon: Icon, nested, title, description, note, status, actions, control, children }: { id?: string; icon?: LucideIcon | undefined; nested?: boolean | undefined; title: ReactNode; description: string; note?: ReactNode; status: ReactNode; actions: PluginRowAction[]; control?: ReactNode; children?: ReactNode }) {
   const row = <li className={cn('list-none py-2', nested && 'pl-7')} data-plugin={id}><div className="flex flex-wrap items-center gap-3">
     {Icon && <Icon size={18} strokeWidth={1.75} aria-hidden="true" data-row-icon="" className="shrink-0 text-muted" />}
     <div className="min-w-0 flex-1 basis-40"><div className="flex min-w-0 items-baseline text-sm font-medium text-text">{title}</div>
       {note ? <div className="flex min-w-0">{note}</div> : <div className="truncate text-xs text-muted" title={description || undefined}>{description}</div>}</div>
     {status}
-    <RowActionButtons actions={actions} />
+    {control ? <div className="ml-auto flex shrink-0 items-center gap-3"><RowActionButtons actions={actions} />{control}</div> : <RowActionButtons actions={actions} />}
   </div>{children}</li>
   return <RowContextMenu label={m.plugins_row_menu()} actions={actions} trigger={row} />
 }
