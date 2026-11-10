@@ -1062,7 +1062,9 @@ export type SessionSkills = z.infer<typeof SessionSkillsSchema>
  */
 export const SessionOutlineEntrySchema = z.object({ message_id: z.string(), index: z.number().int(), excerpt: z.string(), created_at: z.number().nullable() })
 export type SessionOutlineEntry = z.infer<typeof SessionOutlineEntrySchema>
-export const SessionOutlineSchema = z.object({ session_id: z.string(), entries: z.array(SessionOutlineEntrySchema), min_entries: z.number().int().describe('The outline shows once it lists this many questions, sent ones included.') })
+export const SessionOutlineSchema = z.object({ session_id: z.string(), entries: z.array(SessionOutlineEntrySchema),
+  shown: z.boolean().describe('Whether the chat shows its outline: it has enough questions for a jump list to help.'),
+  shown_after: z.number().int().describe('How many more questions the user must send before it shows; 0 when `shown`. Questions sent since this read count toward it.') })
 export type SessionOutline = z.infer<typeof SessionOutlineSchema>
 export const SkillsUsageSchema = z.looseObject({ usage: z.record(z.string(), z.looseObject({ use_count: z.number().optional(), view_count: z.number().optional(), patch_count: z.number().optional() })), skill_names: z.array(z.string()).optional(), total_invocations: z.number().optional(), unique_skills_used: z.number().optional() })
 export const MemorySchema = z.looseObject({

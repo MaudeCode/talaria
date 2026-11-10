@@ -35,8 +35,8 @@ describe('GET /api/session/outline (TAL-2152)', () => {
       { role: 'user', content: 'a'.repeat(300), timestamp: 30 },
       { role: 'user', content: '```ts\nconst x = 1\n```', message_id: 'u4', timestamp: 40 },
     ])
-    const { entries, min_entries } = await outline(sid)
-    expect(min_entries).toBe(4)
+    const { entries, shown, shown_after } = await outline(sid)
+    expect([shown, shown_after]).toEqual([true, 0])
     expect(entries).toEqual([
       { message_id: 'u1', index: 0, excerpt: 'Plan the release', created_at: 10 },
       { message_id: 'u2', index: 4, excerpt: 'use this key ghp_ab...6789 please', created_at: 20 },
@@ -59,14 +59,15 @@ describe('GET /api/session/outline (TAL-2152)', () => {
     } finally { await s.deps.settings.save({ api_redact_enabled: true }) }
   })
 
-  it('counts a steer as a question', async () => {
-    const { entries } = await outline(await seeded('outline-steer', [
+  it('counts a steer as a question, and shows only from four questions', async () => {
+    const { entries, shown, shown_after } = await outline(await seeded('outline-steer', [
       { role: 'user', content: 'Start the audit', timestamp: 1 },
       { role: 'assistant', content: 'Reading.', timestamp: 2 },
       { role: 'user', content: 'Also check the sidebar', _steer: { steer_id: 's1' }, timestamp: 3 },
       { role: 'assistant', content: 'Done.', timestamp: 4 },
     ]))
     expect(entries.map(({ index, excerpt }) => [index, excerpt])).toEqual([[0, 'Start the audit'], [2, 'Also check the sidebar']])
+    expect([shown, shown_after]).toEqual([false, 2])
   })
 
   it('skips compaction markers and keeps the questions on both sides of a compaction', async () => {

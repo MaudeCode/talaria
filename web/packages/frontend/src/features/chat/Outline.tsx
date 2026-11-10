@@ -26,7 +26,8 @@ export function useOutline(sessionId: string, revision: string, live: LiveTurn |
   const query = useQuery({
     queryKey: keys.sessionOutline(sessionId, revision),
     queryFn: ({ signal }) => api.fetchSessionOutline(sessionId, signal),
-    staleTime: Infinity, refetchOnWindowFocus: false, retry: 1,
+    // Read again on each open of the chat and when the transcript's history is replaced (`useTranscript.refresh`).
+    staleTime: 0, refetchOnWindowFocus: false, retry: 1,
   })
   const [sent, setSent] = useState<{ sessionId: string; items: Sent[] }>({ sessionId, items: [] })
   if (sent.sessionId !== sessionId) setSent({ sessionId, items: [] })
@@ -43,8 +44,9 @@ export function useOutline(sessionId: string, revision: string, live: LiveTurn |
   }
   if (!query.data) return undefined
   const answered = new Set(query.data.entries.map((entry) => entry.message_id))
-  const entries = [...query.data.entries, ...items.filter((item) => item.read >= query.dataUpdatedAt && !answered.has(item.entry.message_id)).map((item) => item.entry)]
-  return { entries, shown: entries.length >= query.data.min_entries }
+  const unread = items.filter((item) => item.read >= query.dataUpdatedAt && !answered.has(item.entry.message_id)).map((item) => item.entry)
+  // The server decides; questions sent since its read count toward the number it says are still missing.
+  return { entries: [...query.data.entries, ...unread], shown: query.data.shown || (unread.length > 0 && unread.length >= query.data.shown_after) }
 }
 
 /**

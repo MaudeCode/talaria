@@ -256,12 +256,16 @@ export function useTranscript(sessionId: string | null, equalLive?: (previous: L
       discardSession(sessionId)
       qc.setQueryData(keys.sessions.detail(sessionId), { session: parsed.data })
       void invalidateSessionQueries(qc, sessionId, { detail: false })
+      readOutline()
       return
     }
     // Older/mutation row-only responses need a fresh authoritative transcript.
     if (accepted !== undefined || historyCut) retirePages()
     await qc.invalidateQueries({ queryKey: keys.sessions.detail(sessionId ?? '') })
+    if (accepted !== undefined || historyCut) readOutline()
   }
+  // TAL-2152: a replaced history (edit, undo, retry, clear, an owner action) reads the outline again; a send never does.
+  const readOutline = () => { if (sessionId) void qc.invalidateQueries({ queryKey: keys.sessionOutline(sessionId) }) }
 
   return { query, session, rows, base, live, truncated, loadOlder, loadingOlder, olderError, refresh }
 }

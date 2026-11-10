@@ -113,6 +113,18 @@ test('the outline lists every question, jumps to loaded and unloaded ones, and f
       await page.keyboard.press('Escape')
     }
     expect(reads).toHaveLength(1)
+
+    // A history cut (here /undo of that question) reads the outline again and drops the question it removed.
+    await page.locator('#msg').fill('/undo')
+    await page.locator('#btnSend').click()
+    await expect(page.locator('#messages').getByText('Noted.')).toHaveCount(0)
+    await expect.poll(() => reads.length).toBe(2)
+    if (desktop) await expect(page.getByRole('navigation', { name: 'Conversation outline' }).getByRole('button')).toHaveCount(QUESTIONS)
+    else {
+      await page.getByRole('button', { name: 'Conversation outline' }).click()
+      await expect(page.getByRole('menu', { name: 'Conversation outline' }).getByRole('menuitemradio')).toHaveCount(QUESTIONS)
+      await page.keyboard.press('Escape')
+    }
   } finally { await page.goto('about:blank').catch(() => undefined); await server.close() }
 })
 

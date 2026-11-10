@@ -11881,17 +11881,22 @@
                         ]
                       }
                     },
-                    "min_entries": {
+                    "shown": {
+                      "type": "boolean",
+                      "description": "Whether the chat shows its outline: it has enough questions for a jump list to help."
+                    },
+                    "shown_after": {
                       "type": "integer",
                       "minimum": -9007199254740991,
                       "maximum": 9007199254740991,
-                      "description": "The outline shows once it lists this many questions, sent ones included."
+                      "description": "How many more questions the user must send before it shows; 0 when `shown`. Questions sent since this read count toward it."
                     }
                   },
                   "required": [
                     "session_id",
                     "entries",
-                    "min_entries"
+                    "shown",
+                    "shown_after"
                   ]
                 }
               }

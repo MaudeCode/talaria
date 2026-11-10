@@ -1,5 +1,5 @@
 /** TAL-2152: the conversation outline, built from a chat's public (projected, redacted) messages. */
-import type { SessionOutlineEntry } from '@maudecode/talaria-web-contracts'
+import type { SessionOutline, SessionOutlineEntry } from '@maudecode/talaria-web-contracts'
 import { markdownPlainText } from '../text/markdown.js'
 import { str } from '../util.js'
 import { messageText } from './merge.js'
@@ -35,6 +35,12 @@ export function outlineExcerpt(message: Record<string, unknown>): string {
  * pages use): every row the transcript shows as the user's (markers, deliveries, notices and background updates are not),
  * and every steer.
  */
+/** The outline, with the server's decision of whether it shows. */
+export function sessionOutline(session_id: string, rows: readonly { message: unknown; index: number }[]): SessionOutline {
+  const entries = outlineEntries(rows)
+  return { session_id, entries, shown: entries.length >= OUTLINE_MIN_ENTRIES, shown_after: Math.max(0, OUTLINE_MIN_ENTRIES - entries.length) }
+}
+
 export function outlineEntries(rows: readonly { message: unknown; index: number }[]): SessionOutlineEntry[] {
   return rows.flatMap(({ message: m, index }) => {
     if (!isDict(m) || m.role !== 'user') return []
