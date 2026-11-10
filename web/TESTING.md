@@ -187,7 +187,21 @@ The replay servers leave Tasks, Decisions, Discussions, Insights usage and chat 
 that needs data, `e2e/demo-server.ts` boots a server seeded with synthetic chats, jobs, a decision review and a
 discussion, and `e2e/demo-tour.spec.ts` checks it. From `packages/frontend`,
 `TOUR_SHOTS=<dir> npx playwright test e2e/demo-tour.spec.ts` also saves a full-height screenshot of each of those
-pages for the desktop and mobile projects.
+pages for the desktop and mobile projects. The tour also opens every Settings section (`SettingsSectionSchema`) and
+each Tools tab, checks its heading and that the page has no sideways scroll, and saves `settings-<id>-<project>.png`.
+
+### UI rules
+
+The frontend `lint` ends with `node scripts/check-ui-rules.mjs`, which counts patterns `docs/design-system.md` forbids
+in non-test `.tsx` under `src/features` and `src/shell` (`src/ui` defines the primitives and is not scanned): card
+containers (`card`), bracket text sizes other than 11px, 13px and 20px (`text-size`), raw checkbox, radio and range
+inputs (`raw-control`), and, in `src/features/settings`, page-local `<h2>`–`<h6>` (`settings-heading`) and
+`<FieldRow` outside `SettingsRows.tsx` (`settings-row`). `scripts/ui-rules-baseline.json` holds today's count per rule
+and file. A count above it fails with each `file:line`; a count below it fails until
+`node scripts/check-ui-rules.mjs --update` lowers the baseline, which never raises a count. The only way to allow a
+new instance is a hand-written entry in the baseline's `exceptions` array,
+`{ "rule": "card", "file": "src/features/…/Page.tsx", "count": 1, "reason": "Why the rule does not fit here." }`;
+an entry without a reason fails the check.
 
 `src/reactCompilerCoverage.test.ts` compiles every shipped frontend source with React Compiler and fails on any
 function the compiler skips; a skipped function still builds, unmemoized. Lint misses some skips, notably `try` with

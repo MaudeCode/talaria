@@ -1,0 +1,75 @@
+{
+  "counts": {
+    "card": {
+      "src/features/auth/LoginPage.tsx": 1,
+      "src/features/composer/CommandPalette.tsx": 1,
+      "src/features/composer/chips.tsx": 1,
+      "src/features/notifications/UpdateNotificationCenter.tsx": 1,
+      "src/features/onboarding/OnboardingPage.tsx": 1,
+      "src/features/terminal/TerminalPanelFrame.tsx": 1
+    },
+    "raw-control": {
+      "src/features/composer/chips.tsx": 1,
+      "src/features/decisions/DecisionReviewPage.tsx": 1,
+      "src/features/groups/GroupsPage.tsx": 2,
+      "src/features/kanban/KanbanPage.tsx": 1,
+      "src/features/settings/AuxiliaryModels.tsx": 2,
+      "src/features/settings/CompletionAudioSettings.tsx": 1,
+      "src/features/settings/FeedbackDialog.tsx": 1,
+      "src/features/tasks/JobForm.tsx": 1
+    },
+    "settings-heading": {
+      "src/features/settings/AboutSection.tsx": 3,
+      "src/features/settings/AccessSection.tsx": 3,
+      "src/features/settings/AuxiliaryModels.tsx": 3,
+      "src/features/settings/ExtensionsSection.tsx": 2,
+      "src/features/settings/McpSection.tsx": 2,
+      "src/features/settings/SystemSection.tsx": 5
+    },
+    "settings-row": {
+      "src/features/settings/AccessSection.tsx": 1,
+      "src/features/settings/AppearanceSection.tsx": 6,
+      "src/features/settings/AuxiliaryModels.tsx": 6,
+      "src/features/settings/CompletionAudioSettings.tsx": 7,
+      "src/features/settings/ExtensionsSection.tsx": 1,
+      "src/features/settings/McpSection.tsx": 2,
+      "src/features/settings/ModelsSection.tsx": 2,
+      "src/features/settings/NotificationsSection.tsx": 2,
+      "src/features/settings/PluginsSection.tsx": 2,
+      "src/features/settings/ProvidersSection.tsx": 3,
+      "src/features/settings/QuotaThresholds.tsx": 1,
+      "src/features/settings/SpeechSection.tsx": 6,
+      "src/features/settings/SystemSection.tsx": 4
+    },
+    "text-size": {
+      "src/features/chat/ApprovalCard.tsx": 1,
+      "src/features/chat/ChatView.tsx": 1,
+      "src/features/chat/LiveTurnView.tsx": 1,
+      "src/features/chat/MessageRow.tsx": 1,
+      "src/features/chat/blocks/MediaTiles.tsx": 1,
+      "src/features/chat/blocks/OutboundDraftResult.tsx": 1,
+      "src/features/chat/blocks/ToolCard.tsx": 2,
+      "src/features/composer/chips.tsx": 1,
+      "src/features/logs/LogsPage.tsx": 1,
+      "src/features/memory/MemoryPage.tsx": 1,
+      "src/features/meshy/MeshyGallery.tsx": 2,
+      "src/features/meshy/MeshyItemView.tsx": 6,
+      "src/features/meshy/MeshyModelCard.tsx": 3,
+      "src/features/meshy/ModelViewer.tsx": 3,
+      "src/features/settings/AccessSection.tsx": 1,
+      "src/features/settings/AppearanceSection.tsx": 1,
+      "src/features/settings/SettingsSection.tsx": 1,
+      "src/features/settings/SystemSection.tsx": 1,
+      "src/features/share/SharePage.tsx": 2,
+      "src/features/skills/SessionSkillsPage.tsx": 1,
+      "src/features/skills/SkillsPage.tsx": 3,
+      "src/features/tasks/TasksPage.tsx": 7,
+      "src/features/whats-new/WhatsNew.tsx": 1,
+      "src/features/workspace/FilesPage.tsx": 3,
+      "src/shell/AppShell.tsx": 1,
+      "src/shell/Tabbar.tsx": 2,
+      "src/shell/Titlebar.tsx": 2
+    }
+  },
+  "exceptions": []
+}
