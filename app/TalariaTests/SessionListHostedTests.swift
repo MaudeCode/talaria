@@ -2992,6 +2992,32 @@ extension RegularSplitHostedTests {
         XCTAssertTrue(collapsed)
         XCTAssertEqual(composerDraftText(in: window), "Keep the primary draft")
         attachHostedScreenshot(window, name: "duo-two-chats-closed")
+        let scene = try XCTUnwrap(window.windowScene)
+        addTeardownBlock { @MainActor in
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait))
+            let restored = await self.awaitCondition { scene.interfaceOrientation == .portrait }
+            XCTAssertTrue(restored, "Restore the scene before the next hosted test")
+        }
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeRight))
+        let rotated = await awaitCondition { scene.interfaceOrientation == .landscapeRight }
+        XCTAssertTrue(rotated, "The folded Duo must rotate to its outer landscape display")
+        window.traitOverrides.horizontalSizeClass = .regular
+        window.traitOverrides.verticalSizeClass = .compact
+        display.sizeClass = .regular
+        settle(0.3)
+        window.frame = CGRect(origin: .zero, size: HostedSize.duoOuterLandscape)
+        window.layoutIfNeeded()
+        let landscapeSize = await awaitQuiet { window.bounds.size }
+        XCTAssertEqual(landscapeSize, HostedSize.duoOuterLandscape, "The folded window must reach outer-display landscape")
+        let collapsedLandscape = await awaitNoElement(in: window) { $0.accessibilityLabel == "Make Primary" }
+        XCTAssertTrue(collapsedLandscape, "Compact-height outer landscape must show only the primary chat")
+        XCTAssertFalse(elements(in: window).contains { $0.accessibilityLabel == "Fixture Session 01 reply" })
+        XCTAssertEqual(composerDraftText(in: window), "Keep the primary draft")
+        attachHostedScreenshot(window, name: "duo-two-chats-outer-landscape")
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait))
+        let portrait = await awaitCondition { scene.interfaceOrientation == .portrait }
+        XCTAssertTrue(portrait)
+        window.traitOverrides.verticalSizeClass = .regular
         foldDuo(window, display: display, inner: HostedSize.duoInnerLandscape, closed: false)
         _ = try await requireElement(in: window, label: "Make Primary")
         _ = try await requireElement(in: window, "Unfolding must restore the secondary session, not the primary transcript") {

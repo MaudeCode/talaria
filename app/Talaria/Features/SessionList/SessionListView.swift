@@ -1162,7 +1162,7 @@ struct SessionListView: View {
 
     /// Both panes use the same retained-chat and draft owners as a normal session destination.
     private var secondaryChat: AnyView? {
-        guard let session = navigationState.secondarySession else { return nil }
+        guard canSplitChats, let session = navigationState.secondarySession else { return nil }
         let retained = chats.chat(for: session, server: server) {
             ChatView.makeViewModel(session: session, server: server, sessionListOwner: viewModel)
         }
