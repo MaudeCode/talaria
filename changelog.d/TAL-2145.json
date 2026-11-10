@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Settings › Navigation in Talaria Web draws the sidebar so you show or hide each destination, the Feedback button and the profile switcher by pressing it, counts how many sidebar items and outside chats are shown, and chooses the chat list density with a segmented control.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

@@ -270,9 +270,10 @@ test('hidden tabs leave both states', async ({ page, errors }, info) => {
     for (const name of ['Kanban', 'Decisions', 'Logs', 'Profiles', 'Spaces']) await expect(row(page, name), name).toHaveCount(0)
     await page.goto('/settings/navigation')
     await settle(page)
-    const destinations = page.locator('[data-section="navigation"] [data-group="destinations"]')
-    await expect(destinations.getByRole('switch', { name: 'Todos', exact: true })).toBeVisible()
-    for (const name of ['Logs', 'Profiles', 'Spaces']) await expect(destinations.getByRole('switch', { name, exact: true }), name).toHaveCount(0)
+    const drawing = page.locator('[data-section="navigation"] [data-sidebar-preview]')
+    await expect(drawing.getByRole('button', { name: 'Show Todos', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    for (const name of ['Kanban', 'Decisions']) await expect(drawing.getByRole('button', { name: `Show ${name}`, exact: true }), name).toHaveAttribute('aria-pressed', 'false')
+    for (const name of ['Logs', 'Profiles', 'Spaces']) await expect(drawing.getByRole('button', { name: `Show ${name}`, exact: true }), name).toHaveCount(0)
     expect((await (await page.request.get('/api/settings')).json() as { hidden_tabs?: string[] }).hidden_tabs).toEqual(hidden)
     expect(errors).toEqual([])
   } finally {

@@ -5,14 +5,13 @@ import { useBootstrap } from '../../app/bootstrap'
 import { cn } from '../../ui/cn'
 import { Chip, ContextRingGlyph } from '../composer/chips'
 import { useSettingIntents } from '../../app/settings'
+import { PreviewToggle } from './PreviewToggle'
 import { SettingsGroup } from './SettingsGroup'
 import { useSettingField } from './useSettingField'
 import { COMPOSER_CONTROLS, composerControlId, type ComposerControl } from './composerControls'
 
 const KEYS = COMPOSER_CONTROLS.map((c) => c.key)
 const COUNT_KEYS = ['composer_controls_shown', 'composer_controls_total']
-/** A hidden control: a dashed outline in its own text colour (the chip's border colour is clear until hovered), faded and struck through. */
-const HIDDEN = 'border-dashed border-current! line-through opacity-50'
 
 /**
  * TAL-2138: Settings › Chat's Composer group. Its header shows the server's count of the controls shown (TAL-2172), and its first
@@ -49,15 +48,13 @@ function ComposerPreview({ shown, onToggle }: { shown: (c: ComposerControl) => b
         <div className="flex items-end gap-2">
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
             {COMPOSER_CONTROLS.map((c) => {
-              const on = shown(c)
               const icon = c.glyph === 'ring' ? <ContextRingGlyph pct={40} /> : c.glyph === 'yolo' ? <span aria-hidden="true">⚡</span> : c.icon && <c.icon size={14} className="shrink-0" aria-hidden="true" />
               return (
-                <button key={c.key} type="button" id={composerControlId(c.key)} aria-pressed={on} aria-label={m.settings_composer_show({ control: c.name() })} title={c.name()} onClick={() => onToggle(c)}
-                  className="rounded-(--control-radius) outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)">
-                  {c.label
-                    ? <Chip readOnly size="xs" icon={icon} label={c.label()} title={c.name()} className={cn('cursor-pointer', !on && HIDDEN)} />
-                    : <span className={cn('flex size-7 items-center justify-center rounded-(--control-radius) border text-(--chip-fg)', on ? 'border-transparent' : HIDDEN)}>{icon}</span>}
-                </button>
+                <PreviewToggle key={c.key} id={composerControlId(c.key)} name={c.name()} shown={shown(c)} onToggle={() => onToggle(c)}>
+                  {(hidden) => c.label
+                    ? <Chip readOnly size="xs" icon={icon} label={c.label()} title={c.name()} className={cn('cursor-pointer', hidden)} />
+                    : <span className={cn('flex size-7 items-center justify-center rounded-(--control-radius) border border-transparent text-(--chip-fg)', hidden)}>{icon}</span>}
+                </PreviewToggle>
               )
             })}
           </div>

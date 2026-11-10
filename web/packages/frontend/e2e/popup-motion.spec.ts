@@ -88,10 +88,10 @@ test.describe('popup motion', () => {
 
     test('a Select and a popover grow in and leave faster, as a menu does', async ({ page }) => {
       await boot(page)
-      await page.goto('/settings/navigation')
+      await page.goto('/settings/chat/advanced')
       await settle(page)
       await recordRuns(page)
-      await page.locator('#settingsSidebarDensity').click()
+      await page.locator('#settingsAutoTitleRefresh').click()
       const select = page.getByRole('listbox')
       await expect(select).toBeVisible()
       await expect(select).toHaveCSS('opacity', '1')

@@ -34,6 +34,8 @@ export type SidebarSlot = PanelId | 'dashboard' | 'extensions'
 /** Expanded: the App's order, above the `More` disclosure. */
 export const SIDEBAR_PRIMARY: readonly SidebarSlot[] = ['tasks', 'kanban', 'skills', 'memory', 'insights']
 export const SIDEBAR_MORE: readonly SidebarSlot[] = ['groups', 'todos', 'decisions', 'extensions', 'dashboard']
+/** TAL-2145: the destinations `hidden_tabs` can hide, in the sidebar's order (Settings › Navigation draws them from this). */
+export const SIDEBAR_DESTINATIONS: readonly NavItem[] = [...SIDEBAR_PRIMARY, ...SIDEBAR_MORE].flatMap((slot) => NAV_ITEMS.filter((n) => n.id === slot && !FIXED_TABS.has(n.id)))
 /** One row in both states: `shell.css` lays it out as a labelled row, or as an icon over its caption on the rail. */
 export const SIDEBAR_ROW = 'sidebar-row relative flex w-full min-h-8 flex-none items-center gap-2.5 rounded-(--rail-btn-radius) border-0 bg-transparent px-2.5 text-left text-sm text-muted no-underline cursor-pointer transition-[color,background] duration-(--dur) ease-(--ease) max-[641px]:min-h-11 hover:text-text hover:bg-hover [&.active]:text-(--rail-active-fg) [&.active]:bg-(--rail-active-bg) [&.active]:shadow-(--rail-active-shadow) [&.active]:[font-weight:var(--rail-active-weight)] [&.active_svg]:text-(--rail-active-icon-fg) [&_svg]:shrink-0 [&_svg]:size-[18px]'
 

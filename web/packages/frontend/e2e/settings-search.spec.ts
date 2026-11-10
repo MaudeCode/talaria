@@ -22,7 +22,7 @@ test('Settings search finds a row on another section and focuses its control', a
   await field.fill('cron')
   const results = menu.getByRole('listbox')
   const cron = results.getByRole('option', { name: /Show cron sessions/ })
-  await expect(cron).toContainText('Navigation · Sessions shown')
+  await expect(cron).toContainText('Navigation · Chats from outside Talaria')
   await expect(status).toHaveText('1 setting')
   await page.screenshot({ path: testInfo.outputPath('settings-search.png') })
   await field.press('Enter')
@@ -70,4 +70,19 @@ test('Settings search opens a Chat sub-page row and a composer control in the dr
   await field.press('Enter')
   await expect(page).toHaveURL(/\/settings\/chat#settings-hide_composer_mic$/)
   await expect(page.getByRole('button', { name: 'Show Microphone' })).toBeFocused()
+})
+
+// TAL-2145: a sidebar item opens Navigation at its toggle in the drawing of the sidebar.
+test('Settings search opens a sidebar item at its toggle in the drawing', async ({ page }) => {
+  await page.goto('/settings/appearance')
+  await settle(page)
+  const hamburger = page.locator('#btnHamburger')
+  const field = page.getByRole('combobox', { name: 'Search settings…' })
+  const results = page.getByRole('navigation', { name: 'Settings' }).getByRole('listbox')
+  if (await hamburger.isVisible()) await hamburger.click()
+  await field.fill('decisions')
+  await expect(results.getByRole('option', { name: /Decisions/ })).toContainText('Navigation · Sidebar')
+  await field.press('Enter')
+  await expect(page).toHaveURL(/\/settings\/navigation#settingsHiddenTab-decisions$/)
+  await expect(page.getByRole('button', { name: 'Show Decisions' })).toBeFocused()
 })
