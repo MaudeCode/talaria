@@ -279,8 +279,9 @@ jobs:
     if: inputs.frontend
     name: frontend / e2e (${{ matrix.shard }}/6)
     runs-on: ubuntu-latest
-    # Healthy shards take under three minutes; a sick runner fails fast so the shard can be re-run.
-    timeout-minutes: 10
+    # With Playwright on one worker, a healthy shard takes about 8 to 10 minutes including the bundle build (green main
+    # shards measured 9m30s–10m07s, TAL-2147); the cap is about 1.5x that, so a wedged runner still stops early.
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
