@@ -32,7 +32,11 @@ export function useStartBackground() {
     resource: ({ resource }: { resource: string; sessionId: string; prompt: string }) => resource,
     queryKey: ['sessions', 'background'], readKeys: ({ sessionId }) => [{ queryKey: keys.background(sessionId), exact: true }], exclusive: true,
     effect: ({ resource, prompt }) => ({ fields: { task_id: resource, kind: 'background_command', status: 'running', title: prompt, started_at: null, updated_at: 0, completed_at: null, result_available: false, child_sessions: [], exit_code: null, agents: null, pinned: true, dismissible: false, active: true } satisfies BackgroundTask }),
-    mutationFn: ({ sessionId, prompt }) => api.startBackground(sessionId, prompt),
+    mutationFn: async ({ sessionId, prompt }) => {
+      const result = await api.startBackground(sessionId, prompt)
+      if (result.launch?.state === 'failed' || result.launch?.state === 'unsupported') throw new Error(result.launch.state === 'unsupported' ? m.cmd_unsupported() : m.bg_status_failed())
+      return result
+    },
     onError: (e) => showErrorToast(e),
   })
   return (sessionId: string, prompt: string, notStarted: () => void) => {

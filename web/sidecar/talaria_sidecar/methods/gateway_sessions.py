@@ -21,7 +21,8 @@ from .connectors import snapshot_view
 _ACTIONS = {"snapshot", "watch", "context_detail", "submit", "receipt", "cancel", "steer", "steer_queued", "replace_queued", "interrupt", "approval", "clarify",
             "clarify_lock", "discard", "mutate", "export", "checkpoint_diff", "terminal_info", "shell_exec", "react",
             "connection_status", "connection_wake", "connection_respond", "connection_retry",
-            "work_list", "work_tail", "work_stop", "work_steer"}
+            "work_list", "work_tail", "work_stop", "work_steer", "launch_background", "launch_btw"}
+_SIDE_EVENTS = {"background.complete", "btw.complete"}
 _CONNECTION_ACTIONS = {action for action in _ACTIONS if action.startswith("connection_")}
 _WORK_ACTIONS = {action for action in _ACTIONS if action.startswith("work_")}
 # The owner's own refusals for a row it no longer lists for this session (a cold session, an exited child or process).
@@ -130,6 +131,12 @@ def _connection(value: object) -> dict | None:
 
 
 def _event(value: dict) -> dict:
+    if value.get("type") in _SIDE_EVENTS:
+        payload = value.get("payload")
+        if not isinstance(payload, dict):
+            return {**value, "payload": {}}
+        return {**value, "payload": {"task_id": payload.get("task_id"),
+                                    "text": payload["text"][:64000] if isinstance(payload.get("text"), str) else None}}
     if value.get("type") == "todo.updated":
         return {**value, "payload": _todo_state(value.get("payload")) or {}}
     if value.get("type") in _CONNECTION_EVENTS:
@@ -452,6 +459,25 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
             snap = await snapshot()
             action = params["action"]
             common = {"session_id": sid}
+            if action in {"launch_background", "launch_btw"}:
+                launch = {"state": "failed", "task_id": None}
+                result = {"state": "attached", "reason": None, "snapshot": snap, "receipt": None, "launch": launch}
+                if (sid != params["session_id"] or snap.get("authority_epoch") != params["authority_epoch"]
+                        or snap.get("replay_epoch") != params["replay_epoch"]):
+                    return result
+                try:
+                    # No client identity or policy override: the subscribed native owner freezes the route and context.
+                    reply = await client.rpc("prompt." + action.removeprefix("launch_"), **common, text=params["text"])
+                    task_id = reply.get("task_id") if isinstance(reply, dict) else None
+                    launch = {"state": "accepted", "task_id": task_id} if isinstance(task_id, str) and 0 < len(task_id) <= 128 else {"state": "unknown", "task_id": None}
+                except GatewayRPCError as exc:
+                    reason = str(exc)
+                    state = "unsupported" if getattr(exc, "code", None) == -32601 or reason in {"unknown_method", "method_not_found", "unsupported_projection"} else (
+                        "failed" if reason in {"invalid_params", "permission_denied", "profile_mismatch", "not_found", "runtime_draining"} else "unknown")
+                    launch = {"state": state, "task_id": None}
+                except Exception:  # noqa: BLE001 - no native idempotency key: an uncertain reply must never be resent
+                    launch = {"state": "unknown", "task_id": None}
+                return {**result, "launch": launch}
             if action == "terminal_info":
                 return {"state": "attached", "reason": None, "snapshot": snap, "receipt": None}
             if action == "shell_exec":
@@ -541,7 +567,7 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                 for event in replay["events"]:
                     if event.get("session_id") != sid or event.get("replay_epoch") != epoch:
                         continue
-                    if (event.get("type") in {"session.updated", "notification.show", "notification.clear", *_CONNECTION_EVENTS}
+                    if (event.get("type") in {"session.updated", "notification.show", "notification.clear", *_CONNECTION_EVENTS, *_SIDE_EVENTS}
                             or event.get("execution_generation") == snap["execution_generation"]
                             or event.get("type") == "session.info" and event.get("payload", {}).get("execution_generation") == snap["execution_generation"]):
                         ctx.emit("event", _event(event))
@@ -645,6 +671,12 @@ def session(ctx, params: dict) -> dict:
     if action not in _ACTIONS or not isinstance(sid, str) or not sid.strip() or sid != sid.strip():
         raise InvalidParams("session_id and supported action are required")
     params = {**params, "action": action}
+    if action in {"launch_background", "launch_btw"} and (
+            set(params) - {"profile_home", "session_id", "action", "text", "authority_epoch", "replay_epoch"}
+            or not isinstance(params.get("text"), str) or not params["text"].strip()
+            or type(params.get("authority_epoch")) is not int or params["authority_epoch"] < 0
+            or not isinstance(params.get("replay_epoch"), str) or not params["replay_epoch"]):
+        raise InvalidParams("side launch requires text and its owner identity, without policy overrides")
     if action == "react" and (set(params) - {"profile_home", "session_id", "action", "row_id", "emoji"}
                               or type(params.get("row_id")) is not int or params["row_id"] <= 0
                               or "emoji" not in params or (params["emoji"] is not None and (not isinstance(params["emoji"], str) or params["emoji"] not in _REACTION_EMOJIS))):

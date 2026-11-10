@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import { Loader2, MessageCircleQuestionMark } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
+import { isDefiniteRefusal } from '../../contracts/common'
+import { showErrorToast } from '../toast/errorToast'
 import { openChatStream, SSE_CLOSED, type SseHandle } from '../../api/sse'
 import { Markdown } from '../chat/render/Markdown'
 import type { ComposerNotice } from './ComposerNotices'
 
-interface Side { sessionId: string; question: string; text: string; state: 'asking' | 'answered' | 'failed' }
+interface Side { sessionId: string; taskId: string | null; question: string; text: string; state: 'asking' | 'answered' | 'failed' | 'unknown' }
 
 /**
  * TAL-518: `/btw` asks the server's side-question route and streams its answer into the composer tab, never the
@@ -31,13 +33,17 @@ export function useBtw(sessionId: string | null): { ask: (question: string) => P
     const gen = generation.current
     const update = (next: (s: Side) => Side): void => { if (generation.current === gen) setSide((s) => (s ? next(s) : s)) }
     const end = (): void => { if (generation.current === gen) stop() }
-    const fail = (message?: string): void => { update((s) => ({ ...s, text: `${m.btw_failed()}${message ?? ''}`, state: 'failed' })); end() }
-    setSide({ sessionId, question, text: '', state: 'asking' })
+    const fail = (message?: string, unknown = false): void => { update((s) => ({ ...s, text: unknown ? `${m.owner_outcome_unknown()}. ${message ?? ''}` : `${m.btw_failed()}${message ?? ''}`, state: unknown ? 'unknown' : 'failed' })); end() }
+    setSide({ sessionId, taskId: null, question, text: '', state: 'asking' })
     let streamId: string
+    let native = false
     try {
-      streamId = (await api.askBtw(sessionId, question)).stream_id
+      const result = await api.askBtw(sessionId, question)
+      native = result.launch !== undefined
+      if (native) update((s) => ({ ...s, taskId: result.task_id ?? null }))
+      streamId = result.stream_id
     } catch (e) {
-      fail(e instanceof Error ? e.message : String(e))
+      fail(e instanceof Error ? e.message : String(e), !isDefiniteRefusal(e))
       return
     }
     if (generation.current !== gen) return
@@ -48,16 +54,26 @@ export function useBtw(sessionId: string | null): { ask: (question: string) => P
           const { answer, terminal_state: outcome } = event.data
           update((s) => ({ ...s, text: outcome === 'no_response' || !answer ? m.btw_no_answer() : answer, state: 'answered' }))
           end()
-        } else if (event.event === 'apperror' || event.event === 'error' || event.event === 'cancel') fail(event.data.message)
-        else if (event.event === 'stream_end') fail()
+        } else if (event.event === 'apperror' || event.event === 'error' || event.event === 'cancel') fail(event.data.message, event.data.launch_state === 'unknown' || native && event.data.launch_state === undefined)
+        else if (event.event === 'stream_end') fail(undefined, native)
       },
-      onError: (readyState) => { if (readyState === SSE_CLOSED) fail() },
+      onError: (readyState) => { if (readyState === SSE_CLOSED) fail(undefined, native) },
     })
+  }
+
+  const reconcile = async () => {
+    if (!side?.taskId || side.sessionId !== sessionId) return
+    const gen = generation.current
+    try {
+      const result = await api.fetchBackgroundResult(side.sessionId, side.taskId)
+      if (generation.current !== gen) return
+      setSide((s) => s && s.taskId === side.taskId ? { ...s, text: result.text, state: result.launch_state === 'accepted' ? 'answered' : result.launch_state === 'failed' ? 'failed' : 'unknown' } : s)
+    } catch (error) { if (generation.current === gen) showErrorToast(error) }
   }
 
   const notice: ComposerNotice | null = side?.sessionId === sessionId ? {
     id: 'btw',
-    tone: side.state === 'failed' ? 'error' : undefined,
+    tone: side.state === 'failed' ? 'error' : side.state === 'unknown' ? 'warning' : undefined,
     content: (
       <>
         {side.state === 'asking' ? <Loader2 size={13} className="shrink-0 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <MessageCircleQuestionMark size={13} className="shrink-0" aria-hidden="true" />}
@@ -79,6 +95,7 @@ export function useBtw(sessionId: string | null): { ask: (question: string) => P
     },
     // The answer once it settles, not every streamed token.
     announcement: side.state === 'asking' ? m.btw_asking() : side.text,
+    ...(side.state === 'unknown' && side.taskId ? { action: { label: m.refresh(), run: () => { void reconcile() } } } : {}),
     onDismiss: () => { stop(); setSide(null) },
   } : null
   return { ask, notice }

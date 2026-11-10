@@ -169,6 +169,11 @@ def native_owner_stub(tmp_path, monkeypatch):
         owner.calls.append((method, params))
         if method == "runtime.describe":
             return owner.described
+        if method in {"prompt.background", "prompt.btw"}:
+            result = owner.launch
+            if isinstance(result, Exception):
+                raise result
+            return result
         if method == "session.resume":
             return {"session_id": params["session_id"], "subscription_id": "viewer", "messages": [], "info": owner.info,
                     "authority_epoch": 1, "replay_epoch": "epoch", "last_sequence": 4, "execution_generation": 1, **getattr(owner, "snapshot_extra", {})}
@@ -235,6 +240,77 @@ def native_owner_stub(tmp_path, monkeypatch):
     owner.session = adapter.session
     owner.run = lambda ctx, params: asyncio.run(adapter._run(ctx, params, tmp_path, found))
     return owner
+
+
+@pytest.mark.parametrize("kind", ["background", "btw"])
+def test_native_side_launch_uses_subscribed_parent_and_only_native_text(native_owner_stub, kind):
+    owner = native_owner_stub
+    owner.launch = {"task_id": "bg-native", "private": "never forward"}
+    result = owner.run(None, {"session_id": "native", "action": "launch_" + kind,
+                              "authority_epoch": 1, "replay_epoch": "epoch", "text": "Check"})
+    assert result.get("launch") == {"state": "accepted", "task_id": "bg-native"}
+    calls = owner.calls
+    assert calls.index(("session.resume", {"session_id": "native"})) < calls.index(("prompt." + kind, {"session_id": "native", "text": "Check"}))
+    assert calls[-1] == ("session.detach", {"session_id": "native", "subscription_id": "viewer"})
+    assert not any(method in {"prompt.submit", "session.create"} for method, _ in calls)
+
+
+@pytest.mark.parametrize("failure,state", [(RuntimeError("method_not_found"), "unsupported"),
+                                          (RuntimeError("permission_denied"), "failed"),
+                                          (RuntimeError("runtime_draining"), "failed"),
+                                          (RuntimeError("request_failed"), "unknown"),
+                                          (TimeoutError(), "unknown")])
+def test_native_side_launch_never_retries_an_uncertain_reply(native_owner_stub, failure, state):
+    owner = native_owner_stub
+    owner.launch = failure
+    result = owner.run(None, {"session_id": "native", "action": "launch_background",
+                              "authority_epoch": 1, "replay_epoch": "epoch", "text": "Check"})
+    assert result.get("launch") == {"state": state, "task_id": None}
+    assert len([call for call in owner.calls if call[0] == "prompt.background"]) == 1
+
+
+def test_native_side_launch_fences_owner_before_dispatch(native_owner_stub):
+    owner = native_owner_stub
+    result = owner.run(None, {"session_id": "native", "action": "launch_background",
+                              "authority_epoch": 2, "replay_epoch": "epoch", "text": "Check"})
+    assert result.get("launch") == {"state": "failed", "task_id": None}
+    assert not any(method.startswith("prompt.") for method, _ in owner.calls)
+
+
+def test_native_side_launch_is_reachable_through_the_registered_rpc(native_owner_stub, tmp_path):
+    owner = native_owner_stub
+    owner.launch = {"task_id": "bg-native"}
+    result = owner.session(None, {"profile_home": str(tmp_path), "session_id": "native", "action": "launch_background",
+                                  "authority_epoch": 1, "replay_epoch": "epoch", "text": "Check"})
+    assert result["launch"] == {"state": "accepted", "task_id": "bg-native"}
+
+
+@pytest.mark.parametrize("extra", [{"model": "other"}, {"submission_id": "unsafe-retry"}, {"profile": "other"}, {"text": " "}])
+def test_native_side_launch_rejects_policy_and_retry_overrides(native_owner_stub, tmp_path, extra):
+    from talaria_sidecar.errors import InvalidParams
+    params = {"profile_home": str(tmp_path), "session_id": "native", "action": "launch_btw",
+              "authority_epoch": 1, "replay_epoch": "epoch", "text": "Question", **extra}
+    with pytest.raises(InvalidParams, match="side launch requires"):
+        native_owner_stub.session(None, params)
+    assert native_owner_stub.calls == []
+
+
+@pytest.mark.parametrize("kind", ["background", "btw"])
+def test_native_side_completion_replays_without_a_parent_turn_stamp(native_owner_stub, kind):
+    from types import SimpleNamespace
+    owner = native_owner_stub
+    owner.replay = [{"type": kind + ".complete", "session_id": "native", "replay_epoch": "epoch", "seq": 5,
+                     "payload": {"task_id": "bg-native", "text": "x" * 70000, "private": "omit"}}]
+    ctx = SimpleNamespace(cancelled=False)
+    frames = []
+    def emit(event, data):
+        frames.append((event, data))
+        if event == "replay_complete":
+            ctx.cancelled = True
+    ctx.emit = emit
+    owner.run(ctx, {"session_id": "native", "action": "watch"})
+    assert [(data["type"], data["payload"]) for event, data in frames if event == "event"] == [
+        (kind + ".complete", {"task_id": "bg-native", "text": "x" * 64000})]
 
 
 @pytest.mark.parametrize("boundary", ["warning", "replay"])

@@ -20,7 +20,7 @@ import { DisplayMediaSchema } from './display-media.js'
 import { RunStatusSchema } from './run-status.js'
 import { AgentRefreshConfirmationSchema, AgentUpdateOperationSchema } from './sidecar-shared.js'
 import { SpeedTierSchema } from './speed.js'
-import { ExecutionModeSchema, OwnerAttachmentSchema, MessageReactionViewSchema } from './gateway-session.js'
+import { ExecutionModeSchema, OwnerAttachmentSchema, MessageReactionViewSchema, SideLaunchStateSchema } from './gateway-session.js'
 import { NousAccountSchema, KanbanInspectionNodeSchema, KanbanInspectionSnapshotSchema, CanonicalBotChatSchema, GatewayModeSchema, PluginDisabledReasonSchema, PluginOAuthClientSchema, PluginSettingFieldSchema, SkillCatalogIdentitySchema } from './sidecar-shared.js'
 
 export { SpeedTierSchema } from './speed.js'
@@ -655,6 +655,7 @@ export const GoalResponseSchema = z.looseObject({ ok: z.boolean().optional(), ac
  * - `active`: not settled yet (running, attention or unknown); clients keep refreshing while any record is active.
  */
 export const BackgroundTaskSchema = z.object({
+  launch_state: SideLaunchStateSchema.optional().describe('Native launch receipt state. Unknown work must never be resent automatically.'),
   task_id: z.string(),
   kind: z.enum(['delegation', 'process', 'background_command']),
   status: BackgroundLinkSchema.shape.status,
@@ -705,7 +706,8 @@ export type DelegationStatus = z.infer<typeof DelegationStatusSchema>
 export const BackgroundTasksResponseSchema = z.object({ activity_phase: SessionActivityPhaseSchema.optional(), session_id: z.string(), tasks: z.array(BackgroundTaskSchema),
   pinned_count: z.number().int().nonnegative().describe('TAL-1531: how many of `tasks` are pinned; every client shows this count. Absent from older servers.'),
   agent_available: z.boolean(), agents_working: z.boolean().optional(), delegation_status: DelegationStatusSchema.optional(), owner_work: z.enum(['available', 'unsupported', 'unavailable']).optional() })
-export const BackgroundTaskResultSchema = z.object({ task_id: z.string(), text: z.string() })
+export const BackgroundTaskResultSchema = z.object({ task_id: z.string(), text: z.string(), launch_state: SideLaunchStateSchema.optional() })
+export type BackgroundTaskResult = z.infer<typeof BackgroundTaskResultSchema>
 export const BackgroundDismissRequestSchema = z.object({ session_id: SessionIdSchema, task_id: z.string().min(1) })
 export const BackgroundStopResponseSchema = z.object({ outcome: z.enum(['stopped', 'not_running', 'not_found']) })
 /** TAL-1336: a steering message for one native-owner subagent; `rejected` means no running child took it. */

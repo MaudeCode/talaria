@@ -10612,6 +10612,37 @@
         ],
         "additionalProperties": false
       },
+      "launch": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "accepted",
+              "failed",
+              "unsupported",
+              "unknown"
+            ]
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "state",
+          "task_id"
+        ],
+        "additionalProperties": false
+      },
       "context_detail": {
         "type": "object",
         "properties": {
@@ -11918,6 +11949,37 @@
         },
         "required": [
           "state"
+        ],
+        "additionalProperties": false
+      },
+      "launch": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "accepted",
+              "failed",
+              "unsupported",
+              "unknown"
+            ]
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "state",
+          "task_id"
         ],
         "additionalProperties": false
       },

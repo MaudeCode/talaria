@@ -44,6 +44,34 @@ selector; its display name never takes over `openai`. The shared config
 resolver owns these rules for provider rows, model catalogs, endpoints and
 quota selection. Reading the view never rewrites the source config.
 
+## Native side work
+
+`/api/background` and `/api/btw` dispatch attached sessions through the existing
+owner's `prompt.background` and `prompt.btw`. The subscribed owner applies the
+parent's frozen profile, model, workspace, terminal backend and context. These
+launches create no Web session, parent turn, FIFO admission or sidecar Agent.
+Side questions use the existing side-question result stream; background tasks
+use Background Work and its durable receipts in a separate private document
+namespace. Older Stable versions ignore these receipts instead of interpreting
+them as sid-only Web work. Native receipt identities include
+the profile home, session and owner replay epoch. Public task ids are opaque.
+
+The additive `launch` response and Background Work's `launch_state` distinguish
+pending, accepted, failed, unsupported and unknown outcomes. Completion events
+are bounded and redacted before storage and stream delivery. An accepted launch
+holds the shared native observation until its completion. Repeated completions
+settle one result; replacement owners cannot settle an earlier owner's work.
+
+The side-question notice's Refresh action rereads the result and its server-owned
+launch state; it never sends another launch.
+
+There is no native launch idempotency key. A lost receipt is unknown and never
+resubmitted. A disconnect or replay gap cannot prove cancellation. Reopening the
+owner reconciles accepted task ids from retained completion events, without
+launching work again. If the receipt itself was lost, Talaria cannot safely
+associate an unrelated completion with that request; inspect the owner before
+deciding whether to launch again. Work the owner no longer retains stays unknown.
+
 ## Tested identity
 
 `sidecar/agent_dependency.json` records the tested external Agent: a stable

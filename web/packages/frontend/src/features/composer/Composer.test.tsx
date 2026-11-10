@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { openChatStream, type ChatStreamCallbacks } from '../../api/sse'
+import { openChatStream, SSE_CLOSED, type ChatStreamCallbacks } from '../../api/sse'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BootstrapContext } from '../../app/bootstrap'
@@ -18,7 +18,7 @@ import { returnToComposer } from './composerReturn'
 import { commandCatalog } from '../../../../server/src/tools/commands.ts'
 import { showToast } from '../toast/toast'
 
-vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), cancelChat: vi.fn(), fetchStreamStatus: vi.fn(), fetchSession: vi.fn(), uploadFile: vi.fn(), rollbackUpload: vi.fn(), saveDraft: vi.fn(), fetchDraft: vi.fn(), steerChat: vi.fn(), startChat: vi.fn(), startBackground: vi.fn(), fetchBackgroundTasks: vi.fn(), askBtw: vi.fn(), fetchCommands: vi.fn(), execCommand: vi.fn(), fetchTranscribeCapability: vi.fn(), fetchExecutionModes: vi.fn(() => Promise.resolve({ modes: [{ mode: 'normal', available: true, reason: null, can_attach: true }, { mode: 'ignore_config', available: true, reason: null, can_attach: false }, { mode: 'safe', available: true, reason: null, can_attach: false }] } satisfies ExecutionModes)) }))
+vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), cancelChat: vi.fn(), fetchStreamStatus: vi.fn(), fetchSession: vi.fn(), uploadFile: vi.fn(), rollbackUpload: vi.fn(), saveDraft: vi.fn(), fetchDraft: vi.fn(), steerChat: vi.fn(), startChat: vi.fn(), startBackground: vi.fn(), fetchBackgroundTasks: vi.fn(), fetchBackgroundResult: vi.fn(), askBtw: vi.fn(), fetchCommands: vi.fn(), execCommand: vi.fn(), fetchTranscribeCapability: vi.fn(), fetchExecutionModes: vi.fn(() => Promise.resolve({ modes: [{ mode: 'normal', available: true, reason: null, can_attach: true }, { mode: 'ignore_config', available: true, reason: null, can_attach: false }, { mode: 'safe', available: true, reason: null, can_attach: false }] } satisfies ExecutionModes)) }))
 // jsdom has no EventSource: a followed turn opens a stream handle that does nothing.
 vi.mock(import('../toast/toast'), async (importOriginal) => ({ ...(await importOriginal()), showToast: vi.fn() }))
 vi.mock(import('../../api/sse'), async (importOriginal) => ({ ...(await importOriginal()), openChatStream: vi.fn(() => ({ close: () => undefined, readyState: () => 0 })) }))
@@ -694,9 +694,9 @@ describe('Composer', () => {
     expect(within(await screen.findByRole('dialog', { name: 'Background work' })).getByRole('region', { name: 'Background work' })).toHaveTextContent('summarize repo')
   })
 
-  it('shows a /background launch at once and puts the prompt back when the server refuses it (TAL-1384)', async () => {
+  it.each(['http', 'failed', 'unsupported'])('shows a /background launch at once and puts the prompt back on a %s refusal (TAL-1384, TAL-1340)', async (verdict) => {
     let refuse!: (error: unknown) => void
-    vi.mocked(api.startBackground).mockReturnValue(new Promise((_, reject) => { refuse = reject }) as never)
+    vi.mocked(api.startBackground).mockReturnValue(new Promise((resolve, reject) => { refuse = verdict === 'http' ? reject : () => resolve({ ok: true, task_id: 'launch', stream_id: 'side', session_id: 's1', launch: { state: verdict, task_id: null } }) }) as never)
     vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 's1', agent_available: true, tasks: [], pinned_count: 0 })
     renderComposer({ ...writable, is_streaming: false })
     await waitFor(() => expect(api.fetchBackgroundTasks).toHaveBeenCalled())
@@ -908,10 +908,10 @@ describe('Composer', () => {
   })
 
   // TAL-518: `/btw` asks the server's side-question route and shows the answer above the composer, running or idle.
-  const askSideQuestion = async (session: Session, live: LiveTurn | null) => {
+  const askSideQuestion = async (session: Session, live: LiveTurn | null, unknown = false, disconnected = false) => {
     vi.mocked(api.steerChat).mockClear()
     vi.mocked(api.startChat).mockClear()
-    vi.mocked(api.askBtw).mockReset().mockResolvedValue({ stream_id: 'side', session_id: 'hidden', parent_session_id: 's1' })
+    vi.mocked(api.askBtw).mockReset().mockResolvedValue({ stream_id: 'side', session_id: 'hidden', parent_session_id: 's1', ...(unknown ? { task_id: 'side-native', launch: { state: 'accepted' as const, task_id: 'side-native' } } : {}) })
     let side: ChatStreamCallbacks | null = null
     const closed = vi.fn()
     vi.mocked(openChatStream).mockImplementation((streamId, _replay, cb) => { if (streamId === 'side') side = cb; return { close: streamId === 'side' ? closed : noop, readyState: () => 1 } })
@@ -926,10 +926,27 @@ describe('Composer', () => {
     const panel = await screen.findByRole('region', { name: 'Side question — not in history' })
     expect(panel).toHaveTextContent('how big is it?')
     await waitFor(() => expect(side).not.toBeNull())
-    act(() => { side!.onEvent({ event: 'token', data: { text: 'Three' } }, 'side:1') })
-    expect(panel).toHaveTextContent('Three')
-    act(() => { side!.onEvent({ event: 'done', data: { ephemeral: true, answer: 'Three nodes.', terminal_state: 'completed' } }, 'side:2') })
-    expect(panel).toHaveTextContent('Three nodes.')
+    if (!unknown) {
+      act(() => { side!.onEvent({ event: 'token', data: { text: 'Three' } }, 'side:1') })
+      expect(panel).toHaveTextContent('Three')
+    }
+    if (unknown) {
+      act(() => {
+        if (disconnected) side!.onError!(SSE_CLOSED)
+        else side!.onEvent({ event: 'apperror', data: { message: 'Reopen the owner before sending again.', launch_state: 'unknown' } }, 'side:2')
+      })
+      expect(panel).toHaveTextContent('Outcome unknown')
+      if (!disconnected) expect(panel).toHaveTextContent('Reopen the owner before sending again.')
+      vi.mocked(api.fetchBackgroundResult).mockResolvedValue({ task_id: 'side-native', text: 'Recovered answer.', launch_state: 'accepted' })
+      await userEvent.keyboard('{Escape}')
+      await userEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+      await waitFor(() => expect(api.fetchBackgroundResult).toHaveBeenCalledWith('s1', 'side-native'))
+      await userEvent.click(screen.getByRole('button', { name: 'Side question — not in history: how big is it?' }))
+      expect(await screen.findByRole('region', { name: 'Side question — not in history' })).toHaveTextContent('Recovered answer.')
+    } else {
+      act(() => { side!.onEvent({ event: 'done', data: { ephemeral: true, answer: 'Three nodes.', terminal_state: 'completed' } }, 'side:2') })
+      expect(panel).toHaveTextContent('Three nodes.')
+    }
     expect(closed).toHaveBeenCalled()
     await userEvent.keyboard('{Escape}')
     await userEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
@@ -946,6 +963,13 @@ describe('Composer', () => {
     resetStreamStoreForTests()
     await askSideQuestion({ ...writable, is_streaming: false }, null)
     expect(getStreamState().turns.s1).toBeUndefined()
+  })
+
+  it.each([false, true])('preserves an unknown native side-question outcome without resending, disconnected=%s (TAL-1340)', async (disconnected) => {
+    resetStreamStoreForTests()
+    await askSideQuestion({ ...writable, is_streaming: false }, null, true, disconnected)
+    expect(api.askBtw).toHaveBeenCalledOnce()
+    expect(api.startChat).not.toHaveBeenCalled()
   })
 
   it('sends a steer with its id and shows it as sending until the server has it (TAL-425)', async () => {

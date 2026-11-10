@@ -6,11 +6,12 @@
  * consumes anything. The Agent stays authoritative for its own work: a receipt only fills in what it no longer reports.
  */
 import { createHash } from 'node:crypto'
-import type { BackgroundLink, BackgroundTask, DelegationStatus, OwnerWork, SessionActivityPhase, SidecarResult } from '@maudecode/talaria-web-contracts'
+import type { BackgroundLink, BackgroundTask, BackgroundTaskResult, DelegationStatus, OwnerWork, SessionActivityPhase, SidecarResult, SideLaunch } from '@maudecode/talaria-web-contracts'
 import type { DocumentBackend } from './storage/backend.js'
 import { updateDocument } from './storage/document.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
 import { str } from '../util.js'
+import { redactString } from '../redact.js'
 import { isDict, stripToolCallXml } from './merge.js'
 import { toolKind } from './tool-display.js'
 import { isSafeSessionId } from './session.js'
@@ -24,6 +25,9 @@ type Agents = NonNullable<BackgroundTask['agents']>
 
 /** What the server keeps per record; `result` is the full result text when the Agent will not keep it. */
 export interface Receipt {
+  launch_state?: SideLaunch['state']
+  /** Native routing stays private; the public task id is profile/session scoped. */
+  native?: { scope: string; kind: 'background' | 'btw'; task_id: string | null; authority_epoch: number; replay_epoch: string; sequence: number }
   task_id: string
   kind: Kind
   status: Status
@@ -164,10 +168,11 @@ function dismissible(r: Receipt, status: Status): boolean {
 }
 
 /** The record every client sees; `unconfirmed` shows running work the Agent did not confirm as `unknown`. */
-export function taskView(r: Receipt, opts: { unconfirmed?: boolean; canStop?: boolean } = {}): BackgroundTask {
+export function taskView(r: Receipt, opts: { unconfirmed?: boolean; canStop?: boolean; redact?: boolean } = {}): BackgroundTask {
   const status: Status = opts.unconfirmed && LIVE.has(r.status) ? 'unknown' : r.status
   return {
-    task_id: r.task_id, kind: r.kind, status, title: r.title, started_at: r.started_at, updated_at: r.updated_at, completed_at: r.completed_at,
+    ...(r.launch_state ? { launch_state: r.launch_state } : {}),
+    task_id: r.task_id, kind: r.kind, status, title: redactString(r.title, opts.redact === true), started_at: r.started_at, updated_at: r.updated_at, completed_at: r.completed_at,
     result_available: isTerminal(r.status) || r.status === 'attention' ? Boolean(r.result) || r.agent_result : false,
     child_sessions: (r.children ?? []).filter((c) => isSafeSessionId(c.session_id)).map((c) => ({ goal: c.goal, session_id: c.session_id })), exit_code: r.exit_code, agents: r.agents,
     // Work nobody can confirm (lost in an Agent or server restart) can be dismissed like a finished `/background` result.
@@ -188,7 +193,7 @@ export class BackgroundTaskStore {
   generation(sid: string): number { return this.generations.get(sid) ?? 0 }
   private invalidate(sid: string): void { this.epochs.set(sid, (this.epochs.get(sid) ?? 0) + 1) }
 
-  constructor(private readonly documents: DocumentBackend, private readonly now: () => number, private readonly onChange?: (sid: string) => void | Promise<void>) {}
+  constructor(private readonly documents: DocumentBackend, private readonly now: () => number, private readonly onChange?: (sid: string) => void | Promise<void>, private readonly namespace = 'background') {}
 
   private parse(raw: unknown): Receipt[] { return isDict(raw) && Array.isArray(raw.tasks) ? raw.tasks.filter(isDict) as unknown as Receipt[] : [] }
   private bounded(receipts: Receipt[]): Receipt[] {
@@ -203,7 +208,7 @@ export class BackgroundTaskStore {
       const generation = this.generation(sid)
       const epoch = this.epochs.get(sid)
       let receipts: Receipt[] | null
-      try { receipts = this.parse((await this.documents.get('background', sid))?.value) } catch { receipts = null }
+      try { receipts = this.parse((await this.documents.get(this.namespace, sid))?.value) } catch { receipts = null }
       if (generation !== this.generation(sid)) return []
       // A mutation or eviction landed while this read was in flight: use its cache or read the newer document.
       if (epoch !== this.epochs.get(sid)) continue
@@ -218,7 +223,7 @@ export class BackgroundTaskStore {
 
   private async mutate<T>(sid: string, edit: (receipts: Receipt[]) => T, opts: { skipUnchanged?: boolean; generation?: number } = {}): Promise<T> {
     const generation = opts.generation ?? this.generation(sid)
-    const committed = await updateDocument(this.documents, 'background', sid, (raw) => {
+    const committed = await updateDocument(this.documents, this.namespace, sid, (raw) => {
       if (generation !== this.generation(sid)) throw new Error('Background session changed during reconciliation')
       const receipts = this.parse(raw)
       const before = JSON.stringify(receipts)
@@ -249,25 +254,25 @@ export class BackgroundTaskStore {
     return changed
   }
 
-  async mark(sid: string, taskId: string, fields: Partial<Pick<Receipt, 'dismissed_at' | 'stream_id'>>): Promise<Receipt | null> {
+  async mark(sid: string, taskId: string, fields: Partial<Pick<Receipt, 'dismissed_at' | 'stream_id'>>, opts: { notify?: boolean } = {}): Promise<Receipt | null> {
     const receipt = await this.mutate(sid, (receipts) => {
       const index = receipts.findIndex((receipt) => receipt.task_id === taskId)
       if (index < 0) return null
       receipts[index] = { ...receipts[index]!, ...fields }
       return receipts[index]
     }, { skipUnchanged: true })
-    if (receipt && fields.dismissed_at !== undefined) void this.onChange?.(sid)
+    if (receipt && fields.dismissed_at !== undefined && opts.notify !== false) void this.onChange?.(sid)
     return receipt
   }
 
-  async sessionIds(): Promise<string[]> { return (await this.documents.list('background')).map((entry) => entry.key).filter(isSafeSessionId) }
+  async sessionIds(): Promise<string[]> { return (await this.documents.list(this.namespace)).map((entry) => entry.key).filter(isSafeSessionId) }
 
   evict(sid: string): void { this.invalidate(sid); this.cache.delete(sid) }
 
   async delete(sid: string): Promise<void> {
     this.generations.set(sid, this.generation(sid) + 1)
     this.evict(sid)
-    try { await this.documents.delete('background', sid) } catch { /* best effort */ }
+    try { await this.documents.delete(this.namespace, sid) } catch { /* best effort */ }
   }
 
   async forget(sid: string, taskId: string): Promise<void> {
@@ -365,6 +370,9 @@ export function ownerWorkRows(home: string, sid: string, work: OwnerWork, now: n
 
 /** TAL-1336: the owner side Background Work reads and controls a native-owner chat's work through. */
 export interface OwnerWorkPort {
+  launchTasks?(sid: string, profile?: string): Promise<BackgroundTask[]>
+  launchResult?(sid: string, profile: string | undefined, taskId: string): Promise<BackgroundTaskResult | null>
+  dismissLaunch?(sid: string, profile: string | undefined, taskId: string): Promise<BackgroundTask | null>
   work(sid: string, profile?: string): Promise<OwnerWorkRead | null>
   workTail(sid: string, profile: string | undefined, ref: OwnerWorkRef): Promise<string | null>
   workControl(sid: string, profile: string | undefined, ref: OwnerWorkRef, verb: 'stop' | 'steer', text?: string): Promise<OwnerWorkOutcome>
@@ -493,6 +501,7 @@ export class BackgroundActivity {
     const owner = opts.agentOnly || opts.owner === false ? null : await this.ownerWork(sid, profile)
     // Owner rows carry the owner's permissions: Web's direct-write gate never applies to work the owner controls.
     for (const { task } of owner?.rows ?? []) tasks.push(task)
+    if (owner?.port.launchTasks) tasks.push(...await owner.port.launchTasks(sid, profile ?? undefined))
     tasks.sort((a, b) => (b.started_at ?? b.updated_at) - (a.started_at ?? a.updated_at))
     const state = await this.deps.sessionState?.(sid, opts.excludeStreamId, profile)
     const settled = opts.terminalPhase ?? state?.settled ?? 'completed'
@@ -531,15 +540,23 @@ export class BackgroundActivity {
    * The full result: kept here for `/background` and drained completions, else the Agent's ledger for a delegation.
    * Leaked tool-call XML is removed, as from a transcript reply (TAL-302).
    */
-  async result(sid: string, profile: string | null, taskId: string): Promise<string | null> {
+  async result(sid: string, profile: string | null, taskId: string): Promise<BackgroundTaskResult | null> {
+    const launch = await this.deps.owner?.()?.launchResult?.(sid, profile ?? undefined, taskId)
+    if (launch !== null && launch !== undefined) return launch
     const native = await this.ownerRow(sid, profile, taskId)
-    if (native) return native.row.ref.kind === 'process' ? native.row.tail : native.row.resident ? await native.port.workTail(sid, profile ?? undefined, native.row.ref) : null
+    if (native) {
+      const text = native.row.ref.kind === 'process' ? native.row.tail : native.row.resident ? await native.port.workTail(sid, profile ?? undefined, native.row.ref) : null
+      return text === null ? null : { task_id: taskId, text }
+    }
     const receipt = (await this.deps.store.get(sid, taskId))
-    if (!receipt) return null
-    if (receipt.result) return stripToolCallXml(receipt.result)
+    if (!receipt || receipt.native) return null
+    if (receipt.result) return { task_id: taskId, text: stripToolCallXml(receipt.result) }
     const sidecar = this.deps.sidecar()
     if (receipt.kind !== 'delegation' || !receipt.agent_result || !sidecar) return null
-    try { return stripToolCallXml((await sidecar.call('process.delegation_result', { profile_home: this.deps.profileHome(profile), session_id: sid, delegation_id: taskId })).text) || null } catch { return null }
+    try {
+      const text = stripToolCallXml((await sidecar.call('process.delegation_result', { profile_home: this.deps.profileHome(profile), session_id: sid, delegation_id: taskId })).text)
+      return text ? { task_id: taskId, text } : null
+    } catch { return null }
   }
 
   /** Recheck the session's authoritative snapshot before routing a stop; the sidecar checks ownership again. */
@@ -577,7 +594,9 @@ export class BackgroundActivity {
   }
 
   /** Dismissal is read state, separate from the task: the record stays in the history and leaves the tray. */
-  async dismiss(sid: string, taskId: string): Promise<BackgroundTask | null> {
+  async dismiss(sid: string, taskId: string, profile?: string | null): Promise<BackgroundTask | null> {
+    const native = await this.deps.owner?.()?.dismissLaunch?.(sid, profile ?? undefined, taskId)
+    if (native) return native
     const receipt = (await this.deps.store.mark(sid, taskId, { dismissed_at: this.deps.now() }))
     return receipt ? taskView(receipt) : null
   }

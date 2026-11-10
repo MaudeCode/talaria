@@ -1,0 +1,7 @@
+{
+  "pending": { "state": "pending", "task_id": null },
+  "accepted": { "state": "accepted", "task_id": "owner-launch-fixture" },
+  "failed": { "state": "failed", "task_id": null },
+  "unsupported": { "state": "unsupported", "task_id": null },
+  "unknown": { "state": "unknown", "task_id": null }
+}
