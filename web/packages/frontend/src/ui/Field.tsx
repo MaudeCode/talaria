@@ -6,11 +6,15 @@ import { m } from '../paraglide/messages.js'
 import { cn } from './cn'
 import { POPUP_MOTION } from './popupMotion'
 
-/** A labelled control. `icon` (TAL-2131, §12) is a lucide symbol drawn 18px in muted colour before the label. */
-export function FieldRow({ label, hint, htmlFor, children, inline, icon: Icon }: { label: ReactNode; hint?: ReactNode; htmlFor?: string | undefined; children: ReactNode; inline?: boolean; icon?: LucideIcon | undefined }) {
+/**
+ * A labelled control. `icon` (TAL-2131, §12) is a lucide symbol drawn 18px in muted colour before the label; `detail`
+ * (TAL-2146, §7) is the row's one-line second line, such as a `StatusDot` and its state.
+ */
+export function FieldRow({ label, hint, htmlFor, children, inline, icon: Icon, detail }: { label: ReactNode; hint?: ReactNode; htmlFor?: string | undefined; children: ReactNode; inline?: boolean; icon?: LucideIcon | undefined; detail?: ReactNode }) {
   const text = <>
     <label htmlFor={htmlFor} className="text-sm text-text">{label}</label>
     {hint && <HelpTip label={typeof label === 'string' ? m.field_help_about({ label }) : m.field_help()}>{hint}</HelpTip>}
+    {detail && <div className="flex min-w-0 text-xs text-muted" data-row-detail="">{detail}</div>}
   </>
   return (
     <div className={cn('flex gap-3 py-2', inline ? 'items-center justify-between' : 'flex-col')}>

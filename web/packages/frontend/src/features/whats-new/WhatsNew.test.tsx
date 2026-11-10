@@ -26,6 +26,8 @@ const quiet: WhatsNewState = { announcement, presentation: null, eligible: false
 const fetchMock = vi.mocked(fetchWhatsNew)
 const SCOPE = whatsNewScope(null)
 const TITLE = "What's New in Talaria Web"
+/** Settings › About's Help row that replays the announcement (TAL-2146). */
+const REPLAY = "What's New"
 
 let wrap: (children: ReactNode) => ReactNode
 function renderShell(children: ReactNode = <WhatsNew />, user: string | null = null) {
@@ -63,7 +65,7 @@ describe("What's New (TAL-1617)", () => {
     expect(titles(prompt)).toEqual(presentation.rows.map((row) => row.title + row.description))
     await userEvent.click(within(prompt).getByRole('button', { name: 'Continue' }))
     await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
-    await userEvent.click(screen.getByRole('button', { name: TITLE }))
+    await userEvent.click(screen.getByRole('button', { name: REPLAY }))
     expect(titles(await screen.findByRole('dialog', { name: TITLE }))).toEqual(announcement.rows.map((row) => row.title + row.description))
   })
 
@@ -190,7 +192,7 @@ describe("What's New (TAL-1617)", () => {
     fetchMock.mockResolvedValue(quiet)
     renderShell(<><AboutSection /><WhatsNew /></>)
     await waitFor(() => { expect(window.localStorage.getItem(SCOPE)).toBe(ACK) })
-    await userEvent.click(await screen.findByRole('button', { name: TITLE }))
+    await userEvent.click(await screen.findByRole('button', { name: REPLAY }))
     const dialog = await screen.findByRole('dialog', { name: "What's New in Talaria Web" })
     expect(within(dialog).getAllByRole('listitem')).toHaveLength(announcement.rows.length)
     await userEvent.click(within(dialog).getByRole('button', { name: 'Continue' }))

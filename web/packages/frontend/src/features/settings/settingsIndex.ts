@@ -23,12 +23,11 @@ const key = (settingKey: string) => `settings-${settingKey}`
 
 /** TAL-2086: every static Settings row, in page order. Rows that belong to one listed item (a provider, plugin, MCP server, quota source, profile) are not settings of the page and are left out. */
 export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
-  ...rows('appearance', m.settings_group_this_device, 'device', [
-    ['themePickerGrid', m.settings_label_theme], ['skinPickerGrid', m.settings_label_skin], ['settingsRtl', m.settings_label_rtl],
-  ]),
-  ...rows('appearance', m.settings_group_text_layout, 'interface', [
-    ['fontSizePickerGrid', m.settings_label_font_size], ['chatWidthPickerGrid', m.settings_label_chat_width], ['settingsLanguage', m.settings_label_language],
-  ]),
+  ...rows('appearance', m.settings_label_theme, 'device', [['themePickerGrid', m.settings_label_theme]]),
+  ...rows('appearance', m.settings_label_skin, 'device', [['skinPickerGrid', m.settings_label_skin]]),
+  ...rows('appearance', m.settings_group_text_layout, 'interface', [['fontSizePickerGrid', m.settings_label_font_size], ['chatWidthPickerGrid', m.settings_label_chat_width]]),
+  ...rows('appearance', m.settings_label_language, 'interface', [['settingsLanguage', m.settings_label_language]]),
+  ...rows('appearance', m.settings_label_language, 'device', [['settingsRtl', m.settings_label_rtl]]),
   ...rows('chat', m.settings_group_composer, 'interface', [
     ['settingsSendKey', m.settings_label_send_key], ['settingsDefaultMessageMode', m.settings_label_default_message_mode],
     [key('large_text_paste_as_attachment'), m.settings_label_large_text_paste_as_attachment], [key('show_busy_placeholder_hint'), m.settings_label_busy_placeholder_hint],
@@ -79,7 +78,7 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
   ...rows('notifications', m.settings_group_while_open, 'interface', [
     [key('notifications_enabled'), m.settings_label_notifications], [key('sound_enabled'), m.settings_label_sound],
   ]),
-  ...rows('notifications', m.settings_group_this_device, 'device', [
+  ...rows('notifications', m.settings_group_reply_finishes, 'device', [
     ['completionSound', m.settings_audio_sound], ['completionVolume', m.settings_audio_volume], ['completionFile', m.settings_audio_file, 'completionSound'], ['completionQuiet', m.settings_audio_quiet],
     ['completionStart', m.settings_audio_start, 'completionQuiet'], ['completionEnd', m.settings_audio_end, 'completionQuiet'], ['completionQuietSound', m.settings_audio_quiet_sound, 'completionQuiet'],
   ]),
@@ -88,7 +87,7 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
     [key('notify_on_completion'), m.settings_label_notify_completion, key('web_push')], [key('notify_on_failure'), m.settings_label_notify_failure, key('web_push')],
   ]),
   ...rows('speech', m.settings_group_read_aloud, 'interface', [[key('tts_enabled'), m.settings_label_tts], [key('tts_auto_read'), m.settings_label_tts_auto_read]]),
-  ...rows('speech', m.settings_group_this_device, 'device', [
+  ...rows('speech', m.settings_group_voice_device, 'device', [
     ['settingsTtsEngine', m.settings_label_tts_engine], ['settingsTtsVoice', m.settings_label_tts_voice, 'settingsTtsEngine'], ['settingsTtsRate', m.settings_label_tts_rate], ['settingsTtsPitch', m.settings_label_tts_pitch],
   ]),
   ...rows('models', m.settings_group_main_model, 'profile', [

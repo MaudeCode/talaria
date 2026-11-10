@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Check, type LucideIcon } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import { FieldRow, Switch, TextInput } from '../../ui/Field'
@@ -17,11 +17,11 @@ const trimmed = (draft: string) => draft.trim()
  * One boolean server setting as a switch row; `onSaved` runs once the server confirms a write. `inverted` shows the switch on
  * while the stored value is false, for a `hide_*` key labelled as the thing shown; `fallback` stays the stored value's default.
  */
-export function SettingToggle({ label, hint, settingKey, id: givenId, fallback = false, inverted = false, disabled, onSaved, icon }: SettingProps & { fallback?: boolean; inverted?: boolean; onSaved?: () => void }) {
+export function SettingToggle({ label, hint, settingKey, id: givenId, fallback = false, inverted = false, disabled, onSaved, icon, detail }: SettingProps & { fallback?: boolean; inverted?: boolean; onSaved?: () => void; detail?: ReactNode }) {
   const id = rowId(givenId, settingKey)
   const { bool, set } = useSettingField([settingKey])
   return (
-    <FieldRow label={label} htmlFor={id} hint={hint} icon={icon} inline>
+    <FieldRow label={label} htmlFor={id} hint={hint} icon={icon} detail={detail} inline>
       <Switch id={id} disabled={disabled} checked={bool(settingKey, fallback) !== inverted} onCheckedChange={(checked) => set({ [settingKey]: checked !== inverted }, onSaved)} />
     </FieldRow>
   )

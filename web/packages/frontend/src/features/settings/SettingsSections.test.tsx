@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactElement } from 'react'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -19,6 +19,8 @@ vi.mock('../../api/endpoints', async (importOriginal) => {
   }
 })
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
+vi.mock('../voice/completionAudio', async (importOriginal) => ({ ...await importOriginal<typeof import('../voice/completionAudio')>(), previewSound: vi.fn(() => Promise.resolve()) }))
+vi.mock('../voice/tts', async (importOriginal) => ({ ...await importOriginal<typeof import('../voice/tts')>(), speak: vi.fn(() => Promise.resolve()), stopSpeaking: vi.fn() }))
 // Records which settings fields a rendered page reads.
 const reads = vi.hoisted(() => new Set<string>())
 vi.mock('../../app/settings', async (importOriginal) => {
@@ -44,6 +46,8 @@ import { ModelsSection } from './ModelsSection'
 import { NotificationsSection } from './NotificationsSection'
 import { PrivacySettings } from './PrivacySettings'
 import { SpeechSection } from './SpeechSection'
+import { AUDIO_KEY, DEFAULT_AUDIO, previewSound } from '../voice/completionAudio'
+import { speak, stopSpeaking } from '../voice/tts'
 import { ToolsSection } from './ToolsSection'
 
 const renderSection = (ui: ReactElement, canManage = true, qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })) => {
@@ -301,10 +305,64 @@ describe('the profile reasoning defaults (TAL-2078)', () => {
   })
 })
 
-it('offers device-local completion sound presets and explicit preview', async () => {
+it('plays the selected completion sound from the Sound row (TAL-2146)', async () => {
+  localStorage.setItem(AUDIO_KEY, JSON.stringify({ ...DEFAULT_AUDIO, sound: 'bell' }))
   renderSection(<NotificationsSection />)
-  expect(await screen.findByRole('combobox', { name: 'Completion sound' })).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: 'Preview sound' })).toBeInTheDocument()
+  await screen.findByRole('combobox', { name: 'Sound' })
+  await userEvent.click(screen.getByRole('button', { name: 'Preview sound' }))
+  expect(previewSound).toHaveBeenCalledWith(expect.objectContaining({ sound: 'bell' }))
+  localStorage.removeItem(AUDIO_KEY)
+})
+
+it('shows the saved quiet period range beside its switch and opens to its times when on (TAL-2146)', async () => {
+  localStorage.setItem(AUDIO_KEY, JSON.stringify({ ...DEFAULT_AUDIO, start: '22:00', end: '07:00' }))
+  const view = renderSection(<NotificationsSection />)
+  const quiet = await screen.findByRole('switch', { name: 'Quiet period' })
+  expect(view.container.querySelector('[data-quiet-range]')).toBeNull()
+  expect(screen.queryByLabelText('Quiet period starts')).toBeNull()
+  await userEvent.click(quiet)
+  expect(view.container.querySelector('[data-quiet-range]')).toHaveTextContent('10:00 PM to 7:00 AM')
+  expect(screen.getByLabelText('Quiet period starts')).toHaveValue('22:00')
+  expect(screen.getByLabelText('Quiet period ends')).toHaveValue('07:00')
+  localStorage.removeItem(AUDIO_KEY)
+})
+
+describe('the browser notification permission (TAL-2146)', () => {
+  it.each([
+    ['granted', 'ok', 'Allowed by this browser'],
+    ['denied', 'warning', "Blocked in this browser's settings"],
+    ['default', 'idle', 'Not asked yet'],
+  ] as const)('reads %s as a %s dot with its words', async (permission, state, words) => {
+    vi.stubGlobal('Notification', { permission, requestPermission: vi.fn() })
+    renderSection(<NotificationsSection />)
+    const status = (await screen.findByText(words)).closest('[data-status]')
+    expect(status).toHaveAttribute('data-status', state)
+    expect(screen.getByRole('switch', { name: 'Browser notifications' })).not.toHaveAttribute('data-disabled')
+    vi.unstubAllGlobals()
+  })
+
+  it('says the browser has no notifications and disables the switch', async () => {
+    const saved = Object.getOwnPropertyDescriptor(window, 'Notification')
+    Reflect.deleteProperty(window, 'Notification')
+    renderSection(<NotificationsSection />)
+    expect((await screen.findByText('Not supported by this browser')).closest('[data-status]')).toHaveAttribute('data-status', 'idle')
+    expect(screen.getByRole('switch', { name: 'Browser notifications' })).toHaveAttribute('data-disabled')
+    if (saved) Object.defineProperty(window, 'Notification', saved)
+  })
+})
+
+it('plays a sample through the read-aloud function and stops it on a second press (TAL-2146)', async () => {
+  renderSection(<SettingsSection section="speech" />)
+  await userEvent.click(await screen.findByRole('button', { name: 'Play a sample' }))
+  expect(speak).toHaveBeenCalledExactlyOnceWith('This is how replies will sound.', expect.any(Function))
+  await userEvent.click(screen.getByRole('button', { name: 'Stop the sample' }))
+  expect(stopSpeaking).toHaveBeenCalledOnce()
+  // A sample that finishes on its own puts the button back.
+  await userEvent.click(screen.getByRole('button', { name: 'Play a sample' }))
+  const finished = vi.mocked(speak).mock.calls[1]![1]!
+  act(() => { finished() })
+  expect(screen.getByRole('button', { name: 'Play a sample' })).toBeInTheDocument()
+  expect(stopSpeaking).toHaveBeenCalledOnce()
 })
 
 it('groups the Notifications and Speech rows and shows every slider value (TAL-2079)', async () => {
@@ -314,20 +372,21 @@ it('groups the Notifications and Speech rows and shows every slider value (TAL-2
     return within(element!)
   }
   const notifications = renderSection(<NotificationsSection />)
-  await screen.findByRole('combobox', { name: 'Completion sound' })
-  const completion = group(notifications.container, 'this-device')
+  await screen.findByRole('combobox', { name: 'Sound' })
+  const completion = group(notifications.container, 'reply-finishes')
   const open = group(notifications.container, 'while-open')
   for (const name of ['Browser notifications', 'Notification sound']) expect(open.getByRole('switch', { name })).toBeInTheDocument()
-  expect(completion.getByRole('combobox', { name: 'Completion sound' })).toBeInTheDocument()
-  expect(completion.getByRole('slider', { name: 'Sound volume' }).nextElementSibling).toHaveTextContent('50%')
+  expect(completion.getByRole('combobox', { name: 'Sound' })).toBeInTheDocument()
+  expect(completion.getByRole('slider', { name: 'Volume' }).nextElementSibling).toHaveTextContent('50%')
   notifications.unmount()
   const speech = renderSection(<SpeechSection />)
-  await screen.findByRole('slider', { name: 'Speech rate' })
-  const device = group(speech.container, 'this-device')
+  await screen.findByRole('slider', { name: 'Speed' })
+  const device = group(speech.container, 'voice-device')
   const server = group(speech.container, 'read-aloud')
-  for (const name of ['Text-to-Speech for responses', 'Auto-read responses aloud']) expect(server.getByRole('switch', { name })).toBeInTheDocument()
-  expect(device.getByRole('slider', { name: 'Speech rate' }).nextElementSibling).toHaveTextContent('1.0×')
-  expect(device.getByRole('slider', { name: 'Speech pitch' }).nextElementSibling).toHaveTextContent('1.0')
+  for (const name of ['Read replies aloud', 'Start reading automatically']) expect(server.getByRole('switch', { name })).toBeInTheDocument()
+  expect(device.getByRole('radiogroup', { name: 'Engine' })).toBeInTheDocument()
+  expect(device.getByRole('slider', { name: 'Speed' }).nextElementSibling).toHaveTextContent('1.0×')
+  expect(device.getByRole('slider', { name: 'Pitch' }).nextElementSibling).toHaveTextContent('1.0')
 })
 
 it('shows a failed connectors gate with a retry on the Connectors tab instead of loading forever (TAL-1691)', async () => {

@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { SidebarSection } from './SidebarSection'
 import { ChatSection } from './ChatSection'
 import { NotificationsSection } from './NotificationsSection'
@@ -19,6 +19,7 @@ vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
 const initial = { bot_name: 'Hermes', send_key: 'enter', pinned_sessions_limit: 3, max_tokens: null, show_cli_sessions: false, sound_enabled: false }
 let user: UserEvent
 
+afterEach(() => { vi.unstubAllGlobals() })
 beforeEach(() => {
   vi.resetAllMocks()
   // No per-keystroke macrotask yield; the default delay: 0 timed out under full-suite load.
@@ -29,6 +30,8 @@ beforeEach(() => {
 })
 
 function setup() {
+  // Browser notifications stay enabled only where the browser has notifications (TAL-2146).
+  vi.stubGlobal('Notification', { permission: 'granted', requestPermission: vi.fn() })
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   qc.setQueryData(keys.settings, initial)
   render(<QueryClientProvider client={qc}><BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><SidebarSection /><ChatSection /><NotificationsSection /><PrivacySettings /></BootstrapContext.Provider></QueryClientProvider>)

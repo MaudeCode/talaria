@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Settings in Talaria Web: Appearance lists skins as rows and picks font size and chat width side by side, Notifications shows whether the browser allows notifications, Speech can play a sample of the chosen voice, and About shows versions as figures and shortcuts as keycaps for your platform.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

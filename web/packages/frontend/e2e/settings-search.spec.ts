@@ -38,9 +38,9 @@ test('Settings search finds a row on another section and focuses its control', a
   await field.press('ArrowDown')
   await expect(results.getByRole('option').nth(1)).toHaveAttribute('aria-selected', 'true')
   await expect(field).toHaveAttribute('aria-activedescendant', 'settingsSearchResult-1')
-  await results.getByRole('option', { name: /Speech rate/ }).click()
+  await results.getByRole('option', { name: /Speed/ }).click()
   await expect(page).toHaveURL(/\/settings\/speech#settingsTtsRate$/)
-  await expect(page.getByRole('slider', { name: 'Speech rate' })).toBeFocused()
+  await expect(page.getByRole('slider', { name: 'Speed' })).toBeFocused()
 })
 
 test('a Settings URL with a row id opens that row with its control focused', async ({ page }) => {

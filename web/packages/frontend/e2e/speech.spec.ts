@@ -28,14 +28,14 @@ test('enabling speech shows Read aloud, and auto-read speaks a new reply', async
   try {
     await page.goto('/settings/speech')
     await settle(page)
-    const readAloud = page.getByRole('switch', { name: 'Text-to-Speech for responses', exact: true })
-    const autoRead = page.getByRole('switch', { name: 'Auto-read responses aloud', exact: true })
+    const readAloud = page.getByRole('switch', { name: 'Read replies aloud', exact: true })
+    const autoRead = page.getByRole('switch', { name: 'Start reading automatically', exact: true })
     await expect(readAloud).not.toBeChecked()
     await readAloud.click()
     await expect(readAloud).toBeChecked()
     await autoRead.click()
     await expect(autoRead).toBeChecked()
-    await expect(page.getByLabel('Speech rate')).toHaveValue('1')
+    await expect(page.getByLabel('Speed')).toHaveValue('1')
     await page.screenshot({ path: testInfo.outputPath('speech-settings.png'), fullPage: true })
 
     await fixture.open()

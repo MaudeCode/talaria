@@ -44,6 +44,8 @@ async function serveWhatsNew(target: Page | BrowserContext, request: Page['reque
 }
 
 const dialog = (page: Page) => page.getByRole('dialog', { name: TITLE })
+/** Settings > About's Help row that replays the announcement (TAL-2146). */
+const REPLAY = "What's New"
 
 test('a later Web release introduces itself once, and Settings replays the same dialog', async ({ page }, testInfo) => {
   const server: Server = { version: '1.0.0', fail: false, reads: [] }
@@ -94,20 +96,20 @@ test('a later Web release introduces itself once, and Settings replays the same 
   await page.goto('/settings/about')
   await settle(page)
   await page.screenshot({ path: testInfo.outputPath('whats-new-settings.png') })
-  await page.getByRole('button', { name: TITLE, exact: true }).click()
+  await page.getByRole('button', { name: REPLAY, exact: true }).click()
   const replay = dialog(page)
   // Settings replays the installed build's full announcement, rows already seen included.
   await expect(replay.getByRole('listitem')).toHaveText(experimental.rows.map((row) => row.title + row.description))
   await page.screenshot({ path: testInfo.outputPath('whats-new-replay.png') })
   await page.keyboard.press('Escape')
   await expect(replay).toHaveCount(0)
-  await expect(page.getByRole('button', { name: TITLE, exact: true })).toBeFocused()
+  await expect(page.getByRole('button', { name: REPLAY, exact: true })).toBeFocused()
 
   // Light theme: the same dialog keeps its contrast.
   await page.evaluate(() => { localStorage.setItem('hermes-theme', 'light') })
   await page.reload()
   await settle(page)
-  await page.getByRole('button', { name: TITLE, exact: true }).click()
+  await page.getByRole('button', { name: REPLAY, exact: true }).click()
   await expect(dialog(page)).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('whats-new-replay-light.png') })
   await page.keyboard.press('Escape')
