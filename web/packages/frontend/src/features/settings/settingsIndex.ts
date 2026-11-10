@@ -8,12 +8,16 @@ import { FIXED_TABS, NAV_ITEMS } from '../../shell/nav'
  */
 export type SettingScope = 'device' | 'interface' | 'profile' | 'server'
 
-/** TAL-2086: one Settings row. `label` and `group` are the message functions the row and its `SettingsGroup` render; `id` is its control's. */
-export interface SettingsIndexEntry { section: SettingsSection; tab?: ToolsTab; group: () => string; id: string; label: () => string; scope: SettingScope }
+/**
+ * TAL-2086: one Settings row. `label` and `group` are the message functions the row and its `SettingsGroup` render; `id` is
+ * its control's. A row shown only under a condition names in `shownWith` the control on its page that shows it, or the
+ * nearest row beside it, so a jump to it while hidden lands there.
+ */
+export interface SettingsIndexEntry { section: SettingsSection; tab?: ToolsTab; group: () => string; id: string; label: () => string; scope: SettingScope; shownWith?: string }
 
-type Row = readonly [id: string, label: () => string]
+type Row = readonly [id: string, label: () => string, shownWith?: string]
 const rows = (section: SettingsSection, group: () => string, scope: SettingScope, list: readonly Row[], tab?: ToolsTab): SettingsIndexEntry[] =>
-  list.map(([id, label]) => ({ section, group, id, label, scope, ...(tab ? { tab } : {}) }))
+  list.map(([id, label, shownWith]) => ({ section, group, id, label, scope, ...(tab ? { tab } : {}), ...(shownWith ? { shownWith } : {}) }))
 /** A `SettingToggle`'s default control id. */
 const key = (settingKey: string) => `settings-${settingKey}`
 
@@ -50,7 +54,7 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
     [key('show_conversation_outline'), m.settings_label_conversation_outline],
   ]),
   ...rows('chat', m.settings_group_limits, 'interface', [
-    ['settingsMaxTokens', m.settings_label_max_tokens], [key('compression_prepare_ahead'), m.settings_label_compression_prepare_ahead], ['settingsAutoTitleRefresh', m.settings_label_auto_title_refresh],
+    ['settingsMaxTokens', m.settings_label_max_tokens], [key('compression_prepare_ahead'), m.settings_label_compression_prepare_ahead, 'settingsMaxTokens'], ['settingsAutoTitleRefresh', m.settings_label_auto_title_refresh],
   ]),
   ...rows('chat', m.settings_group_group_discussions, 'interface', [
     [key('group_discussion_max_rounds'), m.settings_label_group_discussion_max_rounds], [key('group_discussion_max_messages'), m.settings_label_group_discussion_max_messages],
@@ -76,19 +80,19 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
     [key('notifications_enabled'), m.settings_label_notifications], [key('sound_enabled'), m.settings_label_sound],
   ]),
   ...rows('notifications', m.settings_group_this_device, 'device', [
-    ['completionSound', m.settings_audio_sound], ['completionVolume', m.settings_audio_volume], ['completionFile', m.settings_audio_file], ['completionQuiet', m.settings_audio_quiet],
-    ['completionStart', m.settings_audio_start], ['completionEnd', m.settings_audio_end], ['completionQuietSound', m.settings_audio_quiet_sound],
+    ['completionSound', m.settings_audio_sound], ['completionVolume', m.settings_audio_volume], ['completionFile', m.settings_audio_file, 'completionSound'], ['completionQuiet', m.settings_audio_quiet],
+    ['completionStart', m.settings_audio_start, 'completionQuiet'], ['completionEnd', m.settings_audio_end, 'completionQuiet'], ['completionQuietSound', m.settings_audio_quiet_sound, 'completionQuiet'],
   ]),
   ...rows('notifications', m.settings_group_web_push, 'interface', [
-    [key('web_push'), m.settings_label_web_push], [key('notify_on_approval'), m.settings_label_notify_approval], [key('notify_on_input'), m.settings_label_notify_input],
-    [key('notify_on_completion'), m.settings_label_notify_completion], [key('notify_on_failure'), m.settings_label_notify_failure],
+    [key('web_push'), m.settings_label_web_push], [key('notify_on_approval'), m.settings_label_notify_approval, key('web_push')], [key('notify_on_input'), m.settings_label_notify_input, key('web_push')],
+    [key('notify_on_completion'), m.settings_label_notify_completion, key('web_push')], [key('notify_on_failure'), m.settings_label_notify_failure, key('web_push')],
   ]),
   ...rows('speech', m.settings_group_read_aloud, 'interface', [[key('tts_enabled'), m.settings_label_tts], [key('tts_auto_read'), m.settings_label_tts_auto_read]]),
   ...rows('speech', m.settings_group_this_device, 'device', [
-    ['settingsTtsEngine', m.settings_label_tts_engine], ['settingsTtsVoice', m.settings_label_tts_voice], ['settingsTtsRate', m.settings_label_tts_rate], ['settingsTtsPitch', m.settings_label_tts_pitch],
+    ['settingsTtsEngine', m.settings_label_tts_engine], ['settingsTtsVoice', m.settings_label_tts_voice, 'settingsTtsEngine'], ['settingsTtsRate', m.settings_label_tts_rate], ['settingsTtsPitch', m.settings_label_tts_pitch],
   ]),
   ...rows('models', m.settings_group_main_model, 'profile', [
-    ['settingsModel', m.settings_label_model], ['settingsModelSpeed', m.settings_model_speed], ['settingsReasoningEffort', m.settings_reasoning_effort], ['settingsShowThinking', m.settings_show_thinking],
+    ['settingsModel', m.settings_label_model], ['settingsModelSpeed', m.settings_model_speed, 'settingsModel'], ['settingsReasoningEffort', m.settings_reasoning_effort, 'settingsModel'], ['settingsShowThinking', m.settings_show_thinking, 'settingsModel'],
   ]),
   ...rows('providers', m.providers_quota_thresholds_title, 'profile', [
     ['quotaThreshold-warning_remaining_percent', m.providers_quota_warning_remaining], ['quotaThreshold-critical_remaining_percent', m.providers_quota_critical_remaining],
@@ -97,7 +101,7 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
   ]),
   ...rows('tools', m.settings_group_approvals, 'profile', [[key('agent_approvals'), m.settings_label_agent_approvals]]),
   ...rows('tools', m.settings_section_plugins_title, 'profile', [['plugins-auto-update', m.plugins_auto_update]], 'plugins'),
-  ...rows('access', m.settings_group_sign_in, 'server', [['settingsPassword', m.settings_label_password], ['settingsAuthAck', m.settings_label_auth_acknowledged]]),
+  ...rows('access', m.settings_group_sign_in, 'server', [['settingsPassword', m.settings_label_password], ['settingsAuthAck', m.settings_label_auth_acknowledged, 'settingsPassword']]),
   ...rows('access', m.settings_group_privacy, 'server', [
     [key('sync_to_insights'), m.settings_label_sync_insights], [key('api_redact_enabled'), m.settings_label_api_redact],
     [key('confirm_external_links'), m.settings_label_confirm_external_links], ['settingsTrustedLinkHosts', m.settings_label_trusted_link_hosts],

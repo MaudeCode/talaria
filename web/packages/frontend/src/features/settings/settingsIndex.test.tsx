@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, it, vi } from 'vitest'
-import { render, waitFor } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 // Every endpoint stays pending unless a section needs its answer to show every static row.
@@ -86,6 +87,8 @@ it('indexes every Settings row once, each where it renders, under its group, in 
   expect(indexed).toEqual(rendered)
   // Each entry's group is the title of the group its row renders in.
   expect(placed).toEqual(Object.fromEntries(SETTINGS_INDEX.map((e) => [e.id, e.group()])))
+  // A hidden row lands on a row of its own page.
+  expect(SETTINGS_INDEX.filter((e) => e.shownWith && !SETTINGS_INDEX.some((o) => o.id === e.shownWith && o.section === e.section && o.tab === e.tab)).map((e) => e.id)).toEqual([])
   // (b) Placement (design-system §11): a section's contract group matches the scope of every row on it.
   expect(SETTINGS_INDEX.filter((e) => SETTINGS_SECTION_GROUPS[e.section] !== GROUP_OF_SCOPE[e.scope]).map((e) => `${e.id}: ${e.scope} on ${e.section}`)).toEqual([])
   // (c) A setting stored only in this browser sits in a group titled This device.
@@ -97,4 +100,16 @@ it('matches the localized label or group title, ignoring case and surrounding sp
   expect(searchSettings('SEND KEY').map((e) => e.id)).toEqual(['settingsSendKey'])
   expect(searchSettings('this device').map((e) => e.section)).toEqual(SETTINGS_INDEX.filter((e) => e.scope === 'device').map((e) => e.section))
   expect(searchSettings('no such setting')).toEqual([])
+})
+
+it('opens a hidden row at the control that shows it, then at the row once it appears (TAL-2086)', async () => {
+  localStorage.setItem(AUDIO_KEY, JSON.stringify(DEFAULT_AUDIO))
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  qc.setQueryData(keys.settings, SETTINGS)
+  render(<QueryClientProvider client={qc}><BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><SettingsSection section="notifications" row="completionStart" visit="1" /></BootstrapContext.Provider></QueryClientProvider>)
+  const quiet = await screen.findByRole('switch', { name: 'Quiet period' })
+  await waitFor(() => expect(quiet).toHaveFocus())
+  await userEvent.keyboard(' ')
+  await waitFor(() => expect(document.getElementById('completionStart')).toHaveFocus())
+  localStorage.setItem(AUDIO_KEY, JSON.stringify({ ...DEFAULT_AUDIO, sound: 'custom', quiet: true }))
 })

@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import type { ToolsTab, SettingsSection as Section } from '../../contracts/url'
 import { SECTION_LABEL } from './SettingsLayout'
+import { SETTINGS_INDEX } from './settingsIndex'
 import { LoadingState } from '../../ui/States'
 import { useLocale } from '../../i18n/useLocale'
 import { HubHeadSlotsContext } from '../../shell/AppShell'
@@ -57,20 +58,32 @@ function focusTarget(element: HTMLElement): HTMLElement | null {
 
 /**
  * TAL-2086: the URL's `#<row id>` scrolls that row into view and focuses its control. Sections load lazily and rows wait
- * for their data, so it watches the page until the row appears; a row that never renders leaves the page as is. `visit`
- * changes with each navigation, so choosing the same row again reveals it again.
+ * for their data, so it watches the page until the row appears. A row shown only under a condition first lands on the
+ * control that shows it (`shownWith`), else its group, and moves on to the row if it appears while focus is still there.
+ * `visit` changes with each navigation, so choosing the same row again reveals it again.
  */
 function useRevealRow(page: RefObject<HTMLElement | null>, id: string | undefined, visit: string | undefined) {
   useEffect(() => {
     const root = page.current
     if (!id || !root) return
+    const entry = SETTINGS_INDEX.find((e) => e.id === id)
+    const control = (target: string) => {
+      const element = document.getElementById(target)
+      return element && root.contains(element) ? focusTarget(element) : null
+    }
+    const group = () => entry ? [...root.querySelectorAll<HTMLElement>('section[data-group]')].find((s) => s.getAttribute('aria-label') === entry.group()) ?? null : null
+    let landed: HTMLElement | null = null
+    const show = (element: HTMLElement) => {
+      element.scrollIntoView?.({ block: 'center' })
+      element.focus({ preventScroll: true })
+      landed = element
+    }
     const reveal = () => {
-      const element = document.getElementById(id)
-      const control = element && root.contains(element) ? focusTarget(element) : null
-      if (!control) return false
-      control.scrollIntoView?.({ block: 'center' })
-      control.focus({ preventScroll: true })
-      return true
+      const row = control(id)
+      // Focus the user moved elsewhere since landing stays where they put it.
+      if (row) { if (!landed || document.activeElement === landed || document.activeElement === document.body) show(row); return true }
+      if (!landed) { const near = (entry?.shownWith ? control(entry.shownWith) : null) ?? group(); if (near) show(near) }
+      return false
     }
     if (reveal()) return
     const observer = new MutationObserver(() => { if (reveal()) stop() })
