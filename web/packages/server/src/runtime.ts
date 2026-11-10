@@ -412,6 +412,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     profilesMatch,
     assistantName,
     redactEnabled: () => { try { return settings.peekValue('api_redact_enabled') !== false } catch { return true } },
+    worklogExpandedDefault: () => { try { return pyBool(settings.peekValue('worklog_details_expanded_default')) } catch { return false } },
     pinnedSessionsLimit: () => { const v = settings.peekValue('pinned_sessions_limit'); return typeof v === 'number' && v >= 1 ? v : 3 },
     // Chat runtime (checkpoint 6) replaces these with live stream and cron state.
     runtime: {

@@ -200,6 +200,33 @@ describe('shared optimistic settings', () => {
     expect(result.current.settings.data).not.toHaveProperty('_set_password')
   })
 
+  it('re-reads open transcripts only when the Worklog default changes (TAL-2149)', async () => {
+    vi.mocked(api.saveSettings).mockImplementation((patch) => Promise.resolve({ ...initial, ...patch }))
+    const { result, qc } = setup()
+    qc.setQueryData(keys.sessions.detail('s1'), { session: {} })
+    qc.setQueryData(keys.sessions.list({}), { sessions: [] })
+    const stale = () => [keys.sessions.detail('s1'), keys.sessions.list({})].map((queryKey) => qc.getQueryState(queryKey)?.isInvalidated)
+    await act(async () => { await result.current.save.mutateAsync({ sound_enabled: true }) })
+    expect(stale()).toEqual([false, false])
+    await act(async () => { await result.current.save.mutateAsync({ worklog_details_expanded_default: true }) })
+    expect(stale()).toEqual([true, false])
+  })
+
+  it('re-reads open transcripts once the reread settles an unknown Worklog default write (TAL-2149)', async () => {
+    const reread = deferred<Settings>()
+    vi.mocked(api.saveSettings).mockRejectedValue(new ApiError({ kind: 'timeout', path: '/api/settings', message: 'timed out' }))
+    vi.mocked(api.fetchSettings).mockReturnValue(reread.promise)
+    const { result, qc } = setup()
+    qc.setQueryData(keys.sessions.detail('s1'), { session: {} })
+    const stale = () => qc.getQueryState(keys.sessions.detail('s1'))?.isInvalidated
+    act(() => result.current.save.mutate({ worklog_details_expanded_default: true }))
+    await waitFor(() => expect(api.fetchSettings).toHaveBeenCalled())
+    expect(stale()).toBe(false)
+    reread.resolve({ ...initial, worklog_details_expanded_default: true })
+    await waitFor(() => expect(result.current.save.error?.message).toBe('timed out'))
+    await waitFor(() => expect(stale()).toBe(true))
+  })
+
   it('keeps an unknown outcome shown until the reread decides it', async () => {
     const reread = deferred<Settings>()
     vi.mocked(api.saveSettings).mockRejectedValue(new ApiError({ kind: 'timeout', path: '/api/settings', message: 'timed out' }))

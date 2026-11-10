@@ -162,6 +162,8 @@ export interface SessionServiceDeps {
   assistantName: (profile: string | null) => string
   redactEnabled: () => boolean
   showReasoning?: (profile: string | null) => Promise<boolean>
+  /** The `worklog_details_expanded_default` setting (TAL-2149): every turn's "Worked" opens by default. */
+  worklogExpandedDefault?: () => boolean
   pinnedSessionsLimit: () => number
   runtime: RuntimeOverlay & {
     /** A live worker stream that must block deletion / duplicate turns for this session. */
@@ -1004,7 +1006,7 @@ export class SessionService {
     const payload = (await this.wireRow(s))
     // Mutation replies replace a client's transcript, so they carry the same server-built scenes as the detail.
     if (withMessages) {
-      payload.messages = (await this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await this.backgroundUpdates(s, withMarkerKinds(withTurnIds(messages), s))), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, showReasoning: await this.deps.showReasoning?.(s.profile) ?? true, runningScene: !(await this.journaledActiveTurn(s)) })))
+      payload.messages = (await this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await this.backgroundUpdates(s, withMarkerKinds(withTurnIds(messages), s))), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, ...(await this.sceneDisplay(s.profile)), runningScene: !(await this.journaledActiveTurn(s)) })))
     }
     return this.publicProjection(redactSessionData(payload, this.deps.redactEnabled()), s.profile)
   }
@@ -1047,6 +1049,11 @@ export class SessionService {
     return this.publicProjection(redactSessionData(s.toDocument(), this.deps.redactEnabled()), s.profile)
   }
 
+  /** How hydrated scenes show for a profile: its reasoning visibility and the Worklog default (TAL-2149). */
+  private async sceneDisplay(profile: string | null): Promise<{ showReasoning: boolean; expandWorklog: boolean }> {
+    return { showReasoning: await this.deps.showReasoning?.(profile) ?? true, expandWorklog: this.deps.worklogExpandedDefault?.() === true }
+  }
+
   /** One server decision for history, mutation replies, done frames and export documents. */
   async publicProjection(payload: Record<string, unknown>, profile: string | null): Promise<Record<string, unknown>> {
     const show = await this.deps.showReasoning?.(profile) ?? true
@@ -1077,7 +1084,7 @@ export class SessionService {
 
   /** Existing projections, once per complete turn range, in absolute transcript coordinates. */
   private async deriveRange(s: Session, rows: Message[], baseIndex: number, initialTurn: string, journaled: boolean, refs: Pick<Map<string, number>, 'get'>, calls: unknown[], reviewRows: (turnId: string) => Message[]): Promise<Message[]> {
-    return (await this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await this.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(rows), baseIndex, initialTurn), s), reviewRows)), calls, s.active_stream_id, baseIndex), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, showReasoning: await this.deps.showReasoning?.(s.profile) ?? true, runningScene: !journaled, clipToolResults: true, baseIndex, refCounts: refs }))) as Message[]
+    return (await this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await this.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(rows), baseIndex, initialTurn), s), reviewRows)), calls, s.active_stream_id, baseIndex), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, ...(await this.sceneDisplay(s.profile)), runningScene: !journaled, clipToolResults: true, baseIndex, refCounts: refs }))) as Message[]
   }
 
   private async limitedDetail(s: Session, index: SessionPrefixIndex, limit: number, before: number | null, pending: ReturnType<SessionService['pendingTurn']>, journaled: Awaited<ReturnType<SessionService['journaledActiveTurn']>>, retried = false) {
@@ -1267,7 +1274,7 @@ export class SessionService {
     if (pending && !limited) transcript = withPendingUserTurn(transcript, pending)
     if (journaled && !limited)transcript = withoutRunningTurnOutput(transcript, { ...journaled, localCount: s.messages.length })
     // Turn ids, tool outcomes and scenes are computed over the full transcript, so every window reports the same values.
-    const all: unknown[] = loadMessages && !limited ? (await this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await this.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(transcript)), s))), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, showReasoning: await this.deps.showReasoning?.(s.profile) ?? true, runningScene: !journaled, clipToolResults: msgLimit !== null }))) : []
+    const all: unknown[] = loadMessages && !limited ? (await this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await this.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(transcript)), s))), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, ...(await this.sceneDisplay(s.profile)), runningScene: !journaled, clipToolResults: msgLimit !== null }))) : []
     let truncated: unknown[] = limited?.messages ?? []
     let offset = limited?.offset ?? 0
     let summaryCount: number | null = limited?.total ?? null
@@ -1428,7 +1435,7 @@ export class SessionService {
     const rows = withMarkerKinds(withTurnIds(messages), session)
     // TAL-1760: a run another process is still writing: its last turn is the open one, with no answer split off yet.
     const activeTurnId = opts.running ? str(rows.at(-1)?._turn_id) || null : null
-    return hydrateAnchorActivityScenes(withToolCallOutcomes(rows, [], activeTurnId), {}, { showReasoning, activeTurnId, runningScene: activeTurnId !== null }) as Message[]
+    return hydrateAnchorActivityScenes(withToolCallOutcomes(rows, [], activeTurnId), {}, { showReasoning, expandWorklog: this.deps.worklogExpandedDefault?.() === true, activeTurnId, runningScene: activeTurnId !== null }) as Message[]
   }
 
   /**

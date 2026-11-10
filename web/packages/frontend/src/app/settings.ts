@@ -98,12 +98,16 @@ async function writeSettings(qc: QueryClient, patch: Record<string, unknown>) {
     if (shown(key)) state.fields.set(key, { sequence, value: patch[key] })
   }
   publish()
+  // TAL-2149: the server opens every Worklog by this setting, so once it is stored (or a reread settles an unknown
+  // outcome) transcripts re-read their scenes, even after the page that wrote it has closed.
+  const refreshScenes = () => { if ('worklog_details_expanded_default' in patch) void qc.invalidateQueries({ queryKey: [...keys.sessions.all, 'detail'] }) }
   let unknown = false
   try {
     await qc.cancelQueries({ queryKey: keys.settings })
     await Promise.all(predecessors)
     if (!current()) throw new Error(m.error_generic())
     const data = await api.saveSettings(patch)
+    if (data.ok !== false && !data.error) refreshScenes()
     if (!current()) return data
     if (typeof data.error === 'string' && data.error) throw new Error(data.error)
     if (data.ok === false) throw new Error(m.error_generic())
@@ -135,8 +139,9 @@ async function writeSettings(qc: QueryClient, patch: Record<string, unknown>) {
         await qc.cancelQueries({ queryKey: keys.settings })
         await qc.query({ queryKey: keys.settings, queryFn: api.fetchSettings, staleTime: 0 })
         settle()
+        refreshScenes()
       } catch {
-        settleOnNextRead(qc, () => current() && [...fields].some((key) => state.fields.get(key)?.sequence === sequence), settle, keys.settings)
+        settleOnNextRead(qc, () => current() && [...fields].some((key) => state.fields.get(key)?.sequence === sequence), () => { settle(); refreshScenes() }, keys.settings)
       }
     } else if (current() && state.active.size === 0) {
       await qc.cancelQueries({ queryKey: keys.settings })

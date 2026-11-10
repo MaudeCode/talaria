@@ -62,6 +62,8 @@ export interface TranscriptProps {
   virtualizeLongTranscripts: boolean
   /** `fade_text_effect` setting (TAL-2148): the streaming reply's new words fade in. */
   fadeText?: boolean
+  /** `transparent_stream_event_timestamps` setting (TAL-2149): in transparent mode each activity row shows its time. */
+  eventTimestamps?: boolean
   /** `session_endless_scroll` setting (TAL-2148): older pages load on scroll; off, only the load button loads them. */
   endlessScroll?: boolean
 }
@@ -383,7 +385,7 @@ export function Transcript(props: TranscriptProps) {
   const renderedRows = virtualize ? null : rows.map(renderRow)
 
   return (
-    <WorklogDisclosureProvider key={scope} scope={scope ?? ""} showReasoning={props.showReasoning} fadeText={props.fadeText}>
+    <WorklogDisclosureProvider key={scope} scope={scope ?? ""} showReasoning={props.showReasoning} fadeText={props.fadeText} eventTimestamps={props.eventTimestamps}>
     <div className="messages-shell relative flex flex-1 min-h-0 flex-col">
       {sessionId && actions.onQuoteSelection && <QuoteSelection key={`${scope ?? ''}:${sessionId}`} transcript={scrollRef} onQuote={actions.onQuoteSelection} />}
       <div ref={scrollRef} onScroll={onScroll} onWheel={(e) => { if (e.deltaY !== 0) onReaderScroll() }} onTouchMove={onReaderScroll} onPointerDown={onReaderInput} onKeyDown={onReaderInput} className={cn('messages relative z-0 flex flex-1 flex-col min-h-0 px-5 overflow-y-auto overflow-x-hidden [-webkit-overflow-scrolling:touch] touch-pan-y overscroll-y-contain [overflow-anchor:none] max-[641px]:pl-[max(10px,env(safe-area-inset-left,0))] max-[641px]:pr-[max(10px,env(safe-area-inset-right,0))]', empty && 'messages-empty')} id="messages" role="log" aria-live="off" aria-relevant="additions">

@@ -275,8 +275,8 @@ function transportRows(scene: Record<string, unknown>, turnId: string): SceneRow
   return rows.map((row) => (row.role === 'reasoning' && !row.row_id.endsWith(':thinking') ? { ...row, disclosure_key: reasoningDisclosureKey(turnId, segment++) } : row))
 }
 
-/** Tail-only transport preview of a durable scene. */
-export function anchorActivitySceneTransportPreview(stored: Record<string, unknown>, sceneRef = '', showReasoning = true, turnId = ''): Record<string, unknown> {
+/** Tail-only transport preview of a durable scene; `expandWorklog` is the `worklog_details_expanded_default` setting. */
+export function anchorActivitySceneTransportPreview(stored: Record<string, unknown>, sceneRef = '', showReasoning = true, turnId = '', expandWorklog = false): Record<string, unknown> {
   // A stored or client-posted answer leaves in the row's display shape too; its excerpt is cut from it afterwards.
   const scene = 'final_answer' in stored ? { ...stored, final_answer: splitDisplayText(str(stored.final_answer))[0] } : stored
   const preview: Record<string, unknown> = {}
@@ -293,16 +293,24 @@ export function anchorActivitySceneTransportPreview(stored: Record<string, unkno
   // Over every row, not just the preview: a client settling its local steer hints must see a steer paged out of it.
   preview.has_consumed_steering = rows.some((row) => row.role === 'steering' && row.steering?.consumed === true)
   // An answer that was only thinking or tool-call markup is no answer: the turn reads as one that did not reply.
-  if (preview.terminal_state === 'completed' && str(stored.final_answer).trim() && !str(scene.final_answer)) {
-    preview.terminal_state = 'no_response'
-    preview.expanded_by_default = EXPANDED_OUTCOMES.has('no_response') && total > 0
-  }
+  const unanswered = preview.terminal_state === 'completed' && Boolean(str(stored.final_answer).trim()) && !str(scene.final_answer)
+  if (unanswered) preview.terminal_state = 'no_response'
+  if (unanswered || expandWorklog) preview.expanded_by_default = worklogExpandedByDefault(str(preview.terminal_state), total, { expandAll: expandWorklog })
   if (sceneRef) preview.activity_scene_ref = sceneRef
   return preview
 }
 
 /** Terminal outcomes whose "Worked" disclosure opens by default, so readable partial work is not hidden. */
 const EXPANDED_OUTCOMES = new Set(['error', 'no_response', 'degraded', 'connection_lost', 'tool_limit_reached', 'compression_exhausted'])
+
+/**
+ * Whether a turn's "Worked" opens by default: always under the `worklog_details_expanded_default` setting (`expandAll`,
+ * TAL-2149), else while it runs, when it holds a result the user must see (`mustShow`), or when its outcome leaves
+ * readable partial work. A person's own open or close still wins on the client.
+ */
+function worklogExpandedByDefault(terminalState: string, rowCount: number, opts: { expandAll?: boolean; mustShow?: boolean } = {}): boolean {
+  return opts.expandAll === true || terminalState === 'running' || opts.mustShow === true || (EXPANDED_OUTCOMES.has(terminalState) && rowCount > 0)
+}
 
 const isHiddenAssistant = (m: Record<string, unknown>): boolean => m.role === 'assistant' && agentRowKind(m) === 'hidden'
 const hasToolCalls = (m: Record<string, unknown>): boolean => (Array.isArray(m.tool_calls) && m.tool_calls.length > 0) || hasToolUseBlocks(m)
@@ -450,7 +458,7 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
   const terminalState = opts.running ? 'running' : terminalStateOf(last, finalAnswer)
   return {
     version: 'activity_scene_v1', activity_rows: rows, final_answer: finalAnswer, terminal_state: terminalState,
-    expanded_by_default: opts.running === true || rows.some((row) => row.tool?.result_view?.outbound_draft ?? row.tool?.result_view?.proposal ?? row.tool?.result_view?.block ?? row.tool?.result_view?.terminal) || (EXPANDED_OUTCOMES.has(terminalState) && rows.length > 0), turn_duration: anchorSceneMessageTurnDuration(last),
+    expanded_by_default: worklogExpandedByDefault(terminalState, rows.length, { mustShow: rows.some((row) => row.tool?.result_view?.outbound_draft ?? row.tool?.result_view?.proposal ?? row.tool?.result_view?.block ?? row.tool?.result_view?.terminal) }), turn_duration: anchorSceneMessageTurnDuration(last),
     file_changes: turnFileChanges(rows),
     ...(typeof last._final_phase_duration === 'number' ? { final_phase_duration: last._final_phase_duration } : {}),
   }
@@ -492,7 +500,7 @@ function withStoredOutcome(preview: Record<string, unknown>, built: Record<strin
   // Only an explicit outcome carries over from the turn; answered or not follows the scene's own final answer.
   const explicit = str(built?.terminal_state)
   if (!str(next.terminal_state)) next.terminal_state = explicit && explicit !== 'completed' && explicit !== 'no_response' ? explicit : str(next.final_answer).trim() ? 'completed' : 'no_response'
-  if (typeof next.expanded_by_default !== 'boolean') next.expanded_by_default = EXPANDED_OUTCOMES.has(str(next.terminal_state)) && Number(next.activity_rows_total) > 0
+  if (typeof next.expanded_by_default !== 'boolean') next.expanded_by_default = worklogExpandedByDefault(str(next.terminal_state), Number(next.activity_rows_total))
   return next
 }
 
@@ -559,11 +567,11 @@ function sceneLookup(messages: unknown[], records: Record<string, unknown>, refC
  * Before display excerpts are derived, user rows lose recalled-memory fences and assistant rows leave in their
  * one display shape, after each scene is built from the stored rows.
  */
-export function hydrateAnchorActivityScenes(messages: unknown[], records: Record<string, unknown>, opts: { activeTurnId?: string | null; runningScene?: boolean; clipToolResults?: boolean; baseIndex?: number; refCounts?: Pick<Map<string, number>, 'get'>; showReasoning?: boolean } = {}): unknown[] {
+export function hydrateAnchorActivityScenes(messages: unknown[], records: Record<string, unknown>, opts: { activeTurnId?: string | null; runningScene?: boolean; clipToolResults?: boolean; baseIndex?: number; refCounts?: Pick<Map<string, number>, 'get'>; showReasoning?: boolean; expandWorklog?: boolean } = {}): unknown[] {
   if (!messages.length) return messages
   const lookup = sceneLookup(messages, records, opts.refCounts)
   // Any scene carried inline leaves in the one normalized shape, even off a turn's last row.
-  const out = messages.map((m) => (isDict(m) && isDict(m._anchor_activity_scene) ? { ...m, _anchor_activity_scene: anchorActivitySceneTransportPreview(m._anchor_activity_scene, str(m._anchor_activity_scene.activity_scene_ref), opts.showReasoning, str(m._turn_id)) } : m))
+  const out = messages.map((m) => (isDict(m) && isDict(m._anchor_activity_scene) ? { ...m, _anchor_activity_scene: anchorActivitySceneTransportPreview(m._anchor_activity_scene, str(m._anchor_activity_scene.activity_scene_ref), opts.showReasoning, str(m._turn_id), opts.expandWorklog) } : m))
   for (const [turnId, turn] of turnsOf(messages)) {
     const running = Boolean(opts.activeTurnId) && turnId === opts.activeTurnId
     if (running && opts.runningScene !== true) continue
@@ -579,12 +587,12 @@ export function hydrateAnchorActivityScenes(messages: unknown[], records: Record
     const inline = running ? undefined : message._anchor_activity_scene
     const next: Record<string, unknown> = { ...message }
     if (record && isDict(record.scene)) {
-      next._anchor_activity_scene = withStoredOutcome(anchorActivitySceneTransportPreview(withStoredFinalAnswer(record.scene, built), str(record.message_ref) || refOf(), opts.showReasoning, turnId), built)
+      next._anchor_activity_scene = withStoredOutcome(anchorActivitySceneTransportPreview(withStoredFinalAnswer(record.scene, built), str(record.message_ref) || refOf(), opts.showReasoning, turnId, opts.expandWorklog), built)
       if (record.stream_id) next._anchor_stream_id = str(record.stream_id)
     } else if (isDict(inline)) {
-      next._anchor_activity_scene = withStoredOutcome(anchorActivitySceneTransportPreview(withStoredFinalAnswer(inline, built), str(inline.activity_scene_ref), opts.showReasoning, turnId), built)
+      next._anchor_activity_scene = withStoredOutcome(anchorActivitySceneTransportPreview(withStoredFinalAnswer(inline, built), str(inline.activity_scene_ref), opts.showReasoning, turnId, opts.expandWorklog), built)
     } else if (built) {
-      next._anchor_activity_scene = anchorActivitySceneTransportPreview(built, refOf(), opts.showReasoning, turnId)
+      next._anchor_activity_scene = anchorActivitySceneTransportPreview(built, refOf(), opts.showReasoning, turnId, opts.expandWorklog)
     }
     out[index] = next
   }

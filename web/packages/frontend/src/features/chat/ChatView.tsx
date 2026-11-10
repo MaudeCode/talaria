@@ -552,6 +552,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
             virtualizeLongTranscripts={settings.data?.virtualize_transcript === true}
             endlessScroll={settings.data?.session_endless_scroll !== false}
             fadeText={settings.data?.fade_text_effect === true}
+            eventTimestamps={settings.data?.transparent_stream_event_timestamps !== false}
           />
         )}
         <div ref={dock} className={cn('composer-dock', hero && 'composer-dock--hero')}>

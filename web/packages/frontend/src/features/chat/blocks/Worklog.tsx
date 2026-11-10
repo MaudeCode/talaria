@@ -12,7 +12,7 @@ import type { ToolCardData } from './ToolCard'
 
 export type ActivityMode = 'compact_worklog' | 'transparent_stream' | 'hide_all_activity'
 
-export const WorklogDisclosureContext = createContext<{ showReasoning: boolean; fadeText: boolean; choices: Record<string, boolean>; choose: (key: string, open: boolean) => void; forget: (key: string) => void } | null>(null)
+export const WorklogDisclosureContext = createContext<{ showReasoning: boolean; fadeText: boolean; eventTimestamps: boolean; choices: Record<string, boolean>; choose: (key: string, open: boolean) => void; forget: (key: string) => void } | null>(null)
 export const DisclosureTurnContext = createContext('')
 /**
  * A turn worklog's Expand all / Collapse all: every row disclosure inside it, nested groups included, registers a reset,
@@ -21,7 +21,7 @@ export const DisclosureTurnContext = createContext('')
 const ExpandAllContext = createContext<{ resets: Set<() => void>; open: boolean | undefined } | null>(null)
 
 /** Renderer preferences only, scoped to profile/session and bounded to recent disclosures. */
-export function WorklogDisclosureProvider({ scope, showReasoning = true, fadeText = false, children }: { scope: string; showReasoning?: boolean | undefined; fadeText?: boolean | undefined; children: ReactNode }) {
+export function WorklogDisclosureProvider({ scope, showReasoning = true, fadeText = false, eventTimestamps = false, children }: { scope: string; showReasoning?: boolean | undefined; fadeText?: boolean | undefined; eventTimestamps?: boolean | undefined; children: ReactNode }) {
   const storageKey = `hermes-worklog:v1:${scope}`
   const [choices, setChoices] = useState(() => readPersistedJson(storageKey, z.record(z.string(), z.boolean())) ?? {})
   useEffect(() => { writePersistedJson(storageKey, choices) }, [storageKey, choices])
@@ -34,7 +34,7 @@ export function WorklogDisclosureProvider({ scope, showReasoning = true, fadeTex
   const forget = (key: string) => {
     setChoices((previous) => key in previous ? Object.fromEntries(Object.entries(previous).filter(([k]) => k !== key)) : previous)
   }
-  const value = ({ choices, choose, forget, showReasoning, fadeText })
+  const value = ({ choices, choose, forget, showReasoning, fadeText, eventTimestamps })
   return <WorklogDisclosureContext value={value}>{children}</WorklogDisclosureContext>
 }
 

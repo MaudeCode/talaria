@@ -27,8 +27,8 @@ function liveRun() {
   }
 }
 
-function View({ activity, mode = 'compact_worklog', scope = 'profile/s' }: { activity: TurnActivity; mode?: 'compact_worklog' | 'transparent_stream' | 'hide_all_activity'; scope?: string }) {
-  return <WorklogDisclosureProvider key={scope} scope={scope}><TurnActivityView activity={activity} mode={mode} /></WorklogDisclosureProvider>
+function View({ activity, mode = 'compact_worklog', scope = 'profile/s', eventTimestamps }: { activity: TurnActivity; mode?: 'compact_worklog' | 'transparent_stream' | 'hide_all_activity'; scope?: string; eventTimestamps?: boolean }) {
+  return <WorklogDisclosureProvider key={scope} scope={scope} eventTimestamps={eventTimestamps}><TurnActivityView activity={activity} mode={mode} /></WorklogDisclosureProvider>
 }
 
 /** Live frames as the server ships them: its kind and redacted target ride along with the args. */
@@ -245,6 +245,31 @@ describe('turn worklog presentation', () => {
     view.rerender(<View activity={{ ...activity, status: 'completed', finalAnswer: 'Done', expandedByDefault: false }} />)
     expect(view.container.querySelector('.tool-worklog-summary')).toHaveAttribute('aria-expanded', 'false')
     expect(screen.getByText('Done', { exact: true })).toBeVisible()
+    // TAL-2149: the server opens every Worklog under worklog_details_expanded_default; a person's own close still wins.
+    const openedBySetting = { ...activity, status: 'completed', finalAnswer: 'Done', expandedByDefault: true }
+    view.rerender(<View activity={openedBySetting} />)
+    expect(view.container.querySelector('.tool-worklog-summary')).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.click(view.container.querySelector('.tool-worklog-summary')!)
+    view.unmount()
+    expect(render(<View activity={openedBySetting} />).container.querySelector('.tool-worklog-summary')).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('shows each activity row\'s time only in transparent mode with event timestamps on (TAL-2149)', () => {
+    const at = 1_700_000_000
+    const activity = settled({ final_answer: 'Answer', expanded_by_default: true, activity_rows: rows(
+      { row_id: 'r', role: 'reasoning', text: 'Planning', created_at: at }, { ...proseRow('p', 'Progress'), created_at: at + 60 }, { ...toolRow('a'), created_at: at + 120 },
+    ) })
+    const times = (mode: 'compact_worklog' | 'transparent_stream' | 'hide_all_activity', eventTimestamps: boolean) => {
+      const view = render(<View activity={activity} mode={mode} eventTimestamps={eventTimestamps} />)
+      const shown = [...view.container.querySelectorAll('time')].map((el) => [el.getAttribute('datetime'), el.getAttribute('title')])
+      view.unmount()
+      return shown
+    }
+    const full = (s: number) => new Date(s * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'medium' })
+    expect(times('transparent_stream', true)).toEqual([at, at + 60, at + 120].map((s) => [new Date(s * 1000).toISOString(), full(s)]))
+    expect(times('transparent_stream', false)).toEqual([])
+    expect(times('compact_worklog', true)).toEqual([])
+    expect(times('hide_all_activity', true)).toEqual([])
   })
 
   it('preserves chronological transparent mode and suppresses activity in final-only mode', () => {

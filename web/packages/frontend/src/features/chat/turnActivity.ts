@@ -9,11 +9,13 @@ import type { VisibleMessage } from './useTranscript'
 /** TAL-186: the server's display text for a body, with its media references rewritten, and the media it references. */
 export interface DisplayBody { display?: string; media?: DisplayMedia[] }
 
-export type ActivityItem =
+/** `createdAt`: the server's `created_at` (epoch seconds) on a scene row; live rows have none. */
+export type ActivityItem = (
   | ({ key: string; kind: 'text'; text: string } & DisplayBody)
   | { key: string; kind: 'reasoning'; text: string; titles?: string[]; disclosureKey?: string }
   | { key: string; kind: 'tool'; call: ToolCardData }
   | { key: string; kind: 'steering'; text: string; consumed: boolean }
+) & { createdAt?: number }
 
 export interface TurnActivity {
   key: string
@@ -101,12 +103,13 @@ export function sceneItems(value: unknown): ActivityItem[] {
   return value.flatMap((raw): ActivityItem[] => {
     const row = record(raw)
     const key = text(row.row_id)
-    if (row.role === 'prose') return [{ key, kind: 'text', text: text(row.text), ...displayBody(row.display_text, row.media) }]
-    if (row.role === 'reasoning') return [{ key, kind: 'reasoning', text: text(row.text), titles: Array.isArray(row.titles) ? row.titles.map(text) : [], ...(text(row.disclosure_key) ? { disclosureKey: text(row.disclosure_key) } : {}) }]
-    if (row.role === 'steering') return [{ key, kind: 'steering', text: text(row.text), consumed: record(row.steering).consumed === true }]
+    const at = typeof row.created_at === 'number' ? { createdAt: row.created_at } : {}
+    if (row.role === 'prose') return [{ key, kind: 'text', text: text(row.text), ...displayBody(row.display_text, row.media), ...at }]
+    if (row.role === 'reasoning') return [{ key, kind: 'reasoning', text: text(row.text), titles: Array.isArray(row.titles) ? row.titles.map(text) : [], ...(text(row.disclosure_key) ? { disclosureKey: text(row.disclosure_key) } : {}), ...at }]
+    if (row.role === 'steering') return [{ key, kind: 'steering', text: text(row.text), consumed: record(row.steering).consumed === true, ...at }]
     if (row.role !== 'tool') return []
     const tool = record(row.tool)
-    return [{ key, kind: 'tool', call: {
+    return [{ key, kind: 'tool', ...at, call: {
       progress: ToolProgressSchema.safeParse(tool.progress).data ?? null, id: text(tool.id), name: text(tool.name), kind: toolKindOf(tool.kind), target: text(tool.target), args: tool.args, preview: typeof tool.preview === 'string' ? tool.preview : null, resultView: resultViewOf(tool.result_view), ...(tool.shows_card === true ? { showsCard: true as const } : {}),
       done: tool.done === true, isError: tool.is_error === true, duration: typeof tool.duration === 'number' ? tool.duration : null, costUsd: typeof tool.cost_usd === 'number' ? tool.cost_usd : null,
       ...backgroundOf(tool.background), ...answeredByOf(tool.approval_answered_by), ...(tool.result_truncated === true ? { resultTruncated: true } : {}),
