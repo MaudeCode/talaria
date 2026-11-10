@@ -15,6 +15,11 @@ for (const file of readdirSync(fixtureDir).filter((name) => name.endsWith('.json
 }
 
 describe('sidecar method fixtures (recorded from the pinned Agent)', () => {
+  it('keeps context-window credentials out of the server-to-sidecar params', () => {
+    const params = { profile_home: '/synthetic', model: 'synthetic-model', base_url: 'https://fallback.invalid/v1' }
+    expect(SIDECAR_METHODS['models.context_length'].params.parse({ ...params, api_key: 'sk-synthetic' })).toEqual(params)
+  })
+
   it.each(recorded)('%s parses with its method schemas', (method, fixture) => {
     const methods = { ...SIDECAR_METHODS, ...SIDECAR_SERVER_METHODS }
     expect(methods).toHaveProperty(method)

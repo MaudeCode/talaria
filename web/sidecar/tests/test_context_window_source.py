@@ -7,6 +7,8 @@ import subprocess
 import sys
 from types import ModuleType, SimpleNamespace
 
+import pytest
+
 from conftest import AGENT_DIR, AGENT_PYTHON, isolated_env, requires_agent
 from talaria_sidecar.methods import Registry, chat, providers
 
@@ -81,3 +83,87 @@ def test_a_marker_that_raises_or_answers_empty_gives_null(monkeypatch) -> None:
     for marker in (boom, lambda _agent: ""):
         module.agent_context_marker = marker
         assert chat._context_length(agent) == {"context_length": 1, "context_window_source": None}
+
+
+ROUTING_PROBE = """
+import json, os, sys
+from pathlib import Path
+sys.path.append(sys.argv[1])
+from hermes_cli.runtime_provider import resolve_runtime_provider
+import agent.model_metadata as metadata
+import agent.context_pin as context_pin
+from talaria_sidecar.home import scoped_home
+from talaria_sidecar.methods import Registry, providers
+from types import SimpleNamespace
+
+home = Path(os.environ["HERMES_HOME"])
+provider = json.loads((home / "config.yaml").read_text())["model"]["provider"]
+with scoped_home(home):
+    runtime = resolve_runtime_provider(requested=provider, target_model="synthetic-model")
+recorded, marked = [], []
+metadata.get_model_context_length = lambda model, **kw: recorded.append(kw) or 123456
+context_pin.context_window_marker = lambda *a, **kw: marked.append(kw) or None
+registry = Registry(SimpleNamespace(load=lambda: None, ensure_current=lambda: None))
+providers.register(registry)
+reply = registry.methods["models.context_length"](None, {
+    "profile_home": str(home), "model": "synthetic-model", "provider": provider,
+    "base_url": sys.argv[2], "api_key": sys.argv[3], "config_context_length": 123456,
+})
+print(json.dumps({"runtime": [runtime["base_url"], runtime["api_key"]],
+                  "lookup": [recorded[0]["base_url"], recorded[0]["api_key"]],
+                  "marker_url": marked[0]["base_url"], "reply": reply}))
+"""
+
+
+@requires_agent
+@pytest.mark.parametrize("provider,config,env,server_url,expected", [
+    ("custom:box", {"model": {"base_url": "https://modelblock.invalid/v1"}, "providers": {
+        "custom:box": {"api": "https://box.invalid/v1", "api_key": "sk-synthetic-box"}}}, {},
+     "https://modelblock.invalid/v1", ["https://box.invalid/v1", "sk-synthetic-box"]),
+    ("openrouter", {"custom_providers": [{"name": "openrouter", "base_url": "https://legacy.invalid/v1"}]},
+     {"OPENROUTER_API_KEY": "sk-synthetic-openrouter"}, "https://legacy.invalid/v1",
+     ["https://openrouter.ai/api/v1", "sk-synthetic-openrouter"]),
+    ("anthropic", {"model": {"base_url": "https://proxy.invalid/v1"}},
+     {"ANTHROPIC_API_KEY": "sk-synthetic-anthropic"}, "https://proxy.invalid/v1",
+     ["https://api.anthropic.com", "sk-synthetic-anthropic"]),
+], ids=["custom-owner", "builtin-legacy-name", "anthropic-proxy"])
+def test_lookup_keeps_the_agents_runtime_key_and_url_together(tmp_path, provider, config, env, server_url, expected) -> None:
+    root = tmp_path / ".hermes"
+    root.mkdir()
+    config.setdefault("model", {})["provider"] = provider
+    (root / "config.yaml").write_text(json.dumps(config))
+    run = subprocess.run([AGENT_PYTHON, "-c", ROUTING_PROBE, str(AGENT_DIR), server_url, expected[1]],
+                         env=isolated_env(root, **env), capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr[-4000:]
+    out = json.loads(run.stdout.strip().splitlines()[-1])
+    assert out["runtime"] == expected
+    assert out["lookup"] == out["runtime"]
+    assert out["marker_url"] == out["lookup"][0]
+    assert out["reply"]["context_length"] == 123456
+
+
+@pytest.mark.parametrize("resolver", ["raises", "missing"])
+def test_lookup_without_runtime_resolution_uses_a_keyless_fallback(tmp_path, monkeypatch, resolver) -> None:
+    def fail(**kwargs):
+        raise RuntimeError("synthetic resolver failure")
+
+    module = ModuleType("hermes_cli.runtime_provider")
+    if resolver == "raises":
+        module.resolve_runtime_provider = fail
+    monkeypatch.setitem(sys.modules, "hermes_cli", ModuleType("hermes_cli"))
+    monkeypatch.setitem(sys.modules, "hermes_cli.runtime_provider", module)
+    recorded = []
+    metadata = ModuleType("agent.model_metadata")
+    metadata.get_model_context_length = lambda model, **kw: recorded.append(kw) or 123456
+    monkeypatch.setitem(sys.modules, "agent", ModuleType("agent"))
+    monkeypatch.setitem(sys.modules, "agent.model_metadata", metadata)
+    monkeypatch.setattr(providers, "scoped_home", lambda *a: nullcontext())
+    monkeypatch.setattr(providers, "context_window_source", lambda *a, **kw: None)
+    registry = Registry(SimpleNamespace(load=lambda: None, ensure_current=lambda: None))
+    providers.register(registry)
+    reply = registry.methods["models.context_length"](None, {
+        "profile_home": str(tmp_path), "model": "synthetic-model", "provider": "custom:box",
+        "base_url": "https://fallback.invalid/v1", "api_key": "sk-synthetic-server",
+    })
+    assert reply["context_length"] == 123456
+    assert (recorded[0]["base_url"], recorded[0]["api_key"]) == ("https://fallback.invalid/v1", "")
