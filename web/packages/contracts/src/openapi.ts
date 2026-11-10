@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { FeedbackErrorSchema } from './routes/settings.js'
 import { ModelConfirmationRequiredSchema } from './routes/sessions.js'
 import { RAW_ROUTES } from './routes/raw.js'
-import { SettingsSectionSchema } from './settings-sections.js'
+import { SettingsSectionGroupSchema, SettingsSectionSchema } from './settings-sections.js'
 
 export const OPENAPI_INFO = {
   title: 'Talaria Web API',
@@ -37,8 +37,8 @@ export async function generateOpenApiDocument(): Promise<Record<string, unknown>
   const feedback = paths['/api/feedback/submit']?.post as { responses: Record<string, unknown> }
   for (const status of ['400', '429', '502', '503']) feedback.responses[status] = { description: 'Feedback could not be confirmed sent. Only relay_unreachable permits an automatic retry with the same requestId.', content: { 'application/json': { schema: z.toJSONSchema(FeedbackErrorSchema) } } }
   document.paths = paths
-  // TAL-1691: no route carries the Settings section ids, so the App reads them as a named component.
+  // TAL-1691, TAL-2100: no route carries the Settings section ids or their groups, so the App reads them as named components.
   const components = (document.components ?? {}) as { schemas?: Record<string, unknown> }
-  document.components = { ...components, schemas: { ...components.schemas, SettingsSection: z.toJSONSchema(SettingsSectionSchema) } } as NonNullable<typeof document.components>
+  document.components = { ...components, schemas: { ...components.schemas, SettingsSection: z.toJSONSchema(SettingsSectionSchema), SettingsSectionGroup: z.toJSONSchema(SettingsSectionGroupSchema) } } as NonNullable<typeof document.components>
   return document
 }

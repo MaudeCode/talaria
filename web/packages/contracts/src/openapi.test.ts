@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { generateOpenApiDocument } from './openapi.js'
+import { SettingsSectionSchema } from './settings-sections.js'
 
 describe('OpenAPI generation', () => {
   it('produces an OpenAPI 3.1 document with the contract paths', async () => {
@@ -25,9 +26,10 @@ describe('OpenAPI generation', () => {
     expect(Object.keys(message ?? {})).toEqual(expect.arrayContaining(['_turnDuration', '_turnTps', 'reasoning_titles', '_ts']))
   })
 
-  it('publishes the Settings section ids both clients route by (TAL-1691)', async () => {
+  it('publishes the Settings section ids both clients route by, and their groups (TAL-1691, TAL-2100)', async () => {
     const { components } = await generateOpenApiDocument() as { components?: { schemas?: Record<string, { enum?: unknown }> } }
     const schemas = components?.schemas
-    expect(schemas?.SettingsSection?.enum).toEqual(['appearance', 'chat', 'sidebar', 'models', 'notifications', 'speech', 'agent', 'system', 'about'])
+    expect(schemas?.SettingsSection?.enum).toEqual(SettingsSectionSchema.options)
+    expect(schemas?.SettingsSectionGroup?.enum).toEqual(['interface', 'profile', 'server'])
   })
 })

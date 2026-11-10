@@ -1,5 +1,5 @@
 import { createFileRoute, notFound, redirect } from '@tanstack/react-router'
-import { LEGACY_SETTINGS_SECTIONS, SettingsSearchSchema, SettingsSectionSchema, type AgentTab } from '../contracts/url'
+import { LEGACY_SETTINGS_SECTIONS, SettingsSearchSchema, SettingsSectionSchema, type ToolsTab } from '../contracts/url'
 import { SettingsSection } from '../features/settings/SettingsSection'
 
 export const Route = createFileRoute('/_app/settings/$section')({
@@ -21,6 +21,6 @@ function SettingsSectionPage() {
   const { section } = Route.useParams()
   const { tab } = Route.useSearch()
   const navigate = Route.useNavigate()
-  const setTab = (next: AgentTab) => { void navigate({ search: { tab: next }, replace: true }) }
+  const setTab = (next: ToolsTab) => { void navigate({ search: { tab: next }, replace: true }) }
   return <SettingsSection section={section} tab={tab} onTabChange={setTab} />
 }

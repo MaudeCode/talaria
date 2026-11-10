@@ -29,7 +29,7 @@ const waiting: ConnectorOperationView = { op_id: 'op-page', settled: false, outc
       ? { ...waiting, settled: true, outcome: 'connected', targets: [{ ...waiting.targets[0]!, state: 'connected', connect_url: null, actions: [] }] }
       : waiting }))
 
-    await page.goto('/settings/agent?tab=connectors')
+    await page.goto('/settings/tools?tab=connectors')
     await settle(page)
     const gmail = page.locator('[data-connector="gmail"]')
     const notion = page.locator('[data-connector="notion"]')
@@ -66,7 +66,7 @@ test('an unsigned Connectors page offers sign-in and adopts an external account 
   } }))
   const writes: string[] = []
   page.on('request', (request) => { if (request.method() !== 'GET') writes.push(request.url()) })
-  await page.goto('/settings/agent?tab=connectors')
+  await page.goto('/settings/tools?tab=connectors')
   await settle(page)
   await expect(page.getByRole('button', { name: 'Sign in with Nous Portal' })).toBeVisible()
   const gmail = page.locator('[data-connector="gmail"]')
@@ -86,7 +86,7 @@ test('an unsigned Connectors page offers sign-in and adopts an external account 
   await settle(page)
   await expect(page.getByRole('button', { name: 'Sign in with Nous Portal' })).toBeVisible()
   await page.goto('/settings/appearance')
-  await page.goto('/settings/agent?tab=connectors')
+  await page.goto('/settings/tools?tab=connectors')
   await settle(page)
   await expect(page.getByRole('button', { name: 'Sign in with Nous Portal' })).toBeVisible()
   expect(writes.filter((url) => /connectors|oauth/.test(url))).toEqual([])
@@ -102,9 +102,9 @@ test('an unsigned Connectors page offers sign-in and adopts an external account 
 test('the Connectors tab follows the server flag (TAL-818)', async ({ page }) => {
   let available = false
   await page.route('**/api/connectors/available', (route) => route.fulfill({ json: { available } }))
-  await page.goto('/settings/agent?tab=connectors')
+  await page.goto('/settings/tools?tab=connectors')
   await settle(page)
-  const tabs = page.getByRole('tablist', { name: 'Agent' })
+  const tabs = page.getByRole('tablist', { name: 'Tools' })
   await expect(tabs.getByRole('tab', { name: 'Plugins' })).toHaveAttribute('aria-selected', 'true')
   await expect(tabs.getByRole('tab', { name: 'Connectors' })).toHaveCount(0)
   available = true
@@ -191,7 +191,7 @@ test('scheduled guest offer reuses OAuth, preserves the result, and dismisses wi
   await page.route('**/api/onboarding/oauth/poll?**', (route) => route.fulfill({ json: approved ? {
     ok: true, status: 'approved', flow_id: 'offer-flow', nous_account: { account_id: 'account-1', email: 'u***@example.test', state: 'retrying', lines: ['Moving connected apps.'], moved: [], dropped: [], reconnect: [], poll_after: null },
   } : { ok: true, status: 'pending', flow_id: 'offer-flow' } }))
-  await page.goto('/settings/agent?tab=connectors')
+  await page.goto('/settings/tools?tab=connectors')
   await settle(page)
   await page.screenshot({ path: testInfo.outputPath(`offer-before-${testInfo.project.name}.png`) })
   visible = true

@@ -29,10 +29,10 @@ for (const kind of ['skill', 'mcp', 'extension', 'connector'] as const) {
       await route.fulfill({ json: { ok: true, name: 'alpha', enabled: true, revision: 'rev-8' } })
     })
     await page.route('**/api/connectors/available', (route) => route.fulfill({ json: { available: true } }))
-    await page.goto({ skill: '/skills', mcp: '/settings/agent?tab=mcp', extension: '/settings/agent?tab=extensions', connector: '/settings/agent?tab=connectors' }[kind])
+    await page.goto({ skill: '/skills', mcp: '/settings/tools?tab=mcp', extension: '/settings/extensions', connector: '/settings/tools?tab=connectors' }[kind])
     await settle(page)
-    // MCP, extensions and connectors share the Agent page, so each kind's switch is found in its own group.
-    const scope = kind === 'skill' ? page.locator('body') : page.locator({ mcp: '[data-section="mcp-servers"]', extension: '[data-group="extensions"]', connector: '[data-group="connectors"]' }[kind])
+    // MCP and connectors share the Tools page, so each kind's switch is found in its own group or page.
+    const scope = kind === 'skill' ? page.locator('body') : page.locator({ mcp: '[data-section="mcp-servers"]', extension: '[data-section="extensions"]', connector: '[data-group="connectors"]' }[kind])
     const toggle = scope.getByRole('switch', { name: /^alpha(?:[: ]|$)/ })
     await toggle.scrollIntoViewIfNeeded()
     if (kind === 'extension') {

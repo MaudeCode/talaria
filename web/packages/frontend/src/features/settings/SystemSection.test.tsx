@@ -32,6 +32,7 @@ vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
 import * as api from '../../api/endpoints'
 import { showToast } from '../toast/toast'
 import { SystemSection } from './SystemSection'
+import { AccessSection } from './AccessSection'
 import { UpdatesCheckSchema, type UpdateTargetSchema } from '../../contracts'
 import type { z } from 'zod'
 
@@ -605,14 +606,14 @@ describe('SystemSection version list (TAL-946)', () => {
   })
 })
 
-describe('passkeys (TAL-1179)', () => {
+describe('Access passkeys (TAL-1179)', () => {
   it('removes a deleted passkey at once and restores it with the error on refusal', async () => {
     let refuse!: (error: unknown) => void
     vi.mocked(api.passkeysList).mockResolvedValue({ credentials: [{ id: 'k1', label: 'Laptop' }, { id: 'k2', label: 'Phone' }] } as never)
     vi.mocked(api.passkeyDelete).mockReturnValue(new Promise((_, reject) => { refuse = reject }) as never)
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
     const bootstrap = { ...DEFAULT_BOOTSTRAP, auth: { ...DEFAULT_BOOTSTRAP.auth, passkey_feature_flag: true } }
-    render(<QueryClientProvider client={qc}><BootstrapContext.Provider value={bootstrap}><SystemSection /></BootstrapContext.Provider></QueryClientProvider>)
+    render(<QueryClientProvider client={qc}><BootstrapContext.Provider value={bootstrap}><AccessSection /></BootstrapContext.Provider></QueryClientProvider>)
     const row = (await screen.findByText('Laptop')).closest('li')!
     await userEvent.click(within(row).getByRole('button', { name: 'Delete' }))
     expect(api.passkeyDelete).toHaveBeenCalledWith('k1')

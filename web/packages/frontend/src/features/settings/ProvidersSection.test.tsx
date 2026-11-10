@@ -24,8 +24,7 @@ vi.mock('../../api/endpoints', () => ({
 }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
 import * as api from '../../api/endpoints'
-import { ProvidersSection } from './ProvidersSection'
-import { ModelsSection } from './ModelsSection'
+import { ProvidersPage, ProvidersSection } from './ProvidersSection'
 
 const renderSection = (ui = <ProvidersSection />) => {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
@@ -240,7 +239,7 @@ describe('ProvidersSection', () => {
   it('shows the profile thresholds from settings and saves an edit, then refetches quotas (TAL-411)', async () => {
     vi.mocked(api.fetchSettings).mockResolvedValue({ provider_quota_thresholds: DEFAULTS })
     vi.mocked(api.saveSettings).mockResolvedValue({ provider_quota_thresholds: { ...DEFAULTS, warning_remaining_percent: 30 } })
-    renderSection(<ModelsSection />)
+    renderSection(<ProvidersPage />)
     const warning = await screen.findByRole('spinbutton', { name: 'Warning at % remaining' })
     await waitFor(() => expect(warning).toHaveValue(25))
     expect(screen.getByRole('spinbutton', { name: 'Projection after hours' })).toHaveValue(12)

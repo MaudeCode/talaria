@@ -59,7 +59,7 @@ test('numeric settings reconcile a completed save while the input keeps focus', 
     await route.fulfill({ json: settings })
   })
   try {
-    await page.goto('/settings/sidebar')
+    await page.goto('/settings/navigation')
     const input = page.locator('#settingsPinnedLimit')
     await input.fill('100')
     await expect(input).toHaveValue('100')

@@ -136398,13 +136398,25 @@
         "enum": [
           "appearance",
           "chat",
-          "sidebar",
-          "models",
+          "navigation",
           "notifications",
           "speech",
-          "agent",
+          "models",
+          "providers",
+          "tools",
+          "extensions",
+          "access",
           "system",
           "about"
+        ]
+      },
+      "SettingsSectionGroup": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "string",
+        "enum": [
+          "interface",
+          "profile",
+          "server"
         ]
       }
     }

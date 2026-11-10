@@ -64,7 +64,7 @@ test('Sidebar feedback button is opt-in and sits above Notifications on the rail
   const toggle = page.getByRole('switch', { name: 'Sidebar feedback button' })
   const openSidebarSettings = async () => {
     await page.locator('aside.sidebar').getByRole('link', { name: 'Settings', exact: true }).click()
-    await page.locator('[data-settings-section="sidebar"]').click()
+    await page.locator('[data-settings-section="navigation"]').click()
   }
   try {
     await page.goto('/skills')

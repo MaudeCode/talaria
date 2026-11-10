@@ -13,7 +13,7 @@ test('a disabled switch dims with a not-allowed cursor while an enabled one stay
     const boot = await response.json() as { auth: object }
     await route.fulfill({ response, json: { ...boot, auth: { ...boot.auth, can_manage_server: false } } })
   })
-  await page.goto('/settings/system')
+  await page.goto('/settings/access')
   await settle(page)
 
   const disabled = page.getByRole('switch', { name: 'Redact sensitive data in API responses' })

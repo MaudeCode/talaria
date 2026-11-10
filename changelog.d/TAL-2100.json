@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Web Settings groups its sections into Interface, Profile and Server, names the active profile, and splits Models, Providers, Tools, Extensions, Access and System into their own pages.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}
