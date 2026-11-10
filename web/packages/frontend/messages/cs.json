@@ -819,7 +819,6 @@
 	"mic_no_speech": "Žádný rozpoznaný hlas. Zkuste to znovu.",
 	"model_badge_selected": "Vybráno",
 	"model_custom_label": "Vlastní model ID",
-	"model_custom_placeholder": "např. openai/gpt-5.4",
 	"model_did_you_mean": " — měli jste na mysli „{m}“?",
 	"model_favorite_add": "Přidat do oblíbených",
 	"model_favorite_remove": "Odebrat z oblíbených",

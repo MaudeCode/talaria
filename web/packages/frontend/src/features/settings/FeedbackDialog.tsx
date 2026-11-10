@@ -302,7 +302,7 @@ export function FeedbackDialog() {
   }
   const onDrop = (e: DragEvent<HTMLFormElement>) => { if (!limits || !e.dataTransfer.files.length) return; e.preventDefault(); addFiles(e.dataTransfer.files, limits) }
   return (
-    <Dialog open={open} onOpenChange={(next) => update({ open: next })} title={m.feedback_send_open()} className="max-h-[90dvh] overflow-y-auto">
+    <Dialog open={open} onOpenChange={(next) => update({ open: next })} title={m.feedback_send_open()}>
       <form className="flex flex-col gap-3 text-sm" onSubmit={(e) => { e.preventDefault(); if (ready) void send() }} onPaste={onPaste} onDragOver={(e) => { if (limits) e.preventDefault() }} onDrop={onDrop}>
         <div role="group" aria-label={m.feedback_kind()} className="flex gap-1 rounded-md border border-border bg-input p-1">
           {KINDS.map(([kind, label]) => (

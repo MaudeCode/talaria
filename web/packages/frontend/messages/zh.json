@@ -770,7 +770,6 @@
 	"mic_no_speech": "没有检测到语音，请再试一次。",
 	"model_badge_selected": "已选择",
 	"model_custom_label": "自定义模型 ID",
-	"model_custom_placeholder": "例如 openai/gpt-5.4",
 	"model_did_you_mean": "，您是否想选择“{m}”？",
 	"model_favorite_add": "添加到收藏",
 	"model_favorite_remove": "从收藏中移除",

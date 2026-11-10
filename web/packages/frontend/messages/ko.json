@@ -806,7 +806,6 @@
 	"mic_no_speech": "음성이 감지되지 않았습니다. 다시 시도하세요.",
 	"model_badge_selected": "선택됨",
 	"model_custom_label": "Custom model ID",
-	"model_custom_placeholder": "e.g. openai/gpt-5.4",
 	"model_did_you_mean": " — did you mean \"{m}\"?",
 	"model_favorite_add": "즐겨찾기에 추가",
 	"model_favorite_remove": "즐겨찾기에서 제거",

@@ -16,14 +16,17 @@ vi.mock(import('../../api/endpoints'), async (importOriginal) => ({
     single_profile_mode: false,
   })),
   deleteProfile: vi.fn(), createProfile: vi.fn(),
+  fetchModels: vi.fn(() => Promise.resolve({ groups: [{ provider: 'OpenAI Codex', provider_id: 'openai-codex', models: [{ id: '@openai-codex:gpt-6-astra', label: 'GPT-6 Astra', provider_id: 'openai-codex' }] }] })),
   switchProfile: vi.fn(() => Promise.resolve({ profiles: [{ name: 'scout', canonical_session: { session_id: 'scout-root', tip_session_id: 'scout-live' } }], active: 'scout', is_default: false, default_model: null, default_model_provider: null, default_workspace: null })),
 }))
+vi.mock(import('../toast/errorToast'), () => ({ showErrorToast: vi.fn() }))
 import * as api from '../../api/endpoints'
+import { showErrorToast } from '../toast/errorToast'
 import { ProfilesPage } from './ProfilesPage'
 
-function renderPage() {
+function renderPage(bootstrap = DEFAULT_BOOTSTRAP) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><QueryClientProvider client={qc}><ProfilesPage /></QueryClientProvider></BootstrapContext.Provider>)
+  render(<BootstrapContext.Provider value={bootstrap}><QueryClientProvider client={qc}><ProfilesPage /></QueryClientProvider></BootstrapContext.Provider>)
 }
 
 describe('ProfilesPage', () => {
@@ -82,6 +85,19 @@ describe('ProfilesPage', () => {
       vi.unstubAllGlobals()
     }
   })
+
+  it('TAL-2084: offers Import agent setup in the header actions to an owner only', async () => {
+    renderPage()
+    await screen.findByText('scout')
+    expect(within(screen.getByRole('banner')).getByRole('button', { name: 'Import agent setup' })).toBeVisible()
+    expect(screen.getAllByRole('button', { name: 'Import agent setup' })).toHaveLength(1)
+  })
+
+  it('TAL-2084: hides Import agent setup from a non-owner', async () => {
+    renderPage({ ...DEFAULT_BOOTSTRAP, auth: { ...DEFAULT_BOOTSTRAP.auth, can_manage_server: false } })
+    await screen.findByText('scout')
+    expect(screen.queryByRole('button', { name: 'Import agent setup' })).toBeNull()
+  })
 })
 
 describe('profile writes show their result at once (TAL-1179)', () => {
@@ -103,5 +119,39 @@ describe('profile writes show their result at once (TAL-1179)', () => {
     await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), 'writer{Enter}')
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(screen.getByText('writer')).toBeInTheDocument()
+    expect(api.createProfile).toHaveBeenLastCalledWith({ name: 'writer', clone_config: false })
+  })
+
+  it('TAL-2084: creates with a catalog model and its provider, an API key and a base URL', async () => {
+    vi.mocked(api.createProfile).mockReturnValue(new Promise(() => undefined))
+    const log = vi.spyOn(console, 'log')
+    renderPage()
+    await screen.findByText('scout')
+    await userEvent.click(screen.getByRole('button', { name: 'Create profile' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), 'writer')
+    await userEvent.click(screen.getByRole('combobox', { name: 'Default model' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'GPT-6 Astra' }))
+    const key = screen.getByLabelText('API key')
+    expect(key).toHaveAttribute('type', 'password')
+    await userEvent.type(key, 'sk-test-secret')
+    await userEvent.type(screen.getByRole('textbox', { name: 'Base URL' }), 'http://localhost:11434{Enter}')
+    expect(api.createProfile).toHaveBeenLastCalledWith({ name: 'writer', clone_config: false, default_model: '@openai-codex:gpt-6-astra', model_provider: 'openai-codex', api_key: 'sk-test-secret', base_url: 'http://localhost:11434' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.body.innerHTML).not.toContain('sk-test-secret')
+    expect(log.mock.calls.flat().join(' ')).not.toContain('sk-test-secret')
+    log.mockRestore()
+    // A reopened dialog starts with an empty key.
+    await userEvent.click(screen.getByRole('button', { name: 'Create profile' }))
+    expect(screen.getByLabelText('API key')).toHaveValue('')
+  })
+
+  it('TAL-2084: removes a refused new profile and shows the server error', async () => {
+    vi.mocked(api.createProfile).mockRejectedValue(new Error("Selected model 'x' is not available"))
+    renderPage()
+    await screen.findByText('scout')
+    await userEvent.click(screen.getByRole('button', { name: 'Create profile' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), 'writer{Enter}')
+    await vi.waitFor(() => { expect(showErrorToast).toHaveBeenCalledWith(expect.objectContaining({ message: "Selected model 'x' is not available" })) })
+    expect(screen.queryByText('writer')).toBeNull()
   })
 })

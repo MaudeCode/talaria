@@ -55,7 +55,7 @@ export function AgentImportDialog({ onClose }: { onClose: () => void }) {
   const shown = report ?? discovery.data
   const statusLabel = (status: AgentImportResult['items'][number]['status']) => ({ imported: shown?.status === 'preview' ? m.profile_import_status_importable : m.profile_import_status_imported, skipped: m.profile_import_status_skipped, conflict: m.profile_import_status_conflict, error: m.profile_import_status_error })[status]()
   return <>
-    <Dialog open onOpenChange={(open) => { if (!open) close() }} title={m.profile_import()} className="max-h-[90dvh] overflow-y-auto">
+    <Dialog open onOpenChange={(open) => { if (!open) close() }} title={m.profile_import()}>
       {discovery.isPending && <LoadingState />}
       {discovery.isError && <ErrorState error={discovery.error} onRetry={() => { void discovery.refetch() }} />}
       {shown?.message && <p role="status" className="text-sm text-warning">{shown.message}</p>}

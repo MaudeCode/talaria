@@ -793,7 +793,6 @@
 	"mic_no_speech": "Không phát hiện giọng nói. Hãy thử lại.",
 	"model_badge_selected": "Đã chọn",
 	"model_custom_label": "ID model tự nhập",
-	"model_custom_placeholder": "ví dụ: openai/gpt-5.4",
 	"model_did_you_mean": " — có phải bạn muốn \"{m}\"?",
 	"model_favorite_add": "Thêm vào yêu thích",
 	"model_favorite_remove": "Xóa khỏi yêu thích",

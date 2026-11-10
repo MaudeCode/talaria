@@ -5,7 +5,8 @@ import { LoadingState, ErrorState } from '../../ui/States'
 import { useModelsQuery, useSetDefaultModel, useAuxiliaryModelsQuery, useDefaultModelChoice } from '../../app/queries'
 import { PROFILE_REASONING, reasoningResource, useReasoningDisplayChoice, useReasoningQuery, useSetReasoningDisplay, useSetReasoningEffort } from '../composer/reasoning'
 import { useResourceEffects } from '../sessions/useResourceMutation'
-import { catalogEntryById, catalogGroupLabel, ModelOptionContent, catalogModelSections } from '../../lib/modelEntry'
+import { catalogEntryById } from '../../lib/modelEntry'
+import { catalogModelOptgroups } from '../../lib/modelOptgroups'
 import { useSettingField } from './useSettingField'
 import { AuxiliaryModelsSection } from './AuxiliaryModels'
 import { SettingRow, SettingsGroup } from './SettingsRows'
@@ -29,11 +30,7 @@ function MainModelRows() {
     <>
       <FieldRow label={m.settings_label_model()} hint={m.settings_default_model_hint()} htmlFor="settingsModel" inline>
         <Select id="settingsModel" value={chosen?.model ?? defaultEntry?.id ?? str('default_model')} onValueChange={(v) => { setDefault.mutate({ model: v, provider: catalogEntryById(models.data, v)?.provider_id ?? null }) }}>
-          {(models.data?.groups ?? []).flatMap((g) => catalogModelSections(g).map((section) => (
-            <optgroup key={`${g.provider}:${section.label}`} label={[catalogGroupLabel(g), section.label].filter(Boolean).join(' · ')}>
-              {section.models.map((mm) => <option key={mm.id} value={mm.id}><ModelOptionContent entry={mm} /></option>)}
-            </optgroup>
-          )))}
+          {catalogModelOptgroups(models.data)}
           {!defaultListed && str('default_model') && <option value={defaultEntry?.id ?? str('default_model')}>{defaultEntry?.label ?? str('default_model')}</option>}
         </Select>
       </FieldRow>

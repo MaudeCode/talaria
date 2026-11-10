@@ -2,11 +2,13 @@ import { useBootstrap } from '../../app/bootstrap'
 import { AgentImportDialog } from './AgentImportDialog'
 import { useState } from 'react'
 import type { GatewayMode } from '@maudecode/talaria-web-contracts'
-import { Plus, Trash2, type LucideIcon } from 'lucide-react'
+import { Import, Plus, Trash2, type LucideIcon } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
-import { useProfilesQuery, useSwitchProfile } from '../../app/queries'
+import { useModelsQuery, useProfilesQuery, useSwitchProfile } from '../../app/queries'
+import { catalogEntryById } from '../../lib/modelEntry'
+import { catalogModelOptgroups } from '../../lib/modelOptgroups'
 import { HubPage } from '../../shell/AppShell'
 import { PanelHeadButton } from '../../shell/PanelHead'
 import { Badge } from '../../ui/Badge'
@@ -61,8 +63,10 @@ export function ProfilesPage() {
     })
   }
   return (
-    <HubPage title={m.tab_profiles()} help={<ProfileConceptHelp />} actions={!profiles.data?.single_profile_mode && <PanelHeadButton label={m.profile_create()} className="primary" onClick={() => setCreating(true)}><Plus size={16} aria-hidden="true" /></PanelHeadButton>}>
-      {canImport && <div className="flex justify-end"><Button className="min-h-11" onClick={() => setImporting(true)}>{m.profile_import()}</Button></div>}
+    <HubPage title={m.tab_profiles()} help={<ProfileConceptHelp />} actions={<>
+      {canImport && <PanelHeadButton label={m.profile_import()} onClick={() => setImporting(true)}><Import size={16} aria-hidden="true" /></PanelHeadButton>}
+      {!profiles.data?.single_profile_mode && <PanelHeadButton label={m.profile_create()} className="primary" onClick={() => setCreating(true)}><Plus size={16} aria-hidden="true" /></PanelHeadButton>}
+    </>}>
       {importing && <AgentImportDialog key={active} onClose={() => setImporting(false)} />}
       {profiles.isPending && <LoadingState />}
       {profiles.isError && <ErrorState error={profiles.error} onRetry={() => { void profiles.refetch() }} />}
@@ -113,15 +117,26 @@ export function ProfilesPage() {
   )
 }
 
-/** Closes on Create: the profile shows at once while the server creates it. */
+/**
+ * Closes on Create: the profile shows at once while the server creates it. The dialog unmounts on close, so the
+ * API key leaves component state with it; only the request body carries it.
+ */
 function CreateProfileDialog({ existing, onClose, onSubmit }: { existing: string[]; onClose: () => void; onSubmit: (body: NewProfile) => void }) {
+  const models = useModelsQuery()
   const [name, setName] = useState('')
   const [cloneFrom, setCloneFrom] = useState('')
   const [model, setModel] = useState('')
+  const [apiKey, setApiKey] = useState('')
+  const [baseUrl, setBaseUrl] = useState('')
   const valid = /^[a-z0-9][a-z0-9-]{0,63}$/.test(name.trim())
+  const submit = () => onSubmit({
+    name: name.trim(), clone_from: cloneFrom || undefined, clone_config: !!cloneFrom,
+    default_model: model || undefined, model_provider: catalogEntryById(models.data, model)?.provider_id || undefined,
+    api_key: apiKey || undefined, base_url: baseUrl || undefined,
+  })
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }} title={m.profile_create()}>
-      <form onSubmit={(e) => { e.preventDefault(); if (valid) onSubmit({ name: name.trim(), clone_from: cloneFrom || undefined, clone_config: !!cloneFrom, default_model: model.trim() || undefined }) }} className="flex flex-col gap-1">
+      <form onSubmit={(e) => { e.preventDefault(); if (valid) submit() }} className="flex flex-col gap-1">
         <FieldRow label={m.profile_name_label()} htmlFor="profileName"><TextInput id="profileName" autoFocus value={name} onChange={(e) => setName(e.target.value.toLowerCase())} placeholder={m.profile_name_placeholder()} aria-invalid={name !== '' && !valid} /></FieldRow>
         <FieldRow label={m.profile_clone_from()} htmlFor="profileClone">
           <Select id="profileClone" value={cloneFrom} onValueChange={(v) => setCloneFrom(v)} className="w-full">
@@ -129,7 +144,14 @@ function CreateProfileDialog({ existing, onClose, onSubmit }: { existing: string
             {existing.map((n) => <option key={n} value={n}>{n}</option>)}
           </Select>
         </FieldRow>
-        <FieldRow label={m.profile_default_model_label()} htmlFor="profileModel"><TextInput id="profileModel" value={model} onChange={(e) => setModel(e.target.value)} placeholder={m.model_custom_placeholder()} /></FieldRow>
+        <FieldRow label={m.profile_default_model_label()} htmlFor="profileModel">
+          <Select id="profileModel" value={model} onValueChange={setModel} className="w-full">
+            <option value="">{m.profile_no_default_model()}</option>
+            {catalogModelOptgroups(models.data)}
+          </Select>
+        </FieldRow>
+        <FieldRow label={m.profile_api_key_label()} htmlFor="profileApiKey"><TextInput id="profileApiKey" type="password" autoComplete="new-password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={m.profile_api_key_placeholder()} /></FieldRow>
+        <FieldRow label={m.profile_base_url_label()} htmlFor="profileBaseUrl"><TextInput id="profileBaseUrl" inputMode="url" autoComplete="off" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder={m.profile_base_url_placeholder()} /></FieldRow>
         <div className="mt-3 flex justify-end gap-2"><Button onClick={onClose}>{m.cancel()}</Button><Button type="submit" variant="primary" disabled={!valid}>{m.create()}</Button></div>
       </form>
     </Dialog>
