@@ -1095,6 +1095,8 @@
 	"kanban_edit_task": "Edit task",
 	"kanban_empty": "Empty",
 	"kanban_events_count": "Events ({a0})",
+	"kanban_filters": "Task filters",
+	"kanban_filters_active": "Task filters ({a0})",
 	"kanban_include_archived": "Include archived",
 	"kanban_inspection_scope": "Inspection scope",
 	"kanban_inspection_truncated": "Showing a bounded snapshot. Select a board to inspect more tasks.",

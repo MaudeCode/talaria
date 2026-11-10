@@ -32,6 +32,15 @@ async function choose(label: string, value: string) {
   await userEvent.click(screen.getByRole('combobox', { name: label }))
   await userEvent.click(await screen.findByRole('option', { name: value }))
 }
+/** The Lanes by profile row of the toolbar's filter menu, opening the menu when it is closed. */
+async function lanesItem() {
+  if (!screen.queryByRole('menu')) await userEvent.click(screen.getByRole('button', { name: /^Task filters/ }))
+  return within(await screen.findByRole('menu')).getByRole('menuitemcheckbox', { name: 'Lanes by profile' })
+}
+async function archiveCurrentBoard() {
+  await userEvent.click(screen.getByRole('button', { name: 'Board actions' }))
+  await userEvent.click(await screen.findByRole('menuitem', { name: 'Archive board' }))
+}
 async function openTask(id = 'A') {
   await userEvent.click(await screen.findByRole('button', { name: new RegExp(`^Task ${id}\\b`) }))
   return within(screen.getByRole('dialog'))
@@ -174,18 +183,24 @@ describe('Kanban writes show their result while the server is held (TAL-1179)', 
     const write = deferred<Awaited<ReturnType<typeof api.updateKanbanConfig>>>()
     vi.mocked(api.updateKanbanConfig).mockReturnValueOnce(write.promise).mockReturnValue(new Promise(() => undefined))
     renderPage()
-    const toggle = await screen.findByRole('switch', { name: /Lanes by profile/ })
+    await screen.findByRole('button', { name: /^Task A\b/ })
+    let toggle = await lanesItem()
     await userEvent.click(toggle)
     // Lanes are grouped by the server, so the switch waits for them rather than claiming a layout it cannot show.
     expect(toggle).not.toBeChecked()
     expect(toggle).toHaveAttribute('aria-busy', 'true')
+    expect(toggle).toHaveAttribute('aria-disabled', 'true')
+    await userEvent.keyboard('{Escape}')
     vi.mocked(api.fetchKanbanBoard).mockResolvedValue(snapshot(undefined, true))
     await act(async () => { write.resolve({}); await Promise.resolve() })
     await screen.findByRole('region', { name: 'scout' })
-    await waitFor(() => expect(toggle).toBeChecked())
+    toggle = await lanesItem()
+    expect(toggle).toBeChecked()
     expect(toggle).not.toHaveAttribute('aria-busy')
     await userEvent.click(toggle)
+    // A checkbox row keeps the menu open.
     expect(toggle).not.toBeChecked()
+    await userEvent.keyboard('{Escape}')
     expect(screen.queryByRole('region', { name: 'scout' })).toBeNull()
     expect(columnIds('todo')).toEqual(['A', 'B'])
   })
@@ -318,11 +333,11 @@ describe('Kanban writes show their result while the server is held (TAL-1179)', 
 
     const view = deferred<Awaited<ReturnType<typeof api.updateKanbanConfig>>>()
     vi.mocked(api.updateKanbanConfig).mockReturnValue(view.promise)
-    await userEvent.click(screen.getByRole('switch', { name: /Lanes by profile/ }))
+    await userEvent.click(await lanesItem())
     vi.mocked(api.fetchKanbanBoard).mockImplementation((slug) => slug === 'other' ? Promise.reject(new Error('board deleted')) : Promise.resolve(snapshot([task('A', 'done')], true)))
     await act(async () => { view.resolve({}); await Promise.resolve() })
     await screen.findByRole('region', { name: 'scout' })
-    expect(screen.getByRole('switch', { name: /Lanes by profile/ })).toBeEnabled()
+    expect(await lanesItem()).not.toHaveAttribute('aria-disabled')
   })
 
   it('adds a comment to the log at once and keeps a refused one with Retry', async () => {
@@ -362,7 +377,7 @@ describe('Kanban writes show their result while the server is held (TAL-1179)', 
     vi.mocked(api.fetchKanbanBoards).mockResolvedValue({ current: 'other', pinned: [], boards: [{ slug: 'default', name: 'Default', removable: false }, { slug: 'other', name: 'Other', removable: true }], read_only: false })
     renderPage()
     await screen.findByRole('button', { name: /^Task A\b/ })
-    await userEvent.click(screen.getByRole('button', { name: 'Archive board' }))
+    await archiveCurrentBoard()
     await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Archive' }))
     expect(screen.queryByRole('alertdialog')).toBeNull()
     expect(api.archiveKanbanBoard).toHaveBeenCalledWith('other')
@@ -470,7 +485,7 @@ describe('inspection optimistic relationships and board removal', () => {
     renderPage()
     await choose('View', 'Relationships')
     await choose('Inspection scope', 'All boards')
-    await userEvent.click(screen.getByRole('button', { name: 'Archive board' }))
+    await archiveCurrentBoard()
     await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Archive' }))
     expect(screen.queryByRole('button', { name: 'Task A' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Task D' })).toBeVisible()
@@ -492,7 +507,7 @@ describe('inspection optimistic relationships and board removal', () => {
     await waitFor(() => expect(api.fetchKanbanTask).toHaveBeenCalledWith('other', 'A'))
     await userEvent.keyboard('{Escape}')
     const reads = vi.mocked(api.fetchKanbanTask).mock.calls.length
-    await userEvent.click(screen.getByRole('button', { name: 'Archive board' }))
+    await archiveCurrentBoard()
     await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Archive' }))
     vi.mocked(api.fetchKanbanBoards).mockResolvedValue({ current: 'default', pinned: [], boards: [{ slug: 'default', name: 'Default', removable: false }], read_only: false })
     vi.mocked(api.fetchKanbanInspection).mockResolvedValue(inspectionSnapshot([inspectionNode('default', 'D')]))

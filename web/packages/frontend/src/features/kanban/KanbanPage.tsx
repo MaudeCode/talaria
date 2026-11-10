@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent, useId, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { Archive, Check, FolderPlus, MoreHorizontal, Plus, RefreshCw, X } from 'lucide-react'
+import { Check, MoreHorizontal, Plus, RefreshCw, X } from 'lucide-react'
 import { useDebounced } from '../../lib/useDebounced'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -10,6 +10,7 @@ import { openKanbanEventStream, SSE_CLOSED } from '../../api/sse'
 import type { z } from 'zod'
 import type { KanbanTaskSchema } from '../../contracts'
 import { HubPage } from '../../shell/AppShell'
+import { FilterCheckboxItem, FilterMenu, FilterRadioItem } from '../../shell/FilterMenu'
 import { PanelHeadButton } from '../../shell/PanelHead'
 import { Button, IconButton } from '../../ui/Button'
 import { Switch, FieldRow, TextInput } from '../../ui/Field'
@@ -178,6 +179,15 @@ export function KanbanPage() {
   const stale = board.isPlaceholderData || !board.data
   const readOnly = serverReadOnly || stale
   const currentBoard = boardList.find((b) => b.slug === current)
+  const pinnable = currentBoard && !currentBoard.archived ? currentBoard : undefined
+  const boardWrites = boards.isSuccess && !serverReadOnly
+  // The filter trigger names what narrows or widens the board; lanes only regroup it, so they are not a filter here.
+  const activeFilters = [
+    assignee && `${m.kanban_assignee()}: ${assignee}`,
+    tenant && `${m.kanban_tenant()}: ${tenant}`,
+    onlyMine && m.kanban_only_mine(),
+    includeArchived && m.kanban_include_archived(),
+  ].filter((label): label is string => !!label)
   const selectBoard = (slug: string) => {
     setSelection({ context: getStreamContext(), board: slug, ids: [] })
     setOpenTaskId(null); setCreating(false); setArchivingBoard(false)
@@ -213,7 +223,9 @@ export function KanbanPage() {
   const options = (values: unknown[] | undefined, chosen: string) => [...new Set([...(chosen ? [chosen] : []), ...(values ?? []).map(String)])]
   // A new task has no assignee yet, so it shows once: in the unassigned lane, else the first.
   const createdLane = board.data?.lanes ? Math.max(0, board.data.lanes.findIndex((lane) => !lane.assignee)) : 0
-  const renderColumns = (cols: KanbanColumn[], lane = 0) => <KanbanColumns board={current} columns={withCardEffects(cols, current, effects, lane === createdLane)} readOnly={serverReadOnly} stale={stale} selected={selected} onToggle={toggleSelected} onOpen={setOpenTaskId} onChanged={() => { void invalidate() }} />
+  // A column the board holds no task in is narrow; lanes follow the board's count so their columns stay aligned.
+  const empty = new Set(columns.filter((col) => col.tasks.length === 0).map((col) => col.name))
+  const renderColumns = (cols: KanbanColumn[], lane = 0) => <KanbanColumns board={current} columns={withCardEffects(cols, current, effects, lane === createdLane)} empty={empty} readOnly={serverReadOnly} stale={stale} selected={selected} onToggle={toggleSelected} onOpen={setOpenTaskId} onChanged={() => { void invalidate() }} />
 
   return (
     <HubPage
@@ -235,7 +247,12 @@ export function KanbanPage() {
               </Select>
             </label>
           )}
-          {currentBoard && !currentBoard.archived && <Menu label={m.kanban_board_actions()} trigger={<IconButton label={m.kanban_board_actions()} className="pointer-coarse:min-h-11 pointer-coarse:min-w-11"><MoreHorizontal size={16} aria-hidden="true" /></IconButton>}>{pinItems(currentBoard.slug)}</Menu>}
+          {(!!pinnable || boardWrites) && <Menu label={m.kanban_board_actions()} trigger={<IconButton label={m.kanban_board_actions()} className="pointer-coarse:min-h-11 pointer-coarse:min-w-11"><MoreHorizontal size={16} aria-hidden="true" /></IconButton>}>
+            {pinnable && pinItems(pinnable.slug)}
+            {pinnable && boardWrites && <MenuSeparator />}
+            {boardWrites && <MenuItem disabled={readOnly} onClick={() => setCreatingBoard(true)}>{m.kanban_new_board()}</MenuItem>}
+            {boardWrites && currentBoard?.removable && <><MenuSeparator /><MenuItem disabled={readOnly} className="text-error" onClick={() => setArchivingBoard(true)}>{m.kanban_archive_board_title()}</MenuItem></>}
+          </Menu>}
           {pinned.length > 0 && <div role="tablist" aria-label={m.kanban_pinned_boards()} className="flex min-w-0 max-w-full gap-1 overflow-x-auto">
             {pinned.map((slug, index) => {
               const item = boardList.find(b => b.slug === slug)
@@ -261,29 +278,29 @@ export function KanbanPage() {
               </span>}>{pinItems(slug)}</ContextMenu>
             })}
           </div>}
-          {boards.isSuccess && !serverReadOnly && (
-            <div className="flex items-center">
-              <IconButton label={m.kanban_new_board()} disabled={readOnly} onClick={() => setCreatingBoard(true)}><FolderPlus size={16} aria-hidden="true" /></IconButton>
-              {currentBoard?.removable && <IconButton label={m.kanban_archive_board_title()} disabled={readOnly} onClick={() => setArchivingBoard(true)}><Archive size={16} aria-hidden="true" /></IconButton>}
-            </div>
-          )}
           <Select value={mode} onValueChange={(v) => { setMode(v); setOpenTaskId(null); setSelected([]) }} aria-label={m.kanban_presentation()}>
             <option value="board">{m.kanban_view_board()}</option><option value="timeline">{m.kanban_view_timeline()}</option><option value="relationships">{m.kanban_view_relationships()}</option>
           </Select>
-          <TextInput type="search" value={searchText} onChange={(e) => setSearchText(e.target.value)} placeholder={m.kanban_search_tasks()} aria-label={m.kanban_search_tasks()} className="h-8 w-44" />
-          <Select value={assignee} onValueChange={setAssignee} disabled={onlyMine} aria-label={m.kanban_assignee()}>
-            <option value="">{m.kanban_all_assignees()}</option>
-            {options(board.data?.assignees, assignee).map((a) => <option key={a} value={a}>{a}</option>)}
-          </Select>
-          {(tenant || (board.data?.tenants?.length ?? 0) > 0) && (
-            <Select value={tenant} onValueChange={setTenant} aria-label={m.kanban_tenant()}>
-              <option value="">{m.kanban_all_tenants()}</option>
-              {options(board.data?.tenants, tenant).map((t) => <option key={t} value={t}>{t}</option>)}
-            </Select>
-          )}
-          <label className="flex items-center gap-1.5 text-xs text-muted"><Switch checked={onlyMine} onCheckedChange={(checked) => setOnlyMine(checked)} aria-label={m.kanban_only_mine()} /> {m.kanban_only_mine()}</label>
-          <label className="flex items-center gap-1.5 text-xs text-muted"><Switch checked={includeArchived} onCheckedChange={(checked) => setIncludeArchived(checked)} aria-label={m.kanban_include_archived()} /> {m.kanban_include_archived()}</label>
-          {mode === 'board' && board.data && <label className="flex items-center gap-1.5 text-xs text-muted"><Switch checked={!lanesOff && board.data.lane_by_profile} disabled={lanesStarting} aria-busy={lanesStarting || undefined} onCheckedChange={(checked) => saveView.mutate(checked)} aria-label={m.kanban_lanes_by_profile()} /> {m.kanban_lanes_by_profile()}</label>}
+          <TextInput type="search" value={searchText} onChange={(e) => setSearchText(e.target.value)} placeholder={m.kanban_search_tasks()} aria-label={m.kanban_search_tasks()} className="h-8 basis-44 grow" />
+          <FilterMenu label={activeFilters.length ? m.kanban_filters_active({ a0: activeFilters.join(', ') }) : m.kanban_filters()} filtered={activeFilters.length > 0} className="size-8">
+            <MenuRadioGroup value={assignee} onValueChange={setAssignee}>
+              <MenuGroupLabel>{m.kanban_assignee()}</MenuGroupLabel>
+              <FilterRadioItem value="" disabled={onlyMine}>{m.kanban_all_assignees()}</FilterRadioItem>
+              {options(board.data?.assignees, assignee).map((a) => <FilterRadioItem key={a} value={a} disabled={onlyMine}>{a}</FilterRadioItem>)}
+            </MenuRadioGroup>
+            {(tenant || (board.data?.tenants?.length ?? 0) > 0) && <>
+              <MenuSeparator />
+              <MenuRadioGroup value={tenant} onValueChange={setTenant}>
+                <MenuGroupLabel>{m.kanban_tenant()}</MenuGroupLabel>
+                <FilterRadioItem value="">{m.kanban_all_tenants()}</FilterRadioItem>
+                {options(board.data?.tenants, tenant).map((t) => <FilterRadioItem key={t} value={t}>{t}</FilterRadioItem>)}
+              </MenuRadioGroup>
+            </>}
+            <MenuSeparator />
+            <FilterCheckboxItem checked={onlyMine} onCheckedChange={setOnlyMine}>{m.kanban_only_mine()}</FilterCheckboxItem>
+            <FilterCheckboxItem checked={includeArchived} onCheckedChange={setIncludeArchived}>{m.kanban_include_archived()}</FilterCheckboxItem>
+            {mode === 'board' && board.data && <FilterCheckboxItem checked={!lanesOff && board.data.lane_by_profile} disabled={lanesStarting} aria-busy={lanesStarting || undefined} onCheckedChange={(checked) => saveView.mutate(checked)}>{m.kanban_lanes_by_profile()}</FilterCheckboxItem>}
+          </FilterMenu>
           {serverReadOnly && <span className="text-xs text-warning">{m.kanban_read_only()}</span>}
         </>
       }
@@ -405,11 +422,11 @@ function KanbanInspection({ mode, current, filters, onChanged }: { mode: string;
   </section>
 }
 
-function KanbanColumns({ board, columns, readOnly, stale, selected, onToggle, onOpen, onChanged }: { board: string | undefined; columns: KanbanColumn[]; readOnly: boolean; stale: boolean; selected: string[]; onToggle: (id: string) => void; onOpen: (id: string) => void; onChanged: () => void }) {
+function KanbanColumns({ board, columns, empty, readOnly, stale, selected, onToggle, onOpen, onChanged }: { board: string | undefined; columns: KanbanColumn[]; empty: Set<string>; readOnly: boolean; stale: boolean; selected: string[]; onToggle: (id: string) => void; onOpen: (id: string) => void; onChanged: () => void }) {
   return (
     <div className="kanban-board" id="kanbanList">
       {columns.map((col) => (
-        <section key={col.name} className="kanban-column gap-2" aria-label={statusLabel(col.name, col.label)}>
+        <section key={col.name} className="kanban-column gap-2" data-empty={empty.has(col.name) ? '' : undefined} aria-label={statusLabel(col.name, col.label)}>
           <SectionHeader detail={col.tasks.length}>{statusLabel(col.name, col.label)}</SectionHeader>
           <div className="flex flex-col gap-2">
             {col.tasks.length === 0 && <div className="text-xs text-muted">{m.kanban_no_tasks()}</div>}

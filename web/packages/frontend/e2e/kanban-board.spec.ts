@@ -1,4 +1,4 @@
-import { expect, settle, test } from './fixtures'
+import { expect, expectNoOverflow, settle, test } from './fixtures'
 import type { Page, Route } from '@playwright/test'
 
 // Service-worker requests bypass page routing; these fixtures own every response.
@@ -34,6 +34,15 @@ async function routeKanban(page: Page, boardFor: (q: URLSearchParams) => unknown
   await page.route('**/api/kanban/links**', (route) => { record(route); return route.fulfill({ json: { ok: true } }) })
   await page.route('**/api/kanban/tasks/*/log**', (route) => route.fulfill({ json: { log: [] } }))
   return { queries, writes }
+}
+
+/** Opens the toolbar's one filter menu (TAL-2087), unless a checkbox row left it open. */
+async function openFilters(page: Page) {
+  const trigger = page.getByRole('button', { name: /^Task filters/ })
+  if (await trigger.getAttribute('aria-expanded') !== 'true') await trigger.click()
+  const menu = page.getByRole('menu', { name: /^Task filters/ })
+  await expect(menu).toBeVisible()
+  return menu
 }
 
 test('kanban filters, stats, profile lanes and live refresh render the server fields', async ({ page }, testInfo) => {
@@ -72,7 +81,8 @@ test('kanban filters, stats, profile lanes and live refresh render the server fi
 
   // The lanes switch saves the view; the board then renders consolidated columns.
   lanes = false
-  await page.getByRole('switch', { name: 'Lanes by profile' }).click()
+  await (await openFilters(page)).getByRole('menuitemcheckbox', { name: 'Lanes by profile' }).click()
+  await page.keyboard.press('Escape')
   await expect.poll(() => writes.at(-1)).toEqual({ method: 'PATCH', path: '/api/kanban/config', body: { lane_by_profile: false } })
   await expect(page.locator('.kanban-lane')).toHaveCount(0)
   await expect(page.locator('[data-task-id="T2"]')).toBeVisible()
@@ -81,18 +91,22 @@ test('kanban filters, stats, profile lanes and live refresh render the server fi
   await page.getByRole('searchbox', { name: 'Search tasks' }).fill('login')
   await expect.poll(() => queries.at(-1)?.get('search')).toBe('login')
   await expect(page.locator('[data-task-id="T2"]')).toHaveCount(0)
-  await page.getByRole('combobox', { name: 'Assignee' }).click()
-  await page.getByRole('option', { name: 'builder' }).click()
+  await expect(page.getByRole('button', { name: 'Task filters', exact: true })).not.toHaveAttribute('data-filtered')
+  await (await openFilters(page)).getByRole('menuitemradio', { name: 'builder' }).click()
   await expect.poll(() => queries.at(-1)?.get('assignee')).toBe('builder')
-  await page.getByRole('combobox', { name: 'Tenant' }).click()
-  await page.getByRole('option', { name: 'acme' }).click()
+  await (await openFilters(page)).getByRole('menuitemradio', { name: 'acme' }).click()
   await expect.poll(() => queries.at(-1)?.get('tenant')).toBe('acme')
-  await page.getByRole('switch', { name: 'Only mine' }).click()
+  await (await openFilters(page)).getByRole('menuitemcheckbox', { name: 'Only mine' }).click()
   await expect.poll(() => queries.at(-1)?.get('only_mine')).toBe('1')
-  // Only mine replaces the assignee filter on the server, so its picker is disabled meanwhile.
-  await expect(page.getByRole('combobox', { name: 'Assignee' })).toBeDisabled()
+  // The trigger takes the accent state and names every filter that differs from its default.
+  const trigger = page.getByRole('button', { name: 'Task filters (Assignee: builder, Tenant: acme, Only mine)' })
+  await expect(trigger).toHaveAttribute('data-filtered', '')
+  // Only mine replaces the assignee filter on the server, so its choices are disabled meanwhile.
+  const filters = await openFilters(page)
+  await expect(filters.getByRole('menuitemradio', { name: 'reviewer' })).toBeDisabled()
   expect(queries.at(-1)?.get('search')).toBe('login')
   await page.screenshot({ path: testInfo.outputPath(`kanban-filters-${testInfo.project.name}.png`) })
+  await page.keyboard.press('Escape')
 
   // A task created elsewhere appears once its event arrives, without a manual refresh.
   await page.getByRole('searchbox', { name: 'Search tasks' }).fill('')
@@ -158,16 +172,45 @@ test('kanban bulk status, task links and board create and archive write through 
   await page.keyboard.press('Escape')
 
   // Boards: create by name (the server derives the slug) and archive the removable current board.
-  await page.getByRole('button', { name: 'New board' }).click()
+  await page.getByRole('button', { name: 'Board actions', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'New board' }).click()
   const create = page.getByRole('dialog', { name: 'New board' })
   await create.getByRole('textbox', { name: 'Name' }).fill('Q3 Launch')
   await create.getByRole('button', { name: 'Create' }).click()
   await expect.poll(() => writes.at(-1)).toEqual({ method: 'POST', path: '/api/kanban/boards', body: { name: 'Q3 Launch', switch: true } })
   await expect(create).toHaveCount(0)
-  await page.getByRole('button', { name: 'Archive board' }).click()
+  await page.getByRole('button', { name: 'Board actions', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Archive board' }).click()
   const confirm = page.getByRole('alertdialog', { name: 'Archive board' })
   await expect(confirm).toContainText('Ops')
   await page.screenshot({ path: testInfo.outputPath(`kanban-archive-board-${testInfo.project.name}.png`) })
   await confirm.getByRole('button', { name: 'Archive' }).click()
   await expect.poll(() => writes.at(-1)).toEqual({ method: 'DELETE', path: '/api/kanban/boards/ops', body: null })
+})
+
+test('kanban toolbar keeps to one row and empty columns stay narrow so the first tasks fit (TAL-2087)', async ({ page }, testInfo) => {
+  const desktop = testInfo.project.name === 'desktop'
+  await routeKanban(page, () => board([column('triage', []), column('todo', []), column('scheduled', []), column('ready', [task('first task', 'ready'), task('second task', 'ready')])]))
+  await page.goto('/kanban')
+  await settle(page)
+  if (desktop) await expect(page.locator('aside.sidebar')).toBeVisible()
+  await expect(page.locator('[data-task-id="second task"]')).toBeVisible()
+
+  // One toolbar row on a desktop, at most two on a phone.
+  // A control starts a new row when it sits wholly below the row before it; controls of one row differ in height.
+  const rows = await page.locator('.hub-toolbar > *').evaluateAll((items) => items.map((item) => item.getBoundingClientRect()).filter((box) => box.height > 1).sort((a, b) => a.top - b.top)
+    .reduce<number[]>((bottoms, box) => { if (!bottoms.length || box.top >= bottoms.at(-1)!) bottoms.push(box.bottom); else bottoms[bottoms.length - 1] = Math.max(bottoms.at(-1)!, box.bottom); return bottoms }, []).length)
+  expect(rows).toBeLessThanOrEqual(desktop ? 1 : 2)
+  // An empty column is narrow; the one with tasks keeps its width.
+  const widths = await page.locator('.kanban-column').evaluateAll((cols) => cols.map((col) => Math.round(col.getBoundingClientRect().width)))
+  const empty = desktop ? 140 : Math.round(0.4 * page.viewportSize()!.width)
+  expect(widths.slice(0, 3)).toEqual([empty, empty, empty])
+  expect(widths[3]).toBeGreaterThanOrEqual(desktop ? 260 : 0.82 * page.viewportSize()!.width - 1)
+  await page.screenshot({ path: testInfo.outputPath(`kanban-fit-${testInfo.project.name}.png`) })
+  if (!desktop) return
+  // Both Ready cards are whole on screen without scrolling the board.
+  for (const id of ['first task', 'second task']) await expect(page.locator(`[data-task-id="${id}"]`)).toBeInViewport({ ratio: 1 })
+  expect(await page.locator('.kanban-board').evaluate((el) => el.scrollLeft)).toBe(0)
+  // The board scrolls inside itself at every Duo viewport; the page never does.
+  await expectNoOverflow(page, 'kanban-fit', (name) => page.screenshot({ path: testInfo.outputPath(`${name}.png`) }).then(() => undefined))
 })
