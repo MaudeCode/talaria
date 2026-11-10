@@ -196,11 +196,12 @@ export interface RowAction { label: string; run: () => void; disabled?: boolean;
 export function RowContextMenu({ label, actions, trigger }: { label: string; actions: RowAction[]; trigger: ReactElement }) {
   if (actions.length === 0) return trigger
   return (
-    <ContextMenu label={label} trigger={trigger}>
-      {actions.map(({ label: name, run, disabled, busy, danger }) => <MenuItem key={name} disabled={disabled === true || busy === true} {...(danger ? { className: 'text-error' } : {})} onClick={run}>{name}</MenuItem>)}
-    </ContextMenu>
+    <ContextMenu label={label} trigger={trigger}>{rowActionItems(actions)}</ContextMenu>
   )
 }
+
+/** A row's actions as menu items, shared by `RowContextMenu` and `RowActionsMenu`. */
+export const rowActionItems = (actions: RowAction[]) => actions.map(({ label, run, disabled, busy, danger }) => <MenuItem key={label} disabled={disabled === true || busy === true} {...(danger ? { className: 'text-error' } : {})} onClick={run}>{label}</MenuItem>)
 
 /** One row look for action and choice items: compact under a mouse, a 44 px target under a coarse pointer (TAL-1626). */
 export const MENU_ROW = 'flex cursor-default select-none items-center gap-2 rounded-md px-2.5 py-1.5 text-sm outline-none data-[highlighted]:bg-hover pointer-coarse:min-h-11'

@@ -44,12 +44,13 @@ it.each([
   expect(stderr).toContain(message)
 })
 
-it('ignores the allowed text sizes, src/ui, tests, settings rules outside settings and SettingsRows.tsx', () => {
+it('ignores the allowed text sizes, src/ui, tests, settings rules outside settings and the Settings row kit', () => {
   const root = tree({
     [page]: '<span className="text-[11px] text-[13px] text-[20px]" /><h3>ok</h3><FieldRow label="ok" />',
     'src/ui/Card.tsx': '<div className="rounded-lg border border-border bg-surface text-[12px]"><input type="range" /></div>',
     'src/features/demo/Page.test.tsx': '<input type="radio" className="text-[15px]" />',
     'src/features/settings/SettingsRows.tsx': '<FieldRow label="the kit" />',
+    'src/features/settings/SettingsGroup.tsx': '<FieldRow label="the kit" />',
   })
   expect(scan(root)).toEqual([])
 })

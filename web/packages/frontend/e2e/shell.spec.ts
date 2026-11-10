@@ -59,10 +59,10 @@ test.describe('shell', () => {
     const edges = [await left('#skillsSearch'), await left('#skillsList > li')]
     if (testInfo.project.name !== 'mobile') edges.push(await left('#main .main-view-title'))
     expect(edges).toEqual(Array(edges.length).fill(edges[0]))
-    // Logs sits in a Settings section, whose heading is its header: the toolbar starts at that heading's edge.
+    // Logs sits in a Settings section, whose heading is its header: its View group (TAL-2106) starts at that heading's edge.
     await page.goto('/settings/logs')
     await settle(page)
-    expect(await left('#main .hub-toolbar')).toBe(await left('#main .settings-section-title'))
+    expect(await left('#main [data-group="view"]')).toBe(await left('#main .settings-section-title'))
   })
 
   // TAL-2089: on a phone the titlebar already names the hub, so the page keeps its h1 for assistive technology only.

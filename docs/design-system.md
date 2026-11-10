@@ -216,8 +216,8 @@ Decide an item's home before building it:
 
 A Settings page is the section heading (`SettingsSection`) and a column of
 `SettingsGroup`s; every row is inside a group. Pages import their rows from
-`web/packages/frontend/src/features/settings/SettingsRows.tsx` and write no
-layout classes.
+`web/packages/frontend/src/features/settings/SettingsRows.tsx` (or, for a page
+that reads no server setting, `SettingsGroup.tsx`) and write no layout classes.
 
 | Need | App | Web |
 | --- | --- | --- |
@@ -286,7 +286,7 @@ list of the Web violations that remain.
 | The App detail screen and the "No quota data" section use default `Section` headers instead of the uppercase header | TAL-1765 |
 | The App daily chart formats dates with bare `.dateTime`, not the environment locale and zone | TAL-1765 |
 | Stale and unavailable meters are orange on the App (palette default) and muted on Web | Decide with TAL-1533 (server-owned presentation state) |
-| Web Settings pages not yet on the kit (§12) | TAL-2077 (Providers), TAL-2079 (Notifications, Speech), TAL-2082 (Plugins), TAL-2106 (Extensions, Workspaces, Logs) |
+| Web Settings pages not yet on the kit (§12) | TAL-2077 (Providers), TAL-2079 (Notifications, Speech), TAL-2082 (Plugins) |
 | Composer menus mark the selected row four ways, lack a heading row and open in more than one placement (§13) | TAL-2095 |
 | The Toolsets menu holds a form with a Save button (§13) | TAL-2096 |
 | The App Settings root is not grouped by scope (§11, §12) | TAL-1695 |
@@ -298,8 +298,8 @@ list of the Web violations that remain.
    start from its structure and components.
 3. No new container: if the design needs a box, it needs a section header or a
    metric cell instead.
-4. Build Web Settings rows only from `SettingsRows.tsx` and menus only from
-   `ui/Menu.tsx`.
+4. Build Web Settings rows only from `SettingsRows.tsx` or `SettingsGroup.tsx`
+   and menus only from `ui/Menu.tsx`.
 5. Every value shown is a contract field; every colour is a server level.
 6. Headline figure, label, unit; tabular digits; exact value reachable.
 7. Actions on the item (swipe, context menu) and in the toolbar; nothing waits
