@@ -1437,6 +1437,22 @@
                 "null"
               ]
             },
+            "meta": {
+              "description": "TAL-2153: the detailed row's second line, in display order: the model's name, the message count (the one number part, which clients format as a localized plural), the source when the chat did not start in Talaria, and the profile when the list spans profiles. `GET /api/sessions` and its sidebar search send it only while `sidebar_density` is `detailed`; clients join the parts as one line.",
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  }
+                ]
+              }
+            },
             "sidebar_source": {
               "description": "TAL-1863: the source tab the row files in, the one verdict `webui_session_count`, `cli_session_count` and the `sidebar_source` request filter read. A subagent row takes its parent's tab, listed or not, in its own profile; with no resolvable parent it keeps its own (`webui`). `is_cli_session` stays false for a subagent. `GET /api/sessions` and its sidebar search set it; other routes omit it.",
               "type": "string",
