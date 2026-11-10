@@ -953,6 +953,26 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     }
   })
 
+  it('counts the sidebar items and outside chats shown on every settings read and save (TAL-2175)', async () => {
+    const count = (body: Json) => [body.sidebar_items_shown, body.sidebar_items_total, body.outside_chats_shown, body.outside_chats_total]
+    const outside = ['show_cli_sessions', 'show_claude_code_sessions', 'show_cron_sessions', 'show_webhook_sessions', 'show_kanban_sessions', 'show_previous_messaging_sessions']
+    const all = (on: boolean) => Object.fromEntries(outside.map((key) => [key, on]))
+    const before = await json(await s.get('/api/settings'))
+    try {
+      // By default every destination shows, the Feedback button and profile switcher do not; CLI and Claude Code chats show.
+      expect(count(before)).toEqual([8, 10, 2, 6])
+      // Legacy ids and the fixed Chat hide nothing; Settings drops `chat` and the server ignores `logs` and `profiles`.
+      expect(count(await json(await post(s, '/api/settings', { hidden_tabs: ['logs', 'profiles', 'workspaces', 'chat'] })))).toEqual([8, 10, 2, 6])
+      expect(count(await json(await post(s, '/api/settings', { hidden_tabs: ['kanban', 'insights', 'logs'], show_titlebar_profile: true, show_cron_sessions: true, show_cli_sessions: false })))).toEqual([7, 10, 2, 6])
+      expect(count(await json(await s.get('/api/settings')))).toEqual([7, 10, 2, 6])
+      const allHidden = { hidden_tabs: ['tasks', 'kanban', 'skills', 'memory', 'insights', 'groups', 'todos', 'decisions'], show_sidebar_feedback: false, show_titlebar_profile: false, ...all(false) }
+      expect(count(await json(await post(s, '/api/settings', allHidden)))).toEqual([0, 10, 0, 6])
+      expect(count(await json(await post(s, '/api/settings', { hidden_tabs: [], show_sidebar_feedback: true, show_titlebar_profile: true, ...all(true) })))).toEqual([10, 10, 6, 6])
+    } finally {
+      await post(s, '/api/settings', { hidden_tabs: before.hidden_tabs, show_sidebar_feedback: before.show_sidebar_feedback, show_titlebar_profile: before.show_titlebar_profile, ...Object.fromEntries(outside.map((key) => [key, before[key]])) })
+    }
+  })
+
   it('projects the pinned sources this read lists, in pinned order, for the Web sidebar (TAL-1870)', async () => {
     const saved = configs.get(s.state)
     const reset = (config: Json | undefined): void => { configs.set(s.state, config ?? {}); s.deps.agentConfig.invalidate(); s.deps.catalog.invalidate() }

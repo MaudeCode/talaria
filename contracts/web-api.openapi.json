@@ -87588,6 +87588,30 @@
                       "maximum": 9007199254740991,
                       "description": "TAL-2172, every settings read and save: how many composer controls Settings › Chat draws."
                     },
+                    "sidebar_items_shown": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "TAL-2175, every settings read and save: how many of the sidebar items Settings › Navigation draws are shown (each hideable destination `hidden_tabs` does not name, `show_sidebar_feedback` and `show_titlebar_profile` while true)."
+                    },
+                    "sidebar_items_total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "TAL-2175, every settings read and save: how many hideable sidebar items Settings › Navigation draws."
+                    },
+                    "outside_chats_shown": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "TAL-2175, every settings read and save: how many of the six `show_*_sessions` kinds of chats from outside Talaria are shown."
+                    },
+                    "outside_chats_total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "TAL-2175, every settings read and save: how many kinds of chats from outside Talaria Settings › Navigation lists."
+                    },
                     "hidden_tabs": {
                       "type": "array",
                       "items": {
@@ -87988,6 +88012,30 @@
                       "minimum": 0,
                       "maximum": 9007199254740991,
                       "description": "TAL-2172, every settings read and save: how many composer controls Settings › Chat draws."
+                    },
+                    "sidebar_items_shown": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "TAL-2175, every settings read and save: how many of the sidebar items Settings › Navigation draws are shown (each hideable destination `hidden_tabs` does not name, `show_sidebar_feedback` and `show_titlebar_profile` while true)."
+                    },
+                    "sidebar_items_total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "TAL-2175, every settings read and save: how many hideable sidebar items Settings › Navigation draws."
+                    },
+                    "outside_chats_shown": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "TAL-2175, every settings read and save: how many of the six `show_*_sessions` kinds of chats from outside Talaria are shown."
+                    },
+                    "outside_chats_total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "TAL-2175, every settings read and save: how many kinds of chats from outside Talaria Settings › Navigation lists."
                     },
                     "hidden_tabs": {
                       "type": "array",

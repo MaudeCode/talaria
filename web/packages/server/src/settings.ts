@@ -207,6 +207,25 @@ export function composerControlCount(settings: Record<string, unknown>): { compo
   return { composer_controls_shown: keys.filter(([key, shows]) => (settings[key] === true) === shows).length, composer_controls_total: keys.length }
 }
 
+/** TAL-2175: the sidebar destinations `hidden_tabs` can hide; Chat and Settings are fixed, and other ids (legacy `logs`, `profiles`, `workspaces`) hide nothing. */
+const SIDEBAR_HIDEABLE_DESTINATIONS: ReadonlySet<string> = new Set(['tasks', 'kanban', 'skills', 'memory', 'insights', 'groups', 'todos', 'decisions'])
+/** TAL-2175: the sidebar's buttons a setting shows while true (TAL-1588 Feedback, TAL-2099 profile switcher). */
+const SIDEBAR_BUTTON_KEYS = ['show_sidebar_feedback', 'show_titlebar_profile'] as const
+/** TAL-2175: the chats from outside Talaria the chats list shows while each key is true. */
+const OUTSIDE_CHAT_KEYS = ['show_cli_sessions', 'show_claude_code_sessions', 'show_cron_sessions', 'show_webhook_sessions', 'show_kanban_sessions', 'show_previous_messaging_sessions'] as const
+
+/** TAL-2175: how many sidebar items and outside chats are shown, for Settings › Navigation's Sidebar and Chats from outside Talaria headers. */
+export function navigationCounts(settings: Record<string, unknown>): { sidebar_items_shown: number; sidebar_items_total: number; outside_chats_shown: number; outside_chats_total: number } {
+  const hidden = new Set(Array.isArray(settings.hidden_tabs) ? settings.hidden_tabs.filter((id) => SIDEBAR_HIDEABLE_DESTINATIONS.has(id as string)) : [])
+  const buttonsShown = SIDEBAR_BUTTON_KEYS.filter((key) => settings[key] === true).length
+  return {
+    sidebar_items_shown: SIDEBAR_HIDEABLE_DESTINATIONS.size - hidden.size + buttonsShown,
+    sidebar_items_total: SIDEBAR_HIDEABLE_DESTINATIONS.size + SIDEBAR_BUTTON_KEYS.length,
+    outside_chats_shown: OUTSIDE_CHAT_KEYS.filter((key) => settings[key] === true).length,
+    outside_chats_total: OUTSIDE_CHAT_KEYS.length,
+  }
+}
+
 /** Python `int(v)`: ints, whole floats, and decimal strings; booleans count as 0/1. */
 function pyInt(v: unknown): number | null {
   if (typeof v === 'boolean') return v ? 1 : 0

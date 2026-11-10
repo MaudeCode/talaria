@@ -1,7 +1,7 @@
 import { Clock, Code, Columns3, FolderPlus, MessageCircle, MessageSquareWarning, Pin, Rows3, Search, SquarePen, Terminal, UserRound, Webhook, type LucideIcon } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import { cn } from '../../ui/cn'
-import { useSettingField } from './useSettingField'
+import { useSettingField, useShownCounts } from './useSettingField'
 import { LoadingState, ErrorState } from '../../ui/States'
 import { SIDEBAR_DESTINATIONS } from '../../shell/nav'
 import { SIDEBAR_ICON_PROPS } from '../../shell/SidebarRowContent'
@@ -27,9 +27,14 @@ const OUTSIDE_CHATS = [
   { key: 'show_kanban_sessions', label: m.settings_label_kanban_sessions, icon: Columns3 },
 ] as const
 
-/** TAL-1691, TAL-2100, TAL-2145: Settings › Navigation, what the sidebar and the chats list show. */
+const SIDEBAR_KEYS = ['hidden_tabs', ...BUTTONS.map((b) => b.key)]
+const OUTSIDE_KEYS = OUTSIDE_CHATS.map((o) => o.key)
+const COUNT_KEYS = ['sidebar_items_shown', 'sidebar_items_total', 'outside_chats_shown', 'outside_chats_total']
+
+/** TAL-1691, TAL-2100, TAL-2145: Settings › Navigation, what the sidebar and the chats list show; each header shows the server's count (TAL-2175). */
 export function SidebarSection() {
-  const { settings, bool, set } = useSettingField(['hidden_tabs', ...BUTTONS.map((b) => b.key), ...OUTSIDE_CHATS.map((o) => o.key)])
+  const { settings, bool, num, set } = useSettingField([...SIDEBAR_KEYS, ...OUTSIDE_KEYS, ...COUNT_KEYS])
+  const counts = useShownCounts([...SIDEBAR_KEYS, ...OUTSIDE_KEYS], num)
   if (settings.isPending) return <LoadingState />
   if (settings.isError) return <ErrorState error={settings.error} onRetry={() => { void settings.refetch() }} />
   const hiddenTabs = settings.data.hidden_tabs ?? []
@@ -38,12 +43,11 @@ export function SidebarSection() {
     toggle: () => { const cur = new Set(hiddenTabs); if (cur.has(n.id)) cur.delete(n.id); else cur.add(n.id); set({ hidden_tabs: [...cur] }) },
   }))
   const buttons: SidebarItem[] = BUTTONS.map((b) => ({ id: `settings-${b.key}`, name: b.name(), icon: b.icon, shown: bool(b.key), toggle: () => set({ [b.key]: !bool(b.key) }) }))
-  // TAL-2175 sends both counts from the server; until then the client counts the stored keys, its own writes included.
-  const items = [...destinations, ...buttons]
-  const outsideShown = OUTSIDE_CHATS.filter((o) => bool(o.key)).length
+  const sidebarCount = counts('sidebar_items', SIDEBAR_KEYS, () => [...destinations, ...buttons].filter((i) => i.shown).length)
+  const outsideCount = counts('outside_chats', OUTSIDE_KEYS, () => OUTSIDE_CHATS.filter((o) => bool(o.key)).length)
   return (
     <div className={SETTINGS_PAGE} data-section="navigation">
-      <SettingsGroup id="sidebar" title={m.settings_group_sidebar()} detail={m.settings_items_shown({ shown: items.filter((i) => i.shown).length, total: items.length })}>
+      <SettingsGroup id="sidebar" title={m.settings_group_sidebar()} detail={sidebarCount && m.settings_items_shown(sidebarCount)}>
         <div className="@container">
           <div className="grid gap-x-6 gap-y-3 py-2 @min-[601px]:grid-cols-[240px_minmax(0,1fr)] @min-[601px]:items-start">
             <SidebarPreview destinations={destinations} buttons={buttons} />
@@ -58,7 +62,7 @@ export function SidebarSection() {
           </div>
         </div>
       </SettingsGroup>
-      <SettingsGroup id="outside-chats" title={m.settings_group_outside_chats()} detail={m.settings_items_shown({ shown: outsideShown, total: OUTSIDE_CHATS.length })}>
+      <SettingsGroup id="outside-chats" title={m.settings_group_outside_chats()} detail={outsideCount && m.settings_items_shown(outsideCount)}>
         {OUTSIDE_CHATS.map((o) => <SettingToggle key={o.key} label={o.label()} settingKey={o.key} icon={o.icon} />)}
       </SettingsGroup>
     </div>

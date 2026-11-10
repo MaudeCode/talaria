@@ -4,10 +4,9 @@ import { m } from '../../paraglide/messages.js'
 import { useBootstrap } from '../../app/bootstrap'
 import { cn } from '../../ui/cn'
 import { Chip, ContextRingGlyph } from '../composer/chips'
-import { useSettingIntents } from '../../app/settings'
 import { PreviewToggle } from './PreviewToggle'
 import { SettingsGroup } from './SettingsGroup'
-import { useSettingField } from './useSettingField'
+import { useSettingField, useShownCounts } from './useSettingField'
 import { COMPOSER_CONTROLS, composerControlId, type ComposerControl } from './composerControls'
 
 const KEYS = COMPOSER_CONTROLS.map((c) => c.key)
@@ -21,12 +20,9 @@ const COUNT_KEYS = ['composer_controls_shown', 'composer_controls_total']
 export function ComposerGroup({ children }: { children: ReactNode }) {
   const { bool, num, set } = useSettingField([...KEYS, ...COUNT_KEYS])
   const shown = (c: ComposerControl) => c.shows ? bool(c.key) : !bool(c.key)
-  // While the user's own write of a control is unconfirmed, the header counts the drawing it shows; the server's count follows.
-  const unconfirmed = Object.keys(useSettingIntents(KEYS)).length > 0
-  const total = num('composer_controls_total', -1)
-  const count = unconfirmed ? COMPOSER_CONTROLS.filter(shown).length : num('composer_controls_shown', 0)
+  const count = useShownCounts(KEYS, num)('composer_controls', KEYS, () => COMPOSER_CONTROLS.filter(shown).length)
   return (
-    <SettingsGroup id="composer" title={m.settings_group_composer()} detail={total < 0 ? undefined : m.settings_composer_controls_shown({ shown: count, total })}>
+    <SettingsGroup id="composer" title={m.settings_group_composer()} detail={count && m.settings_composer_controls_shown(count)}>
       <ComposerPreview shown={shown} onToggle={(c) => set({ [c.key]: c.shows ? !shown(c) : shown(c) })} />
       {children}
     </SettingsGroup>
