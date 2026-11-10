@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BootstrapContext } from '../../app/bootstrap'
@@ -15,8 +15,8 @@ const SERVER_FIELDS = { update_channels: ['stable', 'nightly', 'experimental'] }
 vi.mock('../../api/endpoints', () => ({
   restartAgent: vi.fn(), shutdownServer: vi.fn(), passkeyRegisterOptions: vi.fn(), passkeyRegister: vi.fn(), passkeyDelete: vi.fn(),
   fetchSettings: vi.fn(() => Promise.resolve(settingsState)),
-  fetchSystemHealth: vi.fn(() => Promise.resolve({ status: 'ok' })),
-  fetchAgentHealth: vi.fn(() => Promise.resolve({ alive: true })),
+  fetchSystemHealth: vi.fn(() => Promise.resolve({ status: 'ok', display_state: 'ok', display_reason: null })),
+  fetchAgentHealth: vi.fn(() => Promise.resolve({ alive: true, display_state: 'ok', display_reason: null })),
   fetchUpdatesCheck: vi.fn(() => Promise.resolve({ cached: true, webui: { behind: 0, state: 'up_to_date', can_apply: false, installed_unverified: false, manual_link: false, target_version: null, summary_available: false }, agent: { behind: 0, state: 'up_to_date', can_apply: false, installed_unverified: false, manual_link: false, target_version: null } })),
   checkUpdatesNow: vi.fn(),
   passkeysList: vi.fn(),
@@ -634,7 +634,7 @@ describe('Gateway restart capability (TAL-1627)', () => {
   const why = () => screen.findByRole('button', { name: 'Why restart is unavailable' })
 
   it('offers restart only when the server says Talaria controls the Gateway, and rereads it after a refusal', async () => {
-    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true, gateway_lifecycle: { managed: false, reason: 'external_gateway', start_command: null } })
+    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true, display_state: 'ok', display_reason: null, gateway_lifecycle: { managed: false, reason: 'external_gateway', start_command: null } })
     vi.mocked(api.fetchAgentHealth).mockResolvedValueOnce({ alive: true, gateway_lifecycle: { managed: true, reason: 'local_gateway', start_command: null } })
     vi.mocked(api.restartAgent).mockRejectedValueOnce(new ApiError({ kind: 'http', status: 409, path: '/api/health/restart', message: 'This Gateway is managed outside Talaria. Start, stop, or restart it where it runs.' }))
     renderSystem()
@@ -664,10 +664,76 @@ describe('Gateway restart capability (TAL-1627)', () => {
   })
 
   it('offers nothing when an older server sends no capability', async () => {
-    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true })
+    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true, display_state: 'ok', display_reason: null })
     renderSystem()
     expect(await screen.findAllByText('Running normally')).toHaveLength(2)
     expect(restartButton()).toBeNull()
     expect(screen.queryByRole('button', { name: 'Why restart is unavailable' })).toBeNull()
+  })
+})
+
+describe('Health, disk and Agent figure from server fields (TAL-2162)', () => {
+  beforeEach(() => { settingsState = { ...SERVER_FIELDS } })
+  /** The Health group's dots in row order: Talaria Web, then Hermes Agent. */
+  const dot = async (name: 'Talaria Web' | 'Hermes Agent') => (await screen.findByRole('region', { name: 'Health' })).querySelectorAll<HTMLElement>('[data-status]')[name === 'Talaria Web' ? 0 : 1]!
+  const figureTone = (id: string) => document.querySelector(`[data-stat="${id}"] [data-figure-tone]`)?.getAttribute('data-figure-tone') ?? null
+  const fill = () => (screen.getByRole('meter', { name: /Server disk/ }).firstElementChild as HTMLElement).className
+
+  it.each([
+    [{ display_state: 'ok', display_reason: null }, 'ok', 'Running normally'],
+    [{ display_state: 'warning', display_reason: 'Metrics unavailable: disk' }, 'warning', 'Metrics unavailable: disk'],
+    [{ display_state: 'error', display_reason: 'Metrics unavailable' }, 'error', 'Metrics unavailable'],
+  ] as const)('the Web row renders %o', async (fields, state, text) => {
+    vi.mocked(api.fetchSystemHealth).mockResolvedValue({ status: 'whatever', ...fields })
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ cached: true, webui: current, agent: current })
+    renderSystem()
+    await waitFor(async () => { const el = await dot('Talaria Web'); expect(el.dataset.status).toBe(state); expect(el).toHaveTextContent(text) })
+  })
+
+  it.each([
+    [{ alive: true, display_state: 'ok', display_reason: null }, 'ok', 'Running normally'],
+    [{ alive: false, display_state: 'error', display_reason: 'remote_gateway_unreachable' }, 'error', 'remote_gateway_unreachable'],
+    [{ alive: false, display_state: 'error', display_reason: null }, 'error', 'Not responding'],
+    [{ alive: null, display_state: 'idle', display_reason: 'starting' }, 'idle', 'starting'],
+  ] as const)('the Agent row renders %o', async (fields, state, text) => {
+    vi.mocked(api.fetchAgentHealth).mockResolvedValue(fields)
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ cached: true, webui: current, agent: current })
+    renderSystem()
+    await waitFor(async () => { const el = await dot('Hermes Agent'); expect(el.dataset.status).toBe(state); expect(el).toHaveTextContent(text) })
+  })
+
+  it.each([
+    ['healthy', 'bg-accent', null],
+    ['warning', 'bg-warning', 'warning'],
+    ['critical', 'bg-error', 'error'],
+  ] as const)('a %s disk fills the meter and tones both disk figures from the server level', async (level, cls, tone) => {
+    vi.mocked(api.fetchSystemHealth).mockResolvedValue({ status: 'ok', display_state: 'ok', display_reason: null, disk: { percent: 90, display_level: level } })
+    renderSystem()
+    await waitFor(() => { expect(fill()).toContain(cls) })
+    expect(figureTone('disk')).toBe(tone)
+    expect(document.querySelector('[data-disk] [data-figure-tone]')?.getAttribute('data-figure-tone') ?? null).toBe(tone)
+  })
+
+  it('tones the Agent figure only from the server figure_tone', async () => {
+    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: false, display_state: 'error', display_reason: null })
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ cached: true, webui: current, agent: { ...behind(2), figure_tone: null } })
+    renderSystem()
+    await screen.findByText('Not responding')
+    expect(figureTone('agent')).toBeNull()
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ cached: true, webui: current, agent: { ...current, figure_tone: 'warning' } })
+    cleanup(); renderSystem()
+    await waitFor(() => { expect(figureTone('agent')).toBe('warning') })
+  })
+
+  it('shows the neutral fallbacks for an older server without the fields', async () => {
+    vi.mocked(api.fetchSystemHealth).mockResolvedValue({ status: 'partial', disk: { percent: 99 } })
+    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: false, details: { reason: 'down' } })
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ cached: true, webui: current, agent: behind(2) })
+    renderSystem()
+    await waitFor(() => { expect(fill()).toContain('bg-accent') })
+    expect((await dot('Talaria Web')).dataset.status).toBe('idle')
+    expect((await dot('Hermes Agent')).dataset.status).toBe('idle')
+    expect(figureTone('disk')).toBeNull()
+    expect(figureTone('agent')).toBeNull()
   })
 })

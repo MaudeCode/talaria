@@ -101,7 +101,8 @@
     "installed_unverified": false,
     "manual_link": false,
     "target_version": "v0.21.7",
-    "summary_available": true
+    "summary_available": true,
+    "figure_tone": "warning"
   },
   "agent_recovery": {
     "phase": "waiting",

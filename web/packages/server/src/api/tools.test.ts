@@ -1306,7 +1306,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(res.status).toBe(200)
     res = await s.get('/api/updates/check')
     const off = { state: 'off', can_apply: false, installed_unverified: false, manual_link: false, target_version: null, summary_available: false, versions: [], folded_count: 0 }
-    expect(await json(res)).toEqual({ disabled: true, webui: off, agent: off })
+    expect(await json(res)).toEqual({ disabled: true, webui: off, agent: { ...off, figure_tone: null } })
     res = await post(s, '/api/updates/check', { force: true })
     expect((await json(res)).channel).toBe('stable')
     res = await s.get('/api/transcribe/capability')

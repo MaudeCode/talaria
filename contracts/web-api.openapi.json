@@ -104290,6 +104290,27 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "display_state": {
+                      "enum": [
+                        "ok",
+                        "warning",
+                        "error",
+                        "idle"
+                      ],
+                      "type": "string",
+                      "description": "TAL-2162: `alive` true is `ok`, false `error` with `details.reason`, null `idle` with `details.state`. Absent from older servers."
+                    },
+                    "display_reason": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "TAL-2162: the text beside the dot when not `ok`; null when there is none."
+                    },
                     "chat": {
                       "anyOf": [
                         {
@@ -104450,6 +104471,27 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "display_state": {
+                      "enum": [
+                        "ok",
+                        "warning",
+                        "error",
+                        "idle"
+                      ],
+                      "type": "string",
+                      "description": "TAL-2162: `status` ok is `ok`, partial `warning`, unavailable `error`. Absent from older servers."
+                    },
+                    "display_reason": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "TAL-2162: the text beside the dot when not `ok`; null when there is none."
+                    },
                     "available": {
                       "type": "boolean"
                     },
@@ -104488,6 +104530,17 @@
                             },
                             "used_bytes": {
                               "type": "number"
+                            },
+                            "display_level": {
+                              "enum": [
+                                "healthy",
+                                "warning",
+                                "critical",
+                                "stale",
+                                "unavailable"
+                              ],
+                              "type": "string",
+                              "description": "TAL-2162: `critical` from 95% used, `warning` from 85%, else `healthy`. Absent from older servers."
                             }
                           },
                           "additionalProperties": {}
@@ -110244,6 +110297,17 @@
                               "minimum": 0,
                               "maximum": 9007199254740991,
                               "description": "How many `versions` are `folded`."
+                            },
+                            "figure_tone": {
+                              "anyOf": [
+                                {
+                                  "const": "warning"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "TAL-2162, `/api/updates/check` Agent target only: `warning` while an update can be applied (`release_ready`, `commits_behind`, `finish`) or the gateway probe reports the Agent down."
                             }
                           },
                           "required": [
@@ -110509,6 +110573,17 @@
                               "minimum": 0,
                               "maximum": 9007199254740991,
                               "description": "How many `versions` are `folded`."
+                            },
+                            "figure_tone": {
+                              "anyOf": [
+                                {
+                                  "const": "warning"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "TAL-2162, `/api/updates/check` Agent target only: `warning` while an update can be applied (`release_ready`, `commits_behind`, `finish`) or the gateway probe reports the Agent down."
                             }
                           },
                           "required": [
@@ -110958,6 +111033,17 @@
                               "minimum": 0,
                               "maximum": 9007199254740991,
                               "description": "How many `versions` are `folded`."
+                            },
+                            "figure_tone": {
+                              "anyOf": [
+                                {
+                                  "const": "warning"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "TAL-2162, `/api/updates/check` Agent target only: `warning` while an update can be applied (`release_ready`, `commits_behind`, `finish`) or the gateway probe reports the Agent down."
                             }
                           },
                           "required": [
@@ -111223,6 +111309,17 @@
                               "minimum": 0,
                               "maximum": 9007199254740991,
                               "description": "How many `versions` are `folded`."
+                            },
+                            "figure_tone": {
+                              "anyOf": [
+                                {
+                                  "const": "warning"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "TAL-2162, `/api/updates/check` Agent target only: `warning` while an update can be applied (`release_ready`, `commits_behind`, `finish`) or the gateway probe reports the Agent down."
                             }
                           },
                           "required": [

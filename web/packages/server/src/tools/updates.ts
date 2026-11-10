@@ -2493,14 +2493,19 @@ export function updateTargetView(name: 'webui' | 'agent', target: Dict, off: boo
   }
 }
 
-/** `/api/updates/check`: every present target carries its view; disabled checks report both targets off. */
-export function updatesCheckView(status: Dict): Dict {
+/**
+ * `/api/updates/check`: every present target carries its view; disabled checks report both targets off. TAL-2162: the Agent
+ * target's `figure_tone` warns while it has an update to apply or the gateway probe (`agentHealth`) reports it down.
+ */
+export function updatesCheckView(status: Dict, gatewayDown = false): Dict {
   const off = status.disabled === true
   const view = (name: 'webui' | 'agent'): Dict | null => {
     const info = status[name]
     return info && typeof info === 'object' ? updateTargetView(name, info as Dict, off) : off ? updateTargetView(name, {}, true) : null
   }
-  return { ...status, webui: view('webui'), agent: view('agent') }
+  const agent = view('agent')
+  const agentUpdate = agent !== null && ['release_ready', 'commits_behind', 'finish'].includes(agent.state as string)
+  return { ...status, webui: view('webui'), agent: agent && { ...agent, figure_tone: agentUpdate || gatewayDown ? 'warning' : null } }
 }
 
 /** Python `_wait_until_restart_safe`: poll until no chat work is active, bounded so a stuck run cannot jam the update forever. */

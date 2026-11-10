@@ -140,10 +140,37 @@ export function systemHealth(home: string, runtime: Dict): Dict {
     const total = fs.blocks * fs.bsize
     const used = total - fs.bavail * fs.bsize
     if (total <= 0) throw new Error('disk_unavailable')
-    disk = { used_bytes: used, total_bytes: total, percent: clamp((used / total) * 100) }
+    const percent = clamp((used / total) * 100)
+    disk = { used_bytes: used, total_bytes: total, percent, display_level: diskLevel(percent) }
   } catch { errors.push({ metric: 'disk', code: 'disk_unavailable' }) }
   const available = cpu !== null || memory !== null || disk !== null
-  return { status: available && !errors.length ? 'ok' : available ? 'partial' : 'unavailable', available, checked_at: checkedAt(), cpu, memory, disk, webui_runtime: runtime, errors }
+  const status = available && !errors.length ? 'ok' : available ? 'partial' : 'unavailable'
+  return { status, ...systemDisplay(status, errors), available, checked_at: checkedAt(), cpu, memory, disk, webui_runtime: runtime, errors }
+}
+
+/** TAL-2162: disk use at which the System meter and figures turn warning, then critical (common 85/95 disk alert defaults). */
+const DISK_WARNING_PERCENT = 85
+const DISK_CRITICAL_PERCENT = 95
+export const diskLevel = (percent: number): 'healthy' | 'warning' | 'critical' =>
+  percent >= DISK_CRITICAL_PERCENT ? 'critical' : percent >= DISK_WARNING_PERCENT ? 'warning' : 'healthy'
+
+/** TAL-2162: a health row's dot and, when not ok, the text beside it; clients word only ok and a reasonless error. */
+export interface HealthDisplay { display_state: 'ok' | 'warning' | 'error' | 'idle'; display_reason: string | null }
+
+/** Web's health row from `systemHealth`'s status: partial names the metrics it could not read. */
+export function systemDisplay(status: string, errors: readonly { metric: string }[]): HealthDisplay {
+  if (status === 'ok') return { display_state: 'ok', display_reason: null }
+  if (status === 'partial') return { display_state: 'warning', display_reason: `Metrics unavailable: ${errors.map((e) => e.metric).join(', ')}` }
+  return { display_state: 'error', display_reason: 'Metrics unavailable' }
+}
+
+/** The Agent gateway's health row: down carries its reason, unknown carries its state. */
+export function agentDisplay(alive: unknown, details: unknown): HealthDisplay {
+  const d = (details && typeof details === 'object' ? details : {}) as Dict
+  const text = (v: unknown): string | null => (typeof v === 'string' && v ? v : null)
+  if (alive === true) return { display_state: 'ok', display_reason: null }
+  if (alive === false) return { display_state: 'error', display_reason: text(d.reason) }
+  return { display_state: 'idle', display_reason: text(d.state) }
 }
 
 const REMOTE_PROBE_TIMEOUT_MS = 2000
@@ -375,7 +402,8 @@ export async function agentHealth(deps: AgentHealthDeps): Promise<Dict> {
   const probe = remote !== null
     ? singleFlightRead(gatewayProbes, remote, GATEWAY_PROBE_CACHE_TTL_S, deps.now, () => runRemoteProbe(remote, env, deps.fetch()))
     : localGatewayHealth(deps.hermesHome, deps.profileHome(), deps.now)
-  return { ...(await probe), checked_at: checkedAt(), gateway_chat: gatewayChat }
+  const health = await probe
+  return { ...health, ...agentDisplay(health.alive, health.details), checked_at: checkedAt(), gateway_chat: gatewayChat }
 }
 
 const PLATFORM_LABELS: Record<string, string> = { telegram: 'Telegram', discord: 'Discord', slack: 'Slack', email: 'Email', web: 'Web', api: 'API' }

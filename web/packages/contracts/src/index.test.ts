@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import { CronBlueprintsSchema, CronBlueprintFillSchema, AgentHealthSchema, ErrorBodySchema, ChatEventSchema, ClarifyPendingEnvelopeSchema, MemoryWriteRefusalSchema, ModelsSchema, ProviderQuotasSchema, SIDECAR_RPC_VERSION, SkillsSchema, SpeechPrepareSchema, TranscribeResponseSchema, TranscribeStreamEndSchema, TranscribeStreamEventSchema, TranscribeStreamStartSchema, UpdatesCheckSchema, UpdateNotificationsSchema, UpdateApplySchema, SteerSendNowResponseSchema, WhatsNewAnnouncementSchema, WhatsNewStateSchema } from './index.js'
+import { CronBlueprintsSchema, CronBlueprintFillSchema, AgentHealthSchema, SystemHealthSchema, ErrorBodySchema, ChatEventSchema, ClarifyPendingEnvelopeSchema, MemoryWriteRefusalSchema, ModelsSchema, ProviderQuotasSchema, SIDECAR_RPC_VERSION, SkillsSchema, SpeechPrepareSchema, TranscribeResponseSchema, TranscribeStreamEndSchema, TranscribeStreamEventSchema, TranscribeStreamStartSchema, UpdatesCheckSchema, UpdateNotificationsSchema, UpdateApplySchema, SteerSendNowResponseSchema, WhatsNewAnnouncementSchema, WhatsNewStateSchema } from './index.js'
 
 const shared = (path: string): unknown => JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts', path), 'utf8'))
 
@@ -182,8 +182,16 @@ describe('contracts package', () => {
         expect(event.data[key]).toEqual(health.chat[key])
       }
     }
-    expect(AgentHealthSchema.parse(fixture.completed_update).chat).toEqual({ available: true, condition: null })
+    expect(AgentHealthSchema.parse(fixture.completed_update)).toMatchObject({ chat: { available: true, condition: null }, display_state: 'ok', display_reason: null })
     expect(AgentHealthSchema.parse(fixture.legacy).chat).toEqual({ available: false, condition: 'agent_runtime_stale' })
+  })
+
+  it('describes the System health row and disk level (TAL-2162)', () => {
+    const fixture = shared('fixtures/system-health.json') as Record<string, unknown>
+    expect(Object.fromEntries(Object.entries(fixture).map(([k, v]) => { const h = SystemHealthSchema.parse(v); return [k, [h.display_state, h.disk?.display_level ?? null]] }))).toEqual({
+      ok: ['ok', 'warning'], partial: ['warning', null], unavailable: ['error', null], critical_disk: ['ok', 'critical'],
+    })
+    expect(SystemHealthSchema.safeParse({ display_state: 'down' }).success).toBe(false)
   })
 
   it('preserves shared catalog recovery authority without turning it into an empty deletion', () => {

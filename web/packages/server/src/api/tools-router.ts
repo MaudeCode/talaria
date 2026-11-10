@@ -196,6 +196,8 @@ const connectorRead = <M extends 'connectors.catalog' | 'connectors.accounts' | 
   })
 
 const health = (ctx: RequestContext): Promise<Dict> => agentHealth({ env: ctx.deps.config.env, hermesHome: ctx.deps.config.hermesHome, profileHome: () => home(ctx), fetch: () => ctx.deps.fetch, now: ctx.deps.nowSeconds })
+/** TAL-2162: the gateway probe reports the Agent down; a failed probe is not a verdict. */
+const gatewayDown = (ctx: RequestContext): Promise<boolean> => health(ctx).then((h) => h.alive === false, () => false)
 
 /**
  * TAL-805: the active profile's gateway mode from sidecar `gateway.mode`; null for a remote gateway. A named profile never
@@ -946,18 +948,19 @@ export const toolsRouter = os.router({
   })),
   updates: {
     check: os.updates.check.handler(({ context: { ctx } }) => run(async () => {
-      const settings = (await ctx.deps.settings.load())
-      if (settings.check_for_updates === false) return updatesCheckView({ disabled: true }) as never
-      return updatesCheckView(ctx.deps.updates.cachedStatus(!pyBool(settings.ignore_agent_updates))) as never
+      const [settings, down] = await Promise.all([ctx.deps.settings.load(), gatewayDown(ctx)])
+      if (settings.check_for_updates === false) return updatesCheckView({ disabled: true }, down) as never
+      return updatesCheckView(ctx.deps.updates.cachedStatus(!pyBool(settings.ignore_agent_updates)), down) as never
     })),
     checkNow: os.updates.checkNow.handler(({ input, context: { ctx } }) => run(async () => {
+      const down = gatewayDown(ctx)
       const settings = (await ctx.deps.settings.load())
       const force = pyBool(input.force)
-      if (settings.check_for_updates === false && !force) return updatesCheckView({ disabled: true }) as never
+      if (settings.check_for_updates === false && !force) return updatesCheckView({ disabled: true }, await down) as never
       // An explicit body channel wins over a debounced, not-yet-saved setting.
       const channel = isWebChannel(input.channel) ? input.channel : normalizeWebChannel(settings.update_channel)
       ctx.deps.log(`[updates] checking for updates (force=${String(force)}, channel=${channel})`)
-      return updatesCheckView(await ctx.deps.updates.check(force, !pyBool(settings.ignore_agent_updates), channel, input.agent_channel)) as never
+      return updatesCheckView(await ctx.deps.updates.check(force, !pyBool(settings.ignore_agent_updates), channel, input.agent_channel), await down) as never
     })),
     apply: os.updates.apply.handler(({ input, context: { ctx } }) => run(() => applyWithNotification(ctx, input, 'apply'))),
     force: os.updates.force.handler(({ input, context: { ctx } }) => run(() => applyWithNotification(ctx, input, 'force'))),
