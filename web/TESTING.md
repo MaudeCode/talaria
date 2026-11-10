@@ -17,6 +17,11 @@ provider, or the network. Run commands from `web/` unless noted.
 | iOS contract | `app/scripts/validate-upstream-contract` | boots the Node server on the replay sidecar and runs the HTTP/SSE probe plus Swift decoders |
 | Everything | `scripts/check web` (root) | `scripts/check-web-server` + frontend gates + browser |
 
+Message catalogs in `packages/frontend/messages/` keep their keys in sorted order, so a new key goes
+at its sorted position, not at the end; the i18n gate (run by the frontend `lint`) fails otherwise.
+`npm run i18n:fix -w packages/frontend` puts keys there and normalises formatting; run it after
+resolving a catalog conflict.
+
 CI (`.github/workflows/web-verify.yml`) runs the server, sidecar (one job per supported Agent release
 in `sidecar/agent_support.json` and shard of its suite, each provisioned with
 `scripts/check-agent-compatibility.py --skip-docker --release TAG --shard N/M`, then a join that
