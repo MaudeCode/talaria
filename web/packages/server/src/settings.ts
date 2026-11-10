@@ -192,6 +192,21 @@ export function sidebarQuotaProjection(pins: unknown, sources: unknown, authorit
   return { sidebar_source_ids, sidebar_can_pin: sidebar_source_ids.length < SIDEBAR_QUOTA_PIN_LIMIT }
 }
 
+/**
+ * TAL-2172: the composer controls Settings › Chat draws, each with the value of its key that shows it: a `hide_composer_*`
+ * key shows its control while false, `show_quota_chip` (off by default, TAL-2151) while true.
+ */
+const COMPOSER_CONTROL_SHOWN_WHEN: Readonly<Record<string, boolean>> = {
+  hide_composer_attach: false, hide_composer_model: false, hide_composer_reasoning: false, hide_composer_profile: false, hide_composer_workspace: false,
+  hide_composer_toolsets: false, show_quota_chip: true, hide_composer_context: false, hide_composer_mic: false, hide_composer_yolo: false,
+}
+
+/** TAL-2172: how many of those controls the composer shows, for the Composer group's header. */
+export function composerControlCount(settings: Record<string, unknown>): { composer_controls_shown: number; composer_controls_total: number } {
+  const keys = Object.entries(COMPOSER_CONTROL_SHOWN_WHEN)
+  return { composer_controls_shown: keys.filter(([key, shows]) => (settings[key] === true) === shows).length, composer_controls_total: keys.length }
+}
+
 /** Python `int(v)`: ints, whole floats, and decimal strings; booleans count as 0/1. */
 function pyInt(v: unknown): number | null {
   if (typeof v === 'boolean') return v ? 1 : 0

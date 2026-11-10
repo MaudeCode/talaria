@@ -41,17 +41,41 @@ async function renderChat(settings: Record<string, unknown>) {
   return within(await screen.findByRole('region', { name: 'Composer' }))
 }
 
+/** The server's count of the controls shown, as every settings read and save carries it (TAL-2172). */
+const counted = (shown: number) => ({ composer_controls_shown: shown, composer_controls_total: 10 })
+
 it('draws each hideable composer control as a toggle in the composer\'s order, counted in the header (TAL-2138)', async () => {
-  const composer = await renderChat({ hide_composer_profile: true, show_quota_chip: false })
+  const composer = await renderChat({ hide_composer_profile: true, show_quota_chip: false, ...counted(8) })
   const toggles = composer.getAllByRole('button').filter((b) => b.hasAttribute('aria-pressed'))
   expect(toggles.map((b) => b.getAttribute('aria-label'))).toEqual(CONTROLS.map((c) => `Show ${c}`))
   expect(toggles.filter((b) => b.getAttribute('aria-pressed') === 'false').map((b) => b.getAttribute('aria-label'))).toEqual(['Show Profile', 'Show Provider quota'])
   expect(composer.getByText('8 of 10 controls shown')).toBeInTheDocument()
 })
 
+it('shows the server\'s count of the controls shown in the header, not the drawing\'s (TAL-2172)', async () => {
+  // Every control is drawn shown, but the header shows the server's count, never one counted from the drawing.
+  const composer = await renderChat({ show_quota_chip: true, ...counted(9) })
+  expect(composer.getAllByRole('button').filter((b) => b.getAttribute('aria-pressed') === 'false')).toEqual([])
+  expect(composer.getByText('9 of 10 controls shown')).toBeInTheDocument()
+})
+
+it('counts a hidden control at once, then keeps the server\'s count once it confirms the write (TAL-2172)', async () => {
+  const held = deferred<Record<string, unknown>>()
+  const composer = await renderChat({ show_quota_chip: true, ...counted(10) })
+  vi.mocked(saveSettings).mockReturnValue(held.promise)
+  await userEvent.click(composer.getByRole('button', { name: 'Show Model' }))
+  expect(composer.getByText('9 of 10 controls shown')).toBeInTheDocument()
+  // Another tab hid the microphone meanwhile; the server's count of both follows the confirmation.
+  const stored = { show_quota_chip: true, hide_composer_model: true, hide_composer_mic: true, ...counted(8) }
+  vi.mocked(fetchSettings).mockResolvedValue(stored)
+  held.resolve(stored)
+  expect(await composer.findByText('8 of 10 controls shown')).toBeInTheDocument()
+  expect(composer.getByRole('button', { name: 'Show Microphone' })).toHaveAttribute('aria-pressed', 'false')
+})
+
 it('hides a control at once, saves its key and the composer follows; a refusal rolls it back with the error (TAL-2138)', async () => {
   const held = deferred<Record<string, unknown>>()
-  const composer = await renderChat({ show_quota_chip: true })
+  const composer = await renderChat({ show_quota_chip: true, ...counted(10) })
   vi.mocked(saveSettings).mockReturnValue(held.promise)
   const model = composer.getByRole('button', { name: 'Show Model' })
   expect(model).toHaveAttribute('aria-pressed', 'true')
@@ -69,7 +93,7 @@ it('hides a control at once, saves its key and the composer follows; a refusal r
 })
 
 it('reaches and toggles every control from the keyboard, the quota chip, hidden by default, saving its shown key (TAL-2138, TAL-2151)', async () => {
-  const composer = await renderChat({})
+  const composer = await renderChat(counted(9))
   composer.getByRole('button', { name: 'Show Attach button' }).focus()
   for (const [i, name] of CONTROLS.entries()) {
     if (i > 0) await userEvent.tab()

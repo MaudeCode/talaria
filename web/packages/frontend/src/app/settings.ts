@@ -79,7 +79,12 @@ export function useSetting<K extends keyof Settings>(key: K): Settings[K] | unde
 
 /** The value this tab's own unconfirmed write of `key` shows; undefined when no write of it is in flight. */
 export function useSettingIntent<K extends keyof Settings>(key: K): Settings[K] | undefined {
-  return useIntent([key]).data?.fields[key]
+  return useSettingIntents([key])[key]
+}
+
+/** The values this tab's own unconfirmed writes of `fields` show, by key; empty when none of them is in flight. */
+export function useSettingIntents(fields: readonly string[]): Record<string, unknown> {
+  return useIntent(fields).data?.fields ?? {}
 }
 
 export function useSaveSettings() {
