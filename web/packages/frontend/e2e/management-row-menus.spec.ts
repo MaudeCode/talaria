@@ -29,7 +29,7 @@ test('a workspace row offers its buttons, with the same disabled ends, and Renam
   const menu = rowMenu(page, 'Workspace actions')
   const row = (name: string) => page.locator('#workspacesPanel li', { hasText: name })
   await row('Beta').click({ button: 'right' })
-  await expect(items(menu)).toHaveText(['Move up', 'Move down', 'Rename', 'Remove'])
+  await expect(items(menu)).toHaveText(['Make default', 'Move up', 'Move down', 'Rename', 'Remove'])
   await expect(menu.getByRole('menuitem', { name: 'Move up' })).toBeEnabled()
   await expect(menu.getByRole('menuitem', { name: 'Move down' })).toBeDisabled()
   await page.screenshot({ path: info.outputPath('workspace-menu-desktop.png') })

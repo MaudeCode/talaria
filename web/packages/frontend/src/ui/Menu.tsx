@@ -209,7 +209,7 @@ export function ContextMenu({ trigger, children, className, label }: Pick<MenuPr
 }
 
 /** One action of a row: the row shows it as its own control, and `RowContextMenu` offers it as a menu item. */
-export interface RowAction { label: string; run: () => void; disabled?: boolean; busy?: boolean; danger?: boolean; /** A disclosure's state, for its visible control. */ expanded?: boolean; /** TAL-2131: the §12 action-table symbol its visible `RowActionButtons` control shows. */ icon?: LucideIcon }
+export interface RowAction { label: string; run: () => void; disabled?: boolean; busy?: boolean; danger?: boolean; /** Why the item is disabled, as its tooltip. */ title?: string; /** A disclosure's state, for its visible control. */ expanded?: boolean; /** TAL-2131: the §12 action-table symbol its visible `RowActionButtons` control shows. */ icon?: LucideIcon }
 
 /** A row's right-click and long-press menu, with the same actions as its visible controls; a row with none keeps the browser's menu. */
 export function RowContextMenu({ label, actions, trigger }: { label: string; actions: RowAction[]; trigger: ReactElement }) {
@@ -220,7 +220,7 @@ export function RowContextMenu({ label, actions, trigger }: { label: string; act
 }
 
 /** A row's actions as menu items, shared by `RowContextMenu` and `RowActionsMenu`. */
-export const rowActionItems = (actions: RowAction[]) => actions.map(({ label, run, disabled, busy, danger }) => <MenuItem key={label} disabled={disabled === true || busy === true} {...(danger ? { className: 'text-error' } : {})} onClick={run}>{label}</MenuItem>)
+export const rowActionItems = (actions: RowAction[]) => actions.map(({ label, run, disabled, busy, danger, title }) => <MenuItem key={label} title={title} disabled={disabled === true || busy === true} {...(danger ? { className: 'text-error' } : {})} onClick={run}>{label}</MenuItem>)
 
 /** One row look for action and choice items: compact under a mouse, a 44 px target under a coarse pointer (TAL-1626). */
 export const MENU_ROW = 'flex cursor-default select-none items-center gap-2 rounded-md px-2.5 py-1.5 text-sm outline-none data-[highlighted]:bg-hover pointer-coarse:min-h-11'

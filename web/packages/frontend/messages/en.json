@@ -3261,24 +3261,42 @@
 	"worklog_tool_limit": "Tool limit reached",
 	"workspace_add": "Add workspace",
 	"workspace_add_path_placeholder": "Add workspace path (e.g. /home/user/my-project)",
+	"workspace_add_space": "Add space",
 	"workspace_added": "Workspace added",
 	"workspace_already_saved": "Workspace already saved — choose it from the list",
 	"workspace_artifact_source_session": "session",
 	"workspace_artifacts_tab": "Artifacts",
 	"workspace_auto_create_folder": "Create folder if it doesn't exist",
 	"workspace_busy_switch": "Cannot switch workspace while agent is running",
+	"workspace_chat_count": [
+		{
+			"declarations": [
+				"input count"
+			],
+			"selectors": [
+				"count"
+			],
+			"match": {
+				"count=1": "{count} chat",
+				"count=*": "{count} chats"
+			}
+		}
+	],
 	"workspace_choose_path": "Choose workspace path",
 	"workspace_choose_path_meta": "Add a validated path and switch this conversation",
 	"workspace_close_preview": "Close preview",
-	"workspace_current": "Current",
+	"workspace_default": "Default",
 	"workspace_desc": "Add and switch workspaces for your sessions.",
 	"workspace_drag_hint": "Drag to reorder",
 	"workspace_empty_dir": "This workspace is empty.",
 	"workspace_empty_no_path": "No workspace selected. Set a workspace in Settings → Workspace to browse files.",
 	"workspace_files_tab": "Files",
+	"workspace_folder_not_found": "Folder not found · {path}",
+	"workspace_folders": "Folders",
 	"workspace_git_branch": "Branch",
 	"workspace_hidden_files_visible": "hidden visible",
 	"workspace_hidden_files_visible_title": "Hidden files are visible — click for options",
+	"workspace_make_default": "Make default",
 	"workspace_manage": "Manage workspaces",
 	"workspace_manage_meta": "Open the Spaces panel",
 	"workspace_menu_current": "Current workspace",
@@ -3306,6 +3324,7 @@
 	"workspace_remove_confirm": "Remove this workspace from the list? Files on disk are not deleted.",
 	"workspace_remove_confirm_message": "Remove \"{path}\"?",
 	"workspace_remove_confirm_title": "Remove workspace",
+	"workspace_remove_default_title": "Choose another default space first",
 	"workspace_removed": "Workspace removed",
 	"workspace_rename_prompt": "Workspace name",
 	"workspace_renamed": "Workspace renamed",
