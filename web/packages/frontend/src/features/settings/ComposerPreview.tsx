@@ -19,6 +19,7 @@ const HIDDEN = 'border-dashed border-current! line-through opacity-50'
 export function ComposerGroup({ children }: { children: ReactNode }) {
   const { bool, set } = useSettingField(KEYS)
   const shown = (c: ComposerControl) => c.shows ? bool(c.key, true) : !bool(c.key)
+  // TAL-2172 sends this count from the server; until then the client counts the stored keys, its own writes included.
   const count = COMPOSER_CONTROLS.filter(shown).length
   return (
     <SettingsGroup id="composer" title={m.settings_group_composer()} detail={m.settings_composer_controls_shown({ shown: count, total: COMPOSER_CONTROLS.length })}>
