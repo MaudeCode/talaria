@@ -63,6 +63,7 @@ for (const width of [1280, 390]) {
     await page.screenshot({ path: testInfo.outputPath(`mcp-${String(width)}-toggled.png`) })
 
     const tools = page.getByRole('list', { name: 'MCP Tools' })
+    await expect(tools).toHaveAttribute('data-row-list', '')
     await expect(tools.getByRole('listitem')).toHaveCount(3)
     await page.getByRole('searchbox', { name: 'Search MCP tools' }).fill('pull')
     await expect(tools.getByRole('listitem')).toHaveCount(1)

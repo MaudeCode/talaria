@@ -5,12 +5,14 @@ import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { cn } from '../../ui/cn'
+import { Row, RowList } from '../../ui/List'
 import { Button } from '../../ui/Button'
 import { Select } from '../../ui/Select'
 import type { z } from 'zod'
 import type { McpCostPatchSchema, McpCostPolicySchema, McpEventsSchema } from '@maudecode/talaria-web-contracts'
 import { Badge } from '../../ui/Badge'
-import { FieldRow, HelpTip, TextInput } from '../../ui/Field'
+import { HelpTip, TextInput } from '../../ui/Field'
+import { SettingRow, SettingsGroup } from './SettingsRows'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { useResourceEffects, useResourceMutation, type ResourceEffect } from '../sessions/useResourceMutation'
 import { ResourceSwitch } from '../sessions/ResourceSwitch'
@@ -51,7 +53,7 @@ function StatusBadge({ status }: { status: string | undefined }) {
 }
 
 /** MCP servers from config.yaml with server-computed status and health, the enable toggle, and server-side tool search. */
-export function McpSection({ heading }: { heading: string }) {
+export function McpSection() {
   const effects = useResourceEffects<boolean>()
   const [q, setQuery] = useState('')
   // A cold health cache answers `health_pending`; re-read until the server's probes settle.
@@ -75,25 +77,23 @@ export function McpSection({ heading }: { heading: string }) {
   const unavailable = tools.data?.unavailable_servers ?? []
   return (
     <>
-      <section aria-labelledby="systemMcpHeading" className="flex flex-col gap-2" data-section="mcp-servers">
-        <h2 id="systemMcpHeading" className={heading}>{m.mcp_servers_title()}<HelpTip label={m.field_help_about({ label: m.mcp_servers_title() })}>{m.mcp_servers_desc()}{servers.data?.reload_required ? ` ${m.mcp_reload_hint()}` : ''}</HelpTip></h2>
+      <SettingsGroup id="mcp-servers" section="mcp-servers" title={m.mcp_servers_title()} hint={<>{m.mcp_servers_desc()}{servers.data?.reload_required ? ` ${m.mcp_reload_hint()}` : ''}</>}>
         {servers.isPending ? <LoadingState /> : servers.isError && !servers.data ? <ErrorState error={servers.error} onRetry={() => { void servers.refetch() }} /> : servers.data.servers.length === 0 ? <EmptyState>{m.mcp_no_servers()}</EmptyState> : (
-          <ul className="flex flex-col divide-y divide-border-subtle">
+          <RowList aria-label={m.mcp_servers_title()}>
             {servers.data.servers.map((s) => <McpServerRow key={s.name} server={s} effect={effects[`mcp:${s.name}`]} eventsEffect={effects[`mcp-events:${s.name}`]} toggleSupported={servers.data.toggle_supported === true} onToggle={toggle.mutate} onEvents={saveEvents.mutate} />)}
-          </ul>
+          </RowList>
         )}
-      </section>
-      <section aria-labelledby="systemMcpToolsHeading" className="flex flex-col gap-2" data-section="mcp-tools">
-        <h2 id="systemMcpToolsHeading" className={heading}>{m.mcp_tools_title()}<HelpTip label={m.field_help_about({ label: m.mcp_tools_title() })}>{m.mcp_tools_desc()} {m.mcp_tools_runtime_note()}</HelpTip></h2>
+      </SettingsGroup>
+      <SettingsGroup id="mcp-tools" section="mcp-tools" title={m.mcp_tools_title()} hint={`${m.mcp_tools_desc()} ${m.mcp_tools_runtime_note()}`}>
         <McpToolSearch onSearch={setQuery} />
         {tools.isPending ? <LoadingState /> : tools.isError ? <ErrorState error={tools.error} onRetry={() => { void tools.refetch() }} /> : tools.data.tools.length === 0 ? (
           <EmptyState>{q ? m.mcp_tools_no_matches() : m.mcp_tools_no_tools()}{!q && unavailable.length > 0 && <span className="mt-1 block text-xs">{m.mcp_tools_inactive_configured_servers({ servers: unavailable.join(', ') })}</span>}</EmptyState>
         ) : (
-          <ul aria-label={m.mcp_tools_title()} className={cn('flex max-h-96 flex-col divide-y divide-border-subtle overflow-y-auto', tools.isPlaceholderData && 'opacity-60')}>
+          <RowList aria-label={m.mcp_tools_title()} className={cn(tools.isPlaceholderData && 'opacity-60')}>
             {tools.data.tools.map((t) => <McpToolRow key={`${t.server ?? ''}\0${t.name ?? ''}`} name={t.name} server={t.server} description={t.description} status={typeof t.status === 'string' ? t.status : undefined} />)}
-          </ul>
+          </RowList>
         )}
-      </section>
+      </SettingsGroup>
     </>
   )
 }
@@ -117,7 +117,7 @@ const McpServerRow = memo(function McpServerRow({ server: s, effect, eventsEffec
   const events = s.events
   const eventState = events?.show_state ? EVENT_STATE[events.state] : undefined
   return (
-    <li className="py-2" data-mcp-server={s.name}>
+    <Row data-mcp-server={s.name}>
       <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5 text-sm">
@@ -134,14 +134,14 @@ const McpServerRow = memo(function McpServerRow({ server: s, effect, eventsEffec
         )}
       </div>
       {events?.show_panel && <McpEventsPanel name={s.name} events={events} effect={eventsEffect} onChange={onEvents} />}
-      {s.cost_policy && <details className="mt-2 text-sm"><summary className="cursor-pointer text-muted">{m.mcp_cost_title()}</summary><McpCostEditor key={s.cost_policy.revision} policy={s.cost_policy} /></details>}
-    </li>
+      {s.cost_policy && <details className="text-sm"><summary className="cursor-pointer text-muted">{m.mcp_cost_title()}</summary><McpCostEditor key={s.cost_policy.revision} policy={s.cost_policy} /></details>}
+    </Row>
   )
 })
 
 /** TAL-1510: the experimental events opt-in and the server's native subscription status for one row. */
 function McpEventsPanel({ name, events, effect, onChange }: { name: string; events: McpEvents; effect: ResourceEffect<boolean> | undefined; onChange: (value: { name: string; events: boolean }) => void }) {
-  return <details className="mt-2 text-sm" data-mcp-events={name}>
+  return <details className="text-sm" data-mcp-events={name}>
     <summary className="cursor-pointer text-muted">{m.mcp_events_title()}</summary>
     <div className="mt-2 flex min-w-0 flex-col gap-1">
       <div className="flex flex-wrap items-center gap-2">
@@ -199,12 +199,12 @@ function McpCostEditor({ policy }: { policy: CostPolicy }) {
     </dl>
     <p className="text-xs text-muted">{m.mcp_cost_reload()}</p>
     {policy.can_edit ? <form onSubmit={(e) => { e.preventDefault(); submit(false) }}>
-      <FieldRow label={m.mcp_cost_field()} htmlFor={`${id}-field`}>
+      <SettingRow label={m.mcp_cost_field()} htmlFor={`${id}-field`}>
         <Select id={`${id}-field`} value={field} onValueChange={(v) => { setField(v as keyof CostPatch); setDraft(null); setError('') }}>{Object.entries(COST_FIELDS).map(([key, entry]) => <option key={key} value={key}>{entry.label()}</option>)}</Select>
-      </FieldRow>
-      <FieldRow label={COST_FIELDS[field].label()} hint={COST_FIELDS[field].hint()} htmlFor={`${id}-value`}>
+      </SettingRow>
+      <SettingRow label={COST_FIELDS[field].label()} hint={COST_FIELDS[field].hint()} htmlFor={`${id}-value`} stacked>
         {field === 'tool_costs' ? <textarea id={`${id}-value`} value={text} onChange={(e) => setDraft(e.target.value)} rows={4} className="w-full rounded-md border border-border bg-input px-3 py-2 font-mono text-sm text-text" /> : <TextInput id={`${id}-value`} value={text} onChange={(e) => setDraft(e.target.value)} />}
-      </FieldRow>
+      </SettingRow>
       {error && <p role="alert" className="text-error">{error}</p>}
       <div className="flex flex-wrap gap-2"><Button type="submit">{m.mcp_cost_save()}</Button><Button onClick={() => submit(true)}>{m.mcp_cost_unset()}</Button></div>
     </form> : <p className="text-xs text-muted">{m.mcp_cost_readonly()}</p>}
@@ -218,13 +218,11 @@ const McpToolRow = memo(function McpToolRow({ name, server, description, status 
   status: string | undefined
 }) {
   return (
-    <li className="py-2">
-      <div className="flex flex-wrap items-center gap-1.5 text-sm">
-        <span className="font-mono text-[13px] text-text">{name}</span>
-        <span className="text-[11px] text-muted">{server}</span>
-        <StatusBadge status={status} />
-      </div>
-      {description && <div className="line-clamp-2 text-[11px] text-muted">{description}</div>}
-    </li>
+    <Row compact>
+      <span className="font-mono text-[13px] text-text">{name}</span>
+      <span className="text-[11px] text-muted">{server}</span>
+      <StatusBadge status={status} />
+      {description && <span className="line-clamp-2 basis-full text-[11px] text-muted">{description}</span>}
+    </Row>
   )
 })

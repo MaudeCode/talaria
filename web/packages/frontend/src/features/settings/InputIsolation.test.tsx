@@ -224,7 +224,7 @@ describe('input render isolation (TAL-1405)', () => {
   })
 
   it('debounced tool filtering renders no retained tool or server rows', async () => {
-    mount(<McpSection heading="" />)
+    mount(<McpSection />)
     await screen.findByText('zebra')
     reset(renders.server)
     reset(renders.tool)

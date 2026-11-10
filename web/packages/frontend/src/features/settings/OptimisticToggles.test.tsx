@@ -30,7 +30,7 @@ const extensions = () => ({ protocol_version: 1, manifests: ids.map((id) => ({ i
 const connectors = () => ({ available: true, policy_revision: 'rev-1', connectors: ids.map((slug) => ({ slug, name: slug, enabled: false, rules_editable: true, connected: true, accounts: [], tools_off: 3, org_locked: false })) })
 const cases = [
   { name: 'skill', ui: <SkillsPage />, key: keys.skills.all, snapshot: skills, read: () => vi.mocked(api.fetchSkills), write: () => vi.mocked(api.toggleSkill) },
-  { name: 'MCP', ui: <McpSection heading="" />, key: keys.mcp.servers, snapshot: mcp, read: () => vi.mocked(api.fetchMcpServers), write: () => vi.mocked(api.toggleMcpServer) },
+  { name: 'MCP', ui: <McpSection />, key: keys.mcp.servers, snapshot: mcp, read: () => vi.mocked(api.fetchMcpServers), write: () => vi.mocked(api.toggleMcpServer) },
   { name: 'extension', ui: <ExtensionsSection />, key: keys.extensions.manifests, snapshot: extensions, read: () => manifests, write: () => vi.mocked(api.extensionAction) },
   { name: 'connector', ui: <ConnectorsSection />, key: keys.connectors.page, snapshot: connectors, read: () => vi.mocked(api.fetchConnectors), write: () => vi.mocked(api.setConnectorRule) },
 ]

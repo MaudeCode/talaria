@@ -25,7 +25,7 @@ import { McpSection } from './McpSection'
 
 function renderMcp() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-  render(<QueryClientProvider client={qc}><McpSection heading="" /></QueryClientProvider>)
+  render(<QueryClientProvider client={qc}><McpSection /></QueryClientProvider>)
 }
 
 describe('McpSection', () => {
@@ -63,6 +63,7 @@ describe('McpSection', () => {
   it('search asks the server for matching tools and renders only its answer', async () => {
     renderMcp()
     const list = await screen.findByRole('list', { name: 'MCP Tools' })
+    expect(list).toHaveAttribute('data-row-list')
     expect(within(list).getAllByRole('listitem')).toHaveLength(2)
     await userEvent.type(screen.getByRole('searchbox'), 'pulls')
     await waitFor(() => expect(api.fetchMcpTools).toHaveBeenLastCalledWith('pulls'))

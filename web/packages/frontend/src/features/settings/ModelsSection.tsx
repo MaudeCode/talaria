@@ -1,5 +1,5 @@
 import { m } from '../../paraglide/messages.js'
-import { FieldRow, Switch } from '../../ui/Field'
+import { Switch } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { LoadingState, ErrorState } from '../../ui/States'
 import { useModelsQuery, useSetDefaultModel, useAuxiliaryModelsQuery, useDefaultModelChoice } from '../../app/queries'
@@ -28,21 +28,21 @@ function MainModelRows() {
   if (settings.isError) return <ErrorState error={settings.error} onRetry={() => { void settings.refetch() }} />
   return (
     <>
-      <FieldRow label={m.settings_label_model()} hint={m.settings_default_model_hint()} htmlFor="settingsModel" inline>
+      <SettingRow label={m.settings_label_model()} hint={m.settings_default_model_hint()} htmlFor="settingsModel">
         <Select id="settingsModel" value={chosen?.model ?? defaultEntry?.id ?? str('default_model')} onValueChange={(v) => { setDefault.mutate({ model: v, provider: catalogEntryById(models.data, v)?.provider_id ?? null }) }}>
           {catalogModelOptgroups(models.data)}
           {!defaultListed && str('default_model') && <option value={defaultEntry?.id ?? str('default_model')}>{defaultEntry?.label ?? str('default_model')}</option>}
         </Select>
-      </FieldRow>
+      </SettingRow>
       {auxiliary.isError && <ErrorState error={auxiliary.error} onRetry={() => { void auxiliary.refetch() }} />}
       {!!mainModel && !!speedTiers?.length && (
-        <FieldRow label={m.settings_model_speed()} hint={m.settings_model_speed_hint()} htmlFor="settingsModelSpeed" inline>
+        <SettingRow label={m.settings_model_speed()} hint={m.settings_model_speed_hint()} htmlFor="settingsModelSpeed">
           <Select id="settingsModelSpeed" value={chosen?.service_tier ?? (chosen ? speedTiers[0]?.service_tier : main?.service_tier)} onValueChange={(service_tier) => {
             setDefault.mutate({ model: mainModel, provider: chosen ? chosen.provider : main?.provider ?? null, advanced: { service_tier } })
           }}>
             {speedTiers.map((tier) => <option key={tier.id} value={tier.service_tier}>{tier.id === 'standard' ? m.settings_model_speed_standard() : tier.id === 'ultrafast' ? m.settings_model_speed_ultrafast() : m.settings_model_speed_fast()}</option>)}
           </Select>
-        </FieldRow>
+        </SettingRow>
       )}
       <ReasoningRows />
     </>

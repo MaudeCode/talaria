@@ -84,6 +84,7 @@ describe('Auxiliary models settings', () => {
 
   it('lists every server task in server order with Auto, pinned, and off-catalog values', async () => {
     renderSetting()
+    expect(await screen.findByRole('list', { name: 'Auxiliary Models' })).toHaveAttribute('data-row-list')
     const list = await openList()
     const rows = list.getAllByRole('button')
     expect(rows.map((r) => r.firstElementChild?.firstElementChild?.textContent)).toEqual(TASKS.map(label))
@@ -224,7 +225,7 @@ it('requires explicit profile lending consent before saving a profile route', as
   await userEvent.click(screen.getByRole('combobox', { name: 'Profile' }))
   await userEvent.click(await screen.findByRole('option', { name: 'research' }))
   expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
-  await userEvent.click(screen.getByRole('checkbox'))
+  await userEvent.click(screen.getByRole('switch', { name: 'Allow subagents to use this profile' }))
   expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
 })
 
@@ -272,7 +273,7 @@ it.each(['model_map', 'profile_routes'] as const)('preserves No default when cre
   } else {
     await userEvent.click(screen.getByRole('combobox', { name: 'Profile' }))
     await userEvent.click(await screen.findByRole('option', { name: 'research' }))
-    await userEvent.click(screen.getByRole('checkbox'))
+    await userEvent.click(screen.getByRole('switch', { name: 'Allow subagents to use this profile' }))
   }
   await userEvent.click(screen.getByRole('button', { name: 'Save' }))
   expect(api.setDelegation).toHaveBeenCalledWith(expect.objectContaining({ action: 'routes', backend, block: expect.objectContaining({ default: null, [backend === 'model_map' ? 'options' : 'profiles']: [expect.objectContaining({ name: backend === 'model_map' ? 'New route' : 'research' })] }) }))

@@ -340,6 +340,8 @@
 	"connectors_state_skipped": "Skipped",
 	"connectors_tool_aria": "{name} available to Hermes",
 	"connectors_tools": "Tools",
+	"connectors_tools_filter": "Filter tools",
+	"connectors_tools_filter_empty": "No tools match",
 	"connectors_tools_off": "{count} off",
 	"connectors_unavailable": "Connectors are not available for this profile.",
 	"content_required": "Content is required",
