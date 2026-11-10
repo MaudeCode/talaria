@@ -20,7 +20,7 @@ import { useAutoRead } from './useAutoRead'
 import { useLiveTurn } from '../../stream/store'
 import { VirtualHistory, type HistoryVirtualizer } from './VirtualHistory'
 import { firstRowPast, nextBoxed, readerAnchorRow, revealQuestion, rowBoxes } from './viewportAnchor'
-import { Outline } from './Outline'
+import { LIVE_INDEX, Outline } from './Outline'
 
 const VIRTUALIZE_AT = 200
 const NO_ACTIONS: RowActions = {}
@@ -346,22 +346,25 @@ export function Transcript(props: TranscriptProps) {
     if (!entry || rows.length === 0) return
     // A grouped turn is keyed by its first assistant message but answers for every message it holds.
     const byKey = entry.focus ? rows.findIndex((row) => row.key === entry.focus || !!row.assistantRows?.some((part) => part.key === entry.focus)) : -1
+    // A question still streaming is its turn's prompt row once the server shows it, else the live question below the history.
+    const liveTarget = entry.jump && byKey < 0 && entry.index === LIVE_INDEX
     // A jump's position also finds a row the transcript shows inside another (a steer in its turn) once its page is loaded.
-    const index = byKey >= 0 || entry.index === undefined || loadedFrom > entry.index ? byKey : rows.findLastIndex((row) => row.index <= (entry.index ?? -1))
+    const index = liveTarget ? rows.findLastIndex((row) => row.message.role === 'user' && streamId !== undefined && (row.message._turn_id === streamId || (!!turnId && row.message._turn_id === turnId)))
+      : byKey >= 0 || entry.index === undefined || loadedFrom > entry.index ? byKey : rows.findLastIndex((row) => row.index <= (entry.index ?? -1))
     // A linked message pages until it appears; an error keeps its target for explicit retry.
     // Progress follows the loaded offset: a page can join an existing grouped row or hold no visible rows at all.
-    if (index < 0 && entry.focus && truncated && !olderError && (entry.pagedAt !== loadedFrom || loadingOlder)) {
+    if (index < 0 && entry.focus && !liveTarget && truncated && !olderError && (entry.pagedAt !== loadedFrom || loadingOlder)) {
       if (entry.pagedAt !== loadedFrom && !loadingOlder) { entry.pagedAt = loadedFrom; requestOlder() }
       return
     }
     if (index < 0 && entry.focus && olderError) return
     entryRef.current = null
     readerAnchor.current = null
-    const key = rows[index]?.key ?? ''
-    const find = () => scrollRef.current?.querySelector<HTMLElement>(`[data-message-key="${CSS.escape(key)}"]`)
-    const target = index < 0 || virtualize ? null : find()
-    // A jump whose message is gone leaves the reader where they are.
-    if (index < 0 || (!virtualize && !target)) { if (!entry.jump) scrollToBottom(false); return }
+    const key = index >= 0 ? rows[index]?.key ?? '' : 'pending-user'
+    const find = () => scrollRef.current?.querySelector<HTMLElement>(index < 0 ? '[data-live-user="1"]' : `[data-message-key="${CSS.escape(key)}"]`)
+    const target = (index >= 0 && !virtualize) || (index < 0 && liveTarget) ? find() : null
+    // A jump whose message is gone leaves the reader where they are; a live question already gone is at the end.
+    if (!target && (index < 0 || !virtualize)) { if (!entry.jump || liveTarget) scrollToBottom(false); return }
     pin(false)
     settlingRef.current = false
     focusAnchor.current = key || null

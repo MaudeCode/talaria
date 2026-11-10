@@ -16,6 +16,9 @@ import { cn } from '../../ui/cn'
 import { firstRowPast, rowBoxes } from './viewportAnchor'
 
 /** `read`: when the outline read this entry came after was taken; a later read answers for it. */
+/** The position of a question still streaming: not known here, so a jump goes to the live question below the history. */
+export const LIVE_INDEX = Number.MAX_SAFE_INTEGER
+
 interface Sent { stream: string; read: number; entry: SessionOutlineEntry }
 
 /**
@@ -48,8 +51,7 @@ export function useOutline(sessionId: string, revision: string, live: LiveTurn |
     const message_id = live.userMessageId ?? `live:${live.streamId}`
     const known = items.find((item) => item.stream === live.streamId)
     if (known?.entry.message_id !== message_id) {
-      // Its position is not known here: a jump finds it by its id, or else at the end.
-      const entry = { message_id, index: Number.MAX_SAFE_INTEGER, excerpt: text, created_at: null }
+      const entry = { message_id, index: LIVE_INDEX, excerpt: text, created_at: null }
       setSent({ sessionId, items: known ? items.map((item) => (item === known ? { ...known, entry } : item)) : [...items, { stream: live.streamId, read: query.dataUpdatedAt, entry }] })
     }
   }

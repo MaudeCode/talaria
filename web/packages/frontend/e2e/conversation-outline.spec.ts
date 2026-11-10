@@ -14,10 +14,13 @@ const QUESTIONS = 150
 /** A server with one chat of `questions` questions and the outline setting as given; counts outline requests. */
 async function outlineServer(page: Page, { questions = QUESTIONS, on = true } = {}) {
   const sidecar = new FakeSidecar()
-  sidecar.respond('chat.start', (params) => ({ status: 'completed', failed: false, partial: false, error: null, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '',
+  // A turn waits for `release` while `held` is set, so a test can act while its question is still streaming.
+  const turn = { held: null as Promise<void> | null, release: (): void => undefined }
+  const hold = () => { turn.held = new Promise((resolve) => { turn.release = () => { turn.held = null; resolve() } }) }
+  sidecar.respond('chat.start', async (params) => { await turn.held; return { status: 'completed', failed: false, partial: false, error: null, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '',
     usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: 0 }, context: {},
     model: 'test-model', provider: 'test', compressed: false, agent_session_id: params.session_id, token_sent: true, pending_steer: '', live_tool_calls: [],
-    messages: [...params.conversation_history, { role: 'user', content: params.user_message }, { role: 'assistant', content: 'Noted.' }], final_response: 'Noted.' }))
+    messages: [...params.conversation_history, { role: 'user', content: params.user_message }, { role: 'assistant', content: 'Noted.' }], final_response: 'Noted.' } })
   const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' } })
   const workspace = join(server.state, 'workspace')
   mkdirSync(workspace, { recursive: true })
@@ -31,7 +34,7 @@ async function outlineServer(page: Page, { questions = QUESTIONS, on = true } = 
   await server.deps.settings.save({ show_conversation_outline: on })
   const reads: string[] = []
   page.on('request', (request) => { if (new URL(request.url()).pathname === '/api/session/outline') reads.push(request.url()) })
-  return { server, sid, reads }
+  return { server, sid, reads, hold, release: () => { turn.release() } }
 }
 
 /** The message row with this key: focused, and in the transcript's view. */
@@ -42,7 +45,7 @@ async function expectJumpedTo(page: Page, key: string) {
 }
 
 test('the outline lists every question, jumps to loaded and unloaded ones, and follows the reader', async ({ page }, info) => {
-  const { server, sid, reads } = await outlineServer(page)
+  const { server, sid, reads, hold, release } = await outlineServer(page)
   try {
     await page.goto(`${server.base}/session/${sid}`)
     await settle(page)
@@ -101,11 +104,26 @@ test('the outline lists every question, jumps to loaded and unloaded ones, and f
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no horizontal overflow').toBe(true)
 
-    // A sent question joins the outline from the stream at once; when its turn settles, one read replaces it with the
-    // server's entry (Markdown stripped).
+    // A sent question joins the outline from the stream at once, with no read; while it still streams, its entry jumps to
+    // it. When its turn settles, one read replaces it with the server's entry (Markdown stripped).
     expect(reads).toHaveLength(1)
+    hold()
     await page.locator('#msg').fill('One **more** question')
     await page.locator('#btnSend').click()
+    const pick = async (i: number | 'last') => {
+      if (!desktop) await page.getByRole('button', { name: 'Conversation outline' }).click()
+      const entries = desktop ? page.getByRole('navigation', { name: 'Conversation outline' }).getByRole('button') : page.getByRole('menu', { name: 'Conversation outline' }).getByRole('menuitemradio')
+      await expect(entries).toHaveCount(QUESTIONS + 1)
+      await (i === 'last' ? entries.last() : entries.nth(i)).click()
+    }
+    await pick(0)
+    await expectJumpedTo(page, '0-user')
+    await pick('last')
+    const liveQuestion = page.locator('#messages [data-role="user"]').filter({ hasText: 'One **more** question' }).last()
+    await expect(liveQuestion).toBeFocused()
+    await expect(liveQuestion).toBeInViewport()
+    expect(reads).toHaveLength(1)
+    release()
     await expect(page.locator('#messages').getByText('Noted.').last()).toBeVisible()
     await expect.poll(() => reads.length).toBe(2)
     if (desktop) {
