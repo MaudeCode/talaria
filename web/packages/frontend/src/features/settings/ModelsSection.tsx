@@ -73,7 +73,7 @@ function ReasoningRows() {
   return (
     <>
       {status.supports_reasoning_effort && (
-        <SettingRow label={m.settings_reasoning_effort()} hint={m.settings_default_model_hint()} htmlFor="settingsReasoningEffort" icon={Brain}>
+        <SettingRow label={m.settings_reasoning_effort()} htmlFor="settingsReasoningEffort" icon={Brain}>
           {levels.length <= 4
             ? <Segmented id="settingsReasoningEffort" label={m.settings_reasoning_effort()} options={levels} value={effort} onChange={setEffort} />
             : <Select id="settingsReasoningEffort" value={effort} onValueChange={setEffort}>
