@@ -2538,6 +2538,8 @@
 	"settings_group_server": "Server",
 	"settings_group_sessions_shown": "Sessions shown",
 	"settings_group_sign_in": "Sign-in",
+	"settings_group_skins_from_extensions": "From extensions",
+	"settings_group_text_layout": "Text and layout",
 	"settings_group_transcript": "Transcript",
 	"settings_group_versions": "Versions",
 	"settings_group_workspace_panel": "Workspace panel",
