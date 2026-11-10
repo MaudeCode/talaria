@@ -11,7 +11,7 @@ import type { AppDeps } from '../http/context.js'
 import type { DocumentBackend } from './storage/backend.js'
 import { updateDocument } from './storage/document.js'
 import { HttpFailure } from './service.js'
-import { CLARIFY_DEFAULT_TIMEOUT_SECONDS } from './pending.js'
+import { AGENT_PROMPT_DEFAULT_TIMEOUT_SECONDS } from './pending.js'
 import { EnvWriteError, loadEnvFile } from '../providers/env-file.js'
 import { writeRuntimeCredential } from '../providers/runtime-env.js'
 import { addKnownSecret } from '../redact.js'
@@ -84,7 +84,7 @@ export class SecretRequests {
     const sid = caller.session_id
     const profile = caller.profile || 'default'
     const existedBefore = Object.hasOwn(loadEnvFile(join(this.home(profile), '.env')), envName)
-    const timeout = params.timeout_seconds ?? CLARIFY_DEFAULT_TIMEOUT_SECONDS
+    const timeout = params.timeout_seconds ?? AGENT_PROMPT_DEFAULT_TIMEOUT_SECONDS
     const clarifyId = randomUUID().replace(/-/g, '')
     return new Promise<Result>((resolve, reject) => {
       let timer: NodeJS.Timeout | undefined

@@ -238,7 +238,8 @@ export const ServerDecisionReviewRecordParamsSchema = ServerDecisionReviewReadPa
 /**
  * TAL-1967: the `harness` toolset's proposals, each of the calling session (another session's is `proposal_unknown`).
  * `proposal_put` validates `payload` for its `kind` and refuses with the failed condition, writing nothing.
- * `timeout_seconds` is the session's clarify timeout as the sidecar resolved it; 0 or less never expires.
+ * `timeout_seconds` is how long the proposal stays open as the sidecar resolved it (TAL-2053: an hour, or a longer clarify
+ * timeout); 0 or less never expires.
  */
 export const ServerProposalPutParamsSchema = z.object({
   caller_session_id: z.string().min(1),

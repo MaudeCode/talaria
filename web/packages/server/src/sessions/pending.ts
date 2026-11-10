@@ -11,7 +11,10 @@ import { ApprovalChoiceSchema, type ClarifyAnswers, type ClarifyStep, type Vault
 
 export interface PendingSubscriber { queue: Record<string, unknown>[]; wake: (() => void) | null; closed: boolean }
 
-export const CLARIFY_DEFAULT_TIMEOUT_SECONDS = 3600
+/** The Agent resolver's clarify default since v0.23.1 (TAL-2053). */
+export const CLARIFY_DEFAULT_TIMEOUT_SECONDS = 90
+/** TAL-2053: proposals and secret requests are not clarify questions; they keep the hour earlier Agent releases gave them. */
+export const AGENT_PROMPT_DEFAULT_TIMEOUT_SECONDS = 3600
 export const CLARIFY_MAX_CHOICES = 4
 
 function choiceText(choice: unknown): string {
@@ -166,7 +169,7 @@ function withTimeoutMetadata(data: Record<string, unknown>, now: number): Record
   const item = { ...data }
   const requestedAt = Number(item.requested_at) || now
   const timeoutRaw = item.timeout_seconds
-  // The sidecar stamps the resolved Agent timeout; only a frame without one falls back to the Python default (3600).
+  // The sidecar stamps the resolved Agent timeout; only a frame without one falls back to the Agent's default.
   const timeout = timeoutRaw === null || timeoutRaw === undefined ? CLARIFY_DEFAULT_TIMEOUT_SECONDS : Math.trunc(Number(timeoutRaw)) || 0
   item.requested_at = requestedAt
   item.timeout_seconds = timeout

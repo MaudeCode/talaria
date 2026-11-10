@@ -15,6 +15,7 @@ import type { AppDeps } from '../http/context.js'
 import type { DocumentBackend } from './storage/backend.js'
 import { updateDocument } from './storage/document.js'
 import { HttpFailure } from './service.js'
+import { AGENT_PROMPT_DEFAULT_TIMEOUT_SECONDS } from './pending.js'
 import { sendSessionMessage } from './admission.js'
 import { agentApprovals, compressionPrepareAhead, maxTokensStatus } from '../config/agent-config.js'
 import { loadEnvFile } from '../providers/env-file.js'
@@ -212,7 +213,7 @@ export class Proposals {
     let id = newId()
     while (await this.documents.get(NAMESPACE, id)) id = newId()
     const at = this.now()
-    const timeout = params.timeout_seconds ?? 3600
+    const timeout = params.timeout_seconds ?? AGENT_PROMPT_DEFAULT_TIMEOUT_SECONDS
     const proposal = {
       proposal_id: id, session_id: caller.session_id, profile, kind, payload, ...presentation,
       payload_hash: payloadHash(kind, payload, presentation.review), status: 'pending', outcome: { text: null, error: null },

@@ -140,7 +140,7 @@ def _clarify_callback(run: _Run, params: dict, emit=None):
             questions, question = question, ""
         choices_list = [str(c) for c in (choices or [])]
         # Predecessor `_clarify_timeout_seconds`: the Agent's own resolver over this profile's config
-        # (``clarify.timeout`` else ``agent.clarify_timeout`` else 3600); ``<= 0`` waits until answered or cancelled.
+        # (``clarify.timeout`` else ``agent.clarify_timeout`` else 90 since v0.23.1); ``<= 0`` waits until answered or cancelled.
         # The advertised ``timeout_seconds`` is what the clients count down, so it is the same number.
         timeout = _clarify_timeout(params)
         if run.deadline is not None:
@@ -739,10 +739,22 @@ def _clarify_timeout(params: dict) -> int:
         cfg = load_config() or {}
         raw = (cfg.get("clarify") or {}).get("timeout")
         if raw is None:
-            raw = (cfg.get("agent") or {}).get("clarify_timeout", 3600)
+            raw = (cfg.get("agent") or {}).get("clarify_timeout", 90)
         return int(raw)
     except Exception:  # noqa: BLE001
-        return 3600
+        return 90  # the Agent resolver's own default since v0.23.1
+
+
+# TAL-2053: proposals and secret requests are not clarify questions; reading a diff or fetching a key takes longer
+# than the Agent's 90 s clarify default (v0.23.1), so they keep the hour every earlier release gave them.
+AGENT_PROMPT_TIMEOUT = 3600
+
+
+def _agent_prompt_timeout() -> int:
+    """How long a ``propose`` card or ``request_secret`` prompt stays open: an hour, or the configured clarify timeout
+    when longer; none when that timeout is 0 or less (no limit)."""
+    clarify = _clarify_timeout({})
+    return max(clarify, AGENT_PROMPT_TIMEOUT) if clarify > 0 else 0
 
 
 def _steer_slot_lock(agent):

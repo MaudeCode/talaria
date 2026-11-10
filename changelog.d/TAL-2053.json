@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Agent proposals and secret requests in Talaria Web stay open for an hour again on Agent v0.23.1, instead of expiring after 90 seconds.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

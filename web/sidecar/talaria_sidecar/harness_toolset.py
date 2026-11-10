@@ -372,11 +372,11 @@ def _payload(args: dict, params: dict) -> None:
 
 
 def _proposal(args: dict, params: dict) -> None:
-    """The agent's payload, and the session's clarify timeout, which the proposal expires with."""
+    """The agent's payload, and how long the proposal stays open."""
     from .methods import chat  # chat imports this module
 
     _payload(args, params)
-    params["timeout_seconds"] = chat._clarify_timeout({})
+    params["timeout_seconds"] = chat._agent_prompt_timeout()
 
 
 decision_review_put = _tool("server.decision_review_put", "decision_review_put", ("title",), _passed("items", "intro", "review_id"))
@@ -421,11 +421,11 @@ usage_read = _tool("server.usage_read", "usage_read", ())
 
 
 def _secret(args: dict, params: dict) -> float:
-    """``optional`` and the session's clarify timeout; the call outlasts the prompt (no limit when the timeout is 0 or less)."""
+    """``optional`` and how long the prompt stays open; the call outlasts the prompt (no limit when that is 0)."""
     from .methods import chat  # chat imports this module
 
     params["optional"] = args.get("optional") is True
-    timeout = chat._clarify_timeout({})
+    timeout = chat._agent_prompt_timeout()
     params["timeout_seconds"] = timeout
     return timeout + rpc.SERVER_CALL_TIMEOUT if timeout > 0 else threading.TIMEOUT_MAX
 
