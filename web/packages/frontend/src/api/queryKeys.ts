@@ -71,7 +71,7 @@ export const keys = {
   proposal: (id: string) => ['proposal', id] as const,
   /** TAL-1968: one `show` block; it never changes, but an HTML block's frame grant is minted per read. */
   showBlock: (id: string) => ['show-block', id] as const,
-  logs: (file: string, tail: number) => ['logs', file, tail] as const,
+  logs: (file: string, tail: number, q = '', level?: string) => ['logs', file, tail, q, level ?? 'all'] as const,
   onboarding: ['onboarding'] as const,
   extensions: { all: ['extensions'] as const, status: ['extensions', 'status'] as const, registry: ['extensions', 'registry'] as const, manifests: ['extensions', 'manifests'] as const },
   dashboard: ['dashboard'] as const,
