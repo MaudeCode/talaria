@@ -800,6 +800,8 @@ export const ProfileSchema = z.looseObject({
   display_name_overridden: z.boolean().optional(),
   /** TAL-213: present only when the profile has a canonical Bot Chat; clients open `tip_session_id` after switching to the profile. */
   canonical_session: CanonicalBotChatSchema.nullable().optional(),
+  /** TAL-2143, `/api/profiles` only: the gateway's status dot, `ok` while it runs and `idle` while it does not; absent with `gateway_running`. */
+  gateway_state: z.enum(['ok', 'idle']).optional(),
   /** TAL-819: skill and memory writes the Agent staged for approval, reviewed on the Skills and Memory pages. */
   pending_writes: z.number().int().optional(),
 })

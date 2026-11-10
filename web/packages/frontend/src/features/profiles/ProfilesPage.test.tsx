@@ -70,7 +70,7 @@ describe('ProfilesPage', () => {
 
   it('TAL-805: labels each profile by the server gateway mode', async () => {
     const modes = ['own', 'served', 'parked', 'standalone', 'stopped'] as const
-    vi.mocked(api.fetchProfiles).mockResolvedValueOnce({ profiles: modes.map((mode) => ({ name: mode, gateway_mode: mode, gateway_running: mode === 'own' || mode === 'served' })), active: 'own', single_profile_mode: false })
+    vi.mocked(api.fetchProfiles).mockResolvedValueOnce({ profiles: modes.map((mode) => ({ name: mode, gateway_mode: mode, gateway_running: mode === 'own' || mode === 'served', gateway_state: mode === 'own' || mode === 'served' ? 'ok' as const : 'idle' as const })), active: 'own', single_profile_mode: false })
     await renderPage()
     const label = async (name: string): Promise<HTMLElement> => (await screen.findByText(name, { selector: 'span.truncate' })).closest('li')!
     expect(within(await label('own')).getByText('Gateway running')).toBeVisible()
@@ -81,7 +81,7 @@ describe('ProfilesPage', () => {
   })
 
   it('TAL-805: falls back to gateway_running from a server without gateway_mode', async () => {
-    vi.mocked(api.fetchProfiles).mockResolvedValueOnce({ profiles: [{ name: 'up', gateway_running: true }, { name: 'down', gateway_running: false }, { name: 'unknown' }], active: 'up', single_profile_mode: false })
+    vi.mocked(api.fetchProfiles).mockResolvedValueOnce({ profiles: [{ name: 'up', gateway_running: true, gateway_state: 'ok' as const }, { name: 'down', gateway_running: false, gateway_state: 'idle' as const }, { name: 'unknown' }], active: 'up', single_profile_mode: false })
     await renderPage()
     const row = async (name: string): Promise<HTMLElement> => (await screen.findByText(name, { selector: 'span.truncate' })).closest('li')!
     expect(within(await row('up')).getByText('Gateway running')).toBeVisible()
@@ -117,8 +117,8 @@ describe('ProfilesPage', () => {
   it('TAL-2143: shows the server\'s figures and, per profile, its monogram, marks, model line and gateway state', async () => {
     vi.mocked(api.fetchProfiles).mockResolvedValueOnce({
       profiles: [
-        { name: 'default', is_default: true, display_name: 'Writer', model: 'claude-sonnet-4-6', provider: 'anthropic', gateway_running: true, has_env: false },
-        { name: 'scratch', gateway_running: false },
+        { name: 'default', is_default: true, display_name: 'Writer', model: 'claude-sonnet-4-6', provider: 'anthropic', gateway_running: true, gateway_state: 'ok', has_env: false },
+        { name: 'scratch', gateway_running: false, gateway_state: 'idle' },
       ],
       active: 'default', single_profile_mode: false, summary: { total: 2, gateways_running: 1, active_name: 'Writer' },
     })

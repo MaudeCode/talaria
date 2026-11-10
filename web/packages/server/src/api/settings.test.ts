@@ -1630,7 +1630,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     }
   })
 
-  it('TAL-2143: the profile list counts its visible profiles and their running gateways, and names the active one', async () => {
+  it('TAL-2143: the profile list counts its visible profiles and their running gateways, and names the active one, and classifies each gateway', async () => {
     const restore = sidecar.responderFor('profiles.list')
     const row = (name: string, visible: boolean, gateway_running: boolean) => ({ name, path: join(s.state, 'profiles', name), is_default: false, gateway_running, model: null, provider: null, has_env: false, visible, skill_count: 0, enabled_skills: 0, total_skills: 0 })
     sidecar.respond('profiles.list', () => ({ profiles: [
@@ -1640,7 +1640,9 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     ] }))
     s.deps.profiles.invalidate()
     try {
-      expect((await json(await s.get('/api/profiles'))).summary).toEqual({ total: 2, gateways_running: 1, active_name: 'default' })
+      const body = await json(await s.get('/api/profiles'))
+      expect(body.summary).toEqual({ total: 2, gateways_running: 1, active_name: 'default' })
+      expect((body.profiles as Json[]).map((p) => [p.name, p.gateway_state])).toEqual([['default', 'ok'], ['scout', 'idle'], ['ghost', 'ok']])
       sidecar.respond('profiles.list', () => ({ profiles: [{ ...row('default', true, true), path: s.state, is_default: true, display_name: 'Writer' }] }))
       s.deps.profiles.invalidate()
       expect((await json(await s.get('/api/profiles'))).summary).toMatchObject({ active_name: 'Writer' })

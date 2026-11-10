@@ -3114,6 +3114,13 @@
                   }
                 ]
               },
+              "gateway_state": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "idle"
+                ]
+              },
               "pending_writes": {
                 "type": "integer",
                 "minimum": -9007199254740991,

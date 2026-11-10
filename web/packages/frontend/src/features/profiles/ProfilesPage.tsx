@@ -140,7 +140,7 @@ export function ProfilesPage({ name }: { name?: string | undefined } = {}) {
                   <ProfileHeading profile={p} isActive={p.name === active} link={confirmed(p)} className="text-sm" />
                   <div className="mt-0.5 truncate text-xs text-muted">{modelLine(p)}</div>
                 </div>
-                {gateway && <span className="hidden min-w-0 @min-[601px]:flex"><StatusDot state={p.gateway_running ? 'ok' : 'idle'}>{gateway}</StatusDot></span>}
+                {gateway && p.gateway_state && <span className="hidden min-w-0 @min-[601px]:flex"><StatusDot state={p.gateway_state}>{gateway}</StatusDot></span>}
                 {use && <RowActionButtons actions={[use]} />}
                 {/* The menu's trigger shows on hover and focus where a pointer hovers; right-click and long-press open the same menu. */}
                 {actions.length > 0 && <span className="flex [@media(hover:hover)]:opacity-0 group-hover:opacity-100 focus-within:opacity-100 has-data-popup-open:opacity-100"><RowActionsMenu label={m.profile_row_menu()} actions={actions} /></span>}
