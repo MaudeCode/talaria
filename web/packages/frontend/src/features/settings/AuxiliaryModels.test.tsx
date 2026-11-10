@@ -9,11 +9,11 @@ const TASKS = ['vision', 'compression', 'approval', 'mcp', 'title_generation', '
 const label = (task: string): string => (task === 'title_generation' ? 'Title generation' : task === 'mcp' ? 'MCP' : task.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase()))
 const EFFORTS = ['low', 'medium', 'high', 'none']
 const inherited = (task: string) => ({ saved: null as string | null, effective: '', inherited: true, default_source: task === 'delegation' ? 'parent' as const : 'provider' as const, options: EFFORTS, unavailable: null as 'slot' | 'model' | 'agent' | null })
-const auto = (task: string) => ({ task, label: label(task), description: `${task} description`, provider: 'auto', model: '', is_auto: true, value_label: 'Claude Sonnet 4.6', provider_label: 'Anthropic', selected_option_id: null, in_catalog: true, inherit_from: null, reasoning_effort: '', reasoning: inherited(task) })
+const auto = (task: string) => ({ task, label: label(task), description: `${task} description`, provider: 'auto', model: '', is_auto: true, changed: false, value_label: 'Claude Sonnet 4.6', provider_label: 'Anthropic', selected_option_id: null, in_catalog: true, inherit_from: null, reasoning_effort: '', reasoning: inherited(task) })
 function auxState(overrides: Record<string, object> = {}) {
   return { main: { provider: 'anthropic', model: 'claude-sonnet-4-6' }, tasks: TASKS.map((t) => ({ ...auto(t), ...overrides[t] })) }
 }
-const pinnedBeta = { provider: 'custom:beta', model: 'llama3', is_auto: false, value_label: 'Llama3', provider_label: 'beta', selected_option_id: '@custom:beta:llama3', in_catalog: true }
+const pinnedBeta = { provider: 'custom:beta', model: 'llama3', is_auto: false, changed: true, value_label: 'Llama3', provider_label: 'beta', selected_option_id: '@custom:beta:llama3', in_catalog: true }
 const CATALOG = {
   groups: [
     { provider: 'Anthropic', provider_id: 'anthropic', models: [{ id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' }, { id: 'claude-opus-4-7', label: 'Claude Opus 4.7' }] },
@@ -68,7 +68,7 @@ function deferred<T>() {
 }
 
 beforeEach(() => {
-  vi.mocked(api.fetchAuxiliaryModels).mockReset().mockResolvedValue(auxState({ vision: { provider: 'openrouter', model: 'legacy/gone-model', is_auto: false, value_label: 'legacy/gone-model', provider_label: 'OpenRouter', selected_option_id: null, in_catalog: false } }))
+  vi.mocked(api.fetchAuxiliaryModels).mockReset().mockResolvedValue(auxState({ vision: { provider: 'openrouter', model: 'legacy/gone-model', is_auto: false, changed: true, value_label: 'legacy/gone-model', provider_label: 'OpenRouter', selected_option_id: null, in_catalog: false } }))
   vi.mocked(api.fetchModels).mockReset().mockResolvedValue(CATALOG)
   vi.mocked(api.setAuxiliaryModel).mockReset()
 })
@@ -122,7 +122,7 @@ describe('Auxiliary models settings', () => {
     expect(screen.getByText('0 of 10 changed')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Reset all to auto' })).toBeInTheDocument()
     cleanup()
-    vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue(auxState({ mcp: { reasoning: { ...inherited('mcp'), saved: 'high', inherited: false } } }))
+    vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue(auxState({ mcp: { changed: true, reasoning: { ...inherited('mcp'), saved: 'high', inherited: false } } }))
     renderSetting()
     const mcp = (await openList()).getByRole('row', { name: /MCP/ })
     expect(mcp.querySelector('[data-dot]')).toHaveAttribute('data-dot', 'changed')
@@ -197,7 +197,7 @@ describe('Auxiliary models settings', () => {
   })
 
   it('resets every task only after confirmation', async () => {
-    vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue(auxState({ compression: { reasoning: { ...inherited('compression'), saved: 'high', inherited: false } } }))
+    vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue(auxState({ compression: { changed: true, reasoning: { ...inherited('compression'), saved: 'high', inherited: false } } }))
     vi.mocked(api.setAuxiliaryModel).mockReturnValue(new Promise(() => undefined))
     renderSetting()
     await openList()
@@ -211,6 +211,8 @@ describe('Auxiliary models settings', () => {
     const list = await screen.findByRole('table', { name: 'Task models' })
     expect(list).not.toHaveTextContent('Not in catalog')
     expect(within(list).getByRole('row', { name: /Compression/ })).not.toHaveTextContent('High')
+    expect(screen.getByText('0 of 10 changed')).toBeInTheDocument()
+    expect(within(list).getByRole('row', { name: /Vision/ }).querySelector('[data-dot]')).toHaveAttribute('data-dot', 'idle')
   })
 })
 
@@ -293,19 +295,78 @@ it('renders server-denied delegation management read-only while retaining the lo
   expect(screen.getByRole('button', { name: 'Fixed model' })).toBeEnabled()
 })
 
-it('shows the Delegation row\'s route count in route mode and its mode name otherwise (TAL-2137)', async () => {
-  const routes = [{ name: 'one', description: '' }, { name: 'two', description: '' }]
-  vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue({ ...auxState(), delegation: { ...delegationFixtures.default, configured: 'model_map', model_map: { options: routes, default: null } } })
-  renderSetting()
-  const row = (await openList()).getByRole('row', { name: /Delegation/ })
-  expect(within(row).getAllByRole('cell')[1]).toHaveTextContent(/^2 routes$/)
-  expect(row.querySelector('[data-dot]')).toHaveAttribute('data-dot', 'changed')
-  cleanup()
+it('shows the Delegation row\'s mode name while the server counts no routes (TAL-2137)', async () => {
   vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue({ ...auxState(), delegation: delegationFixtures.default })
   renderSetting()
   const plain = (await openList()).getByRole('row', { name: /Delegation/ })
   expect(within(plain).getAllByRole('cell')[1]).toHaveTextContent(/^Default$/)
   expect(plain.querySelector('[data-dot]')).toHaveAttribute('data-dot', 'idle')
+})
+
+it('marks and counts what the server reports, not what the slot fields suggest (TAL-2161)', async () => {
+  // A non-owner's route mode: the server counts the routes it does not list, and calls the Auto slot changed.
+  const delegation = { ...delegationFixtures.readonly, configured: 'profile_routes', fixed_model_active: false, route_count: 3 }
+  vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue({ ...auxState({ delegation: { changed: true }, mcp: { changed: true } }), delegation })
+  renderSetting()
+  const list = await openList()
+  const row = list.getByRole('row', { name: /Delegation/ })
+  expect(within(row).getAllByRole('cell')[1]).toHaveTextContent(/^3 routes$/)
+  expect(list.getByRole('row', { name: /MCP/ }).querySelector('[data-dot]')).toHaveAttribute('data-dot', 'changed')
+  expect(screen.getByText('2 of 10 changed')).toBeInTheDocument()
+})
+
+it('moves the dot, the count and the Delegation cell at once for each pick, mode switch and route edit (TAL-2161)', async () => {
+  vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue({ ...auxState({ vision: { ...pinnedBeta, changed: true }, mcp: { changed: true, reasoning: { ...inherited('mcp'), saved: 'high', inherited: false } } }), delegation: delegationFixtures.default })
+  vi.mocked(api.setAuxiliaryModel).mockReturnValue(new Promise(() => undefined))
+  vi.mocked(api.setDelegation).mockReturnValue(new Promise(() => undefined))
+  renderSetting()
+  const list = await openList()
+  const dot = (name: RegExp) => list.getByRole('row', { name }).querySelector('[data-dot]')
+  expect(screen.getByText('2 of 10 changed')).toBeInTheDocument()
+  // A pinned model: changed.
+  await userEvent.click(within(await (await openTask(/Title generation/)).findByRole('region', { name: 'beta' })).getByRole('button', { name: 'Llama3' }))
+  expect(dot(/Title generation/)).toHaveAttribute('data-dot', 'changed')
+  expect(screen.getByText('3 of 10 changed')).toBeInTheDocument()
+  // Auto on a slot with nothing else saved: unchanged; on a slot with a saved effort: still changed.
+  await userEvent.click((await openTask(/Vision/)).getByRole('button', { name: /^Auto/ }))
+  expect(dot(/Vision/)).toHaveAttribute('data-dot', 'idle')
+  await userEvent.click((await openTask(/MCP/)).getByRole('button', { name: /^Auto/ }))
+  expect(dot(/MCP/)).toHaveAttribute('data-dot', 'changed')
+  expect(screen.getByText('2 of 10 changed')).toBeInTheDocument()
+  // A route mode: the Delegation row is changed and shows the mode's route count.
+  const delegation = await openTask(/Delegation/)
+  await userEvent.click(delegation.getByRole('combobox', { name: 'Mode' }))
+  await userEvent.click(await screen.findByRole('option', { name: 'Named model routes' }))
+  expect(api.setDelegation).toHaveBeenCalledWith({ action: 'backend', backend: 'model_map' })
+  expect(dot(/Delegation/)).toHaveAttribute('data-dot', 'changed')
+  expect(within(list.getByRole('row', { name: /Delegation/ })).getAllByRole('cell')[1]).toHaveTextContent(/^1 route$/)
+  expect(screen.getByText('3 of 10 changed')).toBeInTheDocument()
+})
+
+it('counts an added route in the Delegation cell at once, and Restore Default clears the dot (TAL-2161)', async () => {
+  const delegation = { ...delegationFixtures.default, configured: 'model_map', fixed_model_active: false, route_count: 1 }
+  vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue({ ...auxState({ delegation: { changed: true } }), delegation })
+  let answer!: (state: Awaited<ReturnType<typeof api.setDelegation>>) => void
+  vi.mocked(api.setDelegation).mockReturnValueOnce(new Promise((resolve) => { answer = resolve })).mockReturnValue(new Promise(() => undefined))
+  renderSetting()
+  const list = await openList()
+  const cell = () => within(list.getByRole('row', { name: /Delegation/ })).getAllByRole('cell')[1]
+  expect(cell()).toHaveTextContent(/^1 route$/)
+  await userEvent.click(list.getByRole('button', { name: /Delegation/ }))
+  await userEvent.click(screen.getByRole('button', { name: 'Model routes' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Add route' }))
+  await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), 'Second')
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+  expect(cell()).toHaveTextContent(/^2 routes$/)
+  const confirmed = { ...auxState({ delegation: { changed: true } }), delegation: { ...delegation, route_count: 2 } }
+  vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue(confirmed)
+  await act(async () => { answer(confirmed); await Promise.resolve() })
+  await waitFor(() => expect(api.fetchAuxiliaryModels).toHaveBeenCalledTimes(2))
+  await userEvent.click(screen.getByRole('button', { name: 'Back' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Restore Default' }))
+  expect(cell()).toHaveTextContent(/^Default$/)
+  expect(list.getByRole('row', { name: /Delegation/ }).querySelector('[data-dot]')).toHaveAttribute('data-dot', 'idle')
+  expect(screen.getByText('0 of 10 changed')).toBeInTheDocument()
 })
 
 it.each(['model_map', 'profile_routes'] as const)('preserves No default when creating a named route with %s', async (backend) => {
@@ -377,7 +438,7 @@ describe('Auxiliary models page loading and reasoning (TAL-1285)', () => {
     let answer!: (value: Awaited<ReturnType<typeof api.setAuxiliaryModel>>) => void
     vi.mocked(api.setAuxiliaryModel).mockReturnValue(new Promise((resolve) => { answer = resolve }))
     vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue(auxState({
-      compression: { provider: 'anthropic', model: 'claude-opus-4-7', is_auto: false, value_label: 'Claude Opus 4.7', selected_option_id: 'claude-opus-4-7', reasoning: { ...inherited('compression'), saved: 'medium', inherited: false } },
+      compression: { provider: 'anthropic', model: 'claude-opus-4-7', is_auto: false, changed: true, value_label: 'Claude Opus 4.7', selected_option_id: 'claude-opus-4-7', reasoning: { ...inherited('compression'), saved: 'medium', inherited: false } },
       title_generation: { reasoning: { ...inherited('title_generation'), options: ['low', 'high', 'none'] } },
       mcp: { reasoning: { ...inherited('mcp'), options: [], unavailable: 'slot' } },
     }))
@@ -396,7 +457,7 @@ describe('Auxiliary models page loading and reasoning (TAL-1285)', () => {
     // The pick shows at once in the row and the control, before the server answers.
     expect(list.getByRole('row', { name: /Title generation/ })).toHaveTextContent('Auto · Claude Sonnet 4.6 · High')
     expect(editor.getByRole('button', { name: 'Reasoning effort: High' })).toBeInTheDocument()
-    const confirmed = auxState({ title_generation: { reasoning: { ...inherited('title_generation'), options: ['low', 'high', 'none'], saved: 'high', inherited: false } } })
+    const confirmed = auxState({ title_generation: { changed: true, reasoning: { ...inherited('title_generation'), options: ['low', 'high', 'none'], saved: 'high', inherited: false } } })
     vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue(confirmed)
     answer({ ok: true, auxiliary: confirmed })
     await waitFor(() => expect(api.fetchAuxiliaryModels).toHaveBeenCalledTimes(2))
@@ -429,7 +490,7 @@ describe('Auxiliary models page loading and reasoning (TAL-1285)', () => {
     const editor = await openTask(/Title generation/)
     await userEvent.click(within(await editor.findByRole('region', { name: 'beta' })).getByRole('button', { name: 'Llama3' }))
     teardownAll()
-    const other = auxState({ title_generation: { provider: 'anthropic', model: 'claude-opus-4-7', is_auto: false, value_label: 'Claude Opus 4.7', selected_option_id: 'claude-opus-4-7' } })
+    const other = auxState({ title_generation: { provider: 'anthropic', model: 'claude-opus-4-7', is_auto: false, changed: true, value_label: 'Claude Opus 4.7', selected_option_id: 'claude-opus-4-7' } })
     qc.setQueryData(['models', 'auxiliary'], other)
     await act(async () => { answer({ ok: true, auxiliary: auxState({ title_generation: pinnedBeta }) }); await Promise.resolve() })
     await waitFor(() => expect(qc.getQueryData(['models', 'auxiliary'])).toEqual(other))

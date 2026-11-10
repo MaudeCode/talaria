@@ -81,6 +81,38 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     }
   })
 
+  it('marks each changed slot and counts the configured delegation mode\'s routes (TAL-2161)', async () => {
+    const before = structuredClone(configs.get(s.state)) ?? {}
+    const backends = { model_map: { options: [{ name: 'one' }, { name: 'two' }], default: null }, profile_routes: { profiles: [{ name: 'research' }], default: null } }
+    const read = async (configured: string, config: Json): Promise<{ changed: Record<string, unknown>; delegation: Json }> => {
+      sidecar.respond('aux.delegation', () => ({ supported: true, configured, effective: configured, available: true, blocked_reason: null, fixed_model_active: configured === 'default', backends: [], profiles: ['default'] }))
+      configs.set(s.state, { model: before.model, delegation: { backend: configured, backends }, ...config })
+      s.deps.agentConfig.invalidate(s.state)
+      s.deps.catalog.invalidate()
+      const body = await json(await s.get('/api/model/auxiliary'))
+      return { changed: Object.fromEntries((body.tasks as { task: string; changed: boolean }[]).map((t) => [t.task, t.changed])), delegation: dictOf(body.delegation) }
+    }
+    try {
+      let state = await read('default', {})
+      expect(state.delegation.route_count).toBeNull()
+      expect(Object.values(state.changed).every((changed) => changed === false)).toBe(true)
+      state = await read('model_map', {})
+      expect(state.delegation.route_count).toBe(2)
+      expect(state.changed).toMatchObject({ delegation: true, vision: false })
+      state = await read('profile_routes', {})
+      expect(state.delegation.route_count).toBe(1)
+      expect(state.changed).toMatchObject({ delegation: true })
+      state = await read('default', { auxiliary: { vision: { provider: 'anthropic', model: 'claude-opus-4-7' }, compression: { provider: 'auto', model: '', reasoning_effort: 'high' } } })
+      expect(state.delegation.route_count).toBeNull()
+      expect(state.changed).toMatchObject({ vision: true, compression: true, title_generation: false, delegation: false })
+    } finally {
+      sidecar.respond('aux.delegation', undefined)
+      configs.set(s.state, before)
+      s.deps.agentConfig.invalidate(s.state)
+      s.deps.catalog.invalidate()
+    }
+  })
+
   it('serializes native backend and route writes with other profile settings and rejects managed edits (TAL-1499)', async () => {
     const before = structuredClone(configs.get(s.state))
     const methods = ['aux.delegation_backend', 'aux.delegation_routes', 'aux.delegation', 'config.set'] as const
@@ -2700,5 +2732,8 @@ it('refuses delegation configuration and hides other profile identities for a bo
     const ownerHeaders = { cookie: `${server.deps.auth.cookieName()}=${owner}`, origin: server.base, 'x-csrf-token': server.deps.auth.csrfTokenForSession(owner) ?? '' }
     expect((await post(server, '/api/model/auxiliary/delegation', { action: 'routes', backend: 'profile_routes', block: { profiles: [{ name: 'victim' }], default: 'victim' } }, ownerHeaders)).status).toBe(200)
     expect((await json(await server.get('/api/model/auxiliary', { headers: ownerHeaders }))).delegation).toMatchObject({ can_edit: true, profiles: ['default', 'victim'] })
+    // TAL-2161: the non-owner's Delegation row still counts the routes it may not list.
+    native.respond('aux.delegation', () => ({ supported: true, configured: 'profile_routes', effective: 'profile_routes', available: true, fixed_model_active: false, blocked_reason: null, backends: [], profiles: ['default', 'victim'] }))
+    expect((await json(await server.get('/api/model/auxiliary', { headers }))).delegation).toMatchObject({ configured: 'profile_routes', route_count: 1, profile_routes: { profiles: [] } })
   } finally { await server.close() }
 })

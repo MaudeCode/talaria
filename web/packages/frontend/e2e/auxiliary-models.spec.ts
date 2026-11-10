@@ -27,8 +27,10 @@ const auxiliary = {
     // A plugin task inheriting Compression, which is pinned: while Auto it shows Compression's model (TAL-800).
     ...(task === 'compression' ? { provider: 'anthropic', model: 'claude-opus-4-7', is_auto: false, value_label: 'Claude Opus 4.7', selected_option_id: 'claude-opus-4-7' } : {}),
     ...(task === 'side_task' ? { inherit_from: 'compression', value_label: 'Claude Opus 4.7' } : {}),
-  })),
+  })).map((t) => ({ ...t, changed: !t.is_auto || !t.reasoning.inherited })),
 }
+/** The server's `route_count` for a delegation state (TAL-2161). */
+const counted = (d: DelegationSettings): DelegationSettings => ({ ...d, route_count: d.configured === 'model_map' ? d.model_map.options?.length ?? 0 : d.configured === 'profile_routes' ? d.profile_routes.profiles?.length ?? 0 : null })
 const models = {
   active_provider: 'anthropic', default_model: 'claude-sonnet-4-6',
   groups: [
@@ -52,7 +54,7 @@ for (const width of [1280, 390]) {
     await page.route('**/api/model/set', async (route) => {
       const body = route.request().postDataJSON() as { task: string; reasoning_effort?: string }
       writes.push(body)
-      state = { ...state, tasks: state.tasks.map((t) => t.task === body.task ? { ...t, reasoning: reasoning(t.task, body.reasoning_effort ?? null) } : t) }
+      state = { ...state, tasks: state.tasks.map((t) => t.task === body.task ? { ...t, reasoning: reasoning(t.task, body.reasoning_effort ?? null), changed: !t.is_auto || body.reasoning_effort != null } : t) }
       await route.fulfill({ json: { ok: true, auxiliary: state } })
     })
     await page.goto('/settings/models')
@@ -178,15 +180,15 @@ for (const width of [1280, 390]) {
   test(`delegation mode recovery and route editing fit at ${width}px`, async ({ page }, testInfo) => {
     const { default: fixtures } = await import('../../../../contracts/fixtures/delegation-settings.json', { with: { type: 'json' } })
     let delegation: DelegationSettings = structuredClone(fixtures.missing)
-    const tasks = [...auxiliary.tasks, { task: 'delegation', label: 'Delegation', description: 'subagent model (delegate_task)', provider: 'auto', model: '', is_auto: true, value_label: '', provider_label: '', selected_option_id: null, in_catalog: true, inherit_from: null, reasoning_effort: '', reasoning: reasoning('delegation') }]
+    const tasks = () => [...auxiliary.tasks, { task: 'delegation', label: 'Delegation', description: 'subagent model (delegate_task)', provider: 'auto', model: '', is_auto: true, changed: delegation.configured !== 'default', value_label: '', provider_label: '', selected_option_id: null, in_catalog: true, inherit_from: null, reasoning_effort: '', reasoning: reasoning('delegation') }]
     await page.setViewportSize({ width, height: width > 600 ? 900 : 844 })
-    await page.route('**/api/model/auxiliary', (route) => route.fulfill({ json: { ...auxiliary, tasks, delegation } }))
+    await page.route('**/api/model/auxiliary', (route) => route.fulfill({ json: { ...auxiliary, tasks: tasks(), delegation } }))
     await page.route('**/api/models', (route) => route.fulfill({ json: models }))
     await page.route('**/api/model/auxiliary/delegation', async (route) => {
       const write = route.request().postDataJSON() as { action: string; backend: string; block: typeof delegation.model_map }
-      if (write.action === 'backend') delegation = { ...fixtures.default, configured: write.backend, effective: write.backend, fixed_model_active: write.backend === 'default' }
-      else delegation = { ...delegation, [write.backend]: write.block }
-      await route.fulfill({ json: { ...auxiliary, tasks, delegation } })
+      if (write.action === 'backend') delegation = counted({ ...fixtures.default, configured: write.backend, effective: write.backend, fixed_model_active: write.backend === 'default' })
+      else delegation = counted({ ...delegation, [write.backend]: write.block })
+      await route.fulfill({ json: { ...auxiliary, tasks: tasks(), delegation } })
     })
     await page.goto('/settings/models')
     await settle(page)
