@@ -90556,6 +90556,10 @@
                         ],
                         "additionalProperties": {}
                       }
+                    },
+                    "unlisted_overrides": {
+                      "type": "boolean",
+                      "description": "TAL-2137: a disabled or removed plugin's task still holds a pinned route or saved effort, which Reset All clears though no listed task shows it."
                     }
                   },
                   "required": [
@@ -92721,6 +92725,10 @@
                         ],
                         "additionalProperties": {}
                       }
+                    },
+                    "unlisted_overrides": {
+                      "type": "boolean",
+                      "description": "TAL-2137: a disabled or removed plugin's task still holds a pinned route or saved effort, which Reset All clears though no listed task shows it."
                     }
                   },
                   "required": [
@@ -93400,6 +93408,10 @@
                             ],
                             "additionalProperties": {}
                           }
+                        },
+                        "unlisted_overrides": {
+                          "type": "boolean",
+                          "description": "TAL-2137: a disabled or removed plugin's task still holds a pinned route or saved effort, which Reset All clears though no listed task shows it."
                         }
                       },
                       "required": [

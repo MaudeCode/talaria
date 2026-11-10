@@ -108,12 +108,19 @@ describe('Auxiliary models settings', () => {
     expect(editor.getByText('title_generation description')).toBeInTheDocument()
   })
 
-  it('counts a saved effort as a change and offers no Reset all while nothing is changed (TAL-2137)', async () => {
+  it('counts a saved effort as a change and offers Reset all only while something is changed or left over (TAL-2137)', async () => {
     vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue(auxState())
     renderSetting()
     await openList()
     expect(screen.getByText('0 of 10 changed')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Reset all to auto' })).not.toBeInTheDocument()
+    cleanup()
+    // A removed plugin's leftover pin, which no listed task shows, still offers Reset All.
+    vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue({ ...auxState(), unlisted_overrides: true })
+    renderSetting()
+    await openList()
+    expect(screen.getByText('0 of 10 changed')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reset all to auto' })).toBeInTheDocument()
     cleanup()
     vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue(auxState({ mcp: { reasoning: { ...inherited('mcp'), saved: 'high', inherited: false } } }))
     renderSetting()

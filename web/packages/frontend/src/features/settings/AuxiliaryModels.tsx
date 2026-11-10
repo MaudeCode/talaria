@@ -45,10 +45,12 @@ export function AuxiliaryModelsSection() {
   // Counted from the shown slots, so a pick or Reset All moves the count at once (TAL-2161 moves it to a server `changed` field).
   const changed = (t: AuxTask) => !t.is_auto || !t.reasoning.inherited || (t.task === 'delegation' && !!delegation && delegation.configured !== 'default')
   const count = tasks.filter(changed).length
+  // Reset All also clears a removed plugin's leftover override, which no listed task shows; a pending reset hides it at once.
+  const resettable = count > 0 || (aux.data?.unlisted_overrides === true && !tasks.some((t) => 'reasoning_reset' in t))
   const title = m.settings_group_task_models()
   return (
     <SettingsGroup id="auxiliary" title={title} detail={aux.data && m.settings_task_models_changed({ n: count, total: tasks.length })}
-      action={count > 0 ? <IconButton variant="ghost" label={m.settings_btn_reset_aux_models()} disabled={delegation?.can_edit === false} onClick={() => setConfirmReset(true)}><RotateCcw aria-hidden="true" /></IconButton> : null}>
+      action={resettable ? <IconButton variant="ghost" label={m.settings_btn_reset_aux_models()} disabled={delegation?.can_edit === false} onClick={() => setConfirmReset(true)}><RotateCcw aria-hidden="true" /></IconButton> : null}>
       {aux.isError && <ErrorState error={aux.error} onRetry={() => { void aux.refetch() }} />}
       {!aux.data ? !aux.isError && <LoadingState /> : (
         <table aria-label={title} className="w-full table-fixed text-sm">
@@ -121,7 +123,7 @@ function TaskValue({ task, changed }: { task: AuxTask; changed: boolean }) {
   )
 }
 
-/** The Delegation row's Model cell: how many routes its route mode holds, else the mode's name ("Default"). */
+/** The Delegation row's Model cell: how many routes its route mode holds, else the mode's name ("Default"); TAL-2161 moves it to the server. */
 function DelegationValue({ state }: { state: DelegationSettings }) {
   const routes = state.configured === 'model_map' ? state.model_map.options ?? [] : state.configured === 'profile_routes' ? state.profile_routes.profiles ?? [] : null
   const label = routes ? m.delegation_routes_count({ count: routes.length }) : state.backends.find((b) => b.name === state.configured)?.label ?? state.configured

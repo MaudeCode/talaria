@@ -17,7 +17,7 @@ import { HttpFailure } from '../sessions/service.js'
 import { SidecarError } from '../sidecar/client.js'
 import type { SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { SessionNotFound } from '../sessions/store.js'
-import { agentApprovals, auxiliaryModels, auxiliaryReasoning, compressionPrepareAhead, dict, DISCUSSION_LIMITS_KEY, discussionLimits, type DiscussionLimits, isDict, modelSection, canonicaliseProviderId, ConfigUnavailable, maxTokensStatus, PREPARE_AHEAD_KEY, findPersonality, reasoningStatus, setAgentApprovals, setAuxiliaryModel, setDefaultModel, setMaxTokens, validReasoningEffort, type AuxEfforts, type Dict } from '../config/agent-config.js'
+import { agentApprovals, auxiliaryModels, auxiliaryReasoning, compressionPrepareAhead, dict, DISCUSSION_LIMITS_KEY, discussionLimits, type DiscussionLimits, isDict, modelSection, canonicaliseProviderId, ConfigUnavailable, maxTokensStatus, PREPARE_AHEAD_KEY, findPersonality, reasoningStatus, setAgentApprovals, setAuxiliaryModel, setDefaultModel, setMaxTokens, unlistedAuxiliaryOverrides, validReasoningEffort, type AuxEfforts, type Dict } from '../config/agent-config.js'
 import { ProfileError, validateProfileName } from '../profiles/profiles.js'
 import { OnboardingError } from '../onboarding.js'
 import { EnvWriteError } from '../providers/env-file.js'
@@ -62,17 +62,17 @@ const auxiliaryState = async (ctx: RequestContext): Promise<Dict> => {
   const config = await ctx.deps.agentConfig.read(profileHome)
   const main = modelSection(config)
   const model = str(main.default ?? main.name).trim()
-  const [[tiers = []], canEdit, delegation, { slots, reasoning }, catalog] = await Promise.all([
+  const [[tiers = []], canEdit, delegation, { slots, reserved, reasoning }, catalog] = await Promise.all([
     // Speed availability must not prevent reading or editing the independent auxiliary slots.
     model ? ctx.deps.agentConfig.speedTiers(profileHome, config, [{ model, provider: str(main.provider) }]).catch(() => []) : Promise.resolve([]),
     canManageServer(ctx),
     ctx.deps.agentConfig.delegation(profileHome, config),
-    ctx.deps.agentConfig.auxiliarySlots(profileHome).then(async ({ slots }) => ({ slots, reasoning: await auxiliaryReasoning(config, slots, auxEfforts(ctx)) })),
+    ctx.deps.agentConfig.auxiliarySlots(profileHome).then(async ({ slots, reserved }) => ({ slots, reserved, reasoning: await auxiliaryReasoning(config, slots, auxEfforts(ctx)) })),
     ctx.deps.catalog.models(profileHome),
   ])
   // Native profile identities and lending routes are owner-only configuration.
   const visible = canEdit ? delegation : { ...delegation, profiles: [], model_map: { options: [], default: null }, profile_routes: { profiles: [], default: null } }
-  return { ...stampAuxiliarySelections(auxiliaryModels(config, tiers, slots, reasoning), catalog), delegation: { ...visible, can_edit: canEdit } }
+  return { ...stampAuxiliarySelections(auxiliaryModels(config, tiers, slots, reasoning), catalog), delegation: { ...visible, can_edit: canEdit }, unlisted_overrides: unlistedAuxiliaryOverrides(config, slots, reserved) }
 }
 const CLEAR_PERSONALITY = new Set(['none', 'default', 'clear'])
 const truthy = (v: string | undefined): boolean => ['1', 'true', 'yes', 'on'].includes((v ?? '').trim().toLowerCase())

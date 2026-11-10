@@ -985,7 +985,8 @@ export const AuxiliaryTaskSchema = z.looseObject({
   /** TAL-1285: the slot's reasoning control, resolved by the server against the route the slot runs on (its pin, the slot it inherits, else the main model). */
   reasoning: AuxiliaryReasoningSchema,
 })
-export const AuxiliaryModelsSchema = z.looseObject({ delegation: DelegationSettingsSchema.optional(), main: z.looseObject({ model: z.string().optional(), provider: z.string().optional(), base_url: z.string().optional(), api_key_set: z.boolean().optional(), service_tier: z.enum(['', 'default', 'priority', 'ultrafast']).optional().describe('Empty string is the Standard value returned by older servers.'), supported_speed_tiers: z.array(SpeedTierSchema).optional() }), tasks: z.array(AuxiliaryTaskSchema) })
+export const AuxiliaryModelsSchema = z.looseObject({ delegation: DelegationSettingsSchema.optional(), main: z.looseObject({ model: z.string().optional(), provider: z.string().optional(), base_url: z.string().optional(), api_key_set: z.boolean().optional(), service_tier: z.enum(['', 'default', 'priority', 'ultrafast']).optional().describe('Empty string is the Standard value returned by older servers.'), supported_speed_tiers: z.array(SpeedTierSchema).optional() }), tasks: z.array(AuxiliaryTaskSchema),
+  unlisted_overrides: z.boolean().optional().describe('TAL-2137: a disabled or removed plugin\'s task still holds a pinned route or saved effort, which Reset All clears though no listed task shows it.') })
 export const MaxTokensSchema = z.looseObject({ max_tokens: NullableNumber, max_tokens_effective: NullableNumber, max_tokens_fallback: NullableNumber })
 
 // ── workspaces, files, git ───────────────────────────────────────────────
