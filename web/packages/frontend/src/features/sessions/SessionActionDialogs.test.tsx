@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionRow, SessionsList } from '../../contracts'
 
 vi.mock('../../api/endpoints', () => ({
-  fetchSessions: vi.fn(), searchSessions: vi.fn(), fetchProjects: vi.fn(), archiveSession: vi.fn(), renameSession: vi.fn(), moveSession: vi.fn(),
+  fetchSettings: () => Promise.resolve({}), fetchSessions: vi.fn(), searchSessions: vi.fn(), fetchProjects: vi.fn(), archiveSession: vi.fn(), renameSession: vi.fn(), moveSession: vi.fn(),
   deleteSession: vi.fn(), revokeShare: vi.fn(), fetchWorktreeStatus: vi.fn(), exportSessionUrl: () => '',
 }))
 vi.mock('./useNewChat', () => ({ useNewChat: () => vi.fn() }))

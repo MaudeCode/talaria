@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionRow } from '../../contracts'
 
-vi.mock('../../api/endpoints', () => ({ fetchSessions: vi.fn(), searchSessions: vi.fn(), fetchProjects: vi.fn(), archiveSession: vi.fn() }))
+vi.mock('../../api/endpoints', () => ({ fetchSettings: () => Promise.resolve({}), fetchSessions: vi.fn(), searchSessions: vi.fn(), fetchProjects: vi.fn(), archiveSession: vi.fn() }))
 vi.mock('./useNewChat', () => ({ useNewChat: () => vi.fn() }))
 import * as api from '../../api/endpoints'
 import { openMobileSidebar, useShellState } from '../../shell/useShellState'
