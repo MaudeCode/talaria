@@ -9,13 +9,18 @@ import { useNewChat } from '../features/sessions/useNewChat'
 import { Brandmark } from './Brandmark'
 import { UpdateNotificationCenterButton } from '../features/notifications/UpdateNotificationCenter'
 
+/** The destination the titlebar names. TAL-2089: a hub page with this title leaves its heading to assistive technology on a phone. */
+export function usePanelTitle(): string {
+  const bootstrap = useBootstrap()
+  const panel = useLocation({ select: (location) => panelForPath(location.pathname) })
+  return NAV_ITEMS.find((n) => n.id === panel)?.label() ?? bootstrap.bot_name
+}
+
 /** Legacy `.app-titlebar`: hidden in desktop browsers, visible on mobile and in installed PWAs. */
 export function Titlebar({ subtitle }: { subtitle?: string | undefined }) {
-  const bootstrap = useBootstrap()
   const navigate = useNavigate()
   const newChat = useNewChat()
-  const panel = useLocation({ select: (location) => panelForPath(location.pathname) })
-  const panelLabel = NAV_ITEMS.find((n) => n.id === panel)?.label() ?? bootstrap.bot_name
+  const panelLabel = usePanelTitle()
   const { sidePanelOpen } = useShellState()
   // From 641px the rail carries the hamburger; an installed PWA's titlebar shows at those widths too.
   const isDesktop = useIsDesktop()

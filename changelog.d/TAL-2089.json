@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "On a phone, Talaria Web pages such as Kanban and Skills name themselves once in the titlebar instead of repeating the name in a header row underneath.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

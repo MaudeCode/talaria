@@ -40,7 +40,8 @@ test('pinned boards persist through the real settings API and fit foldable viewp
     }
     await page.reload()
     await expect(page.getByRole('tab', { name: 'Release planning', exact: true })).toHaveAttribute('aria-selected', 'true')
-    await page.getByRole('heading', { name: 'Kanban', exact: true }).hover()
+    // Pointer off the tabs; a phone's Kanban heading is screen-reader-only (TAL-2089), so no element to hover.
+    await page.mouse.move(1, 1)
     const inactive = await page.getByRole('tab', { name: 'Operations', exact: true }).evaluate(el => getComputedStyle(el).backgroundColor)
     await expect.poll(() => page.getByRole('tab', { name: 'Release planning', exact: true }).evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe(inactive)
     await page.screenshot({ path: info.outputPath('after-pinning.png'), fullPage: true })
