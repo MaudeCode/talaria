@@ -9,7 +9,7 @@ import { Check, CircleCheck, Download, KeyRound, RefreshCw, Trash2, Wrench } fro
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
-import { useDefaultModelChoice, useSetDefaultModel } from '../../app/queries'
+import { useDefaultModelChoice, useModelsQuery, useSetDefaultModel } from '../../app/queries'
 import { post } from '../../api/client'
 import { OkSchema, type ProviderSchema } from '../../contracts'
 import { IconButton } from '../../ui/Button'
@@ -56,7 +56,9 @@ export function ProvidersSection() {
   const { quotas, refresh: refreshQuotas } = useProviderQuotas()
   const { str } = useSettingField(['default_model'])
   const setDefault = useSetDefaultModel()
-  const chosenModel = useDefaultModelChoice()?.model
+  const choice = useDefaultModelChoice()
+  // The server resolves which provider serves the default (`default_provider_id`); the same model id can sit on several cards.
+  const catalog = useModelsQuery()
   const [editing, setEditing] = useState<string | null>(null)
   const invalidate = () => { void qc.invalidateQueries({ queryKey: keys.providers }); void qc.invalidateQueries({ queryKey: keys.models }) }
   const toastError = (e: unknown) => showErrorToast(e)
@@ -72,7 +74,8 @@ export function ProvidersSection() {
   if (providers.isPending) return <LoadingState />
   if (providers.isError && !providers.data) return <ErrorState error={providers.error} onRetry={() => { void providers.refetch() }} />
   const active = providers.data.active_provider
-  const defaultModel = chosenModel ?? str('default_model')
+  const defaultModel = choice ? choice.model : str('default_model')
+  const defaultProvider = choice ? choice.provider : catalog.data?.default_provider_id ?? null
   const quotaNotice = quotas.data?.availability?.unavailable_reason ?? providers.data.availability?.unavailable_reason
   const rows = new Map(providers.data.providers.map((p) => [p.id, p]))
   const titles = { configured: m.providers_group_configured(), available: m.providers_group_available() }
@@ -95,7 +98,7 @@ export function ProvidersSection() {
               const p = rows.get(id)
               if (!p) return null
               const hint = p.install_hint
-              return <ProviderRow key={p.id} p={p} compact={name === 'available'} quotaSources={quotas.data?.sources} quotaNotice={quotaNotice} catalogUnavailable={catalogUnavailable} defaultModel={defaultModel}
+              return <ProviderRow key={p.id} p={p} compact={name === 'available'} quotaSources={quotas.data?.sources} quotaNotice={quotaNotice} catalogUnavailable={catalogUnavailable} defaultModel={defaultModel} defaultProvider={defaultProvider}
                 editing={editing === p.id} onEdit={setEditing} onInvalidate={invalidate} onSetDefault={setDefault.mutate}
                 onRefresh={refreshModels.mutate} refreshBusy={refreshModels.isPending} refreshing={refreshModels.isPending && refreshModels.variables === p.id}
                 onSaveKey={saveKey.mutate} keySaving={saveKey.isPending} onSaveHosted={saveHosted.mutate} hostedSaving={saveHosted.isPending}
@@ -118,6 +121,8 @@ interface ProviderRowProps {
   quotaNotice: string | null | undefined
   catalogUnavailable: boolean
   defaultModel: string | undefined
+  /** The provider serving `defaultModel`; null marks no card, so every card keeps its selection action. */
+  defaultProvider: string | null
   editing: boolean
   onEdit: (id: string | null) => void
   onInvalidate: () => void
@@ -136,7 +141,7 @@ interface ProviderRowProps {
 
 // Memoized so typing in the filter renders only the rows entering the list (TAL-1405). Each filter answer is a new
 // response (TAL-2127), so `p` compares by value.
-const ProviderRow = memo(function ProviderRow({ p, compact, quotaSources, quotaNotice, catalogUnavailable, defaultModel, editing, onEdit, onInvalidate, onSetDefault, onRefresh, refreshBusy, refreshing, onSaveKey, keySaving, onSaveHosted, hostedSaving, onInstall, installing, installBlocked }: ProviderRowProps) {
+const ProviderRow = memo(function ProviderRow({ p, compact, quotaSources, quotaNotice, catalogUnavailable, defaultModel, defaultProvider, editing, onEdit, onInvalidate, onSetDefault, onRefresh, refreshBusy, refreshing, onSaveKey, keySaving, onSaveHosted, hostedSaving, onInstall, installing, installBlocked }: ProviderRowProps) {
   const sources = quotaSources?.filter((s) => s.provider_id === p.id) ?? []
   const quota = sources[0]
   const plan = quotaSourcePlan(quota)
@@ -185,7 +190,9 @@ const ProviderRow = memo(function ProviderRow({ p, compact, quotaSources, quotaN
               {p.models.map((mm) => (
                 <li key={mm.id} className="flex min-h-9 items-center justify-between gap-2 text-xs text-text" data-provider-model={mm.id}>
                   <span className="flex min-w-0 items-center gap-2"><ModelOptionContent entry={mm} /></span>
-                  {mm.id === defaultModel
+                  {mm.id === defaultModel && p.id === defaultProvider
+
+
                     ? <Mark>{m.providers_default_model()}</Mark>
                     : <IconButton variant="ghost" label={m.providers_set_default()} onClick={() => onSetDefault({ model: mm.id, provider: p.id })}><CircleCheck aria-hidden="true" /></IconButton>}
                 </li>

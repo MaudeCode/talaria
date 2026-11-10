@@ -54,7 +54,24 @@ describe('ProvidersSection', () => {
 
   afterEach(() => { quotaResponse.current = null; providersResponse.current = null; vi.useRealTimers() })
 
+  it("marks the default model only on the server's default provider and keeps the same id selectable elsewhere (TAL-2131)", async () => {
+    const shared = [{ id: 'shared-model', label: 'Shared model' }]
+    providersResponse.current = { active_provider: 'zai', providers: [{ id: 'openrouter', display_name: 'OpenRouter', has_key: true, configured: true, models: shared }, { id: 'zai', display_name: 'Z.AI', has_key: true, configured: true, models: shared }] }
+    vi.mocked(api.fetchSettings).mockResolvedValue({ default_model: 'shared-model' })
+    vi.mocked(api.fetchModels).mockResolvedValue({ groups: [], default_model: 'shared-model', default_provider_id: 'zai' })
+    renderSection()
+    const card = async (id: string) => {
+      const row = (await screen.findByText(id === 'zai' ? 'Z.AI' : 'OpenRouter')).closest<HTMLElement>(`[data-provider="${id}"]`)!
+      return within(row.querySelector<HTMLElement>('[data-provider-model="shared-model"]')!)
+    }
+    await waitFor(async () => expect((await card('zai')).getByText('Default model')).toBeInTheDocument())
+    expect((await card('zai')).queryByRole('button', { name: 'Set as default' })).toBeNull()
+    await userEvent.click((await card('openrouter')).getByRole('button', { name: 'Set as default' }))
+    expect(api.setDefaultModel).toHaveBeenCalledWith('shared-model', 'openrouter', undefined)
+  })
+
   it("renders the server's groups, counts and filter answers in server order (TAL-2077, TAL-2127)", async () => {
+
     const openai = { id: 'openai', display_name: 'OpenAI', has_key: false, configured: false }
     const zai = { id: 'zai', display_name: 'Z.AI', has_key: true, configured: true }
     const openrouter = { id: 'openrouter', display_name: 'OpenRouter', has_key: true, configured: false }
