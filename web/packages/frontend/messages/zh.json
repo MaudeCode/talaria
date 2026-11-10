@@ -176,6 +176,7 @@
 	"composer_placeholder_busy_queue": "Enter = 队列 | /interrupt | /background | /steer",
 	"composer_placeholder_busy_steer": "Enter = 引导 | /queue | /background | /interrupt",
 	"composer_queue": "消息加入队列",
+	"composer_quota_chip_title": "提供商配额",
 	"composer_send": "发送消息",
 	"composer_steer": "引导当前响应",
 	"composer_stop": "停止生成",

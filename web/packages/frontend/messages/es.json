@@ -211,6 +211,7 @@
 	"composer_placeholder_busy_queue": "Enter = queue | /interrupt | /background | /steer",
 	"composer_placeholder_busy_steer": "Enter = steer | /queue | /background | /interrupt",
 	"composer_queue": "Poner en cola",
+	"composer_quota_chip_title": "Cuota del proveedor",
 	"composer_send": "Enviar mensaje",
 	"composer_steer": "Dirigir respuesta actual",
 	"composer_stop": "Detener generación",

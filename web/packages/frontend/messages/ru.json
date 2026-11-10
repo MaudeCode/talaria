@@ -231,6 +231,7 @@
 	"composer_placeholder_busy_queue": "Enter = очередь | /interrupt | /background | /steer",
 	"composer_placeholder_busy_steer": "Enter = правка | /queue | /background | /interrupt",
 	"composer_queue": "Поставить в очередь",
+	"composer_quota_chip_title": "Квота провайдера",
 	"composer_send": "Отправить сообщение",
 	"composer_steer": "Направить ответ",
 	"composer_stop": "Остановить генерацию",

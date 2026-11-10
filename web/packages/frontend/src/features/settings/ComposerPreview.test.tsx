@@ -22,7 +22,7 @@ import { showToast } from '../toast/toast'
 import { SettingsSection } from './SettingsSection'
 
 /** The ten hideable controls in the composer's order, by the name each toggle in the drawing has. */
-const CONTROLS = ['Attach button', 'Model', 'Reasoning', 'Profile', 'Workspace', 'Toolsets', 'Quota chip', 'Context ring', 'Microphone', 'YOLO mode notice']
+const CONTROLS = ['Attach button', 'Model', 'Reasoning', 'Profile', 'Workspace', 'Toolsets', 'Provider quota', 'Context ring', 'Microphone', 'YOLO mode notice']
 
 /** What the real composer decides for its model chip from the same settings: hidden or shown. */
 function ComposerModelChip() {
@@ -45,13 +45,13 @@ it('draws each hideable composer control as a toggle in the composer\'s order, c
   const composer = await renderChat({ hide_composer_profile: true, show_quota_chip: false })
   const toggles = composer.getAllByRole('button').filter((b) => b.hasAttribute('aria-pressed'))
   expect(toggles.map((b) => b.getAttribute('aria-label'))).toEqual(CONTROLS.map((c) => `Show ${c}`))
-  expect(toggles.filter((b) => b.getAttribute('aria-pressed') === 'false').map((b) => b.getAttribute('aria-label'))).toEqual(['Show Profile', 'Show Quota chip'])
+  expect(toggles.filter((b) => b.getAttribute('aria-pressed') === 'false').map((b) => b.getAttribute('aria-label'))).toEqual(['Show Profile', 'Show Provider quota'])
   expect(composer.getByText('8 of 10 controls shown')).toBeInTheDocument()
 })
 
 it('hides a control at once, saves its key and the composer follows; a refusal rolls it back with the error (TAL-2138)', async () => {
   const held = deferred<Record<string, unknown>>()
-  const composer = await renderChat({})
+  const composer = await renderChat({ show_quota_chip: true })
   vi.mocked(saveSettings).mockReturnValue(held.promise)
   const model = composer.getByRole('button', { name: 'Show Model' })
   expect(model).toHaveAttribute('aria-pressed', 'true')
@@ -68,7 +68,7 @@ it('hides a control at once, saves its key and the composer follows; a refusal r
   await waitFor(() => expect(showToast).toHaveBeenCalledWith(message, 4000, 'error'))
 })
 
-it('reaches and toggles every control from the keyboard, the quota chip saving its shown key (TAL-2138)', async () => {
+it('reaches and toggles every control from the keyboard, the quota chip, hidden by default, saving its shown key (TAL-2138, TAL-2151)', async () => {
   const composer = await renderChat({})
   composer.getByRole('button', { name: 'Show Attach button' }).focus()
   for (const [i, name] of CONTROLS.entries()) {
@@ -81,6 +81,6 @@ it('reaches and toggles every control from the keyboard, the quota chip saving i
   await userEvent.tab({ shift: true })
   await userEvent.tab({ shift: true })
   await userEvent.keyboard(' ')
-  expect(composer.getByRole('button', { name: 'Show Quota chip' })).toHaveAttribute('aria-pressed', 'false')
-  expect(saveSettings).toHaveBeenLastCalledWith({ show_quota_chip: false })
+  expect(composer.getByRole('button', { name: 'Show Provider quota' })).toHaveAttribute('aria-pressed', 'true')
+  expect(saveSettings).toHaveBeenLastCalledWith({ show_quota_chip: true })
 })

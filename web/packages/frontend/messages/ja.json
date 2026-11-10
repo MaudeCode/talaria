@@ -199,6 +199,7 @@
 	"composer_placeholder_busy_queue": "Enter = キュー登録 | /interrupt | /background | /steer",
 	"composer_placeholder_busy_steer": "Enter = 割り込み操作 | /queue | /background | /interrupt",
 	"composer_queue": "メッセージをキュー",
+	"composer_quota_chip_title": "プロバイダーのクォータ",
 	"composer_send": "メッセージを送信",
 	"composer_steer": "現在の応答をステア",
 	"composer_stop": "生成を停止",

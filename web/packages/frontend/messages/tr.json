@@ -212,6 +212,7 @@
 	"composer_placeholder_busy_queue": "Enter = queue | /interrupt | /background | /steer",
 	"composer_placeholder_busy_steer": "Enter = steer | /queue | /background | /interrupt",
 	"composer_queue": "Sıra mesajı",
+	"composer_quota_chip_title": "Sağlayıcı kotası",
 	"composer_send": "Mesaj gönder",
 	"composer_steer": "Akım tepkisini yönlendir",
 	"composer_stop": "Üretimi durdur",

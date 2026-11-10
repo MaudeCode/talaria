@@ -212,6 +212,7 @@
 	"composer_placeholder_busy_queue": "Enter = fronta | /interrupt | /background | /steer",
 	"composer_placeholder_busy_steer": "Enter = řízení | /queue | /background | /interrupt",
 	"composer_queue": "Zařadit zprávu do fronty",
+	"composer_quota_chip_title": "Kvóta poskytovatele",
 	"composer_send": "Odeslat zprávu",
 	"composer_steer": "Řídit aktuální odpověď",
 	"composer_stop": "Zastavit generování",

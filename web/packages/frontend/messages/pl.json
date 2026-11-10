@@ -225,6 +225,7 @@
 	"composer_placeholder_busy_queue": "Enter = queue | /interrupt | /background | /steer",
 	"composer_placeholder_busy_steer": "Enter = steer | /queue | /background | /interrupt",
 	"composer_queue": "Kolejkuj wiadomość",
+	"composer_quota_chip_title": "Limit dostawcy",
 	"composer_send": "Wyślij wiadomość",
 	"composer_steer": "Steruj bieżącą odpowiedzią",
 	"composer_stop": "Zatrzymaj generowanie",

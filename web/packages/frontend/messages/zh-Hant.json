@@ -199,6 +199,7 @@
 	"composer_placeholder_busy_queue": "Enter = queue | /interrupt | /background | /steer",
 	"composer_placeholder_busy_steer": "Enter = steer | /queue | /background | /interrupt",
 	"composer_queue": "訊息加入佇列",
+	"composer_quota_chip_title": "供應商配額",
 	"composer_send": "傳送訊息",
 	"composer_steer": "引導目前回應",
 	"composer_stop": "停止產生",

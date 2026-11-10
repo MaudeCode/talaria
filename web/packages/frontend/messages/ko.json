@@ -212,6 +212,7 @@
 	"composer_placeholder_busy_queue": "Enter = queue | /interrupt | /background | /steer",
 	"composer_placeholder_busy_steer": "Enter = steer | /queue | /background | /interrupt",
 	"composer_queue": "메시지 대기열에 추가",
+	"composer_quota_chip_title": "제공자 할당량",
 	"composer_send": "메시지 보내기",
 	"composer_steer": "현재 응답 유도",
 	"composer_stop": "생성 중지",

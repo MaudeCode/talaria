@@ -18,7 +18,7 @@ const HIDDEN = 'border-dashed border-current! line-through opacity-50'
  */
 export function ComposerGroup({ children }: { children: ReactNode }) {
   const { bool, set } = useSettingField(KEYS)
-  const shown = (c: ComposerControl) => c.shows ? bool(c.key, true) : !bool(c.key)
+  const shown = (c: ComposerControl) => c.shows ? bool(c.key) : !bool(c.key)
   // TAL-2172 sends this count from the server; until then the client counts the stored keys, its own writes included.
   const count = COMPOSER_CONTROLS.filter(shown).length
   return (
@@ -40,20 +40,23 @@ function ComposerPreview({ shown, onToggle }: { shown: (c: ComposerControl) => b
     <div className="py-2">
       <div className="flex flex-col gap-2 rounded-(--composer-radius) border-(length:--composer-border-width) border-(--composer-border-color) p-2.5 max-[641px]:rounded-(--composer-radius-phone)" data-composer-preview="">
         <p className="px-1 text-sm text-muted" aria-hidden="true">{m.composer_placeholder({ name: bot })}</p>
-        <div className="flex flex-wrap items-center gap-1">
-          {COMPOSER_CONTROLS.map((c) => {
-            const on = shown(c)
-            const icon = c.glyph === 'ring' ? <ContextRingGlyph pct={40} /> : c.glyph === 'yolo' ? <span aria-hidden="true">⚡</span> : c.icon && <c.icon size={14} className="shrink-0" aria-hidden="true" />
-            return (
-              <button key={c.key} type="button" id={composerControlId(c.key)} aria-pressed={on} aria-label={m.settings_composer_show({ control: c.name() })} title={c.name()} onClick={() => onToggle(c)}
-                className="rounded-(--control-radius) outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)">
-                {c.label
-                  ? <Chip readOnly size="xs" icon={icon} label={c.label()} title={c.name()} className={cn('cursor-pointer', !on && HIDDEN)} />
-                  : <span className={cn('flex size-7 items-center justify-center rounded-(--control-radius) border text-(--chip-fg)', on ? 'border-transparent' : HIDDEN)}>{icon}</span>}
-              </button>
-            )
-          })}
-          <span className="send-btn ms-auto cursor-default" aria-hidden="true"><ArrowUp size={14} /></span>
+        {/* The send button keeps its own column at the right, as in the composer; the controls wrap beside it. */}
+        <div className="flex items-end gap-2">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+            {COMPOSER_CONTROLS.map((c) => {
+              const on = shown(c)
+              const icon = c.glyph === 'ring' ? <ContextRingGlyph pct={40} /> : c.glyph === 'yolo' ? <span aria-hidden="true">⚡</span> : c.icon && <c.icon size={14} className="shrink-0" aria-hidden="true" />
+              return (
+                <button key={c.key} type="button" id={composerControlId(c.key)} aria-pressed={on} aria-label={m.settings_composer_show({ control: c.name() })} title={c.name()} onClick={() => onToggle(c)}
+                  className="rounded-(--control-radius) outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)">
+                  {c.label
+                    ? <Chip readOnly size="xs" icon={icon} label={c.label()} title={c.name()} className={cn('cursor-pointer', !on && HIDDEN)} />
+                    : <span className={cn('flex size-7 items-center justify-center rounded-(--control-radius) border text-(--chip-fg)', on ? 'border-transparent' : HIDDEN)}>{icon}</span>}
+                </button>
+              )
+            })}
+          </div>
+          <span className="send-btn cursor-default" aria-hidden="true"><ArrowUp size={14} /></span>
         </div>
       </div>
     </div>

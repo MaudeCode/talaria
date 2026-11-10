@@ -225,6 +225,7 @@
 	"composer_placeholder_busy_queue": "Enter = queue | /interrupt | /background | /steer",
 	"composer_placeholder_busy_steer": "Enter = steer | /queue | /background | /interrupt",
 	"composer_queue": "Mettre en file d'attente",
+	"composer_quota_chip_title": "Quota du fournisseur",
 	"composer_send": "Envoyer le message",
 	"composer_steer": "Piloter la réponse en cours",
 	"composer_stop": "Arrêter la génération",

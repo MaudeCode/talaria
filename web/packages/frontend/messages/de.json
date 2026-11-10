@@ -189,6 +189,7 @@
 	"composer_placeholder_busy_queue": "Enter = queue | /interrupt | /background | /steer",
 	"composer_placeholder_busy_steer": "Enter = steer | /queue | /background | /interrupt",
 	"composer_queue": "Nachricht einreihen",
+	"composer_quota_chip_title": "Anbieter-Kontingent",
 	"composer_send": "Nachricht senden",
 	"composer_steer": "Antwort steuern",
 	"composer_stop": "Generierung stoppen",
