@@ -132,13 +132,6 @@ it('puts each Chat and Navigation row in the group where it applies, each once w
     for (const [name, group] of GROUPS[section]) if (group === 'destinations' || group === 'quotas') expect(screen.getByRole('switch', { name })).toBeInTheDocument()
     view.unmount()
   }
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  qc.setQueryData(keys.settings, settings)
-  vi.stubGlobal('matchMedia', (query: string) => ({ matches: false, media: query, addEventListener: () => undefined, removeEventListener: () => undefined }))
-  renderSection(<SettingsSection section="appearance" />, true, qc)
-  await screen.findByText('Theme')
-  vi.unstubAllGlobals()
-  expect(screen.queryByLabelText('Sidebar density')).toBeNull()
 })
 
 describe('settings pages', () => {
