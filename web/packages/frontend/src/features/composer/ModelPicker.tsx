@@ -52,12 +52,17 @@ const MAX_HEIGHT = 346
 const CHROME = 52
 
 /** TAL-807: the server's rate-limit state for a provider group: its account limit or a low quota level (never both). */
-function GroupLimitBadge({ group, locale }: { group: Group; locale: string }) {
-  const badge = 'shrink-0 text-[11px] font-medium normal-case tracking-normal'
-  if (group.limit?.scope === 'account') return <span data-model-limit="account" className={cn(badge, 'text-error')}>{m.model_limited_until({ time: resetTime(locale, group.limit.resets_at) })}</span>
-  if (group.quota_level === 'critical') return <span data-quota-level="critical" className={cn(badge, 'text-error')}>{m.model_quota_critical()}</span>
-  if (group.quota_level === 'warning') return <span data-quota-level="warning" className={cn(badge, 'text-warning')}>{m.model_quota_warning()}</span>
+function groupLimit(group: Group, locale: string): { text: string; tone: string; data: Record<string, string> } | null {
+  if (group.limit?.scope === 'account') return { text: m.model_limited_until({ time: resetTime(locale, group.limit.resets_at) }), tone: 'text-error', data: { 'data-model-limit': 'account' } }
+  if (group.quota_level === 'critical') return { text: m.model_quota_critical(), tone: 'text-error', data: { 'data-quota-level': 'critical' } }
+  if (group.quota_level === 'warning') return { text: m.model_quota_warning(), tone: 'text-warning', data: { 'data-quota-level': 'warning' } }
   return null
+}
+
+/** The group's limit badge: in the provider tab's header, and beside the provider on every row of Favorites and search. */
+function GroupLimitBadge({ group, locale }: { group: Group; locale: string }) {
+  const limit = groupLimit(group, locale)
+  return limit && <span {...limit.data} className={cn('shrink-0 text-[11px] font-medium normal-case tracking-normal', limit.tone)}>{limit.text}</span>
 }
 
 const groupKey = (group: Group) => group.provider_id ?? group.provider
@@ -214,13 +219,13 @@ const ModelRow = memo(function ModelRow({ entry, group, index, locale, mixed, se
   const starLabel = favorite ? m.model_favorite_remove() : m.model_favorite_add()
   // The star is the row's one action besides choosing it, so right-click and long-press offer it too.
   return <RowContextMenu label={entry.label ?? entry.id} actions={starrable ? [{ label: starLabel, run: () => onStar(entry, !favorite) }] : []} trigger={
-    <Combobox.Item index={index} value={entry.id} data-model-option={entry.id} aria-label={[modelOptionLabel(entry, locale), mixed ? provider : null].filter(Boolean).join(' · ')} className={ROW}>
+    <Combobox.Item index={index} value={entry.id} data-model-option={entry.id} aria-label={[modelOptionLabel(entry, locale), resetsAt ? m.model_limited_until({ time: resetTime(locale, resetsAt) }) : null, mixed ? provider : null, mixed ? groupLimit(group, locale)?.text : null].filter(Boolean).join(' · ')} className={ROW}>
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="flex min-w-0 items-center gap-2">
           <ModelOptionContent entry={entry} />
           {resetsAt && <span data-model-limit="model" className="ms-auto shrink-0 text-xs text-warning">{m.model_limited_until({ time: resetTime(locale, resetsAt) })}</span>}
         </span>
-        {mixed && <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted"><ProviderIcon icon={group.icon} className="size-3" /><span className="truncate">{provider}</span></span>}
+        {mixed && <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted"><ProviderIcon icon={group.icon} className="size-3" /><span className="truncate">{provider}</span><GroupLimitBadge group={group} locale={locale} /></span>}
       </span>
       {starrable
         ? <button type="button" aria-label={starLabel} title={starLabel} data-model-favorite={favorite ? 'true' : 'false'}

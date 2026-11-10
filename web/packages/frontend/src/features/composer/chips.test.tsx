@@ -419,7 +419,7 @@ describe('ModelChip', () => {
     await waitFor(() => { expect(vi.mocked(fetchModels).mock.calls.length).toBe(reads + 1) })
     const header = (id: string) => document.querySelector(`[data-model-picker-group="${id}"]`)
     await waitFor(() => { expect(header('anthropic')).toHaveTextContent('Low quota') })
-    expect(screen.getByRole('option', { name: /Claude Opus 4\.7/ })).toHaveTextContent(`Limited until ${time}`)
+    expect(screen.getByRole('option', { name: `Claude Opus 4.7 · Limited until ${time}` })).toHaveTextContent(`Limited until ${time}`)
     expect(screen.getByRole('option', { name: 'M' })).not.toHaveTextContent('Limited')
     await userEvent.click(within(rail()).getByRole('button', { name: 'Gemini' }))
     expect(header('gemini')).toHaveTextContent(`Limited until ${time}`)
@@ -428,6 +428,11 @@ describe('ModelChip', () => {
     // A healthy level shows nothing.
     await userEvent.click(within(rail()).getByRole('button', { name: 'Ollama' }))
     expect(header('ollama')).not.toHaveTextContent(/quota|Limited/i)
+    // Search mixes providers and has no header, so each row carries its group's limit beside the provider.
+    await userEvent.type(screen.getByRole('combobox'), 'gemini 2.5')
+    const gemini = screen.getByRole('option', { name: `Gemini 2.5 Flash · Gemini · Limited until ${time}` })
+    expect(gemini.querySelector('[data-model-limit="account"]')).toHaveTextContent(`Limited until ${time}`)
+    expect(screen.getByRole('option', { name: 'Gemini 2.5 Flash · Google · Quota nearly out' })).toHaveTextContent('Quota nearly out')
   })
 })
 
