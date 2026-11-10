@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Settings › Providers in Talaria Web opens with your connected providers, lowest quota, month's spend and default, shows each configured provider as one line with its quota meter or daily spend, and opens it to its own page for quota, sidebar pins, spend, sign-in and models; quota pins moved there from Navigation.",
+      "highlight": false,
+      "components": ["web"],
+      "announcement": {
+        "title": "A page for each provider",
+        "description": "Open a provider to see its quota, spend, sign-in and models, and pin its quota to the sidebar.",
+        "icon": "settings"
+      }
+    }
+  ]
+}

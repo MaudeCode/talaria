@@ -67,7 +67,7 @@ const PLACEMENT: Record<string, SettingsSectionId> = {
   sidebar_density: 'navigation', pinned_sessions_limit: 'navigation', session_endless_scroll: 'chat', session_jump_buttons: 'chat', show_conversation_outline: 'chat', project_quick_create_buttons: 'navigation',
   show_cli_sessions: 'navigation', show_claude_code_sessions: 'navigation', show_cron_sessions: 'navigation', show_webhook_sessions: 'navigation', show_kanban_sessions: 'navigation',
   show_previous_messaging_sessions: 'navigation', hidden_tabs: 'navigation', show_titlebar_profile: 'navigation', show_sidebar_feedback: 'navigation', show_quota_chip: 'chat',
-  '[data-group="quotas"]': 'navigation', workspace_panel_open: 'navigation', workspace_todos_tab: 'navigation', new_chat_on_workspace_switch: 'navigation',
+  workspace_panel_open: 'navigation', workspace_todos_tab: 'navigation', new_chat_on_workspace_switch: 'navigation',
   terminal_auto_expand_on_output: 'navigation', screen_reader_mode: 'navigation',
   default_model: 'models', '#settingsModel': 'models', '[data-group="auxiliary"]': 'models', '[data-group="quota-thresholds"]': 'providers',
   notifications_enabled: 'notifications', sound_enabled: 'notifications', '#completionSound': 'notifications',
@@ -120,7 +120,6 @@ const GROUPS: Record<'chat' | 'navigation', [string, string][]> = {
     ['Tasks', 'destinations'], ['Kanban', 'destinations'], ['Skills', 'destinations'], ['Memory', 'destinations'], ['Discussions', 'destinations'], ['Todos', 'destinations'],
     ['Decisions', 'destinations'], ['Insights', 'destinations'],
     ['Sidebar feedback button', 'buttons'], ['Show profile switcher in titlebar', 'buttons'],
-    ['Claude', 'quotas'], ['OpenRouter', 'quotas'],
     ['Keep workspace panel open by default', 'workspace'], ['Show Todos tab in workspace panel', 'workspace'], ['Start a new chat when switching workspace', 'workspace'],
     ['Auto-expand terminal on output', 'workspace'], ['Terminal screen reader mode', 'workspace'],
   ],
@@ -128,17 +127,15 @@ const GROUPS: Record<'chat' | 'navigation', [string, string][]> = {
 
 it('puts each Chat and Navigation row in the group where it applies, each once with its own labelled control (TAL-2075)', async () => {
   const settings = { hidden_tabs: ['kanban'], compression_prepare_ahead: true, group_discussion_max_rounds: 3, group_discussion_max_messages: 10 }
-  const quotas = { sources: [{ source_id: 'qsrc_claude', display_name: 'Claude' }, { source_id: 'qsrc_or', display_name: 'OpenRouter' }], sidebar_source_ids: ['qsrc_or'], sidebar_can_pin: true }
   for (const section of ['chat', 'navigation'] as const) {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     qc.setQueryData(keys.settings, settings)
-    qc.setQueryData(keys.providerQuotas, quotas)
     const view = renderSection(<SettingsSection section={section} />, true, qc)
     await waitFor(() => expect(view.container.querySelector(`[data-section="${section}"]`)).not.toBeNull())
     const labels = [...view.container.querySelectorAll<HTMLLabelElement>(`[data-section="${section}"] label`)]
     expect(labels.map((label) => [label.textContent, label.closest('[data-group]')?.getAttribute('data-group')]), section).toEqual(GROUPS[section])
     for (const label of labels) expect(document.getElementById(label.htmlFor), label.textContent ?? '').not.toBeNull()
-    for (const [name, group] of GROUPS[section]) if (group === 'destinations' || group === 'quotas') expect(screen.getByRole('switch', { name })).toBeInTheDocument()
+    for (const [name, group] of GROUPS[section]) if (group === 'destinations') expect(screen.getByRole('switch', { name })).toBeInTheDocument()
     view.unmount()
   }
 })

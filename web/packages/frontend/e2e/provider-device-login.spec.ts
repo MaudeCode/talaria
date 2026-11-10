@@ -43,8 +43,8 @@ test('provider device sign-in is usable across phone layouts and reconciles appr
   await row.getByRole('button', { name: 'Sign in with GitHub Copilot' }).click()
   await expect(row.getByText('TEST-1827')).toBeVisible()
   approved = true
-  await expect(row.getByText('Signed in to GitHub Copilot.')).toBeVisible()
-  await expect(row).toContainText('Configured')
+  // TAL-2135: once signed in, the provider joins Your providers, which opens its own page.
+  await expect(page.locator('[data-section="providers-configured"] [data-provider="copilot"]')).toContainText('Configured')
   expect(starts).toEqual([{ provider: 'copilot' }, { provider: 'copilot' }])
   await capture('signed-in')
 })

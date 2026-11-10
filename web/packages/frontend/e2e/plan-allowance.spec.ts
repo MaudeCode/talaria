@@ -60,7 +60,8 @@ for (const legacy of [true, false]) test(`${legacy ? 'legacy' : 'native'} model 
     availability: { authoritative: quotaPhase !== 'offline', status: quotaPhase === 'offline' ? 'unavailable' : 'available', generation: 'synthetic-generation', unavailable_reason: quotaPhase === 'offline' ? 'Account status temporarily unavailable.' : null },
     sources: legacy || quotaPhase === 'offline' ? [] : [{ source_id: 'test-nous', provider_id: 'nous', status: 'available', plan_usage: { ...plan, credits_pay: quotaPhase === 'credits' }, plan_stale: false, windows: [] }],
   } }))
-  await page.goto('/settings/providers'); await settle(page)
+  // TAL-2135: a plan allowance shows on its provider's own page.
+  await page.goto('/settings/providers/nous'); await settle(page)
   if (!legacy) {
     await expect(page.getByTestId('provider-plan-usage')).toContainText('0% remaining')
     await expect(page.getByTestId('provider-plan-usage')).toContainText('80% remaining')

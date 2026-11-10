@@ -29,9 +29,13 @@ test('recovery holds label cached quotas and the configured model truthfully', a
   held = true
   await page.reload()
   await expect(page.locator('[data-section="providers"]').getByRole('status')).toContainText('Showing last-confirmed data')
-  await expect(page.getByTestId('provider-quota-pace')).toBeVisible()
-  await page.getByRole('button', { name: 'Refresh quotas', exact: true }).click()
-  await expect(page.getByTestId('provider-quota-pace')).toBeVisible()
+  // TAL-2135: the provider's own page keeps its cached windows through a refresh.
+  await page.goto('/settings/providers/anthropic')
+  await settle(page)
+  const weekly = page.locator('[data-group="quota"] [data-quota-window="Weekly"]')
+  await expect(weekly).toBeVisible()
+  await page.locator('[data-group="quota"]').getByRole('button', { name: 'Refresh quotas', exact: true }).click()
+  await expect(weekly).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('quota-recovery-after.png'), fullPage: true })
   await page.goto('/settings/models')

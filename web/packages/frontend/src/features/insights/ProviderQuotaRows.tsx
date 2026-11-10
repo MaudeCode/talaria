@@ -15,7 +15,7 @@ import { QuotaMeter, quotaCreditsText, quotaSourceName, quotaSourcePlan, quotaSt
  * Every `/api/provider/quotas` source with every window laid out like the App's Insights rows (TAL-1750, TAL-1782):
  * the window's headline percent in the chosen mode, a meter with the pace marker, the reset beside the forecast,
  * then Pace / Burn / Budget cells. Each value is a contract field (TAL-409 pace, TAL-411 urgency); the client only
- * formats. Settings › Providers keeps its sibling `ProviderQuotaPace`: one pace window as inline metadata.
+ * formats. Settings › Providers (TAL-2135) shares `QuotaWindowMeter` and `quotaPaceWord`.
  */
 export function ProviderQuotaRows({ quotas, mode, onRefresh }: { quotas: UseQueryResult<z.infer<typeof ProviderQuotasSchema>>; mode: QuotaPercentMode; onRefresh: () => void }) {
   const locale = useLocale()
@@ -91,9 +91,7 @@ function QuotaSourceRow({ source: s, mode, locale }: { source: QuotaSource; mode
 
 function QuotaWindowRow({ window: w, source, mode, locale }: { window: QuotaWindow; source: QuotaSource; mode: QuotaPercentMode; locale: string }) {
   const { pace, forecast } = w
-  const { level, percent, marker, modeLabel } = quotaWindowFigures(source, w, mode)
-  // The server's minutes to reset, as of its `computed_at`; the list rereads every minute.
-  const countdown = pace ? formatMinutes(locale, pace.minutes_to_reset) : null
+  const { level, percent, modeLabel } = quotaWindowFigures(source, w, mode)
   return (
     <div className="flex flex-col gap-1.5" data-quota-window={w.label} data-level={level}>
       <div className="flex items-baseline justify-between gap-3">
@@ -105,6 +103,34 @@ function QuotaWindowRow({ window: w, source, mode, locale }: { window: QuotaWind
           </span>
         ) : w.detail && <span className="text-xs text-muted">{w.detail}</span>}
       </div>
+      <QuotaWindowMeter window={w} source={source} mode={mode} locale={locale} countdown />
+      {pace && (
+        <div className="mt-0.5 flex gap-2">
+          <MetricCell id="pace" label={m.provider_quota_pace_label()} value={quotaPaceWord(pace, locale)} />
+          <MetricCell id="burn" label={m.provider_quota_burn_label()} value={formatBurnRate(locale, pace.burn_rate)} />
+          {forecast?.budget_percent != null && <MetricCell id="budget" label={m.provider_quota_budget_label()} value={(forecast.budget_unit === 'day' ? m.provider_quota_budget_day_short : m.provider_quota_budget_hour_short)({ percent: formatPercent(locale, forecast.budget_percent) })} />}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** A window's pace as the server words it: over or under by its delta, else on pace. */
+export const quotaPaceWord = (pace: NonNullable<QuotaWindow['pace']>, locale: string): string =>
+  pace.status === 'over' ? m.provider_quota_pace_over_short({ percent: formatPercent(locale, -pace.pace_delta_percent) }) : pace.status === 'under' ? m.provider_quota_pace_under_short({ percent: formatPercent(locale, pace.pace_delta_percent) }) : m.provider_quota_on_pace()
+
+/**
+ * One window's meter with its pace marker, the reset at the left and the server's forecast at the right (`text-warning`
+ * only on a `warning` outcome). Insights adds the server's minutes to reset (`countdown`); Settings › Providers (TAL-2135)
+ * puts its own headline above it.
+ */
+export function QuotaWindowMeter({ window: w, source, mode, locale, countdown: withCountdown }: { window: QuotaWindow; source: QuotaSource; mode: QuotaPercentMode; locale: string; countdown?: boolean }) {
+  const { pace, forecast } = w
+  const { level, percent, marker, modeLabel } = quotaWindowFigures(source, w, mode)
+  // The server's minutes to reset, as of its `computed_at`; the list rereads every minute.
+  const countdown = withCountdown && pace ? formatMinutes(locale, pace.minutes_to_reset) : null
+  return (
+    <>
       {percent !== null && <QuotaMeter level={level} percent={percent} marker={marker} label={`${w.label}: ${formatPercent(locale, percent)} ${modeLabel}`} />}
       {(w.reset_at || forecast || (percent !== null && w.detail)) && (
         <div className="flex items-baseline justify-between gap-3 text-xs text-muted">
@@ -118,13 +144,6 @@ function QuotaWindowRow({ window: w, source, mode, locale }: { window: QuotaWind
           )}
         </div>
       )}
-      {pace && (
-        <div className="mt-0.5 flex gap-2">
-          <MetricCell id="pace" label={m.provider_quota_pace_label()} value={pace.status === 'over' ? m.provider_quota_pace_over_short({ percent: formatPercent(locale, -pace.pace_delta_percent) }) : pace.status === 'under' ? m.provider_quota_pace_under_short({ percent: formatPercent(locale, pace.pace_delta_percent) }) : m.provider_quota_on_pace()} />
-          <MetricCell id="burn" label={m.provider_quota_burn_label()} value={formatBurnRate(locale, pace.burn_rate)} />
-          {forecast?.budget_percent != null && <MetricCell id="budget" label={m.provider_quota_budget_label()} value={(forecast.budget_unit === 'day' ? m.provider_quota_budget_day_short : m.provider_quota_budget_hour_short)({ percent: formatPercent(locale, forecast.budget_percent) })} />}
-        </div>
-      )}
-    </div>
+    </>
   )
 }

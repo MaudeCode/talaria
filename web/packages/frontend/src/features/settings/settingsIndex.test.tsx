@@ -71,7 +71,7 @@ it('indexes every Settings row once, each where it renders, under its group, in 
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     qc.setQueryData(keys.settings, SETTINGS)
     const view = render(<QueryClientProvider client={qc}><BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><SettingsSection section={section} tab={tab} /></BootstrapContext.Provider></QueryClientProvider>)
-    const expected = SETTINGS_INDEX.filter((e) => e.section === section && e.tab === tab)
+    const expected = SETTINGS_INDEX.filter((e) => e.section === section && e.tab === tab && !e.item)
     // Each page's indexed rows load lazily and wait for their data.
     await waitFor(() => {
       expect(view.container.querySelector(`[data-section="${section}"]`)).not.toBeNull()
@@ -81,16 +81,21 @@ it('indexes every Settings row once, each where it renders, under its group, in 
     for (const entry of expected) placed[entry.id] = groupTitle(document.getElementById(entry.id)!)
     view.unmount()
   }
-  const indexed = Object.fromEntries(Object.keys(rendered).map((page) => [page, SETTINGS_INDEX.filter((e) => (e.tab ? `${e.section}?tab=${e.tab}` : e.section) === page).map((e) => e.id).sort()]))
+  const indexed = Object.fromEntries(Object.keys(rendered).map((page) => [page, SETTINGS_INDEX.filter((e) => !e.item && (e.tab ? `${e.section}?tab=${e.tab}` : e.section) === page).map((e) => e.id).sort()]))
   // (a) Drift: a row on a page without an entry, or an entry for a row its page does not render.
   expect(indexed).toEqual(rendered)
   // Each entry's group is the title of the group its row renders in.
-  expect(placed).toEqual(Object.fromEntries(SETTINGS_INDEX.map((e) => [e.id, e.group()])))
+  expect(placed).toEqual(Object.fromEntries(SETTINGS_INDEX.filter((e) => !e.item).map((e) => [e.id, e.group()])))
   // A hidden row lands on a row of its own page.
   expect(SETTINGS_INDEX.filter((e) => e.shownWith && !SETTINGS_INDEX.some((o) => o.id === e.shownWith && o.section === e.section && o.tab === e.tab)).map((e) => e.id)).toEqual([])
   // (b) Placement (design-system §11): a section's contract group matches the scope of every row on it.
   expect(SETTINGS_INDEX.filter((e) => SETTINGS_SECTION_GROUPS[e.section] !== GROUP_OF_SCOPE[e.scope]).map((e) => `${e.id}: ${e.scope} on ${e.section}`)).toEqual([])
 }, 30_000)
+
+it('leads quota and sidebar searches to Providers, where each provider pins its quota (TAL-2135)', () => {
+  for (const query of ['quota', 'sidebar']) expect(searchSettings(query).find((e) => e.id === 'providerSidebarQuota')).toMatchObject({ section: 'providers', item: true })
+  expect(searchSettings('quota').filter((e) => e.section === 'navigation')).toEqual([])
+})
 
 it('matches the localized label or group title, ignoring case and surrounding space (TAL-2086)', () => {
   expect(searchSettings('  ')).toEqual([])
