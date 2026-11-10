@@ -1,18 +1,24 @@
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, Outlet, RouterProvider } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useSyncExternalStore, type ReactNode } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import * as api from '../api/endpoints'
 import { keys } from '../api/queryKeys'
+import { useSaveSettings } from '../app/settings'
 import { BootstrapContext, bootstrapStatus, setBootstrapForTests, subscribeBootstrap } from '../app/bootstrap'
+import { ApiError } from '../contracts'
 import { DEFAULT_BOOTSTRAP } from '../contracts/adapters/memory'
 import type { Bootstrap } from '../contracts/bootstrap'
+import { deferred } from '../test/fixtures'
 import { Sidebar } from './Sidebar'
 import { closeMobileSidebar, toggleMobileSidebar, toggleSidebarCollapsed } from './useShellState'
 
 vi.mock('../features/sessions/useNewChat', () => ({ useNewChat: () => vi.fn() }))
 vi.mock('../features/notifications/UpdateNotificationCenter', () => ({ UpdateNotificationCenterButton: () => null }))
 vi.mock('../extensions/registry', () => ({ useExtensionManifests: () => ({ data: { manifests: [] } }) }))
+vi.mock('../api/endpoints', async (original) => ({ ...await original<object>(), saveSettings: vi.fn(), fetchSettings: vi.fn() }))
 vi.mock('../app/queries', async (original) => ({ ...await original<object>(), useDashboardStatusQuery: () => ({ data: {} }) }))
 
 type Layout = 'expanded' | 'rail' | 'drawer'
@@ -28,6 +34,12 @@ function LiveBootstrap({ children }: { children: ReactNode }) {
   return status?.state === 'ready' ? <BootstrapContext.Provider value={status.data}>{children}</BootstrapContext.Provider> : null
 }
 
+// The Access switch's write, as `SettingToggle` sends it.
+function AckWriter() {
+  const save = useSaveSettings()
+  return <button type="button" onClick={() => { save.mutate({ auth_disabled_acknowledged: true }, { onError: () => undefined }) }}>Acknowledge</button>
+}
+
 async function renderSidebar(layout: Layout, boot: Bootstrap, settings: Record<string, unknown> = {}) {
   vi.stubGlobal('matchMedia', (query: string) => ({ matches: layout !== 'drawer' && query.includes('min-width'), media: query, addEventListener: () => undefined, removeEventListener: () => undefined }))
   toggleSidebarCollapsed(layout === 'rail')
@@ -35,7 +47,7 @@ async function renderSidebar(layout: Layout, boot: Bootstrap, settings: Record<s
   setBootstrapForTests(boot)
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   client.setQueryData(keys.settings, { hidden_tabs: [], ...settings })
-  const root = createRootRoute({ component: () => <QueryClientProvider client={client}><LiveBootstrap><Sidebar panel={null} /></LiveBootstrap><Outlet /></QueryClientProvider> })
+  const root = createRootRoute({ component: () => <QueryClientProvider client={client}><LiveBootstrap><Sidebar panel={null} /><AckWriter /></LiveBootstrap><Outlet /></QueryClientProvider> })
   const routeTree = root.addChildren(['/', '/settings/$section'].map((path) => createRoute({ getParentRoute: () => root, path, component: () => null })))
   const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: ['/'] }) })
   await router.load()
@@ -44,7 +56,7 @@ async function renderSidebar(layout: Layout, boot: Bootstrap, settings: Record<s
 
 const warning = () => screen.queryByRole('link', { name: 'No password' })
 
-beforeEach(() => { window.scrollTo = vi.fn() })
+beforeEach(() => { window.scrollTo = vi.fn(); vi.mocked(api.fetchSettings).mockResolvedValue({ hidden_tabs: [], auth_disabled_acknowledged: true }) })
 afterEach(() => { toggleSidebarCollapsed(false); closeMobileSidebar() })
 
 it.each<Layout>(['expanded', 'rail', 'drawer'])('TAL-2158: the %s sidebar warns an owner in the error colour that the server has no password, linking to Access', async (layout) => {
@@ -69,12 +81,36 @@ it.each<Layout>(['expanded', 'rail', 'drawer'])('TAL-2158: once acknowledged, th
   expect(link).toHaveAccessibleDescription(MESSAGE)
 })
 
-it.each([
-  { flipped: true, server: 'error', shown: 'warning' },
-  { flipped: false, server: 'warning', shown: 'error' },
-] as const)('TAL-2158: flipping the Access switch to $flipped shows $shown at once, over the server level $server until bootstrap rereads', async ({ flipped, server, shown }) => {
-  await renderSidebar('expanded', bootstrap({ no_password_warning: server }), { auth_disabled_acknowledged: flipped })
-  expect(await screen.findByRole('link', { name: 'No password' })).toHaveAttribute('data-tone', shown)
+const tone = () => screen.getByRole('link', { name: 'No password' }).getAttribute('data-tone')
+
+it('TAL-2158: confirmed settings that disagree with bootstrap (another tab\'s write) never override the server level', async () => {
+  await renderSidebar('expanded', bootstrap({ no_password_warning: 'error' }), { auth_disabled_acknowledged: true })
+  await screen.findByRole('link', { name: 'No password' })
+  expect(tone()).toBe('error')
+})
+
+it('TAL-2158: this tab\'s acknowledgement shows at once, holds through its save, and hands over to the server level once bootstrap rereads', async () => {
+  const save = deferred<{ ok: boolean; auth_disabled_acknowledged: boolean }>()
+  vi.mocked(api.saveSettings).mockReturnValue(save.promise)
+  await renderSidebar('expanded', bootstrap({ no_password_warning: 'error' }), { auth_disabled_acknowledged: false })
+  await userEvent.click(await screen.findByRole('button', { name: 'Acknowledge' }))
+  expect(tone()).toBe('warning')
+  await act(async () => { save.resolve({ ok: true, auth_disabled_acknowledged: true }); await save.promise })
+  await waitFor(() => expect(api.fetchSettings).toHaveBeenCalled())
+  expect(tone()).toBe('warning')
+  act(() => { setBootstrapForTests(bootstrap({ no_password_warning: 'warning', auth_disabled_acknowledged: true })) })
+  expect(tone()).toBe('warning')
+  // From here the server decides, even against this tab's last write.
+  act(() => { setBootstrapForTests(bootstrap({ no_password_warning: 'error' })) })
+  expect(tone()).toBe('error')
+})
+
+it('TAL-2158: a refused acknowledgement rolls back to the server level', async () => {
+  vi.mocked(api.saveSettings).mockRejectedValue(new ApiError({ kind: 'http', status: 400, path: '/api/settings', message: 'Refused' }))
+  await renderSidebar('expanded', bootstrap({ no_password_warning: 'error' }), { auth_disabled_acknowledged: false })
+  await userEvent.click(await screen.findByRole('button', { name: 'Acknowledge' }))
+  await waitFor(() => expect(api.saveSettings).toHaveBeenCalled())
+  await waitFor(() => expect(tone()).toBe('error'))
 })
 
 it('TAL-2158: no warning when the server reports none, whatever the raw auth fields say', async () => {

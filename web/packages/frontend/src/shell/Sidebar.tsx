@@ -4,6 +4,7 @@ import { ChevronDown, ChevronLeft, ChevronRight, Menu as MenuIcon, MessageSquare
 import { m } from '../paraglide/messages.js'
 import { useBootstrap } from '../app/bootstrap'
 import { useDashboardStatusQuery, useSetting } from '../app/queries'
+import { useSettingIntent } from '../app/settings'
 import { useExtensionManifests } from '../extensions/registry'
 import { SidebarQuotas } from '../features/insights/SidebarQuotas'
 import { UpdateNotificationCenterButton } from '../features/notifications/UpdateNotificationCenter'
@@ -106,12 +107,18 @@ function SidebarNav({ panel }: { panel: ReactNode }) {
  * icon once the Access switch `auth_disabled_acknowledged` is on. Null (auth on, or no server management) draws nothing.
  */
 function NoPasswordWarning() {
-  const level = useBootstrap().auth.no_password_warning
-  // The switch's own write shows at once; the server's level takes over when its save rereads bootstrap.
-  const acknowledged = useSetting('auth_disabled_acknowledged')
+  const { auth } = useBootstrap()
+  const level = auth.no_password_warning
+  // This tab's Access switch write shows at once and holds after its save until that save's bootstrap reread lands; a
+  // refusal rolls the setting back, which drops it. Every other change (another tab, the server) is the server's level.
+  const pending = useSettingIntent('auth_disabled_acknowledged')
+  const confirmed = useSetting('auth_disabled_acknowledged')
+  const [held, setHeld] = useState<{ value: boolean; auth: typeof auth } | null>(null)
+  if (pending !== undefined && (held?.value !== pending || held.auth !== auth)) setHeld({ value: pending, auth })
+  const own = pending ?? (held?.auth === auth && held.value === confirmed ? held.value : undefined)
   const descriptionId = useId()
   if (!level) return null
-  const tone = acknowledged === undefined || acknowledged === (level === 'warning') ? level : acknowledged ? 'warning' : 'error'
+  const tone = own === undefined ? level : own ? 'warning' : 'error'
   const quiet = tone === 'warning'
   const label = m.auth_no_password()
   return (

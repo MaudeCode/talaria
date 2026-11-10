@@ -58,6 +58,11 @@ export function useSetting<K extends keyof Settings>(key: K): Settings[K] | unde
   return useSettingsQuery([key]).data?.[key]
 }
 
+/** The value this tab's own unconfirmed write of `key` shows; undefined when no write of it is in flight. */
+export function useSettingIntent<K extends keyof Settings>(key: K): Settings[K] | undefined {
+  return useIntent([key]).data?.fields[key]
+}
+
 export function useSaveSettings() {
   const qc = useQueryClient()
   // Register the owner without subscribing a write-only control to other fields' optimistic edits.
