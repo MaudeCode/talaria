@@ -157,23 +157,26 @@ final class ChatHostedTests: XCTestCase {
         var window: UIWindow?
         var atCompletion: (opacity: Float, top: CGFloat)?
 
-        /// The composer's + is a UIKit button in both composer presentations, and the chat's only one at the bottom.
-        /// SwiftUI leaves a hidden composer's UIKit views out of the window, so a missing button reads as invisible.
+        /// The composer's + is a UIKit menu button in both composer presentations, and the leading one outside a scroll
+        /// view: the control strip's chips scroll, and Send is trailing. SwiftUI leaves a hidden composer's UIKit views
+        /// out of the window, so a missing button reads as invisible.
         func composer() -> (opacity: Float, top: CGFloat) {
             guard let window else { return (0, .nan) }
             let buttons = Self.menuButtons(in: window).map { ($0, $0.convert($0.bounds, to: window)) }
-            guard let bottom = buttons.max(by: { $0.1.maxY < $1.1.maxY }) else { return (0, .nan) }
-            let opacity = sequence(first: bottom.0.layer, next: \.superlayer).reduce(Float(1)) { $0 * ($1.isHidden ? 0 : $1.opacity) }
+            guard let plus = buttons.min(by: { $0.1.minX < $1.1.minX }) else { return (0, .nan) }
+            let opacity = sequence(first: plus.0.layer, next: \.superlayer).reduce(Float(1)) { $0 * ($1.isHidden ? 0 : $1.opacity) }
             // The + sits at a fixed offset from the bottom-anchored card's top, so its top tracks the card's height.
-            return (opacity, bottom.1.minY)
+            return (opacity, plus.1.minY)
         }
 
         private static func menuButtons(in view: UIView) -> [UIButton] {
-            [view as? UIButton].compactMap { $0 }.filter(\.showsMenuAsPrimaryAction) + view.subviews.flatMap(menuButtons)
+            guard !(view is UIScrollView) else { return [] }
+            return [view as? UIButton].compactMap { $0 }.filter(\.showsMenuAsPrimaryAction) + view.subviews.flatMap(menuButtons)
         }
     }
 
     /// TAL-1679: the composer slides in with the chat at its measured size; it does not wait for the push to finish.
+    /// TAL-1998: and loading the chat after the push does not move it.
     func testComposerShowsAtItsSettledSizeDuringThePush() async throws {
         let fixture = try FixtureApp(for: self)
         let session = try await fixture.session()
@@ -198,6 +201,11 @@ final class ChatHostedTests: XCTestCase {
         // Where the composer stood when it used to appear, once the push had finished.
         XCTAssertTrue(shownTops.allSatisfy { abs($0 - pushed.top) < 0.5 },
                       "The composer must never show at a provisional size: \(shownTops) against \(pushed.top)")
+        // TAL-1998: the session load that starts once the push finishes adds the toolsets chip; the composer stays put.
+        _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        settle(0.3)
+        attachHostedScreenshot(window, name: "composer-after-chat-load")
+        XCTAssertEqual(probe.composer().top, pushed.top, accuracy: 0.5, "The composer moved once the chat had loaded")
     }
 
     func testBookFoldMovesComposerAndUnfoldingRetainsItsEditorAndDraft() async throws {
