@@ -87612,6 +87612,14 @@
                     "screen_reader_mode": {
                       "type": "boolean",
                       "description": "TAL-1605: give the Web workspace PTY an xterm accessibility tree; owner-command output always has one."
+                    },
+                    "workspace_panel_open": {
+                      "type": "boolean",
+                      "description": "TAL-2154: open the Web chat workspace panel on each chat's first visit in a browser tab; the person's own open or close wins after that."
+                    },
+                    "workspace_todos_tab": {
+                      "type": "boolean",
+                      "description": "TAL-2154: show a Todos page for the current chat in the Web chat workspace panel."
                     }
                   },
                   "additionalProperties": {}
@@ -87993,6 +88001,14 @@
                     "screen_reader_mode": {
                       "type": "boolean",
                       "description": "TAL-1605: give the Web workspace PTY an xterm accessibility tree; owner-command output always has one."
+                    },
+                    "workspace_panel_open": {
+                      "type": "boolean",
+                      "description": "TAL-2154: open the Web chat workspace panel on each chat's first visit in a browser tab; the person's own open or close wins after that."
+                    },
+                    "workspace_todos_tab": {
+                      "type": "boolean",
+                      "description": "TAL-2154: show a Todos page for the current chat in the Web chat workspace panel."
                     }
                   },
                   "additionalProperties": {}

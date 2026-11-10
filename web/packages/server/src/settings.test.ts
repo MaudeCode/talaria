@@ -261,6 +261,11 @@ describe('save', () => {
     expect(sidebarQuotaProjection(['qsrc_gone', 'qsrc_a'], sources, true)).toEqual({ sidebar_source_ids: ['qsrc_a'], sidebar_can_pin: true })
     expect(sidebarQuotaProjection(['qsrc_gone', 'qsrc_a'], sources, false)).toEqual({ sidebar_source_ids: ['qsrc_gone', 'qsrc_a'], sidebar_can_pin: false })
   })
+  it('stores the keep-workspace-panel-open choice, off until opted in (TAL-2154)', async () => {
+    expect((await store().load()).workspace_panel_open).toBe(false)
+    expect((await store().save({ workspace_panel_open: true })).workspace_panel_open).toBe(true)
+    expect((await store().load()).workspace_panel_open).toBe(true)
+  })
   it('keeps the PTY screen-reader mode off until opted in, coercing writes to a boolean (TAL-1605)', async () => {
     write({ bot_name: 'Older' })
     expect((await store().load()).screen_reader_mode).toBe(false)

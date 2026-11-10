@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web's \"Keep workspace panel open by default\" setting now saves and opens the workspace panel when you start or first open a chat, and \"Show Todos tab in workspace panel\" adds a Todos tab for the current chat.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}
