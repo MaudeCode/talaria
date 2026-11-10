@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "The Talaria Web composer hides the Agent mode control when the Agent offers only Normal, names reasoning effort levels in words such as Extra high, says when no models are available, and keeps the new worktree item to one line.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

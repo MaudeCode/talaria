@@ -16243,6 +16243,10 @@
                           "can_attach"
                         ]
                       }
+                    },
+                    "selectable": {
+                      "type": "boolean",
+                      "description": "TAL-2097: more than one mode is available, so a fresh chat has a mode to choose. Absent (an older server) means true."
                     }
                   },
                   "required": [

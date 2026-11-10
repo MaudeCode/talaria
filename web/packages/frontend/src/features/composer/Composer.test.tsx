@@ -99,10 +99,10 @@ describe('Composer', () => {
     expect(attach()).not.toBeNull()
   })
 
-  it('keeps the fresh-chat Agent mode reachable when the other strip controls are hidden (TAL-1040)', () => {
+  it('keeps the fresh-chat Agent mode reachable when the other strip controls are hidden (TAL-1040)', async () => {
     const settings = { hide_composer_workspace: true, hide_composer_toolsets: true, hide_composer_profile: true } as unknown as Settings
     renderComposer(null, null, noop, settings, undefined, undefined, { onExecutionModeChange: vi.fn() })
-    expect(screen.getByRole('button', { name: 'Agent mode: Normal' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Agent mode: Normal' })).toBeInTheDocument()
   })
 
   it.each([false, true])('keeps an early attachment when its upload completes before transcript load: %s', async (completedBeforeLoad) => {
@@ -1295,7 +1295,7 @@ describe('Composer', () => {
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
     await userEvent.click(within(document.querySelector<HTMLElement>('#composerMobileConfigPanel')!).getByRole('button', { name: /^Reasoning effort:/ }))
     // The menu is portaled outside the composer box, yet a press in it belongs to the panel that opened it.
-    fireEvent.pointerDown(await screen.findByRole('menuitemradio', { name: 'high' }))
+    fireEvent.pointerDown(await screen.findByRole('menuitemradio', { name: 'High' }))
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
     fireEvent.pointerDown(document.body)
     expect(toggle).toHaveAttribute('aria-expanded', 'false')

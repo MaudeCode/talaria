@@ -180,7 +180,7 @@ export function ModelPickerContent({ selectedId, searchInput, onSelect, onCustom
               ? <Combobox.Item index={row.option} value={CUSTOM} aria-label={`${m.model_custom_label()}: ${row.id}`} className={ROW}><span className="min-w-0 flex-1 truncate"><span className="font-mono text-xs">{row.id}</span> <span className="text-xs text-muted">{m.model_custom_label()}</span></span></Combobox.Item>
               : <ModelRow entry={row.entry} group={row.group} index={row.option} locale={locale} mixed={mixed} selected={row.entry.id === selectedId} favorite={shown(row.entry)}
                   onStar={toggleStar} />} />
-            : <p role="status" className="px-3 py-4 text-center text-sm text-muted">{view === FAVORITES && !searching ? m.model_favorites_empty() : m.model_search_no_results()}</p>}
+            : <p role="status" className="px-3 py-4 text-center text-sm text-muted">{searching ? m.model_search_no_results() : view === FAVORITES && byId.size ? m.model_favorites_empty() : m.model_none_available()}</p>}
         </div>
       </Combobox.Root>
     </div>

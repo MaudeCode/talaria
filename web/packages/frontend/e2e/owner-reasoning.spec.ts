@@ -53,26 +53,26 @@ test('an owner chat shows, sets and resets its own level through its owner', asy
   await page.goto(`/session/${sid}`)
   await expect(page.locator('[data-role="user"]')).toHaveText(['Back up the cluster'])
   await openPicker(page)
-  await expect(page.getByRole('menuitemradio')).toHaveText(['Default', 'low', 'medium', 'high'])
-  await expect(page.getByRole('menuitemradio', { name: 'high' })).toBeChecked()
+  await expect(page.getByRole('menuitemradio')).toHaveText(['Default', 'Low', 'Medium', 'High'])
+  await expect(page.getByRole('menuitemradio', { name: 'High' })).toBeChecked()
   if (shots) await page.screenshot({ path: `${shots}/picker-${info.project.name}.png` })
 
   // The choice shows before the owner answers, and the owner's answer replaces it.
   let answer!: () => void
   chat.state.hold = new Promise<void>((resolve) => { answer = resolve })
   chat.state.apply = () => { chat.state.attachment = atLevel('low', 3) }
-  await page.getByRole('menuitemradio', { name: 'low' }).click()
-  await expect(shown(page, 'low')).toBeAttached()
+  await page.getByRole('menuitemradio', { name: 'Low' }).click()
+  await expect(shown(page, 'Low')).toBeAttached()
   await expect.poll(() => chat.state.writes).toEqual([expect.objectContaining({ session_id: sid, action: 'mutate', operation: 'reasoning', payload: { effort: 'low' }, expected_revision: 2, execution_generation: 1 })])
   if (shots) await page.screenshot({ path: `${shots}/chosen-${info.project.name}.png` })
   answer()
-  await expect.poll(() => page.getByRole('menuitemradio', { name: 'low' }).isChecked()).toBe(true)
+  await expect.poll(() => page.getByRole('menuitemradio', { name: 'Low' }).isChecked()).toBe(true)
 
   // Reset gives the level back to the profile: the owner's answer names what that is.
   chat.state.apply = () => { chat.state.attachment = atLevel('medium', 4) }
   await openPicker(page)
   await page.getByRole('menuitemradio', { name: 'Default' }).click()
-  await expect(shown(page, 'medium')).toBeAttached()
+  await expect(shown(page, 'Medium')).toBeAttached()
   expect(chat.state.writes.at(-1)).toMatchObject({ operation: 'reasoning', payload: { effort: null }, expected_revision: 3 })
   expect(chat.state.writes).toHaveLength(2)
   expect(chat.state.profileReads).toBe(0)
@@ -90,7 +90,7 @@ test.describe('evidence', () => {
     await expect(page.getByText('Applies after this turn').first()).toBeVisible()
     if (shots) await page.screenshot({ path: `${shots}/deferred-${info.project.name}.png` })
     await openPicker(page)
-    await expect(page.getByRole('menuitemradio', { name: 'high' })).toBeChecked()
+    await expect(page.getByRole('menuitemradio', { name: 'High' })).toBeChecked()
   })
 
   test('a refused pick rolls back to the actual level with the refusal', async ({ page, errors }, info) => {
@@ -99,9 +99,9 @@ test.describe('evidence', () => {
     chat.state.refuse = true
     await page.goto(`/session/${sid}`)
     await openPicker(page)
-    await page.getByRole('menuitemradio', { name: 'low' }).click()
+    await page.getByRole('menuitemradio', { name: 'Low' }).click()
     await expect(page.getByText('The owning Agent refused the action')).toBeVisible()
-    await expect(page.getByRole('menuitemradio', { name: 'high' })).toBeChecked()
+    await expect(page.getByRole('menuitemradio', { name: 'High' })).toBeChecked()
     expect(chat.state.writes).toHaveLength(1)
     if (shots) await page.screenshot({ path: `${shots}/refused-${info.project.name}.png` })
     errors.splice(0, errors.length, ...errors.filter((e) => !/api\/chat\/owner-action|status of 409/.test(e)))

@@ -631,7 +631,9 @@ export class GatewaySessions {
     const result = await this.createCall({ profile_home: this.deps.profileHome(profile), probe: true })
     const reason = result.state === 'attached' ? null : unavailableReason(result)
     // Owner chats take no file attachments (`submit` refuses them), so a fresh chat in either bypass mode cannot attach.
-    return { modes: [{ mode: 'normal', available: true, reason: null, can_attach: true, can_reference: true }, ...(['ignore_config', 'safe'] as const).map((mode) => ({ mode, available: reason === null, reason, can_attach: false, can_reference: false }))] }
+    const modes = [{ mode: 'normal' as const, available: true, reason: null, can_attach: true, can_reference: true }, ...(['ignore_config', 'safe'] as const).map((mode) => ({ mode, available: reason === null, reason, can_attach: false, can_reference: false }))]
+    // TAL-2097: with one available mode a fresh chat has nothing to choose, so clients hide the mode control.
+    return { modes, selectable: modes.filter((option) => option.available).length > 1 }
   }
 
   /**

@@ -3,6 +3,7 @@ import { Switch } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { LoadingState, ErrorState } from '../../ui/States'
 import { useModelsQuery, useSetDefaultModel, useAuxiliaryModelsQuery, useDefaultModelChoice } from '../../app/queries'
+import { reasoningLevelLabel } from '../composer/chips'
 import { PROFILE_REASONING, reasoningResource, useReasoningDisplayChoice, useReasoningQuery, useSetReasoningDisplay, useSetReasoningEffort } from '../composer/reasoning'
 import { useResourceEffects } from '../sessions/useResourceMutation'
 import { catalogEntryById } from '../../lib/modelEntry'
@@ -67,7 +68,7 @@ function ReasoningRows() {
         <SettingRow label={m.settings_reasoning_effort()} hint={m.settings_default_model_hint()} htmlFor="settingsReasoningEffort">
           <Select id="settingsReasoningEffort" value={effort} onValueChange={(level) => { effortWrite.mutate({ key: PROFILE_REASONING, level: level || null }) }}>
             <option value="">{m.reasoning_default()}</option>
-            {(status.supported_efforts ?? []).map((level) => <option key={level} value={level}>{level}</option>)}
+            {(status.supported_efforts ?? []).map((level) => <option key={level} value={level}>{reasoningLevelLabel(level)}</option>)}
           </Select>
         </SettingRow>
       )}
