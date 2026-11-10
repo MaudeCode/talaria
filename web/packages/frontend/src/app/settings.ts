@@ -10,7 +10,21 @@ import type { Settings } from '../contracts'
 // Every setting shows the user's value at once; `_`-prefixed credential commands (passwords) are write-only.
 const shown = (key: string) => !key.startsWith('_')
 const intentKey = ['settings-intents'] as const
-interface Intent { context: object; fields: Record<string, unknown> }
+/** `partial` (TAL-2136): unconfirmed keys of object settings written with `partialSetting`, shown over the confirmed object. */
+interface Intent { context: object; fields: Record<string, unknown>; partial: Record<string, Record<string, unknown>> }
+
+const PARTIAL = Symbol('partialSetting')
+interface PartialSetting { [PARTIAL]: Record<string, unknown> }
+const isPartial = (value: unknown): value is PartialSetting => typeof value === 'object' && value !== null && PARTIAL in value
+/**
+ * TAL-2136: a write of only these keys of an object setting the server merges key by key (`provider_quota_thresholds`). Each
+ * key shows at once and rolls back on its own, and the request carries only these keys, never another write's unconfirmed one.
+ */
+export function partialSetting(fields: Record<string, unknown>): PartialSetting {
+  return { [PARTIAL]: fields }
+}
+/** The `state.fields` entry of one key of a partial write. */
+const SUB = '\u0000'
 // The resource owner's single-resource lock cannot express overlapping per-field settings writes.
 const owners = new WeakMap<QueryClient, ReturnType<typeof makeOwner>>()
 
@@ -37,7 +51,8 @@ function useIntent(fields?: readonly string[]) {
     select: (intent) => {
       if (intent?.context !== context) return null
       const selected = pickFields(intent.fields, fields)
-      return Object.keys(selected).length ? { context: intent.context, fields: selected } : null
+      const partial = pickFields(intent.partial, fields)
+      return Object.keys(selected).length || Object.keys(partial).length ? { context: intent.context, fields: selected, partial } : null
     },
   })
 }
@@ -46,7 +61,11 @@ export function useSettingsQuery(fields?: readonly string[]) {
   const settings = useQuery({ queryKey: keys.settings, queryFn: api.fetchSettings, staleTime: 30_000, select: (data) => pickFields(data, fields) })
   const intent = useIntent(fields).data
   const confirmed = settings.data
-  const overlay = confirmed && intent ? { ...confirmed, ...intent.fields } : undefined
+  const merged = (key: string, keys: Record<string, unknown>) => {
+    const stored = confirmed?.[key]
+    return { ...(typeof stored === 'object' && stored !== null ? stored : {}), ...keys }
+  }
+  const overlay = confirmed && intent ? { ...confirmed, ...intent.fields, ...Object.fromEntries(Object.entries(intent.partial).map(([key, keys]) => [key, merged(key, keys)])) } : undefined
   const isError = overlay ? settings.isError : false
   const error = overlay ? settings.error : null
   const refetch = settings.refetch
@@ -84,19 +103,28 @@ async function writeSettings(qc: QueryClient, patch: Record<string, unknown>) {
   const state = owner
   const current = () => state.context === getStreamContext() && state.query === currentQuery()
   const publish = () => {
-    if (current()) qc.setQueryData<Intent>(intentKey, { context: state.context, fields: Object.fromEntries([...state.fields].map(([key, field]) => [key, field.value])) })
+    if (!current()) return
+    const fields: Record<string, unknown> = {}
+    const partial: Record<string, Record<string, unknown>> = {}
+    for (const [path, field] of state.fields) {
+      const [key = '', sub] = path.split(SUB)
+      if (sub === undefined) fields[key] = field.value
+      else (partial[key] ??= {})[sub] = field.value
+    }
+    qc.setQueryData<Intent>(intentKey, { context: state.context, fields, partial })
   }
   const sequence = ++state.next
   const fields = Object.keys(patch)
+  // What the server receives (a partial write as its own keys), and the overlay entries this write owns.
+  const sent = Object.fromEntries(Object.entries(patch).map(([key, value]) => [key, isPartial(value) ? value[PARTIAL] : value]))
+  const paths = Object.entries(patch).flatMap(([key, value]) => isPartial(value) ? Object.keys(value[PARTIAL]).map((sub) => [key + SUB + sub, value[PARTIAL][sub]] as const) : [[key, value] as const])
   // Keep disjoint writes concurrent, but persist repeated edits in user order.
   const predecessors = [...state.active.values()].filter((write) => write.keys.some((key) => fields.includes(key))).map((write) => write.done)
   let release!: () => void
   const done = new Promise<void>((resolve) => { release = resolve })
   state.active.set(sequence, { keys: fields, done })
-  for (const key of fields) {
-    state.writes.add(key)
-    if (shown(key)) state.fields.set(key, { sequence, value: patch[key] })
-  }
+  for (const key of fields) state.writes.add(key)
+  for (const [path, value] of paths) if (shown(path)) state.fields.set(path, { sequence, value })
   publish()
   // TAL-2149: the server opens every Worklog by this setting, so once it is stored (or a reread settles an unknown
   // outcome) transcripts re-read their scenes, even after the page that wrote it has closed.
@@ -106,7 +134,7 @@ async function writeSettings(qc: QueryClient, patch: Record<string, unknown>) {
     await qc.cancelQueries({ queryKey: keys.settings })
     await Promise.all(predecessors)
     if (!current()) throw new Error(m.error_generic())
-    const data = await api.saveSettings(patch)
+    const data = await api.saveSettings(sent)
     if (data.ok !== false && !data.error) refreshScenes()
     if (!current()) return data
     if (typeof data.error === 'string' && data.error) throw new Error(data.error)
@@ -127,7 +155,7 @@ async function writeSettings(qc: QueryClient, patch: Record<string, unknown>) {
     throw error
   } finally {
     const settle = () => {
-      for (const key of fields) if (state.fields.get(key)?.sequence === sequence) state.fields.delete(key)
+      for (const [path] of paths) if (state.fields.get(path)?.sequence === sequence) state.fields.delete(path)
       publish()
     }
     // A refusal rolls back at once; an unknown outcome keeps the shown value until a successful read decides it.
@@ -141,7 +169,7 @@ async function writeSettings(qc: QueryClient, patch: Record<string, unknown>) {
         settle()
         refreshScenes()
       } catch {
-        settleOnNextRead(qc, () => current() && [...fields].some((key) => state.fields.get(key)?.sequence === sequence), () => { settle(); refreshScenes() }, keys.settings)
+        settleOnNextRead(qc, () => current() && paths.some(([path]) => state.fields.get(path)?.sequence === sequence), () => { settle(); refreshScenes() }, keys.settings)
       }
     } else if (current() && state.active.size === 0) {
       await qc.cancelQueries({ queryKey: keys.settings })

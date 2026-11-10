@@ -363,7 +363,7 @@ describe('ProvidersSection', () => {
     const hours = screen.getByRole('spinbutton', { name: 'Start projecting after' })
     await userEvent.clear(hours)
     await userEvent.type(hours, '6{Enter}')
-    await waitFor(() => expect(api.saveSettings).toHaveBeenCalledExactlyOnceWith({ provider_quota_thresholds: { ...DEFAULTS, pace_minimum_elapsed_hours: 6 } }))
+    await waitFor(() => expect(api.saveSettings).toHaveBeenCalledExactlyOnceWith({ provider_quota_thresholds: { pace_minimum_elapsed_hours: 6 } }))
     // The saved thresholds reclassify the quotas, which the list rereads on the way back.
     await userEvent.click(screen.getByRole('button', { name: 'Providers' }))
     await waitFor(() => expect(vi.mocked(api.fetchProviderQuotas).mock.calls.length).toBeGreaterThan(before))

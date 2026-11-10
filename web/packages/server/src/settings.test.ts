@@ -399,12 +399,14 @@ describe('save', () => {
 })
 
 describe('provider quota thresholds (TAL-411)', () => {
-  it('keeps one set per profile, patches field by field, and ignores invalid values', async () => {
+  it('keeps one set per profile, patches field by field, clamps and rounds numbers to their range, and ignores anything else (TAL-2136)', async () => {
     const s = store()
     expect((await s.quotaThresholds('default'))).toEqual(QUOTA_THRESHOLD_DEFAULTS)
     await s.save({ provider_quota_thresholds: { warning_remaining_percent: 40, pace_minimum_elapsed_hours: 73, pace_tolerance_percent: 2.5, pace_warning_burn_rate_percent: '150' } }, { profile: 'work' })
     await s.save({ provider_quota_thresholds: { pace_tolerance_percent: 0 } }, { profile: 'work' })
-    expect((await s.quotaThresholds('work'))).toEqual({ ...QUOTA_THRESHOLD_DEFAULTS, warning_remaining_percent: 40, pace_tolerance_percent: 0 })
+    expect((await s.quotaThresholds('work'))).toEqual({ ...QUOTA_THRESHOLD_DEFAULTS, warning_remaining_percent: 40, pace_minimum_elapsed_hours: 72, pace_tolerance_percent: 0 })
+    await s.save({ provider_quota_thresholds: { pace_tolerance_percent: 2.5, warning_remaining_percent: -4, pace_critical_burn_rate_percent: Number.NaN } }, { profile: 'work' })
+    expect((await s.quotaThresholds('work'))).toMatchObject({ pace_tolerance_percent: 3, warning_remaining_percent: 1, pace_critical_burn_rate_percent: QUOTA_THRESHOLD_DEFAULTS.pace_critical_burn_rate_percent })
     expect((await s.quotaThresholds('default'))).toEqual(QUOTA_THRESHOLD_DEFAULTS)
     expect(onDisk().provider_quota_thresholds).toBeUndefined()
     // Without a request profile the key is ignored rather than stored loose.
@@ -418,7 +420,7 @@ describe('provider quota thresholds (TAL-411)', () => {
     expect((await s.quotaThresholds('default'))).toMatchObject({ warning_remaining_percent: 20, critical_remaining_percent: 20, pace_warning_burn_rate_percent: 200, pace_critical_burn_rate_percent: 200 })
     // A hand-edited file is read through the same validation.
     write({ provider_quota_thresholds_by_profile: { default: { warning_remaining_percent: 5, critical_remaining_percent: 9, pace_tolerance_percent: -1 } } })
-    expect((await s.quotaThresholds('default'))).toEqual({ ...QUOTA_THRESHOLD_DEFAULTS, warning_remaining_percent: 5, critical_remaining_percent: 5 })
+    expect((await s.quotaThresholds('default'))).toEqual({ ...QUOTA_THRESHOLD_DEFAULTS, warning_remaining_percent: 5, critical_remaining_percent: 5, pace_tolerance_percent: 0 })
   })
 })
 

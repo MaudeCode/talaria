@@ -7,6 +7,7 @@ import { IconButton } from '../../ui/Button'
 import { Segmented } from '../../ui/Segmented'
 import { cn } from '../../ui/cn'
 import { useSettingField } from './useSettingField'
+import { partialSetting } from '../../app/queries'
 
 /** What every server-setting row takes; `id` defaults to `settings-<settingKey>`, `icon` (TAL-2131) is drawn before the label. */
 interface SettingProps { label: string; hint?: string; settingKey: string; id?: string; disabled?: boolean; icon?: LucideIcon }
@@ -65,8 +66,9 @@ export function SettingSegmented({ label, hint, settingKey, id: givenId, fallbac
 /**
  * One integer server setting, with `unit` (TAL-2136) after the field. An integer from `min` up goes to the server, which owns
  * the accepted range; `max` and `step` only bound the input's stepper. With `allowEmpty` an empty field writes `null`. A stored 0 or unset
- * value shows empty. With `field` the row edits that key of an object setting: it saves on blur or Enter, clamped to `min` to
- * `max`, and writes the whole object so the shown value keeps the other keys; anything but a number puts the stored value back.
+ * value shows empty. With `field` the row edits that key of an object setting the server merges key by key: it saves the typed
+ * number on blur or Enter as a `partialSetting` and shows the server's answer, which owns the range; anything but a number puts
+ * the stored value back.
  */
 export function SettingNumber({ label, hint, settingKey, field, id: givenId, fallback = 0, min = 1, max, step, allowEmpty, placeholder, width = 'w-20', disabled, icon, unit, onSaved }: SettingProps & { field?: string; fallback?: number; min?: number; max?: number; step?: number; allowEmpty?: boolean; placeholder?: string; width?: string; unit?: string; onSaved?: () => void }) {
   const id = rowId(givenId, settingKey)
@@ -79,9 +81,8 @@ export function SettingNumber({ label, hint, settingKey, field, id: givenId, fal
     if (draft === null || !field || !object) return
     setDraft(null)
     const n = Number(draft.trim())
-    if (draft.trim() === '' || !Number.isFinite(n)) return
-    const next = Math.min(max ?? Infinity, Math.max(min, Math.round(n)))
-    if (next !== nested) void setAsync({ [settingKey]: { ...object, [field]: next } }, onSaved)
+    if (draft.trim() === '' || !Number.isFinite(n) || n === nested) return
+    void setAsync({ [settingKey]: partialSetting({ [field]: n }) }, onSaved)
   }
   const input = field
     ? <TextInput id={id} type="number" inputMode="numeric" min={min} max={max} step={step} disabled={disabled} placeholder={placeholder} value={draft ?? (typeof nested === 'number' ? String(nested) : '')}

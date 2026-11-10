@@ -746,7 +746,7 @@ export const TranscribeResponseSchema = z.looseObject({ ok: z.literal(true), tra
 
 // ── settings, profiles, models, providers ───────────────────────────────
 
-/** TAL-411: the request profile's quota urgency thresholds. A save patches valid fields and clamps critical to at most warning. */
+/** TAL-411: the request profile's quota urgency thresholds. A save patches the fields it sends, each rounded and clamped to its range (TAL-2136), and clamps critical to at most warning. */
 export const QuotaThresholdsSchema = z.object({
   warning_remaining_percent: z.number().int().min(1).max(99), critical_remaining_percent: z.number().int().min(0).max(99), pace_tolerance_percent: z.number().int().min(0).max(25),
   pace_warning_burn_rate_percent: z.number().int().min(100).max(300), pace_critical_burn_rate_percent: z.number().int().min(100).max(400), pace_minimum_elapsed_hours: z.number().int().min(0).max(72),
