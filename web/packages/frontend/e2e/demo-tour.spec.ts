@@ -18,11 +18,11 @@ test('the demo server shows seeded data on every data page', async ({ page }, in
   }
   try {
     await visit('chat', `/session/${DEMO_SESSION_ID}`, 'Filed two tickets and ordered them so they cannot conflict.')
-    await visit('tasks', '/tasks', 'Morning digest')
+    await visit('tasks', '/tasks', 'Dependency audit')
     await visit('insights-usage', '/insights?tab=usage', 'claude-sonnet-4-6')
     await visit('decisions', '/decisions', 'Settings audit')
     await visit('decision-review', `/decisions/${reviewId}`, 'Retention policy')
     await visit('discussions', '/groups', 'Design review')
     await visit('discussion', '/groups?room=discussion', 'Review this proposal before Friday.')
-  } finally { await page.goto('about:blank'); await server.close() }
+  } finally { await page.goto('about:blank').catch(() => undefined); await server.close() }
 })
