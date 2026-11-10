@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Settings › Providers lists the providers you set up first, then the rest in compact rows, with a filter to find one by name.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}
