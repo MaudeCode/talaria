@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "In Talaria Web, the composer is addressed to your assistant's name or the discussion's name, Insights shows costs with two decimals, and Earlier conversations looks like a button.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

@@ -9,7 +9,7 @@ export interface BarChartRow { label: string; value: number; /** Longer label fo
  * TAL-1968: `variant: 'line'` draws the same series as a line through each bar's centre; `maxDisplay` and `peak` are the
  * scale label and peak point the server chose. A negative value plots below a zero line, and its bar hangs from it.
  */
-export function BarChart({ title, rows, format = String, controls, id, variant = 'bar', maxDisplay, peak: serverPeak }: { title: string; rows: BarChartRow[]; format?: (value: number) => string; controls?: ReactNode; id: string; variant?: 'bar' | 'line'; maxDisplay?: string; peak?: { label: string; display: string } }) {
+export function BarChart({ title, rows, format = String, exact, controls, id, variant = 'bar', maxDisplay, peak: serverPeak }: { title: string; rows: BarChartRow[]; format?: (value: number) => string; /** The exact value for a bar's hover title, when `format` rounds it. */ exact?: ((value: number) => string) | undefined; controls?: ReactNode; id: string; variant?: 'bar' | 'line'; maxDisplay?: string; peak?: { label: string; display: string } }) {
   const tableId = useId()
   const shown = (r: BarChartRow) => r.display ?? format(r.value)
   // The table twin is always in the tree for assistive technology; the toggle only reveals it to sighted readers.
@@ -40,7 +40,7 @@ export function BarChart({ title, rows, format = String, controls, id, variant =
           {rows.map((r) => {
             const height = r.value === 0 ? 0 : Math.max(2, Math.abs(zero - fromTop(r.value)))
             return (
-              <div key={r.label} className="relative h-full min-w-0 flex-1" title={`${r.title ?? r.label}: ${shown(r)}`}>
+              <div key={r.label} className="relative h-full min-w-0 flex-1" title={`${r.title ?? r.label}: ${exact ? exact(r.value) : shown(r)}`}>
                 {variant === 'bar' && <div className={`absolute inset-x-0 mx-auto w-full max-w-6 bg-accent ${r.value < 0 ? 'rounded-b' : 'rounded-t'}`} style={{ top: `${String(r.value < 0 ? zero : zero - height)}%`, height: `${String(height)}%` }} />}
               </div>
             )

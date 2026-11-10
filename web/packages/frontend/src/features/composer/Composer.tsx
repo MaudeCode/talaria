@@ -87,6 +87,7 @@ interface RoomComposerProps {
   notices?: ComposerProps['notices']
   room: {
     identity: string
+    name: string
     maxUploadBytes: number
     maxAttachments: number
     canSend: boolean
@@ -751,7 +752,8 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
 
   // While a clarification owns the box, the message-only controls leave the footer (docs/ui-ux clarify-card).
   const hide = (key: string) => hideComposerControl(settings, answering, key)
-  const placeholder = clarify ? (clarify.step.choices.length ? m.clarify_composer_placeholder_choices() : m.clarify_composer_placeholder()) : busy && !nativeOwner ? (busyMode === 'queue' ? m.composer_placeholder_busy_queue() : busyMode === 'interrupt' ? m.composer_placeholder_busy_interrupt() : m.composer_placeholder_busy_steer()) : m.composer_placeholder()
+  const addressee = m.composer_placeholder({ name: room?.name ?? bootstrap.bot_name })
+  const placeholder = clarify ? (clarify.step.choices.length ? m.clarify_composer_placeholder_choices() : m.clarify_composer_placeholder()) : busy && !nativeOwner ? (busyMode === 'queue' ? m.composer_placeholder_busy_queue() : busyMode === 'interrupt' ? m.composer_placeholder_busy_interrupt() : m.composer_placeholder_busy_steer()) : addressee
   const onCompress = () => { void onLocalCommand('compress', '') }
   const context: ContextFigures = ({
     planGauge: session?.plan_gauge, sessionId: sessionId ?? undefined, detailKey: session?.context_detail_key,
@@ -858,7 +860,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
           onKeyDown={onKeyDown}
           onPaste={onPaste}
           placeholder={placeholder}
-          aria-label={clarify ? clarify.step.question : m.composer_placeholder()}
+          aria-label={clarify ? clarify.step.question : addressee}
           aria-autocomplete={palette.open ? 'list' : undefined}
           aria-controls={palette.open ? palette.listId : undefined}
           aria-activedescendant={palette.activeId}

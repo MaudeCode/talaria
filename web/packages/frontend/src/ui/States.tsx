@@ -45,9 +45,13 @@ export function formatDate(ts: number | string | null | undefined): string {
   return new Date(n).toLocaleString()
 }
 
-/** US dollars at the precision small model costs need; `locale` defaults to the browser's. */
-export function formatUsd(n: number, locale?: string): string {
-  return n.toLocaleString(locale, { style: 'currency', currency: 'USD', maximumFractionDigits: 4 })
+/**
+ * US dollars at the precision small model costs need; `locale` defaults to the browser's. `digits` fixes the decimals for
+ * one cent or more, while a smaller amount keeps up to four so it never reads as $0.00.
+ */
+export function formatUsd(n: number, locale?: string, digits?: number): string {
+  const fixed = digits !== undefined && Math.abs(n) >= 0.01
+  return n.toLocaleString(locale, { style: 'currency', currency: 'USD', ...(fixed ? { minimumFractionDigits: digits, maximumFractionDigits: digits } : { maximumFractionDigits: 4 }) })
 }
 
 export function formatBytes(n: number | null | undefined): string {

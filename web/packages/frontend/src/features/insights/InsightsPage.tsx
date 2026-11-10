@@ -49,7 +49,8 @@ export function InsightsPage() {
 
   const integer = new Intl.NumberFormat(locale)
   const compact = (n: number) => formatCompact(locale, n)
-  const usd = (n: number) => formatUsd(n, locale)
+  const usd = (n: number) => formatUsd(n, locale, 2)
+  const exactUsd = (n: number) => formatUsd(n, locale)
   const percent = (n: number) => formatPercent(locale, n)
   const dayLabel = (date: string) => localDay(date)?.toLocaleDateString(locale, { month: 'short', day: 'numeric' }) ?? date
   const metricLabel: Record<Metric, string> = { tokens: m.insights_tokens(), cost: m.insights_cost(), sessions: m.insights_sessions() }
@@ -64,7 +65,7 @@ export function InsightsPage() {
     { label: m.insights_input_tokens(), value: compact(d.total_input_tokens ?? 0), title: integer.format(d.total_input_tokens ?? 0) },
     { label: m.insights_output_tokens(), value: compact(d.total_output_tokens ?? 0), title: integer.format(d.total_output_tokens ?? 0) },
     { label: m.insights_tokens(), value: compact(d.total_tokens ?? 0), title: integer.format(d.total_tokens ?? 0) },
-    { label: m.insights_cost(), value: usd(d.total_cost ?? 0) },
+    { label: m.insights_cost(), value: usd(d.total_cost ?? 0), title: exactUsd(d.total_cost ?? 0) },
     { label: m.insights_cache_read(), value: compact(d.total_cache_read_tokens ?? 0), title: integer.format(d.total_cache_read_tokens ?? 0) },
     ...(d.total_cache_hit_percent === null || d.total_cache_hit_percent === undefined ? [] : [{ label: m.insights_cache_hit(), value: percent(d.total_cache_hit_percent) }]),
   ] : []
@@ -103,6 +104,7 @@ export function InsightsPage() {
                   title={m.insights_daily()}
                   rows={d.daily_tokens.map((r) => ({ label: dayLabel(r.date), title: r.date, value: metricValue[metric](r) }))}
                   format={metricFormat[metric]}
+                  exact={metric === 'cost' ? exactUsd : undefined}
                   controls={<Select value={metric} onValueChange={(v) => setMetric(v as Metric)} aria-label={m.insights_metric()} className="h-7 text-xs">{METRICS.map((k) => <option key={k} value={k}>{metricLabel[k]}</option>)}</Select>}
                 />
               )}
@@ -136,7 +138,7 @@ export function InsightsPage() {
                             <td className="py-1 pl-3 text-right" title={integer.format(r.input_tokens ?? 0)}>{compact(r.input_tokens ?? 0)}</td>
                             <td className="py-1 pl-3 text-right" title={integer.format(r.output_tokens ?? 0)}>{compact(r.output_tokens ?? 0)}</td>
                             <td className="py-1 pl-3 text-right" title={integer.format(r.total_tokens ?? 0)}>{compact(r.total_tokens ?? 0)}</td>
-                            <td className="py-1 pl-3 text-right">{usd(r.cost ?? 0)}</td>
+                            <td className="py-1 pl-3 text-right" title={exactUsd(r.cost ?? 0)}>{usd(r.cost ?? 0)}</td>
                             <td className="py-1 pl-3 text-right">{r.cache_hit_percent === null || r.cache_hit_percent === undefined ? '—' : percent(r.cache_hit_percent)}</td>
                             <td className="py-1 pl-3 text-right">{share === undefined ? '—' : percent(share)}</td>
                           </tr>

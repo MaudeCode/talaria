@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
+import { History } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import type { AcceptedSourceReference } from '@maudecode/talaria-web-contracts'
 import { fetchSourceReferences } from '../../api/endpoints'
 import { useDebounced } from '../../lib/useDebounced'
 import { m } from '../../paraglide/messages.js'
+import { Button } from '../../ui/Button'
 import { Dialog } from '../../ui/Dialog'
 import { ErrorState } from '../../ui/States'
 import { relativeTime, SessionListItem } from './SessionListPanel'
@@ -21,7 +23,7 @@ export function SessionReferences({ profile, selected, onChange }: {
   const candidates = useQuery({ queryKey: ['session-reference-candidates', profile, q], queryFn: ({ signal }) => fetchSourceReferences(q, signal), enabled: open, staleTime: 0 })
   if (!onChange && !selected.length) return null
   return <div className="pointer-events-auto mx-auto max-w-(--msg-max) flex flex-wrap items-center gap-2 px-3 py-2 text-xs text-muted" data-testid="session-references">
-    {onChange && <button type="button" className="min-h-11 hover:text-text" onClick={() => setOpen(true)}>{m.session_references()}</button>}
+    {onChange && <Button variant="ghost" className="min-h-11" onClick={() => setOpen(true)}><History size={14} aria-hidden="true" />{m.session_references()}</Button>}
     {!onChange && <span>{m.session_references()}</span>}
     {selected.map((ref) => onChange
       ? <button key={ref.session_id} title={ref.title} type="button" className="min-h-11 max-w-48 content-center truncate hover:text-text" aria-label={m.session_reference_remove({ title: ref.title })} onClick={() => onChange(selected.filter((r) => r.session_id !== ref.session_id))}>{ref.title} ×</button>
