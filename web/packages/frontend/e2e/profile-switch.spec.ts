@@ -15,6 +15,12 @@ async function twoProfiles(page: Page) {
     { name: 'research', canonical_session: { session_id: 'research-root', tip_session_id: 'research-bot' } },
   ] })
   await page.route('**/api/profiles', (route) => route.fulfill({ json: listed() }))
+  // The server's bootstrap names the active profile, as the switch's cookie would make it.
+  await page.route('**/api/bootstrap', async (route) => {
+    const response = await route.fetch()
+    const bootstrap = await response.json()
+    return route.fulfill({ response, json: { ...bootstrap, profile: { name: state.active, is_default: state.active === 'default' } } })
+  })
   await page.route('**/api/profile/switch', async (route) => {
     state.active = (route.request().postDataJSON() as { name: string }).name
     await route.fulfill({ json: { ...listed(), is_default: state.active === 'default', default_model: null, default_model_provider: null, default_workspace: null } })
@@ -55,10 +61,21 @@ async function openSidebar(page: Page) {
 
 test('switching from the composer strip keeps a new chat and its draft, and shows the new profile at once', async ({ page }, info) => {
   const profiles = await twoProfiles(page)
+  await page.route('**/api/session/execution-modes', (route) => route.fulfill({ json: { modes: [
+    { mode: 'normal', available: true, reason: null, can_attach: true, can_reference: true },
+    { mode: 'safe', available: true, reason: null, can_attach: false, can_reference: false },
+  ] } }))
   await page.goto('/')
   const msg = page.locator('#msg')
   await msg.fill('A thought to finish later')
   await profiles.arm()
+  await msg.click()
+  // A choice made for the unsaved chat belongs to the previous profile and resets with the reloaded bootstrap; the draft carries over.
+  const mode = page.locator('.composer-strip .composer-execution-mode-chip')
+  await mode.click()
+  await page.getByRole('menuitemradio', { name: 'Safe mode', exact: true }).click()
+  await expect(mode).toContainText('Safe mode')
+  await page.keyboard.press('Escape')
   await msg.click()
   await page.locator('.composer-strip').getByRole('button', { name: /default/ }).click()
   await page.getByRole('menuitemradio', { name: /research/ }).click()
@@ -66,6 +83,8 @@ test('switching from the composer strip keeps a new chat and its draft, and show
   await profiles.expectInPlace('research')
   await expect(page).toHaveURL((url) => url.pathname === '/')
   await expect(msg).toHaveValue('A thought to finish later')
+  await msg.click()
+  await expect(mode).not.toContainText('Safe mode')
   await openSidebar(page)
   await expect(page.getByText("The research profile's chat")).toBeVisible()
   await expect(page.getByText("The default profile's chat")).toHaveCount(0)
@@ -96,6 +115,27 @@ test('switching from the titlebar menu happens in place', async ({ page }, info)
   await profiles.expectInPlace('research')
   await expect(page.locator('.app-titlebar-left').getByRole('button', { name: /research/ })).toBeVisible()
   await page.screenshot({ path: info.outputPath('titlebar-switch.png') })
+})
+
+test('switching while editing Memory drops the previous profile\'s unsaved edit', async ({ page }, info) => {
+  test.skip(info.project.name !== 'mobile', 'The titlebar shows at phone width.')
+  await showTitlebarProfile(page)
+  const profiles = await twoProfiles(page)
+  const memory = await (await page.request.get('/api/memory')).json()
+  let active = 'default'
+  await page.route('**/api/profile/switch', async (route) => { active = (route.request().postDataJSON() as { name: string }).name; await route.fallback() })
+  await page.route(/\/api\/memory(\?|$)/, (route) => route.fulfill({ json: { ...memory, memory: `The ${active} profile's notes`, memory_revision: active } }))
+  await page.goto('/memory')
+  await page.getByRole('button', { name: 'Edit' }).click()
+  const editor = page.getByRole('textbox', { name: 'Memory' })
+  await editor.fill('An edit made in the default profile')
+  await profiles.arm()
+  await page.locator('.app-titlebar-left').getByRole('button', { name: /default/ }).click()
+  await page.getByRole('menuitemradio', { name: /research/ }).click()
+  await profiles.expectInPlace('research', ['/api/bootstrap', '/api/settings'])
+  await expect(page.getByText("The research profile's notes")).toBeVisible()
+  await expect(editor).toHaveCount(0)
+  await expect(page.getByText('An edit made in the default profile')).toHaveCount(0)
 })
 
 test('Use and Open Bot Chat on the Profiles page switch in place, and the Bot Chat opens through the router', async ({ page }, info) => {

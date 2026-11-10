@@ -132,3 +132,17 @@ describe('boot snapshot writer', () => {
     expect(JSON.parse(readPersisted(snapshotKey) ?? '{}')).toMatchObject({ generation: 'current', mutations: [], queries: [{ queryKey: ['projects'] }] })
   })
 })
+
+describe('boot snapshot restore', () => {
+  it('TAL-2099: a reset after a snapshot restore drops the restored data, as a profile switch needs', async () => {
+    writePersisted('hermes-boot-generation', 'current')
+    const writer = createQueryClient()
+    writer.setQueryData(['projects'], projects('Previous profile'))
+    window.dispatchEvent(new Event('pagehide'))
+
+    const restored = createQueryClient()
+    expect(restored.getQueryData(['projects'])).toMatchObject({ projects: [{ name: 'Previous profile' }] })
+    await restored.resetQueries()
+    expect(restored.getQueryData(['projects'])).toBeUndefined()
+  })
+})
