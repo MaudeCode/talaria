@@ -185,7 +185,10 @@ export function renderMarkdown(text: string): string {
 
 const ENTITIES: Record<string, string> = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#x27;': "'" }
 
-/** TAL-2157: Markdown as the plain text a reader sees, on one line: rendered, then stripped of tags. */
+/** Tags `renderInline` writes inside a run of text: removing one leaves its neighbours joined, as the reader sees them. */
+const INLINE_TAG = /<\/?(?:a|code|strong|em|del|s|b|i)(?:\s[^>]*)?>/g
+
+/** TAL-2157: Markdown as the plain text a reader sees, on one line: rendered, then stripped of tags (a block break is a space). */
 export function markdownPlainText(text: string): string {
-  return renderMarkdown(text).replace(/<[^>]*>/g, ' ').replace(/&(?:amp|lt|gt|quot|#x27);/g, (entity) => ENTITIES[entity] ?? entity).replace(/\s+/g, ' ').trim()
+  return renderMarkdown(text).replace(INLINE_TAG, '').replace(/<[^>]*>/g, ' ').replace(/&(?:amp|lt|gt|quot|#x27);/g, (entity) => ENTITIES[entity] ?? entity).replace(/\s+/g, ' ').trim()
 }

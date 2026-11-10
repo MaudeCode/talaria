@@ -90,6 +90,8 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   })
   const shownRows = typeof cutFrom === 'number' ? reactionRows.filter((row) => row.index < cutFrom) : reactionRows
   const lastExchange = [...rows].reverse().find((row) => row.message.role === 'user')?.index
+  // TAL-2152: a rename or a new compaction reads the outline again; nothing else does.
+  const outline = sessionId && session && settings.data?.show_conversation_outline === true ? { revision: JSON.stringify([session.title, rows.findLast((row) => row.message._marker_kind === 'context_compaction')?.key ?? null]) } : undefined
   const intent = useTurnIntent(sessionId)
   const { onEdit, dialog: editDialog, operation, runHistory } = useEditMessage(sessionId, refresh)
   const clarify = useClarify(sessionId, live)
@@ -564,6 +566,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
             endlessScroll={settings.data?.session_endless_scroll !== false}
             fadeText={settings.data?.fade_text_effect === true}
             eventTimestamps={settings.data?.transparent_stream_event_timestamps !== false}
+            outline={outline}
           />
         )}
         <div ref={dock} className={cn('composer-dock', hero && 'composer-dock--hero')}>

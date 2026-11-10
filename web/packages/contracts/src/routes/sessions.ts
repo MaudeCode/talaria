@@ -5,7 +5,7 @@ import { oc } from '@orpc/contract'
 import { z } from 'zod'
 import { ModelSelectionWarningSchema, SessionDeleteRefusedSchema } from '../sidecar-shared.js'
 import { ExecutionModesSchema } from '../gateway-session.js'
-import { AgentRuntimeMetadataSchema, SessionIdSchema, SessionRowSchema, SessionEnvelopeSchema, SessionsListSchema, SessionNewRequestSchema, DraftSchema, DraftResponseSchema, ProjectSchema, ProjectsSchema, SessionStatusSchema, SessionUsageSchema, SessionSkillsSchema, SessionDeleteResultSchema, ShareReadSchema, ShareCreateResponseSchema, ActivitySceneRowSchema, ToolResultViewSchema, SessionSchema, AttachmentSchema } from '../views.js'
+import { AgentRuntimeMetadataSchema, SessionIdSchema, SessionRowSchema, SessionEnvelopeSchema, SessionsListSchema, SessionNewRequestSchema, DraftSchema, DraftResponseSchema, ProjectSchema, ProjectsSchema, SessionStatusSchema, SessionUsageSchema, SessionSkillsSchema, SessionOutlineSchema, SessionDeleteResultSchema, ShareReadSchema, ShareCreateResponseSchema, ActivitySceneRowSchema, ToolResultViewSchema, SessionSchema, AttachmentSchema } from '../views.js'
 
 /** Session, project, share, and draft routes. Response rows are loose: the sidecar carries operator-defined extras. */
 
@@ -156,6 +156,7 @@ export const sessionsContract = {
     contextDetail: oc.route({ method: 'GET', path: '/api/session/context-detail', tags, summary: 'Read bounded, safe allocation estimates and context-file metadata from the existing Agent or the session\'s stored prompt and tools, never building an Agent.' }).input(SessionQuery.extend({ context_detail_key: z.string().min(1).max(128) })).output(ContextDetailSchema),
     usage: oc.route({ method: 'GET', path: '/api/session/usage', tags }).input(SessionQuery).output(SessionUsageSchema),
     skills: oc.route({ method: 'GET', path: '/api/session/skills', tags, summary: 'TAL-1649: the skills this conversation loaded and how often, counted by the server from successful loads only. Never inferred from transcript text; a session without recorded loads answers an empty list.' }).input(SessionQuery).output(SessionSkillsSchema),
+    outline: oc.route({ method: 'GET', path: '/api/session/outline', tags, summary: 'TAL-2152: every user message of the chat, oldest first, as a one-line excerpt with the position its transcript page loads from. Built from the stored messages without tool results.' }).input(SessionQuery).output(SessionOutlineSchema),
     new: oc.route({ method: 'POST', path: '/api/session/new', tags }).input(SessionNewRequestSchema).output(SessionEnvelopeSchema.extend({ worktree_skipped: z.string().optional() })),
     executionModes: oc.route({ method: 'GET', path: '/api/session/execution-modes', tags, summary: 'TAL-1040: which execution modes a fresh chat in the active profile can start in now.' }).input(z.object({})).output(ExecutionModesSchema),
     rename: oc.route({ method: 'POST', path: '/api/session/rename', tags }).input(SessionBody.extend({ title: z.string() })).output(SessionEnvelopeSchema),

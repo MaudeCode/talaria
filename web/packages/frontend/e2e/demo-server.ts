@@ -101,6 +101,8 @@ async function seed(server: Awaited<ReturnType<typeof discussionServer>>['server
     '',
   ].join('\n'))
   const now = Math.floor(Date.now() / 1000)
+  // TAL-2152: the seeded chat has four questions, so the chat page shows its outline.
+  await server.deps.settings.save({ show_conversation_outline: true })
   const saveSession = (data: Record<string, unknown>) => server.deps.sessionStore.save(new Session({ profile: 'default', workspace, ...data }, { workspace, model: null }))
 
   await saveSession({
@@ -111,6 +113,10 @@ async function seed(server: Awaited<ReturnType<typeof discussionServer>>['server
       { role: 'tool', tool_call_id: 'read', content: 'export function ChatSection() {\n  // 87 lines\n}', timestamp: now - 3585 },
       { role: 'tool', tool_call_id: 'grep', content: '58', timestamp: now - 3580 },
       { role: 'assistant', content: '## Findings\n\n| Page | Problem |\n| --- | --- |\n| Chat | 19 controls in one group |\n| Sidebar | Destinations wrap inline |\n\n```ts\nconst groups = [\'Composer\', \'Transcript\']\n```\n\n1. Regroup **Chat** first.\n2. Then move the sidebar destinations into rows.', timestamp: now - 3500 },
+      { role: 'user', content: 'Which of the two is riskier?', timestamp: now - 3000 },
+      { role: 'assistant', content: 'The **Chat** regroup: it moves 19 controls, and two of them have deep links.', timestamp: now - 2950 },
+      { role: 'user', content: 'Can the sidebar change ship first?', timestamp: now - 2000 },
+      { role: 'assistant', content: 'Yes. It touches only the sidebar rows, so it cannot conflict with the regroup.', timestamp: now - 1950 },
       { role: 'user', content: 'Good. File tickets for both.', timestamp: now - 700 },
       { role: 'assistant', content: 'Filed two tickets and ordered them so they cannot conflict.', timestamp: now - 600 },
     ],

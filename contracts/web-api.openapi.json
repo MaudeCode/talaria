@@ -11816,6 +11816,95 @@
         }
       }
     },
+    "/api/session/outline": {
+      "get": {
+        "operationId": "session.outline",
+        "summary": "TAL-2152: every user message of the chat, oldest first, as a one-line excerpt with the position its transcript page loads from. Built from the stored messages without tool results.",
+        "tags": [
+          "sessions"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "session_id": {
+                      "type": "string"
+                    },
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "message_id": {
+                            "type": "string"
+                          },
+                          "index": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "excerpt": {
+                            "type": "string"
+                          },
+                          "created_at": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "message_id",
+                          "index",
+                          "excerpt",
+                          "created_at"
+                        ]
+                      }
+                    },
+                    "shown": {
+                      "type": "boolean",
+                      "description": "Whether the chat shows its outline: it has enough questions for a jump list to help."
+                    },
+                    "shown_after": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "description": "How many more questions the user must send before it shows; 0 when `shown`. Questions sent since this read count toward it."
+                    }
+                  },
+                  "required": [
+                    "session_id",
+                    "entries",
+                    "shown",
+                    "shown_after"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/session/new": {
       "post": {
         "operationId": "session.new",

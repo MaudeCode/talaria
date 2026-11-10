@@ -125,6 +125,8 @@ export const fetchShowBlock = (block_id: string, signal?: AbortSignal) => orpc()
 export const fetchSessionStatus = (id: SessionId) => orpc().session.status({ session_id: id })
 export const fetchSessionUsage = (id: SessionId) => orpc().session.usage({ session_id: id })
 export const fetchSessionSkills = (id: SessionId) => orpc().session.skills({ session_id: id })
+/** TAL-2152: the chat's questions, one line each, with the position each one's transcript page loads from. */
+export const fetchSessionOutline = (id: SessionId, signal?: AbortSignal) => orpc().session.outline({ session_id: id }, signal ? { signal } : {})
 export const markSessionViewed = (session_id: SessionId) => orpc().talaria.viewed({ session_id })
 export const fetchWebPushStatus = (endpoint?: string) => orpc().webPush.status(endpoint ? { endpoint } : {})
 export const subscribeWebPush = (endpoint: string, keys: { p256dh: string; auth: string }) => orpc().webPush.subscribe({ endpoint, keys })
