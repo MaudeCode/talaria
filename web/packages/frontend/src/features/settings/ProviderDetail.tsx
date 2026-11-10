@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactElement } from 'react'
 import { useLocation, useNavigate, useRouter } from '@tanstack/react-router'
 import { KeyRound, PanelLeft, Pencil, RefreshCw, Server, Trash2, Wrench } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
@@ -10,6 +10,7 @@ import { formatPercent } from '../../i18n/units'
 import { BackButton, IconButton } from '../../ui/Button'
 import { Mark } from '../../ui/Badge'
 import { ConfirmDialog } from '../../ui/Dialog'
+import { RowContextMenu, type RowAction } from '../../ui/Menu'
 import { Switch } from '../../ui/Field'
 import { Figure } from '../../ui/List'
 import { Monogram } from '../../ui/Monogram'
@@ -142,17 +143,23 @@ function ProviderSignIn({ p, catalogUnavailable }: { p: Provider; catalogUnavail
   const name = p.display_name ?? p.id
   const keyed = !p.is_self_hosted && p.configurable !== false && !p.is_oauth
   const edit = p.is_self_hosted ? m.providers_self_hosted_setup() : p.has_key ? m.providers_key_replace() : m.providers_key_set()
+  // One list for the credential rows' buttons and their right-click and long-press menu.
+  const actions = [
+    ...(keyed || p.is_self_hosted ? [{ label: edit, run: () => setEditing((v) => !v), icon: p.is_self_hosted ? Wrench : Pencil }] : []),
+    ...(p.removable === true ? [{ label: m.providers_key_remove(), run: () => setRemoving(true), danger: true, icon: Trash2 }] : []),
+  ] satisfies RowAction[]
+  const withMenu = (row: ReactElement) => <RowContextMenu label={m.providers_row_menu()} actions={actions} trigger={row} />
   return (
     <SettingsGroup id="sign-in" title={m.providers_group_sign_in()}>
-      <SettingAction label={p.is_self_hosted ? m.providers_endpoint() : keyed ? m.providers_api_key() : m.providers_account()} icon={p.is_self_hosted ? Server : KeyRound} detail={<ProviderStatus p={p} catalogUnavailable={catalogUnavailable} />}>
+      {withMenu(<div><SettingAction label={p.is_self_hosted ? m.providers_endpoint() : keyed ? m.providers_api_key() : m.providers_account()} icon={p.is_self_hosted ? Server : KeyRound} detail={<ProviderStatus p={p} catalogUnavailable={catalogUnavailable} />}>
         {(keyed || p.is_self_hosted) && <IconButton variant="default" label={edit} aria-expanded={editing} onClick={() => setEditing((v) => !v)}>{p.is_self_hosted ? <Wrench aria-hidden="true" /> : <Pencil aria-hidden="true" />}</IconButton>}
-      </SettingAction>
+      </SettingAction></div>)}
       {editing && p.is_self_hosted && <div className="py-2"><SelfHostedForm id={p.id} baseUrl={p.base_url ?? ''} saving={saveHosted.isPending} onSubmit={(body) => saveHosted.mutate({ id: p.id, name, ...body })} /></div>}
       {editing && keyed && <div className="py-2"><ProviderKeyForm label={m.providers_key_label({ provider: name })} hasKey={p.has_key === true} saving={saveKey.isPending} onSubmit={(key) => saveKey.mutate({ id: p.id, key })} /></div>}
-      {p.removable === true && (
-        <SettingAction label={m.providers_key_remove()} icon={Trash2}>
+      {p.removable === true && withMenu(
+        <div><SettingAction label={m.providers_key_remove()} icon={Trash2}>
           <IconButton variant="danger" label={m.providers_key_remove()} onClick={() => setRemoving(true)}><Trash2 aria-hidden="true" /></IconButton>
-        </SettingAction>
+        </SettingAction></div>,
       )}
       {p.id === 'nous' && <div className="py-2"><OAuthSignIn provider={p.id} label={name} signedIn={p.has_key === true} account={p.nous_account ?? null} accountError={p.nous_account_error ?? null} resultOnly compact idPrefix="providersNousOauth" onApproved={invalidate} /></div>}
       {p.device_login && <div className="py-2"><OAuthSignIn provider={p.id} label={name} signedIn={p.has_key === true} idPrefix={`providerOauth-${p.id}`} onApproved={invalidate} /></div>}

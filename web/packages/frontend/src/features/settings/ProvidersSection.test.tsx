@@ -370,6 +370,17 @@ describe('ProviderDetail (TAL-2135)', () => {
     await waitFor(() => expect(post).toHaveBeenCalledWith('api/providers', { provider: 'anthropic', api_key: null }, expect.anything(), { retries: 0 }))
   })
 
+  it('offers the credential actions from the Sign-in rows on right-click, the same as their buttons', async () => {
+    providersResponse.current = { active_provider: 'anthropic', providers: [anthropic] }
+    await renderAt('/settings/providers/anthropic')
+    const signIn = await found('[data-group="sign-in"]')
+    fireEvent.contextMenu(within(signIn).getByText('API key'), { clientX: 10, clientY: 10 })
+    const menu = await screen.findByRole('menu', { name: 'Provider actions' })
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Replace key', 'Remove key'])
+    await userEvent.click(within(menu).getByRole('menuitem', { name: 'Remove key' }))
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('Remove the Anthropic key?')
+  })
+
   it.each([['deepseek', 'env_var'], ['zai', 'credential_pool']])('offers no Remove key for %s, whose key the server marks not removable (TAL-641)', async (id, source) => {
     providersResponse.current = { active_provider: id, providers: [{ id, display_name: id, has_key: true, configured: true, configurable: true, is_oauth: false, key_source: source, removable: false }] }
     await renderAt(`/settings/providers/${id}`)
