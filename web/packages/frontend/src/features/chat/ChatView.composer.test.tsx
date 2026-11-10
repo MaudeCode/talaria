@@ -213,7 +213,7 @@ it('routes picker effort and reset through the current direct-chat identity afte
   const view = render(<QueryClientProvider client={qc}><ChatView sessionId={first.session_id} /></QueryClientProvider>)
   await waitFor(() => expect(qc.isFetching()).toBe(0))
   fireEvent.click(view.container.querySelector('#composerReasoningChip')!)
-  fireEvent.click(await screen.findByRole('menuitemradio', { name: 'high' }))
+  fireEvent.click(await screen.findByRole('menuitemradio', { name: 'High' }))
   await waitFor(() => expect(adapter.calls).toHaveLength(1))
   expect(JSON.parse(adapter.calls[0]!.body as string)).toEqual({ effort: 'high', model: 'shared-model', session_id: first.session_id })
   fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })

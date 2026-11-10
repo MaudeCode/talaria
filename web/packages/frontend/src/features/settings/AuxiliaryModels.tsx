@@ -8,7 +8,7 @@ import type { DelegationSettings, DelegationRoute } from '@maudecode/talaria-web
 import { useResourceEffects, withEffects } from '../sessions/useResourceMutation'
 import { BackButton, Button } from '../../ui/Button'
 import { ConfirmDialog } from '../../ui/Dialog'
-import { ReasoningChip } from '../composer/chips'
+import { ReasoningChip, reasoningLevelLabel } from '../composer/chips'
 import { Switch, TextInput } from '../../ui/Field'
 import { Row, RowList, SectionHeader } from '../../ui/List'
 import { SettingRow, SettingsGroup } from './SettingsRows'
@@ -85,7 +85,7 @@ export function AuxiliaryModelsSection() {
 /** "Auto · main model" or the pinned provider/model, then a saved effort; the server flags a pinned model missing from the catalog. */
 function TaskValue({ task }: { task: AuxTask }) {
   const model = [task.provider_label, task.value_label].filter(Boolean).join(' · ')
-  const effort = task.reasoning.inherited ? '' : ` · ${task.reasoning.saved ?? ''}`
+  const effort = task.reasoning.inherited ? '' : ` · ${task.reasoning.saved === null ? '' : reasoningLevelLabel(task.reasoning.saved)}`
   return (
     <span className="mt-0.5 flex min-w-0 items-center gap-2 text-xs text-text">
       <span className="truncate">{task.is_auto ? <><span className="font-medium text-accent-text">{m.auxiliary_models_auto()}</span>{model && ` · ${model}`}</> : model}{effort}</span>

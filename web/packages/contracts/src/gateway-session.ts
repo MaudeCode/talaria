@@ -152,6 +152,7 @@ export const ExecutionModesSchema = z.object({
   modes: z.array(z.object({ mode: ExecutionModeSchema, available: z.boolean(), reason: ExecutionModeUnavailableSchema.nullable(),
     can_reference: z.boolean().optional().describe('A fresh chat in this mode accepts earlier-conversation references. Absent means unavailable.'),
     can_attach: z.boolean().describe('A fresh chat in this mode accepts file attachments.') })),
+  selectable: z.boolean().optional().describe('TAL-2097: more than one mode is available, so a fresh chat has a mode to choose. Absent (an older server) means true.'),
 })
 export type ExecutionModes = z.infer<typeof ExecutionModesSchema>
 const OwnerActionBase = z.object({ session_id: z.string().min(1) })

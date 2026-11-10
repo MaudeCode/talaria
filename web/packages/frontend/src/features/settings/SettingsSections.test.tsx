@@ -262,12 +262,12 @@ describe('the profile reasoning defaults (TAL-2078)', () => {
     })
     renderSection(<ModelsSection />)
     const select = await screen.findByRole('combobox', { name: 'Default reasoning effort' })
-    expect(select).toHaveTextContent('medium')
+    expect(select).toHaveTextContent('Medium')
     await userEvent.click(select)
-    expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['Default', 'low', 'medium', 'high'])
-    await userEvent.click(screen.getByRole('option', { name: 'high' }))
+    expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['Default', 'Low', 'Medium', 'High'])
+    await userEvent.click(screen.getByRole('option', { name: 'High' }))
     expect(setReasoningEffort).toHaveBeenCalledWith('high', null, null, undefined)
-    await waitFor(() => expect(select).toHaveTextContent('high'))
+    await waitFor(() => expect(select).toHaveTextContent('High'))
   })
 
   it('moves the effort at once and rolls it back with the error toast when the server refuses', async () => {
@@ -281,7 +281,7 @@ describe('the profile reasoning defaults (TAL-2078)', () => {
     expect(setReasoningEffort).toHaveBeenLastCalledWith('', null, null, undefined)
     expect(select).toHaveTextContent('Default')
     write.reject(refusal())
-    await waitFor(() => expect(select).toHaveTextContent('medium'))
+    await waitFor(() => expect(select).toHaveTextContent('Medium'))
     expect(showToast).toHaveBeenCalledWith('config.yaml is package-managed.', 4000, 'error')
   })
 

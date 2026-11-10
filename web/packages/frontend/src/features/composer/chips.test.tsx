@@ -67,9 +67,9 @@ function toolsetsCatalog(choice: string[] | null) {
 let modes: unknown = { modes: [{ mode: 'normal', available: true, reason: null }, { mode: 'ignore_config', available: true, reason: null }, { mode: 'safe', available: true, reason: null }] }
 vi.mock('../../api/endpoints', () => ({ fetchExecutionModes: vi.fn(() => Promise.resolve(modes)), fetchToolsetsCatalog: vi.fn((choice: string[] | null) => Promise.resolve(toolsetsCatalog(choice))), fetchModels: vi.fn(() => Promise.resolve(catalog)), fetchWorkspaces: vi.fn(() => Promise.resolve(WORKSPACES)), setModelFavorite: vi.fn() }))
 vi.mock('../toast/errorToast', () => ({ showErrorToast: vi.fn() }))
-import { ExecutionModeChip, ModelChip, ToolsetsChip, WorkspaceChip } from './chips'
+import { ExecutionModeChip, ModelChip, ReasoningChip, ToolsetsChip, WorkspaceChip } from './chips'
 import { Dialog } from '../../ui/Dialog'
-import { fetchModels, fetchToolsetsCatalog, setModelFavorite } from '../../api/endpoints'
+import { fetchExecutionModes, fetchModels, fetchToolsetsCatalog, setModelFavorite } from '../../api/endpoints'
 import { showErrorToast } from '../toast/errorToast'
 import { ApiError } from '../../contracts/common'
 
@@ -405,6 +405,27 @@ describe('ModelChip', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
 
+  it('says no models are available for an empty catalog or provider, but not while search offers rows (TAL-2097)', async () => {
+    catalog = { groups: [] }
+    renderChip({ model: null, optionId: null })
+    await userEvent.click(screen.getByRole('button'))
+    expect(await screen.findByRole('status')).toHaveTextContent('No models available')
+    await userEvent.type(screen.getByRole('combobox'), 'vendor/new-model')
+    expect(optionNames()).toEqual(['Custom model ID: vendor/new-model'])
+    expect(screen.queryByText('No models available')).toBeNull()
+    cleanup()
+    // A provider with nothing to list says the same; Favorites with none starred keeps its own line.
+    catalog = { groups: [{ provider: 'Empty', provider_id: 'empty', models: [] }, ...PLUGIN_CATALOG.groups] }
+    renderChip({ model: null, optionId: null })
+    await userEvent.click(screen.getByRole('button'))
+    // With nothing starred it opens on the first provider.
+    expect(await screen.findByRole('status')).toHaveTextContent('No models available')
+    await userEvent.click(within(rail()).getByRole('button', { name: 'Favorites' }))
+    expect(screen.getByRole('status')).toHaveTextContent('No favorites yet')
+    await userEvent.type(screen.getByRole('combobox'), 'claude')
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
   it('sends the picked id with its own provider (TAL-301)', async () => {
     catalog = COLON_CATALOG
     const onChange = vi.fn()
@@ -589,6 +610,20 @@ it('does not offer saves when the toolset catalog fails', async () => {
   expect(await screen.findByRole('menuitemcheckbox', { name: /^file/ })).toBeInTheDocument()
 })
 
+describe('ReasoningChip (TAL-2097)', () => {
+  it('names known effort levels, shows an unknown one as sent, and sends the server ids', async () => {
+    const onChange = vi.fn()
+    render(<ReasoningChip value="xhigh" levels={['minimal', 'low', 'medium', 'high', 'xhigh', 'turbo']} onChange={onChange} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Reasoning effort: Extra high' }))
+    expect((await screen.findAllByRole('menuitemradio')).map((item) => item.textContent)).toEqual(['Default', 'Minimal', 'Low', 'Medium', 'High', 'Extra high', 'turbo'])
+    await userEvent.click(screen.getByRole('menuitemradio', { name: 'Minimal' }))
+    expect(onChange).toHaveBeenLastCalledWith('minimal')
+    cleanup()
+    render(<ReasoningChip value="turbo" levels={['low', 'turbo']} onChange={onChange} />)
+    expect(screen.getByRole('button', { name: 'Reasoning effort: turbo' })).toBeInTheDocument()
+  })
+})
+
 describe('ExecutionModeChip (TAL-1040)', () => {
   const renderMode = (props: Parameters<typeof ExecutionModeChip>[0]) => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -598,14 +633,14 @@ describe('ExecutionModeChip (TAL-1040)', () => {
   it('picks a mode the server offers for the fresh chat', async () => {
     const onChange = vi.fn()
     renderMode({ value: 'normal', onChange })
-    await userEvent.click(screen.getByRole('button', { name: 'Agent mode: Normal' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Agent mode: Normal' }))
     await userEvent.click(await screen.findByRole('menuitemradio', { name: 'Safe mode' }))
     expect(onChange).toHaveBeenCalledWith('safe')
   })
 
   it('names the menu in its first label and marks only the chosen mode with a check (TAL-2095)', async () => {
     renderMode({ value: 'normal', onChange: vi.fn() })
-    await userEvent.click(screen.getByRole('button'))
+    await userEvent.click(await screen.findByRole('button'))
     const menu = await screen.findByRole('menu')
     expect(within(menu).getByRole('group', { name: 'Agent mode' }).firstElementChild).toHaveTextContent('Agent mode')
     const chosen = await within(menu).findByRole('menuitemradio', { name: 'Normal' })
@@ -618,12 +653,34 @@ describe('ExecutionModeChip (TAL-1040)', () => {
     modes = { modes: [{ mode: 'normal', available: true, reason: null }, { mode: 'ignore_config', available: false, reason: 'agent_unsupported' }, { mode: 'safe', available: false, reason: 'agent_unsupported' }] }
     const onChange = vi.fn()
     renderMode({ value: 'normal', onChange })
-    await userEvent.click(screen.getByRole('button'))
+    await userEvent.click(await screen.findByRole('button'))
     const safe = await screen.findByRole('menuitemradio', { name: /Safe mode/ })
     expect(safe).toHaveAttribute('aria-disabled', 'true')
     expect(safe).toHaveTextContent('Not supported by this Agent')
     await userEvent.click(safe)
     expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('leaves a fresh chat without the chip when the server offers one mode, and keeps it when it offers more or does not say (TAL-2097)', async () => {
+    const both = (selectable: boolean | undefined) => ({ modes: [{ mode: 'normal', available: true, reason: null }, { mode: 'ignore_config', available: !!selectable, reason: selectable ? null : 'agent_unsupported' }, { mode: 'safe', available: !!selectable, reason: selectable ? null : 'agent_unsupported' }], ...(selectable === undefined ? {} : { selectable }) })
+    modes = both(false)
+    renderMode({ value: 'normal', onChange: vi.fn() })
+    // The mocked read answers at once; after it the chip stays away, so it is the server's answer that hid it.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)))
+    expect(screen.queryByRole('button', { name: /Agent mode/ })).toBeNull()
+    expect(fetchExecutionModes).toHaveBeenCalled()
+    cleanup()
+    // A mode already picked stays changeable after the others become unavailable.
+    renderMode({ value: 'safe', onChange: vi.fn() })
+    expect(await screen.findByRole('button', { name: 'Agent mode: Safe mode' })).toBeInTheDocument()
+    cleanup()
+    for (const selectable of [true, undefined]) {
+      modes = both(selectable)
+      renderMode({ value: 'normal', onChange: vi.fn() })
+      expect(await screen.findByRole('button', { name: 'Agent mode: Normal' })).toBeInTheDocument()
+      cleanup()
+    }
+    modes = both(true)
   })
 
   it('shows the frozen mode of a started chat without a picker', () => {

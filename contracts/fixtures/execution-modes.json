@@ -22,7 +22,8 @@
         "can_attach": false,
         "can_reference": false
       }
-    ]
+    ],
+    "selectable": true
   },
   "unavailable": {
     "modes": [
@@ -47,7 +48,8 @@
         "can_attach": false,
         "can_reference": false
       }
-    ]
+    ],
+    "selectable": false
   },
   "create_request": {
     "execution_mode": "safe",

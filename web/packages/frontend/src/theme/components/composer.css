@@ -154,6 +154,8 @@
 .queue-card-input{flex:1;min-width:0;padding:2px 6px;border:1px solid var(--border);border-radius:6px;background:transparent;font:inherit;color:var(--text)}
 .composer-strip{display:flex;align-items:center;gap:calc(var(--space-1) / 2);padding:calc(var(--space-1) / 2) calc(var(--space-1) * 1.5);border-top:0;border-radius:0 0 var(--r-lg) var(--r-lg);overflow-x:auto;scrollbar-width:none}
 .composer-strip::-webkit-scrollbar{display:none}
+/* TAL-2097: a control strip whose only chip, the fresh-chat Agent mode, has nothing to offer draws no empty bar. */
+.composer-strip:empty{display:none}
 @media (max-width:640px){.composer-strip{width:calc(100% - var(--space-3) * 2)}}
 /* Pending images (TAL-1552, after the App's TAL-634): the same strip hung from the card's top edge, the card's outline
    closing it. Each image is just its thumbnail, with a remove badge on the corner. */

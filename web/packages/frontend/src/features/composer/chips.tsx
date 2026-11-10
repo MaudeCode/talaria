@@ -102,13 +102,20 @@ export function ComposerMenu({ label, className, children, ...props }: Omit<Menu
 }
 
 const EFFORTS = ['default', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const
+const REASONING_LEVEL_LABEL = new Map<string, () => string>([
+  ['none', m.reasoning_level_none], ['minimal', m.reasoning_level_minimal], ['low', m.reasoning_level_low], ['medium', m.reasoning_level_medium],
+  ['high', m.reasoning_level_high], ['xhigh', m.reasoning_level_xhigh], ['max', m.reasoning_level_max], ['ultra', m.reasoning_level_ultra],
+])
+/** TAL-2097: a server effort id in words; an id without a message shows as sent. The id itself is what is sent back. */
+export const reasoningLevelLabel = (level: string) => REASONING_LEVEL_LABEL.get(level)?.() ?? level
+
 /** `defaultLabel` names what no saved level falls back to (the auxiliary delegation slot inherits its parent's, TAL-1285). */
 export function ReasoningChip({ value, levels, onChange, row, defaultLabel = m.reasoning_default() }: { value: string | null; levels: string[] | undefined; onChange: (level: string | null) => void; row?: boolean; defaultLabel?: string }) {
   const options = levels?.length ? ['default', ...levels] : [...EFFORTS]
   return (
-    <ComposerMenu label={m.composer_control_reasoning()} trigger={<Chip id={row ? undefined : "composerReasoningChip"} icon={<Brain size={16} aria-hidden="true" />} label={value ?? defaultLabel} title={m.composer_control_reasoning()} row={row} className="composer-reasoning-chip" />}>
+    <ComposerMenu label={m.composer_control_reasoning()} trigger={<Chip id={row ? undefined : "composerReasoningChip"} icon={<Brain size={16} aria-hidden="true" />} label={value === null ? defaultLabel : reasoningLevelLabel(value)} title={m.composer_control_reasoning()} row={row} className="composer-reasoning-chip" />}>
       <MenuRadioGroup value={value ?? 'default'} onValueChange={(v: string) => onChange(v === 'default' ? null : v)}>
-        {options.map((o) => <MenuChoiceItem key={o} value={o}>{o === 'default' ? defaultLabel : o}</MenuChoiceItem>)}
+        {options.map((o) => <MenuChoiceItem key={o} value={o}>{o === 'default' ? defaultLabel : reasoningLevelLabel(o)}</MenuChoiceItem>)}
       </MenuRadioGroup>
     </ComposerMenu>
   )
@@ -181,11 +188,17 @@ const EXECUTION_MODE_REASON: Record<NonNullable<ExecutionModes['modes'][number][
   gateway_stopped: m.execution_mode_gateway_stopped, gateway_unavailable: m.execution_mode_gateway_unavailable,
 }
 
-/** TAL-1040: a fresh chat picks how its Agent runs; without `onChange` it shows the mode the server froze. */
+/**
+ * TAL-1040: a fresh chat picks how its Agent runs; without `onChange` it shows the mode the server froze. TAL-2097: a fresh
+ * chat shows it once the server says there is a mode to choose (`selectable`, absent from an older server); a mode already
+ * picked keeps it, so the pick can still go back to Normal.
+ */
 export function ExecutionModeChip({ value, onChange, row }: { value: ExecutionMode; onChange?: ((mode: ExecutionMode) => void) | undefined; row?: boolean | undefined }) {
   const [open, setOpen] = useState(false)
+  const modes = useExecutionModesQuery(!!onChange)
   const chip = { icon: <Shield size={13} aria-hidden="true" />, label: EXECUTION_MODE_LABEL[value](), title: m.composer_control_execution_mode(), row, size: 'xs' as const, className: 'composer-execution-mode-chip' }
   if (!onChange) return <Chip {...chip} readOnly />
+  if (value === 'normal' && (modes.isPending || modes.data?.selectable === false)) return null
   return (
     <ComposerMenu open={open} onOpenChange={setOpen} label={m.composer_control_execution_mode()} trigger={<Chip {...chip} />}>
       <ExecutionModePicker value={value} onChange={(mode) => { onChange(mode); setOpen(false) }} />
@@ -221,9 +234,9 @@ export function WorkspaceChip({ value, name, onChange, onNewWorktree, onRemoveWo
       </MenuRadioGroup>
       {(onNewWorktree ?? onRemoveWorktree) && <MenuSeparator />}
       {onNewWorktree && (
-        <MenuItem onClick={() => onNewWorktree(value)} className="items-start gap-2">
-          <GitBranch size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-          <span className="flex min-w-0 flex-col"><span>{m.workspace_new_worktree_conversation()}</span><span className="text-[11px] text-muted">{m.workspace_new_worktree_conversation_meta()}</span></span>
+        <MenuItem onClick={() => onNewWorktree(value)} title={m.workspace_new_worktree_conversation_meta()} className="gap-2">
+          <GitBranch size={14} className="shrink-0" aria-hidden="true" />
+          <span>{m.workspace_new_worktree_conversation()}</span>
         </MenuItem>
       )}
       {/* A worktree chat's own removal, reachable on touch layouts that hide the sidebar row's menu. */}

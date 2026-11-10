@@ -24,6 +24,7 @@ import { transcriptCut, useEditMessage } from './useEditMessage'
 import { Transcript } from './Transcript'
 import { TranscriptSkeleton } from './TranscriptSkeleton'
 import { Composer, turnRequest } from '../composer/Composer'
+import { reasoningLevelLabel } from '../composer/chips'
 import { composerStateId, useQueuedTurns, type QueuedTurn } from '../composer/queue'
 import { returnToComposer } from '../composer/composerReturn'
 import { ApprovalCards } from './ApprovalCard'
@@ -202,7 +203,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     : confirmingReasoning ?? (reasoningEffect && 'value' in reasoningEffect ? reasoningEffect.value ?? null : reasoningStatus?.reasoning_effort || null)
   const reasoningLevels = reasoningStatus?.supported_efforts
   const reasoningSupported = reasoningStatus?.supports_reasoning_effort !== false || reasoningStatus.supports_thinking_toggle === true
-  const sendReasoning = useSetReasoningEffort((status) => showToast(`${m.composer_control_reasoning()}: ${status.reasoning_effort || m.reasoning_default()}`)).mutate
+  const sendReasoning = useSetReasoningEffort((status) => showToast(`${m.composer_control_reasoning()}: ${status.reasoning_effort ? reasoningLevelLabel(status.reasoning_effort) : m.reasoning_default()}`)).mutate
   // Capture the chat and model fields, not the query's escaping key array, so the compiler keeps this handler stable; the
   // answer and the optimistic value stay on the chat that was asked, whichever chat is open when it lands.
   const setReasoning = (level: string | null) => {
@@ -342,7 +343,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       case 'branch': if (sessionId) { const r = await api.branchSession(sessionId); void invalidateSessionQueries(qc, r.session_id); await navigate({ to: '/session/$sessionId', params: { sessionId: r.session_id } }) } return true
       case 'reasoning': {
         const arg = args.trim().toLowerCase()
-        if (!arg) { showToast(`${m.composer_control_reasoning()}: ${reasoning ?? m.reasoning_default()}`, 4000); return true }
+        if (!arg) { showToast(`${m.composer_control_reasoning()}: ${reasoning === null ? m.reasoning_default() : reasoningLevelLabel(reasoning)}`, 4000); return true }
         if (arg === 'show' || arg === 'on' || arg === 'hide' || arg === 'off') { setReasoningDisplay(arg === 'show' || arg === 'on' ? 'show' : 'hide'); return true }
         setReasoning(arg === 'default' ? null : arg)
         return true
