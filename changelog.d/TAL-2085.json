@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Talaria Web opens each profile to a detail page in Settings > Profiles with its model, gateway, skills, API keys, pending writes and folder, and the Settings sidebar's Profile header opens the active profile; a profile row's actions move to its menu.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

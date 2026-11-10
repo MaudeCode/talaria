@@ -120,6 +120,8 @@ async function settingsPages(page: Page, info: TestInfo, theme: Theme) {
   const pages = [
     ...SettingsSectionSchema.options.map((id) => ({ name: id, path: id, tab: undefined })),
     ...ToolsTabSchema.options.map((tab) => ({ name: `tools-${tab}`, path: `tools?tab=${tab}`, tab })),
+    // TAL-2085: a profile's detail page.
+    { name: 'profiles-detail', path: 'profiles?name=default', tab: undefined },
   ]
   try {
     if (theme === 'light') await pickLightTheme(page, server.base)

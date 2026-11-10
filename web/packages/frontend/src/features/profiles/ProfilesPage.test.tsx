@@ -4,13 +4,16 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { createMemoryHistory, createRootRoute, createRoute, createRouter, Outlet, RouterProvider, useParams, useSearch } from '@tanstack/react-router'
+import { SettingsSearchSchema } from '../../contracts/url'
 
 vi.mock(import('../../api/endpoints'), async (importOriginal) => ({
   ...(await importOriginal()),
   fetchProfiles: vi.fn(() => Promise.resolve({
     profiles: [
       { name: 'default', is_default: true, display_name: '', description: '', has_avatar: false, canonical_session: null },
-      { name: 'scout', is_default: false, display_name: 'Research lead', description: 'Finds sources.', has_avatar: true, canonical_session: { session_id: 'scout-root', tip_session_id: 'scout-tip' } },
+      { name: 'scout', is_default: false, display_name: 'Research lead', description: 'Finds sources.', has_avatar: true, canonical_session: { session_id: 'scout-root', tip_session_id: 'scout-tip' },
+        path: '/home/u/.hermes/profiles/scout', model: 'gpt-6-astra', provider: 'openai-codex', enabled_skills: 3, total_skills: 7, gateway_mode: 'parked' as const, has_env: true, pending_writes: 2 },
     ],
     active: 'default',
     single_profile_mode: false,
@@ -24,14 +27,29 @@ import * as api from '../../api/endpoints'
 import { showErrorToast } from '../toast/errorToast'
 import { ProfilesPage } from './ProfilesPage'
 
-function renderPage(bootstrap = DEFAULT_BOOTSTRAP) {
+/** The page at Settings > Profiles, `?name=` included, under a router that also holds the pages its links open. */
+async function renderPage(bootstrap = DEFAULT_BOOTSTRAP, path = '/settings/profiles') {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<BootstrapContext.Provider value={bootstrap}><QueryClientProvider client={qc}><ProfilesPage /></QueryClientProvider></BootstrapContext.Provider>)
+  const root = createRootRoute({ component: () => <BootstrapContext.Provider value={bootstrap}><QueryClientProvider client={qc}><Outlet /></QueryClientProvider></BootstrapContext.Provider> })
+  const section = createRoute({ getParentRoute: () => root, path: '/settings/$section', validateSearch: SettingsSearchSchema, component: function Section() {
+    const { section: id } = useParams({ strict: false }) as { section: string }
+    const { name } = useSearch({ strict: false }) as { name?: string }
+    return id === 'profiles' ? <ProfilesPage name={name} /> : <p>Section {id}</p>
+  } })
+  const skills = createRoute({ getParentRoute: () => root, path: '/skills', component: () => <p>Skills page</p> })
+  const router = createRouter({ routeTree: root.addChildren([section, skills]), history: createMemoryHistory({ initialEntries: [path] }) })
+  await router.load()
+  render(<RouterProvider router={router} />)
+  return router
+}
+const rowMenuItems = async (row: HTMLElement) => {
+  await userEvent.click(within(row).getByRole('button', { name: 'Profile actions' }))
+  return within(await screen.findByRole('menu', { name: 'Profile actions' })).getAllByRole('menuitem')
 }
 
 describe('ProfilesPage', () => {
   it('keeps the profiles-vs-workspaces explanation behind the title help button', async () => {
-    renderPage()
+    await renderPage()
     expect(await screen.findByText('default')).toBeVisible()
     expect(screen.queryByText(/Use profiles for how the agent works/)).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'About Profiles' }))
@@ -40,7 +58,7 @@ describe('ProfilesPage', () => {
   })
 
   it('TAL-1791: marks only the active profile', async () => {
-    renderPage()
+    await renderPage()
     const active = (await screen.findByText('default')).closest('li')!
     expect(within(active).getByText('ACTIVE')).toBeVisible()
     expect(within(screen.getByText('scout').closest('li')!).queryByText('ACTIVE')).not.toBeInTheDocument()
@@ -49,7 +67,7 @@ describe('ProfilesPage', () => {
   it('TAL-805: labels each profile by the server gateway mode', async () => {
     const modes = ['own', 'served', 'parked', 'standalone', 'stopped'] as const
     vi.mocked(api.fetchProfiles).mockResolvedValueOnce({ profiles: modes.map((mode) => ({ name: mode, gateway_mode: mode, gateway_running: mode === 'own' || mode === 'served' })), active: 'own', single_profile_mode: false })
-    renderPage()
+    await renderPage()
     const label = async (name: string): Promise<HTMLElement> => (await screen.findByText(name, { selector: 'span.truncate' })).closest('li')!
     expect(within(await label('own')).getByText('Gateway running')).toBeVisible()
     expect(within(await label('served')).getByText('Gateway served by host')).toBeVisible()
@@ -60,7 +78,7 @@ describe('ProfilesPage', () => {
 
   it('TAL-805: falls back to gateway_running from a server without gateway_mode', async () => {
     vi.mocked(api.fetchProfiles).mockResolvedValueOnce({ profiles: [{ name: 'up', gateway_running: true }, { name: 'down', gateway_running: false }, { name: 'unknown' }], active: 'up', single_profile_mode: false })
-    renderPage()
+    await renderPage()
     const row = async (name: string): Promise<HTMLElement> => (await screen.findByText(name, { selector: 'span.truncate' })).closest('li')!
     expect(within(await row('up')).getByText('Gateway running')).toBeVisible()
     expect(within(await row('down')).getByText('Gateway stopped')).toBeVisible()
@@ -71,13 +89,15 @@ describe('ProfilesPage', () => {
     const assign = vi.fn()
     vi.stubGlobal('location', { href: window.location.href, origin: window.location.origin, assign })
     try {
-      renderPage()
+      await renderPage()
       const scout = (await screen.findByText('Research lead')).closest('li')!
       expect(within(scout).getByText('scout')).toBeVisible()
       expect(within(scout).getByText('Finds sources.')).toBeVisible()
+      // The active default profile has no Bot Chat and nothing to use or delete, so it offers no menu, but still opens.
       const plain = screen.getByText('default').closest('li')!
-      expect(within(plain).queryByRole('button', { name: 'Open Bot Chat' })).not.toBeInTheDocument()
-      await userEvent.click(within(scout).getByRole('button', { name: 'Open Bot Chat' }))
+      expect(within(plain).queryByRole('button', { name: 'Profile actions' })).toBeNull()
+      expect(within(plain).getByRole('link', { name: 'default' })).toHaveAttribute('href', '/settings/profiles?name=default')
+      await userEvent.click((await rowMenuItems(scout)).find((item) => item.textContent === 'Open Bot Chat')!)
       expect(api.switchProfile).toHaveBeenCalledWith('scout')
       // The chat opens from the row the switch resolved, not the cached listing.
       await vi.waitFor(() => { expect(assign).toHaveBeenCalledWith(expect.stringMatching(/\/session\/scout-live$/)) })
@@ -87,33 +107,95 @@ describe('ProfilesPage', () => {
   })
 
   it('TAL-2084: offers Import agent setup in the header actions to an owner only', async () => {
-    renderPage()
+    await renderPage()
     await screen.findByText('scout')
     expect(within(screen.getByRole('banner')).getByRole('button', { name: 'Import agent setup' })).toBeVisible()
     expect(screen.getAllByRole('button', { name: 'Import agent setup' })).toHaveLength(1)
   })
 
   it('TAL-2084: hides Import agent setup from a non-owner', async () => {
-    renderPage({ ...DEFAULT_BOOTSTRAP, auth: { ...DEFAULT_BOOTSTRAP.auth, can_manage_server: false } })
+    await renderPage({ ...DEFAULT_BOOTSTRAP, auth: { ...DEFAULT_BOOTSTRAP.auth, can_manage_server: false } })
     await screen.findByText('scout')
     expect(screen.queryByRole('button', { name: 'Import agent setup' })).toBeNull()
+  })
+})
+
+describe('profile detail (TAL-2085)', () => {
+  it('opens from the profile name and shows every field the server sent, with Back to the list', async () => {
+    const router = await renderPage()
+    const row = (await screen.findByText('Research lead')).closest('li')!
+    expect(within(row).queryByRole('button', { name: 'Use' })).toBeNull()
+    expect(within(row).queryByRole('button', { name: 'Delete this profile' })).toBeNull()
+    await userEvent.click(within(row).getByRole('link', { name: /Research lead/ }))
+    await vi.waitFor(() => { expect(router.state.location.search).toEqual({ name: 'scout' }) })
+    const detail = document.querySelector<HTMLElement>('[data-profile-detail="scout"]')!
+    expect(within(detail).getByText('Finds sources.')).toBeVisible()
+    const value = (group: string, label: string) => within(within(detail).getByRole('region', { name: group })).getByText(label).nextElementSibling?.textContent
+    expect(value('Model', 'Default model')).toBe('gpt-6-astra')
+    expect(value('Model', 'Provider')).toBe('openai-codex')
+    expect(value('Agent', 'Gateway')).toBe('Gateway parked')
+    expect(value('Agent', 'Skills')).toBe('3 of 7')
+    expect(value('Agent', 'API keys')).toBe('Configured')
+    expect(value('Agent', 'Pending writes')).toBe('2')
+    expect(value('Location', 'Path')).toBe('/home/u/.hermes/profiles/scout')
+    // Not the active profile: no Models link; its actions sit beside the name.
+    expect(within(detail).queryByRole('button', { name: 'Models settings' })).toBeNull()
+    for (const name of ['Open Bot Chat', 'Use', 'Delete this profile']) expect(within(detail).getByRole('button', { name })).toBeVisible()
+    await userEvent.click(within(detail).getByRole('button', { name: 'Review on Skills' }))
+    await vi.waitFor(() => { expect(router.state.location.pathname).toBe('/skills') })
+    router.history.back()
+    await userEvent.click(await screen.findByRole('button', { name: 'Back' }))
+    await vi.waitFor(() => { expect(router.state.location.search).toEqual({}) })
+    expect(await screen.findByRole('list')).toBeVisible()
+  })
+
+  it('renders a direct load of the active default profile with only the fields it has', async () => {
+    const router = await renderPage(DEFAULT_BOOTSTRAP, '/settings/profiles?name=default')
+    const detail = (await screen.findByText('ACTIVE')).closest<HTMLElement>('[data-profile-detail="default"]')!
+    expect(within(detail).getByText('Default')).toBeVisible()
+    expect(within(detail).queryByRole('region', { name: 'Agent' })).toBeNull()
+    expect(within(detail).queryByRole('region', { name: 'Location' })).toBeNull()
+    expect(within(detail).queryByRole('button', { name: 'Delete this profile' })).toBeNull()
+    expect(within(detail).queryByRole('button', { name: 'Use' })).toBeNull()
+    await userEvent.click(within(detail).getByRole('button', { name: 'Models settings' }))
+    await vi.waitFor(() => { expect(router.state.location.pathname).toBe('/settings/models') })
+  })
+
+  it('shows an error with a way back for an unknown profile name', async () => {
+    const router = await renderPage(DEFAULT_BOOTSTRAP, '/settings/profiles?name=ghost')
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('No profile named "ghost".')
+    await userEvent.click(within(alert).getByRole('link', { name: 'Back to Profiles' }))
+    await vi.waitFor(() => { expect(router.state.location.search).toEqual({}) })
+    expect(await screen.findByText('scout')).toBeVisible()
   })
 })
 
 describe('profile writes show their result at once (TAL-1179)', () => {
   it('removes a deleted profile at once after confirmation', async () => {
     vi.mocked(api.deleteProfile).mockReturnValue(new Promise(() => undefined))
-    renderPage()
+    await renderPage()
     const scout = (await screen.findByText('scout')).closest('li')!
-    await userEvent.click(within(scout).getByRole('button', { name: 'Delete this profile' }))
+    await userEvent.click((await rowMenuItems(scout)).find((item) => item.textContent === 'Delete this profile')!)
     await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete' }))
     expect(api.deleteProfile).toHaveBeenCalledWith('scout')
     expect(screen.queryByText('scout')).toBeNull()
   })
 
+  it('TAL-2085: deletes from the detail page and returns to the list at once', async () => {
+    vi.mocked(api.deleteProfile).mockReturnValue(new Promise(() => undefined))
+    const router = await renderPage(DEFAULT_BOOTSTRAP, '/settings/profiles?name=scout')
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete this profile' }))
+    await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete' }))
+    expect(api.deleteProfile).toHaveBeenCalledWith('scout')
+    await vi.waitFor(() => { expect(router.state.location.search).toEqual({}) })
+    expect(await screen.findByText('default')).toBeVisible()
+    expect(screen.queryByText('scout')).toBeNull()
+  })
+
   it('closes New profile on Create and shows the profile at once', async () => {
     vi.mocked(api.createProfile).mockReturnValue(new Promise(() => undefined))
-    renderPage()
+    await renderPage()
     await screen.findByText('scout')
     await userEvent.click(screen.getByRole('button', { name: 'Create profile' }))
     await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), 'writer{Enter}')
@@ -125,7 +207,7 @@ describe('profile writes show their result at once (TAL-1179)', () => {
   it('TAL-2084: creates with a catalog model and its provider, an API key and a base URL', async () => {
     vi.mocked(api.createProfile).mockReturnValue(new Promise(() => undefined))
     const log = vi.spyOn(console, 'log')
-    renderPage()
+    await renderPage()
     await screen.findByText('scout')
     await userEvent.click(screen.getByRole('button', { name: 'Create profile' }))
     await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), 'writer')
@@ -147,7 +229,7 @@ describe('profile writes show their result at once (TAL-1179)', () => {
 
   it('TAL-2084: removes a refused new profile and shows the server error', async () => {
     vi.mocked(api.createProfile).mockRejectedValue(new Error("Selected model 'x' is not available"))
-    renderPage()
+    await renderPage()
     await screen.findByText('scout')
     await userEvent.click(screen.getByRole('button', { name: 'Create profile' }))
     await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), 'writer{Enter}')
