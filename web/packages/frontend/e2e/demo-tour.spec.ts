@@ -122,6 +122,8 @@ async function settingsPages(page: Page, info: TestInfo, theme: Theme) {
     { name: 'profiles-detail', path: 'profiles?name=default', tab: undefined },
     // TAL-2135: a configured provider's own page.
     { name: 'providers-anthropic', path: 'providers/anthropic', tab: undefined },
+    // TAL-2136: the quota alert thresholds' own page.
+    { name: 'providers-quota-alerts', path: 'providers/quota-alerts', tab: undefined },
     // TAL-2138: Chat's sub-pages.
     ...ChatPageSchema.options.map((page) => ({ name: `chat-${page}`, path: `chat/${page}`, tab: undefined })),
   ]

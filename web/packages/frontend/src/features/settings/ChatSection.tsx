@@ -6,7 +6,7 @@ import { useSettingField } from './useSettingField'
 import { LoadingState, ErrorState } from '../../ui/States'
 import { GatewayRestart } from './GatewayRestart'
 import { ComposerGroup } from './ComposerPreview'
-import { CHAT_PAGE_TITLE, SETTINGS_INDEX } from './settingsIndex'
+import { PAGE_TITLE, SETTINGS_INDEX } from './settingsIndex'
 import { SettingAction, SettingLink, SettingNumber, SettingSegmented, SettingSelect, SettingToggle as Toggle, SettingsBack, SettingsGroup, SETTINGS_PAGE, SETTINGS_TITLE } from './SettingsRows'
 
 const FIELDS = ['compression_prepare_ahead', 'group_discussion_max_rounds', 'group_discussion_restart_required']
@@ -72,7 +72,7 @@ export function ChatSubPage({ page }: { page: ChatPage }) {
     <div className={SETTINGS_PAGE} data-section="chat" data-chat-page={page}>
       <div className="flex flex-col gap-2">
         <SettingsBack label={m.settings_section_chat_title()} section="chat" />
-        <h1 className={SETTINGS_TITLE}>{CHAT_PAGE_TITLE[page]()}</h1>
+        <h1 className={SETTINGS_TITLE}>{PAGE_TITLE[page]()}</h1>
       </div>
       {page === 'workspace-panel' ? <>
         <SettingsGroup id="panel" title={m.settings_group_panel()}>

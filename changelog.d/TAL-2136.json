@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Settings › Providers in Talaria Web lists the providers you can add one per line, two columns wide, each with its one way to set it up, and opens a provider's page after you set its key; quota alert thresholds moved to their own Quota alerts page, where each value shows its unit and saves on its own.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

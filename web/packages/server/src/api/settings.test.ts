@@ -718,6 +718,21 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(providerListing(payload, 'zzz')).toMatchObject({ providers: [], groups: [] })
   })
 
+  it('providerListing names how each provider is set up, first match winning (TAL-2136)', () => {
+    const rows: Record<string, unknown>[] = [
+      { id: 'plugin-llm', install_hint: 'llm-plugin', is_self_hosted: true, device_login: true },
+      { id: 'lmstudio', is_self_hosted: true, device_login: true },
+      { id: 'copilot', device_login: true, configurable: true },
+      { id: 'nous', is_oauth: true },
+      { id: 'deepseek' },
+      { id: 'openai-codex', is_oauth: true },
+      { id: 'bedrock', configurable: false },
+    ]
+    expect(providerListing({ providers: rows }).providers.map((p): unknown[] => [p.id, p.setup])).toEqual([
+      ['plugin-llm', 'plugin'], ['lmstudio', 'self_hosted'], ['copilot', 'oauth'], ['nous', 'oauth'], ['deepseek', 'key'], ['openai-codex', 'cli'], ['bedrock', 'cli'],
+    ])
+  })
+
   it('POST /api/providers refuses a key the Agent writer would rewrite and leaves no runtime copy (TAL-797)', async () => {
     const res = await post(s, '/api/providers', { provider: 'deepseek', api_key: 'sk-caf\u00e9-12345' })
     expect(res.status).toBe(400)
@@ -2092,14 +2107,15 @@ describe('provider quota windows carry server-computed pace (TAL-409)', () => {
     ] })
     expect(dictOf(await json(await s.get('/api/settings'))).provider_quota_thresholds).toEqual(DEFAULTS)
 
-    // Critical clamps to at most warning; an out-of-range value keeps the stored one.
+    // Critical clamps to at most warning; an out-of-range value clamps to its range (TAL-2136).
     const saved = await json(await post(s, '/api/settings', { provider_quota_thresholds: { warning_remaining_percent: 95, critical_remaining_percent: 99, pace_tolerance_percent: 4, pace_minimum_elapsed_hours: 500 } }))
-    const changed = { ...DEFAULTS, warning_remaining_percent: 95, critical_remaining_percent: 95, pace_tolerance_percent: 4 }
+    const changed = { ...DEFAULTS, warning_remaining_percent: 95, critical_remaining_percent: 95, pace_tolerance_percent: 4, pace_minimum_elapsed_hours: 72 }
     expect(saved.provider_quota_thresholds).toEqual(changed)
     expect(dictOf(await json(await s.get('/api/settings'))).provider_quota_thresholds).toEqual(changed)
+    // Projection now waits 72 hours, so the Weekly window is not yet eligible.
     expect(await classified()).toEqual({ urgency: { remaining: 'critical', pace: 'healthy' }, windows: [
       [false, { remaining: 'critical', pace: 'healthy' }, 'under'],
-      [true, { remaining: 'critical', pace: 'healthy' }, 'on'],
+      [false, { remaining: 'critical', pace: 'healthy' }, 'on'],
       [false, { remaining: 'critical', pace: 'critical' }, null],
     ] })
 

@@ -13,7 +13,7 @@ import { SettingAction, SettingLink, SettingNumber, SettingRow, SettingSegmented
 
 vi.mock('../../api/endpoints', () => ({ fetchSettings: vi.fn(), saveSettings: vi.fn() }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
-const initial = { mode: 'a', limit: 3, name: 'Hermes', hosts: ['one.example'], hide_thing: false }
+const initial = { mode: 'a', limit: 3, name: 'Hermes', hosts: ['one.example'], hide_thing: false, quota: { warn: 20, crit: 5 } }
 const options = [{ value: 'a', label: 'Alpha' }, { value: 'b', label: 'Beta' }]
 const user = userEvent.setup({ delay: null })
 
@@ -57,6 +57,57 @@ it.each([
   fireEvent.change(screen.getByLabelText('Limit'), { target: { value: typed } })
   if (written) await waitFor(() => expect(api.saveSettings).toHaveBeenCalledExactlyOnceWith(written))
   else expect(api.saveSettings).not.toHaveBeenCalled()
+})
+
+it('SettingNumber with a field saves only its key on blur, then shows the server answer, and writes nothing else (TAL-2136)', async () => {
+  // The server merges the key and owns its range (here, at most 50).
+  let stored: Record<string, unknown> = initial
+  vi.mocked(api.saveSettings).mockImplementation((patch) => {
+    const quota = { ...(stored.quota as object), ...(patch.quota as object) } as { warn: number; crit: number }
+    stored = { ...stored, quota: { ...quota, warn: Math.min(50, quota.warn) } }
+    return Promise.resolve(stored)
+  })
+  vi.mocked(api.fetchSettings).mockImplementation(() => Promise.resolve(stored))
+  setup(<SettingNumber label="Warn" settingKey="quota" field="warn" min={1} max={50} unit="%" />)
+  const input = screen.getByRole('spinbutton', { name: 'Warn' })
+  expect(input).toHaveValue(20)
+  expect(input.parentElement?.nextElementSibling).toHaveTextContent('%')
+  await user.clear(input)
+  await user.type(input, '75')
+  expect(api.saveSettings).not.toHaveBeenCalled()
+  await user.tab()
+  await waitFor(() => expect(api.saveSettings).toHaveBeenCalledExactlyOnceWith({ quota: { warn: 75 } }))
+  await waitFor(() => expect(input).toHaveValue(50))
+  vi.mocked(api.saveSettings).mockClear()
+  // Emptied, or left unchanged, the field puts the value back and writes nothing.
+  await user.clear(input)
+  await user.tab()
+  await user.click(input)
+  await user.tab()
+  expect(input).toHaveValue(50)
+  expect(api.saveSettings).not.toHaveBeenCalled()
+})
+
+it("SettingNumber with a field never sends another key's unconfirmed edit, so a refused edit rolls back alone (TAL-2136)", async () => {
+  const first = deferred<typeof initial>()
+  const second = deferred<typeof initial>()
+  vi.mocked(api.saveSettings).mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+  setup(<><SettingNumber id="warn" label="Warn" settingKey="quota" field="warn" /><SettingNumber id="crit" label="Crit" settingKey="quota" field="crit" /></>)
+  const warn = screen.getByRole('spinbutton', { name: 'Warn' })
+  const crit = screen.getByRole('spinbutton', { name: 'Crit' })
+  await user.clear(warn)
+  await user.type(warn, '30{Enter}')
+  await user.clear(crit)
+  await user.type(crit, '7{Enter}')
+  await waitFor(() => { expect(warn).toHaveValue(30); expect(crit).toHaveValue(7) })
+  first.reject(new ApiError({ kind: 'http', status: 409, path: 'api/settings', message: 'Refused', body: { error: 'Refused' } }))
+  await waitFor(() => expect(warn).toHaveValue(20))
+  expect(crit).toHaveValue(7)
+  await waitFor(() => expect(api.saveSettings).toHaveBeenCalledTimes(2))
+  expect(vi.mocked(api.saveSettings).mock.calls).toEqual([[{ quota: { warn: 30 } }], [{ quota: { crit: 7 } }]])
+  second.resolve({ ...initial, quota: { warn: 20, crit: 7 } })
+  await waitFor(() => expect(crit).toHaveValue(7))
+  expect(warn).toHaveValue(20)
 })
 
 it('SettingNumber with allowEmpty writes null for an empty field and shows an unset value empty', async () => {
@@ -150,6 +201,10 @@ it.each([
 
     fireEvent.change(screen.getByLabelText('Row'), { target: { value: '9' } })
   }, () => expect(screen.getByLabelText('Row')).toHaveValue(9), () => expect(screen.getByLabelText('Row')).toHaveValue(3)],
+  ['SettingNumber with a field', <SettingNumber label="Row" settingKey="quota" field="warn" />, async () => {
+    await user.clear(screen.getByLabelText('Row'))
+    await user.type(screen.getByLabelText('Row'), '30{Enter}')
+  }, () => expect(screen.getByLabelText('Row')).toHaveValue(30), () => expect(screen.getByLabelText('Row')).toHaveValue(20)],
   ['SettingText', <SettingText label="Row" settingKey="name" />, async () => {
     await user.clear(screen.getByLabelText('Row'))
     await user.type(screen.getByLabelText('Row'), 'Atlas')

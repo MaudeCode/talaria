@@ -1,5 +1,5 @@
 import { useState, type KeyboardEvent, type ReactNode } from 'react'
-import { Link, useNavigate, useParams } from '@tanstack/react-router'
+import { Link, useMatchRoute, useNavigate, useParams } from '@tanstack/react-router'
 import { MAIN_VIEW } from '../../shell/AppShell'
 import { PanelHead } from '../../shell/PanelHead'
 import { m } from '../../paraglide/messages.js'
@@ -10,7 +10,7 @@ import { closeMobileSidebar } from '../../shell/useShellState'
 import { useActiveProfileName } from '../../shell/ProfileMenu'
 import { SectionHeader } from '../../ui/List'
 import { MessageSquare, AudioLines, Bell, SunMedium, PanelLeft, Cpu, KeyRound, Wrench, Puzzle, Lock, Server, Info, UserRound, FolderOpen, FileText, Search, type LucideIcon } from 'lucide-react'
-import { CHAT_PAGE_TITLE, searchSettings, type SettingsIndexEntry } from './settingsIndex'
+import { PAGE_TITLE, searchSettings, type SettingsIndexEntry } from './settingsIndex'
 
 const SECTION_ICON: Record<Section, LucideIcon> = {
   appearance: SunMedium, chat: MessageSquare, navigation: PanelLeft, notifications: Bell, speech: AudioLines,
@@ -51,8 +51,9 @@ const resultId = (index: number) => `settingsSearchResult-${index}`
 export function SectionMenu() {
   useLocale()
   const params: { section?: string; providerId?: string; page?: string } = useParams({ strict: false })
-  // A provider's own page (TAL-2135) sits under Providers, a Chat sub-page (TAL-2138) under Chat.
-  const current = params.section ?? (params.providerId !== undefined ? 'providers' : params.page !== undefined ? 'chat' : undefined)
+  // A provider's own page (TAL-2135) and Quota alerts (TAL-2136) sit under Providers, a Chat sub-page (TAL-2138) under Chat.
+  const underProviders = useMatchRoute()({ to: '/settings/providers/quota-alerts' }) !== false || params.providerId !== undefined
+  const current = params.section ?? (underProviders ? 'providers' : params.page !== undefined ? 'chat' : undefined)
   const profile = useActiveProfileName()
   const navigate = useNavigate()
   // TAL-2086: device-local UI state over the rows' own wording; while it has text, the matches replace the section list.
@@ -62,8 +63,9 @@ export function SectionMenu() {
   const choose = (entry: SettingsIndexEntry) => {
     setQuery('')
     closeMobileSidebar()
-    // A row on a Chat sub-page (TAL-2138) opens that sub-page.
-    if (entry.page) void navigate({ to: '/settings/chat/$page', params: { page: entry.page }, hash: entry.id })
+    // A row on a page under its section (TAL-2136, TAL-2138) opens that page.
+    if (entry.page === 'quota-alerts') void navigate({ to: '/settings/providers/quota-alerts', hash: entry.id })
+    else if (entry.page) void navigate({ to: '/settings/chat/$page', params: { page: entry.page }, hash: entry.id })
     else void navigate({ to: '/settings/$section', params: { section: entry.section }, search: entry.tab ? { tab: entry.tab } : {}, hash: entry.id })
   }
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -101,7 +103,7 @@ export function SectionMenu() {
                 <li key={entry.id} id={resultId(index)} role="option" aria-selected={index === highlight} data-settings-result={entry.id} onMouseDown={(e) => e.preventDefault()} onMouseEnter={() => setHighlight(index)} onClick={() => choose(entry)}
                   className={cn('flex flex-col gap-0.5 px-2.5 py-[7px] rounded-(--r-sm) cursor-pointer text-[13px]', index === highlight && 'bg-hover')}>
                   <span className="font-medium text-text">{entry.label()}</span>
-                  <span className="text-xs text-muted">{SECTION_LABEL[entry.section]()}{entry.page && ` › ${CHAT_PAGE_TITLE[entry.page]()}`} · {entry.group()}</span>
+                  <span className="text-xs text-muted">{SECTION_LABEL[entry.section]()}{entry.page && ` › ${PAGE_TITLE[entry.page]()}`} · {entry.group()}</span>
 
                 </li>
               ))}

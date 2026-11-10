@@ -23,7 +23,6 @@ import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
 import { AUDIO_KEY, DEFAULT_AUDIO } from '../voice/completionAudio'
 import { SettingsSection } from './SettingsSection'
 import { SETTINGS_INDEX, searchSettings, type SettingScope } from './settingsIndex'
-import { ChatPageSchema } from '../../contracts/url'
 import { FIXED_TABS, NAV_ITEMS } from '../../shell/nav'
 import { renderRouted } from '../../test/router'
 
@@ -68,12 +67,12 @@ const groupTitle = (row: HTMLElement) => row.closest('section[data-group]')?.get
 it('indexes every Settings row once, each where it renders, under its group, in the group its scope belongs to (TAL-2086)', async () => {
   const ids = SETTINGS_INDEX.map((entry) => entry.id)
   expect(ids.filter((id, i) => ids.indexOf(id) !== i), 'duplicate index ids').toEqual([])
-  // Each section, each Tools tab with rows of its own, and each Chat sub-page (TAL-2138).
+  // Each section, each Tools tab, and each page under a section (TAL-2136, TAL-2138).
   const pages = SettingsSectionSchema.options.flatMap((section) => [
     ...[undefined, ...new Set(SETTINGS_INDEX.filter((e) => e.section === section && e.tab).map((e) => e.tab))].map((tab) => ({ section, tab, page: undefined })),
-    ...(section === 'chat' ? ChatPageSchema.options.map((page) => ({ section, tab: undefined, page })) : []),
+    ...[...new Set(SETTINGS_INDEX.filter((e) => e.section === section && e.page).map((e) => e.page))].map((page) => ({ section, tab: undefined, page })),
   ])
-  const pageOf = (e: { section: string; tab?: string | undefined; page?: string | undefined }) => e.tab ? `${e.section}?tab=${e.tab}` : e.page ? `${e.section}/${e.page}` : e.section
+  const pageOf = (e: { section: string; tab?: string | undefined; page?: string | undefined }) => e.page ? `${e.section}/${e.page}` : e.tab ? `${e.section}?tab=${e.tab}` : e.section
   const rendered: Record<string, string[]> = {}
   const placed: Record<string, string | null | undefined> = {}
   for (const { section, tab, page } of pages) {
@@ -103,6 +102,8 @@ it('indexes every Settings row once, each where it renders, under its group, in 
 
 it('leads quota and sidebar searches to Providers, where each provider pins its quota (TAL-2135)', () => {
   for (const query of ['quota', 'sidebar']) expect(searchSettings(query).find((e) => e.id === 'providerSidebarQuota')).toMatchObject({ section: 'providers', item: true })
+  // TAL-2136: the thresholds lead to Providers › Quota alerts.
+  expect(searchSettings('burn rate').map((e) => [e.id, e.page])).toEqual([['quotaThreshold-pace_warning_burn_rate_percent', 'quota-alerts'], ['quotaThreshold-pace_critical_burn_rate_percent', 'quota-alerts']])
   expect(searchSettings('quota').filter((e) => e.section === 'navigation')).toEqual([])
 })
 

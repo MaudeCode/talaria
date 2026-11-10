@@ -67,13 +67,13 @@ declare module '@tanstack/react-router' {
 
 /**
  * TAL-2081: a row that is itself the control: an external page in a new tab (`href`, ending in §12's Open symbol), a dialog
- * (`onClick`, a chevron), or a Settings sub-page (`link`, a chevron; TAL-2138). `detail` is trailing muted text before the symbol.
+ * (`onClick`, a chevron), or a Settings sub-page (`link`, a chevron; TAL-2138). `detail` (TAL-2136) is muted text before the symbol, such as the value the page holds.
  */
 export function SettingLink({ label, icon: Icon, detail, ...target }: { label: string; icon?: LucideIcon; detail?: string } & ({ href: string } | { onClick: () => void } | { link: LinkProps })) {
   const className = 'flex min-h-11 w-full items-center justify-between gap-3 py-2 text-left text-sm text-text transition-colors hover:text-accent-text focus-visible:outline-2 focus-visible:outline-accent'
   const icon = { size: 14, 'aria-hidden': true, className: 'shrink-0 text-muted' } as const
   const text = Icon ? <span className="flex min-w-0 items-center gap-2.5"><RowIcon icon={Icon} />{label}</span> : label
-  const end = (symbol: ReactNode) => detail ? <span className="flex shrink-0 items-center gap-2 text-xs text-muted">{detail}{symbol}</span> : symbol
+  const end = (symbol: ReactNode) => detail ? <span className="flex min-w-0 items-center gap-3"><span className="truncate text-xs text-muted">{detail}</span>{symbol}</span> : symbol
   if ('href' in target) return <a className={className} href={target.href} target="_blank" rel="noopener noreferrer">{text}{end(<ArrowUpRight {...icon} />)}</a>
   if ('link' in target) return <Link {...target.link} state={{ settingsParent: true }} className={className}>{text}{end(<ChevronRight {...icon} />)}</Link>
   return <button type="button" className={className} onClick={target.onClick}>{text}{end(<ChevronRight {...icon} />)}</button>

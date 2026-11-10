@@ -12,16 +12,19 @@ export type SettingScope = 'device' | 'interface' | 'profile' | 'server'
 /**
  * TAL-2086: one Settings row. `label` and `group` are the message functions the row and its `SettingsGroup` render; `id` is
  * its control's. A row shown only under a condition names in `shownWith` the control on its page that shows it, or the
- * nearest row beside it, so a jump to it while hidden lands there. `page` is the Chat sub-page the row sits on (TAL-2138).
+ * nearest row beside it, so a jump to it while hidden lands there.
  */
-export interface SettingsIndexEntry { section: SettingsSection; tab?: ToolsTab; page?: ChatPage; group: () => string; id: string; label: () => string; scope: SettingScope; shownWith?: string; /** TAL-2135: the row sits on each listed item's own page (a provider's), so a jump lands on the group that lists them. */ item?: true }
+/** TAL-2136, TAL-2138: a page under a section with its own route: Providers › Quota alerts, and Chat's sub-pages. */
+export type SettingsPage = 'quota-alerts' | ChatPage
+
+export interface SettingsIndexEntry { section: SettingsSection; tab?: ToolsTab; group: () => string; id: string; label: () => string; scope: SettingScope; shownWith?: string; /** TAL-2135: the row sits on each listed item's own page (a provider's), so a jump lands on the group that lists them. */ item?: true; /** TAL-2136, TAL-2138: the row sits on this page under its section. */ page?: SettingsPage }
 
 type Row = readonly [id: string, label: () => string, shownWith?: string]
 const rows = (section: SettingsSection, group: () => string, scope: SettingScope, list: readonly Row[], tab?: ToolsTab): SettingsIndexEntry[] =>
   list.map(([id, label, shownWith]) => ({ section, group, id, label, scope, ...(tab ? { tab } : {}), ...(shownWith ? { shownWith } : {}) }))
-/** TAL-2138: each Chat sub-page's title, which its link on Chat and its search results name. */
-export const CHAT_PAGE_TITLE: Record<ChatPage, () => string> = { 'workspace-panel': m.settings_group_workspace_panel, advanced: m.settings_page_advanced }
-const chatPage = (page: ChatPage, entries: SettingsIndexEntry[]) => entries.map((entry) => ({ ...entry, page }))
+/** TAL-2136, TAL-2138: each page's title, which the link that opens it and its rows' search results name. */
+export const PAGE_TITLE: Record<SettingsPage, () => string> = { 'quota-alerts': m.providers_quota_alerts, 'workspace-panel': m.settings_group_workspace_panel, advanced: m.settings_page_advanced }
+const onPage = (page: SettingsPage, entries: SettingsIndexEntry[]) => entries.map((entry) => ({ ...entry, page }))
 /** A `SettingToggle`'s default control id. */
 const key = (settingKey: string) => `settings-${settingKey}`
 
@@ -47,14 +50,14 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
   ...rows('chat', m.settings_group_group_discussions, 'interface', [
     [key('group_discussion_max_rounds'), m.settings_label_group_discussion_max_rounds], [key('group_discussion_max_messages'), m.settings_label_group_discussion_max_messages],
   ]),
-  ...chatPage('workspace-panel', [
+  ...onPage('workspace-panel', [
     ...rows('chat', m.settings_group_panel, 'interface', [
       [key('workspace_panel_open'), m.settings_label_workspace_panel_open], [key('workspace_todos_tab'), m.settings_label_workspace_todos_tab],
       [key('new_chat_on_workspace_switch'), m.settings_label_new_chat_on_workspace_switch],
     ]),
     ...rows('chat', m.terminal_title, 'interface', [[key('terminal_auto_expand_on_output'), m.settings_label_terminal_auto_expand], [key('screen_reader_mode'), m.settings_label_terminal_screen_reader]]),
   ]),
-  ...chatPage('advanced', [
+  ...onPage('advanced', [
     ...rows('chat', m.settings_group_transcript, 'interface', [
       [key('show_busy_placeholder_hint'), m.settings_label_busy_placeholder_hint], [key('transparent_stream_event_timestamps'), m.settings_label_transparent_stream_event_timestamps],
       [key('fade_text_effect'), m.settings_label_fade_text_effect], [key('show_tps'), m.settings_label_token_speed],
@@ -96,11 +99,13 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
   ]),
   // TAL-2135: each provider's page pins its quota to the sidebar; the search leads to the providers that have one.
   { section: 'providers', group: m.providers_group_yours, id: 'providerSidebarQuota', label: m.providers_quota_in_sidebar, scope: 'profile', item: true },
-  ...rows('providers', m.providers_quota_thresholds_title, 'profile', [
+  // TAL-2136: the quota thresholds sit on Providers › Quota alerts.
+  ...onPage('quota-alerts', [...rows('providers', m.providers_quota_group_remaining, 'profile', [
     ['quotaThreshold-warning_remaining_percent', m.providers_quota_warning_remaining], ['quotaThreshold-critical_remaining_percent', m.providers_quota_critical_remaining],
+  ]), ...rows('providers', m.providers_quota_group_pace, 'profile', [
     ['quotaThreshold-pace_tolerance_percent', m.providers_quota_pace_tolerance], ['quotaThreshold-pace_warning_burn_rate_percent', m.providers_quota_pace_warning_burn],
     ['quotaThreshold-pace_critical_burn_rate_percent', m.providers_quota_pace_critical_burn], ['quotaThreshold-pace_minimum_elapsed_hours', m.providers_quota_pace_minimum_hours],
-  ]),
+  ])]),
   ...rows('tools', m.settings_section_plugins_title, 'profile', [['plugins-auto-update', m.plugins_auto_update]], 'plugins'),
   ...rows('tools', m.settings_group_agent_permissions, 'profile', [[key('agent_approvals'), m.settings_label_agent_approvals]]),
   ...rows('access', m.settings_group_sign_in, 'server', [['settingsPassword', m.settings_label_password], ['settingsAuthAck', m.settings_label_auth_acknowledged, 'settingsPassword']]),

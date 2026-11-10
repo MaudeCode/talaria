@@ -4,8 +4,8 @@ import { useDebounced } from '../../lib/useDebounced'
 import { sameRowProps } from '../../lib/sameRowProps'
 import type { z } from 'zod'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
-import { Check, ChevronRight, Download, KeyRound, RefreshCw, Trash2, Wrench } from 'lucide-react'
+import { Link, useNavigate } from '@tanstack/react-router'
+import { Bell, Check, ChevronRight, Download, KeyRound, LogIn, RefreshCw, Wrench, type LucideIcon } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -13,7 +13,6 @@ import { post } from '../../api/client'
 import { OkSchema, type ProviderSchema, type QuotaLevel } from '../../contracts'
 import { IconButton } from '../../ui/Button'
 import { RowContextMenu, type RowAction } from '../../ui/Menu'
-import { RowActionButtons } from '../../ui/RowActionsMenu'
 import { FieldRow, TextInput } from '../../ui/Field'
 import { EmptyState, ErrorState, LoadingState, formatUsd } from '../../ui/States'
 import { Mark, StatusDot } from '../../ui/Badge'
@@ -27,11 +26,11 @@ import { showErrorToast } from '../toast/errorToast'
 import { BarChart } from '../insights/BarChart'
 import { quotaSourcePlan, quotaStatusText, type QuotaSource } from '../insights/QuotaMeter'
 import { QuotaWindowMeter } from '../insights/ProviderQuotaRows'
-import { SETTINGS_PAGE, SettingsGroup, SettingsStats, type SettingsStat } from './SettingsGroup'
+import { SETTINGS_PAGE, SettingLink, SettingsGroup, SettingsStats, type SettingsStat } from './SettingsGroup'
 import { useOpenRouterCostHistory } from './OpenRouterCost'
 import { OAuthSignIn } from '../onboarding/OAuthSignIn'
 import { usePluginInstall } from './usePluginInstall'
-import { QuotaThresholdsForm } from './QuotaThresholds'
+import { useSetting } from '../../app/queries'
 
 const setProviderKey = (provider: string, api_key: string | null) => post('api/providers', { provider, api_key }, OkSchema, { retries: 0 })
 
@@ -97,7 +96,7 @@ export function QuotaSourceStatus({ source }: { source: QuotaSource }) {
   return <div className="flex min-w-0"><StatusDot state={source.status === 'stale' ? 'warning' : 'error'} title={text}>{text}</StatusDot></div>
 }
 
-/** TAL-2100, TAL-2135: Settings › Providers: the server's figures, the configured providers as blocks that open their own page, the providers to add, then the quota thresholds. */
+/** TAL-2100, TAL-2135, TAL-2136: Settings › Providers: the server's figures, the configured providers as blocks that open their own page and the Quota alerts link, then the providers to add. */
 export function ProvidersPage() {
   const { quotas, refresh } = useProviderQuotas()
   const locale = useLocale()
@@ -113,7 +112,6 @@ export function ProvidersPage() {
       <div className={SETTINGS_PAGE} data-section="providers">
         {stats.length > 0 && <SettingsStats label={m.settings_section_providers_title()} stats={stats} />}
         <ProvidersSection />
-        <QuotaThresholdsForm />
       </div>
     </HubPage>
   )
@@ -128,17 +126,26 @@ export function ProvidersSection() {
   const { quotas } = useProviderQuotas()
   const cost = useOpenRouterCostHistory(all.data?.providers.some((p) => p.id === 'openrouter' && p.has_key === true && p.configured === true) === true)
   const [editing, setEditing] = useState<string | null>(null)
+  const [allShown, setAllShown] = useState(false)
+  const navigate = useNavigate()
   const { saveKey, saveHosted, refreshModels, invalidate } = useProviderWrites({ onSaved: () => setEditing(null) })
   const install = usePluginInstall()
+  const thresholds = useSetting('provider_quota_thresholds')
+  const locale = useLocale()
+  // TAL-2136: a key set from Add a provider opens that provider's own page once the server confirms it. It reads only the
+  // stable `mutate`, so typing in the filter leaves the memoized rows alone.
+  const mutateKey = saveKey.mutate
+  const onSaveKey = (value: { id: string; key: string | null }) => mutateKey(value, { onSuccess: () => { if (value.key) void navigate({ to: '/settings/providers/$providerId', params: { providerId: value.id }, state: { settingsParent: true } }) } })
   if (providers.isPending || all.isPending) return <LoadingState />
   if (providers.isError && !providers.data) return <ErrorState error={providers.error} onRetry={() => { void providers.refetch() }} />
   const quotaNotice = quotas.data?.availability?.unavailable_reason ?? providers.data.availability?.unavailable_reason
-  const catalogUnavailable = providers.data.availability?.authoritative === false
   const rows = (data: typeof providers.data | undefined) => new Map((data?.providers ?? []).map((p) => [p.id, p]))
   const yours = all.data?.groups?.find((g) => g.id === 'configured')?.provider_ids ?? []
   const byId = rows(all.data)
-  const available = providers.data.groups?.find((g) => g.id === 'available')
+  const available = providers.data.groups?.find((g) => g.id === 'available')?.provider_ids ?? []
   const availableRows = rows(providers.data)
+  // The filter shows every match; without it the first few, then a disclosure.
+  const shown = q || allShown ? available : available.slice(0, ADD_SHOWN)
   return (
     <div className="flex flex-col gap-7.5" data-group="providers">
       {providers.isError && <p role="alert" className="text-warning">{m.oauth_result_unavailable()}</p>}
@@ -151,30 +158,33 @@ export function ProvidersSection() {
               return p && <ConfiguredProvider key={id} p={p} catalogUnavailable={all.data?.availability?.authoritative === false} sources={quotas.data?.sources?.filter((s) => s.provider_id === id) ?? []} cost={id === 'openrouter' && p.has_key ? cost.data : undefined} spend={quotas.data?.summary?.spend_month ?? null}
                 onRefresh={refreshModels.mutate} refreshBusy={refreshModels.isPending} />
             })}
+            {thresholds && <Row className="py-1"><SettingLink label={m.providers_quota_alerts()} icon={Bell} detail={m.providers_quota_alerts_warn_at({ percent: formatPercent(locale, thresholds.warning_remaining_percent) })}
+              link={{ to: '/settings/providers/quota-alerts' }} /></Row>}
           </RowList>
         </SettingsGroup>
       )}
-      <div className="flex flex-col gap-3">
+      <section className="flex flex-col gap-3" data-section="providers-available">
+        <SectionHeader detail={available.length}>{m.providers_group_add()}</SectionHeader>
         <TextInput type="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={m.providers_filter()} aria-label={m.providers_filter()} />
         {providers.data.providers.length === 0 && <EmptyState compact>{q ? m.providers_filter_empty() : m.providers_empty()}</EmptyState>}
-        {available && (
-          <section className="flex flex-col gap-1" data-section="providers-available">
-            <SectionHeader detail={available.provider_ids.length}>{m.providers_group_available()}</SectionHeader>
-            <RowList>
-              {available.provider_ids.map((id) => {
-                const p = availableRows.get(id)
-                if (!p) return null
-                const hint = p.install_hint
-                return <ProviderRow key={p.id} p={p} catalogUnavailable={catalogUnavailable}
-                  editing={editing === p.id} onEdit={setEditing} onInvalidate={invalidate}
-                  onRefresh={refreshModels.mutate} refreshBusy={refreshModels.isPending}
-                  onSaveKey={saveKey.mutate} keySaving={saveKey.isPending} onSaveHosted={saveHosted.mutate} hostedSaving={saveHosted.isPending}
-                  onInstall={install.request} installing={hint ? install.isInstalling(hint) : false} installBlocked={hint ? install.blocked(hint) : null} />
-              })}
-            </RowList>
-          </section>
+        {shown.length > 0 && (
+          // Two columns from 601px; an open form spans both under its provider, and the next provider fills the gap beside it.
+          <RowList className="grid grid-flow-row-dense grid-cols-1 gap-x-6 min-[601px]:grid-cols-2">
+            {shown.map((id) => {
+              const p = availableRows.get(id)
+              if (!p) return null
+              const hint = p.install_hint
+              return <ProviderRow key={p.id} p={p}
+                editing={editing === p.id} onEdit={setEditing} onInvalidate={invalidate}
+                onSaveKey={onSaveKey} keySaving={saveKey.isPending} onSaveHosted={saveHosted.mutate} hostedSaving={saveHosted.isPending}
+                onInstall={install.request} installing={hint ? install.isInstalling(hint) : false} installBlocked={hint ? install.blocked(hint) : null} />
+            })}
+          </RowList>
         )}
-      </div>
+        {!q && available.length > ADD_SHOWN && <button type="button" aria-expanded={allShown} className="self-start py-2 text-xs text-muted hover:text-text" onClick={() => setAllShown((v) => !v)}>
+          {allShown ? m.providers_models_fewer() : m.providers_models_more({ n: available.length - ADD_SHOWN })}
+        </button>}
+      </section>
       {install.consent}
     </div>
   )
@@ -231,14 +241,31 @@ function ConfiguredProvider({ p, catalogUnavailable, sources, cost, spend, onRef
   )
 }
 
+/** The providers Add a provider shows before its "more" disclosure. */
+const ADD_SHOWN = 8
+
+type Setup = NonNullable<Provider['setup']>
+const SETUP_ACTION: Record<Exclude<Setup, 'cli'>, { label: () => string; icon: LucideIcon }> = {
+  key: { label: m.providers_key_set, icon: KeyRound },
+  oauth: { label: m.providers_oauth_sign_in, icon: LogIn },
+  self_hosted: { label: m.providers_self_hosted_setup, icon: Wrench },
+  plugin: { label: m.providers_install_plugin, icon: Download },
+}
+
+/** The server's `setup`. TAL-2136: an older server without it gets the same first-match derivation; delete once it ships. */
+function setupOf(p: Provider): Setup {
+  if (p.setup) return p.setup
+  if (p.install_hint) return 'plugin'
+  if (p.is_self_hosted) return 'self_hosted'
+  if (p.device_login || p.id === 'nous') return 'oauth'
+  return p.configurable !== false && !p.is_oauth ? 'key' : 'cli'
+}
+
 interface ProviderRowProps {
   p: Provider
-  catalogUnavailable: boolean
   editing: boolean
   onEdit: (id: string | null) => void
   onInvalidate: () => void
-  onRefresh: (id: string) => void
-  refreshBusy: boolean
   onSaveKey: (value: { id: string; key: string | null }) => void
   keySaving: boolean
   onSaveHosted: (value: { id: string; name: string; base_url: string; model: string; api_key?: string }) => void
@@ -250,39 +277,39 @@ interface ProviderRowProps {
 
 // Memoized so typing in the filter renders only the rows entering the list (TAL-1405). Each filter answer is a new
 // response (TAL-2127), so `p` compares by value.
-/** A provider to add: one line with its state and its setup actions (§3 Grouping). */
-const ProviderRow = memo(function ProviderRow({ p, catalogUnavailable, editing, onEdit, onInvalidate, onRefresh, refreshBusy, onSaveKey, keySaving, onSaveHosted, hostedSaving, onInstall, installing, installBlocked }: ProviderRowProps) {
+/**
+ * TAL-2136: a provider to add, on one line: its monogram, its name and the one control its server `setup` names, or "Agent
+ * CLI only". The control opens its form in a row spanning both columns under the provider; a plugin opens its install consent.
+ */
+const ProviderRow = memo(function ProviderRow({ p, editing, onEdit, onInvalidate, onSaveKey, keySaving, onSaveHosted, hostedSaving, onInstall, installing, installBlocked }: ProviderRowProps) {
   const hint = p.install_hint
   const name = p.display_name ?? p.id
-  // One list for the visible controls and the right-click and long-press menu.
-  const actions = [
-    { label: m.providers_refresh_models(), run: () => onRefresh(p.id), busy: refreshBusy, icon: RefreshCw },
-    ...(hint ? [{ label: m.providers_install_plugin(), run: () => onInstall(hint), busy: installing, icon: Download }] : []),
-    ...(p.is_self_hosted ? [{ label: m.providers_self_hosted_setup(), run: () => onEdit(editing ? null : p.id), icon: Wrench }]
-      : p.configurable !== false && !p.is_oauth ? [{ label: m.providers_key_set(), run: () => onEdit(editing ? null : p.id), icon: KeyRound }] : []),
-    ...(p.removable === true ? [{ label: m.providers_key_remove(), run: () => onSaveKey({ id: p.id, key: null }), danger: true, icon: Trash2 }] : []),
-  ] satisfies RowAction[]
-  const configured = p.configured ?? p.has_key
-  // TAL-2135: the state and at most one more fact.
-  const status = [catalogUnavailable ? m.catalog_unavailable() : configured ? m.providers_configured() : m.providers_not_configured(), p.base_url].filter(Boolean).join(' · ')
+  const setup = setupOf(p)
+  const action = setup === 'cli' ? null : SETUP_ACTION[setup]
+  const run = () => { if (setup === 'plugin') { if (hint) onInstall(hint) } else onEdit(editing ? null : p.id) }
+  // One list for the visible control and the right-click and long-press menu.
+  const actions = action ? [{ label: action.label(), run, busy: setup === 'plugin' && installing, icon: action.icon }] satisfies RowAction[] : []
+  const open = editing && setup !== 'plugin' && setup !== 'cli'
+  const Icon = action?.icon
   return (
-    <RowContextMenu label={m.providers_row_menu()} actions={actions} trigger={<Row compact data-provider={p.id}>
-      <div className="flex w-full flex-col gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="min-w-0 flex-1 basis-48">
-            <span className="font-medium text-text">{name}</span>
-            <div className="flex min-w-0"><StatusDot state={catalogUnavailable ? 'warning' : configured ? 'ok' : 'idle'} title={status}>{status}</StatusDot></div>
-            {p.auth_error && <div className="flex min-w-0"><StatusDot state="error" title={p.auth_error}>{p.auth_error}</StatusDot></div>}
-          </div>
-          <RowActionButtons actions={actions} />
-        </div>
-        {installBlocked}
-        {p.id === 'nous' && <OAuthSignIn provider={p.id} label={name} signedIn={p.has_key === true} account={p.nous_account ?? null} accountError={p.nous_account_error ?? null} resultOnly compact idPrefix="providersNousOauth" onApproved={onInvalidate} />}
-        {p.device_login && <OAuthSignIn provider={p.id} label={name} signedIn={p.has_key === true} idPrefix={`providerOauth-${p.id}`} onApproved={onInvalidate} />}
-        {editing && p.is_self_hosted && <SelfHostedForm key={p.id} id={p.id} baseUrl={p.base_url ?? ''} saving={hostedSaving} onSubmit={(body) => onSaveHosted({ id: p.id, name, ...body })} />}
-        {editing && !p.is_self_hosted && <ProviderKeyForm key={p.id} label={m.providers_key_label({ provider: name })} hasKey={p.has_key === true} saving={keySaving} onSubmit={(key) => onSaveKey({ id: p.id, key })} />}
-      </div>
-    </Row>} />
+    <>
+      <RowContextMenu label={m.providers_row_menu()} actions={actions} trigger={<Row compact className="flex-nowrap items-center gap-3 text-sm" data-provider={p.id} data-setup={setup}>
+        <Monogram name={name} sm />
+        <span className="min-w-0 flex-1 truncate font-medium text-text">{name}</span>
+        {action && Icon
+          ? <IconButton variant="ghost" label={action.label()} aria-expanded={setup === 'plugin' ? undefined : editing} disabled={setup === 'plugin' && installing} onClick={run}><Icon aria-hidden="true" /></IconButton>
+          : <span className="inline-flex h-8 shrink-0 items-center text-xs text-muted pointer-coarse:h-11">{m.providers_cli_only()}</span>}
+      </Row>} />
+      {(open || installBlocked) && (
+        <li className="col-span-full flex flex-col gap-2 pb-3" data-provider-setup={p.id}>
+          {installBlocked}
+          {open && p.auth_error && <StatusDot state="error" wrap>{p.auth_error}</StatusDot>}
+          {open && setup === 'oauth' && <OAuthSignIn provider={p.id} label={name} signedIn={p.has_key === true} account={p.nous_account ?? null} accountError={p.nous_account_error ?? null} idPrefix={`providerOauth-${p.id}`} onApproved={onInvalidate} />}
+          {open && setup === 'self_hosted' && <SelfHostedForm key={p.id} id={p.id} baseUrl={p.base_url ?? ''} saving={hostedSaving} onSubmit={(body) => onSaveHosted({ id: p.id, name, ...body })} />}
+          {open && setup === 'key' && <ProviderKeyForm key={p.id} label={m.providers_key_label({ provider: name })} hasKey={p.has_key === true} saving={keySaving} onSubmit={(key) => onSaveKey({ id: p.id, key })} />}
+        </li>
+      )}
+    </>
   )
 }, sameRowProps<ProviderRowProps>('p'))
 
