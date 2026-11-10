@@ -1,26 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render as rtlRender, fireEvent, waitFor } from '@testing-library/react'
-import type { ReactElement } from 'react'
+import { useState, type ReactElement } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import terminalFixture from '../../../../../../contracts/fixtures/native-captured-command.json'
 
 const webStart = { ...terminalFixture.web_target, session_id: 's1', workspace: '/w' }
 const noop = () => undefined
-const xterm: { type: (data: string) => void; options: Record<string, unknown> } = vi.hoisted(() => ({ type: () => undefined, options: {} }))
+const xterm: { type: (data: string) => void; options: Record<string, unknown>; created: number; disposed: number; written: string } = vi.hoisted(() => ({ type: () => undefined, options: {}, created: 0, disposed: 0, written: '' }))
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
-    constructor(options: Record<string, unknown>) { this.options = { ...options }; xterm.options = this.options }
+    constructor(options: Record<string, unknown>) { this.options = { ...options }; xterm.options = this.options; xterm.created++; xterm.written = '' }
+    parsed: (() => void)[] = []
     clear = noop
     options: Record<string, unknown>
     cols = 80
     rows = 24
     loadAddon = noop
     open = noop
-    write = noop
-    writeln = noop
+    write = (data: string) => { xterm.written += data; for (const listener of this.parsed) listener() }
+    writeln = (data: string) => { this.write(`${data}\r\n`) }
+    onWriteParsed = (listener: () => void) => { this.parsed.push(listener); return { dispose: noop } }
     onData = (listener: (data: string) => void) => { xterm.type = listener; return { dispose: noop } }
     onResize = () => ({ dispose: noop })
-    dispose = noop
+    focus = noop
+    dispose = () => { xterm.disposed++ }
   },
 }))
 vi.mock('@xterm/addon-fit', () => ({ FitAddon: class { fit = noop } }))
@@ -309,5 +312,108 @@ describe('screen-reader mode (TAL-1605)', () => {
     await settle()
     expect(opened).toHaveLength(2)
     expect(xterm.options.screenReaderMode).toBe(false)
+  })
+})
+
+describe('collapsed terminal (TAL-2156)', () => {
+  let sources: (EventTarget & { readyState: number })[]
+  const settle = () => act(async () => { await new Promise((r) => setTimeout(r, 0)) })
+  const print = (text: string) => act(() => { sources.at(-1)!.dispatchEvent(new MessageEvent('output', { data: JSON.stringify({ text }) })) })
+  const dot = (view: ReturnType<typeof render>) => view.container.querySelector('.composer-terminal-header [data-status]')?.getAttribute('data-status')
+  /** ChatView's part: it owns the collapsed state and hands it down. */
+  function Chat() {
+    const [collapsed, setCollapsed] = useState(false)
+    return <><textarea aria-label="Message" /><TerminalPanel sessionId="s1" workspace="/w" onClose={noop} collapsed={collapsed} onCollapsedChange={setCollapsed} /></>
+  }
+  const open = async (settings: Record<string, unknown> = {}) => {
+    const view = render(<Chat />, settings)
+    await settle()
+    return view
+  }
+  const collapse = (view: ReturnType<typeof render>) => act(() => { view.getByRole('button', { name: 'Collapse' }).click() })
+  const surface = (view: ReturnType<typeof render>) => view.getByRole('application', { name: 'Workspace terminal', hidden: true })
+
+  beforeEach(() => {
+    sources = []
+    vi.stubGlobal('EventSource', class extends EventTarget {
+      readyState = 1
+      close = noop
+      constructor() { super(); sources.push(this) }
+    })
+    vi.mocked(post).mockReset()
+    vi.mocked(post).mockResolvedValue(webStart)
+    vi.mocked(saveSettings).mockClear()
+    xterm.created = 0
+    xterm.disposed = 0
+  })
+  afterEach(() => { vi.useRealTimers() })
+
+  it('keeps the same terminal, its scrollback and its shell across a collapse and expand, and writes nothing to the server', async () => {
+    const view = await open()
+    print('build 1/3\r\n')
+    collapse(view)
+    expect(surface(view)).not.toBeVisible()
+    expect(view.queryByRole('button', { name: 'Clear' })).toBeNull()
+    print('build 2/3\r\n')
+    act(() => { view.getByRole('button', { name: 'Expand' }).click() })
+    expect(surface(view)).toBeVisible()
+    expect(xterm.created).toBe(1)
+    expect(xterm.disposed).toBe(0)
+    expect(xterm.written).toBe('build 1/3\r\nbuild 2/3\r\n')
+    expect(sources).toHaveLength(1)
+    expect(vi.mocked(post).mock.calls.map(([path]) => path)).toEqual(['api/terminal/start'])
+    expect(saveSettings).not.toHaveBeenCalled()
+  })
+
+  it('marks output that arrives while collapsed until the panel is expanded, and announces it once', async () => {
+    const view = await open()
+    collapse(view)
+    expect(dot(view)).toBe('ok')
+    const region = view.getByRole('status')
+    expect(region).not.toHaveTextContent('New output')
+    print('a')
+    expect(dot(view)).toBe('warning')
+    expect(region).toHaveTextContent('New output')
+    print('b')
+    expect(view.getByRole('status')).toBe(region)
+    act(() => { view.getByRole('button', { name: 'Expand' }).click() })
+    collapse(view)
+    expect(dot(view)).toBe('ok')
+  })
+
+  it('stays collapsed on output when auto-expand is off', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const view = await open({ terminal_auto_expand_on_output: false })
+    collapse(view)
+    act(() => { vi.advanceTimersByTime(5000) })
+    print('more')
+    expect(view.getByRole('button', { name: 'Expand' })).toBeVisible()
+    expect(surface(view)).not.toBeVisible()
+  })
+
+  it('expands on output with auto-expand on, without moving focus, but not within a second of a manual collapse', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: false })
+    const view = render(<Chat />, { terminal_auto_expand_on_output: true })
+    await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+    const message = view.getByRole('textbox', { name: 'Message' })
+    collapse(view)
+    act(() => { message.focus() })
+    act(() => { vi.advanceTimersByTime(900) })
+    print('chatty')
+    expect(surface(view)).not.toBeVisible()
+    expect(dot(view)).toBe('warning')
+    act(() => { vi.advanceTimersByTime(100) })
+    print('later')
+    expect(surface(view)).toBeVisible()
+    expect(message).toHaveFocus()
+  })
+
+  it('applies screen-reader mode while collapsed and labels every header button', async () => {
+    const view = await open({ screen_reader_mode: false })
+    collapse(view)
+    act(() => { queryClient.setQueryData(keys.settings, { screen_reader_mode: true }) })
+    await waitFor(() => expect(xterm.options.screenReaderMode).toBe(true))
+    const header = view.container.querySelector('.composer-terminal-header')!
+    expect([...header.querySelectorAll('button')].map((button) => button.getAttribute('aria-label'))).toEqual(['Expand', 'Close'])
   })
 })

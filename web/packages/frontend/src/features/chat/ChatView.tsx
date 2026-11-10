@@ -100,11 +100,13 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     setWatchingRun(watchingRun)
     return () => setWatchingRun(false)
   }, [sessionId, watchingRun])
-  const [terminalOpen, setTerminalOpen] = useState(false)
+  // TAL-2156: collapsed keeps the pane mounted (its shell and scrollback) behind its header; device-local, per chat.
+  const [terminal, setTerminal] = useState<'closed' | 'open' | 'collapsed'>('closed')
+  const terminalOpen = terminal !== 'closed'
   const [dismissedApproval, setDismissedApproval] = useState<string | undefined>()
-  const onToggleTerminal = () => setTerminalOpen((t) => !t)
-  // TAL-1974: a `terminal_open` card opens this session's pane; the pane takes the request and focuses itself.
-  useEffect(() => onOpenTerminalRequest(() => { if (sessionId && peekOpenTerminalRequest(sessionId)) setTerminalOpen(true) }), [sessionId])
+  const onToggleTerminal = () => setTerminal((t) => t === 'closed' ? 'open' : 'closed')
+  // TAL-1974: a `terminal_open` card opens this session's pane, expanded; the pane takes the request and focuses itself.
+  useEffect(() => onOpenTerminalRequest(() => { if (sessionId && peekOpenTerminalRequest(sessionId)) setTerminal('open') }), [sessionId])
   const { sidePanelOpen } = useShellState()
   const [queued, setQueued] = useQueuedTurns(composerStateId(session))
   const onQueue = (entry: QueuedTurn) => setQueued((q) => [...q, entry])
@@ -341,7 +343,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       case 'stop': if (sessionId) await cancelTurn(sessionId); return true
       case 'new': removePersisted('hermes-webui-session'); await navigate({ to: '/', search: { action: 'new-chat' } }); return true
       case 'clear': if (sessionId) return await runHistory(m.history_clearing(), async (current) => { const r = await api.clearSession(sessionId); if (current()) await refresh(r.session) }, 0) ? true : 'refused'; return true
-      case 'terminal': setTerminalOpen((t) => !t); return true
+      case 'terminal': onToggleTerminal(); return true
       case 'title': if (sessionId && args) renameSession(args); return true
       case 'retry': if (sessionId) return await onRegenerate() ? true : 'refused'; return true
       case 'undo': if (sessionId) return await runHistory(m.history_undoing(), async (current) => { const r = await api.undoSession(sessionId); if (!current()) return; if ('error' in r) throw new Error(r.error); await refresh(undefined, true) }, lastExchange) ? true : 'refused'; return true
@@ -519,7 +521,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
             {session && meta && <div className="chat-header-meta hidden text-[11px] text-muted whitespace-nowrap overflow-hidden text-ellipsis font-mono" id="topbarMeta">{meta}</div>}
           </div>
           {/* T3 Code keeps the terminal toggle in the thread header; phones reach it from the composer's overflow menu. */}
-          {sessionId && <button type="button" className={cn('icon-btn has-tooltip has-tooltip--left', terminalOpen && 'active')} id="btnTerminalInline" data-tooltip={m.composer_terminal_toggle()} aria-label={m.composer_terminal_toggle()} aria-pressed={terminalOpen} onClick={() => setTerminalOpen((t) => !t)}><TerminalSquare size={16} aria-hidden="true" /></button>}
+          {sessionId && <button type="button" className={cn('icon-btn has-tooltip has-tooltip--left', terminalOpen && 'active')} id="btnTerminalInline" data-tooltip={m.composer_terminal_toggle()} aria-label={m.composer_terminal_toggle()} aria-pressed={terminalOpen} onClick={onToggleTerminal}><TerminalSquare size={16} aria-hidden="true" /></button>}
           {/* TAL-373: the side panel's edge tab is hidden below 901px; tablets open it here, phones from the titlebar. */}
           {sessionId && <button type="button" className={cn('icon-btn chat-header-side-panel has-tooltip has-tooltip--left', sidePanelOpen && 'active')} id="btnSidePanelInline" data-tooltip={m.panel_label()} aria-label={m.panel_label()} aria-pressed={sidePanelOpen} onClick={toggleSidePanel}><PanelRight size={16} aria-hidden="true" /></button>}
         </div>
@@ -571,10 +573,10 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
           {sessionId && vaultPrompt && <VaultPromptCard key={vaultPrompt.clarifyId} sessionId={sessionId} clarifyId={vaultPrompt.clarifyId} vault={vaultPrompt.vault} />}
           {connectCard && <ConnectCard key={connectCard.op_id} initial={connectCard} />}
           {terminalOpen && sessionId && <Suspense fallback={
-            <TerminalPanelFrame workspace={workspace} status="loading" onClose={() => setTerminalOpen(false)}>
+            <TerminalPanelFrame workspace={workspace} status="loading" onClose={() => setTerminal('closed')}>
               <div className="composer-terminal-surface px-2 py-1" style={{ height: 260 }} />
             </TerminalPanelFrame>
-          }><TerminalPanel key={JSON.stringify([sessionId, workspace])} sessionId={sessionId} workspace={workspace} onClose={() => setTerminalOpen(false)} onReopen={() => setTerminalOpen(true)} /></Suspense>}
+          }><TerminalPanel key={JSON.stringify([sessionId, workspace])} sessionId={sessionId} workspace={workspace} onClose={() => setTerminal('closed')} onReopen={() => setTerminal('open')} collapsed={terminal === 'collapsed'} onCollapsedChange={(collapsed) => setTerminal(collapsed ? 'collapsed' : 'open')} /></Suspense>}
         </div>
         {(sessionId || canReference) && <SessionReferences key={bootstrap.profile?.name} profile={bootstrap.profile?.name ?? 'default'} selected={sessionId ? session?.source_references ?? [] : pending.source_references ?? []} {...(!sessionId ? { onChange: (source_references: AcceptedSourceReference[]) => setPending((p) => ({ ...p, source_references })) } : {})} />}
         <Composer

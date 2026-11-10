@@ -1,5 +1,5 @@
 import { CapturedCommandResultSchema, TerminalStartSchema as StartSchema } from '@maudecode/talaria-web-contracts'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
@@ -15,6 +15,7 @@ import { isDefiniteRefusal } from '../../contracts/common'
 import { TerminalPanelFrame } from './TerminalPanelFrame'
 import { onOpenTerminalRequest, takeOpenTerminalRequest } from './openTerminalRequest'
 import { useSetting } from '../../app/settings'
+import type { DotState } from '../../ui/Badge'
 
 const OkSchema = z.looseObject({ ok: z.boolean().optional(), closed: z.boolean().optional(), error: z.string().optional() })
 /** The server's per-request input limit (UTF-16 length). */
@@ -24,7 +25,15 @@ const INPUT_LIMIT = 8192
  * Workspace terminal on bundled xterm (no CDN). Protocol: POST start, POST input
  * (one request in flight; keys typed meanwhile join the next one), SSE output, POST resize, POST close.
  */
-export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => undefined }: { sessionId: string; workspace: string | undefined; onClose: () => void; onReopen?: () => void }) {
+export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => undefined, collapsed = false, onCollapsedChange = () => undefined }: {
+  sessionId: string
+  workspace: string | undefined
+  onClose: () => void
+  onReopen?: () => void
+  /** TAL-2156: device-local, per chat; the owner keeps it beside the open state. */
+  collapsed?: boolean
+  onCollapsedChange?: (collapsed: boolean) => void
+}) {
   const host = useRef<HTMLDivElement>(null)
   const term = useRef<Terminal | null>(null)
   const fit = useRef<FitAddon | null>(null)
@@ -42,6 +51,21 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
   const screenReader = useSetting('screen_reader_mode') === true
   const screenReaderPref = useRef(screenReader)
   const applyScreenReader = () => { if (term.current) term.current.options.screenReaderMode = mode.current === 'owner_command' || screenReaderPref.current }
+
+  // TAL-2156: output while collapsed marks the header until the panel expands. With auto-expand on it expands the panel,
+  // except within a second of the person collapsing it, so a chatty command can be put away. Expanding never takes focus.
+  const autoExpand = useSetting('terminal_auto_expand_on_output') === true
+  const [unseen, setUnseen] = useState(false)
+  const collapsedAt = useRef(0)
+  const sawOutput = useEffectEvent(() => {
+    if (!collapsed) return
+    setUnseen(true)
+    if (autoExpand && Date.now() - collapsedAt.current >= 1000) onCollapsedChange(false)
+  })
+  const toggleCollapsed = () => {
+    if (!collapsed) { collapsedAt.current = Date.now(); setUnseen(false) }
+    onCollapsedChange(!collapsed)
+  }
 
   /** TAL-1974: the agent terminal this pane shows, so a `terminal_open` card for it only focuses it. */
   const attached = useRef<string | null>(null)
@@ -145,6 +169,8 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
         showErrorToast(error, m.terminal_input_failed())
       })
     }
+    // Every write, the stream's and a captured command's, passes here.
+    const parsed = t.onWriteParsed(() => sawOutput())
     const data = t.onData((d) => { if (mode.current !== 'web_pty') return; q.pending.push(d); flush() })
     const resize = t.onResize(({ cols, rows }) => { if (mode.current !== 'web_pty') return; void post('api/terminal/resize', { session_id: sessionId, cols, rows }, OkSchema, { retries: 0 }).catch(() => undefined) })
     const ro = new ResizeObserver(() => { try { f.fit() } catch { /* not attached */ } })
@@ -154,7 +180,7 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
       drop()
       applyStart.current = null
       stream.current?.close(); stream.current = null
-      data.dispose(); resize.dispose(); ro.disconnect(); t.dispose()
+      parsed.dispose(); data.dispose(); resize.dispose(); ro.disconnect(); t.dispose()
       term.current = null
     }
   }, [sessionId, workspace])
@@ -219,7 +245,7 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
     window.addEventListener('pointerup', up)
   }
   return (
-    <TerminalPanelFrame workspace={captured?.workspace ?? workspace} title={captured ? m.terminal_native_command() : undefined} status={status} onClose={close} onResize={startResize} actions={<>
+    <TerminalPanelFrame workspace={captured?.workspace ?? workspace} title={captured ? m.terminal_native_command() : undefined} status={status} onClose={close} onResize={startResize} collapse={{ collapsed, onToggle: toggleCollapsed, ...collapsedDot(status, unseen) }} actions={<>
       <Button variant="ghost" onClick={() => term.current?.clear()}>{m.terminal_clear()}</Button>
       <Button variant="ghost" onClick={() => { const sel = term.current?.getSelection() ?? ''; copyWithToast(sel) }}>{m.terminal_copy_output()}</Button>
       {!captured && status !== 'starting' && <Button variant="ghost" onClick={() => { void restart() }}>{m.terminal_restart()}</Button>}
@@ -231,4 +257,12 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
       <div ref={host} className="composer-terminal-surface px-2 py-1" style={{ height }} aria-label="Workspace terminal" role="application" />
     </TerminalPanelFrame>
   )
+}
+
+/** TAL-2156: the collapsed header's dot and words for the pane's own stream state. */
+function collapsedDot(status: 'starting' | 'running' | 'closed' | 'error', unseen: boolean): { dot: DotState; words: string } {
+  if (unseen) return { dot: 'warning', words: m.terminal_new_output() }
+  if (status === 'running') return { dot: 'ok', words: m.terminal_status_running() }
+  if (status === 'error') return { dot: 'error', words: m.terminal_error() }
+  return { dot: 'idle', words: status === 'starting' ? m.terminal_status_starting() : m.terminal_status_stopped() }
 }
