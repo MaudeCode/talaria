@@ -48,6 +48,13 @@ test('the demo server shows seeded data on every data page', async ({ page }, in
   } finally { await page.goto('about:blank').catch(() => undefined); await server.close() }
 })
 
+/** Sections whose pane scrolls sideways today, keyed `<section>-<project>`, with the ticket that fixes each. Shrinks only. */
+const KNOWN_PANE_OVERFLOW: Readonly<Record<string, string>> = {
+  // A hidden centered tooltip on the trailing header action sticks out past the pane's right edge.
+  'profiles-mobile': 'TAL-2125',
+  'workspaces-mobile': 'TAL-2125',
+}
+
 // TAL-2103: the Settings gallery. Every section, and each Tools tab, shows its heading with no sideways scroll; with
 // `TOUR_SHOTS` each is saved as `settings-<id>-<project>.png`, the picture a Settings change is reviewed against.
 test('every Settings section and Tools tab shows its heading without horizontal overflow', async ({ page }, info) => {
@@ -67,7 +74,11 @@ test('every Settings section and Tools tab shows its heading without horizontal 
       await expect(page.locator('#main .settings-section-title'), name).toBeVisible()
       if (tab) await expect(page.getByRole('tab', { selected: true }), name).toHaveAttribute('aria-controls', `tools-${tab}`)
       await settle(page)
+      // The section scrolls inside its own pane (`overflow-y-auto`), so a too-wide row scrolls there, not the document.
+      const pane = page.locator('#main .settings-main').locator('..')
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${name} has no horizontal overflow`).toBe(true)
+      const known = KNOWN_PANE_OVERFLOW[`${name}-${info.project.name}`]
+      expect(await pane.evaluate((el) => el.scrollWidth <= el.clientWidth), known ? `${name} still overflows its pane (${known}); remove its KNOWN_PANE_OVERFLOW entry` : `${name} has no horizontal overflow in its pane`).toBe(!known)
       if (shots) await fullHeightShot(page, `${shots}/settings-${name}-${info.project.name}.png`)
     }
   } finally { await page.goto('about:blank').catch(() => undefined); await server.close() }
