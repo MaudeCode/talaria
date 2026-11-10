@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { memo, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { PluginAutoUpdateView, PluginOAuthClientView, PluginSettingView, PluginUpdateAllRow, PluginUpdateResult } from '@maudecode/talaria-web-contracts'
 import { m } from '../../paraglide/messages.js'
@@ -60,16 +60,19 @@ export function PluginsSection() {
     setUpdatedAll(null)
     updateAll.mutate(streamContext)
   }
+  // The stable `mutate` keeps this callback, and so each memoized row, unchanged across filter keystrokes.
+  const mutateUpdate = update.mutate
   const requestUpdate = (key: string, accept = false, token?: string) => {
     if (updating.current) return
     updating.current = true
     setScan(null)
-    update.mutate({ key, accept, ...(token ? { token } : {}) })
+    mutateUpdate({ key, accept, ...(token ? { token } : {}) })
   }
   const plugins = useQuery({ queryKey: keys.plugins, queryFn: api.fetchPlugins, staleTime: 30_000 })
   const effects = useResourceEffects<Record<string, unknown>>()
   const [open, setOpen] = useState<string | null>(null)
   const [browsing, setBrowsing] = useState(false)
+  const [filter, setFilter] = useState('')
   if (plugins.isPending) return <LoadingState />
   if (plugins.isError) return <ErrorState error={plugins.error} onRetry={() => { void plugins.refetch() }} />
   // Saved non-secret values show at once until the reread; secrets never show.
@@ -80,6 +83,9 @@ export function PluginsSection() {
   const editable = !plugins.data.read_only
   const autoUpdate = editable ? plugins.data.auto_update : undefined
   const updateBusy = update.isPending || updateAll.isPending
+  const q = filter.trim().toLowerCase()
+  // TAL-2082: TAL-2129 moves this filter into the `/api/plugins` response; delete it here once that ships.
+  const shown = q ? list.filter((p) => [p.name ?? p.key, p.description ?? ''].some((text) => text.toLowerCase().includes(q))) : list
   return (
     <div className="flex flex-col gap-2" data-section="plugins">
       <div className="flex justify-end gap-2">
@@ -92,22 +98,11 @@ export function PluginsSection() {
       {plugins.data.read_only && <div className="text-xs text-warning">{m.plugins_read_only()}</div>}
       {plugins.data.plugin_isolation_advisory && <div className="text-xs text-warning" data-advisory="plugin-isolation">{m.plugins_isolation_advisory()}</div>}
       {list.length === 0 && <EmptyState>{browsing ? m.plugins_catalog_no_installed() : m.plugins_empty()}</EmptyState>}
+      {list.length > 0 && <TextInput type="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={m.plugins_filter()} aria-label={m.plugins_filter()} />}
+      {list.length > 0 && shown.length === 0 && <EmptyState>{m.plugins_filter_empty()}</EmptyState>}
       <ul className="flex flex-col divide-y divide-border-subtle">
-        {list.map((p) => (
-          <PluginRow key={p.key} title={<>{p.name ?? p.key}{p.version ? <span className="ml-1 text-[11px] text-muted">v{p.version}</span> : null}</>} description={`${p.kind ? `${p.kind} · ` : ''}${p.description ?? ''}`} status={<>
-              {p.update?.available && <span className="text-[11px] text-warning">{m.plugins_update_available()}</span>}
-              {p.is_active_provider && <span className="rounded-full bg-accent-bg px-2 py-0.5 text-xs uppercase tracking-wider text-accent-text">{m.providers_active()}</span>}
-              <span className={p.enabled !== false ? 'text-[11px] text-success' : 'text-[11px] text-muted'}>{p.enabled !== false ? m.plugins_enabled() : m.plugins_disabled()}{p.activation ? ` · ${p.activation}` : ''}</span>
-            </>} actions={[
-              ...(editable && p.update?.available ? [{ label: m.plugins_update(), run: () => requestUpdate(p.key), disabled: updateBusy, busy: update.isPending && update.variables.key === p.key }] : []),
-              ...(editable && p.settings?.length ? [{ label: m.settings_title(), run: () => setOpen(open === p.key ? null : p.key), expanded: open === p.key }] : []),
-            ]}>
-            {p.disabled_reason && <p className="mt-1 text-[11px] text-warning [overflow-wrap:anywhere]">{m.plugins_disabled_by_update({ reason: p.disabled_reason.reason })}</p>}
-            {p.oauth_clients?.length ? <ul className="mt-2 flex flex-col gap-2">{p.oauth_clients.map((c) => <PluginOAuthClientRow key={c.id} pluginKey={p.key} client={c} editable={editable} />)}</ul> : null}
-            {scan?.key === p.key && scan.status === 'blocked' && <div role="alert" className="mt-2 whitespace-pre-line text-xs text-error [overflow-wrap:anywhere]">{scan.findings}</div>}
-            {editable && open === p.key && p.settings ? <PluginSettingsForm pluginKey={p.key} fields={p.settings} onSaved={() => setOpen(null)} /> : null}
-          </PluginRow>
-        ))}
+        {shown.map((p) => <InstalledPluginRow key={p.key} plugin={p} editable={editable} open={open === p.key} onOpen={setOpen} updateBusy={updateBusy}
+          updating={update.isPending && update.variables.key === p.key} blockedFindings={scan?.key === p.key && scan.status === 'blocked' ? scan.findings : null} onUpdate={requestUpdate} />)}
       </ul>
       <ConfirmDialog open={scan?.status === 'needs_consent'} onOpenChange={(isOpen) => { if (!isOpen) setScan((current) => current === scan && current?.status === 'needs_consent' ? null : current) }}
         title={m.plugins_update_consent()} description={scan?.findings} confirmLabel={m.plugins_update()} cancelLabel={m.cancel()} danger
@@ -116,12 +111,46 @@ export function PluginsSection() {
   )
 }
 
+type InstalledPlugin = Awaited<ReturnType<typeof api.fetchPlugins>>['plugins'][number]
+interface InstalledPluginRowProps {
+  plugin: InstalledPlugin
+  editable: boolean
+  open: boolean
+  onOpen: (key: string | null) => void
+  updateBusy: boolean
+  updating: boolean
+  blockedFindings: string | null
+  onUpdate: (key: string) => void
+}
+
+// Memoized so typing in the filter renders only the rows entering the list (TAL-1405).
+const InstalledPluginRow = memo(function InstalledPluginRow({ plugin: p, editable, open, onOpen, updateBusy, updating, blockedFindings, onUpdate }: InstalledPluginRowProps) {
+  return (
+    <PluginRow id={p.key} title={<>{p.name ?? p.key}{p.version ? <span className="ml-1 text-[11px] text-muted">v{p.version}</span> : null}</>} description={`${p.kind ? `${p.kind} · ` : ''}${p.description ?? ''}`} status={<>
+        {p.update?.available && <span className="text-[11px] text-warning">{m.plugins_update_available()}</span>}
+        {p.is_active_provider && <span className="rounded-full bg-accent-bg px-2 py-0.5 text-xs uppercase tracking-wider text-accent-text">{m.providers_active()}</span>}
+        <span className={p.enabled !== false ? 'text-[11px] text-success' : 'text-[11px] text-muted'}>{p.enabled !== false ? m.plugins_enabled() : m.plugins_disabled()}{p.activation ? ` · ${p.activation}` : ''}</span>
+      </>} actions={[
+        ...(editable && p.update?.available ? [{ label: m.plugins_update(), run: () => onUpdate(p.key), disabled: updateBusy, busy: updating }] : []),
+        ...(editable && p.settings?.length ? [{ label: m.settings_title(), run: () => onOpen(open ? null : p.key), expanded: open }] : []),
+      ]}>
+      {p.disabled_reason && <p className="mt-1 text-[11px] text-warning [overflow-wrap:anywhere]">{m.plugins_disabled_by_update({ reason: p.disabled_reason.reason })}</p>}
+      {p.oauth_clients?.length ? <ul className="mt-2 flex flex-col gap-2">{p.oauth_clients.map((c) => <PluginOAuthClientRow key={c.id} pluginKey={p.key} client={c} editable={editable} />)}</ul> : null}
+      {blockedFindings !== null && <div role="alert" className="mt-2 whitespace-pre-line text-xs text-error [overflow-wrap:anywhere]">{blockedFindings}</div>}
+      {editable && open && p.settings ? <PluginSettingsForm pluginKey={p.key} fields={p.settings} onSaved={() => onOpen(null)} /> : null}
+    </PluginRow>
+  )
+})
+
 interface PluginRowAction extends RowAction { expanded?: boolean }
 
-/** Installed and catalog entries share the existing Plugins row and disclosure layout; its actions show inline and in its right-click and long-press menu. */
-function PluginRow({ title, description, status, actions, children }: { title: ReactNode; description: string; status: ReactNode; actions: PluginRowAction[]; children?: ReactNode }) {
-  const row = <li className="py-2"><div className="flex flex-wrap items-center gap-3">
-    <div className="min-w-0 flex-1 basis-40"><div className="text-sm font-medium text-text">{title}</div><div className="text-[11px] text-muted [overflow-wrap:anywhere]">{description}</div></div>
+/**
+ * Installed and catalog entries share the existing Plugins row and disclosure layout; its actions show inline and in its right-click and long-press menu.
+ * TAL-2082: the description keeps to one truncated line, with the full text in its `title` and the DOM for screen readers.
+ */
+function PluginRow({ id, title, description, status, actions, children }: { id?: string; title: ReactNode; description: string; status: ReactNode; actions: PluginRowAction[]; children?: ReactNode }) {
+  const row = <li className="py-2" data-plugin={id}><div className="flex flex-wrap items-center gap-3">
+    <div className="min-w-0 flex-1 basis-40"><div className="text-sm font-medium text-text">{title}</div><div className="truncate text-[11px] text-muted" title={description || undefined}>{description}</div></div>
     {status}
     {actions.map((action) => <Button key={action.label} variant="ghost" className="min-h-11 min-w-11 px-2 py-1 text-xs" disabled={action.disabled === true} aria-busy={action.busy === true} aria-expanded={action.expanded} onClick={action.run}>{action.label}</Button>)}
   </div>{children}</li>
