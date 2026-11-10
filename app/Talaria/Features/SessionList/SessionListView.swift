@@ -19,7 +19,7 @@ struct SessionListView: View {
 
     @Environment(\.modelContext) private var observedModelContext
     @Environment(\.horizontalSizeClass) private var observedHorizontalSizeClass
-    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.verticalSizeClass) private var observedVerticalSizeClass
     @Environment(\.layoutDirection) private var observedLayoutDirection
     @Environment(\.accessibilityReduceMotion) private var observedReduceMotion
     @Environment(\.scenePhase) private var observedScenePhase
@@ -29,6 +29,7 @@ struct SessionListView: View {
     // Cached handlers read current environment inputs through the stable, non-observed context.
     private var modelContext: ModelContext { sessionActionContext?.modelContext ?? observedModelContext }
     private var layoutDirection: LayoutDirection { sessionActionContext?.layoutDirection ?? observedLayoutDirection }
+    private var verticalSizeClass: UserInterfaceSizeClass? { sessionActionContext?.verticalSizeClass ?? observedVerticalSizeClass }
     private var reduceMotion: Bool { sessionActionContext?.reduceMotion ?? observedReduceMotion }
     private var scenePhase: ScenePhase { sessionActionContext?.scenePhase ?? observedScenePhase }
     @State private var quotaViewModel: ProvidersViewModel
@@ -139,6 +140,7 @@ struct SessionListView: View {
         return observedHingeStatus
     }
     @State private var appSidebar = AppSidebarPresentation()
+    @State private var chatSplitFraction: CGFloat = 0.5
     @State private var isPresentingUpdateNotifications: Bool
     @AccessibilityFocusState private var openNavigationIsFocused: Bool
     @AccessibilityFocusState private var archiveUndoIsFocused: Bool
@@ -571,10 +573,11 @@ struct SessionListView: View {
             fillsSafeArea: isDuoOuterSidebar,
             isEnabled: sidebarDrawerIsEnabled,
             overlaysContent: sidebarPresentation.overlaysContent,
-            collapsesNativeSidebar: !sidebarPresentation.tiled,
-            onPresentationChange: appSidebarPresentationChanged
+            collapsesNativeSidebar: sidebarPresentation.toggleTarget == .drawer,
+            onPresentationChange: appSidebarPresentationChanged,
+            onChatDrop: sidebarChatDropHandler
         ) { presented in
-            if !sidebarPresentation.tiled {
+            if sidebarPresentation.toggleTarget == .drawer {
                 sharedSidebar(isPresented: presented, isDrawer: true)
             }
         } content: {
@@ -1114,12 +1117,47 @@ struct SessionListView: View {
         inspector.widensForCompanionPage = widensForCompanionPage
         inspector.companionPageHideRequest = navigationState.companionPageHideRequest
         inspector.secondaryChat = secondaryChat
+        inspector.chatUsesFoldRegions = chatUsesFoldRegions
+        inspector.chatDropIsEnabled = canSplitChats
         return inspector
     }
 
     private var canSplitChats: Bool {
         guard #available(iOS 27.1, *), horizontalSizeClass == .regular, verticalSizeClass != .compact else { return false }
         return RegularSplitLayout.splitsCompanionPage(width: regularSplitWidth, height: regularSplitFullHeight)
+    }
+
+    private var chatUsesFoldRegions: Bool {
+        guard !splitGeometry.verticalRanges.isEmpty else { return false }
+        #if DEBUG
+        // The existing hosted geometry override represents book pose independently of the simulator's hinge.
+        if divisionFramesForTesting != nil { return true }
+        #endif
+        return hingeStatus != .fullyOpen
+    }
+
+    private func acceptSidebarChatDrop(_ providers: [NSItemProvider]) -> Bool {
+        guard canDropSidebarChat,
+              let provider = providers.first(where: { $0.hasItemConformingToTypeIdentifier(SidebarChatDrag.typeIdentifier) })
+        else { return false }
+        _ = provider.loadDataRepresentation(forTypeIdentifier: SidebarChatDrag.typeIdentifier) { data, _ in
+            guard let data, let id = String(data: data, encoding: .utf8) else { return }
+            Task { @MainActor in
+                guard canSplitChats, let session = viewModel.sessions.first(where: { $0.sessionId == id }),
+                      navigationState.canOpenBeside(session) else { return }
+                await openSession(session, beside: true)
+            }
+        }
+        return true
+    }
+
+    private var sidebarChatDropHandler: (([NSItemProvider]) -> Bool)? {
+        guard canDropSidebarChat else { return nil }
+        return sessionActionContext?.filesInspector.onChatDrop ?? { providers in acceptSidebarChatDrop(providers) }
+    }
+
+    private var canDropSidebarChat: Bool {
+        canSplitChats && (navigationState.displayedSessionID != nil || navigationState.selectedSessionID != nil)
     }
 
     /// Both panes use the same retained-chat and draft owners as a normal session destination.
@@ -1137,10 +1175,21 @@ struct SessionListView: View {
                 navigationState.makeSecondaryPrimary(replacing: primary)
                 persistLastSelectedSession()
             },
-            closeSecondary: { navigationState.closeSecondaryChat() }
+            closeSecondary: { navigationState.closeSecondaryChat() },
+            paneUsesFoldRegions: chatUsesFoldRegions
         )
         .id(session.id)
         .environment(\.appearedNavigationRoot, nil))
+    }
+
+    private var splitChatNavigationActions: AnyView {
+        AnyView(VStack(spacing: 4) {
+            regularSidebarToggleButton.frame(minWidth: 44, minHeight: 44)
+            regularNewChatButton.frame(minWidth: 44, minHeight: 44)
+            if updateNotificationViewModel.supportsNotifications {
+                updateNotificationsButton.frame(minWidth: 44, minHeight: 44)
+            }
+        })
     }
 
     private func makeSplitFilesInspector() -> SplitFilesInspector {
@@ -1160,6 +1209,10 @@ struct SessionListView: View {
                 if horizontalSizeClass == .regular { regularWidthChat = session }
             },
             offersCompanionPage: horizontalSizeClass == .regular,
+            navigationActions: { splitChatNavigationActions },
+            onChatDrop: { providers in acceptSidebarChatDrop(providers) },
+            chatSplitFraction: $chatSplitFraction,
+            chatUsesFoldRegions: chatUsesFoldRegions,
             reportCompanionPage: { navigationState.chatShowsCompanionPage = $0 },
             reportEmptyTranscript: { chatShowsEmptyTranscript = $0 }
         )
@@ -1294,6 +1347,8 @@ struct SessionListView: View {
                 widensForCompanionPage: widensForCompanionPage,
                 companionPageHideRequest: navigationState.companionPageHideRequest,
                 secondaryChat: secondaryChat,
+                chatUsesFoldRegions: chatUsesFoldRegions,
+                chatDropIsEnabled: canSplitChats,
                 retained: retained
             )
             .id(session.id)
@@ -2062,6 +2117,7 @@ struct SessionListView: View {
         sessionActionContext?.reduceMotion = observedReduceMotion
         sessionActionContext?.scenePhase = observedScenePhase
         sessionActionContext?.horizontalSizeClass = observedHorizontalSizeClass
+        sessionActionContext?.verticalSizeClass = observedVerticalSizeClass
     }
 
     private var retainedChatSessionIDs: Set<String> {
@@ -2474,7 +2530,8 @@ struct SessionListView: View {
         for id in removingSessionIDs {
             guard removedSessionNavigation[id] == nil,
                   navigationState.selectedSessionID == id || navigationState.selectedSectionSession?.sessionId == id
-                    || navigationState.lastSelectedSessionID == id else { continue }
+                    || navigationState.lastSelectedSessionID == id
+                    || navigationState.secondarySessionID == id else { continue }
             let previous = navigationState
             navigationState.remove(sessionID: id)
             removedSessionNavigation[id] = RemovedSessionNavigation(state: previous, revision: navigationState.openRevision)
@@ -2515,6 +2572,8 @@ private struct SessionChatDestination: View {
     let widensForCompanionPage: Bool
     let companionPageHideRequest: Int
     let secondaryChat: AnyView?
+    let chatUsesFoldRegions: Bool
+    let chatDropIsEnabled: Bool
     let retained: RetainedChat
 
     var body: some View {
@@ -2524,6 +2583,8 @@ private struct SessionChatDestination: View {
         inspector?.widensForCompanionPage = widensForCompanionPage
         inspector?.companionPageHideRequest = companionPageHideRequest
         inspector?.secondaryChat = secondaryChat
+        inspector?.chatUsesFoldRegions = chatUsesFoldRegions
+        inspector?.chatDropIsEnabled = chatDropIsEnabled
         return ChatView(
             session: session, server: server,
             onAPIError: context?.onAPIError ?? { authManager.handleAPIError($0, server: server) },

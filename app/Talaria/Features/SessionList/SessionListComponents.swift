@@ -1,7 +1,23 @@
 import SwiftUI
 import UIKit
 import TalariaKit
+import UniformTypeIdentifiers
 
+/// A sidebar navigation drag is distinct from text/files dropped into a composer.
+enum SidebarChatDrag {
+    static let typeIdentifier = UTType(exportedAs: "dev.kil.talaria.sidebar-chat", conformingTo: .data).identifier
+
+    static func provider(for session: SessionSummary) -> NSItemProvider {
+        let provider = NSItemProvider()
+        provider.suggestedName = session.title
+        guard let id = session.sessionId else { return provider }
+        provider.registerDataRepresentation(forTypeIdentifier: typeIdentifier, visibility: .ownProcess) { completion in
+            completion(Data(id.utf8), nil)
+            return nil
+        }
+        return provider
+    }
+}
 
 struct SessionListRowActions {
     let retryLoad: () -> Void

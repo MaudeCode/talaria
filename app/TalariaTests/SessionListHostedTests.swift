@@ -1710,6 +1710,42 @@ final class RegularSplitHostedTests: XCTestCase {
 /// TAL-1458: the companion page, the file the agent is working on, beside the chat where iOS 27.1's arrangement can
 /// split: iPhone Duo inner display and iPad in landscape. Elsewhere only the chat shows.
 extension RegularSplitHostedTests {
+    func testDroppingASidebarChatOpensItsTranscriptBesideThePrimary() async throws {
+        try requireArrangement()
+        let split = try await openChat(size: HostedSize.padLandscape)
+        let sessions = try await split.fixture.client.sessions()
+        let point = CGPoint(x: split.window.bounds.width * 0.7, y: split.window.bounds.height * 0.3)
+        for title in ["Fixture Session 01", "Fixture Session 02"] {
+            if title == "Fixture Session 02" {
+                // A replacement drag starts in the drawer over the existing split, including its dismiss scrim.
+                HostedAccessibility.activate(try await requireElement(in: split.window, label: "Sidebar"))
+                _ = try await requireElement(in: split.window) {
+                    $0.accessibilityLabel?.hasPrefix(title) == true && $0.accessibilityCustomActions?.isEmpty == false
+                }
+            }
+            let secondary = try XCTUnwrap(sessions.sessions?.first { $0.title == title })
+            let provider = NSItemProvider()
+            provider.registerDataRepresentation(forTypeIdentifier: "dev.kil.talaria.sidebar-chat", visibility: .ownProcess) { completion in
+                completion(Data((secondary.sessionId ?? "").utf8), nil)
+                return nil
+            }
+            let session = HostedDropSession(providers: [provider], window: split.window, isLocal: true) { point }
+            let target = dropTarget(for: session, at: point, in: split.window)
+            let (interaction, delegate) = try XCTUnwrap(target, "A chat drag needs a drop destination over the conversation")
+            delegate.dropInteraction?(interaction, sessionDidEnter: session)
+            settle()
+            let operation = delegate.dropInteraction?(interaction, sessionDidUpdate: session).operation ?? .cancel
+            XCTAssertEqual(operation, .copy,
+                "Destination: \(type(of: delegate)); view: \(String(describing: interaction.view)); local: \(session.localDragSession != nil); types: \(provider.registeredTypeIdentifiers)")
+            guard operation == .copy else { return }
+            delegate.dropInteraction?(interaction, performDrop: session)
+            delegate.dropInteraction?(interaction, sessionDidEnd: session)
+            _ = try await requireElement(in: split.window, label: "\(title) reply")
+            let sends = HostedAccessibility.elements(in: split.window).filter { $0.accessibilityLabel == "Send" }
+            XCTAssertEqual(sends.count, 2, "Both opened chats need their own composer")
+        }
+    }
+
     private func requireArrangement() throws {
         guard #available(iOS 27.1, *) else { throw XCTSkip("The companion page needs iOS 27.1's ArrangementView") }
     }
@@ -2750,6 +2786,119 @@ final class SessionActionsHostedTests: XCTestCase {
 
 /// The sidebar opens a second independently editable chat in the existing arrangement.
 extension RegularSplitHostedTests {
+    func testRefusedArchiveRestoresOnlyTheSecondaryChat() async throws {
+        try requireArrangement()
+        let fixture = try FixtureApp([UITestFixtureEnvironment.holdSessionRemovalArgument,
+                                      UITestFixtureEnvironment.refuseSessionRemovalArgument], for: self)
+        let window = try await openChat(fixture, size: HostedSize.padLandscape)
+        try await typeIntoComposer("Keep the primary draft", in: window)
+        try await openSecondChat(in: window)
+        _ = try await requireElement(in: window, label: "Make Primary")
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Sidebar"))
+        let row = try await requireElement(in: window) {
+            $0.accessibilityLabel?.hasPrefix("Fixture Session 01") == true
+                && $0.accessibilityCustomActions?.contains { $0.name == "Archive" } == true
+        }
+        let archive = try XCTUnwrap(row.accessibilityCustomActions?.first { $0.name == "Archive" })
+        XCTAssertTrue(archive.actionHandler?(archive) ?? false)
+        if let close = HostedAccessibility.element(in: window, label: "Close navigation") {
+            HostedAccessibility.activate(close)
+        }
+        let removed = await awaitNoElement(in: window) { $0.accessibilityLabel == "Make Primary" }
+        XCTAssertTrue(removed, "Archiving the secondary chat must close it before the server answers")
+        XCTAssertEqual(composerDraftText(in: window), "Keep the primary draft")
+        XCTAssertGreaterThan(UITestFixtureHold.shared.pendingCount, 0)
+        fixture.releaseHeldLoads()
+        _ = try await requireElement(in: window, label: "Make Primary")
+        _ = try await requireElement(in: window, label: "Fixture Session 01 reply")
+        XCTAssertEqual(composerDraftText(in: window), "Keep the primary draft")
+    }
+
+    func testEachSplitChatOwnsItsActionsAndTheDividerResizesBothPanes() async throws {
+        try requireArrangement()
+        let split = try await openChat(size: HostedSize.padLandscape)
+        try await typeIntoComposer("Primary draft", in: split.window)
+        try await openSecondChat(in: split.window)
+        _ = try await requireElement(in: split.window, label: "Make Primary")
+        let filesReady = await awaitCondition {
+            HostedAccessibility.elements(in: split.window).filter { $0.accessibilityLabel == "Files" }.count == 2
+        }
+        XCTAssertTrue(filesReady, "Both chats need their own Files action")
+        try await typeIntoComposer("Secondary draft", in: split.window,
+            region: split.window.bounds.divided(atDistance: split.window.bounds.width / 2, from: .maxXEdge).slice)
+        split.window.endEditing(true)
+        let divider = await awaitElement(in: split.window) {
+            HostedAccessibility.identifier(of: $0) == "chat-split-divider"
+        }
+        XCTAssertNotNil(divider, "Two flat chat panes need a resizable divider")
+        if let divider {
+            let before = splitComposers(in: split.window).map { $0.convert($0.bounds, to: split.window).width }
+            XCTAssertEqual(before.count, 2)
+            divider.accessibilityIncrement()
+            let resized = await awaitCondition {
+                let widths = self.splitComposers(in: split.window).map { $0.convert($0.bounds, to: split.window).width }
+                guard before.count == 2, widths.count == 2 else { return false }
+                return widths[0] > before[0] + 20 && widths[1] < before[1] - 20
+            }
+            XCTAssertTrue(resized, "Adjusting the divider must change the two pane widths")
+        }
+        XCTAssertEqual(splitComposers(in: split.window).map { $0.text ?? "" }, ["Primary draft", "Secondary draft"])
+        let files = HostedAccessibility.elements(in: split.window).filter { $0.accessibilityLabel == "Files" }
+            .sorted { $0.accessibilityFrame.midX < $1.accessibilityFrame.midX }
+        let left = try XCTUnwrap(files.first)
+        let right = try XCTUnwrap(files.last)
+        XCTAssertLessThan(left.accessibilityFrame.midX, split.window.bounds.width / 4,
+                          "The primary chat's actions belong at its outer left edge")
+        XCTAssertGreaterThan(right.accessibilityFrame.midX, split.window.bounds.width * 3 / 4,
+                             "The secondary chat's actions belong at its outer right edge")
+        settle(window: split.window)
+        func currentFrames() -> [CGRect] {
+            self.splitComposers(in: split.window).map { $0.convert($0.bounds, to: split.window) }
+                + HostedAccessibility.elements(in: split.window).filter { $0.accessibilityLabel == "Files" }.map(\.accessibilityFrame)
+        }
+        let settledFrames = await awaitQuiet(currentFrames)
+        XCTAssertNotNil(settledFrames, "The resized editors and their action bars must settle before capture")
+        attachHostedScreenshot(split.window, name: "two-chats-resized-first-frame")
+        let renderedFrames = await awaitQuiet(currentFrames)
+        XCTAssertNotNil(renderedFrames, "The full-size rendering must settle without further input")
+        attachHostedScreenshot(split.window, name: "two-chats-resized-with-pane-actions")
+        let sessions = try await split.fixture.client.sessions()
+        let secondaryID = try XCTUnwrap(sessions.sessions?.first { $0.title == "Fixture Session 01" }?.sessionId)
+        UITestFixtureURLProtocol.targetedDirectoryReads.withLock { $0 = [] }
+        let secondaryFiles = try await requireElement(in: split.window) {
+            $0.accessibilityLabel == "Files" && $0.accessibilityFrame.midX > split.window.bounds.midX
+        }
+        let navigation = try XCTUnwrap(HostedAccessibility.titleMenuController(in: split.window)?.navigationController)
+        HostedAccessibility.activate(secondaryFiles)
+        let openedFiles = await awaitCondition {
+            UITestFixtureURLProtocol.targetedDirectoryReads.withLock { !$0.isEmpty }
+        }
+        XCTAssertTrue(openedFiles, "The secondary Files action must open its browser")
+        XCTAssertEqual(UITestFixtureURLProtocol.targetedDirectoryReads.withLock { Set($0) }, [secondaryID],
+                       "The right pane's Files action must address the right chat, never the left chat")
+        let navigableBrowser = await awaitCondition {
+            navigation.viewControllers.count > 1 && !navigation.isNavigationBarHidden
+        }
+        XCTAssertTrue(navigableBrowser, "The pushed Files browser must expose its navigation bar")
+    }
+
+    func testSidebarOverTwoChatsStillShowsItsRows() async throws {
+        try requireArrangement()
+        let split = try await openChat(size: HostedSize.padLandscape)
+        try await openSecondChat(in: split.window)
+        _ = try await requireElement(in: split.window, label: "Make Primary")
+        if let sidebar = HostedAccessibility.toolbarItem("Sidebar", in: split.window) {
+            XCTAssertTrue(HostedAccessibility.activate(sidebar))
+        } else {
+            HostedAccessibility.activate(try await requireElement(in: split.window, label: "Sidebar"))
+        }
+        _ = try await requireElement(in: split.window,
+            "Opening the sidebar over two chats must show the chat list, not an empty drawer") {
+            $0.accessibilityLabel?.hasPrefix("Fixture Session 02") == true
+        }
+        attachHostedScreenshot(split.window, name: "two-chats-sidebar-rows")
+    }
+
     func testOpenBesideShowsTwoIndependentComposersOnIPad() async throws {
         try requireArrangement()
         let fixture = try FixtureApp(for: self)

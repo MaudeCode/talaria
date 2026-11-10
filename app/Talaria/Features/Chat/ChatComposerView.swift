@@ -1719,6 +1719,7 @@ enum ComposerDropItem: Equatable {
     static let types: [UTType] = [.image, .fileURL, .url, .text, .item]
 
     init?(_ provider: NSItemProvider) {
+        guard !provider.hasItemConformingToTypeIdentifier(SidebarChatDrag.typeIdentifier) else { return nil }
         func conforms(_ type: UTType) -> Bool { provider.hasItemConformingToTypeIdentifier(type.identifier) }
         // Files hands a dragged file over as its contents under the file's name, so a named item is a file even when
         // its contents are text.

@@ -187,6 +187,7 @@ final class SessionActionContext {
     var reduceMotion = false
     var scenePhase: ScenePhase = .inactive
     var horizontalSizeClass: UserInterfaceSizeClass?
+    var verticalSizeClass: UserInterfaceSizeClass?
 
     init(viewModel: SessionListViewModel, actions: SessionListRowActions,
          onAPIError: @escaping (Error) -> Void, filesInspector: SplitFilesInspector) {

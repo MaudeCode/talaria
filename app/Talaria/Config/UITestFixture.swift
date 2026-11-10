@@ -494,6 +494,8 @@ final class UITestFixtureURLProtocol: URLProtocol {
     static let answeredPaths = OSAllocatedUnfairLock<[String]>(initialState: [])
     /// The source of every single-account quota read since the hosted test's reset, in order.
     static let targetedQuotaReads = OSAllocatedUnfairLock<[String]>(initialState: [])
+    /// Session identities used by hosted file-browser action checks.
+    static let targetedDirectoryReads = OSAllocatedUnfairLock<[String]>(initialState: [])
 
     /// Puts the fixture's per-launch server state back to a fresh launch's, for hosted tests that start the fixture in
     /// process once per test (TAL-856).
@@ -503,6 +505,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
         sessionToolsets.withLock { $0 = nil }
         sessionListFailures.withLock { $0 = [] }
         answeredPaths.withLock { $0 = [] }
+        targetedDirectoryReads.withLock { $0 = [] }
         targetedQuotaReads.withLock { $0 = [] }
         transcriptReads = 0
         archivedSessionIDs = []
@@ -623,6 +626,10 @@ final class UITestFixtureURLProtocol: URLProtocol {
 
     private func sendResponse(for url: URL) {
         Self.answeredPaths.withLock { $0.append(url.path) }
+        if url.path == "/api/list", let sessionID = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?.first(where: { $0.name == "session_id" })?.value {
+            Self.targetedDirectoryReads.withLock { $0.append(sessionID) }
+        }
         let contentType = url.path.hasSuffix("/stream") ? "text/event-stream" : "application/json"
         let listFailure = url.path == "/api/sessions"
             ? Self.sessionListFailures.withLock { $0.isEmpty ? nil : $0.removeFirst() }
