@@ -49,6 +49,8 @@ Follow that checklist's safety rules:
 ## Contribution style
 
 - Keep one logical change per PR; split unrelated refactors or cleanup.
+- Add message keys at their sorted position in every `packages/frontend/messages/` catalog;
+  `npm run i18n:fix -w packages/frontend` sorts them, including after a catalog conflict.
 - Read `docs/CONTRACTS.md` and the linked contract/RFC for the touched
   subsystem before editing.
 - Run checks with the npm workspace commands in `TESTING.md` (`npm test -w packages/server`,
