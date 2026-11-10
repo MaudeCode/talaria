@@ -146,6 +146,29 @@ describe('ProfilesPage', () => {
     expect(router.state.location.search).toEqual({})
   })
 
+  it('TAL-2176: shows a profile\'s avatar from the server\'s URL in its block and its detail header, else its monogram', async () => {
+    vi.mocked(api.fetchProfiles).mockResolvedValue({
+      profiles: [
+        { name: 'default', is_default: true, has_avatar: false },
+        { name: 'scout', has_avatar: true, avatar_url: './api/profile/avatar?name=scout' },
+      ],
+      active: 'default', single_profile_mode: false,
+    })
+    try {
+      const router = await renderPage()
+      await screen.findByText('scout')
+      const block = (name: string) => document.querySelector<HTMLElement>(`[data-profile="${name}"]`)!
+      expect(block('scout').querySelector('img[data-monogram]')).toHaveAttribute('src', './api/profile/avatar?name=scout')
+      expect(block('default').querySelector('img')).toBeNull()
+      expect(block('default').querySelector('[data-monogram]')).toHaveTextContent('d')
+      await router.navigate({ to: '/settings/$section', params: { section: 'profiles' }, search: { name: 'scout' } })
+      const detail = await vi.waitFor(() => document.querySelector<HTMLElement>('[data-profile-detail="scout"]')!)
+      expect(detail.querySelector('img[data-monogram]')).toHaveAttribute('src', './api/profile/avatar?name=scout')
+    } finally {
+      vi.mocked(api.fetchProfiles).mockReset()
+    }
+  })
+
   it('TAL-2143: hides the figures from a server without the summary, and a click anywhere on a block opens its detail', async () => {
     const router = await renderPage()
     await screen.findByText('Research lead')

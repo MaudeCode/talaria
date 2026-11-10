@@ -14,7 +14,7 @@ import { loadEnvFile } from '../providers/env-file.js'
 import { writeEnvFile } from '../test/env-file.js'
 import { applyProviderPrefix, deduplicateModelIds, formatOllamaLabel, labelForModel, providerListing, uniqueQuotaSources } from '../providers/catalog.js'
 import { coerceReasoningEffort, parseProviderQualifiedModel, customProviderSlug, type SpeedTier } from '../config/agent-config.js'
-import { splitProviderModel } from '../profiles/profiles.js'
+import { ProfileService, splitProviderModel } from '../profiles/profiles.js'
 
 useJsonStorage()
 
@@ -1795,6 +1795,83 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     mkdirSync(join(s.state, 'profiles', 'delta'), { recursive: true })
     expect((await post(s, '/api/profile/create', { name: 'delta' })).status).toBe(200)
     expect((await post(s, '/api/model/set', { scope: 'main', model: '@anthropic:claude-sonnet-4-6', provider: 'anthropic' }, { cookie: deltaCookie })).status).toBe(200)
+  })
+
+  it('TAL-2176: a profile\'s avatar is served from its own assets, refused past them, and each row with one names its URL', async () => {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3])
+    const assets = join(s.state, 'profiles', 'pix', 'assets')
+    mkdirSync(assets, { recursive: true })
+    writeFileSync(join(assets, 'avatar.png'), png)
+    writeFileSync(join(assets, 'avatar.jpg'), 'jpeg bytes')
+    const avatar = (name: string): Promise<Response> => s.get(`/api/profile/avatar?name=${encodeURIComponent(name)}`)
+    let res = await avatar('pix')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type'), 'png comes first in the Agent\'s extension order').toBe('image/png')
+    expect(res.headers.get('cache-control')).toBe('private, max-age=300')
+    expect(Buffer.from(await res.arrayBuffer())).toEqual(png)
+    rmSync(join(assets, 'avatar.png'))
+    res = await avatar('pix')
+    expect(res.headers.get('content-type')).toBe('image/jpeg')
+    expect(await res.text()).toBe('jpeg bytes')
+    rmSync(join(assets, 'avatar.jpg'))
+    writeFileSync(join(assets, 'avatar.webp'), 'webp bytes')
+    expect((await avatar('pix')).headers.get('content-type')).toBe('image/webp')
+    // The root profile's avatar lives in the base home.
+    mkdirSync(join(s.state, 'assets'), { recursive: true })
+    writeFileSync(join(s.state, 'assets', 'avatar.png'), png)
+    expect(Buffer.from(await (await avatar('default')).arrayBuffer())).toEqual(png)
+    rmSync(join(s.state, 'assets'), { recursive: true, force: true })
+    expect((await avatar('default')).status, 'no avatar').toBe(404)
+    mkdirSync(join(s.state, 'profiles', 'bare'), { recursive: true })
+    expect((await avatar('bare')).status, 'no avatar').toBe(404)
+    // Names outside the profiles directory, and links leaving the profile's assets, are refused.
+    const outside = mkdtempSync(join(tmpdir(), 'talaria-avatar-outside-'))
+    writeFileSync(join(outside, 'avatar.png'), png)
+    mkdirSync(join(outside, 'assets'))
+    writeFileSync(join(outside, 'assets', 'avatar.png'), png)
+    symlinkSync(outside, join(s.state, 'profiles', 'escape'))
+    for (const name of ['', '../escape', '..', 'Bad Name', 'escape']) expect((await avatar(name)).status, JSON.stringify(name)).toBe(400)
+    mkdirSync(join(s.state, 'profiles', 'linked', 'assets'), { recursive: true })
+    symlinkSync(join(outside, 'avatar.png'), join(s.state, 'profiles', 'linked', 'assets', 'avatar.png'))
+    expect((await avatar('linked')).status, 'a symlinked avatar file').toBe(404)
+    mkdirSync(join(s.state, 'profiles', 'linkdir'), { recursive: true })
+    symlinkSync(outside, join(s.state, 'profiles', 'linkdir', 'assets'))
+    expect((await avatar('linkdir')).status, 'a symlinked assets directory').toBe(404)
+    // An avatar over 2 MB is refused before any bytes; exactly 2 MB is served.
+    writeFileSync(join(assets, 'avatar.webp'), Buffer.alloc(2 * 1024 * 1024 + 1))
+    expect((await avatar('pix')).status).toBe(403)
+    writeFileSync(join(assets, 'avatar.webp'), Buffer.alloc(2 * 1024 * 1024))
+    expect((await avatar('pix')).status).toBe(200)
+    // Each listed row carries the URL exactly when the Agent saw an avatar.
+    const restore = sidecar.responderFor('profiles.list')
+    const row = (name: string, has_avatar: boolean | undefined) => ({ name, path: join(s.state, 'profiles', name), is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0, ...(has_avatar === undefined ? {} : { has_avatar }) })
+    sidecar.respond('profiles.list', () => ({ profiles: [{ ...row('default', false), path: s.state, is_default: true }, row('pix', true), row('bare', undefined), row('a-b_c', true)] }))
+    s.deps.profiles.invalidate()
+    try {
+      const rows = (await json(await s.get('/api/profiles'))).profiles as Json[]
+      expect(rows.map((p) => [p.name, p.avatar_url])).toEqual([['default', undefined], ['pix', './api/profile/avatar?name=pix'], ['bare', undefined], ['a-b_c', './api/profile/avatar?name=a-b_c']])
+    } finally {
+      sidecar.respond('profiles.list', restore)
+      s.deps.profiles.invalidate()
+      rmSync(join(s.state, 'profiles', 'escape'))
+      rmSync(outside, { recursive: true, force: true })
+      for (const name of ['pix', 'bare', 'linked', 'linkdir']) rmSync(join(s.state, 'profiles', name), { recursive: true, force: true })
+    }
+  })
+
+  it('TAL-2176: in isolated profile mode only the pinned profile\'s avatar is read, from its own home', () => {
+    const home = mkdtempSync(join(tmpdir(), 'talaria-avatar-isolated-'))
+    mkdirSync(join(home, 'assets'))
+    writeFileSync(join(home, 'assets', 'avatar.png'), 'pinned')
+    mkdirSync(join(home, 'profiles', 'other', 'assets'), { recursive: true })
+    writeFileSync(join(home, 'profiles', 'other', 'assets', 'avatar.png'), 'other')
+    const service = new ProfileService({ sidecar: () => null, baseHome: home, isolatedProfileMode: () => true, isolatedProfileName: () => 'scout' } as never)
+    try {
+      expect(service.avatar('scout')).toEqual({ type: 'image/png', bytes: Buffer.from('pinned') })
+      for (const name of ['other', 'default']) expect(() => service.avatar(name)).toThrow(expect.objectContaining({ status: 403 }))
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
   })
 
   it('profile update validates its fields, writes through profiles.set_meta, and waits behind a delete of the same profile (TAL-2093)', async () => {

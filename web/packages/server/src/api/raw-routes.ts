@@ -37,6 +37,7 @@ import { handleTranscribeStream } from './transcribe-stream.js'
 import { FEEDBACK_UPLOAD_MAX_BYTES, stageFeedbackAttachment } from '../feedback.js'
 import { MeshyError } from '../tools/meshy.js'
 import { dashboardScope } from '../tools/dashboard-plugins.js'
+import { ProfileError } from '../profiles/profiles.js'
 
 const SANDBOX_CSP = 'sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox'
 const DANGEROUS_TYPES = new Set(['text/html', 'application/xhtml+xml', 'image/svg+xml'])
@@ -51,6 +52,7 @@ export const RAW_GET_ROUTES: Record<string, RawHandler> = {
   '/api/escape/file/raw': handleEscapeFileRaw,
   '/api/media': handleMedia,
   '/api/meshy/asset': handleMeshyAsset,
+  '/api/profile/avatar': handleProfileAvatar,
   '/api/folder/download': handleFolderDownload,
   '/api/session/export': handleSessionExport,
   '/api/transcribe/stream': handleTranscribeStream,
@@ -272,6 +274,17 @@ async function handleMeshyAsset(ctx: RequestContext): Promise<void> {
     if (error instanceof MeshyError) throw new HttpError(error.status, error.message)
     throw error
   } finally { ctx.res.off('close', close) }
+}
+
+/** TAL-2176: a profile's own avatar image for its Settings › Profiles block; owner only through `OPERATOR_ONLY_PATHS`. */
+async function handleProfileAvatar(ctx: RequestContext): Promise<void> {
+  let avatar: { type: string; bytes: Buffer } | null
+  try { avatar = ctx.deps.profiles.avatar((ctx.query.get('name') ?? '').trim()) } catch (error) {
+    if (error instanceof ProfileError) throw new HttpError(error.status, error.message)
+    throw error
+  }
+  if (!avatar) throw new HttpError(404, 'Profile has no avatar')
+  await ctx.send({ status: 200, headers: { 'Content-Type': avatar.type, 'Cache-Control': 'private, max-age=300', 'Content-Security-Policy': "default-src 'none'; sandbox" }, body: avatar.bytes })
 }
 
 /** Python `_folder_zip_limits`: `HERMES_WEBUI_FOLDER_ZIP_MAX_MB` / `_MAX_FILES` are honoured as given (ZIP64 covers large archives). */
