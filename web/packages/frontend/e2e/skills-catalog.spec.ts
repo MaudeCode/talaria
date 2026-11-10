@@ -53,3 +53,38 @@ test('project skill content is read-only while its catalog row remains visible',
   await expect(page.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Delete', exact: true })).toHaveCount(0)
 })
+
+const recorded = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../contracts/fixtures/sidecar/skills.json'), 'utf8')) as { 'skills.list': { result: { skills: { name: string; description: string; category: string }[] } }[] }
+const longCategories = recorded['skills.list'][0]!.result.skills
+
+// TAL-2088: a long category never squeezes the name. A phone shows the category on the description line; wider rows keep the chip.
+test('skill names stay readable beside long categories', async ({ page }, testInfo) => {
+  await page.route('**/api/skills', (route) => route.fulfill({ json: { skills: longCategories } }))
+  await page.route('**/api/skills/usage', (route) => route.fulfill({ json: { usage: {} } }))
+  await page.goto('/skills')
+  await settle(page)
+  const row = (skill: { name: string }) => page.locator('#skillsList > li').filter({ has: page.getByRole('switch', { name: skill.name, exact: true }) })
+  // Each name's box fits at least its first 12 characters, measured in the name's own font.
+  const squeezed: string[] = []
+  for (const skill of longCategories) {
+    const fits = await row(skill).getByText(skill.name, { exact: true }).evaluate((el, text) => {
+      const probe = document.body.appendChild(Object.assign(document.createElement('span'), { textContent: text }))
+      Object.assign(probe.style, { font: getComputedStyle(el).font, position: 'absolute', whiteSpace: 'pre' })
+      const needed = probe.getBoundingClientRect().width
+      probe.remove()
+      return el.clientWidth >= Math.floor(needed)
+    }, skill.name.slice(0, 12))
+    if (!fits) squeezed.push(skill.name)
+  }
+  expect(squeezed, 'skill names cut short of 12 characters').toEqual([])
+  for (const skill of longCategories) {
+    const chip = row(skill).getByText(skill.category, { exact: true })
+    if (testInfo.project.name === 'mobile') {
+      await expect(chip).toBeHidden()
+      expect(await row(skill).getByText(skill.description).innerText()).toBe(`${skill.category} · ${skill.description}`)
+    } else {
+      await expect(chip).toBeVisible()
+    }
+  }
+  await page.screenshot({ path: testInfo.outputPath(`skills-${testInfo.project.name}.png`) })
+})

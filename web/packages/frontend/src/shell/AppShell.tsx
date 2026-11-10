@@ -72,6 +72,9 @@ export const MAIN_VIEW = 'main-view flex flex-1 min-h-0 min-w-0 flex-col bg-bg'
 export interface HubHeadSlots { help: HTMLElement | null; actions: HTMLElement | null }
 export const HubHeadSlotsContext = createContext<HubHeadSlots | null>(null)
 
+/** TAL-2088: the one horizontal gutter a hub page's header, toolbar and body share, so all three start at one edge. */
+const HUB_GUTTER = 'px-8 max-[769px]:px-3.5'
+
 /** Hub page frame (skills, memory, tasks, insights). Inside a Settings section (profiles, spaces, logs) that section's heading is the header. */
 export function HubPage({ title, help, actions, toolbar, children, id, toolbarClassName }: { title: string; help?: ReactNode; actions?: ReactNode; toolbar?: ReactNode; children: ReactNode; id?: string; toolbarClassName?: string }) {
   const slots = useContext(HubHeadSlotsContext)
@@ -85,15 +88,15 @@ export function HubPage({ title, help, actions, toolbar, children, id, toolbarCl
   )
   return (
     <div className={MAIN_VIEW + ' hub-page active'} id={id}>
-      <header className="main-view-header relative z-10 flex items-center justify-start gap-3 min-h-14 px-8 py-3 border-b border-border shrink-0 bg-bg max-[769px]:px-3.5 max-[769px]:py-2.5 max-[769px]:min-h-12">
+      <header className={cn('main-view-header relative z-10 flex items-center justify-start gap-3 min-h-14 py-3 border-b border-border shrink-0 bg-bg max-[769px]:py-2.5 max-[769px]:min-h-12', HUB_GUTTER)}>
         <div className="flex flex-1 min-w-0 items-center">
           <h1 className="main-view-title min-w-0 text-[20px] font-semibold tracking-(--heading-tracking) text-text leading-[1.3] overflow-hidden text-ellipsis whitespace-nowrap text-left max-[769px]:text-[17px]">{title}</h1>
           {help && <HelpTip label={m.field_help_about({ label: title })} className="shrink-0">{help}</HelpTip>}
         </div>
         {actions && <div className="main-view-actions flex items-center gap-1.5 shrink-0 ml-auto">{actions}</div>}
       </header>
-      {toolbar && <div className={cn("hub-toolbar flex flex-wrap items-center gap-x-3.5 gap-y-2 px-7 py-2.5 border-b border-border max-[769px]:px-3.5 max-[769px]:py-2 ", toolbarClassName)}>{toolbar}</div>}
-      <div className="main-view-body flex-1 min-h-0 overflow-y-auto pt-6 px-8 pb-12 max-[769px]:pt-4 max-[769px]:px-3.5 max-[769px]:pb-8">{children}</div>
+      {toolbar && <div className={cn('hub-toolbar flex flex-wrap items-center gap-x-3.5 gap-y-2 py-2.5 border-b border-border max-[769px]:py-2', HUB_GUTTER, toolbarClassName)}>{toolbar}</div>}
+      <div className={cn('main-view-body flex-1 min-h-0 overflow-y-auto pt-6 pb-12 max-[769px]:pt-4 max-[769px]:pb-8', HUB_GUTTER)}>{children}</div>
     </div>
   )
 }

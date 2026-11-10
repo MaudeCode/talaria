@@ -2,7 +2,7 @@
    fonts come from the token vocabulary in src/theme/skins.ts; no rule mentions a skin or a theme. */
 @layer app{
 .cron-list{flex:1;overflow-y:auto;padding:8px}
-.skills-list{flex:1;overflow-y:auto;padding:0 8px 8px}
+.skills-list{flex:1;overflow-y:auto;padding:0 0 8px}
 .kanban-board{display:flex;gap:24px;min-height:100%;overflow-x:auto;padding-bottom:8px}
 .kanban-column{display:flex;flex-direction:column;min-width:260px;max-width:320px;flex:1}
 .kanban-card{border:1px solid var(--border);border-radius:var(--r-md);padding:10px;cursor:pointer}
