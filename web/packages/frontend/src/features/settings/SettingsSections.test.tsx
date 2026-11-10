@@ -3,6 +3,7 @@ import type { ReactElement } from 'react'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { createMemoryHistory, createRootRoute, createRouter, RouterProvider } from '@tanstack/react-router'
 
 const titleTask = { task: 'title_generation', label: 'Title generation', description: 'session titles', provider: 'auto', model: '', is_auto: true, value_label: 'Claude Sonnet 4.6', provider_label: 'Anthropic', selected_option_id: null, in_catalog: true, inherit_from: null, reasoning_effort: '' }
 // Every other endpoint stays pending, so a page's other lists sit in their loading state.
@@ -52,7 +53,9 @@ import { ToolsSection } from './ToolsSection'
 
 const renderSection = (ui: ReactElement, canManage = true, qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })) => {
   const bootstrap = { ...DEFAULT_BOOTSTRAP, auth: { ...DEFAULT_BOOTSTRAP.auth, can_manage_server: canManage } }
-  return render(<QueryClientProvider client={qc}><BootstrapContext.Provider value={bootstrap}>{ui}</BootstrapContext.Provider></QueryClientProvider>)
+  const page = <QueryClientProvider client={qc}><BootstrapContext.Provider value={bootstrap}>{ui}</BootstrapContext.Provider></QueryClientProvider>
+  // Providers' pages navigate (TAL-2135, TAL-2136); the router renders the page synchronously from its one root route.
+  return render(<RouterProvider router={createRouter({ routeTree: createRootRoute({ component: () => page }), history: createMemoryHistory({ initialEntries: ['/'] }) })} />)
 }
 
 /**
@@ -69,7 +72,7 @@ const PLACEMENT: Record<string, SettingsSectionId> = {
   show_previous_messaging_sessions: 'navigation', hidden_tabs: 'navigation', show_titlebar_profile: 'navigation', show_sidebar_feedback: 'navigation', show_quota_chip: 'chat',
   workspace_panel_open: 'navigation', workspace_todos_tab: 'navigation', new_chat_on_workspace_switch: 'navigation',
   terminal_auto_expand_on_output: 'navigation', screen_reader_mode: 'navigation',
-  default_model: 'models', '#settingsModel': 'models', '[data-group="auxiliary"]': 'models', '[data-group="quota-thresholds"]': 'providers',
+  default_model: 'models', '#settingsModel': 'models', '[data-group="auxiliary"]': 'models', '[data-group="quota-remaining"]': 'providers',
   notifications_enabled: 'notifications', sound_enabled: 'notifications', '#completionSound': 'notifications',
   agent_approvals: 'tools',
   sync_to_insights: 'access', api_redact_enabled: 'access', confirm_external_links: 'access', trusted_link_hosts: 'access', auth_disabled_acknowledged: 'access',
@@ -85,19 +88,21 @@ it('edits every retired Preferences, Conversation, System and Models & Providers
   const settings = Object.fromEntries(Object.keys(PLACEMENT).filter((key) => !isControl(key)).map((key) => [key, false]))
   Object.assign(settings, { provider_quota_thresholds: {}, hidden_tabs: [], trusted_link_hosts: [], group_discussion_max_rounds: 3, group_discussion_max_messages: 10, auth_enabled: false })
   const found: Record<string, SettingsSectionId[]> = {}
-  for (const section of SettingsSectionSchema.options) {
+  // TAL-2136: the quota thresholds sit on Providers › Quota alerts.
+  for (const [section, page] of [...SettingsSectionSchema.options.map((s) => [s, undefined] as const), ['providers', 'quota-alerts'] as const]) {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     qc.setQueryData(keys.settings, settings)
     reads.clear()
-    const view = renderSection(<SettingsSection section={section} />, true, qc)
+    const view = renderSection(<SettingsSection section={section} page={page} />, true, qc)
     await waitFor(() => expect(view.container.querySelector(`[data-section="${section}"]`)).not.toBeNull())
+    if (page) await waitFor(() => expect(view.container.querySelector('[data-group]')).not.toBeNull())
     for (const control of CONTROLS) if (view.container.querySelector(control)) reads.add(control)
     for (const key of reads) if (key in PLACEMENT) (found[key] ??= []).push(section)
     view.unmount()
   }
   vi.unstubAllGlobals()
   expect(found).toEqual(Object.fromEntries(Object.entries(PLACEMENT).map(([key, section]) => [key, [section]])))
-})
+}, 30_000)
 
 /** TAL-2075, TAL-2076: every Chat and Navigation row by its label, in page order, with the `data-group` it sits in. */
 const GROUPS: Record<'chat' | 'navigation', [string, string][]> = {

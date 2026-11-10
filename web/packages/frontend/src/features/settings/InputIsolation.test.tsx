@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { createMemoryHistory, createRootRoute, createRouter, RouterProvider } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { BootstrapContext, loadBootstrap } from '../../app/bootstrap'
 import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
@@ -85,7 +86,10 @@ function mount(children: ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   clients.push(qc)
   const bootstrap = { ...DEFAULT_BOOTSTRAP, auth: { ...DEFAULT_BOOTSTRAP.auth, can_manage_server: true, passkey_feature_flag: true } }
-  return render(<QueryClientProvider client={qc}><BootstrapContext.Provider value={bootstrap}>{children}</BootstrapContext.Provider></QueryClientProvider>)
+  const ui = <QueryClientProvider client={qc}><BootstrapContext.Provider value={bootstrap}>{children}</BootstrapContext.Provider></QueryClientProvider>
+  // Providers navigates after a key save (TAL-2136); the router renders the page synchronously from its one root route.
+  const router = createRouter({ routeTree: createRootRoute({ component: () => ui }), history: createMemoryHistory({ initialEntries: ['/'] }) })
+  return render(<RouterProvider router={router} />)
 }
 beforeEach(() => { vi.clearAllMocks(); configureClient({ transport: unexpectedRequest }) })
 afterEach(() => {
@@ -177,7 +181,7 @@ describe('input render isolation (TAL-1405)', () => {
     const row = document.querySelector<HTMLElement>('[data-provider="one"]')!
     await userEvent.click(within(row).getByRole('button', { name: 'Set key' }))
     await userEvent.type(screen.getByLabelText('one API key'), ' synthetic-key ')
-    await userEvent.click(within(row).getByRole('button', { name: 'Save' }))
+    await userEvent.click(within(document.querySelector<HTMLElement>('[data-provider-setup="one"]')!).getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(post).toHaveBeenCalledWith('api/providers', { provider: 'one', api_key: 'synthetic-key' }, expect.anything(), { retries: 0 }))
     await waitFor(() => expect(screen.queryByLabelText('one API key')).toBeNull())
     await userEvent.click(within(row).getByRole('button', { name: 'Set key' }))

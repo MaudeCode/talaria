@@ -257,13 +257,16 @@ export const KANBAN_PINS_BY_PROFILE_KEY = 'kanban_pinned_boards_by_profile'
 export const MODEL_FAVORITES_BY_PROFILE_KEY = 'model_favorites_by_profile'
 const sameFavorite = (a: ModelFavorite, b: ModelFavorite): boolean => a.provider_id === b.provider_id && a.model === b.model
 
-/** `patch`'s in-range integers over `base`; critical never sits below warning (remaining) or under it (burn rate). */
+/**
+ * `patch`'s numbers over `base`, each rounded and clamped to its range (TAL-2136); anything but a finite number keeps `base`'s.
+ * Critical never sits below warning (remaining) or under it (burn rate).
+ */
 export function mergeQuotaThresholds(base: QuotaThresholds, patch: unknown): QuotaThresholds {
   const next = { ...base }
   if (typeof patch === 'object' && patch !== null && !Array.isArray(patch)) {
     for (const [key, [min, max]] of Object.entries(QUOTA_THRESHOLD_RANGES) as [keyof QuotaThresholds, [number, number]][]) {
       const value = (patch as Settings)[key]
-      if (typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max) next[key] = value
+      if (typeof value === 'number' && Number.isFinite(value)) next[key] = Math.min(max, Math.max(min, Math.round(value)))
     }
   }
   next.critical_remaining_percent = Math.min(next.critical_remaining_percent, next.warning_remaining_percent)

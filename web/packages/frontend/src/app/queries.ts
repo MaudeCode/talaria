@@ -12,7 +12,7 @@ import { showErrorToast } from '../features/toast/errorToast'
 import { showToast } from '../features/toast/toast'
 import { m } from '../paraglide/messages.js'
 
-export { useSettingsQuery, useSetting, useSaveSettings } from './settings'
+export { useSettingsQuery, useSetting, useSaveSettings, partialSetting } from './settings'
 
 const toastError = (e: unknown) => showErrorToast(e)
 interface DefaultModel { model: string; provider?: string | null; advanced?: { service_tier: string } }

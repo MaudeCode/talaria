@@ -30,15 +30,17 @@ test('adds a self-hosted provider, refreshes its models, and picks its model', a
   // TAL-603, TAL-2135: Your providers words the server's key-source kind and marks the default provider.
   await expect(page.locator('[data-provider="anthropic"]')).toContainText('Key from .env')
   await expect(page.locator('[data-provider="anthropic"]').getByText('Default', { exact: true })).toBeVisible()
-  await expect(row).toContainText('Not configured')
+  // TAL-2136: a provider to add is one line with the one control its setup names; it opens the form in the row under it.
+  await expect(row.getByRole('button')).toHaveAccessibleName('Set up')
   await page.locator('[data-section="providers"]').screenshot({ path: testInfo.outputPath('providers-badges.png') })
   await row.getByRole('button', { name: 'Set up' }).click()
-  await row.getByRole('textbox', { name: 'Base URL' }).fill(URL)
-  await row.getByRole('textbox', { name: 'Default model' }).fill(entry.id)
-  await row.screenshot({ path: testInfo.outputPath('self-hosted-form.png') })
+  const form = page.locator('[data-provider-setup="lmstudio"]')
+  await form.getByRole('textbox', { name: 'Base URL' }).fill(URL)
+  await form.getByRole('textbox', { name: 'Default model' }).fill(entry.id)
+  await form.screenshot({ path: testInfo.outputPath('self-hosted-form.png') })
 
   const saved = page.waitForRequest((r) => r.url().endsWith('/api/providers/self-hosted'))
-  await row.getByRole('button', { name: 'Save' }).click()
+  await form.getByRole('button', { name: 'Save' }).click()
   expect((await saved).postDataJSON()).toEqual({ provider: 'lmstudio', base_url: URL, model: entry.id })
   // The configured endpoint joins Your providers as the default, and opens its own page.
   const block = page.locator('[data-section="providers-configured"] [data-provider="lmstudio"]')

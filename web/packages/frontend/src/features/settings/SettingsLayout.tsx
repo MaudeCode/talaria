@@ -1,5 +1,5 @@
 import { useState, type KeyboardEvent, type ReactNode } from 'react'
-import { Link, useNavigate, useParams } from '@tanstack/react-router'
+import { Link, useMatchRoute, useNavigate, useParams } from '@tanstack/react-router'
 import { MAIN_VIEW } from '../../shell/AppShell'
 import { PanelHead } from '../../shell/PanelHead'
 import { m } from '../../paraglide/messages.js'
@@ -51,8 +51,9 @@ const resultId = (index: number) => `settingsSearchResult-${index}`
 export function SectionMenu() {
   useLocale()
   const params: { section?: string; providerId?: string } = useParams({ strict: false })
-  // A provider's own page (TAL-2135) sits under Providers.
-  const current = params.section ?? (params.providerId === undefined ? undefined : 'providers')
+  // A provider's own page (TAL-2135) and Quota alerts (TAL-2136) sit under Providers.
+  const underProviders = useMatchRoute()({ to: '/settings/providers/quota-alerts' }) !== false || params.providerId !== undefined
+  const current = params.section ?? (underProviders ? 'providers' : undefined)
   const profile = useActiveProfileName()
   const navigate = useNavigate()
   // TAL-2086: device-local UI state over the rows' own wording; while it has text, the matches replace the section list.
@@ -62,7 +63,8 @@ export function SectionMenu() {
   const choose = (entry: SettingsIndexEntry) => {
     setQuery('')
     closeMobileSidebar()
-    void navigate({ to: '/settings/$section', params: { section: entry.section }, search: entry.tab ? { tab: entry.tab } : {}, hash: entry.id })
+    if (entry.page === 'quota-alerts') void navigate({ to: '/settings/providers/quota-alerts', hash: entry.id })
+    else void navigate({ to: '/settings/$section', params: { section: entry.section }, search: entry.tab ? { tab: entry.tab } : {}, hash: entry.id })
   }
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Escape' && query) { e.preventDefault(); e.stopPropagation(); setQuery(''); return }

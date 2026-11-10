@@ -55,14 +55,18 @@ export function SettingHeadline({ monogram, title, detail, action }: { monogram:
   )
 }
 
-/** TAL-2081: a row that is itself the control: an external page in a new tab (`href`, ending in §12's Open symbol) or a dialog (`onClick`, a chevron). */
-export function SettingLink({ label, icon: Icon, ...target }: { label: string; icon?: LucideIcon } & ({ href: string } | { onClick: () => void })) {
+/**
+ * TAL-2081: a row that is itself the control: an external page in a new tab (`href`, ending in §12's Open symbol) or a dialog
+ * or page (`onClick`, a chevron). `detail` (TAL-2136) is muted text before the chevron, such as the value the page holds.
+ */
+export function SettingLink({ label, icon: Icon, detail, ...target }: { label: string; icon?: LucideIcon; detail?: string } & ({ href: string } | { onClick: () => void })) {
   const className = 'flex min-h-11 w-full items-center justify-between gap-3 py-2 text-left text-sm text-text transition-colors hover:text-accent-text focus-visible:outline-2 focus-visible:outline-accent'
   const icon = { size: 14, 'aria-hidden': true, className: 'shrink-0 text-muted' } as const
   const text = Icon ? <span className="flex min-w-0 items-center gap-2.5"><RowIcon icon={Icon} />{label}</span> : label
+  const end = (symbol: ReactNode) => detail ? <span className="flex min-w-0 items-center gap-3"><span className="truncate text-xs text-muted">{detail}</span>{symbol}</span> : symbol
   return 'href' in target
-    ? <a className={className} href={target.href} target="_blank" rel="noopener noreferrer">{text}<ArrowUpRight {...icon} /></a>
-    : <button type="button" className={className} onClick={target.onClick}>{text}<ChevronRight {...icon} /></button>
+    ? <a className={className} href={target.href} target="_blank" rel="noopener noreferrer">{text}{end(<ArrowUpRight {...icon} />)}</a>
+    : <button type="button" className={className} onClick={target.onClick}>{text}{end(<ChevronRight {...icon} />)}</button>
 }
 
 export interface SettingsStat { id: string; label: string; value: string; mode?: string | undefined; title?: string | undefined; tone?: FigureTone | undefined }

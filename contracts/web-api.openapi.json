@@ -93984,6 +93984,17 @@
                           "device_login": {
                             "type": "boolean",
                             "description": "Offer the existing device-code sign-in for this provider."
+                          },
+                          "setup": {
+                            "enum": [
+                              "key",
+                              "oauth",
+                              "self_hosted",
+                              "plugin",
+                              "cli"
+                            ],
+                            "type": "string",
+                            "description": "TAL-2136, `/api/providers`: the one way to set this provider up; `cli` when only the Agent CLI can."
                           }
                         },
                         "required": [

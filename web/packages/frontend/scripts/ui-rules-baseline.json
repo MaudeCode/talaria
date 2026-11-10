@@ -17,8 +17,7 @@
     },
     "settings-row": {
       "src/features/settings/PluginsSection.tsx": 1,
-      "src/features/settings/ProvidersSection.tsx": 3,
-      "src/features/settings/QuotaThresholds.tsx": 1
+      "src/features/settings/ProvidersSection.tsx": 3
     },
     "success-text": {
       "src/features/auth/LoginPage.tsx": 1,

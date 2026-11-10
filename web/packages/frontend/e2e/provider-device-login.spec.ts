@@ -18,20 +18,24 @@ test('provider device sign-in is usable across phone layouts and reconciles appr
   await page.route('**/api/onboarding/oauth/cancel', (route) => route.fulfill({ json: { ok: true, status: 'cancelled', provider: 'copilot', flow_id: 'device-flow' } }))
   await page.goto('/settings/providers')
   await settle(page)
-  const row = page.locator('[data-provider="copilot"]')
+  const line = page.locator('[data-provider="copilot"]')
+  // TAL-2136: Sign in opens the device sign-in in the row under the provider.
+  const row = page.locator('[data-provider-setup="copilot"]')
   const viewports = testInfo.project.name === 'desktop'
     ? [[1280, 800], [382, 580], [594, 368], [669, 867], [951, 585], [385, 571]]
     : [[390, 844]]
   const capture = async (state: string) => {
     for (const [width, height] of viewports) {
       await page.setViewportSize({ width: width!, height: height! })
-      await row.scrollIntoViewIfNeeded()
+      await line.scrollIntoViewIfNeeded()
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
       await page.screenshot({ path: testInfo.outputPath(`${state}-${width}-${height}.png`) })
     }
   }
   await capture('before-sign-in')
-  await expect(page.locator('[data-provider="no-hooks"]').getByRole('button', { name: /Sign in/ })).toHaveCount(0)
+  await expect(page.locator('[data-provider="no-hooks"]').getByRole('button')).toHaveCount(0)
+  await expect(page.locator('[data-provider="no-hooks"]')).toContainText('Agent CLI only')
+  await line.getByRole('button', { name: 'Sign in', exact: true }).click()
   await expect(row.getByRole('button', { name: 'Sign in with GitHub Copilot' })).toBeVisible()
   await row.getByRole('button', { name: 'Sign in with GitHub Copilot' }).click()
   await expect(row.getByText('TEST-1827')).toBeVisible()

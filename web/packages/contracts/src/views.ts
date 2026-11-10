@@ -746,7 +746,7 @@ export const TranscribeResponseSchema = z.looseObject({ ok: z.literal(true), tra
 
 // ── settings, profiles, models, providers ───────────────────────────────
 
-/** TAL-411: the request profile's quota urgency thresholds. A save patches valid fields and clamps critical to at most warning. */
+/** TAL-411: the request profile's quota urgency thresholds. A save patches the fields it sends, each rounded and clamped to its range (TAL-2136), and clamps critical to at most warning. */
 export const QuotaThresholdsSchema = z.object({
   warning_remaining_percent: z.number().int().min(1).max(99), critical_remaining_percent: z.number().int().min(0).max(99), pace_tolerance_percent: z.number().int().min(0).max(25),
   pace_warning_burn_rate_percent: z.number().int().min(100).max(300), pace_critical_burn_rate_percent: z.number().int().min(100).max(400), pace_minimum_elapsed_hours: z.number().int().min(0).max(72),
@@ -870,6 +870,7 @@ export const ProviderSchema = z.looseObject({
   is_custom: z.boolean().optional(), key_source: z.string().optional(), base_url: NullableString.optional(), auth_error: NullableString.optional(), env_var: NullableString.optional(), models: z.array(ModelEntrySchema).optional(), models_total: z.number().optional(),
   nous_account: NousAccountSchema.nullable().optional(), nous_account_error: NullableString.optional(),
   is_active: z.boolean().optional(), key_source_kind: KeySourceKindSchema.nullable().optional(), removable: z.boolean().optional(), install_hint: z.string().optional(), device_login: z.boolean().optional().describe('Offer the existing device-code sign-in for this provider.'),
+  setup: z.enum(['key', 'oauth', 'self_hosted', 'plugin', 'cli']).optional().describe('TAL-2136, `/api/providers`: the one way to set this provider up; `cli` when only the Agent CLI can.'),
 })
 /** TAL-2127: one Settings › Providers group; `provider_ids` keeps the server's row order and its length is the header count. */
 export const ProviderGroupSchema = z.looseObject({ id: z.enum(['configured', 'available']), provider_ids: z.array(z.string()) })

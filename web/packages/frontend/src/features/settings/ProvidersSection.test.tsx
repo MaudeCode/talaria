@@ -41,6 +41,7 @@ import * as api from '../../api/endpoints'
 import { post } from '../../api/client'
 import { ProvidersPage, ProvidersSection } from './ProvidersSection'
 import { ProviderDetail } from './ProviderDetail'
+import { QuotaAlertsPage } from './QuotaAlerts'
 
 const renderSection = (ui = <ProvidersSection />) => {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
@@ -52,7 +53,8 @@ async function renderAt(path = '/settings/providers') {
   const root = createRootRoute({ component: () => <QueryClientProvider client={qc}><Outlet /></QueryClientProvider> })
   const list = createRoute({ getParentRoute: () => root, path: '/settings/$section', component: () => <ProvidersPage /> })
   const detail = createRoute({ getParentRoute: () => root, path: '/settings/providers/$providerId', component: function Detail() { return <ProviderDetail id={useParams({ strict: false }).providerId ?? ''} /> } })
-  const router = createRouter({ routeTree: root.addChildren([list, detail]), history: createMemoryHistory({ initialEntries: [path] }) })
+  const alerts = createRoute({ getParentRoute: () => root, path: '/settings/providers/quota-alerts', component: QuotaAlertsPage })
+  const router = createRouter({ routeTree: root.addChildren([list, alerts, detail]), history: createMemoryHistory({ initialEntries: [path] }) })
   await router.load()
   render(<RouterProvider router={router} />)
   return router
@@ -62,6 +64,8 @@ const quotasWith = (sources: Record<string, unknown>[]) => ProviderQuotasSchema.
 const anthropic = { id: 'anthropic', display_name: 'Anthropic', has_key: true, configured: true, is_active: true, key_source: 'env_file', key_source_kind: 'env', removable: true, configurable: true, is_oauth: false }
 const openrouter = { id: 'openrouter', display_name: 'OpenRouter', has_key: true, configured: true, key_source: 'env_file', key_source_kind: 'env' }
 const block = (id: string) => document.querySelector<HTMLElement>(`[data-provider="${id}"]`)!
+/** The row under a provider to add that holds its open form (TAL-2136). */
+const setupRow = (id: string) => found(`[data-provider-setup="${id}"]`)
 const group = (id: string) => document.querySelector<HTMLElement>(`[data-group="${id}"]`)
 /** The element once it renders. */
 const found = (selector: string) => waitFor(() => { const el = document.querySelector<HTMLElement>(selector); expect(el, selector).not.toBeNull(); return el! })
@@ -72,7 +76,8 @@ describe('ProvidersSection', () => {
   it('renders a recovery notice and never calls unknown providers unconfigured', async () => {
     providersResponse.current = { availability: { status: 'unavailable', authoritative: false, generation: 'test', unavailable_reason: 'Provider data is temporarily unavailable. Try again after Agent recovery finishes.' }, providers: [{ id: 'openai-codex', display_name: 'OpenAI Codex', has_key: false }], active_provider: 'openai-codex' }
     renderSection()
-    expect(await screen.findByText('Temporarily unavailable')).toBeInTheDocument()
+    expect(await screen.findByText('OpenAI Codex')).toBeInTheDocument()
+    expect(screen.queryByText('Not configured')).toBeNull()
     expect(screen.getByRole('status')).toHaveTextContent('Agent recovery')
     expect(screen.queryByText('Not configured')).toBeNull()
   })
@@ -165,7 +170,7 @@ describe('ProvidersSection', () => {
     expect(ids('configured')).toEqual(['anthropic', 'zai'])
     expect(ids('available')).toEqual(['openrouter', 'openai'])
     expect(header('configured')).toHaveTextContent(/^Your providers2$/)
-    expect(header('available')).toHaveTextContent(/^Available2$/)
+    expect(header('available')).toHaveTextContent(/^Add a provider2$/)
     const filter = screen.getByRole('searchbox', { name: 'Filter providers' })
     await userEvent.type(filter, 'OPEN')
     await waitFor(() => expect(ids('available')).toEqual(['openai', 'openrouter']))
@@ -174,7 +179,8 @@ describe('ProvidersSection', () => {
     await userEvent.clear(filter)
     await userEvent.type(filter, 'zzz')
     expect(await screen.findByText('No providers match')).toBeInTheDocument()
-    expect(section('available')).toBeNull()
+    expect(ids('available')).toEqual([])
+    expect(header('available')).toHaveTextContent(/^Add a provider0$/)
     await userEvent.clear(filter)
     await waitFor(() => expect(ids('available')).toEqual(['openrouter', 'openai']))
   })
@@ -184,8 +190,9 @@ describe('ProvidersSection', () => {
     vi.mocked(api.onboardingOauthStart).mockResolvedValue({ ok: true, provider: 'device-test', flow_id: 'flow-test', status: 'pending', user_code: 'TEST-1827', verification_url: 'https://device.example.test/login', expires_in: 90, interval: 1 })
     vi.mocked(api.onboardingOauthPoll).mockResolvedValue({ ok: true, provider: 'device-test', flow_id: 'flow-test', status: 'approved' })
     renderSection()
-    const row = (await screen.findByText('Device Test')).closest<HTMLElement>('[data-provider="device-test"]')!
-    expect(within(screen.getByText('No Hooks').closest<HTMLElement>('[data-provider="no-hooks"]')!).queryByRole('button', { name: /Sign in/ })).toBeNull()
+    await userEvent.click(within(await found('[data-provider="device-test"]')).getByRole('button', { name: 'Sign in' }))
+    expect(within(block('no-hooks')).queryByRole('button')).toBeNull()
+    const row = await setupRow('device-test')
     fireEvent.contextMenu(within(row).getByRole('button', { name: 'Sign in with Device Test' }), { clientX: 10, clientY: 10 })
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Sign in with Device Test' }))
     expect(await within(row).findByText('TEST-1827')).toBeInTheDocument()
@@ -210,7 +217,8 @@ describe('ProvidersSection', () => {
     expect(within(dialog).getByText('github-copilot · community')).toBeInTheDocument()
     await userEvent.click(within(dialog).getByRole('button', { name: 'Install disabled' }))
     await waitFor(() => expect(api.installPlugin).toHaveBeenLastCalledWith('github-copilot', 'preview'))
-    expect(await screen.findByText('This provider is not set up yet.')).toBeInTheDocument()
+    // Installed, the provider offers the next step (an older server's derivation: a key) and no install.
+    expect(await within(block('copilot')).findByRole('button', { name: 'Set key' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Install plugin' })).toBeNull()
   })
 
@@ -225,7 +233,7 @@ describe('ProvidersSection', () => {
     expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(within(card).getAllByRole('button', { hidden: true }).map((button) => button.getAttribute('aria-label') ?? button.textContent))
     await userEvent.click(within(menu).getByRole('menuitem', { name: 'Install plugin' }))
     expect(api.installPlugin).toHaveBeenCalledWith('github-copilot', undefined)
-    expect(await within(card).findByRole('alert')).toHaveTextContent('Scan refused this plugin')
+    expect(await within(await setupRow('copilot')).findByRole('alert')).toHaveTextContent('Scan refused this plugin')
   })
 
   it('sets up a self-hosted provider from its row, which then joins Your providers (TAL-570)', async () => {
@@ -238,23 +246,17 @@ describe('ProvidersSection', () => {
     const ollama = (await screen.findByText('Ollama')).closest<HTMLElement>('[data-provider="ollama"]')!
     expect(within(ollama).queryByRole('button', { name: 'Set key' })).toBeNull()
     await userEvent.click(within(ollama).getByRole('button', { name: 'Set up' }))
-    await userEvent.type(within(ollama).getByRole('textbox', { name: 'Base URL' }), 'http://gpu-box:11434/v1')
-    await userEvent.type(within(ollama).getByLabelText('API key (optional)'), 'local-key')
-    await userEvent.type(within(ollama).getByRole('textbox', { name: 'Default model' }), 'qwen3:32b')
-    await userEvent.click(within(ollama).getByRole('button', { name: 'Save' }))
+    const form = await setupRow('ollama')
+    await userEvent.type(within(form).getByRole('textbox', { name: 'Base URL' }), 'http://gpu-box:11434/v1')
+    await userEvent.type(within(form).getByLabelText('API key (optional)'), 'local-key')
+    await userEvent.type(within(form).getByRole('textbox', { name: 'Default model' }), 'qwen3:32b')
+    await userEvent.click(within(form).getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(api.saveSelfHostedProvider).toHaveBeenCalledWith({ provider: 'ollama', base_url: 'http://gpu-box:11434/v1', model: 'qwen3:32b', api_key: 'local-key' }))
     await waitFor(() => expect(document.querySelector('[data-section="providers-configured"] [data-provider="ollama"]')).not.toBeNull())
     const saved = block('ollama')
     expect(within(saved).getByText('http://gpu-box:11434/v1')).toBeInTheDocument()
     expect(within(saved).getByText('Default')).toBeInTheDocument()
     expect(screen.queryByRole('textbox', { name: 'Base URL' })).toBeNull()
-  })
-
-  it('words setup status by the server field, and by the credential when an older server omits it (TAL-570)', async () => {
-    providersResponse.current = { active_provider: 'zai', providers: [{ id: 'zai', display_name: 'Z.AI', has_key: true }, { id: 'ollama', display_name: 'Ollama', has_key: true, configured: false }] }
-    renderSection()
-    expect(await screen.findByText('Configured')).toBeInTheDocument()
-    expect(within(screen.getByText('Ollama').closest<HTMLElement>('[data-provider="ollama"]')!).getByText('Not configured')).toBeInTheDocument()
   })
 
   it("words each block's key source by the server's kind, else its own source, and marks only the default provider (TAL-603, TAL-2135)", async () => {
@@ -271,7 +273,6 @@ describe('ProvidersSection', () => {
     expect(within(block('vault')).getByText('keychain')).toBeInTheDocument()
     expect(within(block('vault')).queryByText('Default')).toBeNull()
     expect(within(block('codex')).getByText('Sign-in expired').closest('[data-status]')).toHaveAttribute('data-status', 'error')
-    expect(within(block('openai')).getByText('Not configured')).toBeInTheDocument()
   })
 
   it('refetches quotas while open so a reset replaces the expired forecast with the server answer (TAL-410)', async () => {
@@ -287,18 +288,84 @@ describe('ProvidersSection', () => {
     expect(a.querySelector('[role="meter"] [aria-hidden]')).toBeNull()
   })
 
-  it('shows the profile thresholds from settings and saves an edit, then refetches quotas (TAL-411)', async () => {
+  it("gives each provider to add one line and the one control its server setup names, whatever its other fields say (TAL-2136)", async () => {
+    // Each row's booleans contradict its `setup`, which alone decides the control.
+    providersResponse.current = { active_provider: 'zai', providers: [
+      { id: 'deepseek', display_name: 'DeepSeek', setup: 'key', is_oauth: true, configurable: false, models_total: 14 },
+      { id: 'nous', display_name: 'Nous Portal', setup: 'oauth', configurable: true },
+      { id: 'lmstudio', display_name: 'LM Studio', setup: 'self_hosted', is_self_hosted: false },
+      { id: 'copilot', display_name: 'GitHub Copilot', setup: 'plugin', install_hint: 'github-copilot', is_self_hosted: true },
+      { id: 'bedrock', display_name: 'AWS Bedrock', setup: 'cli', configurable: true, is_oauth: false },
+    ] }
+    renderSection()
+    await screen.findByText('DeepSeek')
+    const controls = (id: string) => within(block(id)).queryAllByRole('button').map((b) => b.getAttribute('aria-label'))
+    expect(['deepseek', 'nous', 'lmstudio', 'copilot', 'bedrock'].map((id) => [id, controls(id)])).toEqual([
+      ['deepseek', ['Set key']], ['nous', ['Sign in']], ['lmstudio', ['Set up']], ['copilot', ['Install plugin']], ['bedrock', []],
+    ])
+    expect(within(block('bedrock')).getByText('Agent CLI only')).toBeInTheDocument()
+    const list = document.querySelector('[data-section="providers-available"]')!
+    expect(list).not.toHaveTextContent(/Not configured|models|Refresh/)
+    expect(within(block('deepseek')).getByText('D')).toHaveAttribute('data-monogram')
+  })
+
+  it('shows the first eight providers to add, then the rest behind a disclosure, and every match while filtering (TAL-2136)', async () => {
+    const rows = Array.from({ length: 10 }, (_, i) => ({ id: `p${String(i)}`, display_name: `Provider ${String(i)}`, setup: 'key' }))
+    providersResponse.current = (q: string) => ({ active_provider: 'p0', providers: q ? rows.filter((r) => r.display_name.includes(q)) : rows })
+    renderSection()
+    await screen.findByText('Provider 0')
+    const shown = () => document.querySelectorAll('[data-section="providers-available"] [data-provider]').length
+    expect(shown()).toBe(8)
+    await userEvent.click(screen.getByRole('button', { name: '2 more' }))
+    expect(shown()).toBe(10)
+    await userEvent.click(screen.getByRole('button', { name: 'Show fewer' }))
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Filter providers' }), 'Provider')
+    await waitFor(() => expect(api.fetchProviders).toHaveBeenLastCalledWith('Provider'))
+    await waitFor(() => expect(shown()).toBe(10))
+    expect(screen.queryByRole('button', { name: '2 more' })).toBeNull()
+  })
+
+  it("sets a key from Add a provider, then opens that provider's page with it under Your providers (TAL-2136)", async () => {
+    const deepseek = { id: 'deepseek', display_name: 'DeepSeek', setup: 'key', has_key: false, configured: false }
+    providersResponse.current = { active_provider: 'anthropic', providers: [anthropic, deepseek] }
+    vi.mocked(post).mockImplementationOnce(() => {
+      providersResponse.current = { active_provider: 'anthropic', providers: [anthropic, { ...deepseek, has_key: true, configured: true, key_source_kind: 'config' }] }
+      return Promise.resolve({ ok: true })
+    })
+    const router = await renderAt()
+    await userEvent.click(within(await found('[data-provider="deepseek"]')).getByRole('button', { name: 'Set key' }))
+    await userEvent.type(within(await setupRow('deepseek')).getByLabelText('DeepSeek API key'), 'sk-test')
+    await userEvent.click(within(await setupRow('deepseek')).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/settings/providers/deepseek'))
+    expect(post).toHaveBeenCalledWith('api/providers', { provider: 'deepseek', api_key: 'sk-test' }, expect.anything(), { retries: 0 })
+    expect(await found('[data-provider-detail="deepseek"]')).toBeInTheDocument()
+    // Back returns to the list, where it is now one of Your providers.
+    await userEvent.click(screen.getByRole('button', { name: 'Providers' }))
+    await waitFor(() => expect(document.querySelector('[data-section="providers-configured"] [data-provider="deepseek"]')).not.toBeNull())
+  })
+
+  it('links Your providers to Quota alerts, whose six thresholds each show their unit and save alone, with no Save button (TAL-2136)', async () => {
+    providersResponse.current = { active_provider: 'anthropic', providers: [anthropic] }
     vi.mocked(api.fetchSettings).mockResolvedValue({ provider_quota_thresholds: DEFAULTS })
-    vi.mocked(api.saveSettings).mockResolvedValue({ provider_quota_thresholds: { ...DEFAULTS, warning_remaining_percent: 30 } })
-    await renderAt()
-    const warning = await screen.findByRole('spinbutton', { name: 'Warning at % remaining' })
-    await waitFor(() => expect(warning).toHaveValue(25))
-    expect(screen.getByRole('spinbutton', { name: 'Projection after hours' })).toHaveValue(12)
+    vi.mocked(api.saveSettings).mockResolvedValue({ provider_quota_thresholds: { ...DEFAULTS, pace_minimum_elapsed_hours: 6 } })
+    const router = await renderAt()
+    const link = await within(await found('[data-section="providers-configured"]')).findByRole('button', { name: /Quota alerts/ })
+    expect(link).toHaveTextContent('warn at 25% left')
+    expect(screen.queryByRole('spinbutton')).toBeNull()
+    await userEvent.click(link)
+    await waitFor(() => expect(router.state.location.pathname).toBe('/settings/providers/quota-alerts'))
+    await screen.findByRole('heading', { name: 'Quota alerts' })
+    const fields = await waitFor(() => { const f = screen.getAllByRole('spinbutton'); expect(f).toHaveLength(6); return f })
+    expect(fields.map((f) => [f.getAttribute('aria-label') ?? document.querySelector(`label[for="${f.id}"]`)?.textContent, (f as HTMLInputElement).value, f.parentElement?.nextElementSibling?.textContent]))
+      .toEqual([['Warn below', '25', '%'], ['Critical below', '10', '%'], ['Allowed ahead of pace', '3', '%'], ['Warn at burn rate', '125', '%'], ['Critical at burn rate', '175', '%'], ['Start projecting after', '12', 'hours']])
+    expect(screen.queryByRole('button', { name: /Save/ })).toBeNull()
     const before = vi.mocked(api.fetchProviderQuotas).mock.calls.length
-    await userEvent.clear(warning)
-    await userEvent.type(warning, '30')
-    await userEvent.click(screen.getByRole('button', { name: 'Save thresholds' }))
-    await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ provider_quota_thresholds: { ...DEFAULTS, warning_remaining_percent: 30 } }))
+    const hours = screen.getByRole('spinbutton', { name: 'Start projecting after' })
+    await userEvent.clear(hours)
+    await userEvent.type(hours, '6{Enter}')
+    await waitFor(() => expect(api.saveSettings).toHaveBeenCalledExactlyOnceWith({ provider_quota_thresholds: { pace_minimum_elapsed_hours: 6 } }))
+    // The saved thresholds reclassify the quotas, which the list rereads on the way back.
+    await userEvent.click(screen.getByRole('button', { name: 'Providers' }))
     await waitFor(() => expect(vi.mocked(api.fetchProviderQuotas).mock.calls.length).toBeGreaterThan(before))
   })
 })

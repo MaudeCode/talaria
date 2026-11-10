@@ -10,6 +10,8 @@ test('a provider block opens its page and Back returns to the same scroll positi
     { id: 'anthropic', display_name: 'Anthropic', has_key: true, configured: true, is_active: true, key_source: 'env_file', key_source_kind: 'env', configurable: true, models: [], models_total: 0 },
     ...available,
   ] }))
+  // TAL-2136: Add a provider shows eight rows before its disclosure, so a short window is what makes the list scroll.
+  await page.setViewportSize({ width: page.viewportSize()!.width, height: 480 })
   await page.goto('/settings/providers')
   await settle(page)
   const pane = page.locator('#main [data-scroll-restoration-id="settings-main"]')
