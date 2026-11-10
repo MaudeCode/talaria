@@ -52,6 +52,13 @@ describe('classifyLog', () => {
     expect(classifyLog(TAIL.slice(0, 1)).count_tones).toEqual({ error: null, warning: null })
   })
 
+  it('starts a new record at a [tag] prefix, so the Web log\'s unlevelled records inherit nothing', () => {
+    const web = ['[webui] WARNING: slow sidecar start', '[webui] run-journal retention archived 3 runs', '[updates] checked origin/main', '  indented continuation']
+    expect(classifyLog(web).entries.map((e) => e.level)).toEqual(['warning', null, null, null])
+    expect(classifyLog(web, { level: 'warning' }).matched).toBe(1)
+    expect(classifyLog(web).counts).toMatchObject({ warning: 1 })
+  })
+
   it('keeps errors and their continuation lines for level error, warnings too for level warning', () => {
     const errors = classifyLog(TAIL, { level: 'error' })
     expect(errors.entries.map((e) => e.text)).toEqual(['tools.mcp: server "linear" failed to connect: 401', 'Traceback (most recent call last):', '  File "mcp/client.py", line 88, in connect', 'ConnectionError: 401'])

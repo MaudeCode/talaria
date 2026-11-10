@@ -3,6 +3,8 @@ import type { LogEntry, LogLevel, LogLevelFilter } from '@maudecode/talaria-web-
 
 /** A leading timestamp as Hermes, Python logging and ISO 8601 write it, optionally in brackets: `2026-11-08 12:01:03,123`, `2026-11-08T12:01:03Z`, `12:01:03`. */
 const TIMESTAMP = /^\[?(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?|\d{2}:\d{2}:\d{2}(?:[.,]\d+)?)\]?(?:\s+|$)/
+/** A `[tag]` that opens a record of its own, as this server writes (`[webui]`, `[updates]`): it starts a line, not a continuation. */
+const RECORD_TAG = /^\[[A-Za-z][\w.:-]*\](?:\s|$)/
 const TOKEN = /\b(CRITICAL|FATAL|ERROR|WARNING|WARN|INFO|DEBUG|TRACE)\b/i
 const TOKEN_LEVEL: Record<string, LogLevel> = { critical: 'error', fatal: 'error', error: 'error', warning: 'warning', warn: 'warning', info: 'info', debug: 'debug', trace: 'debug' }
 /** Only a token this close to the start of a line names its level; one further in is message text. */
@@ -27,7 +29,7 @@ function withoutToken(rest: string, index: number, length: number): string {
   return before && after ? `${before} ${after}` : before + after
 }
 
-/** One line's level, time and text. A line with no token and no timestamp (a traceback continuation) takes `previous`. */
+/** One line's level, time and text. A line with no token, timestamp or `[tag]` (a traceback continuation) takes `previous`. */
 export function classifyLine(line: string, previous: LogLevel | null): Omit<LogEntry, 'matches'> {
   const stamp = TIMESTAMP.exec(line)
   const rest = stamp ? line.slice(stamp[0].length) : line
@@ -36,7 +38,7 @@ export function classifyLine(line: string, previous: LogLevel | null): Omit<LogE
   if (token && offset + token.index < TOKEN_WINDOW) {
     return { text: withoutToken(rest, token.index, token[0].length), level: TOKEN_LEVEL[token[0].toLowerCase()] ?? null, time: stamp?.[1] ?? null }
   }
-  return { text: rest, level: stamp ? null : previous, time: stamp?.[1] ?? null }
+  return { text: rest, level: stamp || RECORD_TAG.test(line) ? null : previous, time: stamp?.[1] ?? null }
 }
 
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
