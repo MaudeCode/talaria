@@ -1,5 +1,5 @@
 import { JsonDocuments } from './test/storage.js'
-import { closeSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync, writeSync, chmodSync } from 'node:fs'
+import { closeSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync, writeSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -362,8 +362,9 @@ describe('save', () => {
     write({ default_workspace: join(dir, 'gone', 'x'), theme: 'light' })
     const s = store()
     await s.applyStartupWorkspace()
-    expect(s.defaultWorkspace).toBe(join(dir, 'gone', 'x'))
-    expect(onDisk().default_workspace).toBe(join(dir, 'gone', 'x'))
+    // TAL-2098: stored in the canonical spelling the workspace list uses (`dir` sits under macOS's symlinked /var).
+    expect(s.defaultWorkspace).toBe(join(realpathSync(dir), 'gone', 'x'))
+    expect(onDisk().default_workspace).toBe(join(realpathSync(dir), 'gone', 'x'))
     const env = store({ HERMES_WEBUI_DEFAULT_WORKSPACE: join(dir, 'env-ws') })
     env.defaultWorkspace = join(dir, 'env-ws')
     await env.applyStartupWorkspace()

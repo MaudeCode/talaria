@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ConfigUnavailable } from '../config/agent-config.js'
 import { JsonDocuments } from '../sessions/storage/json-documents.js'
+import { bootTestServer } from '../test/harness.js'
 import { isBlockedSystemPath, isBlockedWorkspacePath, WorkspaceRegistry, type WorkspaceDeps } from './workspaces.js'
 
 const realpathProbes = vi.hoisted(() => [] as string[])
@@ -145,5 +146,25 @@ describe('workspace registry config availability (TAL-730)', () => {
     f.profileConfig.mockReturnValue({ terminal: { backend: 'ssh', cwd: '/srv' } })
     expect(await f.registry.load()).toEqual([{ path: '/srv', name: 'Home' }])
     expect(JSON.parse(readFileSync(f.file, 'utf8'))).toEqual([])
+  })
+})
+
+describe('default workspace behind a symlink (TAL-2098)', () => {
+  it('ships the settings default workspace in the same spelling as its workspace list entry', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'talaria-ws-link-'))
+    const real = join(dir, 'real')
+    mkdirSync(real)
+    const link = join(dir, 'link')
+    symlinkSync(real, link)
+    const s = await bootTestServer({ env: { HERMES_WEBUI_DEFAULT_WORKSPACE: link } })
+    try {
+      const settings = await (await s.get('/api/settings')).json() as { default_workspace: string }
+      const listed = await (await s.get('/api/workspaces')).json() as { workspaces: { path: string }[] }
+      expect(listed.workspaces.map((w) => w.path)).toContain(realpathSync(link))
+      expect(settings.default_workspace).toBe(realpathSync(link))
+    } finally {
+      await s.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
