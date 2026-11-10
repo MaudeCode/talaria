@@ -1,0 +1,39 @@
+{
+  "ok": {
+    "status": "ok",
+    "display_state": "ok",
+    "display_reason": null,
+    "available": true,
+    "checked_at": "2026-11-10T12:00:00Z",
+    "cpu": { "percent": 12.5 },
+    "memory": { "used_bytes": 8000000000, "total_bytes": 16000000000, "percent": 50 },
+    "disk": { "used_bytes": 440000000000, "total_bytes": 500000000000, "percent": 88, "display_level": "warning" },
+    "webui_runtime": {},
+    "errors": []
+  },
+  "partial": {
+    "status": "partial",
+    "display_state": "warning",
+    "display_reason": "Metrics unavailable: disk",
+    "available": true,
+    "checked_at": "2026-11-10T12:00:00Z",
+    "cpu": { "percent": 12.5 },
+    "memory": { "used_bytes": 8000000000, "total_bytes": 16000000000, "percent": 50 },
+    "disk": null,
+    "webui_runtime": {},
+    "errors": [{ "metric": "disk", "code": "disk_unavailable" }]
+  },
+  "unavailable": {
+    "status": "unavailable",
+    "display_state": "error",
+    "display_reason": "Metrics unavailable",
+    "available": false,
+    "checked_at": "2026-11-10T12:00:00Z",
+    "cpu": null,
+    "memory": null,
+    "disk": null,
+    "webui_runtime": {},
+    "errors": [{ "metric": "cpu", "code": "cpu_unavailable" }, { "metric": "memory", "code": "memory_unavailable" }, { "metric": "disk", "code": "disk_unavailable" }]
+  },
+  "critical_disk": { "status": "ok", "display_state": "ok", "display_reason": null, "disk": { "used_bytes": 480000000000, "total_bytes": 500000000000, "percent": 96, "display_level": "critical" } }
+}

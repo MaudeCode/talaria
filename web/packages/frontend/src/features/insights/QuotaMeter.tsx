@@ -2,7 +2,7 @@ import type { z } from 'zod'
 import { m } from '../../paraglide/messages.js'
 import type { ProviderQuotaSourceSchema, QuotaLevel } from '../../contracts'
 import { cn } from '../../ui/cn'
-import { METER_RAIL, METER_RAIL_THIN } from '../../ui/List'
+import { METER_RAIL, METER_RAIL_THIN, type FigureTone } from '../../ui/List'
 
 export type QuotaSource = z.infer<typeof ProviderQuotaSourceSchema>
 export type QuotaWindow = NonNullable<QuotaSource['windows']>[number]
@@ -15,6 +15,8 @@ export const toQuotaPercentMode = (value: string | null): QuotaPercentMode => (v
 
 /** The meter fill per server level; `healthy` wears the accent like the App's rail, state colours are state only. */
 const LEVEL_FILL: Record<QuotaLevel, string> = { healthy: 'bg-accent', warning: 'bg-warning', critical: 'bg-error', stale: 'bg-muted', unavailable: 'bg-muted' }
+/** TAL-2162: the figure colour beside a meter per server level; only warning and critical tint it. */
+export const LEVEL_TONE: Partial<Record<QuotaLevel, FigureTone>> = { warning: 'warning', critical: 'error' }
 
 const STATUS_LABEL: Record<string, () => string> = {
   exhausted: m.provider_quota_status_exhausted, unavailable: m.provider_quota_status_unavailable, stale: m.quota_level_stale,

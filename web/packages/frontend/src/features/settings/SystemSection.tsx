@@ -17,7 +17,7 @@ import { RowIcon } from '../../ui/Field'
 import { HubHeadActions } from '../../shell/hubHeadSlots'
 import { useLocale } from '../../i18n/useLocale'
 import { formatPercent, resetTime } from '../../i18n/units'
-import { QuotaMeter } from '../insights/QuotaMeter'
+import { LEVEL_TONE, QuotaMeter } from '../insights/QuotaMeter'
 
 import { showErrorToast } from '../toast/errorToast'
 import { useSettingField } from './useSettingField'
@@ -112,17 +112,18 @@ export function SystemSection() {
   const webInstalled = webUpdate?.current_version ?? str('webui_version', bootstrap.webui_version)
   const agentInstalled = agentUpdate?.current_version ?? str('agent_version', '—')
   const disk = health.data?.disk?.percent
-  const webHealth = webHealthState(health.data?.status)
-  const agentHealth = agentHealthState(agent.data)
+  // An older server sends no level: the meter keeps the healthy fill and the figures no tone.
+  const diskLevel = health.data?.disk?.display_level ?? 'healthy'
+  const webHealth = healthText(health.data)
+  const agentHealth = healthText(agent.data)
   const checkLabel = checkNow.isPending ? m.settings_checking() : bool('ignore_agent_updates') ? m.system_check_web() : m.system_check_both()
   return (
     <div className={SETTINGS_PAGE} data-section="system">
       <HubHeadActions><IconButton variant="ghost" label={checkLabel} onClick={() => checkNow.mutate()} disabled={checkNow.isPending}><RefreshCw aria-hidden="true" /></IconButton></HubHeadActions>
       <SettingsStats label={m.settings_section_system_title()} stats={[
         { id: 'web', label: WEB, value: webInstalled },
-        // TAL-2162 moves this tone to the server's `figure_tone`.
-        { id: 'agent', label: AGENT, value: agentInstalled, tone: agentStatus.tone === 'update' || agent.data?.alive === false ? 'warning' : undefined },
-        ...(disk !== undefined ? [{ id: 'disk', label: m.system_stat_disk_used(), value: formatPercent(locale, disk, 0) }] : []),
+        { id: 'agent', label: AGENT, value: agentInstalled, tone: agentUpdate?.figure_tone ?? undefined },
+        ...(disk !== undefined ? [{ id: 'disk', label: m.system_stat_disk_used(), value: formatPercent(locale, disk, 0), tone: LEVEL_TONE[diskLevel] }] : []),
         ...(health.data?.checked_at ? [{ id: 'checked', label: m.system_stat_checked(), value: resetTime(locale, health.data.checked_at) }] : []),
       ]} />
       <SettingsGroup id="software" title={m.system_software()} hint={m.system_updates_intro()}>
@@ -162,10 +163,9 @@ export function SystemSection() {
           <div className="flex flex-col gap-2 py-3" data-disk="">
             <div className="flex items-baseline justify-between gap-3">
               <span className="text-sm font-medium text-text">{m.system_server_disk()}</span>
-              <Figure value={formatPercent(locale, disk, 0)} mode={m.provider_quota_metric_used()} />
+              <Figure value={formatPercent(locale, disk, 0)} mode={m.provider_quota_metric_used()} tone={LEVEL_TONE[diskLevel]} />
             </div>
-            {/* ponytail: the server sends no disk level yet (TAL-2162), so the meter keeps the healthy fill. */}
-            <QuotaMeter level="healthy" percent={disk} marker={null} label={`${m.system_server_disk()}: ${formatPercent(locale, disk, 0)} ${m.provider_quota_metric_used()}`} />
+            <QuotaMeter level={diskLevel} percent={disk} marker={null} label={`${m.system_server_disk()}: ${formatPercent(locale, disk, 0)} ${m.provider_quota_metric_used()}`} />
           </div>
         ) : null}
       </SettingsGroup>
@@ -221,19 +221,11 @@ function pathStatus(t: Target | null | undefined, name: string, { failed, pendin
   }
 }
 
-// TAL-2162 replaces both classifications below with the server's `display_state` and `display_reason`.
-interface Health { state: DotState; text: string }
-/** Web's health in words: the server's `status`, with `ok` worded and every state given its dot. */
-function webHealthState(status: string | undefined): Health {
-  if (status === undefined) return { state: 'idle', text: '—' }
-  if (status === 'ok') return { state: 'ok', text: m.system_running_normally() }
-  return { state: status === 'unavailable' ? 'error' : 'warning', text: status }
-}
-/** The Agent gateway's liveness in words: the server's reason when it is down, its state while unknown. */
-function agentHealthState(health: { alive?: boolean | null | undefined; details?: { state?: string | undefined; reason?: string | undefined } | undefined } | undefined): Health {
-  if (health?.alive === true) return { state: 'ok', text: m.system_running_normally() }
-  if (health?.alive === false) return { state: 'error', text: health.details?.reason ?? m.system_not_responding() }
-  return { state: 'idle', text: health?.details?.state ?? '—' }
+/** A health row's server dot and its words: `ok` and a reasonless `error` are worded here; an older server's row is an idle dot. */
+function healthText(h: { display_state?: DotState | undefined; display_reason?: string | null | undefined } | undefined): { state: DotState; text: string } {
+  const state = h?.display_state ?? 'idle'
+  if (state === 'ok') return { state, text: m.system_running_normally() }
+  return { state, text: h?.display_reason ?? (state === 'error' ? m.system_not_responding() : '—') }
 }
 
 /** "Summarize with AI" and its dialog: the server's summary of this target's pending update, requested only once the dialog opens. */

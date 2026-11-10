@@ -1182,10 +1182,18 @@ export const ChatReadinessSchema = z.discriminatedUnion('available', [
   z.object({ available: z.literal(false), condition: z.enum(['sidecar_unavailable', 'agent_incompatible', 'agent_runtime_stale']), ...AgentRuntimeMetadataSchema.shape }),
 ])
 export type ChatReadiness = z.infer<typeof ChatReadinessSchema>
+/** TAL-2162: a health row's dot; clients word `ok` and an `error` without `display_reason`. */
+export const HealthDisplayStateSchema = z.enum(['ok', 'warning', 'error', 'idle'])
+const healthDisplay = (what: string) => ({
+  display_state: HealthDisplayStateSchema.optional().describe(`TAL-2162: ${what}. Absent from older servers.`),
+  display_reason: z.string().nullable().optional().describe('TAL-2162: the text beside the dot when not `ok`; null when there is none.'),
+})
 /** Messaging-gateway liveness (`alive`, `details`, `gateway_chat`) for Settings → System, plus Web chat readiness in `chat`. */
-export const AgentHealthSchema = z.looseObject({ chat: ChatReadinessSchema.optional().describe('Always sent since TAL-951; absent from older servers.'), gateway_lifecycle: GatewayLifecycleSchema.optional().describe('TAL-1627: whether the gateway restart may run; clients offer it only when `managed`. Absent from older servers.'), alive: z.boolean().nullable().optional(), checked_at: z.string().optional(), details: z.looseObject({ state: z.string().optional(), reason: z.string().optional() }).optional(), gateway_chat: z.looseObject({ enabled: z.boolean().optional(), backend: z.string().optional(), base_url_configured: z.boolean().optional(), api_key_configured: z.boolean().optional() }).optional(), error: z.string().optional() })
+export const AgentHealthSchema = z.looseObject({ ...healthDisplay('`alive` true is `ok`, false `error` with `details.reason`, null `idle` with `details.state`'), chat: ChatReadinessSchema.optional().describe('Always sent since TAL-951; absent from older servers.'), gateway_lifecycle: GatewayLifecycleSchema.optional().describe('TAL-1627: whether the gateway restart may run; clients offer it only when `managed`. Absent from older servers.'), alive: z.boolean().nullable().optional(), checked_at: z.string().optional(), details: z.looseObject({ state: z.string().optional(), reason: z.string().optional() }).optional(), gateway_chat: z.looseObject({ enabled: z.boolean().optional(), backend: z.string().optional(), base_url_configured: z.boolean().optional(), api_key_configured: z.boolean().optional() }).optional(), error: z.string().optional() })
 export const SystemHealthSchema = z.looseObject({
-  available: z.boolean().optional(), status: z.string().optional(), checked_at: z.string().optional(), cpu: Json.nullable().optional(), memory: Json.nullable().optional(), disk: z.looseObject({ percent: z.number().optional(), total_bytes: z.number().optional(), used_bytes: z.number().optional() }).nullable().optional(),
+  ...healthDisplay('`status` ok is `ok`, partial `warning`, unavailable `error`'),
+  available: z.boolean().optional(), status: z.string().optional(), checked_at: z.string().optional(), cpu: Json.nullable().optional(), memory: Json.nullable().optional(),
+  disk: z.looseObject({ percent: z.number().optional(), total_bytes: z.number().optional(), used_bytes: z.number().optional(), display_level: QuotaLevelSchema.optional().describe('TAL-2162: `critical` from 95% used, `warning` from 85%, else `healthy`. Absent from older servers.') }).nullable().optional(),
   errors: z.array(z.looseObject({ code: z.string().optional(), metric: z.string().optional() })).optional(), webui_runtime: Json.optional(),
 })
 export const UpdateStateSchema = z.enum(['up_to_date', 'release_ready', 'commits_behind', 'local_changes', 'finish', 'manual', 'check_failed', 'off', 'unknown'])
@@ -1218,6 +1226,7 @@ export const UpdateTargetSchema = z.looseObject({
   summary_available: z.boolean().describe('TAL-759: offer "Summarize with AI" for this target (`release_ready` or `commits_behind`).'),
   versions: z.array(UpdateVersionSchema).describe('TAL-946: every installable Stable release newer than the installed one, newest first; empty unless `release_ready` can apply.'),
   folded_count: z.number().int().nonnegative().describe('How many `versions` are `folded`.'),
+  figure_tone: z.literal('warning').nullable().optional().describe('TAL-2162, `/api/updates/check` Agent target only: `warning` while an update can be applied (`release_ready`, `commits_behind`, `finish`) or the gateway probe reports the Agent down.'),
 })
 export const AgentRecoveryStateSchema = z.object({ phase: z.enum(['idle', 'running', 'waiting', 'complete', 'blocked']), attempt: z.number().int().nonnegative(), detail: z.string(), retry_at: z.string().nullable(), operation_id: z.uuid().optional(), operation: AgentUpdateOperationSchema.optional(), verified_revision: z.string().regex(/^[a-f0-9]{40}$/).optional(), runtime_revision: z.string().regex(/^[a-f0-9]{40}$/).optional(), verified_version: z.string().nullable().optional() })
 export type AgentRecoveryState = z.infer<typeof AgentRecoveryStateSchema>
