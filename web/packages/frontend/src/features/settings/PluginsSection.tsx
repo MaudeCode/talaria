@@ -91,6 +91,7 @@ export function PluginsSection() {
     onSuccess: (result) => { if (result.restart_required) showToast(m.plugins_toggle_restart_required(), 10000) },
     onError: (e) => showToast(e instanceof Error ? e.message : String(e), 5000, 'error'),
   })
+  const updateBusy = update.isPending || updateAll.isPending
   const [open, setOpen] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const head = useContext(HubHeadSlotsContext)
@@ -101,7 +102,7 @@ export function PluginsSection() {
   const addButton = <>
     {head?.actions ? createPortal(add, head.actions) : <div className="flex justify-end">{add}</div>}
     <Dialog open={adding} onOpenChange={setAdding} title={m.plugins_add()} finalFocus={addRef} maxWidth={600} className="max-[641px]:w-[calc(100%-16px)]">
-      <PluginCatalogList updating={update.isPending || updateAll.isPending} updatingKey={update.isPending ? update.variables.key : null} onUpdate={requestUpdate} />
+      <PluginCatalogList updating={updateBusy} updatingKey={update.isPending ? update.variables.key : null} onUpdate={requestUpdate} />
     </Dialog>
   </>
   // One page element in every state keeps "Add plugin" and its open dialog mounted while the list loads.
@@ -114,7 +115,6 @@ export function PluginsSection() {
   })
   const editable = !plugins.data.read_only
   const autoUpdate = editable ? plugins.data.auto_update : undefined
-  const updateBusy = update.isPending || updateAll.isPending
   // TAL-2129: `plugins` is the server's filter answer; `total` counts the whole install.
   const installed = (plugins.data.total ?? 0) > 0
   const { groups, summary } = plugins.data
