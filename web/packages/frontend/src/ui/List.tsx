@@ -8,9 +8,9 @@ export const SECTION_HEADER = `${LABEL} font-medium`
 /** The meter track (§5), shared by the quota meter and the Kanban timing bar. */
 export const METER_RAIL = 'relative h-2 overflow-hidden rounded-full bg-border'
 
-/** A plain list on the page background (`docs/design-system.md` §3). */
+/** A plain list on the page background (`docs/design-system.md` §3); `data-row-list` lets tests tell it from a page-local list. */
 export function RowList({ className, ...props }: ComponentProps<'ul'>) {
-  return <ul {...props} className={cn('flex flex-col', className)} />
+  return <ul {...props} data-row-list="" className={cn('flex flex-col', className)} />
 }
 
 /** One item of a `RowList`, split from its neighbours by a hairline; `compact` is the one-line row for items without data. */

@@ -1,7 +1,6 @@
 import { m } from '../../paraglide/messages.js'
 import type { ToolsTab } from '../../contracts/url'
 import { useConnectorsAvailable } from '../../app/queries'
-import { SECTION_HEADER } from '../../ui/List'
 import { TabStrip } from '../../ui/TabStrip'
 import { ErrorState, LoadingState } from '../../ui/States'
 import { useSettingField } from './useSettingField'
@@ -36,7 +35,7 @@ export function ToolsSection({ tab, onTabChange }: { tab?: ToolsTab | undefined;
         <div role="tabpanel" id={`tools-${active}`} data-group={active} className="flex flex-col gap-5">
           {active === 'plugins' && <PluginsSection />}
           {active === 'connectors' && <ConnectorsSection />}
-          {active === 'mcp' && <McpSection heading={SECTION_HEADER} />}
+          {active === 'mcp' && <McpSection />}
         </div>
       </>}
     </div>

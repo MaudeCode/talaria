@@ -85,7 +85,7 @@ export function SettingText({ label, hint, settingKey, id: givenId, fallback = '
 }
 
 /** A labelled control that is not a server setting (device-local preferences, lists of switches). `stacked` puts a multi-control body under its label. */
-export function SettingRow({ label, hint, htmlFor, stacked, children }: { label: string; hint?: string; htmlFor?: string; stacked?: boolean; children: ReactNode }) {
+export function SettingRow({ label, hint, htmlFor, stacked, children }: { label: string; hint?: string | undefined; htmlFor?: string; stacked?: boolean; children: ReactNode }) {
   return <FieldRow label={label} hint={hint} htmlFor={htmlFor} inline={!stacked}>{children}</FieldRow>
 }
 
@@ -118,10 +118,10 @@ export function SettingLink({ label, ...target }: { label: string } & ({ href: s
     : <button type="button" className={className} onClick={target.onClick}>{label}<ChevronRight {...icon} /></button>
 }
 
-/** TAL-1691: a titled group of rows on a Settings page (§4 `SectionHeader`); `hint` opens from a `HelpTip` beside the title. */
-export function SettingsGroup({ id, title, hint, detail, action, children }: { id: string; title: string; hint?: ReactNode; detail?: ReactNode; action?: ReactNode; children: ReactNode }) {
+/** TAL-1691: a titled group of rows on a Settings page (§4 `SectionHeader`); `hint` opens from a `HelpTip` beside the title. `section` keeps a page's `data-section` hook. */
+export function SettingsGroup({ id, title, hint, detail, action, section, children }: { id: string; title: string; hint?: ReactNode; detail?: ReactNode; action?: ReactNode; section?: string; children: ReactNode }) {
   return (
-    <section aria-label={title} data-group={id} className="flex flex-col gap-1">
+    <section aria-label={title} data-group={id} data-section={section} className="flex flex-col gap-1">
       <SectionHeader detail={detail} action={action}>{title}{hint && <HelpTip label={m.field_help_about({ label: title })}>{hint}</HelpTip>}</SectionHeader>
       <div className="flex flex-col divide-y divide-border-subtle">{children}</div>
     </section>

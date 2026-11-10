@@ -9,7 +9,9 @@ import { useResourceEffects, withEffects } from '../sessions/useResourceMutation
 import { BackButton, Button } from '../../ui/Button'
 import { ConfirmDialog } from '../../ui/Dialog'
 import { ReasoningChip } from '../composer/chips'
-import { FieldRow, TextInput } from '../../ui/Field'
+import { Switch, TextInput } from '../../ui/Field'
+import { Row, RowList, SectionHeader } from '../../ui/List'
+import { SettingRow, SettingsGroup } from './SettingsRows'
 import { Select } from '../../ui/Select'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { cn } from '../../ui/cn'
@@ -39,12 +41,12 @@ export function AuxiliaryModelsSection() {
   return (
     <div className="flex flex-col gap-3">
       {aux.isError && <ErrorState error={aux.error} onRetry={() => { void aux.refetch() }} />}
-      <ul className="flex flex-col" aria-label={m.settings_label_auxiliary_models()}>
+      <RowList aria-label={m.settings_label_auxiliary_models()}>
         {tasks.map((t) => {
           const open = editing === t.task
           return (
-            <li key={t.task} className="border-b border-border last:border-b-0">
-              <button type="button" aria-expanded={open} className="flex w-full items-center gap-3 rounded-md px-2 py-2.5 text-left hover:bg-hover" onClick={() => setEditing(open ? null : t.task)}>
+            <Row key={t.task}>
+              <button type="button" aria-expanded={open} className="flex w-full items-center gap-3 rounded-md px-2 py-1 text-left hover:bg-hover" onClick={() => setEditing(open ? null : t.task)}>
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm text-text">{t.label}</span>
                   {t.task !== 'delegation' && <span className="block text-xs text-muted">{t.description}</span>}
@@ -53,16 +55,16 @@ export function AuxiliaryModelsSection() {
                 <ChevronDown size={16} className={cn('shrink-0 text-muted transition-transform', open && 'rotate-180')} aria-hidden="true" />
               </button>
               {open && (
-                <div className="px-2 pb-4 pt-1">
+                <div className="px-2">
                   {t.task === 'delegation' && delegation
                     ? <DelegationEditor key={delegation.configured} task={t} state={delegation} models={models} onDone={() => setEditing(null)} />
                     : <div className="flex flex-col gap-3"><ReasoningControl task={t} /><AuxiliaryModelPicker task={t} models={models} /></div>}
                 </div>
               )}
-            </li>
+            </Row>
           )
         })}
-      </ul>
+      </RowList>
       <div className="flex justify-end">
         <Button disabled={delegation?.can_edit === false} onClick={() => setConfirmReset(true)}>{m.settings_btn_reset_aux_models()}</Button>
       </div>
@@ -98,10 +100,10 @@ function ReasoningControl({ task }: { task: AuxTask }) {
   const { reasoning } = task
   if (!reasoning.options.length) return null
   return (
-    <FieldRow label={m.composer_control_reasoning()} inline>
+    <SettingRow label={m.composer_control_reasoning()}>
       <ReasoningChip value={reasoning.saved} levels={reasoning.options} defaultLabel={reasoning.default_source === 'parent' ? m.delegation_inherit() : m.reasoning_default()}
         onChange={(level) => save.mutate({ task: task.task, reasoning_effort: level, shown: { reasoning: { ...reasoning, saved: level, inherited: level === null } } })} />
-    </FieldRow>
+    </SettingRow>
   )
 }
 
@@ -151,9 +153,9 @@ function AuxiliaryModelPicker({ task, models, onDone, onPick }: { task: AuxTask;
         {models.isError && <ErrorState error={models.error} onRetry={() => { void models.refetch() }} />}
         {!models.data ? !models.isError && <LoadingState /> : groups.length === 0 ? <EmptyState>{m.model_search_no_results()}</EmptyState> : groups.map((g) => (
           <section key={g.provider_id ?? g.provider} aria-label={catalogGroupLabel(g)} className="mt-2">
-            <h3 className="px-2 py-1 text-xs font-medium uppercase tracking-wide text-muted">{catalogGroupLabel(g)}</h3>
+            <SectionHeader className="px-2 py-1">{catalogGroupLabel(g)}</SectionHeader>
             {catalogModelSections(g, query).map((section) => <div key={section.label}>
-              {section.label && <h4 className="px-2 py-1 text-xs text-muted">{section.label}</h4>}
+              {section.label && <SectionHeader className="px-2 py-1">{section.label}</SectionHeader>}
               {section.models.map((mm) => <OptionButton key={mm.id} selected={!onPick && mm.id === task.selected_option_id} onClick={() => pick(mm.id, g.provider_id, { provider_label: catalogGroupLabel(g), value_label: mm.label ?? mm.id })}><ModelOptionContent entry={mm} /></OptionButton>)}
             </div>)}
           </section>
@@ -199,14 +201,13 @@ function DelegationEditor({ task, state, models, onDone }: { task: AuxTask; stat
   }} />
   return <div className="flex min-h-0 flex-col gap-3 [&_button]:min-h-11">
     <BackButton className="self-start" onClick={section ? () => setSection(null) : onDone} />
-    {section ? <>
-      <h3 className="text-sm font-medium">{section === 'model_map' ? m.delegation_routes() : m.delegation_profiles()}</h3>
-      <FieldRow label={m.delegation_default()} htmlFor="delegationDefault">
+    {section ? <SettingsGroup id={section} title={section === 'model_map' ? m.delegation_routes() : m.delegation_profiles()}>
+      <SettingRow label={m.delegation_default()} htmlFor="delegationDefault">
         <Select id="delegationDefault" value={block.default ?? ''} onValueChange={(value) => writeRows(rows, value || null)}>
           <option value="">{m.delegation_no_default()}</option>
           {rows.map((row) => <option key={row.name} value={row.name}>{row.name}</option>)}
         </Select>
-      </FieldRow>
+      </SettingRow>
       <ul aria-label={section === 'model_map' ? m.delegation_routes() : m.delegation_profiles()}>
         {rows.map((row) => <li key={row.name} className="flex min-w-0 items-center gap-2 border-b border-border py-2">
           <div className="min-w-0 flex-1"><span className="block break-words text-sm">{row.name}</span><span className="block break-words text-xs text-muted">{row.description}</span></div>
@@ -216,12 +217,12 @@ function DelegationEditor({ task, state, models, onDone }: { task: AuxTask; stat
       </ul>
       {!rows.length && <EmptyState>{m.delegation_empty()}</EmptyState>}
       <Button className="self-start" onClick={() => { setOriginal(null); setEditing({ name: '', description: '' }) }}>{m.delegation_add_route()}</Button>
-    </> : <>
-      <FieldRow label={m.delegation_mode()} hint={state.can_edit ? undefined : m.delegation_owner_required()} htmlFor="delegationMode">
+    </SettingsGroup> : <>
+      <SettingRow label={m.delegation_mode()} hint={state.can_edit ? undefined : m.delegation_owner_required()} htmlFor="delegationMode">
         <Select id="delegationMode" value={state.configured} disabled={!state.supported || !state.can_edit} onValueChange={(backend) => save.mutate({ write: { action: 'backend', backend }, shown: { ...state, configured: backend } })}>
           {state.backends.map((backend) => <option key={backend.name} value={backend.name} disabled={!backend.available}>{backend.label}</option>)}
         </Select>
-      </FieldRow>
+      </SettingRow>
       {state.blocked_reason && <p role="status" className="break-words text-sm text-muted">{state.blocked_reason}</p>}
       {state.supported && state.can_edit && <Button className="self-start" onClick={() => save.mutate({ write: { action: 'backend', backend: 'default' }, shown: { ...state, configured: 'default' } })}>{m.delegation_restore()}</Button>}
       {state.fixed_model_active ? <>
@@ -241,15 +242,15 @@ function DelegationRouteEditor({ task, models, route, profiles, onCancel, onSave
   const [draft, setDraft] = useState(route)
   const [picking, setPicking] = useState(false)
   const [consent, setConsent] = useState(false)
-  const text = (key: 'name' | 'description' | 'provider' | 'model' | 'base_url' | 'api_key' | 'reasoning_effort', label: string, type = 'text') => <FieldRow key={key} label={label} htmlFor={`route-${key}`}>
+  const text = (key: 'name' | 'description' | 'provider' | 'model' | 'base_url' | 'api_key' | 'reasoning_effort', label: string, type = 'text') => <SettingRow key={key} label={label} htmlFor={`route-${key}`} stacked>
     <TextInput id={`route-${key}`} type={type} value={draft[key] ?? ''} autoComplete="off" onChange={(e) => setDraft({ ...draft, [key]: e.target.value })} />
-  </FieldRow>
+  </SettingRow>
   if (picking) return <AuxiliaryModelPicker task={task} models={models} onDone={() => setPicking(false)} onPick={(model, provider) => { setDraft({ ...draft, model, provider }); setPicking(false) }} />
   return <form className="flex min-h-0 flex-col gap-2 [&_button]:min-h-11" onSubmit={(e) => { e.preventDefault(); onSave(draft) }}>
     {profiles ? <>
-      <FieldRow label={m.delegation_profile()} htmlFor="route-profile"><Select id="route-profile" value={draft.name} onValueChange={(name) => setDraft({ ...draft, name })}>{profiles.map((name) => <option key={name} value={name}>{name}</option>)}</Select></FieldRow>
+      <SettingRow label={m.delegation_profile()} htmlFor="route-profile"><Select id="route-profile" value={draft.name} onValueChange={(name) => setDraft({ ...draft, name })}>{profiles.map((name) => <option key={name} value={name}>{name}</option>)}</Select></SettingRow>
       <p className="text-sm text-muted">{m.delegation_profile_consent()}</p>
-      <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />{m.delegation_profile_opt_in()}</label>
+      <SettingRow label={m.delegation_profile_opt_in()} htmlFor="route-consent"><Switch id="route-consent" checked={consent} onCheckedChange={setConsent} /></SettingRow>
     </> : text('name', m.delegation_route_name())}
     {text('description', m.delegation_route_description())}
     {!profiles && <>
@@ -258,11 +259,11 @@ function DelegationRouteEditor({ task, models, route, profiles, onCancel, onSave
       {text('provider', m.delegation_route_provider())}
       {text('base_url', m.delegation_route_endpoint())}
       {text('api_key', draft.api_key_set ? m.delegation_route_key_saved() : m.delegation_route_key(), 'password')}
-      {draft.api_key_set && <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={draft.api_key_clear ?? false} onChange={(e) => setDraft({ ...draft, api_key_clear: e.target.checked })} />{m.delegation_route_key_clear()}</label>}
+      {draft.api_key_set && <SettingRow label={m.delegation_route_key_clear()} htmlFor="route-key-clear"><Switch id="route-key-clear" checked={draft.api_key_clear ?? false} onCheckedChange={(api_key_clear) => setDraft({ ...draft, api_key_clear })} /></SettingRow>}
       {text('reasoning_effort', m.delegation_route_effort())}
-      <FieldRow label={m.delegation_route_tier()} htmlFor="route-tier"><Select id="route-tier" value={draft.service_tier ?? ''} onValueChange={(service_tier) => setDraft({ ...draft, service_tier })}>
+      <SettingRow label={m.delegation_route_tier()} htmlFor="route-tier"><Select id="route-tier" value={draft.service_tier ?? ''} onValueChange={(service_tier) => setDraft({ ...draft, service_tier })}>
         <option value="">{m.delegation_inherit()}</option><option value="normal">{m.delegation_normal()}</option><option value="fast">{m.delegation_fast()}</option><option value="ultrafast">{m.delegation_ultrafast()}</option>
-      </Select></FieldRow>
+      </Select></SettingRow>
     </>}
     <div className="flex justify-end gap-2 py-2"><Button onClick={onCancel}>{m.cancel()}</Button><Button type="submit" disabled={!draft.name.trim() || !!profiles && !consent}>{m.save()}</Button></div>
   </form>

@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Settings › Models and Tools use the shared Settings headers and rows: auxiliary models, MCP servers and connectors no longer scroll inside their own boxes, and each connector's tool list has a name filter.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}
