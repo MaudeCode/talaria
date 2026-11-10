@@ -1327,9 +1327,9 @@ export type PluginAutoUpdateView = z.infer<typeof PluginAutoUpdateViewSchema>
 export const PluginGroupIdSchema = z.enum(['installed', 'platforms', 'web', 'image_gen', 'video_gen', 'browser', 'dashboard_auth', 'memory', 'model_providers', 'other'])
 export type PluginGroupId = z.infer<typeof PluginGroupIdSchema>
 /**
- * TAL-2132: `installed` holds every `source: installed` row, comes first and is always present; a bundled row joins the group its
- * `category` names (`-` read as `_`), else `other`. Rows sort by name; other empty groups are left out. With `q`, `plugin_keys`
- * holds only matches while both counts describe the whole group. `enabled_percent` is the share turned on, 0 for an empty group.
+ * TAL-2132: `installed` holds every `source: installed` row, comes first and is present even when empty; a bundled row joins the
+ * group its `category` names (`-` read as `_`), else `other`. Rows sort by name; other empty groups are left out. With `q`, only
+ * groups with a match are listed and `plugin_keys` holds only matches, while both counts describe the whole group. `enabled_percent` is the share turned on, 0 for an empty group.
  */
 export const PluginGroupSchema = z.object({ id: PluginGroupIdSchema, plugin_keys: z.array(z.string()), enabled_count: z.number().int(), total_count: z.number().int(), enabled_percent: z.number().min(0).max(100) })
 /** TAL-2132: the install's figures, regardless of `q`; `updates_tone` is `warning` while a plugin has an update waiting. */

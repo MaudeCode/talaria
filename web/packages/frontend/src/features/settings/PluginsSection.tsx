@@ -157,7 +157,7 @@ const GROUP: Record<PluginGroup['id'], { icon: LucideIcon; label: () => string }
 
 /**
  * TAL-2132: the profile's own plugins, then the Agent's in one collapsible row per group. Groups open on a click and start
- * closed; while the filter has text every group with a match is open and the rest are hidden.
+ * closed; while the filter has text the server lists only the groups with a match, and each is open.
  */
 function PluginGroups({ groups, bundled, plugins, filtering, browsing, rowProps, updateAll, autoUpdate }: { groups: PluginGroup[]; bundled: number; plugins: InstalledPlugin[]; filtering: boolean; browsing: boolean; rowProps: (p: InstalledPlugin) => RowProps; updateAll: ReactNode; autoUpdate: PluginAutoUpdateView | undefined }) {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
@@ -165,10 +165,10 @@ function PluginGroups({ groups, bundled, plugins, filtering, browsing, rowProps,
   const rows = (group: PluginGroup) => group.plugin_keys.flatMap((key) => byKey.get(key) ?? [])
   const mine = groups.find((g) => g.id === 'installed')
   const installedRows = mine ? rows(mine) : []
-  const shown = groups.filter((g) => g.id !== 'installed' && (!filtering || g.plugin_keys.length > 0))
+  const shown = groups.filter((g) => g.id !== 'installed')
   const toggle = (id: string) => setExpanded((cur) => { const next = new Set(cur); if (!next.delete(id)) next.add(id); return next })
   return <>
-    {mine && (!filtering || installedRows.length > 0) && <SettingsGroup id="installed" title={m.plugins_group_installed()} detail={mine.total_count} action={updateAll}>
+    {mine && <SettingsGroup id="installed" title={m.plugins_group_installed()} detail={mine.total_count} action={updateAll}>
       {!filtering && mine.total_count === 0 && <EmptyState compact>{browsing ? m.plugins_catalog_no_installed() : m.plugins_empty()}</EmptyState>}
       {installedRows.map((p) => <InstalledPluginRow key={p.key} {...rowProps(p)} />)}
       {autoUpdate && !filtering && <PluginAutoUpdateRow state={autoUpdate} />}

@@ -29,8 +29,10 @@ export function pluginListing<T extends ListedPlugin>(rows: T[], q = '') {
   for (const row of rows) members.get(groupOf(row))?.push(row)
   const groups = GROUP_IDS.flatMap((id) => {
     const all = (members.get(id) ?? []).sort(byName)
+    const keys = all.filter(matches).map((row) => row.key)
     const enabled = all.filter(on).length
-    return id === 'installed' || all.length ? [{ id, plugin_keys: all.filter(matches).map((row) => row.key), enabled_count: enabled, total_count: all.length, enabled_percent: all.length ? 100 * enabled / all.length : 0 }] : []
+    // A search lists only the groups it matched; without one, Installed shows even when empty.
+    return (needle ? keys.length : id === 'installed' || all.length) ? [{ id, plugin_keys: keys, enabled_count: enabled, total_count: all.length, enabled_percent: all.length ? 100 * enabled / all.length : 0 }] : []
   })
   const installed = members.get('installed')?.length ?? 0
   const updates = rows.filter((row) => row.update?.available === true).length

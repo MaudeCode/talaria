@@ -43,23 +43,16 @@ describe('pluginListing groups and summary (TAL-2132)', () => {
     expect(pluginListing(rows).summary).toEqual({ installed: 2, bundled: 12, enabled: 11, total: 14, updates: 1, updates_tone: 'warning' })
   })
 
-  it('narrows only plugin_keys and plugins with q; counts and summary describe the whole install', () => {
+  it('with q lists only the groups and keys that match; counts and summary describe the whole install', () => {
     const listing = pluginListing(rows, ' FAL ')
     expect(shape(listing.groups)).toEqual([
-      ['installed', [], 1, 2, 50],
-      ['platforms', [], 1, 2, 50],
-      ['web', [], 1, 1, 100],
       ['image_gen', ['image_gen/fal'], 1, 1, 100],
       ['video_gen', ['video_gen/fal'], 1, 1, 100],
-      ['browser', [], 1, 1, 100],
-      ['dashboard_auth', [], 1, 1, 100],
-      ['memory', [], 1, 1, 100],
-      ['model_providers', [], 1, 1, 100],
-      ['other', [], 2, 3, 200 / 3],
     ])
     expect(listing.summary).toEqual(pluginListing(rows).summary)
     expect(listing.plugins.map((p) => p.key)).toEqual(['image_gen/fal', 'video_gen/fal'])
     expect(listing.total).toBe(14)
+    expect(shape(pluginListing(rows, 'slack').groups)).toEqual([['platforms', ['platforms/slack'], 1, 2, 50]])
   })
 
   it('omits empty groups but keeps installed, and reads a row without a source as bundled', () => {

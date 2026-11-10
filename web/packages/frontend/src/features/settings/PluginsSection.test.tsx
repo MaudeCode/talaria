@@ -139,7 +139,7 @@ it('TAL-2132: shows the server figures and groups; a group opens and closes, and
   const summary = { installed: 2, bundled: 3, enabled: 4, total: 5, updates: 1, updates_tone: 'warning' as const }
   // The server's answers per `q`: with a filter only `plugins` and `plugin_keys` narrow.
   vi.mocked(api.fetchPlugins).mockImplementation((q = '') => Promise.resolve(q === 'fal'
-    ? { read_only: false, total: 5, summary, plugins: [rows.image, rows.video], groups: [group('installed', [], 1, 2), group('platforms', [], 1, 1), group('image_gen', ['image_gen/fal'], 1, 1), group('video_gen', ['video_gen/fal'], 1, 1)] }
+    ? { read_only: false, total: 5, summary, plugins: [rows.image, rows.video], groups: [group('image_gen', ['image_gen/fal'], 1, 1), group('video_gen', ['video_gen/fal'], 1, 1)] }
     : { read_only: false, total: 5, summary, plugins: Object.values(rows), groups: [group('installed', ['meshy', 'team-notes'], 1, 2), group('platforms', ['platforms/slack'], 1, 1), group('image_gen', ['image_gen/fal'], 1, 1), group('video_gen', ['video_gen/fal'], 1, 1)] }))
   renderPlugins()
   const shown = () => [...document.querySelectorAll('[data-plugin]')].map((row) => row.getAttribute('data-plugin'))
