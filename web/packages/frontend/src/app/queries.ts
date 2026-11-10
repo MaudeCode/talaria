@@ -9,6 +9,8 @@ import { keys } from '../api/queryKeys'
 import * as api from '../api/endpoints'
 import { useResourceEffects, useResourceMutation } from '../features/sessions/useResourceMutation'
 import { showErrorToast } from '../features/toast/errorToast'
+import { showToast } from '../features/toast/toast'
+import { m } from '../paraglide/messages.js'
 
 export { useSettingsQuery, useSetting, useSaveSettings } from './settings'
 
@@ -131,25 +133,37 @@ export function useOnboardingQuery() {
   return useQuery({ queryKey: keys.onboarding, queryFn: api.fetchOnboarding, staleTime: 0 })
 }
 
+/** A profile to switch to; `botChat` opens that profile's canonical Bot Chat once switched. */
+export interface ProfileSwitch { name: string; botChat?: boolean }
+
 /**
  * Profile switch: server-side cookie change; every cached resource belongs to the previous profile. TAL-2099: the
- * switch happens in place, without a reload: an open chat (the previous profile's) gives way to `/`, then the bootstrap
- * and every query reload while the shell, a new chat's draft and open panels stay.
+ * switch happens in place, without a reload: an open chat (the previous profile's) gives way to `/` or the requested
+ * Bot Chat, then the bootstrap and every query reload while the shell and a new chat's draft stay. The switch remounts
+ * the page that started it, so the confirmation, the error and the Bot Chat navigation live here: a caller's own
+ * `mutate` callbacks would not run after that remount.
  */
 export function useSwitchProfile() {
   const qc = useQueryClient()
   const router = useRouter()
   return useMutation({
-    mutationFn: (name: string) => api.switchProfile(name),
-    onSuccess: async () => {
+    mutationFn: ({ name }: ProfileSwitch) => api.switchProfile(name),
+    onSuccess: async (res, { name, botChat }) => {
       teardownAll()
       // `/` restores the last chat, which is the previous profile's.
       removePersisted('hermes-webui-session')
-      if (router.state.location.pathname.startsWith('/session/')) await router.navigate({ to: '/' })
+      // The server resolves the Bot Chat in the switch's own reply (TAL-213), not from the cached listing.
+      const botSession = botChat ? res.profiles.find((p) => p.name === name)?.canonical_session?.tip_session_id : undefined
+      if (botSession) await router.navigate({ to: '/session/$sessionId', params: { sessionId: botSession } })
+      else {
+        showToast(m.profile_switched({ name }))
+        if (router.state.location.pathname.startsWith('/session/')) await router.navigate({ to: '/' })
+      }
       qc.getMutationCache().clear()
       // Reset, not clear: mounted readers drop the previous profile's data and refetch at once.
       await Promise.all([loadBootstrap(), qc.resetQueries()])
     },
+    onError: toastError,
   })
 }
 

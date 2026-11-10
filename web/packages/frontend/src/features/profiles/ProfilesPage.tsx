@@ -68,18 +68,8 @@ export function ProfilesPage({ name }: { name?: string | undefined } = {}) {
   const effects = useResourceEffects()
   const list = withCreated(withEffects(profiles.data?.profiles ?? [], (p) => `profile:${p.name}`, effects), 'profile', effects)
   const active = profiles.data?.active
-  // TAL-213: the server resolves each profile's canonical Bot Chat. Opening it always reasserts the profile (another tab
-  // may have moved the shared cookie) and opens the chat from the row the switch just resolved.
-  const openBotChat = (name: string) => {
-    switchProfile.mutate(name, {
-      onSuccess: (res) => {
-        const sessionId = res.profiles.find((p) => p.name === name)?.canonical_session?.tip_session_id
-        if (sessionId) void navigate({ to: '/session/$sessionId', params: { sessionId } })
-        else showToast(m.profile_switched({ name }))
-      },
-      onError: (e) => showErrorToast(e),
-    })
-  }
+  // TAL-213: opening a Bot Chat always reasserts its profile (another tab may have moved the shared cookie).
+  const openBotChat = (name: string) => switchProfile.mutate({ name, botChat: true })
   const toList = () => { void navigate({ to: '/settings/$section', params: { section: 'profiles' }, search: {} }) }
   // A profile the server has not created yet has no detail to open and nothing to use or delete.
   const confirmed = (p: Profile) => !!profiles.data?.profiles.some((row) => row.name === p.name)
@@ -88,7 +78,7 @@ export function ProfilesPage({ name }: { name?: string | undefined } = {}) {
     const isActive = p.name === active
     return [
       ...(p.canonical_session ? [{ label: m.profile_open_bot_chat(), run: () => openBotChat(p.name), disabled: switchProfile.isPending }] : []),
-      ...(!isActive ? [{ label: m.profile_use(), title: m.profile_switch_title(), run: () => switchProfile.mutate(p.name, { onSuccess: () => showToast(m.profile_switched({ name: p.name })), onError }) }] : []),
+      ...(!isActive ? [{ label: m.profile_use(), title: m.profile_switch_title(), run: () => switchProfile.mutate({ name: p.name }) }] : []),
       ...(canManage && !profiles.data?.single_profile_mode ? [{ label: m.profile_edit(), run: () => setEditing(p.name) }] : []),
       ...(!p.is_default && !isActive ? [{ label: m.profile_delete_title(), Icon: Trash2, run: () => setDeleting(p.name), danger: true }] : []),
     ]

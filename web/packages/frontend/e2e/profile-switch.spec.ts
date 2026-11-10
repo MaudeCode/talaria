@@ -103,6 +103,7 @@ test('switching from an open chat leaves the previous profile\'s chat for a new 
   await stripProfile(page, 'default').click()
   await page.getByRole('menuitemradio', { name: /research/ }).click()
   await expect(page).toHaveURL((url) => url.pathname === '/')
+  await expect(page.getByText('Switched to profile: research')).toBeVisible()
   await profiles.expectInPlace('research')
   await expect(page.getByText('Hello from default-chat')).toHaveCount(0)
 })
@@ -141,21 +142,29 @@ test('switching while editing Memory drops the previous profile\'s unsaved edit'
   await expect(page.getByText('An edit made in the default profile')).toHaveCount(0)
 })
 
-test('Use and Open Bot Chat on the Profiles page switch in place, and the Bot Chat opens through the router', async ({ page }, info) => {
+test('Use on the Profiles page switches in place and confirms the switch', async ({ page }, info) => {
   const profiles = await twoProfiles(page)
   await page.goto('/settings/profiles')
   const research = page.locator('[data-profile="research"]')
   await expect(research).toBeVisible()
   await profiles.arm()
-  const rowAction = async (name: string) => {
-    await research.getByRole('button', { name: 'Profile actions' }).click()
-    await page.getByRole('menu', { name: 'Profile actions' }).getByRole('menuitem', { name }).click()
-  }
-  await rowAction('Use')
+  await research.getByRole('button', { name: 'Profile actions' }).click()
+  await page.getByRole('menu', { name: 'Profile actions' }).getByRole('menuitem', { name: 'Use' }).click()
+  // The switch remounts the page that started it; the confirmation still shows.
+  await expect(page.getByText('Switched to profile: research')).toBeVisible()
   await profiles.expectInPlace('research', ['/api/bootstrap', '/api/settings'])
   await expect(research.getByText('ACTIVE')).toBeVisible()
   await page.screenshot({ path: info.outputPath('profiles-use.png') })
-  await rowAction('Open Bot Chat')
+})
+
+test('Open Bot Chat on an inactive profile switches and opens its chat through the router', async ({ page }) => {
+  const profiles = await twoProfiles(page)
+  await page.goto('/settings/profiles')
+  const research = page.locator('[data-profile="research"]')
+  await expect(research).toBeVisible()
+  await profiles.arm()
+  await research.getByRole('button', { name: 'Profile actions' }).click()
+  await page.getByRole('menu', { name: 'Profile actions' }).getByRole('menuitem', { name: 'Open Bot Chat' }).click()
   await expect(page).toHaveURL((url) => url.pathname === '/session/research-bot')
   await expect(page.getByText('Hello from research-bot')).toBeVisible()
   await profiles.expectInPlace('research')

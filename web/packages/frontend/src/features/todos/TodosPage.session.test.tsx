@@ -41,7 +41,7 @@ it('hydrates a cold session task list and clears it on an accepted clear and a p
   act(() => { qc.setQueryData(keys.sessions.detail(sid), { session: fixture.session }) })
   expect(await screen.findByText('Owner task')).toBeVisible()
   vi.mocked(api.fetchSession).mockResolvedValue({ session: { ...withoutTodos, messages: [] } } as Awaited<ReturnType<typeof api.fetchSession>>)
-  await act(() => switchProfile('other'))
+  await act(() => switchProfile({ name: 'other' }))
   expect(await screen.findByText('This chat has no task list yet.')).toBeVisible()
   expect(screen.queryByText('Owner task')).not.toBeInTheDocument()
 })
