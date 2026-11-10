@@ -25,7 +25,6 @@ import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
 import { cn } from '../../ui/cn'
 import { useResourceEffects, useResourceMutation, withCreated, withEffects } from '../sessions/useResourceMutation'
-import { appUrl } from '../../lib/appRoot'
 import { SettingLink, SettingText, SettingValue, SettingValues, SettingsGroup } from '../settings/SettingsRows'
 
 // TAL-805: `gateway_running` labels rows from a server without `gateway_mode`; delete the fallback once every supported server ships the field.
@@ -75,8 +74,8 @@ export function ProfilesPage({ name }: { name?: string | undefined } = {}) {
     switchProfile.mutate(name, {
       onSuccess: (res) => {
         const sessionId = res.profiles.find((p) => p.name === name)?.canonical_session?.tip_session_id
-        if (sessionId) window.location.assign(appUrl(`session/${encodeURIComponent(sessionId)}`).href)
-        else window.location.reload()
+        if (sessionId) void navigate({ to: '/session/$sessionId', params: { sessionId } })
+        else showToast(m.profile_switched({ name }))
       },
       onError: (e) => showErrorToast(e),
     })
@@ -89,7 +88,7 @@ export function ProfilesPage({ name }: { name?: string | undefined } = {}) {
     const isActive = p.name === active
     return [
       ...(p.canonical_session ? [{ label: m.profile_open_bot_chat(), run: () => openBotChat(p.name), disabled: switchProfile.isPending }] : []),
-      ...(!isActive ? [{ label: m.profile_use(), title: m.profile_switch_title(), run: () => switchProfile.mutate(p.name, { onSuccess: () => { showToast(m.profile_switched({ name: p.name })); window.location.reload() } }) }] : []),
+      ...(!isActive ? [{ label: m.profile_use(), title: m.profile_switch_title(), run: () => switchProfile.mutate(p.name, { onSuccess: () => showToast(m.profile_switched({ name: p.name })), onError }) }] : []),
       ...(canManage && !profiles.data?.single_profile_mode ? [{ label: m.profile_edit(), run: () => setEditing(p.name) }] : []),
       ...(!p.is_default && !isActive ? [{ label: m.profile_delete_title(), Icon: Trash2, run: () => setDeleting(p.name), danger: true }] : []),
     ]

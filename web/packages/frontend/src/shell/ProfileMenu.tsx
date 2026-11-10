@@ -5,6 +5,7 @@ import { useProfilesQuery, useSwitchProfile } from '../app/queries'
 import { useBootstrap } from '../app/bootstrap'
 import { Menu, MenuChoiceItem, MenuItem, MenuRadioGroup, MenuSeparator } from '../ui/Menu'
 import { showToast } from '../features/toast/toast'
+import { showErrorToast } from '../features/toast/errorToast'
 import { Link } from '@tanstack/react-router'
 
 /** The active profile's name, from the profile list once it loads and from bootstrap until then. */
@@ -37,7 +38,7 @@ export function ProfileMenu({ row, composer }: { row?: boolean; composer?: boole
         <Chip size="xs" icon={<UserRound size={13} className="shrink-0" aria-hidden="true" />} label={active} title={m.profile_switch_title()} />
       )}
     >
-      <MenuRadioGroup value={active} onValueChange={(value: string) => { if (value !== active) switchProfile.mutate(value, { onSuccess: () => { showToast(m.profile_switched({ name: value })); window.location.reload() } }) }}>
+      <MenuRadioGroup value={active} onValueChange={(value: string) => { if (value !== active) switchProfile.mutate(value, { onSuccess: () => showToast(m.profile_switched({ name: value })), onError: (e) => showErrorToast(e) }) }}>
         {list.map((p) => (
           <MenuChoiceItem key={p.name} value={p.name}>
             <span className="truncate">{p.display_name || p.name}</span>

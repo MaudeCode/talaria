@@ -62,13 +62,13 @@ test('the Settings menu groups its sections by scope, naming the active profile 
   await profile.getByRole('link', { name: 'default', exact: true }).click()
   await expect(page).toHaveURL(/\/settings\/profiles\?name=default$/)
   await expect(page.locator('[data-profile-detail="default"]')).toBeVisible()
-  // Switching profile from its detail page reloads; the header then names the new profile.
+  // TAL-2099: switching profile from its detail page happens in place; the header then names the new profile.
   await page.route('**/api/profile/switch', (route) => { active = 'research'; return route.fulfill({ json: { ...listed(), is_default: false, default_model: null, default_model_provider: null, default_workspace: null } }) })
   await page.goto('/settings/profiles')
   await settle(page)
   await page.locator('[data-profile="research"]').getByRole('link', { name: 'research' }).click()
   await page.locator('[data-profile-detail="research"]').getByRole('button', { name: 'Use' }).click()
-  await page.waitForEvent('load')
+  await expect(profile).toContainText('research')
   await page.goto('/settings/appearance')
   await settle(page)
   await expect(profile).toContainText('research')

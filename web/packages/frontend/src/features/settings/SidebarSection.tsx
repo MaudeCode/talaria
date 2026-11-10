@@ -67,7 +67,7 @@ export function SidebarSection() {
       </SettingsGroup>
       <SettingsGroup id="buttons" title={m.settings_group_buttons()}>
         <Toggle label={m.settings_label_sidebar_feedback()} settingKey="show_sidebar_feedback" />
-        <Toggle label={m.settings_label_show_titlebar_profile()} settingKey="show_titlebar_profile" fallback />
+        <Toggle label={m.settings_label_show_titlebar_profile()} settingKey="show_titlebar_profile" />
       </SettingsGroup>
       <SidebarQuotaSources />
       <SettingsGroup id="workspace" title={m.settings_group_workspace_panel()}>

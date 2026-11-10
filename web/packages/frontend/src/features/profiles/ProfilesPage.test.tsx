@@ -21,6 +21,7 @@ vi.mock(import('../../api/endpoints'), async (importOriginal) => ({
   deleteProfile: vi.fn(), createProfile: vi.fn(), updateProfile: vi.fn(),
   fetchSettings: vi.fn(() => Promise.resolve({ bot_name: 'Maude' })), saveSettings: vi.fn((patch: Record<string, unknown>) => Promise.resolve({ bot_name: 'Maude', ...patch })),
   fetchModels: vi.fn(() => Promise.resolve({ groups: [{ provider: 'OpenAI Codex', provider_id: 'openai-codex', models: [{ id: '@openai-codex:gpt-6-astra', label: 'GPT-6 Astra', provider_id: 'openai-codex' }] }] })),
+  fetchBootstrap: vi.fn(async () => (await import('../../contracts/adapters/memory')).DEFAULT_BOOTSTRAP),
   switchProfile: vi.fn(() => Promise.resolve({ profiles: [{ name: 'scout', canonical_session: { session_id: 'scout-root', tip_session_id: 'scout-live' } }], active: 'scout', is_default: false, default_model: null, default_model_provider: null, default_workspace: null })),
 }))
 vi.mock(import('../toast/errorToast'), () => ({ showErrorToast: vi.fn() }))
@@ -39,7 +40,8 @@ async function renderPage(bootstrap = DEFAULT_BOOTSTRAP, path = '/settings/profi
   } })
   const skills = createRoute({ getParentRoute: () => root, path: '/skills', component: () => <p>Skills page</p> })
   const memory = createRoute({ getParentRoute: () => root, path: '/memory', component: () => <p>Memory page</p> })
-  const router = createRouter({ routeTree: root.addChildren([section, skills, memory]), history: createMemoryHistory({ initialEntries: [path] }) })
+  const chat = createRoute({ getParentRoute: () => root, path: '/session/$sessionId', component: () => <p>Chat page</p> })
+  const router = createRouter({ routeTree: root.addChildren([section, skills, memory, chat]), history: createMemoryHistory({ initialEntries: [path] }) })
   await router.load()
   render(<RouterProvider router={router} />)
   return router
@@ -89,9 +91,10 @@ describe('ProfilesPage', () => {
 
   it('TAL-213: shows each bot identity and opens the canonical Bot Chat only where one exists', async () => {
     const assign = vi.fn()
-    vi.stubGlobal('location', { href: window.location.href, origin: window.location.origin, assign })
+    const reload = vi.fn()
+    vi.stubGlobal('location', { href: window.location.href, origin: window.location.origin, assign, reload })
     try {
-      await renderPage()
+      const router = await renderPage()
       const scout = (await screen.findByText('Research lead')).closest('li')!
       expect(within(scout).getByText('scout')).toBeVisible()
       expect(within(scout).getByText('Finds sources.')).toBeVisible()
@@ -102,8 +105,11 @@ describe('ProfilesPage', () => {
       await userEvent.keyboard('{Escape}')
       await userEvent.click((await rowMenuItems(scout)).find((item) => item.textContent === 'Open Bot Chat')!)
       expect(api.switchProfile).toHaveBeenCalledWith('scout')
-      // The chat opens from the row the switch resolved, not the cached listing.
-      await vi.waitFor(() => { expect(assign).toHaveBeenCalledWith(expect.stringMatching(/\/session\/scout-live$/)) })
+      // The chat opens from the row the switch resolved, not the cached listing, through the router (TAL-2099).
+      await vi.waitFor(() => { expect(router.state.location.pathname).toBe('/session/scout-live') })
+      expect(await screen.findByText('Chat page')).toBeVisible()
+      expect(assign).not.toHaveBeenCalled()
+      expect(reload).not.toHaveBeenCalled()
     } finally {
       vi.unstubAllGlobals()
     }

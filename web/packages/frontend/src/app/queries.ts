@@ -1,7 +1,10 @@
 import type { DelegationSettings, DelegationWrite } from '@maudecode/talaria-web-contracts'
 /** Query hooks for shared server resources. Keys live in api/queryKeys.ts. */
 import { keepPreviousData, useMutation, useQuery, useQueryClient, type UseQueryOptions } from '@tanstack/react-query'
+import { useRouter } from '@tanstack/react-router'
 import { teardownAll } from '../stream/connection'
+import { loadBootstrap } from './bootstrap'
+import { removePersisted } from '../lib/persisted'
 import { keys } from '../api/queryKeys'
 import * as api from '../api/endpoints'
 import { useResourceEffects, useResourceMutation } from '../features/sessions/useResourceMutation'
@@ -128,15 +131,24 @@ export function useOnboardingQuery() {
   return useQuery({ queryKey: keys.onboarding, queryFn: api.fetchOnboarding, staleTime: 0 })
 }
 
-/** Profile switch: server-side cookie change; every cached resource belongs to the previous profile. */
+/**
+ * Profile switch: server-side cookie change; every cached resource belongs to the previous profile. TAL-2099: the
+ * switch happens in place, without a reload: an open chat (the previous profile's) gives way to `/`, then the bootstrap
+ * and every query reload while the shell, a new chat's draft and open panels stay.
+ */
 export function useSwitchProfile() {
   const qc = useQueryClient()
+  const router = useRouter()
   return useMutation({
     mutationFn: (name: string) => api.switchProfile(name),
     onSuccess: async () => {
       teardownAll()
-      qc.clear()
-      await qc.invalidateQueries()
+      // `/` restores the last chat, which is the previous profile's.
+      removePersisted('hermes-webui-session')
+      if (router.state.location.pathname.startsWith('/session/')) await router.navigate({ to: '/' })
+      qc.getMutationCache().clear()
+      // Reset, not clear: mounted readers drop the previous profile's data and refetch at once.
+      await Promise.all([loadBootstrap(), qc.resetQueries()])
     },
   })
 }

@@ -3,6 +3,7 @@ import { NAV_ITEMS, panelForPath } from './nav'
 import { Menu as MenuIcon, PanelRight, Plus, RotateCw } from 'lucide-react'
 import { m } from '../paraglide/messages.js'
 import { useBootstrap } from '../app/bootstrap'
+import { useSetting } from '../app/settings'
 import { ProfileMenu } from './ProfileMenu'
 import { toggleMobileSidebar, toggleSidePanel, useIsDesktop, useShellState } from './useShellState'
 import { useNewChat } from '../features/sessions/useNewChat'
@@ -26,10 +27,12 @@ export function Titlebar({ subtitle }: { subtitle?: string | undefined }) {
   const isDesktop = useIsDesktop()
   // TAL-373: a chat's right panel (Files, Agents) has no edge tab on narrow screens; this opens it there.
   const inChat = useLocation({ select: (location) => location.pathname.startsWith('/session/') })
+  // TAL-2099: the composer strip carries the profile; the titlebar adds one only when this setting asks for it.
+  const showProfile = useSetting('show_titlebar_profile') === true
   return (
     <header className="app-titlebar relative z-20 flex h-[38px] shrink-0 items-center justify-center bg-(--titlebar-bg) [backdrop-filter:var(--chrome-backdrop)] border-b-0 px-3 pt-(--app-titlebar-safe-top) pl-[max(12px,env(safe-area-inset-left,0))] pr-[max(12px,env(safe-area-inset-right,0))] box-content text-[12px] text-muted select-none [-webkit-app-region:drag] max-[901px]:justify-between max-[769px]:bg-(--titlebar-bg) max-[769px]:border-b max-[769px]:border-b-(--titlebar-border) max-[641px]:h-[52px]" role="banner">
       <div className="app-titlebar-left flex items-center gap-1">
-        <ProfileMenu />
+        {showProfile && <ProfileMenu />}
         {!isDesktop && <button className="app-titlebar-hamburger has-tooltip has-tooltip--bottom hidden size-11 shrink-0 [-webkit-app-region:no-drag] items-center justify-center bg-transparent border-0 text-muted rounded-[8px] cursor-pointer p-0 [-webkit-tap-highlight-color:transparent] transition-[background-color,color] duration-150 max-[901px]:flex max-[641px]:leading-none max-[641px]:overflow-hidden" id="btnHamburger" type="button" data-tooltip={m.tab_more()} aria-label={m.tab_more()} onClick={toggleMobileSidebar}>
           <MenuIcon size={22} aria-hidden="true" />
         </button>}
