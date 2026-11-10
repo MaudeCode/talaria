@@ -1,9 +1,9 @@
 import { UserRound } from 'lucide-react'
-import { Chip } from '../features/composer/chips'
+import { Chip, ComposerMenu } from '../features/composer/chips'
 import { m } from '../paraglide/messages.js'
 import { useProfilesQuery, useSwitchProfile } from '../app/queries'
 import { useBootstrap } from '../app/bootstrap'
-import { MENU_ROW, Menu, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../ui/Menu'
+import { Menu, MenuChoiceItem, MenuItem, MenuRadioGroup, MenuSeparator } from '../ui/Menu'
 import { showToast } from '../features/toast/toast'
 import { Link } from '@tanstack/react-router'
 
@@ -13,17 +13,21 @@ export function useActiveProfileName(): string | undefined {
   return useProfilesQuery().data?.active ?? bootstrap.profile?.name
 }
 
-/** Titlebar profile switcher (Base UI Menu). Hidden in single-profile mode or when only one profile exists. */
-export function ProfileMenu({ row }: { row?: boolean } = {}) {
+/**
+ * Profile switcher (Base UI Menu): the titlebar's opens downward; `composer` makes it one of the composer strip's menus
+ * (TAL-2095). Hidden in single-profile mode or when only one profile exists.
+ */
+export function ProfileMenu({ row, composer }: { row?: boolean; composer?: boolean } = {}) {
   const bootstrap = useBootstrap()
   const profiles = useProfilesQuery()
   const switchProfile = useSwitchProfile()
   const list = profiles.data?.profiles ?? []
   const active = useActiveProfileName() ?? 'default'
   if (!row && (bootstrap.features.single_profile_mode || list.length < 2)) return null
+  const ProfileMenuRoot = composer ? ComposerMenu : Menu
   return (
-    <Menu
-      label={m.profile_switch_title()}
+    <ProfileMenuRoot
+      label={composer ? m.composer_control_profile() : m.profile_switch_title()}
       trigger={row ? (
         <button type="button" className="composer-mobile-config-action" title={m.composer_control_profile()} aria-label={`${m.composer_control_profile()}: ${active}`}>
           <UserRound size={14} aria-hidden="true" />
@@ -35,14 +39,14 @@ export function ProfileMenu({ row }: { row?: boolean } = {}) {
     >
       <MenuRadioGroup value={active} onValueChange={(value: string) => { if (value !== active) switchProfile.mutate(value, { onSuccess: () => { showToast(m.profile_switched({ name: value })); window.location.reload() } }) }}>
         {list.map((p) => (
-          <MenuRadioItem key={p.name} value={p.name} className={MENU_ROW}>
-            <span className="flex-1 truncate">{p.name}{p.is_default ? ` ${m.profile_default_label()}` : ''}</span>
-            {p.name === active && <span className="text-xs font-semibold text-accent-text">{m.profile_active()}</span>}
-          </MenuRadioItem>
+          <MenuChoiceItem key={p.name} value={p.name}>
+            <span className="truncate">{p.display_name || p.name}</span>
+            {p.is_default && p.name !== 'default' && <span className="shrink-0 text-xs text-muted">{m.profile_default_label()}</span>}
+          </MenuChoiceItem>
         ))}
       </MenuRadioGroup>
       <MenuSeparator />
       <MenuItem render={<Link to="/settings/$section" params={{ section: 'profiles' }} />}>{m.tab_profiles()}</MenuItem>
-    </Menu>
+    </ProfileMenuRoot>
   )
 }

@@ -55,7 +55,7 @@ export function ComposerControls({ placement, sessionId, session, settings, pend
           {!hide('hide_composer_workspace') && <WorkspaceChip value={session?.workspace ?? pendingChoices?.workspace ?? settings?.default_workspace} name={session ? session.workspace_name ?? null : undefined} onChange={onWorkspaceChange} onNewWorktree={onNewWorktreeChat} onRemoveWorktree={onRemoveWorktree} />}
           {!session?.read_only && !hide('hide_composer_toolsets') && <ToolsetsChip sessionId={sessionId ?? undefined} value={session?.enabled_toolsets ?? pendingChoices?.enabled_toolsets ?? null} onChange={onToolsetsChange} />}
           {modeChip}
-          {!hide('hide_composer_profile') && <ProfileMenu />}
+          {!hide('hide_composer_profile') && <ProfileMenu composer />}
         </div>
     )}
   </>)
