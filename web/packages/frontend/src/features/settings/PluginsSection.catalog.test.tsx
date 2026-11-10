@@ -13,7 +13,7 @@ const entry = { name: 'probe', title: 'Probe', description: 'Synthetic plugin', 
 beforeEach(() => {
   vi.resetAllMocks()
   state.context = {}
-  vi.mocked(api.fetchPlugins).mockResolvedValue({ plugins: [], read_only: false })
+  vi.mocked(api.fetchPlugins).mockResolvedValue({ plugins: [], total: 0, empty: true, read_only: false })
   vi.mocked(api.fetchPluginCatalog).mockResolvedValue({ supported: true, read_only: false, entries: [entry], total: 1, next_offset: null })
 })
 async function setup(installAvailable = true) {

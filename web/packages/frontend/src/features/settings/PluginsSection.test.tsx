@@ -10,7 +10,7 @@ const clients = [
 ]
 const authorize = 'https://accounts.example.test/authorize?client_id=synthetic&state=synthetic-state'
 vi.mock('../../api/endpoints', () => ({
-  fetchPlugins: vi.fn(() => Promise.resolve({ plugins: [{ key: 'calendar', name: 'Calendar', version: '1.0.0', kind: 'standalone', enabled: true, oauth_clients: clients.map((c) => ({ ...c })) }, { key: 'plain', name: 'Plain', enabled: true }], read_only: false })),
+  fetchPlugins: vi.fn(() => Promise.resolve({ plugins: [{ key: 'calendar', name: 'Calendar', version: '1.0.0', kind: 'standalone', enabled: true, oauth_clients: clients.map((c) => ({ ...c })) }, { key: 'plain', name: 'Plain', enabled: true }], total: 2, read_only: false })),
   onboardingOauthStart: vi.fn((provider: string) => Promise.resolve({ ok: true, status: 'pending', flow_id: 'flow-1', provider, verification_url: authorize, url: authorize, redirect_uri: 'http://127.0.0.1:43123/callback', authorize_host: 'accounts.example.test', token_host: 'oauth2.example.test', expires_in: 180, interval: 2 })),
   onboardingOauthPoll: vi.fn(() => Promise.resolve({ ok: true, status: 'pending', flow_id: 'flow-1' })),
   onboardingOauthCancel: vi.fn(() => Promise.resolve({ ok: true, status: 'cancelled', flow_id: 'flow-1' })),
@@ -36,7 +36,7 @@ it.each([
   ['unknown', 'Settings saved. Live MCP application is unconfirmed. Check MCP status before retrying.'],
 ] as const)('renders the server runtime application result %s after saving', async (runtime_application, message) => {
   const settings = [{ key: 'endpoint', type: 'string' as const, label: 'Endpoint', description: '', required: false, value: 'one' }]
-  vi.mocked(api.fetchPlugins).mockResolvedValueOnce({ plugins: [{ key: 'demo', name: 'Demo', settings }], empty: false, supported_hooks: [], read_only: false })
+  vi.mocked(api.fetchPlugins).mockResolvedValueOnce({ plugins: [{ key: 'demo', name: 'Demo', settings }], total: 1, empty: false, supported_hooks: [], read_only: false })
   vi.mocked(api.savePluginSettings).mockResolvedValueOnce({ ok: true, key: 'demo', written: ['endpoint'], settings, runtime_application })
   renderPlugins()
   await userEvent.click(await screen.findByRole('button', { name: 'Settings' }))
@@ -78,7 +78,7 @@ describe('PluginsSection OAuth clients', () => {
 
 it('closes plugin settings on Save and shows the saved value at once (TAL-1179)', async () => {
   const settings = [{ key: 'endpoint', type: 'string' as const, label: 'Endpoint', description: '', required: false, value: 'one' }]
-  vi.mocked(api.fetchPlugins).mockResolvedValue({ plugins: [{ key: 'demo', name: 'Demo', settings }], empty: false, supported_hooks: [], read_only: false })
+  vi.mocked(api.fetchPlugins).mockResolvedValue({ plugins: [{ key: 'demo', name: 'Demo', settings }], total: 1, empty: false, supported_hooks: [], read_only: false })
   vi.mocked(api.savePluginSettings).mockReturnValueOnce(new Promise(() => undefined))
   renderPlugins()
   await userEvent.click(await screen.findByRole('button', { name: 'Settings' }))
@@ -91,26 +91,38 @@ it('closes plugin settings on Save and shows the saved value at once (TAL-1179)'
   expect(screen.getByRole('textbox', { name: 'Endpoint' })).toHaveValue('two')
 })
 
-it('filters installed plugins by name or description and keeps each description to one titled line (TAL-2082)', async () => {
-  vi.mocked(api.fetchPlugins).mockResolvedValueOnce({ read_only: false, plugins: [
-    { key: 'calendar', name: 'Calendar', kind: 'standalone', description: 'Reads your events', enabled: true },
-    { key: 'mailer', name: 'Mailer', description: 'Sends CALENDAR invites by email', enabled: true },
-    { key: 'notes', name: 'Notes', enabled: true },
-  ] })
+it("renders the server's filter answer and keeps each description to one titled line (TAL-2082, TAL-2129)", async () => {
+  const calendar = { key: 'calendar', name: 'Calendar', kind: 'standalone', description: 'Reads your events', enabled: true }
+  const mailer = { key: 'mailer', name: 'Mailer', description: 'Sends CALENDAR invites by email', enabled: true }
+  const notes = { key: 'notes', name: 'Notes', enabled: true }
+  // The server's answers per `q`; each is a new response with the install's `total`.
+  const answers: Record<string, typeof notes[]> = { '': [calendar, mailer, notes], calendar: [calendar, mailer], EMAIL: [mailer], EMAILzzz: [] }
+  vi.mocked(api.fetchPlugins).mockImplementation((q = '') => Promise.resolve({ read_only: false, total: 3, empty: false, plugins: structuredClone(answers[q] ?? []) }))
   renderPlugins()
   const shown = () => [...document.querySelectorAll('[data-plugin]')].map((row) => row.getAttribute('data-plugin'))
   const description = await screen.findByText('standalone · Reads your events')
   expect(description).toHaveClass('truncate')
   expect(description).toHaveAttribute('title', 'standalone · Reads your events')
   const filter = screen.getByRole('searchbox', { name: 'Filter plugins' })
-  await userEvent.type(filter, 'calendar')
-  expect(shown()).toEqual(['calendar', 'mailer'])
+  await userEvent.type(filter, ' calendar ')
+  await waitFor(() => expect(shown()).toEqual(['calendar', 'mailer']))
+  expect(api.fetchPlugins).toHaveBeenLastCalledWith('calendar')
   await userEvent.clear(filter)
   await userEvent.type(filter, 'EMAIL')
-  expect(shown()).toEqual(['mailer'])
+  await waitFor(() => expect(shown()).toEqual(['mailer']))
   await userEvent.type(filter, 'zzz')
-  expect(shown()).toEqual([])
+  await waitFor(() => expect(shown()).toEqual([]))
+  // `total` tells "nothing matches" from "nothing installed".
   expect(screen.getByText('No plugins match')).toBeInTheDocument()
+  expect(screen.queryByText('No plugins found.')).not.toBeInTheDocument()
   await userEvent.clear(filter)
-  expect(shown()).toEqual(['calendar', 'mailer', 'notes'])
+  await waitFor(() => expect(shown()).toEqual(['calendar', 'mailer', 'notes']))
+  vi.mocked(api.fetchPlugins).mockReset()
+})
+
+it('an install with no plugins shows the empty state without a filter (TAL-2129)', async () => {
+  vi.mocked(api.fetchPlugins).mockResolvedValueOnce({ read_only: false, total: 0, empty: true, plugins: [] })
+  renderPlugins()
+  expect(await screen.findByText('No plugins found.')).toBeInTheDocument()
+  expect(screen.queryByRole('searchbox', { name: 'Filter plugins' })).not.toBeInTheDocument()
 })

@@ -27,6 +27,7 @@ import { NOT_CONTROLLED, restartGateway } from '../tools/gateway-restart.js'
 import { projectOsDashboard } from '../tools/project-os.js'
 import { PluginSettingsInvalid, planPluginSettings, pluginSettingsView, serializePluginSettingsSave } from '../tools/plugin-settings.js'
 import { checkPastedRedirect } from '../tools/plugin-oauth.js'
+import { pluginListing } from '../tools/plugin-listing.js'
 import { oauthCall, oauthView } from './settings-router.js'
 import { credentialShadowed, RuntimeCredentialError, writeRuntimeCredential } from '../providers/runtime-env.js'
 import { EnvWriteError, loadEnvFile } from '../providers/env-file.js'
@@ -805,11 +806,11 @@ export const toolsRouter = os.router({
       return operationView(ctx, await connectorCall(ctx, 'connectors.respond', { op_id: input.op_id, action: move.action, ...(move.target ? { target: move.target } : {}), ...(move.env ? { env: move.env } : {}) }))
     })),
   },
-  plugins: os.plugins.handler(({ context: { ctx } }) => run(async () => {
+  plugins: os.plugins.handler(({ input, context: { ctx } }) => run(async () => {
     const sidecar = ctx.deps.sidecar()
     const hooks = ['pre_tool_call', 'post_tool_call', 'pre_llm_call', 'post_llm_call']
     const editable = await sessionCanManageServer(ctx, await ensureTrustedAuthSession(ctx))
-    if (!sidecar) return { plugins: [], empty: true, supported_hooks: hooks, read_only: true, unavailable: true }
+    if (!sidecar) return { plugins: [], total: 0, empty: true, supported_hooks: hooks, read_only: true, unavailable: true }
     try {
       const config: Dict = await ctx.deps.agentConfig.read(home(ctx)).catch(() => ({}))
       const selected: Record<string, string> = {}
@@ -831,10 +832,10 @@ export const toolsRouter = os.router({
         ...(settings.has(plugin.key) ? { settings: settings.get(plugin.key) } : {}),
         ...(oauth.has(plugin.key) ? { oauth_clients: oauth.get(plugin.key) } : {}),
       }))
-      return { plugins, empty: plugins.length === 0, supported_hooks: result.supported_hooks, read_only: !editable, plugin_isolation_advisory: advisory, ...(autoUpdate?.supported ? { auto_update: await pluginAutoUpdateView(ctx, autoUpdate) } : {}) }
+      return { ...pluginListing(plugins, input.q), supported_hooks: result.supported_hooks, read_only: !editable, plugin_isolation_advisory: advisory, ...(autoUpdate?.supported ? { auto_update: await pluginAutoUpdateView(ctx, autoUpdate) } : {}) }
     } catch (error) {
       ctx.deps.log(`[plugins] visibility payload failed: ${str((error as Error).message)}`)
-      return { plugins: [], empty: true, supported_hooks: hooks, read_only: true, unavailable: true }
+      return { plugins: [], total: 0, empty: true, supported_hooks: hooks, read_only: true, unavailable: true }
     }
   })),
   pluginCatalog: os.pluginCatalog.handler(({ input, context: { ctx } }) => run(async () => {

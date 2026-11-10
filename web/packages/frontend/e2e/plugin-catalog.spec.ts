@@ -1,4 +1,5 @@
 import { expect, settle, test } from './fixtures'
+import { routePlugins } from './plugins'
 
 test.use({ serviceWorkers: 'block', video: 'on' })
 const entry = { name: 'calendar-probe', title: 'Calendar', description: 'Calendar tools for a local test profile', repo: 'https://example.invalid/plugins/calendar', sha: 'a'.repeat(40), tier: 'verified', category: 'tools', requirements: ['Environment: CALENDAR_CLIENT_ID', 'Hermes: >=0.22.3'], installed_key: null as string | null, installed_sha: null as string | null, can_install: true, refusal: null }
@@ -7,7 +8,7 @@ test('catalog previews, confirms a disabled install and reconciles a lost acknow
   let installed = false
   const calls: unknown[] = []
   const evidence = '/tmp/TAL-1331-evidence'
-  await page.route('**/api/plugins', (route) => route.fulfill({ json: { read_only: false, plugins: [{ key: 'notes', name: 'Notes', version: '1.0.0', description: 'Read and write project notes', enabled: true, activation: 'enabled' }, ...(installed ? [{ key: 'calendar-native', name: 'Calendar', version: '1.0.0', description: 'Calendar tools', enabled: false, activation: 'disabled' }] : [])] } }))
+  await routePlugins(page, () => ({ read_only: false, plugins: [{ key: 'notes', name: 'Notes', version: '1.0.0', description: 'Read and write project notes', enabled: true, activation: 'enabled' }, ...(installed ? [{ key: 'calendar-native', name: 'Calendar', version: '1.0.0', description: 'Calendar tools', enabled: false, activation: 'disabled' }] : [])] }))
   await page.route('**/api/plugins/catalog?*', (route) => route.fulfill({ json: { supported: true, read_only: false, entries: [{ ...entry, installed_key: installed ? 'calendar-native' : null, installed_sha: installed ? entry.sha : null, can_install: !installed }], total: 1, next_offset: null } }))
   await page.route('**/api/plugins/install', (route) => {
     const body = route.request().postDataJSON() as { name: string; consent_token?: string }
@@ -46,7 +47,7 @@ test('catalog previews, confirms a disabled install and reconciles a lost acknow
 })
 
 test('catalog and installed empty states identify their own list', async ({ page }, testInfo) => {
-  await page.route('**/api/plugins', (route) => route.fulfill({ json: { read_only: false, plugins: [] } }))
+  await routePlugins(page, () => ({ read_only: false, plugins: [] }))
   await page.route('**/api/plugins/catalog?*', (route) => {
     const empty = new URL(route.request().url()).searchParams.get('query') === 'absent'
     return route.fulfill({ json: { supported: true, read_only: false, entries: empty ? [] : [entry], total: empty ? 0 : 1, next_offset: null } })

@@ -1,4 +1,5 @@
 import { expect, settle, test } from './fixtures'
+import { routePlugins } from './plugins'
 
 test.use({ serviceWorkers: 'block' })
 
@@ -7,13 +8,13 @@ test('plugin updates show Agent scan consent and block dangerous revisions', asy
   let dangerous = false
   let renewedConsent = false
   const calls: unknown[] = []
-  await page.route('**/api/plugins', (route) => route.fulfill({ json: {
+  await routePlugins(page, () => ({
     read_only: false,
     plugins: [
       { key: 'weather', name: 'Weather', version: updated ? '2.0.0' : '1.0.0', description: 'Local weather tools', enabled: true, activation: 'enabled', update: { available: !updated, latest_revision: 'new-revision' } },
       { key: 'notes', name: 'Notes', version: '1.0.0', description: 'Read and write project notes', enabled: false, activation: 'disabled' },
     ],
-  } }))
+  }))
   await page.route('**/api/plugins/update', (route) => {
     const body = route.request().postDataJSON() as { key: string; accept_caution: boolean; consent_token?: string }
     calls.push(body)
@@ -64,13 +65,13 @@ test('plugin updates show Agent scan consent and block dangerous revisions', asy
 
 test('TAL-1829: a long update reason stays on its plugin row without widening the page', async ({ page }, testInfo) => {
   const reason = `the dependency environment no longer builds with it: ${'no-solution-for-synthetic-package=='.repeat(8)}`
-  await page.route('**/api/plugins', (route) => route.fulfill({ json: {
+  await routePlugins(page, () => ({
     read_only: false,
     plugins: [
       { key: 'weather', name: 'Weather', version: '1.0.0', description: 'Local weather tools', enabled: false, activation: 'disabled', disabled_reason: { kind: 'update', reason } },
       { key: 'notes', name: 'Notes', version: '1.0.0', description: 'Read and write project notes', enabled: false, activation: 'disabled' },
     ],
-  } }))
+  }))
   await page.goto('/settings/tools')
   await settle(page)
   const section = page.locator('[data-section="plugins"]')
@@ -83,14 +84,14 @@ test('TAL-1914: the switch, Update all and a behind catalog row work and fit the
   let autoApply = false
   let updated = false
   const sha = 'b'.repeat(40)
-  await page.route('**/api/plugins', (route) => route.fulfill({ json: {
+  await routePlugins(page, () => ({
     read_only: false,
     auto_update: { auto_apply: autoApply, check_hours: 24, inactive_reason: null },
     plugins: [
       { key: 'weather', name: 'Weather', version: updated ? '2.0.0' : '1.0.0', description: 'Local weather tools', enabled: true, activation: 'enabled', update: { available: !updated, latest_revision: sha } },
       { key: 'notes', name: 'Notes', version: '1.0.0', description: 'Read and write project notes', enabled: false, activation: 'disabled' },
     ],
-  } }))
+  }))
   await page.route('**/api/plugins/catalog?*', (route) => route.fulfill({ json: { supported: true, read_only: false, total: 1, next_offset: null, entries: [
     { name: 'weather-catalog', title: 'Weather', description: 'Local weather tools', repo: 'https://example.invalid/plugins/weather', sha, tier: 'verified', category: 'tools', requirements: [], installed_key: 'weather', installed_sha: 'a'.repeat(40), can_install: false, refusal: null, can_update: !updated },
   ] } }))

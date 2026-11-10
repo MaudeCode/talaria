@@ -62,7 +62,8 @@ vi.mock('../../api/endpoints', async (original) => ({
   fetchSkillsUsage: vi.fn(() => Promise.resolve({ usage: Object.fromEntries(skills.map((s, i) => [s.name, { use_count: i + 1 }])) })),
   fetchPendingWrites: vi.fn(() => Promise.resolve({ kind: 'skills', visible: false, enabled: false, items: [] })),
   fetchMcpServers: vi.fn(() => Promise.resolve({ toggle_supported: true, servers: [{ name: 'test', status: 'configured', enabled: true, can_toggle: true, tool_count: 3 }] })),
-  fetchPlugins: vi.fn(() => Promise.resolve({ read_only: false, plugins: [{ key: 'one', name: 'One', enabled: true, update: { available: true } }, { key: 'two', name: 'Two', enabled: true, settings: [] }] })),
+  // The server's filter answer: each call returns new row objects, as a real response does.
+  fetchPlugins: vi.fn((q = '') => Promise.resolve({ read_only: false, total: 2, plugins: [{ key: 'one', name: 'One', enabled: true, update: { available: true } }, { key: 'two', name: 'Two', enabled: true, settings: [] }].filter((p) => p.key.includes(q)) })),
   fetchMcpTools: vi.fn((q: string) => Promise.resolve({ tools: tools.filter((t) => t.name.includes(q)).map((t) => ({ ...t })), total: 3 })),
 }))
 import * as api from '../../api/endpoints'
@@ -137,11 +138,11 @@ describe('input render isolation (TAL-1405)', () => {
     const input = screen.getByRole('searchbox', { name: 'Filter plugins' })
     reset(renders.plugin)
     await userEvent.type(input, 'one')
-    expect(document.querySelector('[data-plugin="two"]')).toBeNull()
+    await waitFor(() => expect(document.querySelector('[data-plugin="two"]')).toBeNull())
     expect(document.querySelector('[data-plugin="one"]')).not.toBeNull()
     expect(renders.plugin).not.toHaveBeenCalled()
     await userEvent.clear(input)
-    expect(document.querySelector('[data-plugin="two"]')).not.toBeNull()
+    await waitFor(() => expect(document.querySelector('[data-plugin="two"]')).not.toBeNull())
     expect(renders.plugin).toHaveBeenCalledTimes(1)
   })
 

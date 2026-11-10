@@ -1,12 +1,13 @@
 import { expect, settle, test } from './fixtures'
+import { routePlugins } from './plugins'
 
 test.use({ serviceWorkers: 'block' })
 
 test('plugin save distinguishes persisted settings from live MCP application', async ({ page }, testInfo) => {
   const fields = [{ key: 'api_key', type: 'secret', label: 'API key', description: '', required: false, env: 'DEMO_KEY', has_value: true }]
-  await page.route('**/api/plugins', (route) => route.fulfill({ json: {
+  await routePlugins(page, () => ({
     read_only: false, plugins: [{ key: 'demo', name: 'Demo', enabled: true, settings: fields }],
-  } }))
+  }))
   let runtime_application = 'applied'
   await page.route('**/api/plugins/settings', (route) => route.fulfill({ json: {
     ok: true, key: 'demo', written: ['api_key'], settings: fields, runtime_application,
@@ -41,7 +42,7 @@ test('plugin save distinguishes persisted settings from live MCP application', a
 test('plugin filter narrows the installed list and each description keeps to one line (TAL-2082)', async ({ page }, testInfo) => {
   const long = 'Connects the agent to a synthetic calendar service so it can read, create and move events, answer availability questions and send invitations on your behalf'
   const plugins = Array.from({ length: 12 }, (_, i) => ({ key: `plugin-${i}`, name: `Plugin ${i}`, version: '1.0.0', kind: 'standalone', enabled: true, description: i === 3 ? `${long} with MAILBOX access` : long }))
-  await page.route('**/api/plugins', (route) => route.fulfill({ json: { read_only: false, plugins } }))
+  await routePlugins(page, () => ({ read_only: false, plugins }))
   await page.route('**/api/settings', async (route) => route.request().method() === 'GET' ? route.fulfill({ json: { ...await (await route.fetch()).json(), agent_approvals: true } }) : route.continue())
   await page.goto('/settings/tools')
   await settle(page)
