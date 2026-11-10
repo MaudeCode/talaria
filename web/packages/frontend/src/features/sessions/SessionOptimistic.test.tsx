@@ -7,7 +7,7 @@ import type { SessionRow } from '../../contracts'
 import { ApiError } from '../../contracts/common'
 
 vi.mock('../../api/endpoints', () => ({
-  fetchSessions: vi.fn(), searchSessions: vi.fn(), fetchProjects: vi.fn(), archiveSession: vi.fn(), createProject: vi.fn(), importSession: vi.fn(),
+  fetchSettings: () => Promise.resolve({}), fetchSessions: vi.fn(), searchSessions: vi.fn(), fetchProjects: vi.fn(), archiveSession: vi.fn(), createProject: vi.fn(), importSession: vi.fn(),
   renameSession: vi.fn(), pinSession: vi.fn(), deleteSession: vi.fn(), moveSession: vi.fn(), revokeShare: vi.fn(), removeWorktree: vi.fn(), fetchWorktreeStatus: vi.fn(),
   renameProject: vi.fn(), deleteProject: vi.fn(), bindProject: vi.fn(), fetchModels: vi.fn(() => Promise.resolve({ groups: [] })),
   fetchWorkspaces: vi.fn(() => Promise.resolve({ workspaces: [{ path: '/w/alpha', name: 'Alpha space' }, { path: '/w/beta', name: 'Beta space' }], last: '/w/alpha' })), duplicateSession: vi.fn(), regenerateTitle: vi.fn(), createShare: vi.fn(), exportSessionUrl: vi.fn(() => ''),

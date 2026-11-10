@@ -1643,7 +1643,7 @@ export class SessionService {
     const listedOwner = (row: Row): string | null => rowOwner(row) ?? resolved.get(str(row.session_id)) ?? null
     const lookups = await withStateDbListingReads(() => this.listStateDbLookups(webuiRows, (cliRows ?? []).map((r) => str(r.session_id))))
     const payload = (await buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), ...(agentStorage ? { agentStorage } : {}), gatewayIdentity, ...lookups, webuiRows, webDiagnosticIds, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch, rowVisible: (row) => this.personMaySee(listedOwner(row)) }))
-    return sessionListResponse(payload, this.deps.runtime, this.deps.redactEnabled(), this.deps.now(), await this.workspaceNames([...payload.sessions, ...payload.sidebar_reference_sessions]))
+    return sessionListResponse(payload, this.deps.runtime, this.deps.redactEnabled(), this.deps.now(), await this.workspaceNames([...payload.sessions, ...payload.sidebar_reference_sessions]), params.detailedRows === true)
   }
 
   /**

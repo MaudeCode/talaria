@@ -14,6 +14,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { AGENT_STORAGE_OK, CANONICAL_READ_ONLY_REASON, OWNERSHIP_UNAVAILABLE_REASON, isCliSessionRow as isStateDbCliRow, isCliSessionRowVisible, normalizeAgentSessionSource, type StateDbSessionSource } from './state-db.js'
 import { INTERACTIVE_SOURCES, MESSAGING_SOURCES, sourceKind } from './source-kind.js'
 import { type AgentStorage, type SidebarGroup, type SidebarGroupKind } from '@maudecode/talaria-web-contracts'
+import { labelForModel } from '../providers/catalog.js'
 
 export type Row = Record<string, unknown>
 const num = (v: unknown): number => { const n = Number(v ?? 0); return Number.isFinite(n) && n > 0 ? n : 0 }
@@ -393,6 +394,8 @@ export interface ListParams {
   webuiRows?: Row[]
   /** TAL-48: the request may see this row (`SessionService.personMaySee` on its owner); omitted when isolation is off. */
   rowVisible?: (row: Row) => boolean
+  /** TAL-2153: `sidebar_density` is `detailed`, so each row carries its `meta` line. */
+  detailedRows?: boolean
 }
 
 export interface GatewayIdentity { session_key: string; chat_id: string; thread_id: string; chat_type: string; user_id: string; platform: string; raw_source: string }
@@ -985,6 +988,17 @@ export function sidebarSessionResponseItem(row: Row, redactEnabled: boolean, att
   return item
 }
 
+/**
+ * TAL-2153: a detailed row's second line, in display order: the model's name, the message count (a number clients
+ * format), the source when the chat did not start in Talaria, and the profile when the list spans profiles.
+ */
+export function sidebarRowMeta(row: Row, allProfiles: boolean): (string | number)[] {
+  const model = str(row.model).trim()
+  const count = sidebarMessageCount(row)
+  const source = sourceKind(row) === 'webui' ? '' : str(row.source_label).trim()
+  return [model && labelForModel(model, []), count, source, allProfiles ? str(row.profile) : ''].filter((part) => part !== '' && part !== 0)
+}
+
 export interface ListResponse extends Record<string, unknown> {
   sessions: Row[]
   sidebar_reference_sessions: Row[]
@@ -1018,9 +1032,12 @@ export function serverTz(date = new Date()): string {
 }
 
 /** Python `_session_list_payload_to_response`; the ETag covers everything but `server_time`. */
-export function sessionListResponse(payload: ListPayload, overlay: RuntimeOverlay, redactEnabled: boolean, now: number, workspaceName: (row: Row) => string | null): { body: ListResponse; etag: string } {
+export function sessionListResponse(payload: ListPayload, overlay: RuntimeOverlay, redactEnabled: boolean, now: number, workspaceName: (row: Row) => string | null, detailedRows = false): { body: ListResponse; etag: string } {
   const runtimeRows = overlayRuntimeRows(payload.sessions, overlay)
-  const sessions = runtimeRows.map((r) => sidebarSessionResponseItem(r, redactEnabled, overlay.attention(str(r.session_id)), overlay.activeStreamIds, workspaceName))
+  const sessions = runtimeRows.map((r) => {
+    const item = sidebarSessionResponseItem(r, redactEnabled, overlay.attention(str(r.session_id)), overlay.activeStreamIds, workspaceName)
+    return detailedRows ? { ...item, meta: sidebarRowMeta(r, payload.all_profiles) } : item
+  })
   const references = payload.sidebar_reference_sessions.map((r) => ({ ...sidebarSessionResponseItem(r, redactEnabled, overlay.attention(str(r.session_id)), overlay.activeStreamIds, workspaceName), _sidebar_reference_only: true }))
   const tz = serverTz()
   const body: ListResponse = {

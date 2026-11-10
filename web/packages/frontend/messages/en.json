@@ -2004,6 +2004,7 @@
 	"project_name_prompt": "Project name:",
 	"project_new": "New project",
 	"project_new_chat": "New chat",
+	"project_new_chat_in": "New chat in {project}",
 	"project_new_prompt": "Project name",
 	"project_profile_default": "Profile default",
 	"project_rename": "Rename project",

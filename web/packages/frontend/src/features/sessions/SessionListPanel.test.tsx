@@ -8,10 +8,12 @@ import type { ReactNode } from 'react'
 import { SessionsListSchema, type SessionRow } from '../../contracts'
 import { ApiError } from '../../contracts/common'
 
-vi.mock('../../api/endpoints', () => ({ fetchSettings: () => Promise.resolve({ sound_enabled: false }), fetchSessions: vi.fn(), searchSessions: vi.fn(), fetchProjects: vi.fn(), archiveSession: vi.fn(), createProject: vi.fn(), importSession: vi.fn() }))
+const settings = vi.hoisted(() => ({ value: {} as Record<string, unknown> }))
+vi.mock('../../api/endpoints', () => ({ fetchSettings: () => Promise.resolve({ sound_enabled: false, ...settings.value }), fetchSessions: vi.fn(), searchSessions: vi.fn(), fetchProjects: vi.fn(), archiveSession: vi.fn(), createProject: vi.fn(), importSession: vi.fn() }))
 const sessionEvents = vi.hoisted(() => ({ emit: vi.fn<(event: { event: string; data: { session_id?: string; reason?: string } }) => void>() }))
 vi.mock('../../api/sse', () => ({ SSE_OPEN: 1, openSessionListStream: ({ onEvent }: { onEvent: typeof sessionEvents.emit }) => { sessionEvents.emit.mockImplementation(onEvent); return { close: () => undefined, readyState: () => 1 } } }))
-vi.mock('./useNewChat', () => ({ useNewChat: () => vi.fn() }))
+const newChat = vi.hoisted(() => vi.fn())
+vi.mock('./useNewChat', () => ({ useNewChat: () => newChat }))
 const rowRender = vi.hoisted(() => vi.fn())
 vi.mock('./SessionContextMenu', () => ({ SessionActions: ({ children }: { children: ReactNode }) => children, SessionContextMenu: ({ row }: { row: SessionRow }) => { rowRender(row.session_id); return null }, SessionMenuItems: () => null }))
 const navigate = vi.hoisted(() => vi.fn())
@@ -23,6 +25,7 @@ vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, className, ...rest }: { children: ReactNode; className?: string; 'data-sid'?: string }) => <a className={className} data-sid={rest['data-sid']}>{children}</a>,
 }))
 import * as api from '../../api/endpoints'
+import { keys } from '../../api/queryKeys'
 import { groupSessionRows, SessionListItem, SessionListPanel } from './SessionListPanel'
 import { useSessionListStream } from './useSessionListStream'
 import { requestSessionSearch } from '../../shell/useShellState'
@@ -51,6 +54,40 @@ beforeEach(() => {
   vi.mocked(api.fetchSessions).mockReset().mockResolvedValue({ sessions: [alpha, delta, other, cli], webui_session_count: 3, cli_session_count: 1 } as never)
   vi.mocked(api.fetchProjects).mockReset().mockResolvedValue({ projects: [{ project_id: 'p1', name: 'Proj' }] } as never)
   vi.mocked(api.searchSessions).mockReset()
+  settings.value = {}
+  newChat.mockReset()
+})
+
+describe('chat list settings (TAL-2153)', () => {
+  const mount = async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    // Settings are read before the panel mounts, so every row and menu renders with them.
+    await client.query({ queryKey: keys.settings, queryFn: api.fetchSettings })
+    render(<QueryClientProvider client={client}><SessionListPanel /></QueryClientProvider>)
+    await screen.findByText('Other zebra')
+  }
+
+  it('shows the server\'s meta parts as one line under the title, formatting only the message count', async () => {
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [{ ...alpha, meta: ['Claude Opus 5.5', 12, 'CLI', 'work'] }, other] } as never)
+    await mount()
+    const line = (sid: string) => document.querySelector(`[data-sid="${sid}"] .session-text`)?.lastElementChild
+    expect(line('alpha')).toHaveTextContent(/^Claude Opus 5\.5 · 12 msgs · CLI · work$/)
+    expect(line('other')).toHaveClass('session-title-row')
+  })
+
+  it.each([false, true])('ends each project filter row in a New chat button only while the setting is on (%s)', async (on) => {
+    settings.value = { project_quick_create_buttons: on }
+    vi.mocked(api.fetchProjects).mockResolvedValue({ projects: [{ project_id: 'p1', name: 'Proj' }, { project_id: 'p2', name: 'Other' }] } as never)
+    await mount()
+    const menu = await openFilters()
+    await within(menu).findByRole('menuitemradio', { name: 'Other' })
+    const buttons = within(menu).queryAllByRole('menuitem', { name: /^New chat in/ })
+    if (!on) return expect(buttons).toHaveLength(0)
+    expect(buttons).toHaveLength(2)
+    await userEvent.click(within(menu).getByRole('menuitem', { name: 'New chat in Other' }))
+    expect(newChat).toHaveBeenCalledWith('p2')
+    await waitFor(() => { expect(screen.queryByRole('menu')).toBeNull() })
+  })
 })
 
 describe('SessionListPanel search (TAL-308)', () => {

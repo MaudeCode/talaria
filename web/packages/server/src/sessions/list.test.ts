@@ -142,6 +142,18 @@ describe('sidebar_source per profile (TAL-1863)', () => {
   })
 })
 
+describe('detailed row meta (TAL-2153)', () => {
+  const overlay: RuntimeOverlay = { activeStreamIds: new Set(), runningCronJobs: new Map(), live: () => undefined, attention: () => null }
+  const meta = (row: Row, allProfiles: boolean) => sessionListResponse({ sessions: [{ session_id: 'a', title: 'a', ...row }], sidebar_reference_sessions: [], archived_limit: null, all_profiles: allProfiles } as unknown as ListPayload, overlay, false, 0, () => null, true).body.sessions[0]?.meta
+
+  it('orders model, message count, outside source and profile, each only where it applies', () => {
+    const cli = { model: 'gpt-5.4', message_count: 7, source_tag: 'cli', source_label: 'CLI', profile: 'work' }
+    expect(meta(cli, true)).toEqual(['GPT 5.4', 7, 'CLI', 'work'])
+    expect(meta(cli, false)).toEqual(['GPT 5.4', 7, 'CLI'])
+    expect(meta({ model: null, message_count: 0, session_source: 'webui', source_label: 'WebUI', profile: 'default' }, true)).toEqual(['default'])
+  })
+})
+
 describe('sidebar groups (TAL-1534)', () => {
   const overlay: RuntimeOverlay = { activeStreamIds: new Set(), runningCronJobs: new Map(), live: () => undefined, attention: () => null }
   const body = (stored: Row[]) => sessionListResponse({ sessions: stored, sidebar_reference_sessions: [], archived_limit: null } as unknown as ListPayload, overlay, false, 0, () => null).body

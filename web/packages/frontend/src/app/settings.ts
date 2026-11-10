@@ -1,5 +1,6 @@
 import { replaceEqualDeep, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { keys } from '../api/queryKeys'
+import { invalidateSessionQueries } from '../api/sessionQueries'
 import * as api from '../api/endpoints'
 import { getStreamContext, useStreamContext } from '../stream/connection'
 import { isDefiniteRefusal } from '../contracts/common'
@@ -131,16 +132,20 @@ async function writeSettings(qc: QueryClient, patch: Record<string, unknown>) {
   for (const key of fields) state.writes.add(key)
   for (const [path, value] of paths) if (shown(path)) state.fields.set(path, { sequence, value })
   publish()
-  // TAL-2149: the server opens every Worklog by this setting, so once it is stored (or a reread settles an unknown
-  // outcome) transcripts re-read their scenes, even after the page that wrote it has closed.
-  const refreshScenes = () => { if ('worklog_details_expanded_default' in patch) void qc.invalidateQueries({ queryKey: [...keys.sessions.all, 'detail'] }) }
+  // Settings the server reads into other payloads: once one is stored (or a reread settles an unknown outcome) those
+  // queries re-read, even after the page that wrote it has closed. TAL-2149: the server opens every Worklog by
+  // `worklog_details_expanded_default`; TAL-2153: `sidebar_density` decides whether list rows carry `meta`.
+  const refreshDependents = () => {
+    if ('worklog_details_expanded_default' in patch) void qc.invalidateQueries({ queryKey: [...keys.sessions.all, 'detail'] })
+    if ('sidebar_density' in patch) void invalidateSessionQueries(qc)
+  }
   let unknown = false
   try {
     await qc.cancelQueries({ queryKey: keys.settings })
     await Promise.all(predecessors)
     if (!current()) throw new Error(m.error_generic())
     const data = await api.saveSettings(sent)
-    if (data.ok !== false && !data.error) refreshScenes()
+    if (data.ok !== false && !data.error) refreshDependents()
     if (!current()) return data
     if (typeof data.error === 'string' && data.error) throw new Error(data.error)
     if (data.ok === false) throw new Error(m.error_generic())
@@ -172,9 +177,9 @@ async function writeSettings(qc: QueryClient, patch: Record<string, unknown>) {
         await qc.cancelQueries({ queryKey: keys.settings })
         await qc.query({ queryKey: keys.settings, queryFn: api.fetchSettings, staleTime: 0 })
         settle()
-        refreshScenes()
+        refreshDependents()
       } catch {
-        settleOnNextRead(qc, () => current() && paths.some(([path]) => state.fields.get(path)?.sequence === sequence), () => { settle(); refreshScenes() }, keys.settings)
+        settleOnNextRead(qc, () => current() && paths.some(([path]) => state.fields.get(path)?.sequence === sequence), () => { settle(); refreshDependents() }, keys.settings)
       }
     } else if (current() && state.active.size === 0) {
       await qc.cancelQueries({ queryKey: keys.settings })
