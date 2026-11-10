@@ -587,12 +587,14 @@ function positiveInt(raw: unknown): number | null {
   return Number.isFinite(n) && n > 0 ? n : null
 }
 
-export interface MaxTokensStatus { max_tokens: number | null; max_tokens_effective: number | null; max_tokens_fallback: number | null }
+/** TAL-2160: `max_tokens_source` names where the turn's limit comes from: the profile's root key, the Agent's `agent.max_tokens`, or neither. */
+export interface MaxTokensStatus { max_tokens: number | null; max_tokens_effective: number | null; max_tokens_fallback: number | null; max_tokens_source: 'profile' | 'agent' | 'none' }
+export const MAX_TOKENS_UNAVAILABLE: MaxTokensStatus = { max_tokens: null, max_tokens_effective: null, max_tokens_fallback: null, max_tokens_source: 'none' }
 
 export function maxTokensStatus(config: Config): MaxTokensStatus {
   const root = positiveInt(config.max_tokens)
   const fallback = config.max_tokens === undefined || config.max_tokens === null ? positiveInt(dict(config.agent).max_tokens) : null
-  return { max_tokens: root, max_tokens_effective: root ?? fallback, max_tokens_fallback: fallback }
+  return { max_tokens: root, max_tokens_effective: root ?? fallback, max_tokens_fallback: fallback, max_tokens_source: root !== null ? 'profile' : fallback !== null ? 'agent' : 'none' }
 }
 
 export async function setMaxTokens(store: AgentConfig, home: string, value: unknown): Promise<MaxTokensStatus> {

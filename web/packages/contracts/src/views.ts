@@ -784,7 +784,12 @@ export const SettingsSchema = z.looseObject({
   auth_enabled: z.boolean().optional(), password_auth_enabled: z.boolean().optional(),
   password_state: z.enum(['ok', 'idle', 'warning', 'error']).optional().describe('TAL-2143: the Access password row\'s status: ok with a password, idle without one while sign-in is on, else the no-password warning level.'), password_env_var: z.boolean().optional(), passkeys_enabled: z.boolean().optional(), passwordless_enabled: z.boolean().optional(),
   auth_disabled_acknowledged: z.boolean().optional(), webui_version: z.string().optional(), agent_version: z.string().optional(), update_channel: z.string().optional(), update_channels: z.array(WebUpdateChannelSchema).optional().describe('TAL-1569: the Web update channels this server offers, in display order.'), agent_update_channel: z.enum(['stable', 'experimental']).optional(), update_channel_version: NullableString.optional(),
-  max_tokens: NullableNumber.optional(), max_tokens_effective: NullableNumber.optional(), max_tokens_fallback: NullableNumber.optional(), tts_engine: z.string().optional(), tts_voice: z.string().optional(),
+  max_tokens: NullableNumber.optional(), max_tokens_effective: NullableNumber.optional(), max_tokens_fallback: NullableNumber.optional(),
+  max_tokens_source: z.enum(['profile', 'agent', 'none']).optional().describe('TAL-2160, every settings read and save: where `max_tokens_effective` comes from: the profile\'s root `max_tokens`, the Agent\'s `agent.max_tokens`, or neither (no limit).'),
+  auto_title_refresh_available: z.boolean().optional().describe('TAL-2160, every settings read and save: title generation is on for the active profile, so `auto_title_refresh_every` can refresh generated titles.'),
+  sync_to_insights_available: z.boolean().optional().describe('TAL-2160, every settings read and save: a sidecar is running, so `sync_to_insights` can copy Web chats into the Agent\'s database. Changing `sync_to_insights` needs an owner session.'),
+  pinned_sessions_limit_max: z.number().int().positive().optional().describe('TAL-2160, every settings read and save: the largest `pinned_sessions_limit` the server accepts; the smallest is 1.'),
+  tts_engine: z.string().optional(), tts_voice: z.string().optional(),
   dictation_append: z.boolean().optional(), persisted_speech_keys: z.array(z.string()).optional(),
   /** TAL-279: ask before opening external chat links; `trusted_link_hosts` are exact, server-normalized hostnames that skip the ask. */
   confirm_external_links: z.boolean().optional(), trusted_link_hosts: z.array(z.string()).optional(),
@@ -1028,7 +1033,7 @@ export const AuxiliaryTaskSchema = z.looseObject({
 })
 export const AuxiliaryModelsSchema = z.looseObject({ delegation: DelegationSettingsSchema.optional(), main: z.looseObject({ model: z.string().optional(), provider: z.string().optional(), base_url: z.string().optional(), api_key_set: z.boolean().optional(), service_tier: z.enum(['', 'default', 'priority', 'ultrafast']).optional().describe('Empty string is the Standard value returned by older servers.'), supported_speed_tiers: z.array(SpeedTierSchema).optional() }), tasks: z.array(AuxiliaryTaskSchema),
   unlisted_overrides: z.boolean().optional().describe('TAL-2137: a disabled or removed plugin\'s task still holds a pinned route or saved effort, which Reset All clears though no listed task shows it.') })
-export const MaxTokensSchema = z.looseObject({ max_tokens: NullableNumber, max_tokens_effective: NullableNumber, max_tokens_fallback: NullableNumber })
+export const MaxTokensSchema = z.looseObject({ max_tokens: NullableNumber, max_tokens_effective: NullableNumber, max_tokens_fallback: NullableNumber, max_tokens_source: z.enum(['profile', 'agent', 'none']) })
 
 // ── workspaces, files, git ───────────────────────────────────────────────
 

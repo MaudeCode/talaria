@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bot, ChevronDown, ChevronUp, CircleArrowUp, Download, LayoutDashboard, Pause, Power, RefreshCw, RotateCw, Sparkles, type LucideIcon } from 'lucide-react'
+import { Bot, ChevronDown, ChevronUp, CircleArrowUp, Download, LayoutDashboard, MessagesSquare, Pause, Power, RefreshCw, Repeat, RotateCw, Sparkles, type LucideIcon } from 'lucide-react'
 import type { WebUpdateChannel } from '@maudecode/talaria-web-contracts'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -21,7 +21,7 @@ import { LEVEL_TONE, QuotaMeter } from '../insights/QuotaMeter'
 
 import { showErrorToast } from '../toast/errorToast'
 import { useSettingField } from './useSettingField'
-import { SettingAction, SettingRow, SettingToggle, SettingsGroup, SettingsStats, SETTINGS_PAGE } from './SettingsRows'
+import { SettingAction, SettingNumber, SettingRow, SettingToggle, SettingsGroup, SettingsStats, SETTINGS_PAGE } from './SettingsRows'
 import type { z } from 'zod'
 import type { UpdateApplySchema, UpdateTargetSchema, UpdateVersionSchema } from '../../contracts'
 import { useUpdateProgress } from '../notifications/UpdateNotificationCenter'
@@ -29,6 +29,22 @@ import { GatewayRestart } from './GatewayRestart'
 import { markServerStopped } from '../notices/useRuntimeNotices'
 
 const CHANNEL_LABELS: Record<WebUpdateChannel, () => string> = { stable: m.settings_update_channel_stable, nightly: m.settings_update_channel_nightly, experimental: m.settings_update_channel_experimental }
+
+/**
+ * TAL-1828, TAL-2160: Group discussion limits, written to the root profile's config for every profile. The server sends them
+ * only to a session that can manage it, and names when a running gateway still holds older limits.
+ */
+export function GroupDiscussionsGroup() {
+  const { settings } = useSettingField(['group_discussion_max_rounds', 'group_discussion_restart_required'])
+  if (typeof settings.data?.group_discussion_max_rounds !== 'number') return null
+  return (
+    <SettingsGroup id="group-discussions" title={m.settings_group_group_discussions()}>
+      <SettingNumber icon={Repeat} label={m.settings_label_group_discussion_max_rounds()} settingKey="group_discussion_max_rounds" />
+      <SettingNumber icon={MessagesSquare} label={m.settings_label_group_discussion_max_messages()} settingKey="group_discussion_max_messages" />
+      {settings.data.group_discussion_restart_required === true ? <SettingAction label={m.settings_label_group_discussion_restart()} icon={RotateCw}><GatewayRestart /></SettingAction> : null}
+    </SettingsGroup>
+  )
+}
 
 export function SystemSection() {
   const bootstrap = useBootstrap()
@@ -153,9 +169,10 @@ export function SystemSection() {
       <SettingsGroup id="updates" title={m.system_updates()}>
         <SettingToggle label={m.settings_label_check_updates()} hint={m.system_check_updates_hint()} icon={RefreshCw} id="settingsCheckUpdates" settingKey="check_for_updates" fallback disabled={!canManage} />
         <SettingToggle label={m.settings_label_auto_apply_updates()} hint={m.system_auto_apply_hint()} icon={Download} id="settingsAutoApplyUpdates" settingKey="auto_apply_updates" disabled={!canManage || !bool('check_for_updates', true)} />
-        <SettingToggle label={m.settings_label_ignore_agent_updates()} hint={m.system_agent_manual_hint()} icon={Pause} id="settingsIgnoreAgentUpdates" settingKey="ignore_agent_updates" onSaved={recheck} />
+        <SettingToggle label={m.settings_label_ignore_agent_updates()} hint={m.system_agent_manual_hint()} icon={Pause} id="settingsIgnoreAgentUpdates" settingKey="ignore_agent_updates" onSaved={recheck} disabled={!canManage} />
         <SettingToggle label={m.settings_label_summarize_updates_automatically()} icon={Sparkles} id="settingsSummarizeUpdatesAutomatically" settingKey="summarize_updates_automatically" fallback disabled={!canManage || !bool('check_for_updates', true)} />
       </SettingsGroup>
+      <GroupDiscussionsGroup />
       <SettingsGroup id="health" title={m.settings_group_health()}>
         <SettingRow label={WEB} icon={LayoutDashboard}><StatusDot state={webHealth.state}>{webHealth.text}</StatusDot></SettingRow>
         <SettingRow label={AGENT} icon={Bot}><StatusDot state={agentHealth.state}>{agentHealth.text}</StatusDot></SettingRow>

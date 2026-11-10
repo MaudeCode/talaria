@@ -47,7 +47,7 @@ it('SettingToggle with inverted shows on while the stored key is false and write
 
 it.each([
   ['an in-range integer', '7', { limit: 7 }],
-  ['an integer above the stepper max, for the server to judge', '51', { limit: 51 }],
+  ['an integer above max, clamped to it (TAL-2160)', '51', { limit: 50 }],
   ['an integer below min', '0', null],
   ['a fraction', '2.5', null],
   ['an empty field without allowEmpty', '', null],

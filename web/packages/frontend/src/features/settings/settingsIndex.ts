@@ -47,9 +47,6 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
     [key('auto_scroll_follow'), m.settings_label_auto_scroll_follow], [key('show_conversation_outline'), m.settings_label_conversation_outline],
     [key('session_jump_buttons'), m.settings_label_session_jump_buttons],
   ]),
-  ...rows('chat', m.settings_group_group_discussions, 'interface', [
-    [key('group_discussion_max_rounds'), m.settings_label_group_discussion_max_rounds], [key('group_discussion_max_messages'), m.settings_label_group_discussion_max_messages],
-  ]),
   ...onPage('workspace-panel', [
     ...rows('chat', m.settings_group_panel, 'interface', [
       [key('workspace_panel_open'), m.settings_label_workspace_panel_open], [key('workspace_todos_tab'), m.settings_label_workspace_todos_tab],
@@ -62,9 +59,7 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
       [key('show_busy_placeholder_hint'), m.settings_label_busy_placeholder_hint], [key('transparent_stream_event_timestamps'), m.settings_label_transparent_stream_event_timestamps],
       [key('fade_text_effect'), m.settings_label_fade_text_effect], [key('show_tps'), m.settings_label_token_speed],
       [key('virtualize_transcript'), m.settings_label_virtualize_transcript], [key('session_endless_scroll'), m.settings_label_session_endless_scroll],
-    ]),
-    ...rows('chat', m.settings_group_limits, 'interface', [
-      ['settingsMaxTokens', m.settings_label_max_tokens], [key('compression_prepare_ahead'), m.settings_label_compression_prepare_ahead, 'settingsMaxTokens'], ['settingsAutoTitleRefresh', m.settings_label_auto_title_refresh],
+      ['settingsAutoTitleRefresh', m.settings_label_auto_title_refresh],
     ]),
   ]),
   // TAL-2145: the sidebar's items are toggles on the drawing of the sidebar, in its order, beside its three rows.
@@ -97,6 +92,8 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
   ...rows('models', m.settings_group_main_model, 'profile', [
     ['settingsModel', m.settings_label_model], ['settingsModelSpeed', m.settings_model_speed, 'settingsModel'], ['settingsReasoningEffort', m.settings_reasoning_effort, 'settingsModel'], ['settingsShowThinking', m.settings_show_thinking, 'settingsModel'],
   ]),
+  // TAL-2160: the profile's limits, from its config.yaml.
+  ...rows('models', m.settings_group_limits, 'profile', [['settingsMaxTokens', m.settings_label_max_tokens], [key('compression_prepare_ahead'), m.settings_label_compression_prepare_ahead, 'settingsMaxTokens']]),
   // TAL-2135: each provider's page pins its quota to the sidebar; the search leads to the providers that have one.
   { section: 'providers', group: m.providers_group_yours, id: 'providerSidebarQuota', label: m.providers_quota_in_sidebar, scope: 'profile', item: true },
   // TAL-2136: the quota thresholds sit on Providers › Quota alerts.
@@ -117,6 +114,10 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
   ...rows('system', m.system_updates, 'server', [
     ['settingsCheckUpdates', m.settings_label_check_updates], ['settingsAutoApplyUpdates', m.settings_label_auto_apply_updates],
     ['settingsIgnoreAgentUpdates', m.settings_label_ignore_agent_updates], ['settingsSummarizeUpdatesAutomatically', m.settings_label_summarize_updates_automatically],
+  ]),
+  // TAL-1828, TAL-2160: the root profile's Group discussion limits, sent only to a session that can manage the server.
+  ...rows('system', m.settings_group_group_discussions, 'server', [
+    [key('group_discussion_max_rounds'), m.settings_label_group_discussion_max_rounds, 'settingsSummarizeUpdatesAutomatically'], [key('group_discussion_max_messages'), m.settings_label_group_discussion_max_messages, 'settingsSummarizeUpdatesAutomatically'],
   ]),
 ]
 

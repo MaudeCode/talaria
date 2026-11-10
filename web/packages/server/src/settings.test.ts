@@ -173,6 +173,15 @@ describe('load', () => {
     expect(s.defaults()).not.toHaveProperty('hide_composer_quota_chip')
   })
 
+  it('reads a stored shift+enter send key as Enter and refuses new writes of it (TAL-2160)', async () => {
+    write({ send_key: 'shift+enter', onboarding_completed: true })
+    const s = store()
+    expect((await s.load()).send_key).toBe('enter')
+    await s.save({ send_key: 'ctrl+enter' })
+    expect((await s.save({ send_key: 'shift+enter' })).send_key).toBe('ctrl+enter')
+    expect(onDisk().send_key).toBe('ctrl+enter')
+  })
+
   it('applies the legacy-key migrations', async () => {
     write({ activity_feed_expanded_default: 1, busy_input_mode: 'queue', simplified_tool_calling: false, assistant_language: 'fr', virtualize_transcript: true, onboarding_completed: true })
     const s = (await store().load())

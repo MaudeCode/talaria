@@ -156,7 +156,8 @@ export function settingsDefaults(opts: { defaultWorkspace: string; botName: stri
 }
 
 const ENUM_VALUES: Record<string, Set<string>> = {
-  send_key: new Set(['enter', 'ctrl+enter', 'shift+enter']),
+  // TAL-2160: `shift+enter` sent like `enter`; a stored one reads as `enter` and new writes of it are refused.
+  send_key: new Set(['enter', 'ctrl+enter']),
   sidebar_density: new Set(['compact', 'detailed']),
   update_channel: new Set(WebUpdateChannelSchema.options),
   agent_update_channel: new Set(['stable', 'experimental']),
@@ -167,8 +168,10 @@ const ENUM_VALUES: Record<string, Set<string>> = {
   chat_activity_display_mode: new Set(['compact_worklog', 'transparent_stream', 'hide_all_activity']),
   structured_code_default_view: new Set(['auto', 'on', 'off']),
 }
+/** TAL-2160: how many pinned chats the sidebar may show; the settings read ships the maximum as `pinned_sessions_limit_max`. */
+export const PINNED_SESSIONS_LIMIT_RANGE: [number, number] = [1, 99]
 const INT_RANGES: Record<string, [number, number]> = {
-  pinned_sessions_limit: [1, 99],
+  pinned_sessions_limit: PINNED_SESSIONS_LIMIT_RANGE,
   inflight_state_max_sessions: [1, 25],
   inflight_state_max_messages: [1, 100],
   inflight_state_max_tool_calls: [1, 200],
@@ -464,6 +467,7 @@ export class SettingsStore {
     }
     if (!('default_message_mode' in stored) && 'busy_input_mode' in stored) settings.default_message_mode = stored.busy_input_mode
     delete settings.busy_input_mode
+    if (settings.send_key === 'shift+enter') settings.send_key = 'enter'
     // TAL-2159: `show_cli_sessions` once also listed messaging and Claude Code chats. A store saved before
     // `show_messaging_sessions` existed with it off keeps both hidden; the next save stores the split.
     if ('show_cli_sessions' in stored && !pyBool(stored.show_cli_sessions) && !('show_messaging_sessions' in stored)) {

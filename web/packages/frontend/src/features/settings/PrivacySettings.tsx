@@ -7,15 +7,16 @@ import { SettingText, SettingToggle as Toggle, SettingsGroup } from './SettingsR
 
 /** TAL-1691: Settings › Access › Privacy, what leaves the server and how links are presented. */
 export function PrivacySettings() {
-  const { settings } = useSettingField(['trusted_link_hosts', 'trusted_link_hosts_count'])
-  // Link safety applies to every user of the server; only an owner may change it.
+  const { settings } = useSettingField(['trusted_link_hosts', 'trusted_link_hosts_count', 'sync_to_insights_available'])
+  // Link safety and the insights sync apply to every user of the server; only an owner may change them.
   const canManage = useBootstrap().auth.can_manage_server
   const hostCount = settings.data?.trusted_link_hosts_count
   if (settings.isPending) return <LoadingState compact />
   if (settings.isError) return <ErrorState error={settings.error} onRetry={() => { void settings.refetch() }} />
   return (
     <SettingsGroup id="privacy" title={m.settings_group_privacy()}>
-      <Toggle label={m.settings_label_sync_insights()} settingKey="sync_to_insights" icon={ChartLine} />
+      {/* TAL-2160: the sync copies every Web chat into the Agent's database through the sidecar. */}
+      <Toggle label={m.settings_label_sync_insights()} settingKey="sync_to_insights" icon={ChartLine} disabled={!canManage || settings.data.sync_to_insights_available === false} />
       <Toggle label={m.settings_label_api_redact()} settingKey="api_redact_enabled" fallback disabled={!canManage} icon={EyeOff} />
       <Toggle label={m.settings_label_confirm_external_links()} settingKey="confirm_external_links" fallback disabled={!canManage} icon={ExternalLink} />
       {/* TAL-2143: closed to the server's count of its normalized hosts, one per line. */}

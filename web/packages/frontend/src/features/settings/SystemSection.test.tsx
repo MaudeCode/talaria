@@ -67,6 +67,19 @@ describe('automatic update summaries (TAL-1008)', () => {
   })
 })
 
+describe('owner-only update switches (TAL-2160)', () => {
+  it('disables Skip Agent updates for a session that cannot manage the server', async () => {
+    settingsState = { ...SERVER_FIELDS, check_for_updates: true }
+    vi.mocked(api.saveSettings).mockReset()
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    render(<QueryClientProvider client={qc}><BootstrapContext.Provider value={{ ...DEFAULT_BOOTSTRAP, auth: { ...DEFAULT_BOOTSTRAP.auth, can_manage_server: false } }}><SystemSection /></BootstrapContext.Provider></QueryClientProvider>)
+    const control = await screen.findByRole('switch', { name: 'Skip Agent updates' })
+    expect(control).toHaveAttribute('aria-disabled', 'true')
+    await userEvent.click(control)
+    expect(api.saveSettings).not.toHaveBeenCalled()
+  })
+})
+
 describe('SystemSection "Check now"', () => {
   it('keeps the Agent picker on Stable when Web is Experimental', async () => {
     renderSystem()

@@ -17,15 +17,16 @@ import { HttpFailure } from '../sessions/service.js'
 import { SidecarError } from '../sidecar/client.js'
 import type { SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { SessionNotFound } from '../sessions/store.js'
-import { agentApprovals, auxiliaryModels, auxiliaryReasoning, compressionPrepareAhead, dict, DISCUSSION_LIMITS_KEY, discussionLimits, type DiscussionLimits, isDict, modelSection, canonicaliseProviderId, ConfigUnavailable, maxTokensStatus, PREPARE_AHEAD_KEY, findPersonality, reasoningStatus, setAgentApprovals, setAuxiliaryModel, setDefaultModel, setMaxTokens, unlistedAuxiliaryOverrides, validReasoningEffort, type AuxEfforts, type Dict } from '../config/agent-config.js'
+import { agentApprovals, auxiliaryModels, auxiliaryReasoning, compressionPrepareAhead, dict, DISCUSSION_LIMITS_KEY, discussionLimits, type DiscussionLimits, isDict, modelSection, canonicaliseProviderId, ConfigUnavailable, MAX_TOKENS_UNAVAILABLE, maxTokensStatus, PREPARE_AHEAD_KEY, findPersonality, reasoningStatus, setAgentApprovals, setAuxiliaryModel, setDefaultModel, setMaxTokens, unlistedAuxiliaryOverrides, validReasoningEffort, type AuxEfforts, type Dict } from '../config/agent-config.js'
 import { ProfileError, validateProfileName } from '../profiles/profiles.js'
 import { OnboardingError } from '../onboarding.js'
 import { EnvWriteError } from '../providers/env-file.js'
 import { composerQuota, displayName, providerEnvVar, providerListing, stampAuxiliarySelections, type QuotaSourceRow } from '../providers/catalog.js'
 import { OAUTH_PROVIDERS, SUPPORTED_PROVIDER_SETUPS } from '../providers/tables.js'
-import { displayBotName, KANBAN_PINS_BY_PROFILE_KEY, MODEL_FAVORITES_BY_PROFILE_KEY, QUOTA_THRESHOLDS_BY_PROFILE_KEY, SETTINGS_SPEECH_KEYS, pyBool, sidebarQuotaProjection, composerControlCount, navigationCounts } from '../settings.js'
+import { displayBotName, KANBAN_PINS_BY_PROFILE_KEY, PINNED_SESSIONS_LIMIT_RANGE, MODEL_FAVORITES_BY_PROFILE_KEY, QUOTA_THRESHOLDS_BY_PROFILE_KEY, SETTINGS_SPEECH_KEYS, pyBool, sidebarQuotaProjection, composerControlCount, navigationCounts } from '../settings.js'
 import { str } from '../util.js'
 import { checkExternalLink, linkPreferences } from '../links.js'
+import { titleGenerationEnabled } from '../sessions/turn.js'
 import { forgetPluginFlow, isPluginFlow, rememberPluginFlow } from '../tools/plugin-oauth.js'
 
 const os = implement(settingsContract).$context<ApiContext>().use(requestSessionIdGuard)
@@ -132,7 +133,7 @@ async function settingsPayload(ctx: RequestContext): Promise<Dict> {
   const raw = await deps.settings.readRaw()
   settings.persisted_speech_keys = [...SETTINGS_SPEECH_KEYS].filter((k) => k in raw).sort()
   Reflect.deleteProperty(settings, 'password_hash')
-  Object.assign(settings, { max_tokens: null, max_tokens_effective: null, max_tokens_fallback: null })
+  Object.assign(settings, MAX_TOKENS_UNAVAILABLE)
   try { Object.assign(settings, maxTokensStatus(await deps.agentConfig.read(home(ctx)))) } catch { /* unavailable: nulls stand */ }
   await authFields(ctx, settings)
   await derivedFields(ctx, settings)
@@ -157,6 +158,11 @@ async function derivedFields(ctx: RequestContext, into: Dict): Promise<void> {
   Reflect.deleteProperty(into, MODEL_FAVORITES_BY_PROFILE_KEY)
   into.provider_quota_thresholds = (await deps.settings.quotaThresholds(activeProfileName(ctx)))
   into.compression_prepare_ahead = await compressionPrepareAhead(deps.agentConfig, home(ctx))
+  // TAL-2160: title refresh rewrites only generated titles, so it runs only while the profile generates them.
+  into.auto_title_refresh_available = await deps.agentConfig.read(home(ctx)).then(titleGenerationEnabled, () => false)
+  // TAL-2160: the insights sync writes through the sidecar, so it does nothing without one.
+  into.sync_to_insights_available = deps.sidecar() !== null
+  into.pinned_sessions_limit_max = PINNED_SESSIONS_LIMIT_RANGE[1]
   into.agent_approvals = await agentApprovals(deps.agentConfig, home(ctx))
   Object.assign(into, await groupDiscussionFields(ctx, into.group_discussion_restart_baseline))
   Reflect.deleteProperty(into, 'group_discussion_restart_baseline')
@@ -216,11 +222,13 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
   const deps = ctx.deps
   const auth = deps.auth
   const body: Dict = { ...input }
-  if (['summarize_updates_automatically', 'auto_apply_updates', 'update_channel', 'agent_update_channel', 'check_for_updates'].some((key) => key in body) && !(await canManageServer(ctx))) throw new HttpError(403, 'An owner session is required to manage updates')
+  if (['summarize_updates_automatically', 'auto_apply_updates', 'update_channel', 'agent_update_channel', 'check_for_updates', 'ignore_agent_updates'].some((key) => key in body) && !(await canManageServer(ctx))) throw new HttpError(403, 'An owner session is required to manage updates')
   // Link safety applies to every user of this server, so only an owner may relax it.
   if (['confirm_external_links', 'trusted_link_hosts'].some((key) => key in body) && !(await canManageServer(ctx))) throw new HttpError(403, 'An owner session is required to manage link safety')
   // Redaction decides what every user of this server sees, so only an owner may change it.
   if ('api_redact_enabled' in body && !(await canManageServer(ctx))) throw new HttpError(403, 'An owner session is required to manage secret redaction')
+  // TAL-2160: the insights sync copies every Web chat into the Agent's database.
+  if ('sync_to_insights' in body && !(await canManageServer(ctx))) throw new HttpError(403, 'An owner session is required to manage the insights sync')
   // The Agent reads Group Chat limits from the root config, for every profile.
   if (Object.keys(DISCUSSION_LIMIT_FIELDS).some((key) => key in body) && !(await canManageServer(ctx))) throw new HttpError(403, 'An owner session is required to manage Group Chat limits')
   if ('bot_name' in body) body.bot_name = displayBotName(body.bot_name)
@@ -297,7 +305,7 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
     Object.assign(saved, maxTokens ?? maxTokensStatus(await deps.agentConfig.read(cfgHome)))
   } catch (error) {
     if (maxTokensProvided) failure(error)
-    Object.assign(saved, { max_tokens: null, max_tokens_effective: null, max_tokens_fallback: null })
+    Object.assign(saved, MAX_TOKENS_UNAVAILABLE)
   }
   const authEnabledAfter = await auth.isAuthEnabled()
   const authJustEnabled = requestedPassword && authEnabledAfter && !authEnabledBefore

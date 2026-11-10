@@ -20,7 +20,10 @@ test('a disabled switch dims with a not-allowed cursor while an enabled one stay
   await expect(disabled).toHaveAttribute('aria-disabled', 'true')
   expect(await look(disabled)).toEqual({ opacity: '0.5', cursor: 'not-allowed' })
 
-  const enabled = page.getByRole('switch', { name: 'Sync to insights' })
+  // TAL-2160: every Privacy switch is owner-only; Chat's are each user's own.
+  await page.goto('/settings/chat')
+  await settle(page)
+  const enabled = page.getByRole('switch', { name: 'Format Markdown in my messages' })
   await expect(enabled).toBeEnabled()
   expect(await look(enabled)).toEqual({ opacity: '1', cursor: 'pointer' })
 })

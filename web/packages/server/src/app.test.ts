@@ -535,6 +535,12 @@ describe('trusted-header auth', () => {
     const pluginUpdate = await s.get('/api/plugins/update', { method: 'POST', headers: { cookie: session!, 'X-Remote-User': 'kim', 'X-Remote-Groups': 'ops', 'content-type': 'application/json' }, body: JSON.stringify({ key: 'p', accept_caution: true }) })
     expect(pluginUpdate.status).toBe(403)
     expect(await pluginUpdate.json()).toEqual({ error: 'Owner session required' })
+    // TAL-2160: the insights sync and the Agent update pause apply to every user of this server.
+    for (const patch of [{ sync_to_insights: true }, { ignore_agent_updates: true }]) {
+      const refused = await s.get('/api/settings', { method: 'POST', headers: { cookie: session!, 'X-Remote-User': 'kim', 'X-Remote-Groups': 'ops', 'content-type': 'application/json' }, body: JSON.stringify(patch) })
+      expect(refused.status, JSON.stringify(patch)).toBe(403)
+      expect(await s.deps.settings.load()).toMatchObject({ sync_to_insights: false, ignore_agent_updates: false })
+    }
     for (const path of ['/api/plugins/update-all', '/api/plugins/auto-update', '/api/plugins/enabled']) {
       const pluginWrite = await s.get(path, { method: 'POST', headers: { cookie: session!, 'X-Remote-User': 'kim', 'X-Remote-Groups': 'ops', 'content-type': 'application/json' }, body: JSON.stringify({ enabled: true }) })
       expect(pluginWrite.status).toBe(403)

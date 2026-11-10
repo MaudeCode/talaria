@@ -34,7 +34,7 @@ const COUNT_KEYS = ['sidebar_items_shown', 'sidebar_items_total', 'outside_chats
 
 /** TAL-1691, TAL-2100, TAL-2145: Settings › Navigation, what the sidebar and the chats list show; each header shows the server's count (TAL-2175). */
 export function SidebarSection() {
-  const { settings, bool, num, set } = useSettingField([...SIDEBAR_KEYS, ...OUTSIDE_KEYS, ...COUNT_KEYS])
+  const { settings, bool, num, set } = useSettingField([...SIDEBAR_KEYS, ...OUTSIDE_KEYS, ...COUNT_KEYS, 'pinned_sessions_limit_max'])
   const counts = useShownCounts([...SIDEBAR_KEYS, ...OUTSIDE_KEYS], num)
   if (settings.isPending) return <LoadingState />
   if (settings.isError) return <ErrorState error={settings.error} onRetry={() => { void settings.refetch() }} />
@@ -57,7 +57,7 @@ export function SidebarSection() {
                 { value: 'compact', label: m.settings_sidebar_density_compact() },
                 { value: 'detailed', label: m.settings_sidebar_density_detailed() },
               ]} />
-              <SettingNumber label={m.settings_label_pinned_shown()} id="settingsPinnedLimit" settingKey="pinned_sessions_limit" fallback={3} max={50} icon={Pin} />
+              <SettingNumber label={m.settings_label_pinned_shown()} id="settingsPinnedLimit" settingKey="pinned_sessions_limit" fallback={3} max={num('pinned_sessions_limit_max', 99)} icon={Pin} />
               <SettingToggle label={m.settings_label_project_new_chat()} settingKey="project_quick_create_buttons" icon={FolderPlus} />
             </div>
           </div>

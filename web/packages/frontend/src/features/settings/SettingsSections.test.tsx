@@ -76,7 +76,7 @@ const PLACEMENT: Record<string, string> = {
   send_key: 'chat', default_message_mode: 'chat', large_text_paste_as_attachment: 'chat', chat_activity_display_mode: 'chat', transparent_stream_event_timestamps: 'chat/advanced',
   worklog_details_expanded_default: 'chat', auto_scroll_follow: 'chat', render_user_markdown: 'chat', fade_text_effect: 'chat/advanced', virtualize_transcript: 'chat/advanced',
   show_busy_placeholder_hint: 'chat/advanced', show_token_usage: 'chat', show_tps: 'chat/advanced',
-  max_tokens: 'chat/advanced', compression_prepare_ahead: 'chat/advanced', group_discussion_max_rounds: 'chat', group_discussion_max_messages: 'chat', auto_title_refresh_every: 'chat/advanced',
+  max_tokens: 'models', compression_prepare_ahead: 'models', group_discussion_max_rounds: 'system', group_discussion_max_messages: 'system', auto_title_refresh_every: 'chat/advanced',
   sidebar_density: 'navigation', pinned_sessions_limit: 'navigation', session_endless_scroll: 'chat/advanced', session_jump_buttons: 'chat', show_conversation_outline: 'chat', project_quick_create_buttons: 'navigation',
   show_cli_sessions: 'navigation', show_claude_code_sessions: 'navigation', show_messaging_sessions: 'navigation', show_cron_sessions: 'navigation', show_webhook_sessions: 'navigation', show_kanban_sessions: 'navigation',
   show_previous_messaging_sessions: 'navigation', hidden_tabs: 'navigation', show_titlebar_profile: 'navigation', show_sidebar_feedback: 'navigation', show_quota_chip: 'chat',
@@ -94,7 +94,7 @@ const PLACEMENT: Record<string, string> = {
 const isControl = (key: string) => key.startsWith('#') || key.startsWith('[')
 const CONTROLS = Object.keys(PLACEMENT).filter(isControl)
 
-it('edits every retired Preferences, Conversation, System and Models & Providers field on exactly its one new page (TAL-1691, TAL-2100, TAL-2138)', async () => {
+it('edits every retired Preferences, Conversation, System and Models & Providers field on exactly its one new page (TAL-1691, TAL-2100, TAL-2138, TAL-2160)', async () => {
   // jsdom has no matchMedia; Appearance reads the colour scheme.
   vi.stubGlobal('matchMedia', (query: string) => ({ matches: false, media: query, addEventListener: () => undefined, removeEventListener: () => undefined }))
   const settings = Object.fromEntries(Object.keys(PLACEMENT).filter((key) => !isControl(key)).map((key) => [key, false]))
@@ -108,8 +108,7 @@ it('edits every retired Preferences, Conversation, System and Models & Providers
     await waitFor(() => expect(view.container.querySelector(`[data-section="${page.section}"]`)).not.toBeNull())
     if (page.page) await waitFor(() => expect(view.container.querySelector('[data-group]')).not.toBeNull())
     for (const control of CONTROLS) if (view.container.querySelector(control)) reads.add(control)
-    // Chat reads whether the Agent offers prepared compaction to count Advanced's rows; only Advanced edits it.
-    for (const key of reads) if (key in PLACEMENT && !(page.id === 'chat' && key === 'compression_prepare_ahead')) (found[key] ??= []).push(page.id)
+    for (const key of reads) if (key in PLACEMENT) (found[key] ??= []).push(page.id)
     view.unmount()
   }
   vi.unstubAllGlobals()
@@ -123,7 +122,6 @@ const GROUPS: Record<string, [string, string][]> = {
     ['Send with', 'composer'], ['While the agent is working', 'composer'], ['Attach long pasted text as a file', 'composer'],
     ['Activity display', 'transcript'], ['Open worklog details automatically', 'transcript'], ['Format Markdown in my messages', 'transcript'], ['Show token usage', 'transcript'],
     ['Follow new content', 'transcript'], ['Conversation outline', 'transcript'], ['Jump buttons', 'transcript'],
-    ['Rounds per discussion', 'group-discussions'], ['Messages per discussion', 'group-discussions'],
   ],
   'chat/workspace-panel': [
     ['Keep workspace panel open by default', 'panel'], ['Show Todos tab in workspace panel', 'panel'], ['Start a new chat when switching workspace', 'panel'],
@@ -132,7 +130,7 @@ const GROUPS: Record<string, [string, string][]> = {
   'chat/advanced': [
     ['Name the busy action in the composer', 'transcript-advanced'], ['Event timestamps', 'transcript-advanced'], ['Fade in streamed text', 'transcript-advanced'],
     ['Show tokens per second', 'transcript-advanced'], ['Render only visible messages (experimental)', 'transcript-advanced'], ['Load earlier messages while scrolling', 'transcript-advanced'],
-    ['Max output tokens', 'limits'], ['Prepare compaction in the background', 'limits'], ['Refresh chat titles', 'limits'],
+    ['Refresh chat titles', 'transcript-advanced'],
   ],
   navigation: [
     ['Density', 'sidebar'], ['Pinned chats shown', 'sidebar'], ['New-chat button per project', 'sidebar'],
@@ -160,12 +158,11 @@ it('keeps Chat to the composer drawing and at most 14 rows, with links that coun
   qc.setQueryData(keys.settings, { compression_prepare_ahead: null, group_discussion_max_rounds: 3, group_discussion_max_messages: 10 })
   const view = await renderPage({ section: 'chat' }, qc)
   const page = await waitFor(() => view.container.querySelector<HTMLElement>('[data-section="chat"]')!)
-  expect([...page.querySelectorAll('section[data-group]')].map((g) => g.getAttribute('data-group'))).toEqual(['composer', 'transcript', 'group-discussions', 'more'])
+  expect([...page.querySelectorAll('section[data-group]')].map((g) => g.getAttribute('data-group'))).toEqual(['composer', 'transcript', 'more'])
   expect(page.querySelector('[data-group="composer"] [data-composer-preview]')).not.toBeNull()
   expect(page.querySelectorAll('[data-group] label').length + page.querySelectorAll('[data-group="more"] a').length).toBeLessThanOrEqual(14)
-  // The Agent without a prepared-compaction choice leaves Advanced one row short.
   expect(within(page).getByRole('link', { name: /Workspace panel/ })).toHaveTextContent('5 settings')
-  expect(within(page).getByRole('link', { name: /Advanced/ })).toHaveTextContent('8 settings')
+  expect(within(page).getByRole('link', { name: /Advanced/ })).toHaveTextContent('7 settings')
   for (const name of ['Send with', 'While the agent is working', 'Activity display']) expect(within(page).getByRole('radiogroup', { name })).toBeInTheDocument()
   expect(within(page).getAllByRole('radio').map((r) => r.textContent)).toEqual(['Enter', 'Ctrl Enter', 'Steer', 'Queue', 'Interrupt', 'Compact', 'Every step', 'Final answer only'])
   expect(page.querySelector('[role="switch"][id^="settings-hide_composer_"]')).toBeNull()

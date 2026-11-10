@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -6,6 +6,8 @@ import { SidebarSection } from './SidebarSection'
 import { ChatSection, ChatSubPage } from './ChatSection'
 import { NotificationsSection } from './NotificationsSection'
 import { PrivacySettings } from './PrivacySettings'
+import { LimitsGroup } from './ModelsSection'
+import { GroupDiscussionsGroup } from './SystemSection'
 import { BootstrapContext } from '../../app/bootstrap'
 import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
 import { keys } from '../../api/queryKeys'
@@ -35,8 +37,8 @@ async function setup() {
   vi.stubGlobal('Notification', { permission: 'granted', requestPermission: vi.fn() })
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   qc.setQueryData(keys.settings, initial)
-  // TAL-2138: Chat's rarely changed rows sit on its sub-pages.
-  await renderRouted(<QueryClientProvider client={qc}><BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><SidebarSection /><ChatSection /><ChatSubPage page="workspace-panel" /><ChatSubPage page="advanced" /><NotificationsSection /><PrivacySettings /></BootstrapContext.Provider></QueryClientProvider>)
+  // TAL-2138: Chat's rarely changed rows sit on its sub-pages. TAL-2160: the profile's limits on Models, Group discussion limits on System.
+  await renderRouted(<QueryClientProvider client={qc}><BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><SidebarSection /><ChatSection /><ChatSubPage page="workspace-panel" /><ChatSubPage page="advanced" /><NotificationsSection /><PrivacySettings /><LimitsGroup /><GroupDiscussionsGroup /></BootstrapContext.Provider></QueryClientProvider>)
   return qc
 }
 
@@ -141,7 +143,8 @@ it.each(['normalization', 'failure'] as const)('reconciles the focused numeric d
   await user.click(input)
   fireEvent.change(input, { target: { value: '100' } })
   expect(input).toHaveValue(100)
-  await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ pinned_sessions_limit: 100 }))
+  // TAL-2160: above the server's maximum, the row writes the maximum.
+  await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ pinned_sessions_limit: 99 }))
   held.resolve(initial)
   await waitFor(() => expect(input).toHaveValue(3))
   expect(input).toHaveFocus()
@@ -192,4 +195,45 @@ it('rolls max output tokens back to the confirmed value after a managed config c
   await waitFor(() => expect(input).toHaveValue(null))
   expect(qc.getQueryData(keys.settings)).toMatchObject({ max_tokens: null })
   expect(showToast).toHaveBeenCalledWith(message, 4000, 'error')
+})
+
+/** TAL-2160: a viewport `matches` the phone query, else wider. */
+const viewport = (phone: boolean) => vi.stubGlobal('matchMedia', (query: string) => ({ matches: phone && query === '(max-width: 640px)', media: query, addEventListener: () => undefined, removeEventListener: () => undefined }))
+
+it.each([[true, 'Ctrl Enter'], [false, 'Enter']])('shows the send rule phones always use, disabled, only at phone width (phone %s, TAL-2160)', async (phone, checked) => {
+  viewport(phone)
+  await setup()
+  const group = screen.getByRole('radiogroup', { name: 'Send with' })
+  expect(within(group).getByRole('radio', { name: checked })).toBeChecked()
+  for (const radio of within(group).getAllByRole('radio')) if (phone) expect(radio).toBeDisabled(); else expect(radio).toBeEnabled()
+})
+
+it('names each title refresh option with its unit and disables it while the profile generates no titles (TAL-2160)', async () => {
+  const qc = await setup()
+  await user.click(screen.getByRole('combobox', { name: 'Refresh chat titles' }))
+  expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['Never', 'Every 5 exchanges', 'Every 10 exchanges', 'Every 20 exchanges'])
+  await user.keyboard('{Escape}')
+  act(() => qc.setQueryData(keys.settings, { ...initial, auto_title_refresh_available: false }))
+  await waitFor(() => expect(screen.getByRole('combobox', { name: 'Refresh chat titles' })).toHaveAttribute('data-disabled'))
+})
+
+it('shows the output limit a turn uses when the profile sets none (TAL-2160)', async () => {
+  const qc = await setup()
+  act(() => qc.setQueryData(keys.settings, { ...initial, max_tokens_source: 'agent', max_tokens_effective: 8192 }))
+  await waitFor(() => expect(screen.getByLabelText('Max output tokens')).toHaveAttribute('placeholder', 'Agent default: 8,192'))
+  act(() => qc.setQueryData(keys.settings, { ...initial, max_tokens_source: 'none', max_tokens_effective: null }))
+  await waitFor(() => expect(screen.getByLabelText('Max output tokens')).toHaveAttribute('placeholder', 'No limit set'))
+})
+
+it('lets only an owner change the insights sync, and only while a sidecar runs (TAL-2160)', async () => {
+  const qc = await setup()
+  const sync = () => screen.getByRole('switch', { name: 'Add Talaria chats to the Agent’s insights' })
+  expect(sync()).not.toHaveAttribute('aria-disabled')
+  act(() => qc.setQueryData(keys.settings, { ...initial, sync_to_insights_available: false }))
+  await waitFor(() => expect(sync()).toHaveAttribute('aria-disabled', 'true'))
+  cleanup()
+  const guest = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  guest.setQueryData(keys.settings, { ...initial, sync_to_insights_available: true })
+  await renderRouted(<QueryClientProvider client={guest}><BootstrapContext.Provider value={{ ...DEFAULT_BOOTSTRAP, auth: { ...DEFAULT_BOOTSTRAP.auth, can_manage_server: false } }}><PrivacySettings /></BootstrapContext.Provider></QueryClientProvider>)
+  expect(sync()).toHaveAttribute('aria-disabled', 'true')
 })
