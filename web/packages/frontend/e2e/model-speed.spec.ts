@@ -33,6 +33,6 @@ test('default model speed uses server tiers and survives a reload', async ({ pag
   await page.screenshot({ path: testInfo.outputPath('speed-saved.png') })
   main.supported_speed_tiers = []
   await page.reload()
-  await expect(page.getByRole('combobox', { name: 'Default Model', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Change model', exact: true })).toBeVisible()
   await expect(speed).toHaveCount(0)
 })
