@@ -779,7 +779,7 @@ export const toolsRouter = os.router({
     dismissOffer: os.connectors.dismissOffer.handler(({ input, context: { ctx } }) => run(() => ctx.deps.connectorOffers.view(home(ctx), runningSidecar(ctx), input.offer_id))),
     tools: os.connectors.tools.handler(({ input, context: { ctx } }) => run(async () => {
       const [listing, policy] = await Promise.all([connectorCall(ctx, 'connectors.tools', { connector: input.connector }), connectorRead(ctx, 'connectors.policy.get')])
-      return connectorTools(listing, policy.value)
+      return connectorTools(listing, policy.value, input.q)
     })),
     setPolicy: os.connectors.setPolicy.handler(({ input, context: { ctx } }) => run(async () => {
       const change = input.tool === undefined ? (typeof input.enabled === 'boolean' ? { enabled: input.enabled } : null)

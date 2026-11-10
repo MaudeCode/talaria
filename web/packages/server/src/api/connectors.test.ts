@@ -109,6 +109,10 @@ describe('TAL-818: the Connectors page and connect card', () => {
     expect((tools.tools as Json[]).map((t) => [t.slug, t.enabled, t.locked, t.editable])).toEqual([
       ['notion_read', true, false, true], ['notion_send', false, false, true], ['notion_delete', false, true, false], ['notion_purge', false, true, false], ['notion_share', false, false, false],
     ])
+    // TAL-2128: `q` keeps the tools whose name contains it, ignoring case; a blank `q` keeps every tool.
+    const named = await json(await s.get('/api/connectors/notion/tools?q=sEnD'))
+    expect((named.tools as Json[]).map((t) => [t.slug, t.enabled, t.editable])).toEqual([['notion_send', false, true]])
+    expect(await json(await s.get('/api/connectors/notion/tools?q=%20'))).toEqual(shared.tools)
 
     // Rules that cannot be read fail closed: every app reads off and read-only, and the page says why.
     sidecar.respond('connectors.policy.get', () => { throw new SidecarError('Select an organization', { condition: 'connectors_org_required' }) })
