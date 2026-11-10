@@ -50,11 +50,11 @@ import { dictateLive, NoSpeechError } from '../voice/liveDictation'
 import * as browserDictation from '../voice/dictation'
 
 const noop = (): void => undefined
-function renderComposer(session: Session | null, live: LiveTurn | null = null, onQueue: (entry: QueuedTurn) => void = noop, settings?: Settings, onEnsureSession: () => Promise<Session> = () => Promise.resolve(session!), onLocalCommand: ComposerProps['onLocalCommand'] = () => Promise.resolve(false), overrides: Partial<ComposerProps> = {}) {
+function renderComposer(session: Session | null, live: LiveTurn | null = null, onQueue: (entry: QueuedTurn) => void = noop, settings?: Settings, onEnsureSession: () => Promise<Session> = () => Promise.resolve(session!), onLocalCommand: ComposerProps['onLocalCommand'] = () => Promise.resolve(false), overrides: Partial<ComposerProps> = {}, bootstrap = DEFAULT_BOOTSTRAP) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const tree = (turn: LiveTurn | null, record = session) => (
     <QueryClientProvider client={qc}>
-      <BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}>
+      <BootstrapContext.Provider value={bootstrap}>
         <Composer
           sessionId={record?.session_id ?? null} session={record} busy={!!turn && !isTerminal(turn.status)} streamId={turn?.streamId ?? null} settings={settings} onEnsureSession={onEnsureSession} onLocalCommand={onLocalCommand}
           terminalOpen={false} onToggleTerminal={noop} onModelChange={noop} onWorkspaceChange={noop} onToolsetsChange={noop} onReasoningChange={noop} reasoning={null}
@@ -232,9 +232,18 @@ describe('Composer', () => {
     expect(document.querySelector('.attach-tray')).toBeNull()
   })
 
+  it('addresses the chat composer to the assistant name and a discussion composer to its room', () => {
+    const chat = renderComposer(null, null, noop, undefined, undefined, undefined, {}, { ...DEFAULT_BOOTSTRAP, bot_name: 'Synthetic Aide' })
+    expect(screen.getByRole('textbox', { name: 'Message Synthetic Aide…' })).toHaveAttribute('placeholder', 'Message Synthetic Aide…')
+    chat.unmount()
+    const room = { identity: 'room-a', name: 'Synthetic Room', maxUploadBytes: 1_000_000, maxAttachments: 4, canSend: true, onSend: vi.fn(() => Promise.resolve(true)), onUpload: vi.fn() }
+    render(<QueryClientProvider client={new QueryClient()}><BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><Composer room={room} settings={undefined} /></BootstrapContext.Provider></QueryClientProvider>)
+    expect(screen.getByRole('textbox', { name: 'Message Synthetic Room…' })).toHaveAttribute('placeholder', 'Message Synthetic Room…')
+  })
+
   it('does not bring back a discussion send refused after auth or profile teardown (TAL-1074)', async () => {
     const sent = deferred<boolean>()
-    const room = { identity: 'room-a', maxUploadBytes: 1_000_000, maxAttachments: 4, canSend: true, onSend: vi.fn(() => sent.promise), onUpload: vi.fn((file: File) => Promise.resolve({ attachment_id: file.name } as never)) }
+    const room = { identity: 'room-a', name: 'Room A', maxUploadBytes: 1_000_000, maxAttachments: 4, canSend: true, onSend: vi.fn(() => sent.promise), onUpload: vi.fn((file: File) => Promise.resolve({ attachment_id: file.name } as never)) }
     const tree = () => (
       <QueryClientProvider client={new QueryClient()}>
         <BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><Composer room={room} settings={undefined} /></BootstrapContext.Provider>

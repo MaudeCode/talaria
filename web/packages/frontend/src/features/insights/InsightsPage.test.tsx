@@ -4,8 +4,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { UseQueryResult } from '@tanstack/react-query'
 import type { z } from 'zod'
 import { ProviderQuotasSchema } from '../../contracts'
+import * as api from '../../api/endpoints'
 import { BarChart } from './BarChart'
+import { InsightsPage } from './InsightsPage'
 import { ProviderQuotaRows } from './ProviderQuotaRows'
+
+vi.mock('@tanstack/react-router', () => ({ useSearch: () => ({ tab: 'usage', days: 30 }), useNavigate: () => vi.fn() }))
+vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), fetchInsights: vi.fn(), fetchProviderQuotas: vi.fn(() => new Promise<never>(() => undefined)) }))
 
 const quotas = ProviderQuotasSchema.parse({
   version: 1, computed_at: '2030-01-01T00:00:00Z', scope_id: 'qscope_test', profile_id: 'default', active_provider: 'anthropic', requested_source_id: null, missing_source: false,
@@ -100,5 +105,16 @@ describe('BarChart', () => {
     expect(daily.textContent).toContain('Oct 30')
     expect(daily.textContent).not.toContain('Oct 15Oct 16')
     expect(screen.getByTitle('2030-10-30: 29')).toBeInTheDocument()
+  })
+})
+
+describe('InsightsPage usage amounts', () => {
+  it('shows one cent or more at exactly two decimals, less at up to four, each with its exact value in title', async () => {
+    vi.mocked(api.fetchInsights).mockResolvedValue({ total_sessions: 3, total_cost: 0.455, models: [{ model: 'synthetic-a', cost: 0.3705 }, { model: 'synthetic-b', cost: 0.0004 }] })
+    render(<QueryClientProvider client={new QueryClient()}><InsightsPage /></QueryClientProvider>)
+    expect(await screen.findByTitle('$0.455')).toHaveTextContent(/^\$0\.46$/)
+    const table = screen.getByTestId('insights-models')
+    expect(within(table).getByTitle('$0.3705')).toHaveTextContent(/^\$0\.37$/)
+    expect(within(table).getByTitle('$0.0004')).toHaveTextContent(/^\$0\.0004$/)
   })
 })

@@ -274,7 +274,7 @@
 	"composer_mobile_workspace": "Workspace",
 	"composer_mode_label": "While busy",
 	"composer_model_served": "Conversation model {configured}, answered by {served} after a fallback",
-	"composer_placeholder": "Message Hermes…",
+	"composer_placeholder": "Message {name}…",
 	"composer_placeholder_busy_interrupt": "Enter = interrupt | /queue | /background | /steer",
 	"composer_placeholder_busy_queue": "Enter = queue | /interrupt | /background | /steer",
 	"composer_placeholder_busy_steer": "Enter = steer | /queue | /background | /interrupt",

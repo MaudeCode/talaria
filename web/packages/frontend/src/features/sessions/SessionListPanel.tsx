@@ -76,6 +76,8 @@ type DisclosureId = 'scheduled' | 'webhook'
 const isDisclosure = (id: GroupId): id is DisclosureId => id === 'scheduled' || id === 'webhook'
 /** Rows a closed-search disclosure previews before View all, as in the App sidebar. */
 const DISCLOSURE_PREVIEW = 5
+/** A status line in the list, inset like a session row (8px, 12px on a phone) so it aligns with the titles. */
+const LIST_NOTE = 'px-2 py-2 text-sm text-muted max-[640px]:px-3'
 
 /** Spoken status for a row that needs the user; the server names the kind. */
 const attentionLabel = (kind: string | undefined) => kind === 'approval' ? m.session_attention_approval_title() : kind === 'clarify' ? m.session_attention_clarify_title() : kind === 'decision' ? m.session_attention_decision_title() : m.session_attention_generic_title()
@@ -382,17 +384,17 @@ export function SessionListPanel() {
       <div className="session-list" id="sessionList" role="list">
         <span className="sr-only" role="status">{dropTarget === null ? '' : dropTarget ? m.session_pin() : m.session_unpin()}</span>
         {storageNotice && (
-          <div className="session-list-note session-list-error" role="status">
+          <div className="session-list-error" role="status">
             <div>{storageNotice}{storage?.reason && <HelpTip label={m.field_help_about({ label: storageNotice })}>{storage.reason}</HelpTip>}</div>
           </div>
         )}
-        {list.isPending && <div className="session-list-note" role="status">{m.loading()}</div>}
+        {list.isPending && <div className={LIST_NOTE} role="status">{m.loading()}</div>}
         {list.isError && (
-          <div className="session-list-note session-list-error" role="alert">
+          <div className="session-list-error" role="alert">
             {m.error_generic()} <button type="button" className="linklike" onClick={() => { void list.refetch() }}>{m.retry()}</button>
           </div>
         )}
-        {list.isSuccess && filtered.length === 0 && !(q.length >= 2 && search.isPending) && <div className="session-list-note">{filter ? m.no_matching_sessions() : m.no_sessions_yet()}</div>}
+        {list.isSuccess && filtered.length === 0 && !(q.length >= 2 && search.isPending) && <div className={LIST_NOTE}>{filter ? m.no_matching_sessions() : m.no_sessions_yet()}</div>}
         {groups.map((g) => {
           const collapsed = isCollapsed(g.id)
           const disclosure = isDisclosure(g.id)
@@ -465,9 +467,9 @@ function SessionGroupDialog({ title, kind, rows, nested, filters, activeId, proj
       </div>
       <SessionActions rows={matches ?? []}>
       <div className="session-list max-h-[60dvh]" role="list">
-        {matches === null && search.isError ? <div className="session-list-note session-list-error" role="alert">{m.error_generic()} <button type="button" className="linklike" onClick={() => { void search.refetch() }}>{m.retry()}</button></div>
-          : matches === null ? <div className="session-list-note" role="status">{m.loading()}</div>
-          : matches.length === 0 ? <div className="session-list-note">{m.no_matching_sessions()}</div>
+        {matches === null && search.isError ? <div className="session-list-error" role="alert">{m.error_generic()} <button type="button" className="linklike" onClick={() => { void search.refetch() }}>{m.retry()}</button></div>
+          : matches === null ? <div className={LIST_NOTE} role="status">{m.loading()}</div>
+          : matches.length === 0 ? <div className={LIST_NOTE}>{m.no_matching_sessions()}</div>
           : matches.map((row) => <SessionTreeItem key={row.session_id} row={row} nested={children.get(row.session_id)} activeId={activeId} projectsById={projectsById} previews={previews} onArchive={onArchive} />)}
       </div>
       </SessionActions>
