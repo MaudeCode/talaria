@@ -11880,11 +11880,18 @@
                           "created_at"
                         ]
                       }
+                    },
+                    "min_entries": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "description": "The outline shows once it lists this many questions, sent ones included."
                     }
                   },
                   "required": [
                     "session_id",
-                    "entries"
+                    "entries",
+                    "min_entries"
                   ]
                 }
               }

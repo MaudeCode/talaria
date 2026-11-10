@@ -35,7 +35,8 @@ describe('GET /api/session/outline (TAL-2152)', () => {
       { role: 'user', content: 'a'.repeat(300), timestamp: 30 },
       { role: 'user', content: '```ts\nconst x = 1\n```', message_id: 'u4', timestamp: 40 },
     ])
-    const { entries } = await outline(sid)
+    const { entries, min_entries } = await outline(sid)
+    expect(min_entries).toBe(4)
     expect(entries).toEqual([
       { message_id: 'u1', index: 0, excerpt: 'Plan the release', created_at: 10 },
       { message_id: 'u2', index: 4, excerpt: 'use this key ghp_ab...6789 please', created_at: 20 },

@@ -5,12 +5,17 @@ import { str } from '../util.js'
 import { messageText } from './merge.js'
 
 export const OUTLINE_EXCERPT_MAX = 120
+/** A chat shows its outline from this many questions; a shorter one is read whole at a glance. */
+export const OUTLINE_MIN_ENTRIES = 4
 
 const isDict = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
 const FENCE = /^\s*(?:```|~~~)/
 
+const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+
+/** At most `OUTLINE_EXCERPT_MAX` characters as a reader counts them, never splitting an emoji. */
 function capped(text: string): string {
-  const chars = [...text]
+  const chars = Array.from(graphemes.segment(text), (part) => part.segment)
   return chars.length <= OUTLINE_EXCERPT_MAX ? text : `${chars.slice(0, OUTLINE_EXCERPT_MAX - 1).join('').trimEnd()}…`
 }
 
@@ -37,7 +42,7 @@ export function outlineEntries(rows: readonly { message: unknown; index: number 
     const id = m.message_id ?? m.id
     return [{
       // The transcript's row key (`messageKey`), so a jump finds the row this entry names.
-      message_id: id === undefined || id === null ? `${String(index)}-user` : String(id),
+      message_id: typeof id === 'string' || typeof id === 'number' ? String(id) : `${String(index)}-user`,
       index,
       excerpt: outlineExcerpt(m),
       created_at: typeof m.timestamp === 'number' && Number.isFinite(m.timestamp) ? m.timestamp : null,

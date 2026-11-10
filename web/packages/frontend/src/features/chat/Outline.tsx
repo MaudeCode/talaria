@@ -15,9 +15,6 @@ import { SECTION_HEADER } from '../../ui/List'
 import { cn } from '../../ui/cn'
 import { firstRowPast, rowBoxes } from './viewportAnchor'
 
-/** The outline shows from this many questions. */
-export const OUTLINE_MIN_ENTRIES = 4
-
 /** `read`: when the outline read this entry came after was taken; a later read answers for it. */
 interface Sent { stream: string; read: number; entry: SessionOutlineEntry }
 
@@ -25,7 +22,7 @@ interface Sent { stream: string; read: number; entry: SessionOutlineEntry }
  * The server's outline, then each question sent here after that read, from the stream state: the user's own write, shown
  * until a later read answers for it. Only `revision` (a compaction or rename) reads the outline again.
  */
-export function useOutline(sessionId: string, revision: string, live: LiveTurn | null): SessionOutlineEntry[] | undefined {
+export function useOutline(sessionId: string, revision: string, live: LiveTurn | null): { entries: SessionOutlineEntry[]; shown: boolean } | undefined {
   const query = useQuery({
     queryKey: keys.sessionOutline(sessionId, revision),
     queryFn: ({ signal }) => api.fetchSessionOutline(sessionId, signal),
@@ -46,7 +43,8 @@ export function useOutline(sessionId: string, revision: string, live: LiveTurn |
   }
   if (!query.data) return undefined
   const answered = new Set(query.data.entries.map((entry) => entry.message_id))
-  return [...query.data.entries, ...items.filter((item) => item.read >= query.dataUpdatedAt && !answered.has(item.entry.message_id)).map((item) => item.entry)]
+  const entries = [...query.data.entries, ...items.filter((item) => item.read >= query.dataUpdatedAt && !answered.has(item.entry.message_id)).map((item) => item.entry)]
+  return { entries, shown: entries.length >= query.data.min_entries }
 }
 
 /**
@@ -90,7 +88,8 @@ function moveFocus(event: KeyboardEvent<HTMLOListElement>) {
 }
 
 export function Outline({ sessionId, revision, live, pane, onJump }: { sessionId: string; revision: string; live: LiveTurn | null; pane: RefObject<HTMLDivElement | null>; onJump: (entry: SessionOutlineEntry) => void }) {
-  const entries = useOutline(sessionId, revision, live) ?? []
+  const outline = useOutline(sessionId, revision, live)
+  const entries = outline?.entries ?? []
   const active = useEntryInView(pane, entries)
   const list = useRef<HTMLOListElement>(null)
   // The column scrolls on its own: it keeps the marked entry in its view, never moving the transcript.
@@ -101,7 +100,7 @@ export function Outline({ sessionId, revision, live, pane, onJump }: { sessionId
     if (row.offsetTop < scroller.scrollTop) scroller.scrollTop = row.offsetTop
     else if (row.offsetTop + row.offsetHeight > scroller.scrollTop + scroller.clientHeight) scroller.scrollTop = row.offsetTop + row.offsetHeight - scroller.clientHeight
   }, [active])
-  if (entries.length < OUTLINE_MIN_ENTRIES) return null
+  if (!outline?.shown) return null
   const focusable = Math.max(active, 0)
   return (
     <>

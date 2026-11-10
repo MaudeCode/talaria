@@ -28,7 +28,7 @@ import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-co
 import { auditSessionRecovery, repairSafeSessionRecovery, type RecoveryDeps } from './recovery.js'
 import { stateDbWebDiagnosticIdsAsync, agentSessionRowsExistingAsync, CANONICAL_READ_ONLY_REASON, OWNERSHIP_UNAVAILABLE_REASON, CONVERSATION_ROUND_THRESHOLD, emptyLineageReport, stateDbSessionReadAsync, stateDbSessionSourcesAsync, stateDbTimestampSeconds, withStateDbListingReads, type stateDbSessionRow, type StateDbMessageSummary, type StateDbRead, type StateDbSessionSource, type StateDbSettlementRead } from './state-db.js'
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
-import { outlineEntries } from './outline.js'
+import { OUTLINE_MIN_ENTRIES, outlineEntries } from './outline.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, insertCompactionRow, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { chatReadiness, runtimeFailureDetails, SidecarError, type SidecarLike } from '../sidecar/client.js'
 import { agentSteerText, ApiMessageSummary, isConversationalAssistant, messageText, splitDisplayText, appendStateDbIdentityRows, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isCompactionRow, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, normalizeUserDisplay, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, withDataUseRequirements, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withheldPromptText, withheldRowForModel, newestSettledReply, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, isDict as isMessageDict, type ToolResultView } from './merge.js'
@@ -1845,7 +1845,7 @@ export class SessionService {
     if (this.owner && await this.owner.owns(sid)) {
       const detail = await this.detail(sid, { messages: '1' })
       const messages = Array.isArray(detail.messages) ? detail.messages as unknown[] : []
-      return { session_id: str(detail.session_id) || sid, entries: outlineEntries(messages.map((message, index) => ({ message, index }))) }
+      return { session_id: str(detail.session_id) || sid, entries: outlineEntries(messages.map((message, index) => ({ message, index }))), min_entries: OUTLINE_MIN_ENTRIES }
     }
     const { session: s, transcript } = await this.fullTranscript(sid)
     const pending = this.pendingTurn(s)
@@ -1855,7 +1855,7 @@ export class SessionService {
     const marked = await this.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(rows)), s))
     const users = marked.flatMap((message, index) => (isMessageDict(message) && message.role === 'user' ? [{ message, index }] : []))
     const projected = redactSessionData({ messages: users.map(({ message }) => message) }, this.deps.redactEnabled()).messages as unknown[]
-    return { session_id: s.session_id, entries: outlineEntries(users.map(({ index }, k) => ({ message: projected[k], index }))) }
+    return { session_id: s.session_id, entries: outlineEntries(users.map(({ index }, k) => ({ message: projected[k], index }))), min_entries: OUTLINE_MIN_ENTRIES }
   }
 
   /**
