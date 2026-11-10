@@ -25,7 +25,7 @@ import { formatPercent } from '../../i18n/units'
 import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
 import { BarChart } from '../insights/BarChart'
-import { quotaSourcePlan, type QuotaSource } from '../insights/QuotaMeter'
+import { quotaSourcePlan, quotaStatusText, type QuotaSource } from '../insights/QuotaMeter'
 import { QuotaWindowMeter } from '../insights/ProviderQuotaRows'
 import { SETTINGS_PAGE, SettingsGroup, SettingsStats, type SettingsStat } from './SettingsGroup'
 import { useOpenRouterCostHistory } from './OpenRouterCost'
@@ -88,6 +88,13 @@ export function ProviderStatus({ p, catalogUnavailable, extra }: { p: Provider; 
   if (!(p.configured ?? p.has_key)) return <StatusDot state="idle">{m.providers_not_configured()}</StatusDot>
   const words = [keySourceText(p) ?? m.providers_configured(), extra].filter(Boolean).join(' · ')
   return <StatusDot state="ok" title={words}>{words}</StatusDot>
+}
+
+/** A quota source the server could not refresh (`status` other than available), as a dot and the server's status text; nothing while available. */
+export function QuotaSourceStatus({ source }: { source: QuotaSource }) {
+  if (source.status === 'available') return null
+  const text = quotaStatusText(source)
+  return <div className="flex min-w-0"><StatusDot state={source.status === 'stale' ? 'warning' : 'error'} title={text}>{text}</StatusDot></div>
 }
 
 /** TAL-2100, TAL-2135: Settings › Providers: the server's figures, the configured providers as blocks that open their own page, the providers to add, then the quota thresholds. */
@@ -209,7 +216,7 @@ function ConfiguredProvider({ p, catalogUnavailable, sources, cost, spend, onRef
         {figure && <span className="shrink-0">{figure}</span>}
         <ChevronRight size={16} aria-hidden="true" className="shrink-0 text-muted" />
       </div>
-      {source && w && <div className="flex flex-col gap-1.5"><QuotaWindowMeter window={w} source={source} mode="remaining" locale={locale} /></div>}
+      {source && w && <div className="flex flex-col gap-1.5"><QuotaWindowMeter window={w} source={source} mode="remaining" locale={locale} /><QuotaSourceStatus source={source} /></div>}
       {!w && cost?.has_enough_data && snapshots.length > 0 && (
         <div className="flex flex-col gap-1.5">
           <BarChart compact id={`provider-spend-${p.id}`} title={m.providers_daily_spend({ n: cost.window_days ?? snapshots.length })} format={(v) => formatUsd(v, locale, 2)}

@@ -20,7 +20,7 @@ import type { QuotaSource } from '../insights/QuotaMeter'
 import { OAuthSignIn } from '../onboarding/OAuthSignIn'
 import { OpenRouterCost } from './OpenRouterCost'
 import { ProviderQuotaPace } from './ProviderQuotaPace'
-import { LEVEL_TONE, ProviderKeyForm, ProviderStatus, SelfHostedForm, useProviders, useProviderWrites, type Provider } from './ProvidersSection'
+import { LEVEL_TONE, ProviderKeyForm, ProviderStatus, QuotaSourceStatus, SelfHostedForm, useProviders, useProviderWrites, type Provider } from './ProvidersSection'
 import { SETTINGS_PAGE, SETTINGS_TITLE, SettingAction, SettingRow, SettingsGroup, SettingsStats, type SettingsStat } from './SettingsGroup'
 import { useSettingField } from './useSettingField'
 
@@ -112,6 +112,8 @@ function ProviderQuota({ sources, pins, onRefresh }: { sources: QuotaSource[]; p
         : [
           // A plan's name, paused and credits status stay beside the windows its gauges became.
           s.plan_usage && <div key={`${s.source_id}-plan`} className="py-3"><ProviderQuotaPace source={s} showAccount={several} gauges={false} /></div>,
+          // Last-confirmed windows say so in the server's words.
+          s.status !== 'available' && <div key={`${s.source_id}-status`} className="py-3"><QuotaSourceStatus source={s} /></div>,
           ...(s.windows ?? []).map((w, i) => (
           <div key={`${s.source_id}-${String(i)}`} className="flex flex-col gap-1.5 py-3" data-quota-window={w.label} data-level={w.display_level}>
             <div className="flex items-baseline justify-between gap-3">

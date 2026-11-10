@@ -458,6 +458,20 @@ describe('ProviderDetail (TAL-2135)', () => {
     expect(pace.querySelector('[data-figure-tone]')).toBeNull()
   })
 
+  it("names a stale source's last-confirmed windows with the server's status text, on the page and in the list", async () => {
+    const reason = 'Account usage refresh failed. Showing last-confirmed data.'
+    const stale = structuredClone(quotas) as unknown as { sources: Record<string, unknown>[] }
+    Object.assign(stale.sources[0]!, { status: 'stale', status_message: reason, display_level: 'stale' })
+    providersResponse.current = { active_provider: 'anthropic', providers: [anthropic] }
+    quotaResponse.current = stale
+    const router = await renderAt('/settings/providers/anthropic')
+    const quota = await found('[data-group="quota"]')
+    await waitFor(() => expect(within(quota).getByText(reason).closest('[data-status]')).toHaveAttribute('data-status', 'warning'))
+    await router.navigate({ to: '/settings/$section', params: { section: 'providers' } })
+    const a = await found('[data-provider="anthropic"]')
+    expect(within(a).getByText(reason).closest('[data-status]')).toHaveAttribute('data-status', 'warning')
+  })
+
   it('words the pace figure by the server status', async () => {
     // A server with a 4% tolerance calls the fixture's 3.4-point deficit on pace.
     const onPace = structuredClone(quotas) as { sources: { windows: { pace: Record<string, unknown> | null }[] }[] }
