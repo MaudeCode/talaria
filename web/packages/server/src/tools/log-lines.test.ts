@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { classifyLine, classifyLog } from './log-lines.js'
+import { classifyLine, classifyLog, MAX_MATCHES } from './log-lines.js'
 
 const TAIL = [
   '2026-11-08 12:01:03,101 INFO gateway: connected to telegram',
@@ -69,6 +69,13 @@ describe('classifyLog', () => {
     expect(counts.lines).toBe(8)
     expect(classifyLog(TAIL, { q: 'mcp', level: 'warning' }).matched).toBe(2)
     expect(classifyLog(TAIL, { q: 'telegram', level: 'error' }).matched).toBe(0)
+  })
+
+  it('stops marking matches at MAX_MATCHES while still listing every matching line', () => {
+    const { entries, matched } = classifyLog(['a'.repeat(MAX_MATCHES + 5), 'a again'], { q: 'a' })
+    expect(matched).toBe(2)
+    expect(entries.reduce((n, e) => n + (e.matches?.length ?? 0), 0)).toBe(MAX_MATCHES)
+    expect(entries[1]?.matches).toEqual([])
   })
 
   it('treats a blank q as no search', () => {

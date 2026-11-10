@@ -7,6 +7,8 @@ const TOKEN = /\b(CRITICAL|FATAL|ERROR|WARNING|WARN|INFO|DEBUG|TRACE)\b/i
 const TOKEN_LEVEL: Record<string, LogLevel> = { critical: 'error', fatal: 'error', error: 'error', warning: 'warning', warn: 'warning', info: 'info', debug: 'debug', trace: 'debug' }
 /** Only a token this close to the start of a line names its level; one further in is message text. */
 const TOKEN_WINDOW = 80
+/** The most search highlights one answer carries; lines past it still match, unmarked, so a one-letter query over a large log stays small. */
+export const MAX_MATCHES = 2000
 
 export interface ClassifiedLog {
   entries: LogEntry[]
@@ -50,6 +52,7 @@ export function classifyLog(lines: readonly string[], filter: { q?: string | und
   const counts = { error: 0, warning: 0, lines: lines.length }
   const entries: LogEntry[] = []
   let previous: LogLevel | null = null
+  let budget = MAX_MATCHES
   for (const line of lines) {
     const entry: LogEntry = classifyLine(line, previous)
     previous = entry.level
@@ -58,7 +61,14 @@ export function classifyLog(lines: readonly string[], filter: { q?: string | und
     if (filter.level === 'error' && entry.level !== 'error') continue
     if (filter.level === 'warning' && entry.level !== 'error' && entry.level !== 'warning') continue
     if (needle !== undefined && !line.toLowerCase().includes(needle)) continue
-    if (pattern) entry.matches = [...entry.text.matchAll(pattern)].map((hit) => [hit.index, hit.index + hit[0].length])
+    if (pattern) {
+      entry.matches = []
+      for (const hit of entry.text.matchAll(pattern)) {
+        if (budget === 0) break
+        entry.matches.push([hit.index, hit.index + hit[0].length])
+        budget -= 1
+      }
+    }
     entries.push(entry)
   }
   // Any error or warning in the tail marks its count; the page colours what is marked.
