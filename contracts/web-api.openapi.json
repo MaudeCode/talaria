@@ -89751,6 +89751,9 @@
                           "display_name_overridden": {
                             "type": "boolean"
                           },
+                          "avatar_url": {
+                            "type": "string"
+                          },
                           "canonical_session": {
                             "anyOf": [
                               {
@@ -89995,6 +89998,9 @@
                           },
                           "display_name_overridden": {
                             "type": "boolean"
+                          },
+                          "avatar_url": {
+                            "type": "string"
                           },
                           "canonical_session": {
                             "anyOf": [
@@ -90261,6 +90267,9 @@
                         "display_name_overridden": {
                           "type": "boolean"
                         },
+                        "avatar_url": {
+                          "type": "string"
+                        },
                         "canonical_session": {
                           "anyOf": [
                             {
@@ -90485,6 +90494,9 @@
                         },
                         "display_name_overridden": {
                           "type": "boolean"
+                        },
+                        "avatar_url": {
+                          "type": "string"
                         },
                         "canonical_session": {
                           "anyOf": [
@@ -137859,6 +137871,53 @@
           },
           "502": {
             "description": "The remote asset redirected, failed or was not an image.",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/profile/avatar": {
+      "get": {
+        "summary": "TAL-2176, owner only: a profile's own `assets/avatar.{png,jpg,webp}`, the first that is a regular file, opened without following a link out of its home. Clients load the row's `avatar_url`, never a URL of their own.",
+        "tags": [
+          "settings"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "description": "Profile name; isolated profile mode reads only its pinned profile.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Image bytes, `Cache-Control: private, max-age=300`.",
+            "content": {
+              "image/png": {},
+              "image/jpeg": {},
+              "image/webp": {}
+            }
+          },
+          "400": {
+            "description": "An invalid name, or one resolving outside the profiles directory.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "403": {
+            "description": "Not the owner, another profile in isolated profile mode, or an avatar over 2 MB.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "404": {
+            "description": "The profile has no avatar.",
             "content": {
               "application/json": {}
             }

@@ -135,7 +135,7 @@ export function ProfilesPage({ name }: { name?: string | undefined } = {}) {
           return (
             <RowContextMenu key={p.name} label={m.profile_row_menu()} actions={actions} trigger={<Row className={cn('group', confirmed(p) && 'cursor-pointer')} data-profile={p.name} onClick={(e) => { if (confirmed(p) && !(e.target as Element).closest('a, button, [role="menu"], [role="dialog"], [role="alertdialog"]')) openDetail(p.name) }}>
               <div className="flex items-center gap-3">
-                <Monogram name={p.display_name || p.name} />
+                <Monogram name={p.display_name || p.name} src={p.avatar_url} />
                 <div className="min-w-0 flex-1">
                   <ProfileHeading profile={p} isActive={p.name === active} link={confirmed(p)} className="text-sm" />
                   <div className="mt-0.5 truncate text-xs text-muted">{modelLine(p)}</div>
@@ -189,6 +189,7 @@ function ProfileDetail({ profile: p, isActive, actions }: { profile: Profile; is
   return (
     <div className={SETTINGS_PAGE} data-profile-detail={p.name}>
       <RowContextMenu label={m.profile_row_menu()} actions={actions} trigger={<div className="flex flex-wrap items-center gap-3">
+        <Monogram name={p.display_name || p.name} src={p.avatar_url} />
         <div className="min-w-0 flex-1 basis-48">
           <ProfileHeading profile={p} isActive={isActive} link={false} className="text-base" />
           {p.description && <p className="mt-1 text-sm text-muted">{p.description}</p>}

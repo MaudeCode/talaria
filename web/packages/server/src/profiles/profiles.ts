@@ -4,7 +4,7 @@
  * `delete_profile_api`). Rows come from the sidecar (`profiles.*`, the Agent's
  * own per-profile readers); the per-request active profile stays a cookie.
  */
-import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import { closeSync, existsSync, fstatSync, lstatSync, readdirSync, readSync, realpathSync, statSync } from 'node:fs'
 import type { DocumentBackend } from '../sessions/storage/backend.js'
 import { updateDocument } from '../sessions/storage/document.js'
 import { join, resolve } from 'node:path'
@@ -16,6 +16,7 @@ import { writeProfileEnv } from '../providers/env-file.js'
 import { providerEnvVar, type ModelsCatalog } from '../providers/catalog.js'
 import { str } from '../util.js'
 import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
+import { openAnchoredFd } from '../workspace/fs.js'
 
 export const PROFILE_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
 
@@ -35,6 +36,15 @@ export function containedProfileHome(baseHome: string, name: string): string | n
     try { lstatSync(home) } catch { return home }
     return null
   }
+}
+
+/** TAL-2176: the sidecar's `_AVATAR_EXTS` order (its `has_avatar`), each with the type the avatar route answers. */
+const AVATAR_TYPES = [['png', 'image/png'], ['jpg', 'image/jpeg'], ['webp', 'image/webp']] as const
+export const PROFILE_AVATAR_MAX_BYTES = 2 * 1024 * 1024
+
+/** TAL-2176: where a row the Agent saw an avatar for loads it; rows without one carry no URL. */
+function withAvatarUrl(row: Dict): Dict {
+  return row.has_avatar === true ? { ...row, avatar_url: `./api/profile/avatar?name=${encodeURIComponent(str(row.name))}` } : row
 }
 
 export const escapedProfileMessage = (name: string): string => `Profile '${name}' resolves outside the profiles directory.`
@@ -136,7 +146,7 @@ export class ProfileService {
       this.rootAliases = new Set(rows.filter((r) => r.is_default === true && typeof r.name === 'string' && r.name).map((r) => r.name as string))
       this.rootAliasesLoaded = true
     }
-    return rows.map((r) => ({ ...r, is_active: str(r.name) === active, pending_writes: pendingWrites(str(r.path)) }))
+    return rows.map((r) => ({ ...withAvatarUrl(r), is_active: str(r.name) === active, pending_writes: pendingWrites(str(r.path)) }))
   }
 
   async activePayload(active: string): Promise<Dict> {
@@ -152,6 +162,43 @@ export class ProfileService {
 
   private assertContained(name: string): void {
     if (this.escapes(name)) throw new ProfileError(escapedProfileMessage(name), 400)
+  }
+
+  /**
+   * TAL-2176: a profile's own `assets/avatar.{png,jpg,webp}`, the first in the sidecar's order that opens as a regular
+   * file through the anchored no-follow walk from its home, so a link at `assets` or at the file is never followed.
+   * Null when it has none; refused past `PROFILE_AVATAR_MAX_BYTES`. Isolated profile mode reads only its pinned profile.
+   */
+  avatar(name: string): { type: string; bytes: Buffer } | null {
+    let home: string
+    if (this.deps.isolatedProfileMode()) {
+      if (name !== this.deps.isolatedProfileName()) throw new ProfileError(`Only profile '${this.deps.isolatedProfileName()}' is readable in isolated profile mode.`, 403)
+      home = this.deps.baseHome
+    } else if (this.isRootProfile(name)) home = this.deps.baseHome
+    else {
+      validateProfileName(name)
+      const contained = containedProfileHome(this.deps.baseHome, name)
+      if (contained === null) throw new ProfileError(escapedProfileMessage(name), 400)
+      home = contained
+    }
+    // The anchored walk names its target under the resolved root (a temp home under `/var` is `/private/var` on macOS).
+    const root = resolvePathLikePython(home)
+    for (const [ext, type] of AVATAR_TYPES) {
+      let fd: number
+      try { fd = openAnchoredFd(root, join(root, 'assets', `avatar.${ext}`), { wantDir: false }) } catch { continue }
+      try {
+        if (!fstatSync(fd).isFile()) continue
+        // Read one byte past the cap rather than trusting the size, so a file growing after the stat is still refused.
+        const buf = Buffer.allocUnsafe(PROFILE_AVATAR_MAX_BYTES + 1)
+        let size = 0
+        for (let n = 1; n > 0 && size < buf.length; size += n) n = readSync(fd, buf, size, buf.length - size, null)
+        if (size > PROFILE_AVATAR_MAX_BYTES) throw new ProfileError(`Profile '${name}' avatar is larger than 2 MB.`, 403)
+        return { type, bytes: buf.subarray(0, size) }
+      } finally {
+        closeSync(fd)
+      }
+    }
+    return null
   }
 
   /** Python `switch_profile(process_wide=False)`: validate, then answer the target's defaults. */
@@ -259,7 +306,7 @@ export class ProfileService {
       return row
     }).finally(() => { releaseSource?.() })
     const rows = await this.list('default')
-    return rows.find((r) => str(r.name) === opts.name) ?? { ...created, is_active: false }
+    return rows.find((r) => str(r.name) === opts.name) ?? { ...withAvatarUrl(created), is_active: false }
   }
 
   /** Per-profile lifecycle chain: creation (+ its configuration) and deletion of one name never overlap. */
@@ -419,7 +466,7 @@ export class ProfileService {
         this.invalidate()
       }
     })
-    return { ...row, is_active: str(row.name) === active || (root && this.isRootProfile(active)), pending_writes: pendingWrites(str(row.path)) }
+    return { ...withAvatarUrl(row), is_active: str(row.name) === active || (root && this.isRootProfile(active)), pending_writes: pendingWrites(str(row.path)) }
   }
 
   async delete(name: string, active: string): Promise<{ ok: true; name: string }> {

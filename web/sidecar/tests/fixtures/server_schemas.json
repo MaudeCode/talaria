@@ -3126,6 +3126,9 @@
               "display_name_overridden": {
                 "type": "boolean"
               },
+              "avatar_url": {
+                "type": "string"
+              },
               "canonical_session": {
                 "anyOf": [
                   {

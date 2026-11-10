@@ -809,6 +809,8 @@ export const ProfileSchema = z.looseObject({
   display_name: z.string().optional(), description: z.string().optional(), has_avatar: z.boolean().optional(),
   /** TAL-2093: Bot Mode's roster title is the shown `display_name`, so a written display name stays hidden behind it. */
   display_name_overridden: z.boolean().optional(),
+  /** TAL-2176: where the profile's avatar image loads (`/api/profile/avatar`), present exactly when `has_avatar` is true. */
+  avatar_url: z.string().optional(),
   /** TAL-213: present only when the profile has a canonical Bot Chat; clients open `tip_session_id` after switching to the profile. */
   canonical_session: CanonicalBotChatSchema.nullable().optional(),
   /** TAL-2143, `/api/profiles` only: the gateway's status dot, `ok` while it runs and `idle` while it does not; absent with `gateway_running`. */

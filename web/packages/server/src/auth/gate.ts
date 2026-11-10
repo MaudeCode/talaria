@@ -33,7 +33,7 @@ export const OPERATOR_ONLY_PATHS = new Set([
   '/api/shutdown', '/api/health/restart', '/api/updates/apply', '/api/updates/force', '/api/updates/clear_lock',
   '/api/plugins/settings', '/api/plugins/update', '/api/plugins/update-all', '/api/plugins/auto-update', '/api/plugins/enabled', '/api/plugins/install', '/api/plugins/oauth/redirect', '/api/plugins/oauth/logout',
   '/api/extensions/toggle', '/api/extensions/sidecar-proxy-consent', '/api/extensions/install', '/api/extensions/uninstall',
-  '/api/gateway/start', '/api/gateway/stop', '/api/gateway/restart', '/api/profile/create', '/api/profile/update', '/api/profile/delete',
+  '/api/gateway/start', '/api/gateway/stop', '/api/gateway/restart', '/api/profile/create', '/api/profile/update', '/api/profile/delete', '/api/profile/avatar',
   '/api/auth/passkey/register/options', '/api/auth/passkey/register', '/api/auth/passkey/delete', '/api/auth/passkeys',
   // TAL-259: recovery acts on every session on the server.
   '/api/session/recovery/audit', '/api/session/recovery/repair-safe',

@@ -93,6 +93,11 @@ export const RAW_ROUTES: readonly RawRoute[] = [
     responses: { 200: { description: 'Model or image bytes.', contentType: ['model/gltf-binary', 'image/png', 'image/jpeg', 'image/webp'] }, 206: { description: 'Partial content.' }, 304: { description: 'ETag matched.' }, 403: { description: 'Refused before any bytes: not self-contained, a link, or too large.', contentType: 'application/json' }, 404: { description: 'Unknown, expired, revoked or foreign grant.', contentType: 'application/json' }, 502: { description: 'The remote asset redirected, failed or was not an image.', contentType: 'application/json' } },
   },
   {
+    method: 'GET', path: '/api/profile/avatar', summary: 'TAL-2176, owner only: a profile\'s own `assets/avatar.{png,jpg,webp}`, the first that is a regular file, opened without following a link out of its home. Clients load the row\'s `avatar_url`, never a URL of their own.', tags: ['settings'],
+    query: { name: { description: 'Profile name; isolated profile mode reads only its pinned profile.', required: true } },
+    responses: { 200: { description: 'Image bytes, `Cache-Control: private, max-age=300`.', contentType: ['image/png', 'image/jpeg', 'image/webp'] }, 400: { description: 'An invalid name, or one resolving outside the profiles directory.', contentType: 'application/json' }, 403: { description: 'Not the owner, another profile in isolated profile mode, or an avatar over 2 MB.', contentType: 'application/json' }, 404: { description: 'The profile has no avatar.', contentType: 'application/json' } },
+  },
+  {
     method: 'GET', path: '/api/folder/download', summary: 'ZIP of a workspace folder (symlinks escaping the workspace are skipped).', tags: ['files'],
     query: { session_id: { description: 'Session whose workspace anchors the path.', required: true }, path: { description: 'Workspace-relative folder.' } },
     responses: { 200: { description: 'ZIP stream.', contentType: 'application/zip' }, 404: { description: 'Folder missing.', contentType: 'application/json' }, 413: { description: 'Folder exceeds the configured size or file-count cap.', contentType: 'application/json' } },
