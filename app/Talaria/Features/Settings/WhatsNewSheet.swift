@@ -3,18 +3,49 @@ import TalariaKit
 import UIKit
 
 /// The installed release's What's New (TAL-182): its authored rows in their order, under one heading, with one
-/// Continue. Closing it any way, Continue or a swipe, acknowledges the rows it showed (TAL-1980); launch presents the
-/// unseen rows and Settings > About replays every packaged row.
+/// Continue. More than four rows turn into pages of four with dots and arrows, where Continue turns the page and a skip
+/// line closes the sheet (TAL-2173). Closing it any way, Continue, the skip line or a swipe, acknowledges every row in
+/// it, shown or not (TAL-1980); launch presents the unseen rows and Settings > About replays every packaged row.
 struct WhatsNewSheet: View {
     static let title = String(localized: "What's New in Talaria")
+    /// Layout, not a decision about which rows show: every row shows, this many to a page.
+    static let rowsPerPage = 4
 
     let announcement: WhatsNewAnnouncement
     var defaults: UserDefaults = .standard
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(HeaderLogoColor.storageKey) private var accentHex = HeaderLogoColor.defaultHex
+    @State private var page = 0
+
+    /// `rows` in consecutive pages of `rowsPerPage`, in their order.
+    static func pages(of rows: [WhatsNewAnnouncement.Row]) -> [[WhatsNewAnnouncement.Row]] {
+        stride(from: 0, to: rows.count, by: rowsPerPage).map { Array(rows[$0..<min($0 + rowsPerPage, rows.count)]) }
+    }
 
     var body: some View {
         let accent = HeaderLogoColor.color(for: accentHex)
+        let pages = Self.pages(of: announcement.rows)
+        Group {
+            if pages.count > 1 {
+                // The construction onboarding pages with, so a swipe turns the page too.
+                TabView(selection: $page) {
+                    ForEach(pages.indices, id: \.self) { index in
+                        rowsPage(pages[index], accent: accent).tag(index)
+                    }
+                }
+                .tabViewStyle(.page(indexDisplayMode: .never))
+            } else {
+                rowsPage(announcement.rows, accent: accent)
+            }
+        }
+        .safeAreaInset(edge: .bottom) { controls(pageCount: pages.count, accent: accent) }
+        .background(Color(.systemBackground))
+        .onDisappear { announcement.acknowledge(defaults: defaults) }
+    }
+
+    /// The heading over `rows`, scrolling on its own so a page at the largest text size still reads in full.
+    private func rowsPage(_ rows: [WhatsNewAnnouncement.Row], accent: Color) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 36) {
                 Text(Self.title)
@@ -24,7 +55,7 @@ struct WhatsNewSheet: View {
                     .accessibilityAddTraits(.isHeader)
 
                 VStack(alignment: .leading, spacing: 24) {
-                    ForEach(announcement.rows) { row in
+                    ForEach(rows) { row in
                         OnboardingFeatureRow(
                             icon: Self.symbol(for: row.icon),
                             color: accent,
@@ -41,8 +72,23 @@ struct WhatsNewSheet: View {
             .onboardingReadableWidth()
         }
         .scrollBounceBehavior(.basedOnSize)
-        .safeAreaInset(edge: .bottom) {
-            Button { dismiss() } label: {
+    }
+
+    private func controls(pageCount: Int, accent: Color) -> some View {
+        let isLastPage = page >= pageCount - 1
+        return VStack(spacing: 8) {
+            if pageCount > 1 {
+                HStack(spacing: 12) {
+                    pageArrow("chevron.left", label: "Previous page", to: page - 1, accent: accent)
+                        .disabled(page == 0)
+                    OnboardingPageIndicator(pageCount: pageCount, currentPage: page,
+                                            color: accent, otherColor: Color(.tertiaryLabel))
+                    pageArrow("chevron.right", label: "Next page", to: page + 1, accent: accent)
+                        .disabled(isLastPage)
+                }
+            }
+
+            Button { isLastPage ? dismiss() : turn(to: page + 1) } label: {
                 Text("Continue")
                     .font(AppFont.body(weight: .semibold))
                     .frame(maxWidth: .infinity)
@@ -52,13 +98,41 @@ struct WhatsNewSheet: View {
             .tint(accent)
             .foregroundStyle(HeaderLogoColor.prefersDarkForeground(for: accentHex) ? Color.black : Color.white)
             .accessibilityIdentifier("whats-new-continue")
-            .padding(.horizontal, 28)
-            .padding(.vertical, 16)
-            .onboardingReadableWidth()
-            .background(Color(.systemBackground))
+
+            if !isLastPage {
+                Button { dismiss() } label: {
+                    Text("Skip, I like surprises")
+                        .frame(minHeight: 44)
+                        // A backing view makes the 44pt frame the accessibility hit area.
+                        .background(Color(.systemBackground))
+                }
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("whats-new-skip")
+            }
         }
+        .padding(.horizontal, 28)
+        .padding(.vertical, 16)
+        .onboardingReadableWidth()
         .background(Color(.systemBackground))
-        .onDisappear { announcement.acknowledge(defaults: defaults) }
+    }
+
+    private func pageArrow(_ symbol: String, label: LocalizedStringKey, to target: Int, accent: Color) -> some View {
+        Button { turn(to: target) } label: {
+            Image(systemName: symbol)
+                .font(.body.weight(.semibold))
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .tint(accent)
+        .accessibilityLabel(label)
+    }
+
+    /// Turns to `target` with a swipe's slide, or at once under Reduce Motion.
+    private func turn(to target: Int) {
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) { page = target }
     }
 
     /// The symbol for a contract icon key (`contracts/whats-new.schema.json`); a key this build does not know yet
