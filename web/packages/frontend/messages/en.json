@@ -2561,7 +2561,6 @@
 	"settings_group_approvals": "Approvals",
 	"settings_group_buttons": "Buttons",
 	"settings_group_chats_list": "Chats list",
-	"settings_group_completion_sound": "Completion sound",
 	"settings_group_composer": "Composer",
 	"settings_group_composer_chips": "Composer chips",
 	"settings_group_composer_controls": "Composer controls",
@@ -2721,6 +2720,20 @@
 	"settings_saved_pw_updated": "Settings saved — password updated",
 	"settings_search_no_results": "No settings found.",
 	"settings_search_placeholder": "Search settings…",
+	"settings_search_results": [
+		{
+			"declarations": [
+				"input count"
+			],
+			"selectors": [
+				"count"
+			],
+			"match": {
+				"count=1": "{count} setting",
+				"count=*": "{count} settings"
+			}
+		}
+	],
 	"settings_section_about_title": "About",
 	"settings_section_access_title": "Access",
 	"settings_section_appearance_meta": "Theme, accent colors, and visual style.",

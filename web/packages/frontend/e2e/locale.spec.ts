@@ -54,7 +54,7 @@ test('German paints translated from the first frame and keeps entries identical 
   const { chunks } = await bootIn(page, 'de')
   await expect(page.locator(LANGUAGE_LABEL)).toHaveText('Sprache')
   expect(await labels(page)).toEqual(['Sprache'])
-  await expect(page.getByRole('heading', { name: 'Design', exact: true })).toBeVisible()
+  await expect(page.getByRole('group', { name: 'Design', exact: true })).toBeVisible()
   // `settings_label_skin` is "Skin" in German too, so the German chunk leaves it to the English module.
   await expect(page.getByText('Skin', { exact: true })).toBeVisible()
   expect(chunks).toEqual(['de'])

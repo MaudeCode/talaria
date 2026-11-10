@@ -1,6 +1,7 @@
-import { lazy, Suspense, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import type { ToolsTab, SettingsSection as Section } from '../../contracts/url'
 import { SECTION_LABEL } from './SettingsLayout'
+import { SETTINGS_INDEX } from './settingsIndex'
 import { LoadingState } from '../../ui/States'
 import { useLocale } from '../../i18n/useLocale'
 import { HubHeadSlotsContext } from '../../shell/AppShell'
@@ -23,6 +24,8 @@ const AboutSection = lazy(() => import('./AboutSection').then((module) => ({ def
 
 /** `tab` and `onTabChange` reach the one section with tabs, Tools; `name` the profile Profiles shows in detail. */
 interface SectionProps { tab?: ToolsTab | undefined; onTabChange?: ((tab: ToolsTab) => void) | undefined; name?: string | undefined }
+/** `row` is the URL's `#<row id>` and `visit` the navigation that set it. */
+interface RevealProps { row?: string | undefined; visit?: string | undefined }
 
 const SECTIONS: Partial<Record<Section, (props: SectionProps) => ReactNode>> = {
   appearance: () => <AppearanceSection />,
@@ -46,14 +49,61 @@ export function registerSettingsSection(section: Section, render: (props: Sectio
   SECTIONS[section] = render
 }
 
-export function SettingsSection({ section, ...props }: { section: Section } & SectionProps) {
+/** A picker grid focuses its chosen tile; a Switch's id is on its hidden input, so the switch beside it takes focus. */
+function focusTarget(element: HTMLElement): HTMLElement | null {
+  if (element.getAttribute('role') === 'group') return element.querySelector<HTMLElement>('[aria-pressed="true"]') ?? element.querySelector<HTMLElement>('button')
+  if (element.tabIndex < 0) return element.parentElement?.querySelector<HTMLElement>('[role="switch"]') ?? null
+  return element
+}
+
+/**
+ * TAL-2086: the URL's `#<row id>` scrolls that row into view and focuses its control. Sections load lazily and rows wait
+ * for their data, so it watches the page until the row appears. A row shown only under a condition first lands on the
+ * control that shows it (`shownWith`), else its group, and moves on to the row if it appears while focus is still there.
+ * `visit` changes with each navigation, so choosing the same row again reveals it again.
+ */
+function useRevealRow(page: RefObject<HTMLElement | null>, id: string | undefined, visit: string | undefined) {
+  useEffect(() => {
+    const root = page.current
+    if (!id || !root) return
+    const entry = SETTINGS_INDEX.find((e) => e.id === id)
+    const control = (target: string) => {
+      const element = document.getElementById(target)
+      return element && root.contains(element) ? focusTarget(element) : null
+    }
+    const group = () => entry ? [...root.querySelectorAll<HTMLElement>('section[data-group]')].find((s) => s.getAttribute('aria-label') === entry.group()) ?? null : null
+    let landed: HTMLElement | null = null
+    const show = (element: HTMLElement) => {
+      element.scrollIntoView?.({ block: 'center' })
+      element.focus({ preventScroll: true })
+      landed = element
+    }
+    const reveal = () => {
+      const row = control(id)
+      // Focus the user moved elsewhere since landing stays where they put it.
+      if (row) { if (!landed || document.activeElement === landed || document.activeElement === document.body) show(row); return true }
+      if (!landed) { const near = (entry?.shownWith ? control(entry.shownWith) : null) ?? group(); if (near) show(near) }
+      return false
+    }
+    if (reveal()) return
+    const observer = new MutationObserver(() => { if (reveal()) stop() })
+    const timer = setTimeout(() => stop(), 10_000)
+    const stop = () => { observer.disconnect(); clearTimeout(timer) }
+    observer.observe(root, { childList: true, subtree: true })
+    return stop
+  }, [id, visit, page])
+}
+
+export function SettingsSection({ section, row, visit, ...props }: { section: Section } & SectionProps & RevealProps) {
   useLocale()
+  const page = useRef<HTMLDivElement>(null)
+  useRevealRow(page, row, visit)
   const render = SECTIONS[section]
   // TAL-2101: a hub page shown as a section (Profiles, Spaces, Logs) puts its help and actions in this heading.
   const [help, setHelp] = useState<HTMLElement | null>(null)
   const [actions, setActions] = useState<HTMLElement | null>(null)
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto">
+    <div ref={page} className="flex-1 min-h-0 overflow-y-auto">
       <div className="settings-main w-full max-w-[820px] mx-auto min-w-0 pt-6 px-7 pb-12 max-[769px]:pt-4 max-[769px]:px-3.5 max-[769px]:pb-10">
         <div className="settings-section-head flex items-center justify-between gap-4 mb-5 pb-3.5 border-b border-border">
           <div ref={setHelp} className="flex min-w-0 items-center">

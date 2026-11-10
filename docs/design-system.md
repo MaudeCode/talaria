@@ -245,6 +245,12 @@ that reads no server setting, `SettingsGroup.tsx`) and write no layout classes.
   `can_manage_server` gate.
 - No `<h2>` to `<h6>`, no raw `FieldRow` and no card container on a Settings
   page.
+- Every Web row has one entry in
+  `web/packages/frontend/src/features/settings/settingsIndex.ts` (its control
+  id, label and group message functions, and storage scope), which the
+  sidebar search lists. `settingsIndex.test.tsx` fails when a row has no entry,
+  when its scope does not match the section's §11 group, or when a setting
+  stored only in this browser sits outside "This device".
 
 ## 13. Menus
 

@@ -315,7 +315,7 @@ it('groups the Notifications and Speech rows and shows every slider value (TAL-2
   }
   const notifications = renderSection(<NotificationsSection />)
   await screen.findByRole('combobox', { name: 'Completion sound' })
-  const completion = group(notifications.container, 'completion-sound')
+  const completion = group(notifications.container, 'this-device')
   const open = group(notifications.container, 'while-open')
   for (const name of ['Browser notifications', 'Notification sound']) expect(open.getByRole('switch', { name })).toBeInTheDocument()
   expect(completion.getByRole('combobox', { name: 'Completion sound' })).toBeInTheDocument()
