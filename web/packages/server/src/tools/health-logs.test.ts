@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HttpFailure } from '../sessions/service.js'
-import { readLogTail } from './health.js'
+import { logCatalog, readLogTail } from './health.js'
 
 /** Bytes read and descriptors opened/closed by `readLogTail`, with an optional gate that holds the next read. */
 const io = vi.hoisted(() => ({ bytes: 0, opened: 0, closed: 0, hold: null as Promise<void> | null, held: null as (() => void) | null, fail: null as Error | null, cap: Infinity }))
@@ -64,7 +64,7 @@ describe('readLogTail', () => {
   })
   afterEach(() => { rmSync(home, { recursive: true, force: true }) })
 
-  const tailOf = async (tail: number, file = 'agent') => (await readLogTail(home, file, String(tail))) as { lines: string[]; truncated: boolean; total_bytes: number; mtime: number | null; hint: string; tail: number; file: string }
+  const tailOf = async (tail: number, file = 'agent') => (await readLogTail(logCatalog(home, null), { file, tail: String(tail) })) as { lines: string[]; truncated: boolean; total_bytes: number; mtime: number | null; hint: string; tail: number; file: string }
   const check = async (content: Buffer, tail: number) => {
     writeFileSync(log, content)
     expect((await tailOf(tail)).lines).toEqual(reference(content, tail))
@@ -159,7 +159,7 @@ describe('readLogTail', () => {
 
     const controller = new AbortController()
     const cancel = holdNextRead()
-    const cancelled = readLogTail(home, 'agent', '100', controller.signal)
+    const cancelled = readLogTail(logCatalog(home, null), { file: 'agent', tail: '100' }, controller.signal)
     await cancel.entered
     controller.abort()
     cancel.release()

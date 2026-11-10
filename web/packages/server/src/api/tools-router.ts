@@ -21,7 +21,7 @@ import { resolveWikiLocation, wikiPages, type WikiLocation } from '../tools/wiki
 import { buildInsights } from '../tools/insights.js'
 import { canonicalExecCommand, commandCatalog, SESSION_EXEC_COMMANDS } from '../tools/commands.js'
 import { spokenText } from './tools-raw.js'
-import { agentHealth, applyDashboardConfig, dashboardConfig, dashboardStatus, forgetGatewayProbes, gatewayStatus, parseDashboardConfig, readLogTail, remoteGatewayBaseUrl, systemHealth } from '../tools/health.js'
+import { agentHealth, applyDashboardConfig, dashboardConfig, dashboardStatus, forgetGatewayProbes, gatewayStatus, logCatalog, parseDashboardConfig, readLogTail, remoteGatewayBaseUrl, systemHealth } from '../tools/health.js'
 import { EXTERNALLY_MANAGED } from '../tools/gateway-lifecycle.js'
 import { NOT_CONTROLLED, restartGateway } from '../tools/gateway-restart.js'
 import { projectOsDashboard } from '../tools/project-os.js'
@@ -711,7 +711,12 @@ export const toolsRouter = os.router({
     const stateRows = async (cutoff: number) => filterAsync(await stateDbSessionReadAsync([], 'insightsSessionRows', join(home(ctx), 'state.db'), cutoff), async (row) => visible.has(str(row.session_id)) || await sessions.personMaySeeForeign(str(row.session_id)))
     return buildInsights(entries, input.days, ctx.deps.nowSeconds(), stateRows) as never
   })),
-  logs: os.logs.handler(({ input, signal, context: { ctx } }) => run(() => readLogTail(home(ctx), input.file, input.tail, signal) as Promise<never>)),
+  logs: os.logs.handler(({ input, signal, context: { ctx } }) => run(async () => {
+    // TAL-2139: this server's own logs cover every person and profile, so only the server owner reads them.
+    const { env, stateDir, port } = ctx.deps.config
+    const owner = await sessionCanManageServer(ctx, await ensureTrustedAuthSession(ctx))
+    return readLogTail(logCatalog(home(ctx), owner ? { env, stateDir, port } : null), input, signal) as Promise<never>
+  })),
   ops: {
     agent: os.ops.agent.handler(({ context: { ctx } }) => run(async () => { const [gateway, chat, lifecycle] = await Promise.all([health(ctx), currentChatReadiness(ctx.deps.sidecar(), ctx.deps.nowSeconds), ctx.deps.gatewayLifecycle(home(ctx))]); return { ...gateway, chat, gateway_lifecycle: lifecycle } })),
     system: os.ops.system.handler(({ context: { ctx } }) => run(() => systemHealth(ctx.deps.config.homeDir, ctx.deps.runtimeDiagnostics()) as never)),

@@ -1066,8 +1066,31 @@ export const CommandRowSchema = z.looseObject({
 export const CommandsSchema = z.looseObject({ commands: z.array(CommandRowSchema) })
 export type Command = z.infer<typeof CommandRowSchema>
 export type CommandClient = z.infer<typeof CommandClientSchema>
-export const LogsSchema = z.looseObject({ file: z.string(), tail: z.number().optional(), lines: z.array(z.string()), truncated: z.boolean().optional(), total_bytes: z.number().optional(), mtime: NullableNumber.optional(), hint: z.string().optional() })
+/** TAL-2139: a log line's level, from its first level token; a traceback continuation takes the line before it. */
+export const LogLevelSchema = z.enum(['error', 'warning', 'info', 'debug'])
+/** The Logs page's level filter: `warning` keeps warnings and errors, `error` keeps errors. */
+export const LogLevelFilterSchema = z.enum(['warning', 'error'])
+/**
+ * One line of `lines`, classified: `time` the leading timestamp as written, `text` the line without it and the level
+ * token, `matches` the `[start, end)` offsets of the search query in `text`.
+ */
+export const LogEntrySchema = z.object({ text: z.string(), level: LogLevelSchema.nullable(), time: z.string().nullable(), matches: z.array(z.tuple([z.number().int(), z.number().int()])).optional() })
+/** A log the page lists, in display order; `exists` is false until the file is written. */
+export const LogFileSchema = z.object({ id: z.string(), exists: z.boolean(), total_bytes: z.number().nullable() })
+/**
+ * `lines` is the raw tail. `entries` are those lines classified and filtered by `q` and `level`; `counts` cover the tail
+ * before the filters and `matched` counts what they keep.
+ */
+export const LogsSchema = z.looseObject({
+  file: z.string(), tail: z.number().optional(), lines: z.array(z.string()), truncated: z.boolean().optional(), total_bytes: z.number().optional(), mtime: NullableNumber.optional(), hint: z.string().optional(),
+  entries: z.array(LogEntrySchema).optional(), files: z.array(LogFileSchema).optional(),
+  counts: z.object({ error: z.number().int(), warning: z.number().int(), lines: z.number().int() }).optional(), matched: z.number().int().optional(),
+})
 export type Logs = z.infer<typeof LogsSchema>
+export type LogEntry = z.infer<typeof LogEntrySchema>
+export type LogLevel = z.infer<typeof LogLevelSchema>
+export type LogLevelFilter = z.infer<typeof LogLevelFilterSchema>
+export type LogFile = z.infer<typeof LogFileSchema>
 export const InsightsSchema = z.looseObject({
   period_days: z.number().optional(), total_sessions: z.number().optional(), total_messages: z.number().optional(), total_tokens: z.number().optional(), total_input_tokens: z.number().optional(), total_output_tokens: z.number().optional(),
   total_cache_read_tokens: z.number().optional(), total_cache_hit_percent: NullableNumber.optional(), total_cost: z.number().optional(), activity_by_day: z.array(z.looseObject({ day: z.string(), sessions: z.number() })).optional(),

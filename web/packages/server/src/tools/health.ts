@@ -2,19 +2,21 @@
 import { readCapped } from '../http/capped.js'
 import { execFile } from 'node:child_process'
 import { constants, existsSync, readFileSync, statSync, statfsSync } from 'node:fs'
-import { open, type FileHandle } from 'node:fs/promises'
+import { lstat, open, type FileHandle } from 'node:fs/promises'
 import { cpus, loadavg, freemem, totalmem } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import type { GatewayLifecycle, GatewayMode, GatewayStatus } from '@maudecode/talaria-web-contracts'
+import type { GatewayLifecycle, GatewayMode, GatewayStatus, LogFile, LogLevelFilter } from '@maudecode/talaria-web-contracts'
 import type { Config, Dict } from '../config/agent-config.js'
 import type { RestartBlockers } from './updates.js'
 import { dict } from '../config/agent-config.js'
 import { statSignature } from '../fs/stat.js'
+import { webuiLogPaths } from './hygiene.js'
+import { classifyLog } from './log-lines.js'
 import { HttpFailure } from '../sessions/service.js'
 import { singleFlightRead, str, type SingleFlightEntry } from '../util.js'
 
 const LOG_FILES: Record<string, string> = { agent: 'agent.log', errors: 'errors.log', gateway: 'gateway.log' }
-const LOG_TAILS = new Set([100, 200, 500, 1000])
+const LOG_TAILS = new Set([100, 200, 500, 1000, 2000])
 const LOG_MAX_BYTES = 4 * 1024 * 1024
 const LOG_CHUNK_BYTES = 64 * 1024
 /** Rereads after a log shrinks under the read (truncation in place) before giving up. */
@@ -23,15 +25,43 @@ const LOG_READ_ATTEMPTS = 3
 // Opening with O_NOFOLLOW refuses a symlinked log atomically; O_NONBLOCK keeps a FIFO in its place from blocking the open.
 const LOG_OPEN_FLAGS = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
 
-export async function readLogTail(profileHome: string, fileKeyRaw: unknown, tailRaw: unknown, signal?: AbortSignal): Promise<Dict> {
-  const fileKey = (str(fileKeyRaw ?? 'agent').trim().toLowerCase()) || 'agent'
-  const filename = LOG_FILES[fileKey]
-  if (!filename) throw new HttpFailure(400, 'Unknown log file')
-  const parsedTail = Number.parseInt(str(tailRaw).trim(), 10)
+/** The logs a request may read by id, and the ones the Logs page lists, in display order. */
+export interface LogCatalog { listed: readonly string[]; paths: Readonly<Record<string, string>> }
+
+/**
+ * TAL-2139: the active profile's Agent and gateway logs, and, for the server owner (`server`), this server's own log
+ * and the launcher's `bootstrap-<port>.log`. Bootstrap is listed only when it is a different file from the server's log
+ * (`ctl` and `HERMES_WEBUI_LOG_FILE`); under the launcher both are the same file. `errors` stays readable, unlisted.
+ */
+export function logCatalog(profileHome: string, server: { env: Record<string, string | undefined>; stateDir: string; port: number } | null): LogCatalog {
+  const dir = resolve(profileHome, 'logs')
+  const paths: Record<string, string> = Object.fromEntries(Object.entries(LOG_FILES).map(([id, name]) => [id, resolve(dir, name)]))
+  if (!server) return { listed: ['agent', 'gateway'], paths }
+  const web = resolve(webuiLogPaths(server.env, server.stateDir, server.port)[0] ?? '')
+  const bootstrap = resolve(server.stateDir, `bootstrap-${String(server.port)}.log`)
+  paths.webui = web
+  if (bootstrap !== web) paths.bootstrap = bootstrap
+  return { listed: ['agent', 'webui', 'gateway', ...(bootstrap !== web ? ['bootstrap'] : [])], paths }
+}
+
+async function logFileRow(id: string, path: string): Promise<LogFile> {
+  try {
+    const st = await lstat(path)
+    return st.isFile() ? { id, exists: true, total_bytes: st.size } : { id, exists: false, total_bytes: null }
+  } catch { return { id, exists: false, total_bytes: null } }
+}
+
+export interface LogQuery { file?: unknown; tail?: unknown; q?: string | undefined; level?: LogLevelFilter | undefined }
+
+export async function readLogTail(catalog: LogCatalog, query: LogQuery, signal?: AbortSignal): Promise<Dict> {
+  const fileKey = (str(query.file ?? 'agent').trim().toLowerCase()) || 'agent'
+  const path = Object.hasOwn(catalog.paths, fileKey) ? catalog.paths[fileKey] : undefined
+  if (!path) throw new HttpFailure(400, 'Unknown log file')
+  const parsedTail = Number.parseInt(str(query.tail).trim(), 10)
   const tail = LOG_TAILS.has(parsedTail) ? parsedTail : 200
-  const logDir = resolve(profileHome, 'logs')
-  const path = resolve(logDir, filename)
-  const notFound = { file: fileKey, tail, lines: [], truncated: false, total_bytes: 0, mtime: null, hint: `Log file for ${fileKey} not found yet.` }
+  const files = await Promise.all(catalog.listed.map((id) => logFileRow(id, catalog.paths[id] ?? '')))
+  const view = (lines: string[]) => ({ lines, files, ...classifyLog(lines, query) })
+  const notFound = { file: fileKey, tail, truncated: false, total_bytes: 0, mtime: null, hint: `Log file for ${fileKey} not found yet.`, ...view([]) }
   let handle: FileHandle
   try { handle = await open(path, LOG_OPEN_FLAGS) } catch (error) {
     // Python `_handle_logs` refused a log resolving outside the logs dir; refusing every symlink makes the open itself the check.
@@ -43,7 +73,7 @@ export async function readLogTail(profileHome: string, fileKeyRaw: unknown, tail
       const st = await handle.stat()
       if (!st.isFile()) return notFound
       const lines = await tailLines(handle, st.size, tail, signal)
-      if (lines) return { file: fileKey, tail, lines, truncated: st.size > LOG_MAX_BYTES, total_bytes: st.size, mtime: st.mtimeMs / 1000, hint: '' }
+      if (lines) return { file: fileKey, tail, truncated: st.size > LOG_MAX_BYTES, total_bytes: st.size, mtime: st.mtimeMs / 1000, hint: '', ...view(lines) }
     }
     throw new HttpFailure(503, 'Log file changed while reading')
   } finally { await handle.close() }
