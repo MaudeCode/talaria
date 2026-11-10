@@ -26,7 +26,8 @@ For architecture, testing, or setup work, also read the matching reference:
 
 For UI or UX work, read `../docs/design-system.md` first (every hub, list,
 settings and detail page: plain rows, no cards, the Insights pages as the
-reference), then `docs/UIUX-GUIDE.md` and `DESIGN.md` before changing layout,
+reference; §11 to §13 for where a setting or page goes, Settings rows and
+menus), then `docs/UIUX-GUIDE.md` and `DESIGN.md` before changing layout,
 interaction flow, themes, chat rendering, or composer chrome.
 
 ## Onboarding and reinstall support

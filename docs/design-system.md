@@ -17,6 +17,8 @@ The reference implementation is Insights (TAL-1750, TAL-1782):
 | Item row with figures | `ProviderQuotaAccountRow.swift`, `ProviderQuotaDetailView.swift` (`ProviderQuotaWindowsView`) | `web/packages/frontend/src/features/insights/ProviderQuotaRows.tsx` |
 | Stat grid, charts, share rows | `InsightsStatGrid.swift`, `InsightsDailyChart.swift`, `InsightsActivityCharts.swift`, `ModelBreakdownRow.swift` | `InsightsPage.tsx` (`<dl>` stats, models table), `BarChart.tsx` |
 | Detail screen | `ProviderQuotaDetailView.swift` | the Insights tab routes (`routes/_app.insights.tsx`) |
+| Settings page | Pending the App sync (TAL-1695) | `web/packages/frontend/src/features/settings/ChatSection.tsx` |
+| Menu | Pending the App sync (TAL-1695) | `web/packages/frontend/src/features/composer/chips.tsx` (`ReasoningChip`) |
 
 A new page starts by copying the structure of the matching row above, not by
 inventing a layout. A rule below that names a component means that component,
@@ -96,7 +98,7 @@ and a tiled column in landscape. On Web it is `shell/Sidebar.tsx`, on every page
 | Reordering | `.onMove` under an edit mode the toolbar toggles; order is a device setting | Not shipped; when added, a drag handle per row and the order kept per browser through `lib/persisted` |
 | Grouping | A second `Section("…")` for items without data ("No quota data"), compact rows | A second `<section data-section="<feature>-unavailable">` with an `h3` header, compact rows |
 
-A Web Settings page declares its rows from `features/settings/SettingsRows.tsx`, one component per control type: `SettingToggle`, `SettingSelect`, `SettingNumber`, `SettingText` (draft and Save), `SettingRow` (a device-local control, `stacked` for a list of switches), `SettingAction` (label and button), grouped by `SettingsGroup`. Each renders through `FieldRow`, so a page writes no row layout of its own.
+Settings rows follow §12.
 
 ## 4. Section headers
 
@@ -189,9 +191,74 @@ ask for an action. No other state wears a frame.
 | Charts | One element with label and value summary; a values list for every point | `role="img"` summary and the table twin |
 | Dynamic Type | System text styles only; `lineLimit` relaxes at accessibility sizes; cell values use `minimumScaleFactor(0.8)`; rail heights are fixed points | The token scale (`--text-xs/sm/md`); a bracket size only where no token exists (11px cell labels, 13px state text, 20px hub title) |
 | Motion | Countdowns move on a shared `TimelineView(.everyMinute)`; reorder animates with `withAnimation` | Shimmer and pulse respect `prefers-reduced-motion` |
-| Time and locale | `Date.FormatStyle(locale:timeZone:)` from the `\.locale` and `\.timeZone` environment so tests pin UTC and `en_US` (the daily chart's axis and values still use bare `.dateTime`, see §12) | `Intl` with the viewer's locale from `useLocale` |
+| Time and locale | `Date.FormatStyle(locale:timeZone:)` from the `\.locale` and `\.timeZone` environment so tests pin UTC and `en_US` (the daily chart's axis and values still use bare `.dateTime`, see §15) | `Intl` with the viewer's locale from `useLocale` |
 
-## 11. Exceptions
+## 11. Where things go
+
+Decide an item's home before building it:
+
+| Rule | Reason |
+| --- | --- |
+| A top-level destination is content the user works in: Chat, Tasks, Kanban, Skills, Memory, Insights, Discussions, Todos, Decisions. Configuration, credentials and diagnostics are Settings sections | The sidebar lists places to work; setup and diagnostics are visited rarely and belong together |
+| Settings sections are grouped by scope, and the grouping is a contract (`SETTINGS_SECTION_GROUPS` in `web/packages/contracts/src/settings-sections.ts`): **Interface** is how Talaria looks and behaves (the server's `settings.json` or the browser); **Profile** is read from or written to the active profile's home (its `config.yaml`, `.env`, or a per-profile setting); **Server** applies to every profile on the server | The group says what a change affects before the user makes it, and both clients read the same grouping |
+| A setting has exactly one home. The same control never appears on two pages | Two copies drift apart and leave the user unsure which one wins |
+| A setting stored only in this browser sits in a group titled "This device" | The user can tell it will not follow them to another browser |
+| A per-chat composer control whose default is configurable has that default in Settings (Chat when it is an interface setting, the Profile group when it is profile configuration), never only in the composer | The composer changes one chat; the default needs a home that outlasts it |
+| A new setting goes in an existing group of an existing section. A new group needs at least two rows. A new section needs at least five rows that fit no existing section, and is added to `SettingsSectionSchema` with its group | Small groups and sections fragment Settings into pages that hold one switch |
+| A group holds at most eight rows; a longer one is split by what the rows affect | A long group hides the row the user came for |
+
+## 12. Settings and forms
+
+A Settings page is the section heading (`SettingsSection`) and a column of
+`SettingsGroup`s; every row is inside a group. Pages import their rows from
+`web/packages/frontend/src/features/settings/SettingsRows.tsx` and write no
+layout classes.
+
+| Need | App | Web |
+| --- | --- | --- |
+| A titled group of rows | Pending the App sync (TAL-1695) | `SettingsGroup` (title is a noun; optional live `detail`, optional `action`) |
+| On or off, server setting | Pending the App sync (TAL-1695) | `SettingToggle` |
+| One of a few named values | Pending the App sync (TAL-1695) | `SettingSelect` |
+| An integer in a range | Pending the App sync (TAL-1695) | `SettingNumber` |
+| Free text or a list of lines | Pending the App sync (TAL-1695) | `SettingText` (the only row with a Save button, shown while the draft differs) |
+| A control stored in this browser | Pending the App sync (TAL-1695) | `SettingRow` wrapping the control |
+| A row whose control is a button | Pending the App sync (TAL-1695) | `SettingAction` (danger styling on the button, never on the row) |
+| A continuous value | Pending the App sync (TAL-1695) | `Slider` in a `SettingRow`, with its value shown in tabular digits |
+| A visual choice (theme, skin, font size, width) | Pending the App sync (TAL-1695) | Picker tiles in a `SettingRow`; these tiles are the only bordered shapes on a Settings page |
+| A list of things with their own actions (providers, plugins, profiles) | Pending the App sync (TAL-1695) | `RowList` and `Row` (`ui/List.tsx`) with a `ContextMenu`, per §3 |
+| More than twelve list items | Pending the App sync (TAL-1695) | One filter input above the list; the filter is device-local state |
+
+- A label names the thing controlled (§9).
+- An explanation goes in `hint`, which renders a `HelpTip`, never as text
+  under the row.
+- Every write is optimistic with rollback through `useSettingField`; no page
+  has a page-level Save.
+- A row the server did not send a field for is not rendered.
+- An owner-only control is disabled for others through the existing
+  `can_manage_server` gate.
+- No `<h2>` to `<h6>`, no raw `FieldRow` and no card container on a Settings
+  page.
+
+## 13. Menus
+
+Menus are interaction surfaces (§14); every Web menu is built with `Menu` from
+`web/packages/frontend/src/ui/Menu.tsx`.
+
+| Rule | App | Web |
+| --- | --- | --- |
+| Row style | Pending the App sync (TAL-1695) | `MENU_ROW`; choices use `MENU_CHOICE` |
+| First row | Pending the App sync (TAL-1695) | A `MenuGroupLabel` naming what the menu sets |
+| Choose one | Pending the App sync (TAL-1695) | `MenuRadioItem` in a `MenuRadioGroup`; selecting applies at once and closes |
+| Choose several | Pending the App sync (TAL-1695) | `MenuCheckboxItem`; toggling applies at once and the menu stays open |
+| Selected mark | Pending the App sync (TAL-1695) | A trailing check from the shared row; colour alone never carries the state |
+| Unavailable option | Pending the App sync (TAL-1695) | Disabled, with the server's reason in muted text at the right |
+| Grouping | Pending the App sync (TAL-1695) | `MenuGroup` with a `MenuGroupLabel`, by a server field |
+| Long lists | Pending the App sync (TAL-1695) | A pinned search header above twelve items |
+| Destructive item | Pending the App sync (TAL-1695) | Last, after a `MenuSeparator`, in `text-error` |
+| Never in a menu | Pending the App sync (TAL-1695) | A form, a Save button, a native checkbox or radio, explanatory sub-text |
+| Composer menus | Pending the App sync (TAL-1695) | Open upward; at 640px and below span the composer's width |
+
+## 14. Exceptions
 
 | Surface | Rule | Owner |
 | --- | --- | --- |
@@ -201,27 +268,39 @@ ask for an action. No other state wears a frame.
 | Dialogs, menus, popovers, sheets | Interaction surfaces, not content containers. Web motion comes only from `ui/popupMotion.ts`: every Base UI popup and backdrop uses its shared classes, opens slower than it closes, takes clicks from the first frame, and only fades under reduced motion | Platform defaults |
 | Widgets and Live Activities | System layouts with the shared meter and palette | `app/Talaria/Models/ProviderQuotaWidget*.swift` |
 
-## 12. Known deviations in the reference
+## 15. Known deviations
 
-The reference is the rule; these spots in Insights still differ and are owned:
+The rules win; these spots still differ and are owned.
+`web/packages/frontend/scripts/ui-rules-baseline.json` is the machine-readable
+list of the Web violations that remain.
 
 | Deviation | Owner |
 | --- | --- |
 | The App detail screen and the "No quota data" section use default `Section` headers instead of the uppercase header | TAL-1765 |
 | The App daily chart formats dates with bare `.dateTime`, not the environment locale and zone | TAL-1765 |
 | Stale and unavailable meters are orange on the App (palette default) and muted on Web | Decide with TAL-1533 (server-owned presentation state) |
+| Web Settings pages not yet on the kit (§12) | TAL-2075 (Chat, Navigation), TAL-2077 (Providers), TAL-2079 (Notifications, Speech), TAL-2080 (Access, System), TAL-2081 (About), TAL-2082 (Plugins), TAL-2083 (Appearance), TAL-2105 (Models, Tools), TAL-2106 (Extensions, Workspaces, Logs) |
+| Composer menus mark the selected row four ways, lack a heading row and open in more than one placement (§13) | TAL-2095 |
+| The Toolsets menu holds a form with a Save button (§13) | TAL-2096 |
+| The App Settings root is not grouped by scope (§11, §12) | TAL-1695 |
 
-## 13. Checklist for a UI change
+## 16. Checklist for a UI change
 
-1. Find the Insights row or section that shows the same kind of thing and
+1. Decide the item's home with §11 before building.
+2. Find the Insights row or section that shows the same kind of thing and
    start from its structure and components.
-2. No new container: if the design needs a box, it needs a section header or a
+3. No new container: if the design needs a box, it needs a section header or a
    metric cell instead.
-3. Every value shown is a contract field; every colour is a server level.
-4. Headline figure, label, unit; tabular digits; exact value reachable.
-5. Actions on the item (swipe, context menu) and in the toolbar; nothing waits
+4. Build Web Settings rows only from `SettingsRows.tsx` and menus only from
+   `ui/Menu.tsx`.
+5. Every value shown is a contract field; every colour is a server level.
+6. Headline figure, label, unit; tabular digits; exact value reachable.
+7. Actions on the item (swipe, context menu) and in the toolbar; nothing waits
    for the server to reflect a choice (root `AGENTS.md`, "Optimistic writes").
-6. Identifiers and `data-*` hooks follow the naming above; a hosted test or
+8. Identifiers and `data-*` hooks follow the naming above; a hosted test or
    component test reads them.
-7. Screenshots at phone width (390pt) and desktop in the PR; status copy on
+9. Screenshots at phone width (390pt) and desktop in the PR; status copy on
    one line.
+10. For a Web change, run `npm run lint -w packages/frontend` from `web/` (it
+    ends with the UI rules check) and attach the demo tour's screenshots
+    (`web/TESTING.md`) of each touched page at desktop and 390px.
