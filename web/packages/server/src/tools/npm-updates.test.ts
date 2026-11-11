@@ -12,7 +12,7 @@ vi.mock('node:fs', async (original) => {
 })
 import { applyWebUpdate, runGit, runPackageNpm, type BuildRun, type GetJson } from './updates.js'
 
-it('uses real npm to stage a global replacement with its dependencies while preserving the existing bin links', async () => {
+it('uses real npm to upgrade a global package and its dependencies while preserving the existing bin links', async () => {
   const root = mkdtempSync(join(tmpdir(), 'talaria-npm-update-'))
   const registry = createServer()
   try {
@@ -20,23 +20,23 @@ it('uses real npm to stage a global replacement with its dependencies while pres
     const versions = { appWeb: { fixtureVersion: 1 }, webRelay: { protocolVersion: 2 } }
     const release = { tag: 'web-v2.0.0', version: '2.0.0', sourceRevision: 'c'.repeat(40), releaseSet: 'c'.repeat(40), contracts: { appWeb: [1], webRelay: [2] }, compatibleAgent: { ...pin['x-talaria'], image: pin.services['hermes-agent'].image } }
     const write = (path: string, value: string): void => { mkdirSync(join(path, '..'), { recursive: true }); writeFileSync(path, value) }
+    const metadata = (name: string, version: string) => ({ name, version, type: 'module', ...(name === '@maudecode/talaria-web' ? { bin: { 'talaria-web': 'dist/bin/talaria-web.js', 'talaria-web-mcp': 'dist/bin/talaria-web-mcp.js' }, dependencies: { 'synthetic-update-dep': version } } : { exports: './index.js' }) })
     function pack(name: string, version: string): Buffer {
       const folder = join(root, `${name.split('/').pop() ?? name}-${version}`)
       const server = name === '@maudecode/talaria-web'
-      const metadata = { name, version, type: 'module', ...(server ? { bin: { 'talaria-web': 'dist/bin/talaria-web.js', 'talaria-web-mcp': 'dist/bin/talaria-web-mcp.js' }, dependencies: { 'synthetic-update-dep': '1.0.0' } } : { exports: './index.js' }) }
-      write(join(folder, 'package/package.json'), JSON.stringify(metadata))
+      write(join(folder, 'package/package.json'), JSON.stringify(metadata(name, version)))
       if (server) {
         write(join(folder, 'package/sidecar/agent_dependency.json'), JSON.stringify(pin))
         write(join(folder, 'package/contract_versions.json'), JSON.stringify(versions))
         if (version === '2.0.0') write(join(folder, 'package/_release.json'), JSON.stringify(release))
         for (const bin of ['talaria-web', 'talaria-web-mcp']) write(join(folder, `package/dist/bin/${bin}.js`), `#!/usr/bin/env node\nimport value from 'synthetic-update-dep'; console.log('${version} ' + value)\n`)
-      } else write(join(folder, 'package/index.js'), "export default 'dependency-loaded'\n")
+      } else write(join(folder, 'package/index.js'), `export default 'dependency-${version}'\n`)
       execFileSync('tar', ['-czf', join(folder, 'package.tgz'), '-C', folder, 'package'], { stdio: 'pipe' })
       return readFileSync(join(folder, 'package.tgz'))
     }
     const packages = new Map([
       ['@maudecode/talaria-web', new Map([['1.0.0', pack('@maudecode/talaria-web', '1.0.0')], ['2.0.0', pack('@maudecode/talaria-web', '2.0.0')]])],
-      ['synthetic-update-dep', new Map([['1.0.0', pack('synthetic-update-dep', '1.0.0')]])],
+      ['synthetic-update-dep', new Map([['1.0.0', pack('synthetic-update-dep', '1.0.0')], ['2.0.0', pack('synthetic-update-dep', '2.0.0')]])],
     ])
     await new Promise<void>((resolve) => registry.listen(0, '127.0.0.1', resolve))
     const address = registry.address()
@@ -53,7 +53,7 @@ it('uses real npm to stage a global replacement with its dependencies while pres
       if (!versions) { res.writeHead(404); res.end('{}'); return }
       res.setHeader('Content-Type', 'application/json')
       res.end(JSON.stringify({ name: path, 'dist-tags': { latest: [...versions.keys()].at(-1) }, versions: Object.fromEntries([...versions].map(([version, bytes]) => [version, {
-        name: path, version, ...(path === '@maudecode/talaria-web' ? { bin: { 'talaria-web': 'dist/bin/talaria-web.js', 'talaria-web-mcp': 'dist/bin/talaria-web-mcp.js' }, dependencies: { 'synthetic-update-dep': '1.0.0' } } : {}),
+        ...metadata(path, version),
         dist: { tarball: `${origin}/tar/${encodeURIComponent(path)}@${version}`, integrity: `sha512-${createHash('sha512').update(bytes).digest('base64')}` },
       }])) }))
     })
@@ -61,6 +61,7 @@ it('uses real npm to stage a global replacement with its dependencies while pres
     const run: BuildRun = (args, cwd, timeout) => runPackageNpm([...args, '--registry', origin, '--cache', join(root, 'cache'), '--userconfig', '/dev/null', '--ignore-scripts'], cwd, timeout)
     const initial = await run(['install', '--global', '--prefix', prefix, '--no-audit', '--no-fund', '@maudecode/talaria-web@1.0.0'], root, 20_000)
     expect(initial.ok, initial.out).toBe(true)
+    expect(execFileSync(process.execPath, [join(prefix, 'bin/talaria-web')], { encoding: 'utf8' }).trim()).toBe('1.0.0 dependency-1.0.0')
     const packageRoot = join(prefix, 'lib/node_modules/@maudecode/talaria-web')
     const npm: BuildRun = (args, cwd, timeout) => run(args[0] === 'root' ? [...args, '--prefix', prefix] : args, cwd, timeout)
     const getJson: GetJson = (_path, { asset }) => Promise.resolve(asset ? {
@@ -71,7 +72,7 @@ it('uses real npm to stage a global replacement with its dependencies while pres
     const id = { release: () => ({}), stamped: () => ({}), runningSourceRevision: () => null }
     expect(await applyWebUpdate(packageRoot, 'stable', runGit, getJson, id, npm, () => true, { stateDir: join(root, 'state') })).toMatchObject({ ok: true })
     for (const bin of ['talaria-web', 'talaria-web-mcp']) {
-      expect(execFileSync(process.execPath, [join(prefix, 'bin', bin)], { encoding: 'utf8' }).trim()).toBe('2.0.0 dependency-loaded')
+      expect(execFileSync(process.execPath, [join(prefix, 'bin', bin)], { encoding: 'utf8' }).trim()).toBe('2.0.0 dependency-2.0.0')
     }
   } finally {
     registry.closeAllConnections()
