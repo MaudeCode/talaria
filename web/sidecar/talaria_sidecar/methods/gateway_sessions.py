@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager, closing, suppress
+from functools import lru_cache
 from importlib.util import find_spec
 import json
 from pathlib import Path
@@ -39,6 +40,10 @@ _CONTROL_REFUSALS = {"native_clarify_batch_unavailable", "owner_controls_unverif
 _STATE_BUSY, _STATE_BUSY_BUDGET = "owner_state_busy", 5.0
 # Queued on a watch's event queue when its call is cancelled, so the watch ends without polling the flag (TAL-1746).
 _WAKE = object()
+# An idle watch reads the transcript for another viewer's reaction at most this often; a message or reaction event
+# brings the read forward (TAL-1711). A streaming token changes no stored reaction.
+_RESTART_CHECK_S, _REACTION_POLL_S = 2, 10
+_SUPPORT_RECORD = Path(__file__).resolve().parents[2] / "agent_support.json"
 _CREATE_FIELDS = {"request_id", "source", "cwd", "model", "provider", "base_url", "toolsets", "safe_mode", "ignore_user_config"}
 
 
@@ -228,11 +233,18 @@ def _served(home: Path, endpoint, *, allow_verified: bool = False) -> bool:
     return not _verified_contract(endpoint, "served-local-policy-v1")
 
 
+@lru_cache(maxsize=1)
+def _support_record(stamp: tuple) -> dict:
+    """The support record, parsed once per file version: a watch checks it on every reaction read."""
+    return json.loads(_SUPPORT_RECORD.read_text())
+
+
 def _verified_contract(endpoint, name: str) -> bool:
     # The private control socket reports the owner's boot revision, not the sidecar's
     # checkout or a version label. The authenticated describe must still match below.
     try:
-        record = json.loads((Path(__file__).resolve().parents[2] / "agent_support.json").read_text())
+        stat = _SUPPORT_RECORD.stat()
+        record = _support_record((stat.st_mtime_ns, stat.st_size))
         revisions = record["nativeContracts"][name]
         return (isinstance(revisions, list)
                 and all(isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{40}", sha) for sha in revisions)
@@ -417,8 +429,8 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
             if params["action"] in {"snapshot", "watch"}:
                 try:
                     stats = await client.rpc("session.stats", session_id=sid)
-                    after = await client.rpc("session.resume", session_id=sid)
-                    if all(value.get(k) == after.get(k) for k in ("session_id", "authority_epoch", "replay_epoch", "execution_generation")):
+                    # A gauge read across a turn boundary belongs to neither snapshot.
+                    if stats.get("execution_generation", value.get("execution_generation")) == value.get("execution_generation"):
                         gauge = stats.get("plan_gauge")
                 except GatewayRPCError:
                     pass  # older owners have no stats capability
@@ -574,21 +586,25 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                 sequence = replay["last_sequence"]
             ctx.emit("replay_complete", {})
             _wake_on_cancel(ctx, events)
-            checked = asyncio.get_running_loop().time()
+            checked = polled = asyncio.get_running_loop().time()
+            stale = False  # a message or reaction event arrived since the last reaction read
             while not ctx.cancelled:
                 now = asyncio.get_running_loop().time()
-                if not restarting and now - checked >= 2:
+                read = snap.get("reactions_supported") and (stale or now - polled >= _REACTION_POLL_S)
+                # A read sends on this socket, so it always follows a fresh probe.
+                if not restarting and (read or now - checked >= _RESTART_CHECK_S):
                     checked = now
                     if restarting := await asyncio.to_thread(_restart_wait, home):
                         result["restarting"] = True
                         ctx.emit("restarting", {"restarting": True})
-                    if not restarting and snap.get("reactions_supported"):
-                        # The owner emits no reaction event. Read through this viewer's existing subscription,
-                        # including while tokens keep the event queue busy.
-                        current = await snapshot()
-                        if [(r.get("row_id"), r.get("reactions")) for r in current["messages"] if r.get("reactions")] != [(r.get("row_id"), r.get("reactions")) for r in snap["messages"] if r.get("reactions")]:
-                            ctx.emit("snapshot", {**result, "snapshot": current, "reaction_only": True})
-                        snap = current
+                if not restarting and read:
+                    # The owner emits no event for another viewer's reaction. Read through this viewer's existing
+                    # subscription, including while tokens keep the event queue busy.
+                    polled, stale = now, False
+                    current = await snapshot()
+                    if [(r.get("row_id"), r.get("reactions")) for r in current["messages"] if r.get("reactions")] != [(r.get("row_id"), r.get("reactions")) for r in snap["messages"] if r.get("reactions")]:
+                        ctx.emit("snapshot", {**result, "snapshot": current, "reaction_only": True})
+                    snap = current
                 try:
                     frame = await asyncio.wait_for(events.get(), 1.0)
                 except TimeoutError:
@@ -627,6 +643,9 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                 if event.get("seq", 0) <= sequence:
                     continue
                 sequence = event["seq"]
+                kind = event.get("type")
+                if isinstance(kind, str) and kind.startswith(("message.", "reaction.")) and kind != "message.delta":
+                    stale = True
                 ctx.emit("event", _event(event))
             return result
         except GatewayRPCError as exc:
