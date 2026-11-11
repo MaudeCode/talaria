@@ -106,7 +106,7 @@ describe('raw byte routes', () => {
     expect(res.headers.get('content-length')).toBe(String(big.length))
   })
 
-  it('serves cold media ranges and revalidates the subsequent full response', async () => {
+  it('serves cold media ranges under the full response validator and revalidates it', async () => {
     const path = join(ws, 'range-cache.png')
     const bytes = Buffer.from([10, 20, 30, 40])
     writeFileSync(path, bytes)
@@ -114,12 +114,13 @@ describe('raw byte routes', () => {
     let res = await s.get(url, { headers: { range: 'bytes=1-2' } })
     expect(res.status).toBe(206)
     expect(res.headers.get('content-range')).toBe('bytes 1-2/4')
-    expect(res.headers.get('etag')).toBeNull()
+    const rangeEtag = res.headers.get('etag')
     expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes.subarray(1, 3))
     res = await s.get(url)
     const etag = res.headers.get('etag')!
     expect(res.status).toBe(200)
     expect(etag).toMatch(/^W\/"/)
+    expect(rangeEtag).toBe(etag)
     expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes)
     res = await s.get(url, { headers: { 'if-none-match': etag, range: 'bytes=0-0' } })
     expect(res.status).toBe(304)

@@ -80,13 +80,14 @@ compression at level 6 when the serialized body exceeds 1 KiB and the client
 accepts gzip, leaving the event loop available for live-stream heartbeats.
 
 Media byte responses keep the anchored descriptor and hard-link checks on every
-request. Buffered reads yield through asynchronous descriptor IO. A range reads
-only its selected span unless an uncached conditional request needs a content
-validator. The server retains at most 256 validators, keyed by device, inode,
-size, and nanosecond modification/change timestamps, and never caches media
-bytes or open descriptors. Uncached ranges may omit an ETag. Buffered reads
-recheck the descriptor signature before publishing a validator; streamed bodies
-own their descriptors through completion or cancellation.
+request. The ETag is a weak validator built from the opened descriptor's fstat
+signature (inode, size, and nanosecond modification/change timestamps), so a
+rewrite, truncation or replacement changes it without hashing any bytes; a
+`no-store` response carries none. A matching `If-None-Match` answers 304 before
+range handling and reads nothing. Every body, full or a single range, streams
+its selected span from the descriptor with backpressure, and the stream owns the
+descriptor through completion or cancellation. The server never caches media
+bytes, validators or open descriptors.
 
 Workspace editor saves stage a complete replacement in an exclusively created sibling file,
 carry over the destination's permission mode, sync it, then atomically rename it over the original.
