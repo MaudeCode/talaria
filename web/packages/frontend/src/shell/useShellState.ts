@@ -66,6 +66,8 @@ export function settingsBackHref(): string { return outsideSettings }
 export function readTabOrder(): string[] | null { return readPersistedJson('hermes-webui-tab-order', TabIdListSchema) }
 export function readHiddenTabs(): string[] | null { return readPersistedJson('hermes-webui-hidden-tabs', TabIdListSchema) }
 
+/** TAL-2160: a phone-width viewport, where the composer always sends with Ctrl/Cmd+Enter whatever `send_key` says. */
+export const PHONE_QUERY = '(max-width: 640px)'
 export function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState(() => window.matchMedia(query).matches)
   useEffect(() => {
@@ -90,3 +92,4 @@ export function useIsSidebarRail(): boolean {
   return isDesktop && !settings && (isTiled ? collapsed : !mobileOpen)
 }
 export const useIsNarrow = () => useMediaQuery('(max-width: 768px)')
+export const useIsPhone = () => useMediaQuery(PHONE_QUERY)

@@ -1,0 +1,22 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Every Settings page is rebuilt to the approved design, with figures, meters and status at a glance, and settings that did nothing now work.",
+      "highlight": true,
+      "components": ["web"],
+      "announcement": {
+        "title": "Settings, redesigned",
+        "description": "Every Settings page now shows figures, meters and status at a glance, and every switch does what it says.",
+        "icon": "settings"
+      }
+    },
+    {
+      "category": "Fixed",
+      "summary": "Settings no longer mislead: profile output limits and background compaction sit on Models, Group discussion limits on System, title refresh options name their unit, Send with shows the rule phones always use, the Agent insights sync and Agent update pause are owner-only, and the pinned chats limit stays within 1 to 99.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

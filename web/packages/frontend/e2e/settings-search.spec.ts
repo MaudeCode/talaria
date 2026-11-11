@@ -44,9 +44,9 @@ test('Settings search finds a row on another section and focuses its control', a
 })
 
 test('a Settings URL with a row id opens that row with its control focused', async ({ page }) => {
-  await page.goto('/settings/chat#settingsSendKey')
+  await page.goto('/settings/chat#settingsDefaultMessageMode')
   await settle(page)
-  await expect(page.getByRole('radiogroup', { name: 'Send with' }).getByRole('radio', { checked: true })).toBeFocused()
+  await expect(page.getByRole('radiogroup', { name: 'While the agent is working' }).getByRole('radio', { checked: true })).toBeFocused()
   await page.goto('/settings/appearance#themePickerGrid')
   await settle(page)
   await expect(page.getByRole('group', { name: 'Theme' }).getByRole('button', { pressed: true })).toBeFocused()

@@ -1,4 +1,4 @@
-import { Brain, Eye, Gauge, Pencil } from 'lucide-react'
+import { Brain, Eye, Gauge, Pencil, Ruler, Shrink } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import { IconButton } from '../../ui/Button'
 import { Switch } from '../../ui/Field'
@@ -10,9 +10,10 @@ import { ModelPickerPopover, reasoningLevelLabel } from '../composer/chips'
 import { PROFILE_REASONING, reasoningResource, useReasoningDisplayChoice, useReasoningQuery, useSetReasoningDisplay, useSetReasoningEffort } from '../composer/reasoning'
 import { useResourceEffects } from '../sessions/useResourceMutation'
 import { catalogEntryById } from '../../lib/modelEntry'
+import { useLocale } from '../../i18n/useLocale'
 import { useSettingField } from './useSettingField'
 import { AuxiliaryModelsSection } from './AuxiliaryModels'
-import { SettingHeadline, SettingRow, SettingsGroup, SETTINGS_PAGE } from './SettingsRows'
+import { SettingHeadline, SettingNumber, SettingRow, SettingToggle, SettingsGroup, SETTINGS_PAGE } from './SettingsRows'
 
 /**
  * The main model as the page's headline (TAL-2137), changed through the composer's model picker, then, when its catalog
@@ -92,11 +93,31 @@ function ReasoningRows() {
   )
 }
 
+/**
+ * TAL-2160: the active profile's output limit and prepared compaction, both in its `config.yaml`. An unset limit shows what a
+ * turn uses instead: the Agent's `agent.max_tokens`, else no limit. Prepared compaction shows only when the Agent offers it.
+ */
+export function LimitsGroup() {
+  const locale = useLocale()
+  const { settings } = useSettingField(['max_tokens_source', 'max_tokens_effective', 'compression_prepare_ahead'])
+  if (settings.isPending) return null
+  if (settings.isError) return <ErrorState error={settings.error} onRetry={() => { void settings.refetch() }} />
+  const { max_tokens_source: source, max_tokens_effective: effective } = settings.data
+  const placeholder = source === 'agent' && typeof effective === 'number' ? m.settings_placeholder_max_tokens_agent({ n: new Intl.NumberFormat(locale).format(effective) }) : m.settings_placeholder_max_tokens_none()
+  return (
+    <SettingsGroup id="limits" title={m.settings_group_limits()}>
+      <SettingNumber icon={Ruler} label={m.settings_label_max_tokens()} id="settingsMaxTokens" settingKey="max_tokens" allowEmpty width="w-36" placeholder={placeholder} />
+      {typeof settings.data.compression_prepare_ahead === 'boolean' ? <SettingToggle icon={Shrink} label={m.settings_label_compression_prepare_ahead()} settingKey="compression_prepare_ahead" /> : null}
+    </SettingsGroup>
+  )
+}
+
 /** TAL-1691, TAL-2100: Settings > Models, the active profile's main and auxiliary models. */
 export function ModelsSection() {
   return (
     <div className={SETTINGS_PAGE} data-section="models">
       <SettingsGroup id="main-model" title={m.settings_group_main_model()} hint={m.settings_default_model_hint()}><MainModelRows /></SettingsGroup>
+      <LimitsGroup />
       <AuxiliaryModelsSection />
     </div>
   )

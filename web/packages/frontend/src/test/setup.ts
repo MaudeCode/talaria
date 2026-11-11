@@ -9,6 +9,10 @@ vi.mock('../api/sse', async (original) => ({
   openSessionStream: () => ({ close: () => undefined, readyState: () => 1 }),
 }))
 
+// jsdom has no matchMedia: a page that reads a media query (Settings › Chat's phone rule, TAL-2160) renders as on a wide
+// screen unless its test stubs one.
+window.matchMedia ??= ((query: string) => ({ matches: false, media: query, onchange: null, addEventListener: () => undefined, removeEventListener: () => undefined, dispatchEvent: () => false })) as unknown as typeof window.matchMedia
+
 afterEach(() => {
   cleanup()
   window.localStorage.clear()

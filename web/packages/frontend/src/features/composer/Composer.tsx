@@ -36,6 +36,7 @@ import { randomHex } from '../../lib/randomHex'
 import { QueueCard } from './QueueCard'
 import { composerStateId, type QueuedTurn } from './queue'
 import { stopSpeaking } from '../voice/tts'
+import { PHONE_QUERY } from '../../shell/useShellState'
 
 export type BusyMode = 'steer' | 'queue' | 'interrupt'
 /** TAL-2155: moves this chat's draft text and staged files to the composer of another chat, which adopts them. */
@@ -98,16 +99,15 @@ interface RoomComposerProps {
   }
 }
 
-const PHONE = '(max-width: 640px)'
 const EMPTY_NOTICES: ComposerNotice[] = []
 const EMPTY_TASKS: NonNullable<ReturnType<typeof useBackgroundTasks>['data']>['tasks'] = []
 const EMPTY_ADMISSIONS: NonNullable<Session['owner_attachment']>['admissions'] = []
 /** Phone-width viewport: the footer runs the icon/burger stage and collapses when idle (legacy _isPhoneWidthViewport). */
 function usePhone(): boolean {
   // oxlint-disable-next-line typescript/prefer-optional-chain -- `window?.` would throw where `window` is undeclared.
-  const [phone, setPhone] = useState(() => typeof window !== 'undefined' && window.matchMedia(PHONE).matches)
+  const [phone, setPhone] = useState(() => typeof window !== 'undefined' && window.matchMedia(PHONE_QUERY).matches)
   useEffect(() => {
-    const mq = window.matchMedia(PHONE)
+    const mq = window.matchMedia(PHONE_QUERY)
     const on = () => setPhone(mq.matches)
     mq.addEventListener('change', on)
     return () => mq.removeEventListener('change', on)
@@ -242,7 +242,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
     }
     f.classList.remove('cf-icons', 'cf-burger')
     let next: 'full' | 'icons' | 'burger' = 'full'
-    if (window.matchMedia(PHONE).matches) next = 'burger'
+    if (window.matchMedia(PHONE_QUERY).matches) next = 'burger'
     else if (overflows()) { f.classList.add('cf-icons'); next = 'icons'; if (overflows()) next = 'burger' }
     // Restore the classes here: React only re-renders when the stage actually changes.
     f.classList.toggle('cf-icons', next !== 'full')
@@ -702,7 +702,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
     // A clarification answer is short: Enter answers on every width, whatever the chat send-key rule.
     if (clarify) { if (!e.shiftKey) { e.preventDefault(); clarify.send(value) } return }
     const isNumpad = e.code === 'NumpadEnter'
-    const mobile = window.matchMedia('(max-width: 640px)').matches
+    const mobile = window.matchMedia(PHONE_QUERY).matches
     if (sendKey === 'ctrl+enter' || mobile) {
       if (isNumpad || e.ctrlKey || e.metaKey) { e.preventDefault(); void send() }
       return

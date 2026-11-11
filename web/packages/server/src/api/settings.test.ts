@@ -434,6 +434,49 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(body.default_model_provider).toBe('anthropic')
   })
 
+  it('ships the max_tokens a turn uses and where it comes from (TAL-2160)', async () => {
+    const { max_tokens: root, ...base } = structuredClone(configs.get(s.state)) ?? {}
+    const read = async (config: Json): Promise<unknown[]> => {
+      configs.set(s.state, { ...base, ...config })
+      s.deps.agentConfig.invalidate(s.state)
+      const body = await json(await s.get('/api/settings'))
+      return [body.max_tokens, body.max_tokens_effective, body.max_tokens_source]
+    }
+    const agent = (maxTokens: number): Json => ({ agent: { ...dictOf(base.agent), max_tokens: maxTokens } })
+    try {
+      expect(await read({ max_tokens: 2048, ...agent(1024) })).toEqual([2048, 2048, 'profile'])
+      expect(await read(agent(1024))).toEqual([null, 1024, 'agent'])
+      expect(await read({})).toEqual([null, null, 'none'])
+    } finally {
+      configs.set(s.state, { ...base, ...(root === undefined ? {} : { max_tokens: root }) })
+      s.deps.agentConfig.invalidate(s.state)
+    }
+  })
+
+  it('says whether title refresh and the insights sync can run, and the pinned limit\'s maximum (TAL-2160)', async () => {
+    const before = structuredClone(configs.get(s.state)) ?? {}
+    const read = async (config: Json): Promise<Json> => {
+      configs.set(s.state, { ...before, ...config })
+      s.deps.agentConfig.invalidate(s.state)
+      return json(await s.get('/api/settings'))
+    }
+    try {
+      expect(await read({})).toMatchObject({ auto_title_refresh_available: true, sync_to_insights_available: true, pinned_sessions_limit_max: 99 })
+      expect((await read({ auxiliary: { title_generation: { enabled: false } } })).auto_title_refresh_available).toBe(false)
+      const noSidecar = vi.spyOn(s.deps, 'sidecar').mockReturnValue(null)
+      try { expect((await read({})).sync_to_insights_available).toBe(false) } finally { noSidecar.mockRestore() }
+      // The server owns the range: a save outside it keeps the stored value, for every client.
+      expect((await json(await post(s, '/api/settings', { pinned_sessions_limit: 42 }))).pinned_sessions_limit).toBe(42)
+      expect((await json(await post(s, '/api/settings', { pinned_sessions_limit: 100 }))).pinned_sessions_limit).toBe(42)
+      expect((await json(await post(s, '/api/settings', { pinned_sessions_limit: 0 }))).pinned_sessions_limit).toBe(42)
+      expect((await json(await post(s, '/api/settings', { pinned_sessions_limit: 99 }))).pinned_sessions_limit).toBe(99)
+    } finally {
+      configs.set(s.state, before)
+      s.deps.agentConfig.invalidate(s.state)
+      await post(s, '/api/settings', { pinned_sessions_limit: 3 })
+    }
+  })
+
   it('POST /api/settings persists allowed keys, writes max_tokens to config.yaml, and clears it on blank', async () => {
     let res = await post(s, '/api/settings', { bot_name: '  ', send_key: 'ctrl+enter', max_tokens: '4096', not_a_setting: true })
     expect(res.status).toBe(200)

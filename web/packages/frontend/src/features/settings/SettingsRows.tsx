@@ -51,14 +51,15 @@ export function SettingSelect({ label, hint, settingKey, id: givenId, fallback, 
 
 /**
  * TAL-2131: one string server setting as a segmented control, saving like `SettingSelect`, for two to four short options.
- * On a column too narrow for the label and every option, the control moves under its label (TAL-2138).
+ * On a column too narrow for the label and every option, the control moves under its label (TAL-2138). `value` (TAL-2160)
+ * shows a rule in force instead of the stored choice, for a disabled control.
  */
-export function SettingSegmented({ label, hint, settingKey, id: givenId, fallback, options, disabled, icon }: SettingProps & { fallback: string; options: readonly { value: string; label: string }[] }) {
+export function SettingSegmented({ label, hint, settingKey, id: givenId, fallback, options, disabled, icon, value }: SettingProps & { fallback: string; options: readonly { value: string; label: string }[]; value?: string }) {
   const id = rowId(givenId, settingKey)
   const { str, set } = useSettingField([settingKey])
   return (
     <FieldRow label={label} htmlFor={id} hint={hint} icon={icon} inline wrap>
-      <Segmented id={id} label={label} disabled={disabled} options={options} value={str(settingKey, fallback)} onChange={(v) => set({ [settingKey]: v })} />
+      <Segmented id={id} label={label} disabled={disabled} options={options} value={value ?? str(settingKey, fallback)} onChange={(v) => set({ [settingKey]: v })} />
     </FieldRow>
   )
 }

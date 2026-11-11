@@ -1,35 +1,31 @@
-import { ArrowDownToLine, ArrowUpDown, ChevronsUpDown, CornerDownLeft, FileText, Hash, List, ListTree, Loader, MessagesSquare, PanelRight, Repeat, SlidersHorizontal, Type } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpDown, ChevronsUpDown, CornerDownLeft, FileText, Hash, List, ListTree, Loader, PanelRight, SlidersHorizontal, Type } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { ChatPage } from '../../contracts/url'
 import { modifierKey } from '../../ui/Keys'
+import { useIsPhone } from '../../shell/useShellState'
 import { useSettingField } from './useSettingField'
 import { LoadingState, ErrorState } from '../../ui/States'
-import { GatewayRestart } from './GatewayRestart'
 import { ComposerGroup } from './ComposerPreview'
 import { PAGE_TITLE, SETTINGS_INDEX } from './settingsIndex'
-import { SettingAction, SettingLink, SettingNumber, SettingSegmented, SettingSelect, SettingToggle as Toggle, SettingsBack, SettingsGroup, SETTINGS_PAGE, SETTINGS_TITLE } from './SettingsRows'
+import { SettingLink, SettingSegmented, SettingSelect, SettingToggle as Toggle, SettingsBack, SettingsGroup, SETTINGS_PAGE, SETTINGS_TITLE } from './SettingsRows'
 
-const FIELDS = ['compression_prepare_ahead', 'group_discussion_max_rounds', 'group_discussion_restart_required']
-/** The Agent sends `compression_prepare_ahead` only when it has the choice (TAL-1825). */
-const hasCompression = (value: unknown) => typeof value === 'boolean'
+const FIELDS = ['auto_title_refresh_available']
 
 /**
  * TAL-1691, TAL-2075, TAL-2076, TAL-2138: Settings › Chat, the composer drawn with its controls, how the composer sends,
- * how the transcript shows and scrolls, and Group discussion limits. Rarely changed rows sit on its two sub-pages.
+ * and how the transcript shows and scrolls. Rarely changed rows sit on its two sub-pages. TAL-2160: profile limits are on
+ * Models and Group discussion limits on System.
  */
 export function ChatSection() {
   const { settings } = useSettingField(FIELDS)
   if (settings.isPending) return <LoadingState />
   if (settings.isError) return <ErrorState error={settings.error} onRetry={() => { void settings.refetch() }} />
   // A sub-page's link counts the rows it shows.
-  const rows = (page: ChatPage) => SETTINGS_INDEX.filter((e) => e.page === page && (e.id !== 'settings-compression_prepare_ahead' || hasCompression(settings.data.compression_prepare_ahead))).length
+  const rows = (page: ChatPage) => SETTINGS_INDEX.filter((e) => e.page === page).length
   return (
     <div className={SETTINGS_PAGE} data-section="chat">
       <ComposerGroup>
-        <SettingSegmented icon={CornerDownLeft} label={m.settings_label_send_key()} id="settingsSendKey" settingKey="send_key" fallback="enter" options={[
-          { value: 'enter', label: m.settings_send_key_enter() },
-          { value: 'ctrl+enter', label: m.settings_send_key_ctrl_enter({ modifier: modifierKey() }) },
-        ]} />
+        <SendKeyRow />
         <SettingSegmented icon={Loader} label={m.settings_label_default_message_mode()} id="settingsDefaultMessageMode" settingKey="default_message_mode" fallback="steer" options={[
           { value: 'steer', label: m.settings_default_message_mode_steer() },
           { value: 'queue', label: m.settings_default_message_mode_queue() },
@@ -50,11 +46,6 @@ export function ChatSection() {
         <Toggle icon={ListTree} label={m.settings_label_conversation_outline()} settingKey="show_conversation_outline" />
         <Toggle icon={ArrowUpDown} label={m.settings_label_session_jump_buttons()} settingKey="session_jump_buttons" fallback />
       </SettingsGroup>
-      {typeof settings.data.group_discussion_max_rounds === 'number' ? <SettingsGroup id="group-discussions" title={m.settings_group_group_discussions()}>
-        <SettingNumber icon={Repeat} label={m.settings_label_group_discussion_max_rounds()} settingKey="group_discussion_max_rounds" />
-        <SettingNumber icon={MessagesSquare} label={m.settings_label_group_discussion_max_messages()} settingKey="group_discussion_max_messages" />
-        {settings.data.group_discussion_restart_required === true ? <SettingAction label={m.settings_label_group_discussion_restart()}><GatewayRestart /></SettingAction> : null}
-      </SettingsGroup> : null}
       <SettingsGroup id="more" title={m.settings_group_more()}>
         <SettingLink icon={PanelRight} label={m.settings_group_workspace_panel()} detail={m.settings_subpage_rows({ n: rows('workspace-panel') })} link={{ to: '/settings/chat/$page', params: { page: 'workspace-panel' } }} />
         <SettingLink icon={SlidersHorizontal} label={m.settings_page_advanced()} detail={m.settings_subpage_rows({ n: rows('advanced') })} link={{ to: '/settings/chat/$page', params: { page: 'advanced' } }} />
@@ -92,16 +83,30 @@ export function ChatSubPage({ page }: { page: ChatPage }) {
           <Toggle label={m.settings_label_token_speed()} settingKey="show_tps" />
           <Toggle label={m.settings_label_virtualize_transcript()} settingKey="virtualize_transcript" />
           <Toggle label={m.settings_label_session_endless_scroll()} settingKey="session_endless_scroll" fallback />
-        </SettingsGroup>
-        <SettingsGroup id="limits" title={m.settings_group_limits()}>
-          <SettingNumber label={m.settings_label_max_tokens()} id="settingsMaxTokens" settingKey="max_tokens" allowEmpty width="w-28" placeholder={m.settings_placeholder_max_tokens_none()} />
-          {hasCompression(settings.data.compression_prepare_ahead) ? <Toggle label={m.settings_label_compression_prepare_ahead()} settingKey="compression_prepare_ahead" /> : null}
-          <SettingSelect label={m.settings_label_auto_title_refresh()} id="settingsAutoTitleRefresh" settingKey="auto_title_refresh_every" fallback="0" options={[
-            { value: '0', label: m.settings_auto_title_refresh_off() },
-            { value: '5', label: '5' }, { value: '10', label: '10' }, { value: '20', label: '20' },
-          ]} />
+          {/* TAL-2160: refresh rewrites only generated titles, so it waits on the profile's title generation. */}
+          <SettingSelect label={m.settings_label_auto_title_refresh()} id="settingsAutoTitleRefresh" settingKey="auto_title_refresh_every" fallback="0"
+            {...(settings.data.auto_title_refresh_available === false ? { disabled: true, hint: m.settings_desc_auto_title_refresh_unavailable() } : {})} options={[
+              { value: '0', label: m.settings_auto_title_refresh_off() },
+              ...['5', '10', '20'].map((n) => ({ value: n, label: m.settings_auto_title_refresh_every({ n }) })),
+            ]} />
         </SettingsGroup>
       </>}
     </div>
+  )
+}
+
+/**
+ * TAL-2160: how the composer sends. At phone width the composer always sends with Ctrl/Cmd+Enter, so the control is disabled
+ * and shows that rule.
+ */
+function SendKeyRow() {
+  const phone = useIsPhone()
+  const modifier = modifierKey()
+  return (
+    <SettingSegmented icon={CornerDownLeft} label={m.settings_label_send_key()} id="settingsSendKey" settingKey="send_key" fallback="enter"
+      {...(phone ? { disabled: true, value: 'ctrl+enter', hint: m.settings_send_key_phone_hint({ modifier }) } : {})} options={[
+        { value: 'enter', label: m.settings_send_key_enter() },
+        { value: 'ctrl+enter', label: m.settings_send_key_ctrl_enter({ modifier }) },
+      ]} />
   )
 }

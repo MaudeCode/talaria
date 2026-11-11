@@ -88227,6 +88227,30 @@
                         }
                       ]
                     },
+                    "max_tokens_source": {
+                      "enum": [
+                        "profile",
+                        "agent",
+                        "none"
+                      ],
+                      "type": "string",
+                      "description": "TAL-2160, every settings read and save: where `max_tokens_effective` comes from: the profile's root `max_tokens`, the Agent's `agent.max_tokens`, or neither (no limit)."
+                    },
+                    "auto_title_refresh_available": {
+                      "type": "boolean",
+                      "description": "TAL-2160, every settings read and save: title generation is on for the active profile, so `auto_title_refresh_every` can refresh generated titles."
+                    },
+                    "sync_to_insights_available": {
+                      "type": "boolean",
+                      "description": "TAL-2160, every settings read and save: a sidecar is running, so `sync_to_insights` can copy Web chats into the Agent's database. Changing `sync_to_insights` needs an owner session."
+                    },
+                    "pinned_sessions_limit_max": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "exclusiveMinimum": 0,
+                      "description": "TAL-2160, every settings read and save: the largest `pinned_sessions_limit` the server accepts; the smallest is 1."
+                    },
                     "tts_engine": {
                       "type": "string"
                     },
@@ -88671,6 +88695,30 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "max_tokens_source": {
+                      "enum": [
+                        "profile",
+                        "agent",
+                        "none"
+                      ],
+                      "type": "string",
+                      "description": "TAL-2160, every settings read and save: where `max_tokens_effective` comes from: the profile's root `max_tokens`, the Agent's `agent.max_tokens`, or neither (no limit)."
+                    },
+                    "auto_title_refresh_available": {
+                      "type": "boolean",
+                      "description": "TAL-2160, every settings read and save: title generation is on for the active profile, so `auto_title_refresh_every` can refresh generated titles."
+                    },
+                    "sync_to_insights_available": {
+                      "type": "boolean",
+                      "description": "TAL-2160, every settings read and save: a sidecar is running, so `sync_to_insights` can copy Web chats into the Agent's database. Changing `sync_to_insights` needs an owner session."
+                    },
+                    "pinned_sessions_limit_max": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "exclusiveMinimum": 0,
+                      "description": "TAL-2160, every settings read and save: the largest `pinned_sessions_limit` the server accepts; the smallest is 1."
                     },
                     "tts_engine": {
                       "type": "string"

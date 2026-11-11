@@ -13,7 +13,7 @@ async function capture(page: Page, section: string, project: string) {
 }
 
 test('ordinary settings show local intent while saves are held', async ({ page, request }, info) => {
-  let settings = { ...await (await request.get('/api/settings')).json(), send_key: 'enter', render_user_markdown: false, sound_enabled: false }
+  let settings = { ...await (await request.get('/api/settings')).json(), default_message_mode: 'steer', render_user_markdown: false, sound_enabled: false }
   const held = deferred<undefined>()
   let writes = 0
   await page.route('**/api/settings', async (route) => {
@@ -26,10 +26,11 @@ test('ordinary settings show local intent while saves are held', async ({ page, 
   })
   try {
     await page.goto('/settings/chat')
-    const ctrlEnter = page.locator('#settingsSendKey').getByRole('radio', { name: /Enter$/ }).last()
-    await ctrlEnter.click()
+    // TAL-2160: Send with is disabled at phone width, so the held write is a choice both projects can make.
+    const queue = page.locator('#settingsDefaultMessageMode').getByRole('radio', { name: 'Queue' })
+    await queue.click()
     await expect.poll(() => writes).toBe(1)
-    await expect(ctrlEnter).toHaveAttribute('aria-checked', baseline ? 'false' : 'true')
+    await expect(queue).toHaveAttribute('aria-checked', baseline ? 'false' : 'true')
     await capture(page, 'chat', info.project.name)
     await page.goto('/settings/notifications')
     const sound = page.getByRole('switch', { name: 'Notification sound' })
