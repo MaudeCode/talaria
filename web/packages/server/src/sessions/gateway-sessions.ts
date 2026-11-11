@@ -23,8 +23,9 @@ import type { SessionChannels, StreamRegistry } from './streams.js'
 import { SessionNotices } from './notices.js'
 import type { RunJournal, RunJournalWriter } from './journal.js'
 import { SessionEventBus } from './events.js'
-import { messageWindowForDisplay, messagesForLimitedPayload } from './window.js'
-import { pendingUserRow, stripToolCallXml } from './merge.js'
+import { messageCountsAsRenderable, messageWindowForDisplay, messagesForLimitedPayload } from './window.js'
+import { isCompactionRow, pendingUserRow, stripToolCallXml } from './merge.js'
+import { withTurnIds } from './anchor.js'
 import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles.js'
 import { CANONICAL_READ_ONLY_REASON, WEB_DIAGNOSTIC_REQUEST_PREFIX } from './state-db.js'
 import { toolProgress } from './tool-display.js'
@@ -37,7 +38,7 @@ interface Target { sid: string; profile: string; home: string; key: string }
 type Batch = GatewayClarifyBatch & { remaining: string[] }
 interface Watch { stream: string; controller: AbortController; snapshot: GatewaySnapshot; batch: Batch | null; restarting: boolean; reconcile?: () => void }
 /** The attach-only transport outlives individual run projections while a viewer holds it. */
-interface Observation { controller: AbortController; snapshot: GatewaySnapshot; todoSequence: number; connectionSequence: number; replaying: boolean; completion: StreamFrame | null; listeners: Set<(frame: StreamFrame) => void>; leases: number; ended: Promise<GatewaySessionResult>; ready: Promise<boolean>; sideResults: Map<string, { sequence: number; text: string }> }
+interface Observation { controller: AbortController; snapshot: GatewaySnapshot; todoSequence: number; connectionSequence: number; replaying: boolean; completion: StreamFrame | null; listeners: Set<(frame: StreamFrame, parsed?: GatewaySessionResult) => void>; leases: number; ended: Promise<GatewaySessionResult>; ready: Promise<boolean>; sideResults: Map<string, { sequence: number; text: string }> }
 
 const ownerStreamPrefix = (home: string): string => `owner-${createHash('sha256').update(home).digest('hex').slice(0, 16)}-`
 const ownerStateId = (identity: string): string => `owner-${createHash('sha256').update(identity).digest('hex')}`
@@ -134,6 +135,31 @@ const keepConnection = (safe: Row, source: Row): Row => {
 const keepToolCall = (operation: ConnectorOperationSnapshot, held: GatewaySnapshot['pending_connection']): ConnectorOperationSnapshot =>
   ({ ...operation, tool_call_id: operation.tool_call_id ?? (held?.op_id === operation.op_id ? held.tool_call_id : null) })
 
+/**
+ * TAL-1723: `messageWindowForDisplay(project(0), limit, before)` without projecting rows that window cannot reach.
+ * `project(start)` projects `rows` from `start` on, one output per row, reading whole turns only; so it starts at a turn
+ * boundary: where `limit` renderable rows before `before` reach, widened until no turn straddles the cut. The reach
+ * doubles until the projected tail holds `limit` renderable rows there, which makes its window the full one.
+ */
+function projectedWindow(rows: Row[], project: (start: number) => unknown[], limit: number | null, before: number | null): [unknown[], number] {
+  if (!limit) return messageWindowForDisplay(project(0), limit, before)
+  const end = before === null ? rows.length : Math.max(0, Math.min(before, rows.length))
+  const turns = withTurnIds(rows).map((row, index) => str(row._turn_id) || `row:${String(index)}`)
+  const first = new Map<string, number>()
+  turns.forEach((turn, index) => { if (!first.has(turn)) first.set(turn, index) })
+  // A Web compaction row hides the Agent's marker for the same compaction anywhere in the transcript (TAL-1566).
+  const compaction = rows.findIndex(isCompactionRow)
+  for (let reach = limit; ; reach *= 2) {
+    let start = end
+    for (let seen = 0; start > 0 && seen < reach;) if (messageCountsAsRenderable(rows[--start])) seen++
+    for (let index = rows.length - 1; index >= start; index--) start = Math.min(start, first.get(turns[index]!)!)
+    if (compaction >= 0 && compaction < start) start = 0
+    const projected = project(start)
+    const [window, offset] = messageWindowForDisplay(projected, limit, before === null ? null : before - start)
+    if (start === 0 || projected.slice(0, end - start).filter(messageCountsAsRenderable).length >= limit) return [window, offset + start]
+  }
+}
+
 /** TAL-1336: owner events after which the session's processes or subagents read differently. */
 const OWNER_WORK_EVENTS: ReadonlySet<string> = new Set(['subagent.start', 'subagent.complete', 'background.complete'])
 export type OwnerWorkOutcome = NonNullable<GatewaySessionResult['work_outcome']>
@@ -168,7 +194,7 @@ export class GatewaySessions {
     service: SessionService; sidecar: () => SidecarLike | null; registry: StreamRegistry;
     launchStore?: BackgroundTaskStore;
     journal: RunJournal; events: SessionEventBus; channels: SessionChannels; profileHome: (profile: string) => string;
-    activeProfile: () => string; showReasoning: (home: string) => Promise<boolean>; redactEnabled: () => boolean; now: () => number; log: (line: string) => void;
+    activeProfile: () => string; showReasoning: (home: string) => Promise<boolean>; configFingerprint?: (home: string) => string; redactEnabled: () => boolean; now: () => number; log: (line: string) => void;
   }) { this.notices = new SessionNotices(deps.now) }
 
   private addNativeNotice(target: Target, key: string, frame: Row): void {
@@ -227,8 +253,10 @@ export class GatewaySessions {
         signal: observation.controller.signal, timeoutMs: 0,
         onStream: (frame) => {
           if (observation.controller.signal.aborted || this.observations.get(target.key) !== observation) return
+          // TAL-1723: listeners take this one parse of the snapshot frame instead of parsing it again.
+          let parsed: GatewaySessionResult | undefined
           if (frame.event === 'snapshot') {
-            const result = GatewaySessionResultSchema.parse(frame.data)
+            const result = parsed = GatewaySessionResultSchema.parse(frame.data)
             if (result.snapshot?.session_id !== target.sid) { readyResolve(false); observation.controller.abort(); return }
             // Reaction readback invalidates display data only. Queued native turn events still own settlement.
             if ((frame.data as Row).reaction_only === true) { this.changed(target); return }
@@ -319,7 +347,7 @@ export class GatewaySessions {
               observation.completion = frame
             } else if (event.type === 'session.updated') this.changed(target)
           }
-          for (const listener of observation.listeners) listener(frame)
+          for (const listener of observation.listeners) listener(frame, parsed)
         },
       })
     })().catch(() => ({ state: 'unavailable' as const, reason: 'owner_connection_lost', snapshot: null, receipt: null })).finally(() => {
@@ -777,18 +805,22 @@ export class GatewaySessions {
       fields.todo_state = this.nativeTodo(target, snapshot) ?? normalizeTodoSnapshot({ todos: [] })
       const observed = this.watches.get(target.key)?.snapshot
       const canReact = snapshot.reactions_supported === true && this.attachment(result).can_submit
-      const nativeRows: Row[] = snapshot.messages.map(({ reactions, ...row }) => ({ ...row,
-        reaction_view: this.reactionView({ ...row, reactions }, canReact),
-      }))
+      const nativeRows: Row[] = [...snapshot.messages]
       const active = stream ? runningAdmission(snapshot) : null
       let start = active ? nativeRows.findIndex((m) => m.role === 'user' && m.message_id === active.admission_id) : -1
       if (active && stream && start < 0) {
         start = nativeRows.length
         nativeRows.push({ ...pendingUserRow(active.text ?? '', [], null, str(snapshot.info.source) || 'gateway', stream), message_id: active.admission_id })
       }
-      const messages = start < 0 ? nativeRows : nativeRows.map((row, index) => index >= start ? { ...row, _turn_id: stream } : row)
-      const projected = withMessages ? this.deps.service.foreignMessages(messages, base, showReasoning) : []
-      const [rows, offset] = messageWindowForDisplay(projected, limit, before)
+      const turnRow = (row: Row, index: number): Row => start >= 0 && index >= start ? { ...row, _turn_id: stream } : row
+      // Reaction views and the turn projection cost per row, so only the rows the requested page can reach get them.
+      const project = (from: number) => this.deps.service.foreignMessages(nativeRows.slice(from).map((message, slot) => {
+        const index = from + slot
+        if (index >= snapshot.messages.length) return turnRow(message, index)
+        const { reactions, ...row } = message
+        return turnRow({ ...row, reaction_view: this.reactionView({ ...row, reactions }, canReact) }, index)
+      }), base, showReasoning, { baseIndex: from })
+      const [rows, offset] = withMessages ? projectedWindow(nativeRows.map(turnRow), project, limit, before) : [[], 0]
       const model = str(snapshot.info.model) || str(base.model) || null
       const provider = Object.hasOwn(snapshot.info, 'provider')
         ? str(snapshot.info.provider) || null : str(base.model_provider) || null
@@ -1114,15 +1146,15 @@ export class GatewaySessions {
     const observation = this.transport(target, base, snapshot)
     const release = this.lease(observation)
     let activeAdmission = admissionId ?? runningAdmission(snapshot)?.admission_id ?? snapshot.pending.find((p) => !p.steering)?.admission_id
-    let receive: ((frame: StreamFrame) => void) | null = null
-    const buffered: StreamFrame[] = [{ event: 'snapshot', seq: 0, data: { state: 'attached', reason: null, snapshot, receipt: null, replaying: true } }]
+    let receive: ((frame: StreamFrame, parsed?: GatewaySessionResult) => void) | null = null
+    const buffered: [StreamFrame, (GatewaySessionResult | undefined)?][] = [[{ event: 'snapshot', seq: 0, data: { state: 'attached', reason: null, snapshot, receipt: null, replaying: true } }]]
     const completed = observation.completion?.data as Row | undefined
     if (completed?.authority_epoch === snapshot.authority_epoch && completed.replay_epoch === snapshot.replay_epoch
-        && completed.execution_generation === snapshot.execution_generation && ((completed.payload ?? {}) as Row).admission_id === activeAdmission) buffered.push(observation.completion!)
-    if (!observation.replaying) buffered.push({ event: 'replay_complete', seq: 0, data: {} })
-    const listener = (frame: StreamFrame) => {
-      if (receive) receive(frame)
-      else if (buffered.length < 4096) buffered.push(frame)
+        && completed.execution_generation === snapshot.execution_generation && ((completed.payload ?? {}) as Row).admission_id === activeAdmission) buffered.push([observation.completion!])
+    if (!observation.replaying) buffered.push([{ event: 'replay_complete', seq: 0, data: {} }])
+    const listener = (frame: StreamFrame, parsed?: GatewaySessionResult) => {
+      if (receive) receive(frame, parsed)
+      else if (buffered.length < 4096) buffered.push([frame, parsed])
       else watch.controller.abort()
     }
     observation.listeners.add(listener)
@@ -1151,7 +1183,20 @@ export class GatewaySessions {
       let liveRunning = false
       let usage: Row = {}
       let reasoning = ''
+      // TAL-1723: a stable title snapshot is due only after reasoning grew, as on direct turns.
+      let reasoningChanged = false
       let titles = new ReasoningTitleTracker()
+      // TAL-1723: the Show reasoning preference, read once, again after `session.info`, and when the config file's
+      // fingerprint changed (checked at most once per second), never once per streamed frame.
+      let show: { value: boolean; fingerprint: string; checkedAt: number } | null = null
+      const showReasoning = async (): Promise<boolean> => {
+        const at = this.deps.now()
+        if (show && at - show.checkedAt < 1) return show.value
+        const fingerprint = this.deps.configFingerprint?.(target.home) ?? ''
+        if (show?.fingerprint !== fingerprint) show = { value: await this.deps.showReasoning(target.home).catch(() => false), fingerprint, checkedAt: at }
+        else show.checkedAt = at
+        return show.value
+      }
       const calls = registry.liveToolCalls.get(watch.stream)!
       const put = async (event: string, data: Row) => {
         let safe = event === 'tool' || event === 'tool_complete' ? publicToolFrame(data, this.deps.redactEnabled()) : event === 'connect_card' ? data : redactNestedMessageContainers(data, this.deps.redactEnabled()) as Row
@@ -1165,7 +1210,7 @@ export class GatewaySessions {
         for (const call of calls) if (call.progress) await put('tool_progress', { id: call.tid, progress: null })
         calls.length = 0
       }
-      const resetProjection = async () => { await clearTools(); liveRunning = false; reasoning = ''; usage = {}; completion = null; titles = new ReasoningTitleTracker() }
+      const resetProjection = async () => { await clearTools(); liveRunning = false; reasoning = ''; reasoningChanged = false; usage = {}; completion = null; titles = new ReasoningTitleTracker() }
       const meter = async (data: Row, complete = false) => {
         usage = { ...usage, ...ownerUsage(data, complete) }
         if (['input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_write_tokens'].every((key) => typeof usage[key] === 'number')) await put('metering', { session_id: target.sid, usage: { ...usage, estimated_cost: usage.estimated_cost ?? null }, tps: usage.tps ?? null, tps_available: usage.tps !== undefined, estimated: false })
@@ -1230,7 +1275,7 @@ export class GatewaySessions {
       }
       await prompts(snapshot)
       if (watch.controller.signal.aborted) return
-      receive = (frame) => {
+      receive = (frame, parsed) => {
           enqueue(async () => {
             if (frame.event === 'replay_complete') {
               replaying = false
@@ -1251,7 +1296,7 @@ export class GatewaySessions {
               return
             }
             if (frame.event === 'snapshot') {
-              const result = GatewaySessionResultSchema.parse(frame.data)
+              const result = parsed ?? GatewaySessionResultSchema.parse(frame.data)
               replaying = (frame.data as Row).replaying === true
               if (replaying) liveRunning = false
               if (!result.snapshot) return
@@ -1301,6 +1346,7 @@ export class GatewaySessions {
               return
             }
             if (kind === 'session.info') {
+              show = null
               if (data.authority_epoch !== watch.snapshot.authority_epoch) return
               if (Number(data.execution_generation) < watch.snapshot.execution_generation) return
               const firstClaim = !ran && data.running === true
@@ -1316,18 +1362,20 @@ export class GatewaySessions {
             }
             if (event.authority_epoch !== watch.snapshot.authority_epoch || event.execution_generation !== watch.snapshot.execution_generation) return
             if (kind === 'message.delta') {
-              const stable = titles.stableSnapshot(reasoning)
-              if (stable !== null && await this.deps.showReasoning(target.home).catch(() => false)) await put('reasoning', { text: '', titles: stable })
+              const stable = reasoningChanged ? titles.stableSnapshot(reasoning) : null
+              reasoningChanged = false
+              if (stable !== null && await showReasoning()) await put('reasoning', { text: '', titles: stable })
               await put('token', { text: str(data.text || data.delta || data.content) })
             }
             else if (kind === 'reasoning.delta') {
               reasoning += str(data.text)
-              if (await this.deps.showReasoning(target.home).catch(() => false)) await put('reasoning', titles.prepare(reasoningEventPayload(data.text, reasoning)))
+              reasoningChanged = true
+              if (await showReasoning()) await put('reasoning', titles.prepare(reasoningEventPayload(data.text, reasoning)))
             }
             else if (kind.startsWith('subagent.') && str(data.subagent_id)) {
               // Reuse the delegate activity row; each child keeps one identity through progress and completion.
               const complete = kind === 'subagent.complete'
-              const visible = kind !== 'subagent.thinking' || await this.deps.showReasoning(target.home).catch(() => false)
+              const visible = kind !== 'subagent.thinking' || await showReasoning()
               const preview = visible ? str(data.summary || data.tool_preview || data.text) : ''
               await put(complete ? 'tool_complete' : 'tool', { id: `owner-subagent-${str(data.subagent_id)}`, name: 'subagent_progress',
                 args: { task: str(data.goal) }, preview: preview || null,
@@ -1372,7 +1420,7 @@ export class GatewaySessions {
 
           })
       }
-      for (const frame of buffered.splice(0)) receive(frame)
+      for (const [frame, parsed] of buffered.splice(0)) receive(frame, parsed)
       const result = await Promise.race([
         observation.ended,
         new Promise<GatewaySessionResult>((resolve) => {

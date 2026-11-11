@@ -3,12 +3,14 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { Worker } from 'node:worker_threads'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ContextDetailSchema, SessionEnvelopeSchema, type GatewaySnapshot, type GatewaySessionResult } from '@maudecode/talaria-web-contracts'
+import { ContextDetailSchema, GatewaySessionResultSchema, SessionEnvelopeSchema, type GatewaySnapshot, type GatewaySessionResult } from '@maudecode/talaria-web-contracts'
 import type { StreamFrame } from '../sidecar/client.js'
 import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { CANONICAL_READ_ONLY_REASON, type StateDbWorkerRequest } from './state-db.js'
 import { GatewaySessions } from './gateway-sessions.js'
+import { ReasoningTitleTracker } from './reasoning-titles.js'
+import { messageWindowForDisplay, messagesForLimitedPayload } from './window.js'
 import type { GatewaySubscriber, GatewayWatcher } from './gateway-watcher.js'
 import { TerminalSession } from '../tools/terminal.js'
 import { admission, attached, bootOwnerAttachment, fixture, nativeNotices, ownerHelpers, sid, snapshot } from '../test/gateway-owner.js'
@@ -812,5 +814,79 @@ describe('diagnostic chats under person isolation (TAL-48)', () => {
       db.close()
       await s.close()
     }
+  })
+})
+
+describe('owner stream and projection cost (TAL-1723)', () => {
+  let s: TestServer
+  let db: DatabaseSync
+  let sidecar: FakeSidecar
+  beforeEach(async () => { ({ s, db, sidecar } = await bootOwnerAttachment()) })
+  afterEach(async () => { db.close(); await s.close(); vi.restoreAllMocks() })
+  const { observeOwner } = ownerHelpers(() => ({ s, sidecar }))
+  const running = () => snapshot({ running: true, pending: [admission()] })
+
+  it('scans reasoning titles once per reasoning segment, not once per streamed token', async () => {
+    const stable = vi.spyOn(ReasoningTitleTracker.prototype, 'stableSnapshot')
+    const watch = await observeOwner(running())
+    for (let i = 0; i < 500; i++) watch.event('message.delta', { text: 'x' })
+    watch.event('reasoning.delta', { text: '**Checking the plan**\n' })
+    watch.event('message.delta', { text: 'y' })
+    watch.finish()
+    const frames = await watch.read
+    expect(frames.filter((frame) => frame.event === 'token')).toHaveLength(501)
+    expect(stable).toHaveBeenCalledTimes(1)
+  })
+
+  it('reads the Show reasoning preference once per watch and again after session info', async () => {
+    const owner = s.deps.sessions.owner as unknown as { deps: { showReasoning: (home: string) => Promise<boolean> } }
+    const show = vi.spyOn(owner.deps, 'showReasoning')
+    const watch = await observeOwner(running())
+    for (let i = 0; i < 200; i++) watch.event('reasoning.delta', { text: 'thinking ' })
+    watch.event('session.info', { authority_epoch: 1, execution_generation: 1, running: true })
+    for (let i = 0; i < 200; i++) watch.event('reasoning.delta', { text: 'more ' })
+    watch.finish()
+    const frames = await watch.read
+    expect(frames.filter((frame) => frame.event === 'reasoning')).toHaveLength(400)
+    expect(show).toHaveBeenCalledTimes(2)
+  })
+
+  it('parses each owner snapshot frame once', async () => {
+    const watch = await observeOwner(running())
+    const parse = vi.spyOn(GatewaySessionResultSchema, 'parse')
+    watch.snapshot({ last_sequence: 77 })
+    watch.finish()
+    const frames = await watch.read
+    expect(frames.some((frame) => frame.event === 'session_snapshot')).toBe(true)
+    // Only the streamed frame carries `replay_gap`; owner reads that return the same snapshot are parsed by their own call.
+    expect(parse.mock.calls.filter(([data]) => Object.hasOwn(data as object, 'replay_gap') && (data as GatewaySessionResult).snapshot?.last_sequence === 77)).toHaveLength(1)
+  })
+
+  describe('a 1,000-row owner transcript', () => {
+    // 250 turns of four rows: a prompt, a tool call, its result and a reacted answer.
+    const rows = Array.from({ length: 250 }, (_, turn) => [
+      { role: 'user', content: `Question ${String(turn)}`, row_id: turn * 4 + 1 },
+      { role: 'assistant', content: '', row_id: turn * 4 + 2, tool_calls: [{ id: `call-${String(turn)}`, type: 'function', function: { name: 'read_file', arguments: '{}' } }] },
+      { role: 'tool', content: `result ${String(turn)}`, tool_call_id: `call-${String(turn)}`, row_id: turn * 4 + 3 },
+      { role: 'assistant', content: `Answer ${String(turn)}`, row_id: turn * 4 + 4, reactions: turn % 3 ? [] : [{ emoji: '👍', author: 'agent' }] },
+    ]).flat()
+    const detail = async (query: string) => SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}${query}`)).json()).session
+
+    it.each([[120, null], [120, 500], [121, null]])('projects only the turns a %s-row page reaches, identically to the full projection (before=%s)', async (limit, before) => {
+      sidecar.respond('gateway.session', () => attached(snapshot({ messages: rows, message_count: rows.length, reactions_supported: true })))
+      const full = await detail('')
+      const [expected, offset] = messageWindowForDisplay(full.messages ?? [], limit, before)
+      const projected = vi.spyOn(s.deps.sessions, 'foreignMessages')
+      const reactions = vi.spyOn(GatewaySessions.prototype as unknown as { reactionView: () => unknown }, 'reactionView')
+      const page = await detail(`&msg_limit=${String(limit)}${before === null ? '' : `&msg_before=${String(before)}`}`)
+      expect(page.messages).toEqual(messagesForLimitedPayload(expected))
+      expect(page._messages_offset).toBe(offset)
+      expect(page.message_count).toBe(1000)
+      // The owner projection reaches the rows from the prompt of the window's first turn on. The other call projects
+      // the Web copy's own state.db rows, which carry no reaction views.
+      const reached = rows.length - Math.floor(offset / 4) * 4
+      expect(projected.mock.calls.filter(([messages]) => messages.some((m) => Object.hasOwn(m, 'reaction_view'))).map(([messages]) => messages.length)).toEqual([reached])
+      expect(reactions).toHaveBeenCalledTimes(reached)
+    })
   })
 })
