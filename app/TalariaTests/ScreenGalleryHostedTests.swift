@@ -115,13 +115,42 @@ final class ScreenGalleryHostedTests: XCTestCase {
         prepare: (UIWindow) async throws -> Void = { _ in },
         @ViewBuilder content: () -> Content
     ) async throws {
+        func reads(_ path: String) -> Int {
+            UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == path }.count }
+        }
+        var settingsReads = reads("/api/settings")
+        var updateReads = reads("/api/updates/check")
         try await renderHostedPage(name) {
             NavigationStack { content() }
                 .defaultAppStorage(defaults)
                 .environment(\.scenePhase, .active)
                 .modelContainer(fixture.cache)
-        } inspect: { window, variant in
+        } prepare: { window in
             try await prepare(window)
+            let loadedText: String?
+            switch name {
+            case "settings-models": loadedText = "fixture-model"
+            case "settings-profiles": loadedText = "Fixture Profile"
+            case "settings-workspaces": loadedText = "Fixture Workspace"
+            case "settings-auxiliary-models": loadedText = "legacy/vision-model"
+            case "settings-notifications": loadedText = "iOS permission not requested."
+            case "settings-system":
+                // This fixture omits version metadata, so Unknown alone also matches the initial state.
+                let answered = await awaitCondition {
+                    reads("/api/settings") > settingsReads && reads("/api/updates/check") > updateReads
+                }
+                XCTAssertTrue(answered, "\(name): this variant's settings and update requests did not finish")
+                settingsReads = reads("/api/settings")
+                updateReads = reads("/api/updates/check")
+                loadedText = "Unknown"
+            default: loadedText = nil
+            }
+            if let loadedText {
+                _ = try await requireElement(in: window, "\(name): loaded content is missing") {
+                    $0.accessibilityLabel?.contains(loadedText) == true
+                }
+            }
+        } inspect: { window, variant in
             let heading = try await requireElement(in: window, label: title)
             settle(window: window)
             let bounds = window.bounds

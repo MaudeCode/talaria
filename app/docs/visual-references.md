@@ -28,6 +28,8 @@ checks that its title or first section is visible, accessible text has positive
 width, and no visible accessibility element is wider than the window.
 Horizontally scrolling tabs may straddle an edge of their clipped viewport.
 It does not compare pixels or record new references.
+Async Settings pages wait for their loaded fixture rows before inspection and
+capture; the System page also waits for that render's settings and update reads.
 
 From `app/`, capture the gallery with:
 

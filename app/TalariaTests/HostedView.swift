@@ -216,6 +216,7 @@ extension XCTestCase {
         _ name: String,
         variants: [HostedVariant] = HostedVariant.gallery,
         @ViewBuilder content: () throws -> Content,
+        prepare: (UIWindow) async throws -> Void = { _ in },
         inspect: (UIWindow, HostedVariant) async throws -> Void
     ) async throws {
         for variant in variants {
@@ -237,6 +238,7 @@ extension XCTestCase {
                 window.isHidden = true
                 window.rootViewController = nil
             }
+            try await prepare(window)
             try await inspect(window, variant)
             attachHostedScreenshot(window, name: "\(name)-\(variant.name)")
         }
@@ -584,5 +586,40 @@ final class HostedWindowFailureImageTests: XCTestCase {
             XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Page"))
         }
         XCTAssertEqual(attached, keepsHostedScreenshots ? HostedVariant.gallery.map { "matrix-\($0.name)" } : [])
+    }
+
+    func testPageWaitsForLoadedRowsBeforeInspection() async throws {
+        let host = "gallery-readiness-\(UUID().uuidString.lowercased()).test"
+        let server = try XCTUnwrap(URL(string: "https://\(host)"))
+        let requests = DeferredRequests()
+        let previousHook = UITestURLSessionHook.configure
+        DeferredMockURLProtocol.setOnRequest({ request in _ = requests.append(request) }, forHost: host)
+        UITestURLSessionHook.configure = { $0.protocolClasses = [DeferredMockURLProtocol.self] }
+        defer {
+            UITestURLSessionHook.configure = previousHook
+            DeferredMockURLProtocol.setOnRequest(nil, forHost: host)
+        }
+
+        var inspected = false
+        let render = Task {
+            try await renderHostedPage("held-models", variants: [HostedVariant.gallery[0]]) {
+                NavigationStack { ModelsSettingsView(server: server) }
+            } prepare: { window in
+                _ = try await self.requireElement(in: window) { $0.accessibilityLabel?.contains("fixture-model") == true }
+            } inspect: { _, _ in
+                inspected = true
+            }
+        }
+        defer { render.cancel() }
+        let started = await awaitCondition { requests.count > 0 || inspected }
+        XCTAssertTrue(started)
+        let inspectedWhileHeld = await awaitCondition(timeout: 1) { inspected }
+        XCTAssertFalse(inspectedWhileHeld, "The gallery inspected the loading Models page before its held response arrived")
+        for index in 0..<requests.count {
+            let request = requests.request(at: index)
+            if !request.isStopped { request.complete(withJSON: #"{"models":[],"default_model":"fixture-model"}"#) }
+        }
+        try await render.value
+        XCTAssertTrue(inspected, "The loaded Models page was inspected")
     }
 }
