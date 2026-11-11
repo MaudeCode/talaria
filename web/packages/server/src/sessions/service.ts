@@ -1431,12 +1431,16 @@ export class SessionService {
     return { synth, meta, reads, ...(summary ? { summary } : {}) }
   }
 
-  /** Python `_handle_session_get` without a sidecar: the state.db transcript as a (read-only or claimable) foreign stub. */
-  foreignMessages(messages: Message[], session: object, showReasoning = true, opts: { running?: boolean } = {}): Message[] {
-    const rows = withMarkerKinds(withTurnIds(messages), session)
+  /**
+   * Python `_handle_session_get` without a sidecar: the state.db transcript as a (read-only or claimable) foreign stub.
+   * `baseIndex` is the transcript index of `messages[0]` when they are whole turns from the transcript's tail (TAL-1723).
+   */
+  foreignMessages(messages: Message[], session: object, showReasoning = true, opts: { running?: boolean; baseIndex?: number } = {}): Message[] {
+    const baseIndex = opts.baseIndex ?? 0
+    const rows = withMarkerKinds(withTurnIds(messages, baseIndex), session)
     // TAL-1760: a run another process is still writing: its last turn is the open one, with no answer split off yet.
     const activeTurnId = opts.running ? str(rows.at(-1)?._turn_id) || null : null
-    return hydrateAnchorActivityScenes(withToolCallOutcomes(rows, [], activeTurnId), {}, { showReasoning, expandWorklog: this.deps.worklogExpandedDefault?.() === true, activeTurnId, runningScene: activeTurnId !== null }) as Message[]
+    return hydrateAnchorActivityScenes(withToolCallOutcomes(rows, [], activeTurnId, baseIndex), {}, { showReasoning, expandWorklog: this.deps.worklogExpandedDefault?.() === true, activeTurnId, runningScene: activeTurnId !== null, baseIndex }) as Message[]
   }
 
   /**
