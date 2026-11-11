@@ -459,7 +459,10 @@ describe('SystemSection update paths', () => {
     const web = await screen.findByRole('region', { name: 'Talaria Web' })
     expect(await within(web).findByText('Talaria Web is updated manually')).toBeInTheDocument()
     expect(within(web).getByText('This npm installation is ahead of the selected Stable release.')).toBeInTheDocument()
-    expect(within(path('Hermes Agent')).getByText('Hermes Agent is up to date')).toBeInTheDocument()
+    // TAL-2182: an up-to-date path is one node holding Installed, the version and its status.
+    const agent = path('Hermes Agent')
+    expect(within(agent).getAllByRole('listitem')).toHaveLength(1)
+    expect(within(within(agent).getByRole('listitem')).getByText('Hermes Agent is up to date')).toBeInTheDocument()
   })
 
   it('reports disabled checks for both components', async () => {
