@@ -596,8 +596,9 @@ export class RelayPublisher {
 
   private async publishProfileSnapshot(profile: string, profileId: string, change?: number): Promise<void> {
     const states = (await this.buildStates(profile, change))
-    // Relay leases by the session's activity, which a finished turn keeps running while its background work runs.
-    if (states.some((state) => !(TERMINAL_PHASES as readonly string[]).includes(state.activityPhase ?? state.phase))) this.liveProfiles.add(profile)
+    // Relay leases by the session's activity, which a finished turn keeps running while its background work runs; a
+    // session left out because it could not be read may be live too, so the next tick reads it again.
+    if (this.activity.incomplete(profile) || states.some((state) => !(TERMINAL_PHASES as readonly string[]).includes(state.activityPhase ?? state.phase))) this.liveProfiles.add(profile)
     else this.liveProfiles.delete(profile)
     const config = this.config.profiles[profile]
     if (config?.profile_id !== profileId || !await this.publishes(profile, config)) return

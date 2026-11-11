@@ -82,6 +82,8 @@ export class ActivityStates {
   private readonly notices = new Map<string, { sent: { at: number; level: AgentNotifyLevel }[]; shown: { notice: AgentNotice; at: number }[] }>()
   /** TAL-1722: per profile, the rows built for the latest hub change, shared by every channel passing for it. */
   private readonly built = new Map<string, { rows: Promise<ActivityState[]>; retries: Set<() => void>; change: number }>()
+  /** TAL-1722: profiles whose latest rows left out a session whose metadata could not be read. */
+  private readonly incompleteProfiles = new Set<string>()
 
   constructor(private readonly deps: ActivityDeps) {}
 
@@ -171,7 +173,11 @@ export class ActivityStates {
     return entry.rows
   }
 
+  /** Whether the profile's latest rows left out a session that could not be read, which may still be live. */
+  incomplete(profile: string): boolean { return this.incompleteProfiles.has(profile) }
+
   private async build(profile: string, retry: () => void): Promise<ActivityState[]> {
+    let incomplete = false
     const cutoff = this.deps.now() - TERMINAL_RETENTION_S
     const backgroundIds = new Set(await this.deps.background?.sessionIds(cutoff) ?? [])
     for (const [sid, run] of this.terminal) if (run.terminal_at < cutoff && !backgroundIds.has(sid)) this.terminal.delete(sid)
@@ -199,7 +205,7 @@ export class ActivityStates {
     for (const [sid, run] of bySession) {
       if (run.activity_parent_session_id) continue
       let session
-      try { session = (await this.deps.store.get(sid, { metadataOnly: true })) } catch { continue }
+      try { session = (await this.deps.store.get(sid, { metadataOnly: true })) } catch { incomplete = true; continue }
       if (!this.deps.profilesMatch(session.profile, profile)) continue
       let phase = run.relay_phase ?? 'running'
       const approval = this.deps.pending.approvalPending(sid).pending
@@ -210,7 +216,7 @@ export class ActivityStates {
       if ([...this.deps.registry.activeRuns.values()].some((current) => current.session_id === sid && current.stream_id !== run.stream_id && current.started_at >= run.started_at)) { retry(); continue }
       try {
         if (!this.deps.profilesMatch((await this.deps.store.get(sid, { metadataOnly: true })).profile, profile)) continue
-      } catch { continue }
+      } catch { incomplete = true; continue }
       if (run.phase === 'settled' && !run.stream_id) phase = snapshot?.activity_phase ?? 'stale'
       // A finished run keeps the instant it ended, so a viewer who saw that turn covers it whenever the snapshot is built.
       const updatedAt = Math.floor((run.terminal_at ?? this.deps.now()) * 1000)
@@ -219,6 +225,8 @@ export class ActivityStates {
       const notices = this.notices.get(sid)?.shown.map((shown) => shown.notice) ?? []
       states.push({ sessionId: sid, streamId: run.stream_id || null, ...(snapshot ? { activityPhase: snapshot.activity_phase } : {}), title: (session.title || 'Untitled').slice(0, 120), phase, startedAt: Math.floor((run.started_at || this.deps.now()) * 1000), updatedAt, deepLink: `/sessions/${encodeURIComponent(sid)}`, alertEligible, ...(approvalId ? { approvalHeadId: approvalHeadId(sid, approvalId) } : {}), ...(review ? { decisionReviewId: review.review_id, decisionReviewTitle: review.title } : {}), ...(notices.length ? { agentNotices: notices } : {}), ownerPersonId: session.owner_person_id })
     }
+    if (incomplete) this.incompleteProfiles.add(profile)
+    else this.incompleteProfiles.delete(profile)
     return states
   }
 }

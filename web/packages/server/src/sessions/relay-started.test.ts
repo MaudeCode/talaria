@@ -209,6 +209,23 @@ describe('idle passes (TAL-1722)', () => {
     p.stop()
   })
 
+  it('keeps refreshing a profile whose live session could not be read, and publishes it once storage recovers', async () => {
+    const live = { session_id: 'live', profile: null, title: 'Live', owner_person_id: null }
+    let readable = false
+    const registry = new StreamRegistry()
+    registry.activeRuns.set('stream-live', { stream_id: 'stream-live', session_id: 'live', started_at: clock, phase: 'running', workspace: home, model: null, provider: null, ephemeral: false })
+    const p = await publisher({ registry, agentSessionsStamp: () => 'state-db-1', store: { get: () => (readable ? Promise.resolve(live) : Promise.reject(new Error('storage busy'))), readIndexEntries: () => index } as unknown as RelayPublisherDeps['store'] })
+    await p.start()
+    await vi.waitFor(() => { expect(reads.agent).toBeGreaterThan(0) })
+    await asleep()
+    readable = true
+    const snapshots = (): Sent[] => sent.filter((s) => s.url.endsWith('/prf_default/snapshot'))
+    const before = snapshots().length
+    await tick()
+    expect(snapshots().slice(before).map((s) => (s.body.states as Row[]).map((state) => state.phase))).toEqual([['running']])
+    p.stop()
+  })
+
   it('rereads the Agent sessions on the next idle tick after a failed read', async () => {
     let fail = true
     const p = await publisher({ agentSessionsStamp: () => 'state-db-1', agentSessions: (profile: string) => { reads.agent += 1; if (fail) return Promise.reject(new Error('listing worker busy')); return Promise.resolve(agent[profile] ?? []) } })
