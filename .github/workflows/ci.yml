@@ -79,11 +79,15 @@ jobs:
     name: App tooling
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.app_tooling != 'false') }}
-    # macOS for shlock and lockf, not Xcode: these tests fake xcrun and xcodebuild.
+    # macOS for shlock and lockf, not Xcode: the simulator tooling tests fake xcrun and xcodebuild.
     runs-on: macos-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+      - name: Check string catalogs and test their checker
+        run: |
+          ci/check-string-catalogs
+          python3 ci/check_string_catalogs_test.py
       - name: Test local XCTest admission and synthetic simulator leases
         run: |
           scripts/test-test-ios 20

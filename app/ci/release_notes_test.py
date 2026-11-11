@@ -542,6 +542,28 @@ class ReleaseNotesTests(unittest.TestCase):
         self.commit("TAL-3: change a build setting")
         self.cli("validate", "--base", base, error="require user-facing entries")
 
+    def test_catalog_formatting_can_skip_but_translation_changes_cannot(self):
+        path = "app/Talaria/Resources/Localizable.xcstrings"
+        catalog = {"sourceLanguage": "en", "strings": {
+            "Zebra": {}, "Alpha": {"localizations": {"fr": {"stringUnit": {
+                "state": "translated", "value": "Éléphant",
+            }}}},
+        }, "version": "1.0"}
+        self.write(path, json.dumps(catalog))
+        self.commit("fixture catalog")
+        base = self.git("rev-parse", "HEAD")
+        catalog["strings"] = {key: catalog["strings"][key] for key in ["Alpha", "Zebra"]}
+        self.write(path, json.dumps(catalog, indent=2, ensure_ascii=False))
+        self.write("changelog.d/TAL-2.json", '{"skip":"Catalog formatting only"}')
+        self.commit("TAL-2: sort catalog")
+        self.cli("validate", "--base", base)
+        self.cli("validate", "--base", base, "--target", "HEAD")
+        catalog["strings"]["Alpha"]["localizations"]["fr"]["stringUnit"]["value"] = "Autre"
+        self.write(path, json.dumps(catalog))
+        self.cli("validate", "--base", base, error="require user-facing entries")
+        self.commit("TAL-2: change translation")
+        self.cli("validate", "--base", base, "--target", "HEAD", error="require user-facing entries")
+
     def test_app_changes_cannot_use_only_skip_or_another_tickets_metadata(self):
         self.write("Talaria/Feature.swift", "// fixture\n")
         self.write("changelog.d/TAL-2.json", '{"skip":"Docs only"}')

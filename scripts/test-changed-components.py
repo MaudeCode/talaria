@@ -81,11 +81,15 @@ class RoutingTests(unittest.TestCase):
             (["web/.env.example"], {"web_server"}),
             (["app/Talaria/Features/Chat/ChatView.swift"], {"app"}),
             (["app/Talaria/Resources/Guide.md"], {"app"}),
+            (["app/Talaria/Resources/Localizable.xcstrings"], {"app", "app_tooling"}),
+            (["app/Talaria/Resources/Nested/InfoPlist.xcstrings"], {"app", "app_tooling"}),
             (["app/Talaria/Networking/APIClient.swift"], {"app", "contracts"}),
             # The Web server's provider icon test reads the App's icon registry and SVGs (TAL-1858).
             (["app/Talaria/Models/ProviderIconRegistry.swift"], {"app", "contracts", "web_server"}),
             (["app/Talaria/Resources/ProviderIcons.xcassets/ProviderIconOpenAI.imageset/icon.svg"], {"app", "web_server"}),
-            (["app/ci/release_notes.py"], {"tooling"}),
+            (["app/ci/release_notes.py"], {"app_tooling", "tooling"}),
+            (["app/ci/check-string-catalogs"], {"app_tooling", "tooling"}),
+            (["app/ci/check_string_catalogs_test.py"], {"app_tooling", "tooling"}),
             (["app/scripts/test-ios"], {"app_tooling", "tooling"}),
             (["app/scripts/prepare-ui-simulator", "app/scripts/ready-simulator-documents",
               "app/scripts/ready-simulator-notifications", "app/scripts/seed-simulator-photo"], {"app", "tooling"}),
@@ -130,7 +134,7 @@ class RoutingTests(unittest.TestCase):
               ".xcodebuildmcp/config.yaml", ".gitleaksignore"], {"tooling"}),
             ([".github/workflows/web-verify.yml"], {"web_server", "web_frontend", "web_sidecar", "tooling"}),
             ([".github/workflows/relay-verify.yml"], {"relay", "tooling"}),
-            ([".github/workflows/ci.yml"], {"app", "web_sidecar", "contracts", "tooling"}),
+            ([".github/workflows/ci.yml"], {"app", "app_tooling", "web_sidecar", "contracts", "tooling"}),
             ([".github/workflows/app-tests.yml"], {"app", "contracts", "tooling"}),
             ([".github/actions/setup-xcode/action.yml"], {"app", "tooling"}),
             ([".github/actions/app-package-tests/action.yml"], {"app", "contracts", "tooling"}),
@@ -247,6 +251,29 @@ class RoutingTests(unittest.TestCase):
             git("rm", ".github/workflows/retired.yml")
             without_workflow = commit("delete the workflow")
             self.assertEqual(classify(with_workflow, without_workflow), {"tooling"})
+
+            workflow = root / ".github/workflows/ci.yml"
+            workflow.parent.mkdir(parents=True, exist_ok=True)
+            original_workflow = ("name: CI\non: push\njobs:\n  changes:\n    runs-on: ubuntu-latest\n"
+                                 "  app-tooling:\n    runs-on: macos-latest\n    steps:\n      - run: old-check\n"
+                                 "  app:\n    uses: ./.github/workflows/app-tests.yml\n")
+            workflow.write_text(original_workflow)
+            workflow_base = commit("fixture CI workflow")
+            workflow.write_text(original_workflow.replace("old-check", "catalog-check"))
+            tooling_head = commit("change only App tooling job")
+            self.assertEqual(classify(workflow_base, tooling_head), {"app_tooling", "tooling"})
+            workflow.write_text(workflow.read_text().replace("on: push", "on: pull_request"))
+            trigger_head = commit("change workflow trigger too")
+            self.assertEqual(classify(workflow_base, trigger_head), routing.WORKFLOWS["ci.yml"])
+            workflow.write_text(original_workflow.replace("app-tooling:", "renamed-tooling:"))
+            renamed_head = commit("rename App tooling job")
+            self.assertEqual(classify(workflow_base, renamed_head), routing.WORKFLOWS["ci.yml"])
+            last_job = original_workflow[:original_workflow.index("  app:\n")]
+            workflow.write_text(last_job + "permissions:\n  contents: read\n")
+            permissions_base = commit("App tooling is last before a global workflow key")
+            workflow.write_text(last_job + "permissions:\n  contents: write\n")
+            permissions_head = commit("change global workflow permissions")
+            self.assertEqual(classify(permissions_base, permissions_head), routing.WORKFLOWS["ci.yml"])
 
             (root / "scripts").mkdir()
             (root / "scripts/new-unknown-tool.py").write_text("unknown shared tooling\n")

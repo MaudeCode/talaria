@@ -326,7 +326,15 @@ def debug_only(base, target, path):
     return all(check(*side) for side in changed_lines(base, target, path))
 
 
-def test_support_only(base, target, path):
+def non_shipping_change(base, target, path):
+    if path.startswith("Talaria/Resources/") and path.endswith(".xcstrings"):
+        prefix = "app/" if git("ls-tree", "--full-tree", "--name-only", base, "app/" + path) else ""
+        # Catalog ordering and formatting do not change any shipped string or translation.
+        try:
+            return json.loads(source_at(base, prefix + path), object_pairs_hook=unique_keys) == json.loads(
+                source_at(target, prefix + path), object_pairs_hook=unique_keys)
+        except ValueError:
+            return False
     files = {path.removeprefix("app/") for path in git("ls-tree", "-r", "--name-only", "--full-tree", base).splitlines()}
     files |= {path.removeprefix("app/") for path in (
         git("ls-tree", "-r", "--name-only", "--full-tree", target) if target
@@ -379,7 +387,7 @@ def validate(base=None, target=None):
         has_app_entries = any("app" in entry.get("components", ["app"])
                               for data in selected.values() for entry in data.get("entries", []))
         app_changes = [path for path in changed if not repository_only(path)
-                       and not test_support_only(base, target, path)]
+                       and not non_shipping_change(base, target, path)]
         if app_changes and not has_app_entries:
             raise ValueError("app or unclassified changes require user-facing entries; skip is only for repository/docs/test work")
         # Subjects identify tickets only; release prose always comes from JSON.

@@ -42,6 +42,7 @@ Talaria is a native SwiftUI iPhone client for a self-hosted Talaria Web server
   consolidate behavior with multiple callers, delete obsolete code, keep files
   and types cohesive, avoid single-use abstractions, and create a Kaneo follow-up
   when necessary cleanup is too broad for the selected task.
+- Put new catalog keys at their sorted position; from the repository root run `app/ci/check-string-catalogs --fix` after edits or resolving a catalog conflict.
 - Keep the Settings root as a category directory. Put new controls in their
   owning category. A new root category needs a distinct user-facing concern;
   a direct root action needs explicit justification as unusually important.

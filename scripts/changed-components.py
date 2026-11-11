@@ -37,7 +37,7 @@ JOBS = {"app": {"app", "contracts"}, "app-tooling": {"app_tooling"}, "web": {"we
         "web-docker": {"docker"}, "relay": {"relay"}, "contracts": {"contracts"}}
 WORKFLOWS = {
     # CI owns the App jobs and the Web contract probe's fixture handoff.
-    "ci.yml": {"app", "web_sidecar", "contracts", "tooling"},
+    "ci.yml": {"app", "app_tooling", "web_sidecar", "contracts", "tooling"},
     "app-tests.yml": {"app", "contracts", "tooling"},
     "web-verify.yml": {"web_server", "web_frontend", "web_sidecar", "tooling"},
     "web-docker-smoke.yml": {"docker", "tooling"},
@@ -96,6 +96,8 @@ def path_suites(path):
     # Runtime resources and test fixtures can be Markdown too; never classify
     # them as documentation just because of their extension.
     if (component == "app" and local.startswith(("Talaria", "Packages/", "Config/"))):
+        if local.startswith("Talaria/Resources/") and local.endswith(".xcstrings"):
+            return {"app", "app_tooling"}  # Compile the catalogs and enforce their canonical ordering.
         # The Web server's provider icon test holds its table and web/static/brand/providers to the App's (TAL-1858).
         icons = {"web_server"} if (local == "Talaria/Models/ProviderIconRegistry.swift"
                                      or local.startswith("Talaria/Resources/ProviderIcons.xcassets/")) else set()
@@ -149,6 +151,8 @@ def path_suites(path):
     if component == "scripts":
         return SCRIPTS.get(local, SUITES)
     if component == "app":
+        if local in ("ci/check-string-catalogs", "ci/check_string_catalogs_test.py", "ci/release_notes.py"):
+            return {"app_tooling", "tooling"}
         if local in ("ci/build-for-testing", "ci/check-swift-warnings", "ci/wait-for-job", "ci/gh-api-poll", "ci/package-coverage"):
             return {"app", "tooling"}  # They build, select and sequence the App CI jobs.
         if local.startswith("ci/"):
@@ -202,12 +206,13 @@ def path_suites(path):
     return SUITES
 
 
-def affected(paths, deleted_workflows=frozenset()):
+def affected(paths, deleted_workflows=frozenset(), overrides=None):
     """A deleted workflow can no longer run, so it needs only the tooling checks rather than an unknown path's full run."""
     paths = list(paths)
     if not paths:
         return set(SUITES)
-    return set().union(*({"tooling"} if path in deleted_workflows else path_suites(path) for path in paths))
+    overrides = overrides or {}
+    return set().union(*({"tooling"} if path in deleted_workflows else overrides.get(path, path_suites(path)) for path in paths))
 
 
 # The Web artifact stamps What's New from release fragments through these (TAL-1616), yet none selects a web_* suite, so
@@ -269,6 +274,21 @@ def git_deleted_workflows(base, head):
     return {os.fsdecode(path) for path in data.split(b"\0") if path}
 
 
+def workflow_overrides(base, head, paths):
+    path = ".github/workflows/ci.yml"
+    if path not in paths:
+        return {}
+    try:
+        before, after = (git("show", f"{ref}:{path}").decode() for ref in (base, head))
+    except subprocess.CalledProcessError:
+        return {}
+    # A change confined to this job cannot affect the App build or Web fixture handoff.
+    job = re.compile(r"^  app-tooling:\n(?:[ \t]*\n| {4}[^\n]*(?:\n|\Z))*", re.MULTILINE)
+    if job.search(before) and job.search(after) and job.sub("", before) == job.sub("", after):
+        return {path: {"app_tooling", "tooling"}}
+    return {}
+
+
 def check_diff(base, head, merge_base=False):
     if base:
         base, head = diff_refs(base, head, merge_base)
@@ -323,7 +343,7 @@ def main():
         if args.base:
             base, head = diff_refs(args.base, args.head, args.merge_base)
             paths = git_diff(base, head)
-            selected = affected(paths, git_deleted_workflows(base, head))
+            selected = affected(paths, git_deleted_workflows(base, head), workflow_overrides(base, head, paths))
     except (OSError, ValueError, subprocess.CalledProcessError):
         print("Could not classify the complete diff; running all suites.", file=sys.stderr)
         selected = SUITES
