@@ -350,13 +350,22 @@ export class SessionStore {
     if (markerCurrent) session.state_db_seen_stamp = session.updated_at
     if (cutCurrent) session.truncation_cut_stamp = session.updated_at
     session.messages = withBackgroundDisplayKinds(session.messages, session)
+    if (!session.messages.length && (session.active_stream_id || session.pending_user_message)) {
+      const stored = await this.backend.readDocument(sid, { metadataOnly: true })
+      if ((stored?.messageCount ?? 0) > 0) {
+        this.deps.log(`[webui] WARNING: refusing to overwrite session ${sid} messages with empty active/pending snapshot`)
+        return
+      }
+    }
     const liveRows = session.messages, liveCalls = session.tool_calls, callCount = liveCalls.length
     const prefix = session.prefixIndex
     let appendOnly = Boolean(prefix && session.messages.length >= prefix.length && prefix.generation === markedStateDbGeneration(session) && prefix.matchesToolCalls(session.tool_calls))
-    const doc = structuredClone(session.toDocument())
-    const rows = doc.messages as Message[]
+    // TAL-1739: no clone. From here to `backend.write` nothing awaits, and every backend serializes `doc` and the rows
+    // before its first await, so later in-place edits cannot reach this write. The row list itself is copied.
+    const doc = session.toDocument()
+    const rows = [...doc.messages as Message[]]
     delete doc.messages
-    // One serialization per row serves both the prefix check and the diff; the backend serializes the document once.
+    // One serialization per row serves the prefix check, the diff and the JSON backend's document.
     const snapshot = rows.map((row) => JSON.stringify(row))
     if (appendOnly) for (let i = 0; i < prefix!.length; i += 1) if (!prefix!.matchesRow(i, snapshot[i]!)) { appendOnly = false; break }
     const indexEntry = session.compact()
@@ -375,14 +384,7 @@ export class SessionStore {
       }
     }
     const expected = session.sidecarLoadedSignature
-    if (!rows.length && (session.active_stream_id || session.pending_user_message)) {
-      const stored = await this.backend.readDocument(sid, { metadataOnly: true })
-      if ((stored?.messageCount ?? 0) > 0) {
-        this.deps.log(`[webui] WARNING: refusing to overwrite session ${sid} messages with empty active/pending snapshot`)
-        return
-      }
-    }
-    try { session.sidecarLoadedSignature = await this.backend.write(sid, { doc, messages, all: rows }, expected) }
+    try { session.sidecarLoadedSignature = await this.backend.write(sid, { doc, messages, all: rows, serializedRows: snapshot }, expected) }
     catch (error) {
       if (error instanceof RevisionConflict) {
         this.sessions.delete(sid)

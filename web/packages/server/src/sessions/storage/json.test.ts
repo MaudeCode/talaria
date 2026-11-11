@@ -359,3 +359,27 @@ it.each([
 
   expect({ fresh: fs.existsSync(fresh), stale: fs.existsSync(stale) }).toEqual({ fresh: true, stale: false })
 })
+
+it('reads full documents and message ranges through fs/promises and retries a read the file changed under (TAL-1739)', async () => {
+  await withStorage(async (storage, directory) => {
+    const path = join(directory, 's.json')
+    await storage.sessions.write('s', { doc: { session_id: 's', title: 'Test', message_count: 0, anchor_scene_index: {}, tool_calls: [] }, messages: { kind: 'replace', rows: rowsOf(3) } }, null)
+    const syncReads = vi.mocked(fs.readFileSync)
+    const asyncReads = vi.mocked(fsp.readFile)
+    syncReads.mockClear()
+    asyncReads.mockClear()
+    expect(await storage.sessions.readDocument('s')).toEqual({ doc: { session_id: 's', title: 'Test', message_count: 3, anchor_scene_index: {}, tool_calls: [] }, messages: rowsOf(3), messageCount: 3, revision: statSignature(path), metadataOnly: false })
+    expect(await storage.sessions.readMessages('s', { start: 1, end: 2 })).toEqual(rowsOf(3).slice(1, 2))
+    expect(syncReads.mock.calls.filter(([file]) => file === path)).toHaveLength(0)
+    expect(asyncReads.mock.calls.filter(([file]) => file === path)).toHaveLength(2)
+    // An atomic replacement lands after the first read: the signatures around it differ, so the read is retried.
+    const replacement = JSON.stringify({ session_id: 's', title: 'Replaced', messages: rowsOf(1) })
+    asyncReads.mockImplementationOnce(async (...args: Parameters<typeof fsp.readFile>) => {
+      const text = await fsp.readFile(...args)
+      fs.writeFileSync(`${path}.next`, replacement)
+      fs.renameSync(`${path}.next`, path)
+      return text
+    })
+    expect(await storage.sessions.readDocument('s')).toEqual({ doc: { session_id: 's', title: 'Replaced' }, messages: rowsOf(1), messageCount: 1, revision: statSignature(path), metadataOnly: false })
+  })
+})

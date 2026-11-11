@@ -39,6 +39,19 @@ export function runSessionBackendConformance(name: string, makeStorage: () => Se
       expect(await sessions.tombstones.has('session')).toBe(false)
     })
 
+    it('writes its input as it was when the write was called, whatever the caller edits while it commits (TAL-1739)', async () => {
+      const sessions = fixture.storage.sessions
+      const rows: Message[] = [{ role: 'user', content: 'before' }]
+      const calls = [{ name: 'before' }]
+      const writing = sessions.write('session', { doc: { session_id: 'session', title: 'Test', updated_at: 100, tool_calls: calls }, messages: { kind: 'replace', rows }, all: rows }, null)
+      rows[0]!.content = 'after'
+      rows.push({ role: 'user', content: 'late' })
+      calls[0]!.name = 'after'
+      await writing
+      expect(await sessions.readDocument('session')).toMatchObject({ doc: { tool_calls: [{ name: 'before' }] }, messages: [{ role: 'user', content: 'before' }], messageCount: 1 })
+      expect((await sessions.readDocument('session', { metadataOnly: true }))?.messageCount).toBe(1)
+    })
+
     it('serves a public share only while its owner exists, without loading or rewriting the session', async () => {
       const { sessions, documents } = fixture.storage
       const shares = new ShareStore(documents, () => 100, sessions)
