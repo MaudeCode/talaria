@@ -190,4 +190,35 @@ describe('idle passes (TAL-1722)', () => {
     expect(snapshots().slice(before.snapshots).map((s) => (s.body.states as Row[]).map((state) => state.phase))).toEqual([['running'], ['running'], ['running']])
     p.stop()
   })
+
+  it('keeps refreshing the lease of a finished turn whose background work still runs', async () => {
+    const live = { session_id: 'live', profile: null, title: 'Live', owner_person_id: null }
+    const registry = new StreamRegistry()
+    registry.activeRuns.set('stream-live', { stream_id: 'stream-live', session_id: 'live', started_at: clock, phase: 'running', workspace: home, model: null, provider: null, ephemeral: false })
+    const background = { sessionIds: () => Promise.resolve([]), snapshot: () => Promise.resolve({ activity_phase: 'running' }) }
+    const p = await publisher({ registry, background, agentSessionsStamp: () => 'state-db-1', store: { get: () => Promise.resolve(live), readIndexEntries: () => index } } as unknown as Partial<RelayPublisherDeps>)
+    p.noteTerminal('stream-live', 'completed')
+    registry.activeRuns.delete('stream-live')
+    await p.start()
+    await vi.waitFor(() => { expect(reads.agent).toBeGreaterThan(0) })
+    await asleep()
+    const snapshots = (): Sent[] => sent.filter((s) => s.url.endsWith('/prf_default/snapshot'))
+    const before = snapshots().length
+    await tick()
+    expect(snapshots().slice(before).map((s) => (s.body.states as Row[]).map((state) => [state.phase, state.activityPhase]))).toEqual([[['completed', 'running']]])
+    p.stop()
+  })
+
+  it('rereads the Agent sessions on the next idle tick after a failed read', async () => {
+    let fail = true
+    const p = await publisher({ agentSessionsStamp: () => 'state-db-1', agentSessions: (profile: string) => { reads.agent += 1; if (fail) return Promise.reject(new Error('listing worker busy')); return Promise.resolve(agent[profile] ?? []) } })
+    await p.start()
+    await vi.waitFor(() => { expect(reads.agent).toBeGreaterThan(0) })
+    await asleep()
+    fail = false
+    agent = { default: [{ id: 'cli-new', started_at: clock + 1 }] }
+    await tick()
+    expect(started().map((s) => s.body.sessionId)).toEqual(['cli-new'])
+    p.stop()
+  })
 })

@@ -389,4 +389,16 @@ describe('recent background sessions (TAL-1722)', () => {
     // A restarted server finds the live session again from storage.
     expect(await new BackgroundTaskStore(counted, () => 200).sessionIds(101)).toEqual(['live'])
   })
+
+  it('retry a receipt read that failed while first listing storage', async () => {
+    const dir = tempDir()
+    await new BackgroundTaskStore(testSessionDocuments(dir), () => 100).update('live', [{ task_id: 'bg', kind: 'background_command', status: 'running', title: 'still going' }])
+    const reads = controlledReads(testSessionDocuments(dir))
+    const store = new BackgroundTaskStore(reads.backend, () => 200)
+    // The listing's read and the same call's retry both fail; a later call reads it again.
+    reads.failNext()
+    reads.failNext()
+    expect(await store.sessionIds(0)).toEqual([])
+    expect(await store.sessionIds(0)).toEqual(['live'])
+  })
 })

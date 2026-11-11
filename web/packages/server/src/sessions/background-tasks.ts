@@ -198,8 +198,8 @@ export class BackgroundTaskStore {
   /** TAL-1722: when each session last had background work, kept by every write once storage was read through. */
   private readonly active = new Map<string, number>()
   private loaded: Promise<void> | null = null
-  /** Sessions written while the first listing runs, whose stored receipts that listing may predate. */
-  private writtenDuringLoad: Set<string> | null = new Set()
+  /** Sessions whose stored receipts are being read or failed to read, until a read or a write settles them. */
+  private readonly unread = new Set<string>()
   private readonly generations = new Map<string, number>()
   /** TAL-1299: bumped by every cache write or eviction, so a read that started earlier never caches over it. */
   private readonly epochs = new Map<string, number>()
@@ -239,21 +239,23 @@ export class BackgroundTaskStore {
   }
 
   private track(sid: string, receipts: Receipt[] | null): void {
-    this.writtenDuringLoad?.add(sid)
+    this.unread.delete(sid)
     const at = receipts && lastActive(receipts)
     if (at === null) this.active.delete(sid)
     else this.active.set(sid, at)
   }
 
+  /** Read one session's stored receipts unless a write settles it first; a failed read stays unread and is retried. */
+  private async readStored(sid: string): Promise<void> {
+    this.unread.add(sid)
+    let receipts: Receipt[]
+    try { receipts = this.parse((await this.documents.get(this.namespace, sid))?.value) } catch { return }
+    if (this.unread.has(sid)) this.track(sid, receipts)
+  }
+
   /** Read every session's receipts once, so later listings come from the writes this store makes. */
   private async load(): Promise<void> {
-    for (const { key: sid } of await this.documents.list(this.namespace)) {
-      if (!isSafeSessionId(sid) || this.writtenDuringLoad!.has(sid)) continue
-      let receipts: Receipt[]
-      try { receipts = this.parse((await this.documents.get(this.namespace, sid))?.value) } catch { continue }
-      if (!this.writtenDuringLoad!.has(sid)) this.track(sid, receipts)
-    }
-    this.writtenDuringLoad = null
+    for (const { key: sid } of await this.documents.list(this.namespace)) if (isSafeSessionId(sid)) await this.readStored(sid)
   }
 
   async get(sid: string, taskId: string): Promise<Receipt | undefined> { return (await this.list(sid)).find((receipt) => receipt.task_id === taskId) }
@@ -305,6 +307,7 @@ export class BackgroundTaskStore {
   /** Sessions with live background work or work that finished at or after `since`; storage is listed only the first time. */
   async sessionIds(since: number): Promise<string[]> {
     try { await (this.loaded ??= this.load()) } catch (error) { this.loaded = null; throw error }
+    for (const sid of [...this.unread]) await this.readStored(sid)
     const ids: string[] = []
     // Work cannot become recent again without a write, which tracks it anew.
     for (const [sid, at] of this.active) if (at >= since) ids.push(sid); else this.active.delete(sid)
@@ -318,6 +321,8 @@ export class BackgroundTaskStore {
     this.evict(sid)
     this.track(sid, null)
     try { await this.documents.delete(this.namespace, sid) } catch { /* best effort */ }
+    // A read that started before the removal may have tracked the old receipts again.
+    this.track(sid, null)
   }
 
   async forget(sid: string, taskId: string): Promise<void> {

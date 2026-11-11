@@ -533,14 +533,13 @@ export class RelayPublisher {
   private async observeStarted(): Promise<StartedLedger> {
     // Agent rows come from the listing worker first, so the ledger's load-to-save stays synchronous.
     const agentRows = new Map<string, Record<string, unknown>[]>()
-    for (const profile of Object.keys(this.config.profiles)) {
-      const stamp = this.deps.agentSessionsStamp?.(profile) ?? null
-      if (stamp === null) this.agentStamps.delete(profile)
-      else this.agentStamps.set(profile, stamp)
-    }
     for (const [profile, cfg] of Object.entries(this.config.profiles)) {
-      if (!(await this.publishes(profile, cfg))) continue
-      try { agentRows.set(profile, await this.publishedAgentRows(profile, await this.deps.agentSessions(profile))) } catch { agentRows.set(profile, []) }
+      // Taken before the read, so a write during it moves the stamp again; a failed read keeps none, so the next tick retries.
+      const stamp = this.deps.agentSessionsStamp?.(profile) ?? null
+      this.agentStamps.delete(profile)
+      const remember = (): void => { if (stamp !== null) this.agentStamps.set(profile, stamp) }
+      if (!(await this.publishes(profile, cfg))) { remember(); continue }
+      try { agentRows.set(profile, await this.publishedAgentRows(profile, await this.deps.agentSessions(profile))); remember() } catch { agentRows.set(profile, []) }
     }
     let index: Record<string, unknown>[] = []
     try { index = await this.deps.store.readIndexEntries() } catch { /* no resident index */ }
@@ -597,7 +596,8 @@ export class RelayPublisher {
 
   private async publishProfileSnapshot(profile: string, profileId: string, change?: number): Promise<void> {
     const states = (await this.buildStates(profile, change))
-    if (states.some((state) => !(TERMINAL_PHASES as readonly string[]).includes(state.phase))) this.liveProfiles.add(profile)
+    // Relay leases by the session's activity, which a finished turn keeps running while its background work runs.
+    if (states.some((state) => !(TERMINAL_PHASES as readonly string[]).includes(state.activityPhase ?? state.phase))) this.liveProfiles.add(profile)
     else this.liveProfiles.delete(profile)
     const config = this.config.profiles[profile]
     if (config?.profile_id !== profileId || !await this.publishes(profile, config)) return
