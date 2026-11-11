@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 import XCTest
 @testable import Talaria
-import TalariaKit
+@testable import TalariaKit
 
 /// The hosted-test harness itself (TAL-856): a hosted SwiftUI screen exposes its controls through the accessibility
 /// tree, activating one runs its action, and the in-process fixture answers the App's requests.
@@ -257,6 +257,55 @@ final class HostedViewTests: XCTestCase {
 /// Settings placement is a user-facing navigation contract, shared with the Web taxonomy.
 @MainActor
 final class SettingsPlacementHostedTests: XCTestCase {
+    func testProfileSwitchConvergesOnTheServerSelectionAfterForegroundRefresh() async throws {
+        let previousHook = UITestURLSessionHook.configure
+        defer { UITestURLSessionHook.configure = previousHook }
+        let active = LockedTestValue("alpha")
+        let reads = LockedTestValue(0)
+        let saves = LockedTestValue(0)
+        let scope = MockURLProtocol.register { request in
+            if request.url?.path == "/api/profile/switch" {
+                active.value = "beta"
+            } else if request.url?.path == "/api/profiles" {
+                reads.value += 1
+            }
+            let data = try JSONSerialization.data(withJSONObject: [
+                "active": active.value,
+                "profiles": [["name": "alpha"], ["name": "beta"]],
+                "single_profile_mode": false
+            ])
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil,
+                                    headerFields: ["Content-Type": "application/json"])!, data)
+        }
+        UITestURLSessionHook.configure = { configuration in
+            configuration.protocolClasses = [MockURLProtocol.self]
+            configuration.httpAdditionalHeaders = [MockURLProtocol.scopeHeader: scope]
+        }
+        let server = URL(string: "https://profile-settings-\(UUID().uuidString.lowercased()).example.test")!
+        defer {
+            ActiveServerProfile.record(nil, for: server)
+            ServerCookieStore.shared.clear(for: server)
+        }
+        let window = try hostWindow(NavigationStack {
+            DefaultProfilePickerView(server: server, currentDefaultProfileName: nil) { _ in saves.value += 1 }
+        }.environment(\.scenePhase, .active))
+        let beta = try await requireElement(in: window, label: "beta")
+        XCTAssertTrue(HostedAccessibility.activate(beta))
+        let saved = await awaitCondition { saves.value == 1 }
+        XCTAssertTrue(saved, "The profile switch must complete before an external change")
+        // A second client switches back while this page remains mounted.
+        active.value = "alpha"
+        let before = reads.value
+        NotificationCenter.default.post(name: .talariaReturnedToForeground, object: nil)
+        let refreshed = await awaitCondition {
+            reads.value > before && HostedAccessibility.element(in: window, label: "alpha")?.accessibilityValue == "Selected"
+        }
+        XCTAssertTrue(refreshed, "Foreground refresh must adopt the server's current profile")
+        XCTAssertNotEqual(HostedAccessibility.element(in: window, label: "beta")?.accessibilityValue, "Selected",
+                          "The completed optimistic selection must not survive a server refresh")
+        attachHostedScreenshot(window, name: "profiles-refreshed-server-selection")
+    }
+
     func testCategoryPagesKeepTheirRowsAndIdentifiersAtOneHome() async throws {
         let fixture = try FixtureApp(for: self)
         let pages: [(SettingsCategory, [String], [String])] = [
