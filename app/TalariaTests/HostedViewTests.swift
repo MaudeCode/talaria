@@ -467,6 +467,108 @@ final class SettingsPlacementHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "profiles-refreshed-server-selection")
     }
 
+    func testProfileBotIdentityAndOpenChatUseTheSwitchResponsesTip() async throws {
+        let previousHook = UITestURLSessionHook.configure
+        defer { UITestURLSessionHook.configure = previousHook }
+        let switchedNames = LockedTestValue([String]())
+        let opened = LockedTestValue([URL]())
+        let saves = LockedTestValue(0)
+        let returnedTip = LockedTestValue<String?>("bot-current-tip")
+        let scope = MockURLProtocol.register { request in
+            let switching = request.url?.path == "/api/profile/switch"
+            if switching {
+                let body = try JSONSerialization.jsonObject(with: apiTestBodyData(from: request) ?? Data()) as? [String: String]
+                switchedNames.value.append(body?["name"] ?? "")
+            }
+            let canonical: Any
+            if let tip = switching ? returnedTip.value : "bot-old-tip" {
+                canonical = ["session_id": "bot-root", "tip_session_id": tip]
+            } else {
+                canonical = NSNull()
+            }
+            let data = try JSONSerialization.data(withJSONObject: [
+                "active": switching ? "alpha" : "beta",
+                "profiles": [
+                    ["name": "alpha", "display_name": "Research Bot", "description": "Finds primary sources.",
+                     "canonical_session": canonical],
+                    ["name": "beta", "canonical_session": NSNull()],
+                    ["name": "gamma"]
+                ],
+                "single_profile_mode": false
+            ])
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil,
+                                    headerFields: ["Content-Type": "application/json"])!, data)
+        }
+        UITestURLSessionHook.configure = { configuration in
+            configuration.protocolClasses = [MockURLProtocol.self]
+            configuration.httpAdditionalHeaders = [MockURLProtocol.scopeHeader: scope]
+        }
+        let server = URL(string: "https://profile-bot-\(UUID().uuidString.lowercased()).example.test")!
+        defer {
+            ActiveServerProfile.record(nil, for: server)
+            ServerCookieStore.shared.clear(for: server)
+        }
+        func screen() -> some View {
+            NavigationStack {
+                DefaultProfilePickerView(server: server, currentDefaultProfileName: nil) { _ in saves.value += 1 }
+            }.environment(\.openURL, OpenURLAction { opened.value.append($0); return .handled })
+        }
+        let window = try hostWindow(screen())
+        _ = try await requireElement(in: window, label: "gamma")
+        attachHostedScreenshot(window, name: "profiles-bot-identity")
+        let action = try await requireElement(in: window, "Missing Open Bot Chat for a canonical profile") {
+            HostedAccessibility.identifier(of: $0) == "profile-open-bot-chat-alpha"
+        }
+        let labels = HostedAccessibility.labels(in: window).joined(separator: " | ")
+        for text in ["Research Bot", "alpha", "Finds primary sources."] {
+            XCTAssertTrue(labels.contains(text), "The row must expose its server identity: \(labels)")
+        }
+        for name in ["beta", "gamma"] {
+            XCTAssertNil(HostedAccessibility.element(in: window, identifier: "profile-open-bot-chat-\(name)"))
+        }
+        XCTAssertTrue(HostedAccessibility.activate(action))
+        let didOpen = await awaitCondition { !opened.value.isEmpty }
+        XCTAssertTrue(didOpen)
+        XCTAssertEqual(switchedNames.value, ["alpha"])
+        XCTAssertEqual(saves.value, 1)
+        let url = try XCTUnwrap(opened.value.first)
+        XCTAssertEqual(TalariaDeepLink.sessionID(from: url), "bot-current-tip")
+        XCTAssertEqual(TalariaDeepLink.publisherID(from: url), server.absoluteString)
+        attachHostedScreenshot(window, name: "profiles-bot-selected")
+
+        // The canonical chat can disappear between listing and switching. Never reuse the list's old tip.
+        returnedTip.value = nil
+        let retry = try await requireElement(in: window) {
+            HostedAccessibility.identifier(of: $0) == "profile-open-bot-chat-alpha"
+                && !$0.accessibilityTraits.contains(.notEnabled)
+        }
+        XCTAssertTrue(HostedAccessibility.activate(retry))
+        _ = try await requireElement(in: window, label: "Bot Chat is no longer available for this profile.")
+        XCTAssertEqual(opened.value.count, 1)
+        XCTAssertEqual(saves.value, 2, "The successful profile switch still updates Settings")
+        XCTAssertNil(HostedAccessibility.element(in: window, identifier: "profile-open-bot-chat-alpha"))
+        attachHostedScreenshot(window, name: "profiles-bot-no-longer-available")
+        window.isHidden = true
+        window.rootViewController = nil
+
+        let layouts: [(String, CGSize, DynamicTypeSize, UIUserInterfaceStyle)] = [
+            ("landscape", HostedSize.phoneLandscape, .large, .light),
+            ("wide", HostedSize.padLandscape, .large, .light),
+            ("duo-outer", HostedSize.duoOuter, .large, .light),
+            ("duo-inner", HostedSize.duoInner, .large, .light),
+            ("accessibility-dark", HostedSize.phone, .accessibility5, .dark)
+        ]
+        for (name, size, type, style) in layouts {
+            let layout = try hostWindow(screen().dynamicTypeSize(type), size: size) { $0.userInterfaceStyle = style }
+            _ = try await requireElement(in: layout) {
+                HostedAccessibility.identifier(of: $0) == "profile-open-bot-chat-alpha"
+            }
+            attachHostedScreenshot(layout, name: "profiles-bot-\(name)")
+            layout.isHidden = true
+            layout.rootViewController = nil
+        }
+    }
+
     private func settleSettingsFixture(in window: UIWindow) async {
         await Task.yield()
         let loaded = await awaitCondition {

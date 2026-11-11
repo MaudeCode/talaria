@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Profiles show their Bot names and descriptions, with an action to open each Bot Chat.",
+      "highlight": false,
+      "components": [
+        "app"
+      ],
+      "announcement": {
+        "title": "Open your Bot Chats",
+        "description": "See Bot names and descriptions in Profiles and open each Bot Chat from its row.",
+        "icon": "chat"
+      }
+    }
+  ]
+}

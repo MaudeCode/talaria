@@ -123,8 +123,41 @@ public struct ProfileSummary: Decodable, Equatable, Hashable, Identifiable, Send
     public let provider: String?
     let hasEnv: Bool?
     public let skillCount: Int?
+    public let botDisplayName: String?
+    public let description: String?
+    public let canonicalSession: CanonicalSession?
+
+    /// The server's canonical root and current tip, unlike a titled SessionBranchLink.
+    public struct CanonicalSession: Decodable, Equatable, Hashable, Sendable {
+        public let sessionId: String?
+        public let tipSessionId: String?
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name, path, isDefault, isActive, gatewayRunning, model, provider, hasEnv, skillCount
+        case botDisplayName = "displayName"
+        case description, canonicalSession
+    }
+
+    init(name: String?, path: String?, isDefault: Bool?, isActive: Bool?, gatewayRunning: Bool?,
+         model: String?, provider: String?, hasEnv: Bool?, skillCount: Int?,
+         botDisplayName: String? = nil, description: String? = nil, canonicalSession: CanonicalSession? = nil) {
+        self.name = name
+        self.path = path
+        self.isDefault = isDefault
+        self.isActive = isActive
+        self.gatewayRunning = gatewayRunning
+        self.model = model
+        self.provider = provider
+        self.hasEnv = hasEnv
+        self.skillCount = skillCount
+        self.botDisplayName = botDisplayName
+        self.description = description
+        self.canonicalSession = canonicalSession
+    }
 
     public var displayName: String {
+        if let botDisplayName, !botDisplayName.isEmpty { return botDisplayName }
         guard let name, !name.isEmpty else { return String(localized: "Profile") }
         return name == "default" ? String(localized: "Default") : name
     }

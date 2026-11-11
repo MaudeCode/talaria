@@ -13,6 +13,7 @@ struct DefaultProfilePickerView: View {
     let onSave: (DefaultProfileSelection) -> Void
 
 
+    @Environment(\.openURL) private var openURL
     @State private var isLoading = false
     @State private var profiles: [ProfileSummary] = []
     @State private var activeProfileName: String?
@@ -136,29 +137,50 @@ struct DefaultProfilePickerView: View {
     }
 
     private func profileRow(_ profile: ProfileSummary) -> some View {
-        Button {
-            Task { await save(profile) }
-        } label: {
-            SettingsItemRow(title: profile.displayName, subtitle: profileDetails(profile),
-                            isSelected: isSelected(profile), isLoading: isSaving && selectedProfileName == profile.normalizedName) {
-                Image(systemName: "person.crop.circle").accessibilityHidden(true)
-            } badges: {
-                if isSelected(profile) { ProfileStatusBadge(title: String(localized: "Selected")) }
-                else if profile.isDefault == true { ProfileStatusBadge(title: String(localized: "Server Default")) }
+        HStack(spacing: 0) {
+            Button {
+                Task { await save(profile) }
+            } label: {
+                SettingsItemRow(title: profile.displayName, subtitle: profileDetails(profile), detail: profile.description,
+                                isSelected: isSelected(profile), isLoading: isSaving && selectedProfileName == profile.normalizedName) {
+                    Image(systemName: "person.crop.circle").accessibilityHidden(true)
+                } badges: {
+                    if isSelected(profile) { ProfileStatusBadge(title: String(localized: "Selected")) }
+                    else if profile.isDefault == true { ProfileStatusBadge(title: String(localized: "Server Default")) }
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(profileAccessibilityLabel(for: profile))
+            .accessibilityValue(profileAccessibilityValue(for: profile))
+
+            if profile.canonicalSession != nil {
+                botChatButton(profile)
+                    .labelStyle(.iconOnly)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
             }
         }
-        .buttonStyle(.plain)
         .disabled(isSaving || profile.normalizedName == nil)
-        .accessibilityLabel(profileAccessibilityLabel(for: profile))
-        .accessibilityValue(profileAccessibilityValue(for: profile))
+        .contextMenu {
+            if profile.canonicalSession != nil { botChatButton(profile) }
+        }
+    }
+
+    private func botChatButton(_ profile: ProfileSummary) -> some View {
+        Button {
+            Task { await save(profile, openBotChat: true) }
+        } label: {
+            Label("Open Bot Chat", systemImage: "arrow.up.right")
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("profile-open-bot-chat-\(profile.name ?? "")")
     }
 
     private func profileAccessibilityLabel(for profile: ProfileSummary) -> String {
-        guard let details = profileDetails(profile) else {
-            return profile.displayName
-        }
-
-        return "\(profile.displayName), \(details)"
+        [profile.displayName, profileDetails(profile), profile.description]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+            .joined(separator: ", ")
     }
 
     private func profileAccessibilityValue(for profile: ProfileSummary) -> String {
@@ -171,11 +193,15 @@ struct DefaultProfilePickerView: View {
 
     private func isSelected(_ profile: ProfileSummary) -> Bool {
         guard let name = profile.normalizedName else { return false }
-        return selectedProfileName == name || activeProfileName == name
+        return (selectedProfileName ?? activeProfileName) == name
     }
 
     private func profileDetails(_ profile: ProfileSummary) -> String? {
         var details: [String] = []
+
+        if let botDisplayName = profile.botDisplayName, !botDisplayName.isEmpty, let name = profile.name {
+            details.append(name)
+        }
 
         if let model = profile.model?.trimmingCharacters(in: .whitespacesAndNewlines), !model.isEmpty {
             details.append(model)
@@ -214,7 +240,7 @@ struct DefaultProfilePickerView: View {
         isLoading = false
     }
 
-    private func save(_ profile: ProfileSummary) async {
+    private func save(_ profile: ProfileSummary, openBotChat: Bool = false) async {
         guard let name = profile.normalizedName else { return }
 
         isSaving = true
@@ -245,6 +271,16 @@ struct DefaultProfilePickerView: View {
                 defaultModel: response.defaultModel
             )
             onSave(selection)
+
+            if openBotChat {
+                guard resolvedName == name,
+                      let tip = response.profiles?.first(where: { $0.normalizedName == name })?.canonicalSession?.tipSessionId,
+                      let url = TalariaDeepLink.sessionURL(sessionID: tip, publisherID: server.absoluteString) else {
+                    saveError = String(localized: "Bot Chat is no longer available for this profile.")
+                    return
+                }
+                openURL(url)
+            }
         } catch {
             saveError = error.localizedDescription
         }
