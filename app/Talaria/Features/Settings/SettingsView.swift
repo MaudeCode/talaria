@@ -97,7 +97,7 @@ struct SettingsPaneView: View {
             WorkspaceManagerView(server: server, isPage: true, onRegistryChanged: {})
         case .system:
             SettingsCategoryPage(category: .system) {
-                SettingsCard(title: String(localized: "System")) {
+                SettingsSection(title: String(localized: "System")) {
                     ServerUpdateSettingsSection(authManager: authManager, server: server)
                 }
             }

@@ -9,8 +9,8 @@ struct ProviderQuotaWidgetProfilesView: View {
     @State private var newProfileName = ""
 
     var body: some View {
-        Form {
-            Section {
+        SidebarList {
+            SettingsSection(title: String(localized: "Widget Profiles")) {
                 HStack {
                     Label("App Default", systemImage: "slider.horizontal.3")
                     Spacer()
@@ -43,8 +43,7 @@ struct ProviderQuotaWidgetProfilesView: View {
                 } label: {
                     Label("Save Current Settings", systemImage: "plus")
                 }
-            } footer: {
-                Text("Profiles are named snapshots of the current Widget Appearance settings. Load one to edit it, then update the snapshot.")
+                SettingsFootnote(String(localized: "Profiles are named snapshots of the current Widget Appearance settings. Load one to edit it, then update the snapshot."))
             }
         }
         .navigationTitle("Widget Profiles")

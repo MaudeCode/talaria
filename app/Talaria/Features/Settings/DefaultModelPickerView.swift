@@ -24,48 +24,45 @@ struct DefaultModelPickerView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 24) {
-                    SettingsPickerSearchField(
-                        text: $searchText,
-                        prompt: "Search models",
-                        clearLabel: "Clear model search"
-                    )
+            SidebarList {
+                SettingsPickerSearchField(
+                    text: $searchText,
+                    prompt: "Search models",
+                    clearLabel: "Clear model search"
+                )
 
-                    if let saveError {
-                        Text(saveError)
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    SettingsCard(title: String(localized: "Custom")) {
-                        TextField("Custom model ID", text: $customModel)
-                            .font(.subheadline)
-                            .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 10)
-                            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-                        Text("Type a model ID exactly as the server expects it.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        ModelPickerButton(
-                            String(localized: "Save Custom Model"),
-                            isLoading: isSavingCustom
-                        ) {
-                            Task { await save(customModel, isCustom: true) }
-                        }
-                        .disabled(customModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
-                    }
-
-                    modelListContent
+                if let saveError {
+                    Text(saveError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding()
+
+                SettingsSection(title: String(localized: "Custom")) {
+                    TextField("Custom model ID", text: $customModel)
+                        .font(.subheadline)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                    Text("Type a model ID exactly as the server expects it.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    ModelPickerButton(
+                        String(localized: "Save Custom Model"),
+                        isLoading: isSavingCustom
+                    ) {
+                        Task { await save(customModel, isCustom: true) }
+                    }
+                    .disabled(customModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
+                }
+
+                modelListContent
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Color(.systemBackground))
             .navigationTitle("Default Model")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -88,7 +85,7 @@ struct DefaultModelPickerView: View {
     @ViewBuilder
     private var modelListContent: some View {
         if isLoading && groups.isEmpty {
-            SettingsCard(title: String(localized: "Models")) {
+            SettingsSection(title: String(localized: "Models")) {
                 HStack(spacing: 8) {
                     ProgressView()
                     Text("Loading models...")
@@ -98,7 +95,7 @@ struct DefaultModelPickerView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         } else if let errorMessage, groups.isEmpty {
-            SettingsCard(title: String(localized: "Models")) {
+            SettingsSection(title: String(localized: "Models")) {
                 Label("Could Not Load Models", systemImage: "exclamationmark.triangle")
                     .font(.subheadline.weight(.semibold))
 
@@ -107,7 +104,7 @@ struct DefaultModelPickerView: View {
                     .foregroundStyle(.secondary)
             }
         } else if filteredGroups.isEmpty {
-            SettingsCard(title: String(localized: "Models")) {
+            SettingsSection(title: String(localized: "Models")) {
                 Label("No Matching Models", systemImage: "magnifyingglass")
                     .font(.subheadline.weight(.semibold))
 
@@ -117,14 +114,10 @@ struct DefaultModelPickerView: View {
             }
         } else {
             ForEach(filteredGroups) { group in
-                SettingsCard(title: group.name) {
-                    VStack(spacing: 0) {
-                        ForEach(Array(group.models.enumerated()), id: \.element.id) { index, model in
+                SettingsSection(title: group.name) {
+                    Group {
+                        ForEach(group.models) { model in
                             modelRow(model)
-
-                            if index < group.models.count - 1 {
-                                Divider()
-                            }
                         }
                     }
                 }

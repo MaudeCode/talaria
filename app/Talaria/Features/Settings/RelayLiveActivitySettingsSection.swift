@@ -2,14 +2,14 @@ import SwiftUI
 import UIKit
 import TalariaKit
 
-struct RelayLiveActivitySettingsCard: View {
+struct RelayLiveActivitySettingsSection: View {
     @AppStorage(AgentRunLiveActivityPrivacy.showsResponseExcerptsKey)
     private var showsLiveActivityResponseExcerpts = false
 
     @AppStorage(TalariaLiveActivityMode.storageKey) private var modeRawValue = TalariaLiveActivityMode.perSession.rawValue
 
     var body: some View {
-        SettingsCard(title: String(localized: "Live Activities")) {
+        SettingsSection(title: String(localized: "Live Activities")) {
             SettingsPickerRow(
                 title: String(localized: "Display"),
                 systemImage: "bolt.horizontal.circle",
@@ -19,8 +19,6 @@ struct RelayLiveActivitySettingsCard: View {
                     Text(mode.title).tag(mode.rawValue)
                 }
             }
-
-            SettingsDivider()
 
             SettingsToggleRow(
                 title: String(localized: "Live Activity Excerpts"),

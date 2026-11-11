@@ -22,7 +22,7 @@ struct ProviderQuotaWidgetAutomaticSettingsSections: View {
 
     var body: some View {
         Group {
-            Section("Automatic Colors") {
+            SettingsSection(title: String(localized: "Automatic Colors")) {
                 colorPicker("Healthy", selection: $healthyColor, customHex: $customHealthyColorHex)
                 colorPicker("Warning", selection: $warningColor, customHex: $customWarningColorHex)
                 colorPicker("Critical", selection: $criticalColor, customHex: $customCriticalColorHex)
@@ -32,7 +32,7 @@ struct ProviderQuotaWidgetAutomaticSettingsSections: View {
 
             if let thresholds {
                 if colorBasis == .pace {
-                    Section {
+                    SettingsSection(title: String(localized: "Pace Breakpoints")) {
                         Group {
                             Stepper(
                                 "Over pace at \(thresholds.paceTolerancePercent)%",
@@ -58,13 +58,10 @@ struct ProviderQuotaWidgetAutomaticSettingsSections: View {
                             )
                         }
                         .disabled(thresholdsAreCached)
-                    } header: {
-                        Text("Pace Breakpoints")
-                    } footer: {
                         thresholdFooter("Pace compares quota remaining with the share of the weekly reset window remaining. Burn-rate alerts apply only when current usage projects exhaustion before reset.")
                     }
                 } else {
-                    Section {
+                    SettingsSection(title: String(localized: "Overall Breakpoints")) {
                         Group {
                             Stepper(
                                 "Warning at \(thresholds.warningRemainingPercent)% remaining",
@@ -78,19 +75,14 @@ struct ProviderQuotaWidgetAutomaticSettingsSections: View {
                             )
                         }
                         .disabled(thresholdsAreCached)
-                    } header: {
-                        Text("Overall Breakpoints")
-                    } footer: {
                         thresholdFooter("Overall Percentage ignores reset time and colors the widget from the quota remaining.")
                     }
                 }
             } else if thresholdsLoaded {
-                Section {
+                SettingsSection(title: String(localized: "Breakpoints")) {
                     Text("Connect to a server that provides quota thresholds to change when quotas turn warning or critical.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
-                } header: {
-                    Text("Breakpoints")
                 }
             }
         }

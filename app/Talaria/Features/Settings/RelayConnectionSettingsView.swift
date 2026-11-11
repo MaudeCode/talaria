@@ -30,30 +30,28 @@ struct RelayConnectionManagementView: View {
     @State private var isDisconnecting = false
 
     var body: some View {
-        List {
+        SidebarList {
             if let errorMessage {
-                Section {
-                    SettingsErrorFootnote(errorMessage)
-                }
+                SettingsErrorFootnote(errorMessage)
+                    .sidebarRowPadding()
+                    .sidebarRow(isSelected: false)
             }
 
-            Section("Servers") {
+            SettingsSection(title: String(localized: "Servers")) {
                 ForEach(serverRows) { server in
                     serverRow(server)
                 }
             }
 
-            Section {
+            SettingsSection(title: String(localized: "Talaria Relay")) {
                 Button("Sign Out of Talaria Relay", role: .destructive) {
                     isConfirmingDisconnect = true
                 }
                 .disabled(isBusy || credentials == nil)
                 .accessibilityIdentifier("settings-disconnect-relay")
-            } footer: {
-                Text("Signing out stops remote Live Activities and alerts. Your server settings stay on this iPhone.")
+                SettingsFootnote(String(localized: "Signing out stops remote Live Activities and alerts. Your server settings stay on this iPhone."))
             }
         }
-        .listStyle(.insetGrouped)
         .navigationTitle("Talaria Relay")
         .navigationBarTitleDisplayMode(.inline)
         .task { await loadCredentials() }

@@ -25,8 +25,6 @@ struct ServerUpdateSettingsSection: View {
                 serverStatusPill
             }
 
-            SettingsDivider()
-
             SettingsValueRow(title: String(localized: "Version")) {
                 serverVersionContent
             }
@@ -161,7 +159,6 @@ private extension ServerUpdateSettingsSection {
     private var agentUpdateRows: some View {
         if let agent = updateTargets?.agent {
             let status = UpdateNote(agent: agent)
-            SettingsDivider()
             SettingsValueRow(title: String(localized: "Hermes Agent")) {
                 Text(
                     versionRange(agent.currentVersion, agent.targetVersion)

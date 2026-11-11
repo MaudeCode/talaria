@@ -48,11 +48,7 @@ struct ServerIdentityEditor: View {
                 placeholder: fallbackName.isEmpty ? String(localized: "Server") : fallbackName
             )
 
-            SettingsDivider()
-
             SettingsTextFieldRow(title: String(localized: "Initials"), text: initialsBinding, placeholder: previewInitials)
-
-            SettingsDivider()
 
             AccentColorSettings(selectedHex: $colorHex, customColor: colorBinding)
         }

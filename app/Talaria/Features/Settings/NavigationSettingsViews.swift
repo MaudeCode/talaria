@@ -32,32 +32,27 @@ struct NavigationSettingsView: View {
 
     var body: some View {
         SettingsCategoryPage(category: .navigation) {
-            SettingsCard(title: String(localized: "Sidebar sections")) {
+            SettingsSection(title: String(localized: "Sidebar sections")) {
                 SettingsToggleRow(
                     title: String(localized: "Tasks"), systemImage: "checklist", isOn: $showsTasks
                 )
                 .accessibilityIdentifier("settings-navigation-section-tasks")
-                SettingsDivider()
                 SettingsToggleRow(
                     title: String(localized: "Kanban"), systemImage: "rectangle.split.3x1", isOn: $showsKanban
                 )
                 .accessibilityIdentifier("settings-navigation-section-kanban")
-                SettingsDivider()
                 SettingsToggleRow(
                     title: String(localized: "Skills"), systemImage: "sparkles", isOn: $showsSkills
                 )
                 .accessibilityIdentifier("settings-navigation-section-skills")
-                SettingsDivider()
                 SettingsToggleRow(
                     title: String(localized: "Memory"), systemImage: "brain", isOn: $showsMemory
                 )
                 .accessibilityIdentifier("settings-navigation-section-memory")
-                SettingsDivider()
                 SettingsToggleRow(
                     title: String(localized: "Insights"), systemImage: "chart.bar", isOn: $showsInsights
                 )
                 .accessibilityIdentifier("settings-navigation-section-insights")
-                SettingsDivider()
                 SettingsToggleRow(
                     title: String(localized: "Feedback Button"), systemImage: FeedbackSheet.systemImage,
                     isOn: $showsSidebarFeedbackButton
@@ -65,14 +60,12 @@ struct NavigationSettingsView: View {
                 .accessibilityIdentifier("settings-sidebar-feedback-toggle")
             }
 
-            SettingsCard(title: String(localized: "Included Chats")) {
+            SettingsSection(title: String(localized: "Included Chats")) {
                 SettingsToggleRow(
                     title: String(localized: "Cron Sessions"),
                     systemImage: "clock.arrow.2.circlepath",
                     isOn: $showsCronSessions
                 )
-
-                SettingsDivider()
 
                 SettingsToggleRow(
                     title: String(localized: "Webhook Sessions"),
@@ -80,15 +73,11 @@ struct NavigationSettingsView: View {
                     isOn: $showsWebhookSessions
                 )
 
-                SettingsDivider()
-
                 SettingsToggleRow(
                     title: String(localized: "CLI Sessions"),
                     systemImage: "terminal",
                     isOn: $showsCliSessions
                 )
-
-                SettingsDivider()
 
                 SettingsToggleRow(
                     title: String(localized: "Claude Code Sessions"),
@@ -97,8 +86,6 @@ struct NavigationSettingsView: View {
                 )
                 .disabled(!showsCliSessions)
 
-                SettingsDivider()
-
                 SettingsToggleRow(
                     title: String(localized: "Subagent Sessions"),
                     systemImage: "arrow.triangle.branch",
@@ -106,7 +93,7 @@ struct NavigationSettingsView: View {
                 )
             }
 
-            SettingsCard(title: String(localized: "Quotas")) {
+            SettingsSection(title: String(localized: "Quotas")) {
                 NavigationLink {
                     ProviderQuotaSidebarDisplayView()
                 } label: {
@@ -125,7 +112,7 @@ struct SpeechSettingsView: View {
 
     var body: some View {
         SettingsCategoryPage(category: .speech) {
-            SettingsCard(title: String(localized: "Speech")) {
+            SettingsSection(title: String(localized: "Speech")) {
                 SettingsPickerRow(
                     title: String(localized: "Dictation Provider"),
                     systemImage: "mic",

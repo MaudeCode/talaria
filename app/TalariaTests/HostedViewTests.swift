@@ -257,6 +257,67 @@ final class HostedViewTests: XCTestCase {
 /// Settings placement is a user-facing navigation contract, shared with the Web taxonomy.
 @MainActor
 final class SettingsPlacementHostedTests: XCTestCase {
+    // The rendered list, rather than the SwiftUI type, owns Settings' chrome contract.
+    func testSettingsPagesUseChatsListChrome() async throws {
+        let fixture = try FixtureApp(for: self)
+        let server = UITestFixtureEnvironment.serverURL
+        let pages: [(String, AnyView)] = [("root", AnyView(SettingsView(server: server, selection: .constant(nil))))]
+            + SettingsCategory.rootCategories.map { category in
+                (category.rawValue, AnyView(SettingsPaneView(authManager: fixture.environment.authManager,
+                                                            server: server, pane: .category(category))))
+            } + [
+                ("apple-account", AnyView(AppleAccountSettingsView(authManager: fixture.environment.authManager, server: server))),
+                ("relay", AnyView(RelayConnectionManagementView(authManager: fixture.environment.authManager))),
+                ("widget-appearance", AnyView(ProviderQuotaWidgetAppearanceView())),
+                ("widget-profiles", AnyView(ProviderQuotaWidgetProfilesView())),
+                ("sidebar-quotas", AnyView(ProviderQuotaSidebarDisplayView())),
+                ("providers-list", AnyView(ProvidersView(server: server))),
+                ("auxiliary-models", AnyView(AuxiliaryModelsSettingsView(server: server)))
+            ]
+        for style in [UIUserInterfaceStyle.light, .dark] {
+            let reference = try hostWindow(NavigationStack {
+                SidebarList { Text("Chat").sidebarRowPadding().sidebarRow(isSelected: false) }
+                    .navigationTitle("Chats")
+            }, size: CGSize(width: 390, height: 844)) { $0.userInterfaceStyle = style }
+            let referenceList = try XCTUnwrap(reference.firstView(ofType: UICollectionView.self))
+            let referenceFrame = try XCTUnwrap(referenceList.collectionViewLayout.layoutAttributesForItem(at: IndexPath(item: 0, section: 0))).frame
+            let referenceBackground = edgePixel(in: reference)
+            XCTAssertFalse(referenceBackground.isEmpty, "The baseline background must render")
+            reference.isHidden = true
+            reference.rootViewController = nil
+            for (name, page) in pages {
+                let window = try hostWindow(NavigationStack { page.modelContainer(fixture.cache) },
+                                            size: CGSize(width: 390, height: 844)) { $0.userInterfaceStyle = style }
+                await settleSettingsFixture(in: window)
+                attachHostedScreenshot(window, name: "settings-chrome-\(name)-\(style == .light ? "light" : "dark")")
+                let list = window.firstView(ofType: UICollectionView.self)
+                XCTAssertNotNil(list, "\(name) must render a list like Chats")
+                if let list {
+                    let frame = try XCTUnwrap(list.visibleCells.first?.frame, "\(name) must have a rendered row to inspect")
+                    XCTAssertEqual(frame.minX, referenceFrame.minX, accuracy: 1, "\(name) must use plain list insets")
+                    XCTAssertEqual(frame.width, referenceFrame.width, accuracy: 1, "\(name) must use plain list width")
+                }
+                if let table = window.firstView(ofType: UITableView.self) {
+                    XCTAssertEqual(table.style, .plain, name)
+                }
+                XCTAssertEqual(edgePixel(in: window), referenceBackground, "\(name) must use Chats' system background")
+                window.isHidden = true
+                window.rootViewController = nil
+            }
+        }
+    }
+
+    private func edgePixel(in window: UIWindow) -> [UInt8] {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1), format: format).image { context in
+            context.cgContext.translateBy(x: -2, y: -400)
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        guard let data = image.cgImage?.dataProvider?.data else { return [] }
+        return Array(UnsafeBufferPointer(start: CFDataGetBytePtr(data), count: CFDataGetLength(data)))
+    }
+
     func testProfileSwitchConvergesOnTheServerSelectionAfterForegroundRefresh() async throws {
         let previousHook = UITestURLSessionHook.configure
         defer { UITestURLSessionHook.configure = previousHook }
@@ -306,6 +367,39 @@ final class SettingsPlacementHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "profiles-refreshed-server-selection")
     }
 
+    private func settleSettingsFixture(in window: UIWindow) async {
+        await Task.yield()
+        let loaded = await awaitCondition {
+            !HostedAccessibility.elements(in: window).contains {
+                $0.accessibilityLabel?.contains("Loading") == true
+            }
+        }
+        XCTAssertTrue(loaded, "The Settings fixture must finish loading before inspecting its rows")
+    }
+
+    private func allSettingsRows(in window: UIWindow) -> (labels: Set<String>, identifiers: Set<String>) {
+        var labels = Set<String>()
+        var identifiers = Set<String>()
+        let scroll = window.firstView(ofType: UICollectionView.self)
+        let top = -(scroll?.adjustedContentInset.top ?? 0)
+        var offset = top
+        repeat {
+            scroll?.setContentOffset(CGPoint(x: 0, y: offset), animated: false)
+            settle(window: window)
+            for element in HostedAccessibility.elements(in: window) {
+                if let label = element.accessibilityLabel { labels.insert(label) }
+                if let identifier = HostedAccessibility.identifier(of: element) { identifiers.insert(identifier) }
+            }
+            guard let scroll else { break }
+            let bottom = max(top, scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+            if offset >= bottom { break }
+            offset = min(bottom, offset + max(1, scroll.bounds.height / 2))
+        } while true
+        scroll?.setContentOffset(CGPoint(x: 0, y: top), animated: false)
+        settle(window: window)
+        return (labels, identifiers)
+    }
+
     func testCategoryPagesKeepTheirRowsAndIdentifiersAtOneHome() async throws {
         let fixture = try FixtureApp(for: self)
         let pages: [(SettingsCategory, [String], [String])] = [
@@ -335,60 +429,68 @@ final class SettingsPlacementHostedTests: XCTestCase {
         let rowIdentifiers = Set(pages.flatMap { $0.2 })
         var homes: [String: [SettingsCategory]] = [:]
         var identifierHomes: [String: [SettingsCategory]] = [:]
-        for style in [UIUserInterfaceStyle.light, .dark] {
-            for (category, labels, identifiers) in pages {
-                let window = try hostWindow(NavigationStack {
-                    SettingsPaneView(authManager: fixture.environment.authManager,
-                                     server: UITestFixtureEnvironment.serverURL, pane: .category(category))
-                        .modelContainer(fixture.cache)
-                }, size: CGSize(width: 390, height: 844)) { $0.userInterfaceStyle = style }
-                for label in labels {
-                    _ = try await requireElement(in: window) {
-                        $0.accessibilityLabel == label || $0.accessibilityLabel?.hasPrefix(label + ",") == true
+        for size in [CGSize(width: 390, height: 844), CGSize(width: 669, height: 867)] {
+            for style in [UIUserInterfaceStyle.light, .dark] {
+                for (category, labels, identifiers) in pages {
+                    let window = try hostWindow(NavigationStack {
+                        SettingsPaneView(authManager: fixture.environment.authManager,
+                                         server: UITestFixtureEnvironment.serverURL, pane: .category(category))
+                            .modelContainer(fixture.cache)
+                    }, size: size) { $0.userInterfaceStyle = style }
+                    await settleSettingsFixture(in: window)
+                    var rows = allSettingsRows(in: window)
+                    for label in labels {
+                        if HostedAccessibility.toolbarAction(label, in: window) != nil { rows.labels.insert(label) }
+                        XCTAssertTrue(rows.labels.contains { $0 == label || $0.hasPrefix(label + ",") }, label)
                     }
-                }
-                let elements = HostedAccessibility.elements(in: window)
-                for identifier in identifiers {
-                    XCTAssertEqual(elements.filter { HostedAccessibility.identifier(of: $0) == identifier }.count, 1, identifier)
-                }
-                if style == .light {
-                    for identifier in rowIdentifiers {
-                        for _ in elements.filter({ HostedAccessibility.identifier(of: $0) == identifier }) {
+                    for identifier in identifiers {
+                        XCTAssertTrue(rows.identifiers.contains(identifier), identifier)
+                    }
+                    if style == .light && size.width == 390 {
+                        for identifier in rowIdentifiers where rows.identifiers.contains(identifier) {
                             identifierHomes[identifier, default: []].append(category)
                         }
+                        for row in exclusiveRows where rows.labels.contains(where: {
+                            $0 == row || $0.hasPrefix(row + ",")
+                        }) { homes[row, default: []].append(category) }
                     }
-                    for row in exclusiveRows where elements.contains(where: {
-                        $0.accessibilityLabel == row || $0.accessibilityLabel?.hasPrefix(row + ",") == true
-                    }) { homes[row, default: []].append(category) }
+                    XCTAssertFalse(rows.labels.contains("Archived Chats"))
+                    if [.liveActivitiesAndWidgets, .dataAndStorage].contains(category) {
+                        XCTAssertFalse(rows.labels.contains("Privacy"))
+                    }
+                    let theme = "\(style == .light ? "light" : "dark")-\(Int(size.width))"
+                    attachHostedScreenshot(window, name: "settings-\(category.rawValue)-\(theme)")
+                    if let scroll = window.firstView(ofType: UIScrollView.self, where: { $0.contentSize.height > $0.bounds.height }) {
+                        scroll.setContentOffset(CGPoint(x: 0, y: max(0, scroll.contentSize.height - scroll.bounds.height)), animated: false)
+                    }
+                    settle()
+                    attachHostedScreenshot(window, name: "settings-\(category.rawValue)-\(theme)-bottom")
+                    window.isHidden = true
+                    window.rootViewController = nil
                 }
-                XCTAssertNil(HostedAccessibility.element(in: window, label: "Archived Chats"))
-                if [.liveActivitiesAndWidgets, .dataAndStorage].contains(category) {
-                    XCTAssertNil(HostedAccessibility.element(in: window, label: "Privacy"))
-                }
-                let theme = style == .light ? "light" : "dark"
-                attachHostedScreenshot(window, name: "settings-\(category.rawValue)-\(theme)")
+                let window = try hostWindow(NavigationStack {
+                    SettingsView(server: UITestFixtureEnvironment.serverURL, profileName: "Fixture profile",
+                                 serverName: "Fixture server", selection: .constant(nil))
+                }, size: size) { $0.userInterfaceStyle = style }
+                _ = try await requireElement(in: window, label: "Fixture profile")
+                _ = try await requireElement(in: window, label: "Fixture server")
+                attachHostedScreenshot(window, name: "settings-root-\(style == .light ? "light" : "dark")-\(Int(size.width))")
                 if let scroll = window.firstView(ofType: UIScrollView.self, where: { $0.contentSize.height > $0.bounds.height }) {
                     scroll.setContentOffset(CGPoint(x: 0, y: max(0, scroll.contentSize.height - scroll.bounds.height)), animated: false)
                 }
                 settle()
-                attachHostedScreenshot(window, name: "settings-\(category.rawValue)-\(theme)-bottom")
+                attachHostedScreenshot(window, name: "settings-root-\(style == .light ? "light" : "dark")-\(Int(size.width))-bottom")
                 window.isHidden = true
                 window.rootViewController = nil
+                let editor = try hostWindow(AddServerView(authManager: fixture.environment.authManager), size: size) {
+                    $0.userInterfaceStyle = style
+                }
+                let editorRows = allSettingsRows(in: editor)
+                XCTAssertTrue(editorRows.labels.contains("URL"), "The server editor keeps its URL field")
+                attachHostedScreenshot(editor, name: "settings-add-server-\(style == .light ? "light" : "dark")-\(Int(size.width))")
+                editor.isHidden = true
+                editor.rootViewController = nil
             }
-            let window = try hostWindow(NavigationStack {
-                SettingsView(server: UITestFixtureEnvironment.serverURL, profileName: "Fixture profile",
-                             serverName: "Fixture server", selection: .constant(nil))
-            }, size: CGSize(width: 390, height: 844)) { $0.userInterfaceStyle = style }
-            _ = try await requireElement(in: window, label: "Fixture profile")
-            _ = try await requireElement(in: window, label: "Fixture server")
-            attachHostedScreenshot(window, name: "settings-root-\(style == .light ? "light" : "dark")")
-            if let scroll = window.firstView(ofType: UIScrollView.self, where: { $0.contentSize.height > $0.bounds.height }) {
-                scroll.setContentOffset(CGPoint(x: 0, y: max(0, scroll.contentSize.height - scroll.bounds.height)), animated: false)
-            }
-            settle()
-            attachHostedScreenshot(window, name: "settings-root-\(style == .light ? "light" : "dark")-bottom")
-            window.isHidden = true
-            window.rootViewController = nil
         }
         for (category, _, identifiers) in pages {
             for identifier in identifiers {

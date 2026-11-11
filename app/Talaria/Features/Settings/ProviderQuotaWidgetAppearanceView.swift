@@ -157,128 +157,128 @@ struct ProviderQuotaWidgetAppearanceView: View {
             pinnedPreviewPanel
             Divider()
 
-            Form {
-                Section("Gauge") {
-                Picker("Color", selection: $arcColorRawValue) {
-                    ForEach(ProviderQuotaWidgetArcColor.allCases) { color in
-                        Text(color.title).tag(color.rawValue)
+            SidebarList {
+                SettingsSection(title: String(localized: "Gauge")) {
+                    Picker("Color", selection: $arcColorRawValue) {
+                        ForEach(ProviderQuotaWidgetArcColor.allCases) { color in
+                            Text(color.title).tag(color.rawValue)
+                        }
+                    }
+
+                    if arcColor == .custom {
+                        ColorPicker("Custom Color", selection: HeaderLogoColor.binding($customArcColorHex))
+                    }
+
+                    Picker("Weight", selection: $arcWeightRawValue) {
+                        ForEach(ProviderQuotaWidgetArcWeight.allCases) { weight in
+                            Text(weight.title).tag(weight.rawValue)
+                        }
+                    }
+
+                    if arcColor == .automatic {
+                        Picker("Automatic Color", selection: $colorBasisRawValue) {
+                            ForEach(ProviderQuotaWidgetColorBasis.allCases) { basis in
+                                Text(basis.title).tag(basis.rawValue)
+                            }
+                        }
+
+                        Toggle("Show Pace Marker", isOn: $showsPaceMarker)
                     }
                 }
 
-                if arcColor == .custom {
-                    ColorPicker("Custom Color", selection: HeaderLogoColor.binding($customArcColorHex))
+                SettingsSection(title: String(localized: "Labels")) {
+                    Toggle("Provider Icon", isOn: $showsProviderIcon)
+
+                    if showsProviderIcon {
+                        Picker("Icon Style", selection: $providerIconStyleRawValue) {
+                            ForEach(ProviderIconStyle.allCases) { style in
+                                Text(style.title).tag(style.rawValue)
+                            }
+                        }
+                    }
+
+                    Picker("Status", selection: $statusTextRawValue) {
+                        ForEach(ProviderQuotaWidgetStatusText.allCases.filter { $0 != .appDefault }) { value in
+                            Text(value.title).tag(value.rawValue)
+                        }
+                    }
+
+                    Picker("Reset", selection: $resetDisplayRawValue) {
+                        ForEach(ProviderQuotaWidgetResetDisplay.allCases.filter { $0 != .appDefault }) { value in
+                            Text(value.title).tag(value.rawValue)
+                        }
+                    }
                 }
 
-                Picker("Weight", selection: $arcWeightRawValue) {
-                    ForEach(ProviderQuotaWidgetArcWeight.allCases) { weight in
-                        Text(weight.title).tag(weight.rawValue)
+                SettingsSection(title: String(localized: "Lock Screen")) {
+                    Toggle("Provider Icon", isOn: $lockScreenShowsProviderIcon)
+                    Toggle("Reset Time", isOn: $lockScreenShowsReset)
+                    Toggle("Quota Window", isOn: $lockScreenShowsWindow)
+                    Picker("Pace Footer", selection: $lockScreenPaceDetailRawValue) {
+                        ForEach(ProviderQuotaLockScreenPaceDetail.allCases) { detail in
+                            Text(detail.title).tag(detail.rawValue)
+                        }
+                    }
+                }
+
+                SettingsSection(title: String(localized: "Surface")) {
+                    Picker("Track Color", selection: $trackColorRawValue) {
+                        ForEach(ProviderQuotaWidgetArcColor.allCases) { color in
+                            Text(color.title).tag(color.rawValue)
+                        }
+                    }
+
+                    if trackColor == .custom {
+                        ColorPicker("Custom Track Color", selection: HeaderLogoColor.binding($customTrackColorHex))
+                    }
+
+                    Stepper("Track Opacity: \(trackOpacityPercent)%", value: $trackOpacityPercent, in: 0...100, step: 5)
+
+                    Picker("Background", selection: $backgroundRawValue) {
+                        ForEach(ProviderQuotaWidgetBackground.allCases.filter { $0 != .appDefault }) { value in
+                            Text(value.title).tag(value.rawValue)
+                        }
+                    }
+
+                    if background == .custom {
+                        ColorPicker("Custom Background Color", selection: HeaderLogoColor.binding($customBackgroundColorHex))
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Background Opacity")
+                                Spacer()
+                                Text("\(backgroundOpacityPercent)%")
+                                    .foregroundStyle(.secondary)
+                                    .monospacedDigit()
+                            }
+                            Slider(value: backgroundOpacityBinding, in: 0...100, step: 1)
+                        }
+                    }
+                }
+
+                SettingsSection(title: String(localized: "Behavior")) {
+                    Picker("Tap", selection: $tapActionRawValue) {
+                        ForEach(ProviderQuotaWidgetTapAction.allCases.filter { $0 != .appDefault }) { value in
+                            Text(value.title).tag(value.rawValue)
+                        }
                     }
                 }
 
                 if arcColor == .automatic {
-                    Picker("Automatic Color", selection: $colorBasisRawValue) {
-                        ForEach(ProviderQuotaWidgetColorBasis.allCases) { basis in
-                            Text(basis.title).tag(basis.rawValue)
-                        }
-                    }
-
-                    Toggle("Show Pace Marker", isOn: $showsPaceMarker)
+                    ProviderQuotaWidgetAutomaticSettingsSections(
+                        healthyColor: $healthyColorRawValue,
+                        warningColor: $warningColorRawValue,
+                        criticalColor: $criticalColorRawValue,
+                        staleColor: $staleColorRawValue,
+                        unavailableColor: $unavailableColorRawValue,
+                        customHealthyColorHex: $customHealthyColorHex,
+                        customWarningColorHex: $customWarningColorHex,
+                        customCriticalColorHex: $customCriticalColorHex,
+                        customStaleColorHex: $customStaleColorHex,
+                        customUnavailableColorHex: $customUnavailableColorHex
+                    )
                 }
             }
-
-            Section("Labels") {
-                Toggle("Provider Icon", isOn: $showsProviderIcon)
-
-                if showsProviderIcon {
-                    Picker("Icon Style", selection: $providerIconStyleRawValue) {
-                        ForEach(ProviderIconStyle.allCases) { style in
-                            Text(style.title).tag(style.rawValue)
-                        }
-                    }
-                }
-
-                Picker("Status", selection: $statusTextRawValue) {
-                    ForEach(ProviderQuotaWidgetStatusText.allCases.filter { $0 != .appDefault }) { value in
-                        Text(value.title).tag(value.rawValue)
-                    }
-                }
-
-                Picker("Reset", selection: $resetDisplayRawValue) {
-                    ForEach(ProviderQuotaWidgetResetDisplay.allCases.filter { $0 != .appDefault }) { value in
-                        Text(value.title).tag(value.rawValue)
-                    }
-                }
-            }
-
-            Section("Lock Screen") {
-                Toggle("Provider Icon", isOn: $lockScreenShowsProviderIcon)
-                Toggle("Reset Time", isOn: $lockScreenShowsReset)
-                Toggle("Quota Window", isOn: $lockScreenShowsWindow)
-                Picker("Pace Footer", selection: $lockScreenPaceDetailRawValue) {
-                    ForEach(ProviderQuotaLockScreenPaceDetail.allCases) { detail in
-                        Text(detail.title).tag(detail.rawValue)
-                    }
-                }
-            }
-
-            Section("Surface") {
-                Picker("Track Color", selection: $trackColorRawValue) {
-                    ForEach(ProviderQuotaWidgetArcColor.allCases) { color in
-                        Text(color.title).tag(color.rawValue)
-                    }
-                }
-
-                if trackColor == .custom {
-                    ColorPicker("Custom Track Color", selection: HeaderLogoColor.binding($customTrackColorHex))
-                }
-
-                Stepper("Track Opacity: \(trackOpacityPercent)%", value: $trackOpacityPercent, in: 0...100, step: 5)
-
-                Picker("Background", selection: $backgroundRawValue) {
-                    ForEach(ProviderQuotaWidgetBackground.allCases.filter { $0 != .appDefault }) { value in
-                        Text(value.title).tag(value.rawValue)
-                    }
-                }
-
-                if background == .custom {
-                    ColorPicker("Custom Background Color", selection: HeaderLogoColor.binding($customBackgroundColorHex))
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Background Opacity")
-                            Spacer()
-                            Text("\(backgroundOpacityPercent)%")
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                        }
-                        Slider(value: backgroundOpacityBinding, in: 0...100, step: 1)
-                    }
-                }
-            }
-
-            Section("Behavior") {
-                Picker("Tap", selection: $tapActionRawValue) {
-                    ForEach(ProviderQuotaWidgetTapAction.allCases.filter { $0 != .appDefault }) { value in
-                        Text(value.title).tag(value.rawValue)
-                    }
-                }
-            }
-
-            if arcColor == .automatic {
-                ProviderQuotaWidgetAutomaticSettingsSections(
-                    healthyColor: $healthyColorRawValue,
-                    warningColor: $warningColorRawValue,
-                    criticalColor: $criticalColorRawValue,
-                    staleColor: $staleColorRawValue,
-                    unavailableColor: $unavailableColorRawValue,
-                    customHealthyColorHex: $customHealthyColorHex,
-                    customWarningColorHex: $customWarningColorHex,
-                    customCriticalColorHex: $customCriticalColorHex,
-                    customStaleColorHex: $customStaleColorHex,
-                    customUnavailableColorHex: $customUnavailableColorHex
-                )
-            }
-        }
         }
         .navigationTitle("Customization")
         .navigationBarTitleDisplayMode(.inline)
@@ -386,7 +386,7 @@ struct ProviderQuotaWidgetAppearanceView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .background(Color(.systemGroupedBackground))
+        .background(Color(.systemBackground))
     }
 
     private var preview: some View {
