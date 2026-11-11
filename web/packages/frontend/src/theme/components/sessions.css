@@ -95,7 +95,8 @@
 .session-item.active .session-title{color:var(--session-active-title-fg)}
 .session-time{opacity:.8}
 /* The left rail is the row's only status marker (TAL-365): accent while running, warning when attention waits; selection never draws it. */
-[data-motion-key]{content-visibility:auto;contain-intrinsic-size:auto 56px}
+/* Keep an outside status rail inside paint containment, without moving the row's content. */
+.session-list [data-motion-key]{--session-motion-outset:max(0px,calc(-1 * var(--session-bar-left)));content-visibility:auto;contain-intrinsic-size:auto 56px;padding-left:var(--session-motion-outset);margin-left:calc(-1 * var(--session-motion-outset))}
 .session-item::before{opacity:0;transform:scaleY(0);transform-origin:center;transition:opacity 180ms ease,transform 180ms ease;content:'';position:absolute;left:var(--session-bar-left);top:var(--session-bar-inset-y);bottom:var(--session-bar-inset-y);width:2px;border-radius:var(--session-bar-radius);background:var(--warning)}
 .session-item.streaming::before,.session-item.needs-attention::before{opacity:1;transform:scaleY(1)}
 .session-item.streaming::before{background:var(--accent);animation:session-pulse 1.4s ease-in-out infinite}

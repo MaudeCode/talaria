@@ -7,7 +7,7 @@ test.use({ serviceWorkers: 'block' })
 
 const now = Math.floor(Date.now() / 1000)
 const row = (session_id: string, title: string, extra: Record<string, unknown> = {}) => ({
-  session_id, title, is_streaming: false, attention: null, last_message_at: now - 600, updated_at: now - 600, pinned: false, archived: false, project_id: null,
+  session_id, title, is_streaming: false, attention: null, sort_ts: now - 600, last_message_at: now - 600, updated_at: now - 600, pinned: false, archived: false, project_id: null,
   is_cli_session: false, source_kind: 'webui', is_messaging_session: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true, ...extra,
 })
 const ROWS = [
@@ -60,6 +60,16 @@ async function expectStatus(page: Page): Promise<void> {
   expect(await rail(item(page, 'rail-idle'))).toMatchObject({ opacity: 0, scaleY: 0 })
   for (const sid of ['rail-running', 'rail-both']) expect(await rail(item(page, sid))).toMatchObject({ content: '""', color: accent, opacity: 1, scaleY: 1 })
   expect(await rail(item(page, 'rail-attention'))).toMatchObject({ content: '""', color: warning, opacity: 1, scaleY: 1 })
+  for (const sid of ['rail-running', 'rail-attention', 'rail-both']) {
+    const paint = await item(page, sid).evaluate((node) => {
+      const bar = getComputedStyle(node, '::before'), row = node.getBoundingClientRect()
+      const box = node.closest('[data-motion-key]')!.getBoundingClientRect()
+      const left = row.left + node.clientLeft + parseFloat(bar.left)
+      return { left, right: left + parseFloat(bar.width), boxLeft: box.left, boxRight: box.right }
+    })
+    expect(paint.left, `${sid} rail stays inside its paint containment`).toBeGreaterThanOrEqual(paint.boxLeft)
+    expect(paint.right).toBeLessThanOrEqual(paint.boxRight)
+  }
   for (const sid of ['rail-idle', 'rail-running', 'rail-attention', 'rail-both']) expect(await dot(item(page, sid))).toBe('none')
   // Status reaches assistive technology as text, not only color or motion; idle rows say nothing extra.
   expect(await item(page, 'rail-running').ariaSnapshot()).toContain('Streaming')
