@@ -247,6 +247,14 @@ export function trustedSessionAllowsActiveProfile(ctx: RequestContext, info: Ses
   return requestProfileMatchesBound(ctx, (info.bound_profile ?? '') || null)
 }
 
+/**
+ * TAL-48: bind the request's session authority once; every session check reads it from the request scope. The gate
+ * binds it for a protected path, and the public bootstrap before it reads the shell's data (TAL-1712).
+ */
+export async function bindPersonAccess(ctx: RequestContext, info: SessionInfo): Promise<void> {
+  if (personIsolationEnabled(ctx.deps.config.env)) ctx.personAccess = { personId: personIdentity(info)?.id ?? null, serverOwner: await sessionCanManageServer(ctx, info) }
+}
+
 /** Owner authority for `OPERATOR_ONLY_PATHS` (Python `session_can_manage_server`). */
 export async function sessionCanManageServer(ctx: { deps: Pick<AppDeps, 'auth' | 'oidc'> }, info: SessionInfo | null): Promise<boolean> {
   if (!(await ctx.deps.auth.isAuthEnabled())) return true
@@ -361,8 +369,7 @@ export async function checkAuth(ctx: RequestContext): Promise<boolean> {
       return false
     }
     ctx.authRefreshCookie = ctx.trusted.cookieValue ?? cookieVal
-    // TAL-48: bind the request's session authority once; every session check reads it from the request scope.
-    if (personIsolationEnabled(ctx.deps.config.env)) ctx.personAccess = { personId: personIdentity(info)?.id ?? null, serverOwner: await sessionCanManageServer(ctx, info) }
+    await bindPersonAccess(ctx, info)
     return true
   }
   if (path.startsWith('/api/')) {

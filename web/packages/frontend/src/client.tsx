@@ -12,7 +12,7 @@ import { installClipboardShim } from './lib/clipboard'
 import { applyBootAppearance } from './theme/boot'
 import { getRouter } from './router'
 import { createQueryClient } from './api/queryClient'
-import { loadBootstrap, bootstrapStatus, subscribeBootstrap, BootstrapContext } from './app/bootstrap'
+import { loadBootstrap, bootstrapStatus, seedShellQueries, subscribeBootstrap, BootstrapContext } from './app/bootstrap'
 import type { Bootstrap } from './contracts/bootstrap'
 import { FatalError } from './features/shell/ErrorBoundary'
 import { registerServiceWorker } from './app/pwa'
@@ -38,9 +38,12 @@ function BootstrapProvider({ initial, children }: { initial: Bootstrap; children
 loadBootstrap().then(
   (bootstrap) => {
     const queryClient = createQueryClient()
+    // TAL-1712: the shell's settings, profiles, workspaces and projects arrive with the bootstrap; a refresh after
+    // login or a profile switch seeds the new identity's the same way.
+    seedShellQueries(queryClient, bootstrapStatus())
     const router = getRouter({ root: appRoot, queryClient, bootstrap })
     // Route guards read the router context, so a refreshed payload must reach it before the next navigation.
-    subscribeBootstrap(() => { const s = bootstrapStatus(); if (s?.state === 'ready') router.update({ context: { queryClient, bootstrap: s.data } }) })
+    subscribeBootstrap(() => { const s = bootstrapStatus(); seedShellQueries(queryClient, s); if (s?.state === 'ready') router.update({ context: { queryClient, bootstrap: s.data } }) })
     root.render(
       <StrictMode>
         <QueryClientProvider client={queryClient}>

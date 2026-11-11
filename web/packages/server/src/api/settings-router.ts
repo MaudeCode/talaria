@@ -127,7 +127,8 @@ async function authFields(ctx: RequestContext, into: Dict): Promise<void> {
   }
 }
 
-async function settingsPayload(ctx: RequestContext): Promise<Dict> {
+/** `/api/settings`; the bootstrap shell ships it too (TAL-1712). */
+export async function settingsPayload(ctx: RequestContext): Promise<Dict> {
   const deps = ctx.deps
   const settings: Dict = (await deps.settings.load())
   const raw = await deps.settings.readRaw()

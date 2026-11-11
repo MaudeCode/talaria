@@ -1,6 +1,6 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
-import { AgentRuntimeMetadataSchema, FrontendBuildIdSchema, LoginRedirectSchema, LoginResponseSchema } from '../views.js'
+import { AgentRuntimeMetadataSchema, FrontendBuildIdSchema, LoginRedirectSchema, LoginResponseSchema, ProfilesSchema, ProjectsSchema, SettingsSchema, WorkspacesSchema } from '../views.js'
 
 /**
  * Core routes: liveness, the public bootstrap document, and password
@@ -75,6 +75,12 @@ export const BootstrapSchema = z.object({
   profile: z.object({ name: z.string(), is_default: z.boolean() }).nullable(),
   onboarding: z.object({ completed: z.boolean() }).nullable(),
   features: BootstrapFeaturesSchema,
+  /**
+   * TAL-1712: the shell's own data, equal to the bodies of `/api/settings`, `/api/profiles`, `/api/workspaces` and
+   * `/api/projects` for this request, so the client seeds those queries instead of reading them. Present only for an
+   * authenticated request whose four reads all succeeded in time; without it the client reads them as before.
+   */
+  shell: z.object({ settings: SettingsSchema, profiles: ProfilesSchema, workspaces: WorkspacesSchema, projects: ProjectsSchema }).optional(),
 })
 export type Bootstrap = z.infer<typeof BootstrapSchema>
 

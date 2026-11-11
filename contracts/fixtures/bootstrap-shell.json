@@ -1,0 +1,34 @@
+{
+  "authenticated": {
+    "webui_version": "web-v0.0.0-fixture",
+    "max_upload_bytes": 20971520,
+    "csrf_token": "",
+    "language": "",
+    "browser_language": "en",
+    "bot_name": "Hermes",
+    "assistant_name": "Hermes",
+    "auth": { "auth_enabled": false, "logged_in": false, "oidc_enabled": false, "oidc_native_handoff_enabled": false, "oidc_unavailable": false, "password_auth_enabled": false, "passwordless_enabled": false, "passkeys_enabled": false, "passkeys_count": 0, "passkey_feature_flag": false, "auth_disabled_acknowledged": false, "can_manage_server": true, "no_password_warning": "error" },
+    "profile": { "name": "default", "is_default": true },
+    "onboarding": { "completed": true },
+    "features": { "dashboard": false, "terminal_remote_backend": false, "extensions": false, "single_profile_mode": false },
+    "shell": {
+      "settings": { "bot_name": "Hermes", "send_key": "enter", "language": "en", "webui_version": "web-v0.0.0-fixture" },
+      "profiles": { "profiles": [{ "name": "default", "is_default": true, "is_active": true, "uses_default_model": true, "name_differs": false }], "active": "default", "single_profile_mode": false, "summary": { "total": 1, "gateways_running": 0, "active_name": "default" } },
+      "workspaces": { "workspaces": [{ "name": "Home", "path": "/synthetic/home", "is_default": true, "exists": true, "display_path": "~", "chat_count": 0 }], "last": "/synthetic/home", "terminal_remote_backend": false },
+      "projects": { "projects": [{ "project_id": "a1b2c3d4e5f6", "name": "Synthetic project", "color": null, "profile": "default", "created_at": 1760000000 }], "all_profiles": false, "active_profile": "default", "other_profile_count": 0 }
+    }
+  },
+  "unauthenticated": {
+    "webui_version": "web-v0.0.0-fixture",
+    "max_upload_bytes": 20971520,
+    "csrf_token": "",
+    "language": "",
+    "browser_language": "en",
+    "bot_name": "Hermes",
+    "assistant_name": "Hermes",
+    "auth": { "auth_enabled": true, "logged_in": false, "oidc_enabled": false, "oidc_native_handoff_enabled": false, "oidc_unavailable": false, "password_auth_enabled": true, "passwordless_enabled": false, "passkeys_enabled": false, "passkeys_count": 0, "passkey_feature_flag": false, "auth_disabled_acknowledged": false, "can_manage_server": false, "no_password_warning": null },
+    "profile": null,
+    "onboarding": null,
+    "features": { "dashboard": false, "terminal_remote_backend": false, "extensions": false, "single_profile_mode": false }
+  }
+}

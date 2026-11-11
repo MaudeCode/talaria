@@ -480,6 +480,783 @@
                         "extensions",
                         "single_profile_mode"
                       ]
+                    },
+                    "shell": {
+                      "type": "object",
+                      "properties": {
+                        "settings": {
+                          "type": "object",
+                          "properties": {
+                            "kanban_pinned_boards": {
+                              "type": "array",
+                              "maxItems": 100,
+                              "items": {
+                                "type": "string",
+                                "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+                              },
+                              "description": "TAL-1851: replace the active profile ordered board pins; stored in Talaria settings, independently of the Agent."
+                            },
+                            "bot_name": {
+                              "type": "string"
+                            },
+                            "default_model": {
+                              "type": "string"
+                            },
+                            "default_workspace": {
+                              "type": "string"
+                            },
+                            "language": {
+                              "type": "string"
+                            },
+                            "send_key": {
+                              "type": "string"
+                            },
+                            "font_size": {
+                              "type": "string"
+                            },
+                            "full_width_chat": {
+                              "type": "boolean"
+                            },
+                            "chat_width": {
+                              "enum": [
+                                "comfortable",
+                                "wide",
+                                "full"
+                              ],
+                              "type": "string"
+                            },
+                            "auto_scroll_follow": {
+                              "type": "boolean"
+                            },
+                            "render_user_markdown": {
+                              "type": "boolean"
+                            },
+                            "chat_activity_display_mode": {
+                              "type": "string"
+                            },
+                            "default_message_mode": {
+                              "type": "string"
+                            },
+                            "fade_text_effect": {
+                              "type": "boolean",
+                              "description": "TAL-2148: fade the streaming reply's new words in (default false); clients skip code and honour reduced motion."
+                            },
+                            "show_busy_placeholder_hint": {
+                              "type": "boolean",
+                              "description": "TAL-2148: while a chat is busy and the draft is empty, the composer placeholder names the busy action (default true)."
+                            },
+                            "session_endless_scroll": {
+                              "type": "boolean",
+                              "description": "TAL-2148: older messages load while scrolling up (default true); off, a Load earlier messages button loads them."
+                            },
+                            "composer_controls_shown": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "TAL-2172, every settings read and save: how many of the composer controls Settings › Chat draws are shown (each `hide_composer_*` key while false, `show_quota_chip` while true)."
+                            },
+                            "composer_controls_total": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "TAL-2172, every settings read and save: how many composer controls Settings › Chat draws."
+                            },
+                            "sidebar_items_shown": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "TAL-2175, every settings read and save: how many of the sidebar items Settings › Navigation draws are shown (each hideable destination `hidden_tabs` does not name, `show_sidebar_feedback` and `show_titlebar_profile` while true)."
+                            },
+                            "sidebar_items_total": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "TAL-2175, every settings read and save: how many hideable sidebar items Settings › Navigation draws."
+                            },
+                            "outside_chats_shown": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "TAL-2175, every settings read and save: how many of the six `show_*_sessions` kinds of chats from outside Talaria are shown."
+                            },
+                            "outside_chats_total": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "TAL-2175, every settings read and save: how many kinds of chats from outside Talaria Settings › Navigation lists."
+                            },
+                            "hidden_tabs": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "composer_control_order": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "show_cli_sessions": {
+                              "type": "boolean"
+                            },
+                            "show_claude_code_sessions": {
+                              "type": "boolean"
+                            },
+                            "show_messaging_sessions": {
+                              "type": "boolean",
+                              "description": "TAL-2159: list chats from messaging apps (default true); `show_cli_sessions` lists terminal, desktop, API and other Agent chats only."
+                            },
+                            "show_cron_sessions": {
+                              "type": "boolean"
+                            },
+                            "show_sidebar_feedback": {
+                              "type": "boolean",
+                              "description": "TAL-1588: show Send feedback in the Web rail above Notifications."
+                            },
+                            "sidebar_quota_sources": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "TAL-1870: the provider quota source ids the expanded Web sidebar pins, in order; the server keeps at most two unique ids."
+                            },
+                            "sidebar_source_ids": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "TAL-1870, a save of `sidebar_quota_sources` only: the quota projection for the saved pins, as `/api/provider/quotas` ships it; absent if the read failed."
+                            },
+                            "sidebar_can_pin": {
+                              "type": "boolean",
+                              "description": "TAL-1870, a save of `sidebar_quota_sources` only: whether another source can be pinned."
+                            },
+                            "show_webhook_sessions": {
+                              "type": "boolean"
+                            },
+                            "show_kanban_sessions": {
+                              "type": "boolean"
+                            },
+                            "check_for_updates": {
+                              "type": "boolean"
+                            },
+                            "summarize_updates_automatically": {
+                              "type": "boolean"
+                            },
+                            "ignore_agent_updates": {
+                              "type": "boolean"
+                            },
+                            "auth_enabled": {
+                              "type": "boolean"
+                            },
+                            "password_auth_enabled": {
+                              "type": "boolean"
+                            },
+                            "password_state": {
+                              "enum": [
+                                "ok",
+                                "idle",
+                                "warning",
+                                "error"
+                              ],
+                              "type": "string",
+                              "description": "TAL-2143: the Access password row's status: ok with a password, idle without one while sign-in is on, else the no-password warning level."
+                            },
+                            "password_env_var": {
+                              "type": "boolean"
+                            },
+                            "passkeys_enabled": {
+                              "type": "boolean"
+                            },
+                            "passwordless_enabled": {
+                              "type": "boolean"
+                            },
+                            "auth_disabled_acknowledged": {
+                              "type": "boolean"
+                            },
+                            "webui_version": {
+                              "type": "string"
+                            },
+                            "agent_version": {
+                              "type": "string"
+                            },
+                            "update_channel": {
+                              "type": "string"
+                            },
+                            "update_channels": {
+                              "type": "array",
+                              "items": {
+                                "enum": [
+                                  "stable",
+                                  "nightly",
+                                  "experimental"
+                                ],
+                                "type": "string"
+                              },
+                              "description": "TAL-1569: the Web update channels this server offers, in display order."
+                            },
+                            "agent_update_channel": {
+                              "enum": [
+                                "stable",
+                                "experimental"
+                              ],
+                              "type": "string"
+                            },
+                            "update_channel_version": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "max_tokens": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "max_tokens_effective": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "max_tokens_fallback": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "max_tokens_source": {
+                              "enum": [
+                                "profile",
+                                "agent",
+                                "none"
+                              ],
+                              "type": "string",
+                              "description": "TAL-2160, every settings read and save: where `max_tokens_effective` comes from: the profile's root `max_tokens`, the Agent's `agent.max_tokens`, or neither (no limit)."
+                            },
+                            "auto_title_refresh_available": {
+                              "type": "boolean",
+                              "description": "TAL-2160, every settings read and save: title generation is on for the active profile, so `auto_title_refresh_every` can refresh generated titles."
+                            },
+                            "sync_to_insights_available": {
+                              "type": "boolean",
+                              "description": "TAL-2160, every settings read and save: a sidecar is running, so `sync_to_insights` can copy Web chats into the Agent's database. Changing `sync_to_insights` needs an owner session."
+                            },
+                            "pinned_sessions_limit_max": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0,
+                              "description": "TAL-2160, every settings read and save: the largest `pinned_sessions_limit` the server accepts; the smallest is 1."
+                            },
+                            "tts_engine": {
+                              "type": "string"
+                            },
+                            "tts_voice": {
+                              "type": "string"
+                            },
+                            "dictation_append": {
+                              "type": "boolean"
+                            },
+                            "persisted_speech_keys": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "confirm_external_links": {
+                              "type": "boolean"
+                            },
+                            "trusted_link_hosts": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "trusted_link_hosts_count": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "description": "TAL-2143: how many normalized `trusted_link_hosts` there are; load and save both answer it."
+                            },
+                            "provider_quota_thresholds": {
+                              "type": "object",
+                              "properties": {
+                                "warning_remaining_percent": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 99
+                                },
+                                "critical_remaining_percent": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 99
+                                },
+                                "pace_tolerance_percent": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 25
+                                },
+                                "pace_warning_burn_rate_percent": {
+                                  "type": "integer",
+                                  "minimum": 100,
+                                  "maximum": 300
+                                },
+                                "pace_critical_burn_rate_percent": {
+                                  "type": "integer",
+                                  "minimum": 100,
+                                  "maximum": 400
+                                },
+                                "pace_minimum_elapsed_hours": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 72
+                                }
+                              },
+                              "required": [
+                                "warning_remaining_percent",
+                                "critical_remaining_percent",
+                                "pace_tolerance_percent",
+                                "pace_warning_burn_rate_percent",
+                                "pace_critical_burn_rate_percent",
+                                "pace_minimum_elapsed_hours"
+                              ]
+                            },
+                            "agent_approvals": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "TAL-1169: the profile's `talaria.agent_approvals` (default false): whether an agent with the talaria toolset may approve once or deny another session's pending command. Null when the profile config cannot be read."
+                            },
+                            "compression_prepare_ahead": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "TAL-1825: the profile's `compression.prepare_ahead`; null when the Agent does not offer it."
+                            },
+                            "group_discussion_max_rounds": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991,
+                                  "exclusiveMinimum": 0
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "TAL-1828: the root config's `hosted_rooms.discussion.max_rounds`, as a gateway loads it (default 3). Null when the session cannot manage the server or this server cannot offer it."
+                            },
+                            "group_discussion_max_messages": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991,
+                                  "exclusiveMinimum": 0
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "TAL-1828: the root config's `hosted_rooms.discussion.max_messages`, as a gateway loads it (default 10). Null as `group_discussion_max_rounds`."
+                            },
+                            "group_discussion_restart_required": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "TAL-1828: the running gateway loaded other limits at startup, so a saved change applies after a gateway restart. Null as `group_discussion_max_rounds`."
+                            },
+                            "screen_reader_mode": {
+                              "type": "boolean",
+                              "description": "TAL-1605: give the Web workspace PTY an xterm accessibility tree; owner-command output always has one."
+                            },
+                            "workspace_panel_open": {
+                              "type": "boolean",
+                              "description": "TAL-2154: open the Web chat workspace panel on each chat's first visit in a browser tab; the person's own open or close wins after that."
+                            },
+                            "workspace_todos_tab": {
+                              "type": "boolean",
+                              "description": "TAL-2154: show a Todos page for the current chat in the Web chat workspace panel."
+                            }
+                          },
+                          "additionalProperties": {}
+                        },
+                        "profiles": {
+                          "type": "object",
+                          "properties": {
+                            "profiles": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "path": {
+                                    "type": "string"
+                                  },
+                                  "is_active": {
+                                    "type": "boolean"
+                                  },
+                                  "is_default": {
+                                    "type": "boolean"
+                                  },
+                                  "model": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "provider": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "skill_count": {
+                                    "type": "number"
+                                  },
+                                  "total_skills": {
+                                    "type": "number"
+                                  },
+                                  "enabled_skills": {
+                                    "type": "number"
+                                  },
+                                  "gateway_running": {
+                                    "type": "boolean"
+                                  },
+                                  "has_env": {
+                                    "type": "boolean"
+                                  },
+                                  "visible": {
+                                    "type": "boolean"
+                                  },
+                                  "gateway_mode": {
+                                    "enum": [
+                                      "own",
+                                      "served",
+                                      "parked",
+                                      "standalone",
+                                      "stopped"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "display_name": {
+                                    "type": "string"
+                                  },
+                                  "description": {
+                                    "type": "string"
+                                  },
+                                  "has_avatar": {
+                                    "type": "boolean"
+                                  },
+                                  "display_name_overridden": {
+                                    "type": "boolean"
+                                  },
+                                  "avatar_url": {
+                                    "type": "string"
+                                  },
+                                  "canonical_session": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "session_id": {
+                                            "type": "string"
+                                          },
+                                          "tip_session_id": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "session_id",
+                                          "tip_session_id"
+                                        ]
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "gateway_state": {
+                                    "enum": [
+                                      "ok",
+                                      "idle"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "uses_default_model": {
+                                    "type": "boolean"
+                                  },
+                                  "name_differs": {
+                                    "type": "boolean"
+                                  },
+                                  "pending_writes": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  }
+                                },
+                                "required": [
+                                  "name"
+                                ],
+                                "additionalProperties": {}
+                              }
+                            },
+                            "active": {
+                              "type": "string"
+                            },
+                            "single_profile_mode": {
+                              "type": "boolean"
+                            },
+                            "summary": {
+                              "type": "object",
+                              "properties": {
+                                "total": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "gateways_running": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "active_name": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "total",
+                                "gateways_running",
+                                "active_name"
+                              ],
+                              "description": "TAL-2143: Settings › Profiles' figures, counted over profiles whose `visible` is not false, and the active profile's display name, else its name."
+                            }
+                          },
+                          "required": [
+                            "profiles",
+                            "active"
+                          ],
+                          "additionalProperties": {}
+                        },
+                        "workspaces": {
+                          "type": "object",
+                          "properties": {
+                            "workspaces": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "path": {
+                                    "type": "string"
+                                  },
+                                  "is_default": {
+                                    "type": "boolean"
+                                  },
+                                  "exists": {
+                                    "type": "boolean"
+                                  },
+                                  "display_path": {
+                                    "type": "string"
+                                  },
+                                  "chat_count": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "path"
+                                ],
+                                "additionalProperties": {}
+                              }
+                            },
+                            "last": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "terminal_remote_backend": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "workspaces"
+                          ],
+                          "additionalProperties": {}
+                        },
+                        "projects": {
+                          "type": "object",
+                          "properties": {
+                            "projects": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "project_id": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "color": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "profile": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "created_at": {
+                                    "type": "number"
+                                  },
+                                  "workspaces": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "default_workspace": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "model": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "model_provider": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "model_option_id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "project_id",
+                                  "name"
+                                ],
+                                "additionalProperties": {}
+                              }
+                            },
+                            "active_profile": {
+                              "type": "string"
+                            },
+                            "all_profiles": {
+                              "type": "boolean"
+                            },
+                            "other_profile_count": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "projects",
+                            "active_profile",
+                            "all_profiles",
+                            "other_profile_count"
+                          ],
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": [
+                        "settings",
+                        "profiles",
+                        "workspaces",
+                        "projects"
+                      ]
                     }
                   },
                   "required": [
