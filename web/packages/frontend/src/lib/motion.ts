@@ -43,3 +43,36 @@ export function revealHeight(el: HTMLElement, { open, from, arrive = false }: { 
   void animation.finished.then(() => { forget(); animation.cancel() }, forget)
   return animation
 }
+
+export type ListSnapshot = Map<string, { el: HTMLElement; rect: DOMRect; group: string | null }>
+
+/** Only rendered boxes participate. Measuring skipped content would defeat content-visibility. */
+export function measureList(container: HTMLElement, keyAttr = 'data-motion-key'): ListSnapshot {
+  const snapshot: ListSnapshot = new Map()
+  for (const el of container.querySelectorAll<HTMLElement>(`[${keyAttr}]`)) {
+    if (el.closest('[hidden],[style*="display: none"]') || (el.checkVisibility && !el.checkVisibility({ contentVisibilityAuto: true, visibilityProperty: true }))) continue
+    const key = el.getAttribute(keyAttr)
+    if (!key) continue
+    const rect = el.getBoundingClientRect()
+    if (rect.width && rect.height) snapshot.set(key, { el, rect, group: el.closest('[data-motion-group]')?.getAttribute('data-motion-group') ?? null })
+  }
+  return snapshot
+}
+
+/** FLIP the wrapper, leaving the row's own swipe transform alone. Call after reveals establish their starting size. */
+export function flipList(container: HTMLElement, before: ListSnapshot, keyAttr = 'data-motion-key'): Animation[] {
+  if (!motionOn()) return []
+  const animations: Animation[] = []
+  for (const [key, { el, rect, group }] of measureList(container, keyAttr)) {
+    const old = before.get(key)
+    if (!old) continue
+    const x = old.rect.left - rect.left, y = old.rect.top - rect.top
+    if (Math.abs(x) < 0.5 && Math.abs(y) < 0.5) continue
+    const lifted = old.group !== group
+    animations.push(el.animate([
+      { transform: `translate(${x}px, ${y}px)`, ...(lifted && { background: 'var(--surface)', boxShadow: 'var(--shadow-md)', position: 'relative', zIndex: 1 }) },
+      { transform: 'none', ...(lifted && { background: 'transparent', boxShadow: 'none', position: 'relative', zIndex: 1 }) },
+    ], { duration: 400, easing: TRAVEL_EASE }))
+  }
+  return animations
+}

@@ -8,7 +8,7 @@
 .session-search-field{position:relative;display:flex;align-items:center;width:100%}
 .session-search input{padding-right:34px}
 .session-search .sidebar-search-icon{left:10px}
-.session-item{content-visibility:auto;contain-intrinsic-size:auto 56px;padding:8px 8px;margin-bottom:2px;border-radius:var(--session-radius);cursor:pointer;font-size:var(--session-font-size);color:var(--muted);transition:background .15s,color .15s,transform .5s cubic-bezier(.22,.61,.36,1),box-shadow .15s ease;display:flex;align-items:flex-start;gap:8px;min-width:0;position:relative;touch-action:pan-y;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;transform:translate3d(var(--session-swipe-offset,0),var(--session-reflow-offset,0),0);line-height:var(--session-line-height)}
+.session-item{padding:8px 8px;margin-bottom:2px;border-radius:var(--session-radius);cursor:pointer;font-size:var(--session-font-size);color:var(--muted);transition:background .15s,color .15s,transform .5s cubic-bezier(.22,.61,.36,1),box-shadow .15s ease;display:flex;align-items:flex-start;gap:8px;min-width:0;position:relative;touch-action:pan-y;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;transform:translate3d(var(--session-swipe-offset,0),var(--session-reflow-offset,0),0);line-height:var(--session-line-height)}
 .session-item:focus-within{padding-right:64px}
 @media (hover:hover){.session-item:hover{background:var(--session-hover-bg);color:var(--text)}}
 .session-item.loading{background:var(--hover-bg);color:var(--text)}
@@ -95,9 +95,11 @@
 .session-item.active .session-title{color:var(--session-active-title-fg)}
 .session-time{opacity:.8}
 /* The left rail is the row's only status marker (TAL-365): accent while running, warning when attention waits; selection never draws it. */
-.session-item.streaming::before,.session-item.needs-attention::before{content:'';position:absolute;left:var(--session-bar-left);top:var(--session-bar-inset-y);bottom:var(--session-bar-inset-y);width:2px;border-radius:var(--session-bar-radius);background:var(--warning)}
-.session-item.streaming::before{background:var(--accent);animation:session-pulse 1.4s ease-in-out infinite}
-@media (prefers-reduced-motion:reduce){.session-item.streaming::before{animation:none}}
+[data-motion-key]{content-visibility:auto;contain-intrinsic-size:auto 56px}
+.session-item::before{opacity:0;transform:scaleY(0);transform-origin:center;transition:opacity 180ms ease,transform 180ms ease;content:'';position:absolute;left:var(--session-bar-left);top:var(--session-bar-inset-y);bottom:var(--session-bar-inset-y);width:2px;border-radius:var(--session-bar-radius);background:var(--warning)}
+.session-item.streaming::before,.session-item.needs-attention::before{opacity:1;transform:scaleY(1)}
+.session-item.streaming::before{background:var(--accent)}
+@media (prefers-reduced-motion:reduce){.session-item::before{transition:none}}
 /* Narrow screens with a pointer always show the actions; the base padding above would otherwise put the timestamp under them. */
 @media (max-width:640px) and (hover:hover){.session-item{padding-right:64px}}
 .session-item.active .session-time{color:var(--session-active-meta-fg)}

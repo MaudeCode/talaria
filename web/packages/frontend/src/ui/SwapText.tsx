@@ -7,25 +7,29 @@ import { ARRIVE_EASE, motionOn, SWAP_MS, TRAVEL_EASE } from '../lib/motion'
  * between their widths, so what follows the label never snaps. Settled, it holds plain text and the caller's ellipsis
  * applies; only while the two lines swap is the slot a one-cell grid with both in it. `className` styles the slot.
  */
-export function SwapText({ text, className }: { text: string; className?: string | undefined }) {
-  const [view, setView] = useState({ text, out: null as string | null, swap: 0 })
-  if (view.text !== text) setView({ text, out: motionOn() ? view.text : null, swap: view.swap + 1 })
+export function SwapText({ text, className, initialText, animate = true }: { text: string; className?: string | undefined; initialText?: string | undefined; animate?: boolean }) {
+  const [view, setView] = useState({ text: initialText ?? text, out: null as string | null, swap: 0 })
+  const enabled = animate && motionOn()
+  if (view.text !== text || (!enabled && view.out !== null)) setView({ text, out: enabled ? view.text : null, swap: view.swap + 1 })
   const slot = useRef<HTMLSpanElement>(null)
   const { out, swap } = view
   useLayoutEffect(() => {
     const el = slot.current
     const incoming = el?.querySelector<HTMLElement>(':scope > [data-swap-in]')
     const outgoing = el?.querySelector<HTMLElement>(':scope > [data-swap-out]')
-    if (!el || !incoming || !outgoing) return
+    if (!animate || !motionOn() || !el || !incoming || !outgoing) return
     const from = outgoing.getBoundingClientRect().width
     const to = incoming.getBoundingClientRect().width
-    if (Math.abs(from - to) > 0.5) el.animate([{ width: `${from}px` }, { width: `${to}px` }], { duration: SWAP_MS, easing: TRAVEL_EASE })
+    const width = Math.abs(from - to) > 0.5 ? el.animate([{ width: `${from}px` }, { width: `${to}px` }], { duration: SWAP_MS, easing: TRAVEL_EASE }) : null
+    void width?.finished.catch(() => undefined)
     const step = SWAP_MS * 2 / 3
-    outgoing.animate([{ opacity: 1 }, { opacity: 0, transform: 'translateY(-3px)' }], { duration: step, easing: 'ease-in', fill: 'forwards' })
+    const exit = outgoing.animate([{ opacity: 1 }, { opacity: 0, transform: 'translateY(-3px)' }], { duration: step, easing: 'ease-in', fill: 'forwards' })
+    void exit.finished.catch(() => undefined)
     // The new line lands last; the slot returns to plain text once it has.
     const enter = incoming.animate([{ opacity: 0 }, { opacity: 1 }], { duration: step, delay: SWAP_MS - step, easing: ARRIVE_EASE, fill: 'backwards' })
     void enter.finished.then(() => { setView((v) => v.swap === swap ? { ...v, out: null } : v) }, () => undefined)
-  }, [swap])
+    return () => { width?.cancel(); exit.cancel(); enter.cancel() }
+  }, [swap, animate])
   const line = 'col-start-1 row-start-1 justify-self-start whitespace-nowrap'
   return (
     <span ref={slot} className={cn(className, out !== null && 'inline-grid overflow-hidden')} data-swapping={out !== null || undefined}>
