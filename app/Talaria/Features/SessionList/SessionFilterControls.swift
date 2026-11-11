@@ -8,6 +8,7 @@ struct SessionFilterControls: View {
     @Binding var projectPendingRename: ProjectSummary?
     let switchActiveProfile: (ProfileSummary) -> Void
     let presentProjectCreation: () -> Void
+    let openArchivedChats: () -> Void
 
     var body: some View {
         Menu {
@@ -54,6 +55,10 @@ struct SessionFilterControls: View {
                     .disabled(viewModel.isViewingCachedData || viewModel.pendingChange(for: selectedProject) != nil)
                 }
             }
+            Button(action: openArchivedChats) {
+                Label("Archived Chats", systemImage: "archivebox")
+            }
+            .accessibilityIdentifier("sidebar-archived-chats")
         } label: {
             Label("Filters", systemImage: hasActiveFilter
                 ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease")

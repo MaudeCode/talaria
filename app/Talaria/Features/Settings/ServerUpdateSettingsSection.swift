@@ -27,17 +27,6 @@ struct ServerUpdateSettingsSection: View {
 
             SettingsDivider()
 
-            NavigationLink {
-                CustomHeadersSettingsView(authManager: authManager)
-            } label: {
-                SettingsAccessoryRow(
-                    title: String(localized: "Connection Headers"),
-                    systemImage: "list.bullet.rectangle"
-                )
-            }
-            .buttonStyle(.plain)
-            .accessibilityHint("Opens the custom request headers editor.")
-
             SettingsValueRow(title: String(localized: "Version")) {
                 serverVersionContent
             }

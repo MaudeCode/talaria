@@ -4,22 +4,9 @@ import UIKit
 import TalariaKit
 
 struct LiveActivitiesWidgetsSettingsView: View {
-    @AppStorage(AgentRunLiveActivityPrivacy.showsResponseExcerptsKey)
-    private var showsLiveActivityResponseExcerpts = false
-
     var body: some View {
         SettingsCategoryPage(category: .liveActivitiesAndWidgets) {
             RelayLiveActivitySettingsCard()
-
-            SettingsCard(title: String(localized: "Privacy")) {
-                SettingsToggleRow(
-                    title: String(localized: "Live Activity Excerpts"),
-                    systemImage: "lock",
-                    isOn: $showsLiveActivityResponseExcerpts
-                )
-
-                SettingsFootnote(String(localized: "Shows short response text on the Lock Screen and Dynamic Island."))
-            }
 
             SettingsCard(title: String(localized: "Widgets")) {
                 NavigationLink(value: SettingsPane.providerQuotaWidget) {
@@ -110,7 +97,7 @@ private struct AppLockSettingsCard: View {
 
     var body: some View {
         let method = lock.method
-        SettingsCard(title: String(localized: "Privacy")) {
+        SettingsCard(title: String(localized: "App Lock")) {
             SettingsToggleRow(
                 title: method.settingsTitle,
                 systemImage: method.systemImage,

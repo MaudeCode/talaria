@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Group Settings by interface, profile, server and device, with sidebar visibility controls in Navigation and Archived Chats in Filters.",
+      "highlight": false,
+      "components": ["app"],
+      "announce": false
+    }
+  ]
+}

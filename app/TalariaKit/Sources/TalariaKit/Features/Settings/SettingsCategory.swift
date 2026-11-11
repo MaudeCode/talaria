@@ -2,8 +2,14 @@ import Foundation
 
 public enum SettingsCategory: String, Identifiable, Sendable {
     case appearance
-    case notificationsAndHaptics
-    case chats
+    case notificationsAndHaptics = "notifications"
+    case chats = "chat"
+    case navigation
+    case speech
+    case models
+    case profiles
+    case workspaces
+    case system
     case liveActivitiesAndWidgets
     case siriAndShortcuts
     case servers
@@ -16,15 +22,9 @@ public enum SettingsCategory: String, Identifiable, Sendable {
 
     public static var rootCategories: [Self] {
         var categories: [Self] = [
-            .appearance,
-            .notificationsAndHaptics,
-            .chats,
-            .liveActivitiesAndWidgets,
-            .siriAndShortcuts,
-            .servers,
-            .providers,
-            .dataAndStorage,
-            .about
+            .appearance, .chats, .navigation, .notificationsAndHaptics, .speech,
+            .models, .providers, .profiles, .workspaces, .system,
+            .servers, .liveActivitiesAndWidgets, .siriAndShortcuts, .dataAndStorage, .about
         ]
         #if DEBUG
         categories.append(.developer)
@@ -32,8 +32,38 @@ public enum SettingsCategory: String, Identifiable, Sendable {
         return categories
     }
 
+    public enum Group: String, CaseIterable, Identifiable, Sendable {
+        case interface, profile, server, device
+
+        public var id: String { rawValue }
+
+        public var title: String {
+            switch self {
+            case .interface: String(localized: "Interface")
+            case .profile: String(localized: "Profile")
+            case .server: String(localized: "Server")
+            case .device: String(localized: "This iPhone")
+            }
+        }
+    }
+
+    public var group: Group {
+        switch self {
+        case .appearance, .chats, .navigation, .notificationsAndHaptics, .speech: .interface
+        case .models, .providers: .profile
+        case .profiles, .workspaces, .system: .server
+        case .servers, .liveActivitiesAndWidgets, .siriAndShortcuts, .dataAndStorage, .about, .developer: .device
+        }
+    }
+
     public var title: String {
         switch self {
+        case .navigation: String(localized: "Navigation")
+        case .speech: String(localized: "Speech")
+        case .models: String(localized: "Models")
+        case .profiles: String(localized: "Profiles")
+        case .workspaces: String(localized: "Workspaces")
+        case .system: String(localized: "System")
         case .appearance: String(localized: "Appearance")
         case .notificationsAndHaptics: String(localized: "Notifications & Haptics")
         case .chats: String(localized: "Chats")
@@ -49,6 +79,12 @@ public enum SettingsCategory: String, Identifiable, Sendable {
 
     public var systemImage: String {
         switch self {
+        case .navigation: "sidebar.left"
+        case .speech: "mic"
+        case .models: "cpu"
+        case .profiles: "person.crop.circle"
+        case .workspaces: "folder"
+        case .system: "gearshape"
         case .appearance: "paintbrush"
         case .notificationsAndHaptics: "bell.badge"
         case .chats: "bubble.left.and.text.bubble.right"

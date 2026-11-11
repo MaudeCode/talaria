@@ -12,7 +12,6 @@ struct DefaultProfilePickerView: View {
     let currentDefaultProfileName: String?
     let onSave: (DefaultProfileSelection) -> Void
 
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var isLoading = false
@@ -27,60 +26,50 @@ struct DefaultProfilePickerView: View {
     @State private var showsCreateProfile = false
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 24) {
-                    SettingsPickerSearchField(
-                        text: $searchText,
-                        prompt: "Search profiles",
-                        clearLabel: "Clear profile search"
-                    )
+        ScrollView {
+            VStack(spacing: 24) {
+                SettingsPickerSearchField(
+                    text: $searchText,
+                    prompt: "Search profiles",
+                    clearLabel: "Clear profile search"
+                )
 
-                    if let saveError {
-                        Text(saveError)
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    profileListContent
-
-                    // The server 403s profile creation in single-profile mode,
-                    // so the affordance is hidden there (#24).
-                    if !isSingleProfileMode {
-                        newProfileButton
-                    }
+                if let saveError {
+                    Text(saveError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding()
-            }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("Default Profile")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
+
+                profileListContent
+
+                // The server 403s profile creation in single-profile mode,
+                // so the affordance is hidden there (#24).
+                if !isSingleProfileMode {
+                    newProfileButton
                 }
             }
-            .task {
-                await loadProfiles()
-            }
-            .refreshesLive(showsStatus: !profiles.isEmpty) {
-                await loadProfiles()
-            }
-            .sheet(isPresented: $showsCreateProfile) {
-                CreateProfileSheet(server: server) { createdProfile in
-                    // Optimistic append so the new profile is visible immediately,
-                    // then a fresh fetch reconciles paths/flags from the server.
-                    if let createdProfile, !profiles.contains(createdProfile) {
-                        profiles.append(createdProfile)
-                    }
-                    Task { await loadProfiles() }
+            .padding()
+        }
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle("Profiles")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await loadProfiles()
+        }
+        .refreshesLive(showsStatus: !profiles.isEmpty) {
+            await loadProfiles()
+        }
+        .sheet(isPresented: $showsCreateProfile) {
+            CreateProfileSheet(server: server) { createdProfile in
+                // Optimistic append so the new profile is visible immediately,
+                // then a fresh fetch reconciles paths/flags from the server.
+                if let createdProfile, !profiles.contains(createdProfile) {
+                    profiles.append(createdProfile)
                 }
+                Task { await loadProfiles() }
             }
         }
-        .adaptiveFormPresentation()
     }
 
     private var newProfileButton: some View {
@@ -303,7 +292,6 @@ struct DefaultProfilePickerView: View {
                 defaultModel: response.defaultModel
             )
             onSave(selection)
-            dismiss()
         } catch {
             saveError = error.localizedDescription
             selectedProfileName = nil

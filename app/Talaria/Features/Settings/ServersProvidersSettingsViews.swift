@@ -103,67 +103,14 @@ struct UserProfileSettingsView: View {
 
 struct ServersSettingsView: View {
     @Bindable var authManager: AuthManager
-    let server: URL
 
     @State private var isPresentingAddServer = false
     @State private var isConfirmingSignOut = false
-    @State private var defaultModel: String?
-    @State private var defaultProfileName: String?
-    @State private var defaultProfileDisplayName: String?
-    @State private var isLoadingDefaultModel = false
-    @State private var isLoadingDefaultProfile = false
-    @State private var showDefaultModelPicker = false
-    @State private var showDefaultProfilePicker = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         SettingsCategoryPage(category: .servers) {
             serversCard
-
-            SettingsCard(title: String(localized: "Active Server")) {
-                HapticButton {
-                    showDefaultModelPicker = true
-                } label: {
-                    SettingsAccessoryRow(
-                        title: String(localized: "Default Model"),
-                        value: defaultModelLabel,
-                        systemImage: "cpu"
-                    )
-                }
-                .buttonStyle(.plain)
-                .accessibilityHint("Opens the default model picker.")
-
-                SettingsDivider()
-
-                NavigationLink {
-                    AuxiliaryModelsSettingsView(server: server)
-                } label: {
-                    SettingsAccessoryRow(
-                        title: String(localized: "Auxiliary Models"),
-                        systemImage: "square.stack.3d.up"
-                    )
-                }
-                .buttonStyle(.plain)
-                .accessibilityHint("Opens the models used for side tasks such as session titles.")
-
-                SettingsDivider()
-
-                HapticButton {
-                    showDefaultProfilePicker = true
-                } label: {
-                    SettingsAccessoryRow(
-                        title: String(localized: "Default Profile"),
-                        value: defaultProfileLabel,
-                        systemImage: "person.crop.circle"
-                    )
-                }
-                .buttonStyle(.plain)
-                .accessibilityHint("Opens the default profile picker.")
-
-                SettingsDivider()
-
-                ServerUpdateSettingsSection(authManager: authManager, server: server)
-            }
 
             SettingsCard(title: String(localized: "Server Access")) {
                 SettingsFootnote(signOutFootnote)
@@ -173,30 +120,8 @@ struct ServersSettingsView: View {
                 }
             }
         }
-        .task { await loadDefaults() }
-        .refreshesLive(showsStatus: false) { await loadDefaults() }
         .sheet(isPresented: $isPresentingAddServer) {
             AddServerView(authManager: authManager)
-        }
-        .sheet(isPresented: $showDefaultModelPicker) {
-            DefaultModelPickerView(
-                server: server,
-                currentDefaultModel: defaultModel,
-                onSave: { defaultModel = $0 }
-            )
-        }
-        .sheet(isPresented: $showDefaultProfilePicker) {
-            DefaultProfilePickerView(
-                server: server,
-                currentDefaultProfileName: defaultProfileName,
-                onSave: { selection in
-                    defaultProfileName = selection.name
-                    defaultProfileDisplayName = selection.displayName
-                    if let model = selection.defaultModel, !model.isEmpty {
-                        defaultModel = model
-                    }
-                }
-            )
         }
         .alert("Sign out of this server?", isPresented: $isConfirmingSignOut) {
             Button("Cancel", role: .cancel) {}
@@ -239,23 +164,18 @@ struct ServersSettingsView: View {
             .buttonStyle(.plain)
             .accessibilityHint("Adds another Hermes server.")
 
+            SettingsDivider()
+
+            NavigationLink {
+                CustomHeadersSettingsView(authManager: authManager)
+            } label: {
+                SettingsAccessoryRow(title: String(localized: "Connection Headers"), systemImage: "list.bullet.rectangle")
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Opens the custom request headers editor.")
+
             IdentitySaveErrorNotice(authManager: authManager)
         }
-    }
-
-    private var defaultModelLabel: String {
-        if isLoadingDefaultModel { return String(localized: "Loading") }
-        guard let defaultModel, !defaultModel.isEmpty else { return String(localized: "Not set") }
-        return defaultModel
-    }
-
-    private var defaultProfileLabel: String {
-        if isLoadingDefaultProfile { return String(localized: "Loading") }
-        if let defaultProfileDisplayName, !defaultProfileDisplayName.isEmpty {
-            return defaultProfileDisplayName
-        }
-        guard let defaultProfileName, !defaultProfileName.isEmpty else { return String(localized: "Not set") }
-        return defaultProfileName == "default" ? String(localized: "Default") : defaultProfileName
     }
 
     private var signOutFootnote: String {
@@ -268,30 +188,6 @@ struct ServersSettingsView: View {
         authManager.servers.count > 1
             ? String(localized: "You'll switch to another configured server. Sign in again to use this one.")
             : String(localized: "You'll return to onboarding and need the server URL and password to sign back in.")
-    }
-
-    @MainActor
-    private func loadDefaults() async {
-        let client = APIClient(baseURL: server)
-        isLoadingDefaultModel = true
-        isLoadingDefaultProfile = true
-
-        do {
-            defaultModel = try await client.models().defaultModel
-        } catch {
-            defaultModel = nil
-        }
-        isLoadingDefaultModel = false
-
-        do {
-            let profiles = try await client.profiles()
-            defaultProfileName = profiles.effectiveDefaultProfileName
-            defaultProfileDisplayName = profiles.displayName(for: defaultProfileName)
-        } catch {
-            defaultProfileName = nil
-            defaultProfileDisplayName = nil
-        }
-        isLoadingDefaultProfile = false
     }
 }
 
@@ -334,18 +230,6 @@ struct ProvidersSettingsView: View {
                         Text(style.title).tag(style.rawValue)
                     }
                 }
-
-                SettingsDivider()
-
-                NavigationLink {
-                    ProviderQuotaSidebarDisplayView()
-                } label: {
-                    SettingsAccessoryRow(
-                        title: String(localized: "Sidebar Quotas"),
-                        systemImage: "sidebar.left"
-                    )
-                }
-                .buttonStyle(.plain)
 
                 SettingsDivider()
 

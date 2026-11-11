@@ -3,6 +3,9 @@ import UIKit
 import TalariaKit
 
 struct RelayLiveActivitySettingsCard: View {
+    @AppStorage(AgentRunLiveActivityPrivacy.showsResponseExcerptsKey)
+    private var showsLiveActivityResponseExcerpts = false
+
     @AppStorage(TalariaLiveActivityMode.storageKey) private var modeRawValue = TalariaLiveActivityMode.perSession.rawValue
 
     var body: some View {
@@ -16,6 +19,16 @@ struct RelayLiveActivitySettingsCard: View {
                     Text(mode.title).tag(mode.rawValue)
                 }
             }
+
+            SettingsDivider()
+
+            SettingsToggleRow(
+                title: String(localized: "Live Activity Excerpts"),
+                systemImage: "lock",
+                isOn: $showsLiveActivityResponseExcerpts
+            )
+
+            SettingsFootnote(String(localized: "Shows short response text on the Lock Screen and Dynamic Island."))
         }
         .onChange(of: modeRawValue) {
             Task {

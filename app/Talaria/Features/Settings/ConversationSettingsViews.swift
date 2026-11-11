@@ -2,12 +2,8 @@ import SwiftUI
 import TalariaKit
 
 struct ChatsSettingsView: View {
-    @Bindable var authManager: AuthManager
-    let server: URL
-
     @AppStorage(StreamingSendBehavior.storageKey) private var streamingSendBehaviorRawValue = StreamingSendBehavior.steer.rawValue
     @AppStorage(ComposerSendKey.storageKey) private var sendKeyRawValue = ComposerSendKey.defaultValue.rawValue
-    @AppStorage(ComposerSTTProviderPreference.storageKey) private var sttProviderPreferenceRawValue = ComposerSTTProviderPreference.defaultValue.rawValue
     @AppStorage(ChatTranscriptDisplaySettings.showsThinkingAndToolCardsKey) private var showsThinkingAndToolCards = true
     @AppStorage(ChatTranscriptDisplaySettings.thinkingCardsStartExpandedKey) private var thinkingCardsStartExpanded = false
     @AppStorage(ChatTranscriptDisplaySettings.toolCardsStartExpandedKey) private var toolCardsStartExpanded = false
@@ -26,27 +22,6 @@ struct ChatsSettingsView: View {
     @AppStorage(ComposerVisibilitySettings.profileKey) private var showsComposerProfile = true
     @AppStorage(ComposerVisibilitySettings.gitBranchKey) private var showsComposerGitBranch = true
     @AppStorage(ComposerVisibilitySettings.contextUsageKey) private var showsComposerContextUsage = true
-    @AppStorage(SessionRowDisplaySettings.showCronSessionsKey) private var showsCronSessions = true
-    @AppStorage(SessionRowDisplaySettings.showWebhookSessionsKey)
-    private var showsWebhookSessions = SessionRowDisplaySettings.showsWebhookSessions()
-    @AppStorage private var showsCliSessions: Bool
-    @AppStorage private var showsClaudeCodeSessions: Bool
-    @AppStorage(SessionRowDisplaySettings.showSubagentSessionsKey)
-    private var showsSubagentSessions = SessionRowDisplaySettings.defaultShowsSubagentSessions
-
-    init(authManager: AuthManager, server: URL) {
-        self.authManager = authManager
-        self.server = server
-        _showsCliSessions = AppStorage(
-            wrappedValue: SessionRowDisplaySettings.showsCliSessions(for: server),
-            SessionRowDisplaySettings.showCliSessionsKey(for: server)
-        )
-        _showsClaudeCodeSessions = AppStorage(
-            wrappedValue: SessionRowDisplaySettings.showsClaudeCodeSessions(for: server),
-            SessionRowDisplaySettings.showClaudeCodeSessionsKey(for: server)
-        )
-    }
-
     var body: some View {
         SettingsCategoryPage(category: .chats) {
             SettingsCard(title: String(localized: "Composer")) {
@@ -73,20 +48,6 @@ struct ChatsSettingsView: View {
                 }
 
                 SettingsFootnote(String(localized: "Hardware keyboard only. While a reply runs, Control-Return queues the message, or steers it if Send While Responding queues."))
-
-                SettingsDivider()
-
-                SettingsPickerRow(
-                    title: String(localized: "Dictation Provider"),
-                    systemImage: "mic",
-                    selection: $sttProviderPreferenceRawValue
-                ) {
-                    ForEach(ComposerSTTProviderPreference.allCases) { preference in
-                        Text(preference.title).tag(preference.rawValue)
-                    }
-                }
-
-                SettingsFootnote(String(localized: "On-device only keeps composer dictation audio off your Hermes server."))
 
                 SettingsDivider()
 
@@ -235,56 +196,6 @@ struct ChatsSettingsView: View {
 
                 // swiftlint:disable:next line_length
                 SettingsFootnote(String(localized: "Covers the git menu, composer branch picker, and the turn-end Commit & Push button and File changes recap."))
-            }
-
-            SettingsCard(title: String(localized: "Included Chats")) {
-                SettingsToggleRow(
-                    title: String(localized: "Cron Sessions"),
-                    systemImage: "clock.arrow.2.circlepath",
-                    isOn: $showsCronSessions
-                )
-
-                SettingsDivider()
-
-                SettingsToggleRow(
-                    title: String(localized: "Webhook Sessions"),
-                    systemImage: "bolt.horizontal.circle",
-                    isOn: $showsWebhookSessions
-                )
-
-                SettingsDivider()
-
-                SettingsToggleRow(
-                    title: String(localized: "CLI Sessions"),
-                    systemImage: "terminal",
-                    isOn: $showsCliSessions
-                )
-
-                SettingsDivider()
-
-                SettingsToggleRow(
-                    title: String(localized: "Claude Code Sessions"),
-                    systemImage: "chevron.left.forwardslash.chevron.right",
-                    isOn: $showsClaudeCodeSessions
-                )
-                .disabled(!showsCliSessions)
-
-                SettingsDivider()
-
-                SettingsToggleRow(
-                    title: String(localized: "Subagent Sessions"),
-                    systemImage: "arrow.triangle.branch",
-                    isOn: $showsSubagentSessions
-                )
-            }
-
-            SettingsCard(title: String(localized: "Archived Chats")) {
-                NavigationLink {
-                    ArchivedSessionsView(server: server, onAPIError: { authManager.handleAPIError($0, server: server) })
-                } label: {
-                    SettingsAccessoryRow(title: String(localized: "Archived Chats"), systemImage: "archivebox")
-                }
-                .buttonStyle(.plain)
             }
         }
     }

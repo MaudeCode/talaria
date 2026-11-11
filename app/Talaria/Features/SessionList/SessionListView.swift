@@ -747,7 +747,8 @@ struct SessionListView: View {
             },
             presentProjectCreation: {
                 isPresentingProjectCreation = true
-            }
+            },
+            openArchivedChats: { openSection(.archived) }
         )
     }
 
@@ -2454,13 +2455,16 @@ struct SessionListView: View {
 
     private var settingsNavigationStack: some View {
         NavigationStack(path: $settingsPath) {
-            settingsModalPage(SettingsView(server: server, selection: Binding {
+            settingsModalPage(SettingsView(server: server, profileName: viewModel.activeProfileDisplayName,
+                serverName: authManager.servers.first { $0.id == authManager.activeServerID }?.displayName,
+                selection: Binding {
                 settingsPath.first
             } set: { pane in
                 settingsPath = pane.map { [$0] } ?? []
             }))
             .navigationDestination(for: SettingsPane.self) { pane in
-                settingsModalPage(SettingsPaneView(authManager: authManager, server: server, pane: pane))
+                settingsModalPage(SettingsPaneView(authManager: authManager, server: server, pane: pane,
+                    onProfileChanged: { await viewModel.loadActiveProfile() }))
             }
         }
     }

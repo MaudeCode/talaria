@@ -253,3 +253,101 @@ final class HostedViewTests: XCTestCase {
         XCTAssertTrue(response.sessions?.contains { $0.sessionId == UITestFixtureURLProtocol.sessionID } == true)
     }
 }
+
+/// Settings placement is a user-facing navigation contract, shared with the Web taxonomy.
+@MainActor
+final class SettingsPlacementHostedTests: XCTestCase {
+    func testCategoryPagesKeepTheirRowsAndIdentifiersAtOneHome() async throws {
+        let fixture = try FixtureApp(for: self)
+        let pages: [(SettingsCategory, [String], [String])] = [
+            (.appearance, ["Theme", "Tint New Chat & Send"], []),
+            (.chats, ["Send While Responding", "Send With", "Workspace", "Profile", "Git Branch", "Context Usage",
+                      "Thinking & Tools", "Expand Thinking by Default", "Expand Tools by Default", "Streamed Text Animation",
+                      "Response Timestamps", "Response Speed", "Wrap Code Block Lines", "Scroll Button Side",
+                      "Right-to-Left Chat Layout", "Files Button", "Open the Agent's File Automatically", "Git Actions"], []),
+            (.navigation, ["Tasks", "Kanban", "Skills", "Memory", "Insights", "Feedback Button", "Cron Sessions",
+                           "Webhook Sessions", "CLI Sessions", "Claude Code Sessions", "Subagent Sessions", "Sidebar Quotas"],
+             ["settings-sidebar-feedback-toggle"] + ["tasks", "kanban", "skills", "memory", "insights"].map { "settings-navigation-section-\($0)" }),
+            (.notificationsAndHaptics, ["Haptic Feedback", "Response Complete Alerts", "Approval and Question Alerts",
+                                       "Approval & Input Alerts", "Provider Quota Alerts", "Warning Alerts", "Critical Alerts", "Time Sensitive"], []),
+            (.speech, ["Dictation Provider"], []),
+            (.models, ["Default Model", "Auxiliary Models"], []),
+            (.providers, ["Provider Icons", "Quota Percentage", "Quota Refresh"], []),
+            (.profiles, ["Search profiles", "New Profile"], []),
+            (.workspaces, ["Add Workspace"], []),
+            (.system, ["Status", "Version", "Check for updates"], []),
+            (.servers, ["Add Server", "Connection Headers", "Sign Out of This Server"], []),
+            (.liveActivitiesAndWidgets, ["Display", "Live Activity Excerpts"], []),
+            (.dataAndStorage, ["Clear Offline Cache"], ["settings-app-lock"]),
+            (.about, ["Send Feedback"], ["settings-send-feedback"])
+        ]
+        // Version also describes the installed App on About.
+        let exclusiveRows = pages.flatMap { $0.1 }.filter { $0 != "Version" }
+        let rowIdentifiers = Set(pages.flatMap { $0.2 })
+        var homes: [String: [SettingsCategory]] = [:]
+        var identifierHomes: [String: [SettingsCategory]] = [:]
+        for style in [UIUserInterfaceStyle.light, .dark] {
+            for (category, labels, identifiers) in pages {
+                let window = try hostWindow(NavigationStack {
+                    SettingsPaneView(authManager: fixture.environment.authManager,
+                                     server: UITestFixtureEnvironment.serverURL, pane: .category(category))
+                        .modelContainer(fixture.cache)
+                }, size: CGSize(width: 390, height: 844)) { $0.userInterfaceStyle = style }
+                for label in labels {
+                    _ = try await requireElement(in: window) {
+                        $0.accessibilityLabel == label || $0.accessibilityLabel?.hasPrefix(label + ",") == true
+                    }
+                }
+                let elements = HostedAccessibility.elements(in: window)
+                for identifier in identifiers {
+                    XCTAssertEqual(elements.filter { HostedAccessibility.identifier(of: $0) == identifier }.count, 1, identifier)
+                }
+                if style == .light {
+                    for identifier in rowIdentifiers {
+                        for _ in elements.filter({ HostedAccessibility.identifier(of: $0) == identifier }) {
+                            identifierHomes[identifier, default: []].append(category)
+                        }
+                    }
+                    for row in exclusiveRows where elements.contains(where: {
+                        $0.accessibilityLabel == row || $0.accessibilityLabel?.hasPrefix(row + ",") == true
+                    }) { homes[row, default: []].append(category) }
+                }
+                XCTAssertNil(HostedAccessibility.element(in: window, label: "Archived Chats"))
+                if [.liveActivitiesAndWidgets, .dataAndStorage].contains(category) {
+                    XCTAssertNil(HostedAccessibility.element(in: window, label: "Privacy"))
+                }
+                let theme = style == .light ? "light" : "dark"
+                attachHostedScreenshot(window, name: "settings-\(category.rawValue)-\(theme)")
+                if let scroll = window.firstView(ofType: UIScrollView.self, where: { $0.contentSize.height > $0.bounds.height }) {
+                    scroll.setContentOffset(CGPoint(x: 0, y: max(0, scroll.contentSize.height - scroll.bounds.height)), animated: false)
+                }
+                settle()
+                attachHostedScreenshot(window, name: "settings-\(category.rawValue)-\(theme)-bottom")
+                window.isHidden = true
+                window.rootViewController = nil
+            }
+            let window = try hostWindow(NavigationStack {
+                SettingsView(server: UITestFixtureEnvironment.serverURL, profileName: "Fixture profile",
+                             serverName: "Fixture server", selection: .constant(nil))
+            }, size: CGSize(width: 390, height: 844)) { $0.userInterfaceStyle = style }
+            _ = try await requireElement(in: window, label: "Fixture profile")
+            _ = try await requireElement(in: window, label: "Fixture server")
+            attachHostedScreenshot(window, name: "settings-root-\(style == .light ? "light" : "dark")")
+            if let scroll = window.firstView(ofType: UIScrollView.self, where: { $0.contentSize.height > $0.bounds.height }) {
+                scroll.setContentOffset(CGPoint(x: 0, y: max(0, scroll.contentSize.height - scroll.bounds.height)), animated: false)
+            }
+            settle()
+            attachHostedScreenshot(window, name: "settings-root-\(style == .light ? "light" : "dark")-bottom")
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+        for (category, _, identifiers) in pages {
+            for identifier in identifiers {
+                XCTAssertEqual(identifierHomes[identifier], [category], "\(identifier) must have exactly one owning page")
+            }
+        }
+        for row in exclusiveRows {
+            XCTAssertEqual(homes[row]?.count, 1, "\(row) must have exactly one owning category")
+        }
+    }
+}

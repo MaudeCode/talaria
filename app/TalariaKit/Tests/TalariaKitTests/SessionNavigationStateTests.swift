@@ -655,7 +655,7 @@ final class AppSectionLayoutTests: XCTestCase {
 
     func testSettingsAnchorsNameModalCategoriesOutsideAppSections() {
         let anchors: [(SettingsScrollAnchor, SettingsCategory)] = [
-            (.servers, .servers), (.system, .servers), (.providerQuotas, .providers)
+            (.servers, .servers), (.system, .system), (.providerQuotas, .providers)
         ]
         for (anchor, category) in anchors {
             XCTAssertEqual(anchor.category, category)
