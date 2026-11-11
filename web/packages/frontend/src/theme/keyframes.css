@@ -46,3 +46,5 @@
 }
 @keyframes settings-field-pulse { 0% { box-shadow: 0 0 0 0 var(--focus-ring); } 35% { box-shadow: 0 0 0 4px var(--focus-ring); } 100% { box-shadow: 0 0 0 0 rgba(0, 0, 0, 0); } }
 @keyframes fade-in{from{opacity:0;}to{opacity:1;}}
+/* Pulse independently of the rail's opacity transition, so arrival and departure still fade. */
+@keyframes session-pulse{0%,100%{filter:opacity(1);}50%{filter:opacity(.35);}}

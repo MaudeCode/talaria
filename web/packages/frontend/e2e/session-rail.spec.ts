@@ -20,7 +20,7 @@ const ROWS = [
 const item = (page: Page, sid: string) => page.locator(`.session-item[data-sid="${sid}"]`)
 const rail = (el: Locator) => el.evaluate((node) => {
   const s = getComputedStyle(node, '::before')
-  return { content: s.content, color: s.backgroundColor, animation: s.animationName }
+  return { content: s.content, color: s.backgroundColor, animation: s.animationName, opacity: Number(s.opacity), scaleY: new DOMMatrixReadOnly(s.transform).m22 }
 })
 const dot = (el: Locator) => el.evaluate((node) => getComputedStyle(node, '::after').content)
 const resolved = (page: Page, token: string) => page.evaluate((t) => {
@@ -57,9 +57,9 @@ async function expectStatus(page: Page): Promise<void> {
   const accent = await resolved(page, '--accent')
   const warning = await resolved(page, '--warning')
   // Selection alone draws no rail; status does, selected or not, and no dot sits by the actions.
-  expect((await rail(item(page, 'rail-idle'))).content).toBe('none')
-  for (const sid of ['rail-running', 'rail-both']) expect(await rail(item(page, sid))).toMatchObject({ content: '""', color: accent })
-  expect(await rail(item(page, 'rail-attention'))).toMatchObject({ content: '""', color: warning })
+  expect(await rail(item(page, 'rail-idle'))).toMatchObject({ opacity: 0, scaleY: 0 })
+  for (const sid of ['rail-running', 'rail-both']) expect(await rail(item(page, sid))).toMatchObject({ content: '""', color: accent, opacity: 1, scaleY: 1 })
+  expect(await rail(item(page, 'rail-attention'))).toMatchObject({ content: '""', color: warning, opacity: 1, scaleY: 1 })
   for (const sid of ['rail-idle', 'rail-running', 'rail-attention', 'rail-both']) expect(await dot(item(page, sid))).toBe('none')
   // Status reaches assistive technology as text, not only color or motion; idle rows say nothing extra.
   expect(await item(page, 'rail-running').ariaSnapshot()).toContain('Streaming')
@@ -116,7 +116,7 @@ test('the left rail carries run and attention status, apart from selection and t
     await openSidebar(page)
     await expect(running).toHaveAttribute('aria-current', 'page')
     expect(await rail(running)).toMatchObject({ content: '""', color: await resolved(page, '--accent') })
-    expect((await rail(item(page, 'rail-idle'))).content).toBe('none')
+    expect(await rail(item(page, 'rail-idle'))).toMatchObject({ opacity: 0, scaleY: 0 })
     // Card skins pad the selected row as a card; its timestamp still clears the actions.
     await page.mouse.move(0, 0)
     await page.evaluate(() => { document.documentElement.dataset.skin = 'codex'; document.documentElement.dataset.skinTraits = 'card-sessions' })
@@ -124,7 +124,7 @@ test('the left rail carries run and attention status, apart from selection and t
   }
 })
 
-test('the running rail pulses only when motion is allowed', async ({ page }) => {
+test('the running rail pulses and fades status changes only when motion is allowed', async ({ page }) => {
   await page.route(/\/api\/sessions(\?|$)/, async (route) => {
     const response = await route.fetch()
     await route.fulfill({ response, json: { ...(await response.json()), sessions: ROWS } })
@@ -135,4 +135,21 @@ test('the running rail pulses only when motion is allowed', async ({ page }) => 
   expect((await rail(item(page, 'rail-running'))).animation).toBe('none')
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   expect((await rail(item(page, 'rail-running'))).animation).toBe('session-pulse')
+  const running = item(page, 'rail-running')
+  const transition = (active: boolean) => running.evaluate(async (node, active) => {
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+    node.classList.toggle('streaming', active)
+    const transitions = node.getAnimations({ subtree: true }).filter((animation): animation is CSSTransition => animation instanceof CSSTransition
+      && animation.effect instanceof KeyframeEffect && animation.effect.target === node && animation.effect.pseudoElement === '::before')
+    const properties = transitions.map((animation) => animation.transitionProperty)
+    await Promise.all(transitions.map((animation) => animation.finished))
+    return properties.sort()
+  }, active)
+  expect(await transition(false)).toEqual(['opacity', 'transform'])
+  expect(await rail(running)).toMatchObject({ opacity: 0, scaleY: 0, animation: 'none' })
+  expect(await transition(true)).toEqual(['opacity', 'transform'])
+  expect(await rail(running)).toMatchObject({ opacity: 1, scaleY: 1, animation: 'session-pulse' })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  expect(await transition(false)).toEqual([])
+  expect(await rail(running)).toMatchObject({ opacity: 0, scaleY: 0, animation: 'none' })
 })

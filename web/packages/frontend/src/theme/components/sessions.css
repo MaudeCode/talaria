@@ -98,8 +98,8 @@
 [data-motion-key]{content-visibility:auto;contain-intrinsic-size:auto 56px}
 .session-item::before{opacity:0;transform:scaleY(0);transform-origin:center;transition:opacity 180ms ease,transform 180ms ease;content:'';position:absolute;left:var(--session-bar-left);top:var(--session-bar-inset-y);bottom:var(--session-bar-inset-y);width:2px;border-radius:var(--session-bar-radius);background:var(--warning)}
 .session-item.streaming::before,.session-item.needs-attention::before{opacity:1;transform:scaleY(1)}
-.session-item.streaming::before{background:var(--accent)}
-@media (prefers-reduced-motion:reduce){.session-item::before{transition:none}}
+.session-item.streaming::before{background:var(--accent);animation:session-pulse 1.4s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){.session-item::before{transition:none}.session-item.streaming::before{animation:none}}
 /* Narrow screens with a pointer always show the actions; the base padding above would otherwise put the timestamp under them. */
 @media (max-width:640px) and (hover:hover){.session-item{padding-right:64px}}
 .session-item.active .session-time{color:var(--session-active-meta-fg)}
