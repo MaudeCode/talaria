@@ -2,6 +2,8 @@ import { Suspense, useState, useSyncExternalStore, type ComponentType } from 're
 
 export interface MarkdownProps {
   text: string
+  /** Keep the current turn's block renderer mounted when another activity takes the tail. */
+  liveTurn?: boolean
   streaming?: boolean
   /** `fade_text_effect` setting (TAL-2148): streamed words fade in; reduced motion and code never animate. */
   fade?: boolean

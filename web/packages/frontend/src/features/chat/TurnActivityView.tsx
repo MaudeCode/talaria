@@ -122,7 +122,7 @@ function ActivityBody({ activity, mode, earlier, sessionId }: { activity: TurnAc
   }
   const renderRow = (item: ActivityItem, last: boolean): ReactNode => {
     switch (item.kind) {
-      case 'text': return <div key={item.key} className="msg-body"><Markdown text={item.display ?? item.text} streaming={activeTail && last} fade={disclosure?.fadeText === true} /><MediaTiles media={item.media} sessionId={sessionId} /></div>
+      case 'text': return <div key={item.key} className="msg-body"><Markdown text={item.display ?? item.text} liveTurn={running} streaming={activeTail && last} fade={disclosure?.fadeText === true} /><MediaTiles media={item.media} sessionId={sessionId} /></div>
       case 'reasoning': return <ReasoningBlock key={item.key} arrivalKey={item.key} text={item.text} titles={item.titles} disclosureKey={item.disclosureKey} live={activeTail && last} />
       case 'steering': return <SteerMessage key={item.key} text={item.text} />
       case 'tool': return <ToolCard key={item.key} arrivalKey={item.key} call={item.call} sessionId={sessionId} />
@@ -162,7 +162,7 @@ function ActivityBody({ activity, mode, earlier, sessionId }: { activity: TurnAc
   return (
     <DisclosureTurnContext value={activity.key}>
       <ArrivalScope keys={items.map((item) => item.key)} running={running}>
-      {mode !== 'hide_all_activity' && (mode === 'compact_worklog' && hasWork && (running || !activity.live)
+      {mode !== 'hide_all_activity' && (mode === 'compact_worklog' && (running || (hasWork && !activity.live))
         ? phases.map((phase, n) => (
           <Fragment key={n}>
             {(phase.work.length > 0 || (n === 0 && earlier)) && <Worklog disclosureId={n === 0 ? 'turn' : `turn:phase:${n}`} calls={callsOf(phase.work)} status={status} expandedByDefault={activity.expandedByDefault === true}>{n === 0 && earlier}{blocksOf(phase.work, n === phases.length - 1)}</Worklog>}

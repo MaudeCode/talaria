@@ -290,6 +290,8 @@ to glide to their content height over 200 ms without clipping. The existing
 "Fade in streamed text" switch is on by default and also fades new words from
 a soft blur over 400 ms with a short stagger and a bounded backlog. Turning it
 off restores instant text and height; settled text and reduced motion never animate.
+A live turn keeps its Markdown block tree mounted when a tool takes the tail or
+the fade switch changes, preserving open JSON trees and link dialogs.
 Height motion uses the Web Animations API because
 `.msg-row` disables CSS transitions for streaming rows. Rows a turn already had
 when it mounted never replay live-turn motion; the separate switch entrance above is the only exception.

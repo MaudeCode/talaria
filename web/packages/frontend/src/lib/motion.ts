@@ -65,7 +65,12 @@ export function followHeight(wrapper: HTMLElement, content: HTMLElement): () => 
     void move.finished.then(() => { if (animation === move) animation = null }, () => undefined)
   })
   observer.observe(content)
-  return () => { observer.disconnect(); animation?.cancel(); wrapper.style.height = original }
+  return () => {
+    observer.disconnect()
+    animation?.cancel()
+    wrapper.style.height = original
+    if (!wrapper.style.cssText) wrapper.removeAttribute('style')
+  }
 }
 
 export type ListSnapshot = Map<string, { el: HTMLElement; rect: DOMRect; group: string | null }>

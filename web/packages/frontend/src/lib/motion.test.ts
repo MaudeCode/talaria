@@ -60,6 +60,7 @@ it('retargets streamed height from the painted size, including shrink, and relea
     stop()
     expect(disconnect).toHaveBeenCalledOnce()
     expect(wrapper.style.height).toBe('')
+    expect(wrapper).not.toHaveAttribute('style')
     vi.stubGlobal('matchMedia', () => ({ matches: true }))
     followHeight(wrapper, content)()
     expect(wrapper.style.height).toBe('')

@@ -72,7 +72,7 @@ function LinkSafetyDialog({ isOpen, onClose, onConfirm, url, host }: LinkSafetyM
   )
 }
 
-export default function MarkdownRenderer({ text, streaming = false, fade = false, className, dir = 'auto' }: MarkdownProps) {
+export default function MarkdownRenderer({ text, streaming = false, fade = false, className, dir = 'auto', liveTurn = false }: MarkdownProps) {
   const check = use(LinkCheckContext)
   const animated = streaming && fade && !prefersReducedMotion()
   const heightRef = useRef<HTMLDivElement>(null)
@@ -102,7 +102,8 @@ export default function MarkdownRenderer({ text, streaming = false, fade = false
   })
   const body = (
     <Streamdown
-      mode={streaming ? 'streaming' : 'static'}
+      // Static mode replaces the block tree. Keep live-turn widgets mounted after the active tail moves on.
+      mode={streaming || liveTurn ? 'streaming' : 'static'}
       parseIncompleteMarkdown={streaming}
       isAnimating={streaming}
       // Streamdown skips `pre`, `svg` and math; inline code is held still in chat.css.
@@ -122,7 +123,7 @@ export default function MarkdownRenderer({ text, streaming = false, fade = false
   )
   return (
     <LineEndedContext value={streaming && text.endsWith('\n')}>
-      {animated ? <div ref={heightRef} data-stream-height="">{body}</div> : body}
+      <div ref={heightRef} data-stream-height={animated ? '' : undefined}>{body}</div>
     </LineEndedContext>
   )
 }

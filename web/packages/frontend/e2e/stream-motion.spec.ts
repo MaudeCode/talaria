@@ -21,7 +21,8 @@ for (const style of ['on', 'off', 'reduced'] as const) {
     const address = server.address()
     if (!address || typeof address === 'string') throw new Error('Missing stream fixture port')
     let sequence = 0
-    const send = (text: string) => { for (const response of streams) response.write(`id: ${run}:${String(++sequence)}\nevent: token\ndata: ${JSON.stringify({ text })}\n\n`) }
+    const emit = (event: string, data: unknown) => { for (const response of streams) response.write(`id: ${run}:${String(++sequence)}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`) }
+    const send = (text: string) => emit('token', { text })
     await page.route('**/api/settings', async (route) => {
       const response = await route.fetch()
       await route.fulfill({ response, json: { ...await response.json(), fade_text_effect: style !== 'off' } })
@@ -91,6 +92,19 @@ for (const style of ['on', 'off', 'reduced'] as const) {
         expect(Math.max(...moving.map((sample) => Math.abs(sample.gap))), 'the pinned transcript follows every painted growth frame').toBeLessThanOrEqual(1)
       }
       await shot('after')
+      if (style === 'on') {
+        send('\n\n```json\n{"nested":{"deep":{"leaf":1}}}\n```\n\nFollowing prose')
+        await page.getByRole('button', { name: 'Tree', exact: true }).click()
+        const tree = page.locator('[data-json-tree]')
+        const deep = tree.locator('details').last()
+        await deep.locator('summary').click()
+        await expect(deep).toHaveAttribute('open')
+        emit('tool', { id: 'after-json', name: 'read_file', kind: 'read', target: 'clock.ts', args: { path: 'clock.ts' } })
+        await expect(page.locator('[data-tool-id="after-json"]')).toBeVisible()
+        await expect(tree).toBeVisible()
+        await expect(deep).toHaveAttribute('open')
+        await shot('json-after-tool')
+      }
       if (style === 'on' && info.project.name === 'desktop') {
         for (const viewport of DUO_VIEWPORTS) {
           await page.setViewportSize(viewport)
