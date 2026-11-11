@@ -57,7 +57,7 @@ exports[`preserves main JSON bytes for every document namespace and run-journal 
   "virtualize_transcript": false,
   "virtualize_transcript_optin": false,
   "show_tps": false,
-  "fade_text_effect": false,
+  "fade_text_effect": true,
   "show_cli_sessions": true,
   "show_claude_code_sessions": true,
   "show_messaging_sessions": true,
@@ -132,7 +132,8 @@ exports[`preserves main JSON bytes for every document namespace and run-journal 
   "provider_cost_budget": null,
   "confirm_external_links": true,
   "trusted_link_hosts": [],
-  "chat_switches_migrated": true
+  "chat_switches_migrated": true,
+  "stream_fade_migrated": true
 }",
     "shares/BwcHBwcHBwcHBwcHBwcHBwcH.json": "{
   "token": "BwcHBwcHBwcHBwcHBwcHBwcH",

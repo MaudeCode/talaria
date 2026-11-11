@@ -4,11 +4,11 @@ import { render, screen, waitFor } from '@testing-library/react'
 import Markdown from './MarkdownRenderer'
 import fixtures from '../__fixtures__/streamingMarkdown'
 
-const { controlRender, parseInput, parserProbe } = vi.hoisted(() => ({ controlRender: vi.fn(), parseInput: vi.fn<(length: number) => void>(), parserProbe: { full: false } }))
+const { controlRender, streamdownProps, parseInput, parserProbe } = vi.hoisted(() => ({ controlRender: vi.fn(), streamdownProps: vi.fn(), parseInput: vi.fn<(length: number) => void>(), parserProbe: { full: false } }))
 
 beforeEach(() => { vi.clearAllMocks(); parserProbe.full = false })
 
-afterEach(() => { Reflect.deleteProperty(HTMLElement.prototype, 'scrollTo') })
+afterEach(() => { vi.unstubAllGlobals(); Reflect.deleteProperty(HTMLElement.prototype, 'scrollTo') })
 
 vi.mock('streamdown', async (importOriginal) => {
   const actual = await importOriginal<typeof import('streamdown')>()
@@ -20,9 +20,10 @@ vi.mock('streamdown', async (importOriginal) => {
     ...actual,
     parseMarkdownIntoBlocks,
     // Count the input to the real parser, including the default pre-optimization path.
-    Streamdown: (props: React.ComponentProps<typeof actual.Streamdown>) => (
-      <actual.Streamdown {...props} parseMarkdownIntoBlocksFn={parserProbe.full ? parseMarkdownIntoBlocks : props.parseMarkdownIntoBlocksFn ?? parseMarkdownIntoBlocks} />
-    ),
+    Streamdown: (props: React.ComponentProps<typeof actual.Streamdown>) => {
+      streamdownProps(props)
+      return <actual.Streamdown {...props} parseMarkdownIntoBlocksFn={parserProbe.full ? parseMarkdownIntoBlocks : props.parseMarkdownIntoBlocksFn ?? parseMarkdownIntoBlocks} />
+    },
     // Observe a real control's context subscription without replacing Streamdown's provider or parser.
     CodeBlockCopyButton: memo(function CopyButtonProbe(props: React.ComponentProps<typeof actual.CodeBlockCopyButton>) {
       useContext(actual.StreamdownContext)
@@ -94,4 +95,19 @@ it('keeps a completed code-block control stable while subsequent text streams', 
   }
 
   expect(controlRender).toHaveBeenCalledTimes(1)
+})
+
+it('uses the blur word options only for live, enabled, full-motion text and switches immediately', () => {
+  const view = render(<Markdown text="A live answer" streaming fade />)
+  const options = streamdownProps.mock.lastCall![0].animated
+  expect(options).toMatchObject({ animation: 'blurIn', sep: 'word', duration: 400, easing: 'cubic-bezier(0.25, 0.8, 0.25, 1)' })
+  view.rerender(<Markdown text="A live answer grows" streaming fade />)
+  expect(streamdownProps.mock.lastCall![0].animated).toBe(options)
+  for (const props of [{ streaming: true, fade: false }, { streaming: false, fade: true }]) {
+    view.rerender(<Markdown text="A live answer grows" {...props} />)
+    expect(streamdownProps.mock.lastCall![0]).not.toHaveProperty('animated')
+  }
+  vi.stubGlobal('matchMedia', () => ({ matches: true }))
+  view.rerender(<Markdown text="A live answer grows" streaming fade />)
+  expect(streamdownProps.mock.lastCall![0]).not.toHaveProperty('animated')
 })

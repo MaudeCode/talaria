@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Streamed replies fade in softly and grow smoothly by default. Turn off Fade in streamed text for instant replies.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announcement": {
+        "title": "Smoother streamed replies",
+        "description": "Words fade into view while replies grow smoothly. Turn the effect off in Chat settings for instant text.",
+        "icon": "sparkles"
+      }
+    }
+  ]
+}

@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Markdown from './MarkdownRenderer'
+import { stubAnimate } from '../../../test/animate'
 import { LinkCheckContext, type LinkCheck } from './LinkCheckContext'
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
@@ -99,4 +100,37 @@ describe('fade text effect (TAL-2148)', () => {
     motion(true)
     expect(animated(render(<Markdown text={text} streaming fade />).container)).toBe(0)
   })
+})
+
+it('follows only the live enabled answer height and releases it immediately on opt-out or settlement', () => {
+  const motion = stubAnimate()
+  let resized = () => undefined
+  const disconnect = vi.fn()
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(callback: () => undefined) { resized = callback }
+    observe = vi.fn()
+    disconnect = disconnect
+  })
+  let height = 24
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    return { height: this.hasAttribute('data-stream-height') ? 24 : height } as DOMRect
+  })
+  try {
+    const view = render(<Markdown text="Streaming" streaming fade />)
+    height = 72
+    act(() => resized())
+    expect(motion.reveals()).toHaveLength(1)
+    expect(motion.reveals()[0]!.keyframes).toEqual([{ height: '24px' }, { height: '72px' }])
+    const instant = render(<Markdown text="Streaming" streaming />).container.innerHTML
+    view.rerender(<Markdown text="Streaming" streaming />)
+    expect(view.container.innerHTML).toBe(instant)
+    expect(disconnect).toHaveBeenCalled()
+    expect(motion.reveals()[0]!.cancel).toHaveBeenCalled()
+    view.rerender(<Markdown text="Streaming" streaming fade />)
+    view.rerender(<Markdown text="Streaming" fade />)
+    expect(view.container.querySelector('[data-stream-height]')).toBeNull()
+    vi.stubGlobal('matchMedia', () => ({ matches: true }))
+    view.rerender(<Markdown text="Streaming" streaming fade />)
+    expect(view.container.innerHTML).toBe(instant)
+  } finally { motion.restore(); vi.unstubAllGlobals() }
 })

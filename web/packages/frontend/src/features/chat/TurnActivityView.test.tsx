@@ -27,8 +27,8 @@ function liveRun() {
   }
 }
 
-function View({ activity, mode = 'compact_worklog', scope = 'profile/s', eventTimestamps }: { activity: TurnActivity; mode?: 'compact_worklog' | 'transparent_stream' | 'hide_all_activity'; scope?: string; eventTimestamps?: boolean }) {
-  return <WorklogDisclosureProvider key={scope} scope={scope} eventTimestamps={eventTimestamps}><TurnActivityView activity={activity} mode={mode} /></WorklogDisclosureProvider>
+function View({ activity, mode = 'compact_worklog', scope = 'profile/s', eventTimestamps, fadeText }: { activity: TurnActivity; mode?: 'compact_worklog' | 'transparent_stream' | 'hide_all_activity'; scope?: string; eventTimestamps?: boolean; fadeText?: boolean }) {
+  return <WorklogDisclosureProvider key={scope} scope={scope} eventTimestamps={eventTimestamps} fadeText={fadeText}><TurnActivityView activity={activity} mode={mode} /></WorklogDisclosureProvider>
 }
 
 /** Live frames as the server ships them: its kind and redacted target ride along with the args. */
@@ -45,6 +45,28 @@ const rows = (...list: Record<string, unknown>[]): SceneRows => list.map((row, o
 function completed(id: string) { return { event: 'tool_complete', data: { id, name: 'read_file', kind: 'read', target: `${id}.txt`, result: `Contents of ${id}` } } as const }
 
 describe('turn worklog presentation', () => {
+  it.each(['compact_worklog', 'transparent_stream'] as const)('keeps the selected JSON tree when fade changes and the first tool takes the tail (%s)', async (mode) => {
+    // The client preloads this chunk before mounting chat; keep lazy asset loading outside this lifecycle assertion.
+    await import('./render/MarkdownRenderer')
+    const run = liveRun()
+    run.emit({ event: 'token', data: { text: '```json\n{"nested":{"deep":{"leaf":1}}}\n```\n\nFollowing prose' } })
+    const present = (fadeText: boolean) => <View activity={liveActivity(run.turn)} mode={mode} fadeText={fadeText} />
+    const view = render(present(true))
+    fireEvent.click(await screen.findByRole('button', { name: 'Tree' }))
+    const tree = view.container.querySelector('[data-json-tree]')!
+    const deep = [...tree.querySelectorAll('details')].find((node) => node.querySelector('summary')?.textContent.includes('"deep"'))!
+    fireEvent.click(deep.querySelector('summary')!)
+    expect(deep).toHaveAttribute('open')
+    view.rerender(present(false))
+    expect(view.container.querySelector('[data-json-tree]')).toBe(tree)
+    expect(deep).toHaveAttribute('open')
+    view.rerender(present(true))
+    run.emit(tool('after'))
+    view.rerender(present(true))
+    expect(view.container.querySelector('[data-json-tree]')).toBe(tree)
+    expect(deep).toHaveAttribute('open')
+  })
+
   it('keeps a call whose card the user must see out of a folded run, live and settled (TAL-1968)', () => {
     const run = liveRun()
     run.emit(tool('a'))

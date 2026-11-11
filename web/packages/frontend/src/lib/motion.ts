@@ -45,6 +45,34 @@ export function revealHeight(el: HTMLElement, { open, from, arrive = false, hold
   return animation
 }
 
+/** Follow a streaming body's natural size without clipping. ResizeObserver lets the pinned transcript follow each painted height. */
+export function followHeight(wrapper: HTMLElement, content: HTMLElement): () => void {
+  if (!motionOn() || typeof ResizeObserver === 'undefined') return () => undefined
+  const original = wrapper.style.height
+  let target = content.getBoundingClientRect().height
+  let animation: Animation | null = null
+  wrapper.style.height = `${target}px`
+  const observer = new ResizeObserver(() => {
+    const next = content.getBoundingClientRect().height
+    if (next === target) return
+    const from = wrapper.getBoundingClientRect().height
+    animation?.cancel()
+    target = next
+    wrapper.style.height = `${next}px`
+    if (!motionOn() || Math.abs(next - from) < 0.5) return
+    const move = wrapper.animate([{ height: `${from}px` }, { height: `${next}px` }], { duration: 200, easing: ARRIVE_EASE })
+    animation = move
+    void move.finished.then(() => { if (animation === move) animation = null }, () => undefined)
+  })
+  observer.observe(content)
+  return () => {
+    observer.disconnect()
+    animation?.cancel()
+    wrapper.style.height = original
+    if (!wrapper.style.cssText) wrapper.removeAttribute('style')
+  }
+}
+
 export type ListSnapshot = Map<string, { el: HTMLElement; rect: DOMRect; group: string | null }>
 
 /** Only rendered boxes participate. Measuring skipped content would defeat content-visibility. */

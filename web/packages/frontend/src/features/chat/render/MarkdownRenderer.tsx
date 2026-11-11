@@ -4,8 +4,8 @@
  * Mermaid, math via KaTeX, and CJK. Hermes structures are typed components
  * elsewhere and are never passed through here as HTML.
  */
-import { use, useEffect, useRef, useState } from 'react'
-import { Streamdown, parseMarkdownIntoBlocks, type LinkSafetyConfig, type LinkSafetyModalProps } from 'streamdown'
+import { use, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Streamdown, parseMarkdownIntoBlocks, type AnimateOptions, type LinkSafetyConfig, type LinkSafetyModalProps } from 'streamdown'
 import { cjk } from '@streamdown/cjk'
 import { appUrl } from '../../../lib/appRoot'
 import { CodeBlock, LineEndedContext } from './CodeBlock'
@@ -18,7 +18,9 @@ import 'streamdown/styles.css'
 import { Dialog } from '../../../ui/Dialog'
 import { Button } from '../../../ui/Button'
 import { m } from '../../../paraglide/messages.js'
-import { prefersReducedMotion } from '../../../lib/motion'
+import { ARRIVE_EASE, followHeight, prefersReducedMotion } from '../../../lib/motion'
+
+const STREAM_WORDS = { animation: 'blurIn', sep: 'word', duration: 400, easing: ARRIVE_EASE, stagger: 12, maxBacklogMs: 120 } satisfies AnimateOptions
 
 // Streamdown checks renderers before Mermaid, so `mermaid` keeps its diagram; unlabeled fences fall back to `code`.
 const OWN_RENDERERS = new Set(['json', 'mermaid', 'mmd'])
@@ -70,8 +72,15 @@ function LinkSafetyDialog({ isOpen, onClose, onConfirm, url, host }: LinkSafetyM
   )
 }
 
-export default function MarkdownRenderer({ text, streaming = false, fade = false, className, dir = 'auto' }: MarkdownProps) {
+export default function MarkdownRenderer({ text, streaming = false, fade = false, className, dir = 'auto', liveTurn = false }: MarkdownProps) {
   const check = use(LinkCheckContext)
+  const animated = streaming && fade && !prefersReducedMotion()
+  const heightRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const wrapper = heightRef.current
+    const content = wrapper?.firstElementChild
+    if (animated && wrapper && content instanceof HTMLElement) return followHeight(wrapper, content)
+  }, [animated])
   const parseBlocks = streaming ? createIncrementalMarkdownParser() : parseMarkdownIntoBlocks
   // Syntax detection selects display assets only; transcript state and link decisions remain server-owned.
   const mermaid = useLazyPlugin(/(?:`{3,}|~{3,})mermaid\b/.test(text), loadMermaid)
@@ -91,26 +100,30 @@ export default function MarkdownRenderer({ text, streaming = false, fade = false
     },
     renderModal: (props) => <LinkSafetyDialog {...props} host={hosts.current.get(props.url)} />,
   })
+  const body = (
+    <Streamdown
+      // Static mode replaces the block tree. Keep live-turn widgets mounted after the active tail moves on.
+      mode={streaming || liveTurn ? 'streaming' : 'static'}
+      parseIncompleteMarkdown={streaming}
+      isAnimating={streaming}
+      // Streamdown skips `pre`, `svg` and math; inline code is held still in chat.css.
+      {...(animated ? { animated: STREAM_WORDS } : {})}
+      parseMarkdownIntoBlocksFn={parseBlocks}
+      className={`${className ?? 'hermes-prose'}${animated ? ' flow-root' : ''}`}
+      plugins={plugins}
+      shikiTheme={SHIKI_THEMES}
+      dir={dir}
+      controls={CONTROLS}
+      lineNumbers={false}
+      linkSafety={linkSafety}
+      urlTransform={urlTransform}
+    >
+      {text}
+    </Streamdown>
+  )
   return (
     <LineEndedContext value={streaming && text.endsWith('\n')}>
-      <Streamdown
-        mode={streaming ? 'streaming' : 'static'}
-        parseIncompleteMarkdown={streaming}
-        isAnimating={streaming}
-        // Streamdown skips `pre`, `svg` and math; inline code is held still in chat.css.
-        animated={streaming && fade && !prefersReducedMotion()}
-        parseMarkdownIntoBlocksFn={parseBlocks}
-        className={className ?? 'hermes-prose'}
-        plugins={plugins}
-        shikiTheme={SHIKI_THEMES}
-        dir={dir}
-        controls={CONTROLS}
-        lineNumbers={false}
-        linkSafety={linkSafety}
-        urlTransform={urlTransform}
-      >
-        {text}
-      </Streamdown>
+      <div ref={heightRef} data-stream-height={animated ? '' : undefined}>{body}</div>
     </LineEndedContext>
   )
 }
