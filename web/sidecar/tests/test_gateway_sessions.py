@@ -149,7 +149,7 @@ def test_only_the_watch_resumes_as_an_open(native_owner_stub, monkeypatch, actio
     assert native_owner_stub.run(ctx, {"session_id": "native", "action": action, **extra})["state"] == "attached"
     reads = [call for call in native_owner_stub.calls if call[0] in {"session.events.since", "session.resume"}]
     reconnect = opens and action != "watch"
-    assert reads[:2] == [("session.events.since", {"session_id": "native"})] * reconnect + [("session.resume", {"session_id": "native"})] * (2 - reconnect)
+    assert reads[:1 + reconnect] == [("session.events.since", {"session_id": "native"})] * reconnect + [("session.resume", {"session_id": "native"})]
     assert reads.count(("session.events.since", {"session_id": "native"})) == reconnect
 
 
@@ -238,7 +238,7 @@ def native_owner_stub(tmp_path, monkeypatch):
     owner.endpoint, owner.discovery = endpoint, found
     monkeypatch.setattr(adapter, "_with_owner", lambda home, run: asyncio.run(run(found)))
     owner.session = adapter.session
-    owner.run = lambda ctx, params: asyncio.run(adapter._run(ctx, params, tmp_path, found))
+    owner.run = lambda ctx, params, **loop: asyncio.run(adapter._run(ctx, params, tmp_path, found), **loop)
     return owner
 
 
@@ -371,6 +371,9 @@ def test_unreadable_served_contract_fails_closed(tmp_path, native_owner_stub, mo
         if record == "unreadable":
             raise OSError("unreadable contract")
         return record
+    from functools import lru_cache
+    from talaria_sidecar.methods import gateway_sessions as adapter
+    monkeypatch.setattr(adapter, "_support_record", lru_cache(maxsize=1)(adapter._support_record.__wrapped__))
     monkeypatch.setattr(Path, "read_text", read)
     owner = native_owner_stub
     owner.endpoint.control_home = str(tmp_path.parent)
@@ -888,23 +891,73 @@ def test_snapshot_skips_model_only_micro_compaction_rows(native_owner_stub):
     assert [row["content"] for row in result["snapshot"]["messages"]] == ["q0", "q1", "answer"]
 
 
-def test_another_viewers_reaction_refreshes_the_existing_watch(native_owner_stub, monkeypatch):
+def _simulated_watch(owner, monkeypatch, seconds, on_emit=lambda kind, at: None):
+    """Run a watch on a virtual clock until ``seconds`` have passed: the loop jumps to its next timer instead of
+    sleeping. Returns the emitted frames with their clock time, and the resumes issued before the deadline."""
+    import asyncio
+    import selectors
     from types import SimpleNamespace
     from talaria_sidecar.methods import gateway_sessions as adapter
+    monkeypatch.setattr(adapter, "_restart_wait", lambda home: False)
+    clock = {"now": 0.0}
+    frames, ctx = [], SimpleNamespace(cancelled=False)
+
+    class Virtual(selectors.DefaultSelector):
+        def select(self, timeout=None):
+            if ctx.cancelled or not timeout:  # a thread hand-off or the loop's own shutdown runs in real time
+                return super().select(timeout)
+            clock["now"] += timeout
+            if clock["now"] >= seconds:
+                ctx.cancelled, clock["resumes"] = True, sum(method == "session.resume" for method, _ in owner.calls)
+            return super().select(0)
+
+    def virtual_loop():
+        loop = asyncio.SelectorEventLoop(Virtual())
+        loop.time = lambda: clock["now"]
+        return loop
+
+    def emit(kind, data):
+        frames.append((clock["now"], kind, data))
+        on_emit(kind, clock["now"])
+    ctx.emit = emit
+    owner.run(ctx, {"session_id": "native", "action": "watch"}, loop_factory=virtual_loop)
+    assert owner.calls[-1][0] == "session.detach"
+    return frames, clock["resumes"]
+
+
+def test_an_idle_watch_reads_the_transcript_at_most_every_ten_seconds(native_owner_stub, monkeypatch):
+    """TAL-1711: an idle watch costs one transcript read per 10 s, one resume per read, and one contract file read."""
+    reads, read_text = [], Path.read_text
+    monkeypatch.setattr(Path, "read_text", lambda self, *args, **kwargs: (reads.append(self.name), read_text(self, *args, **kwargs))[1])
+    _, resumes = _simulated_watch(native_owner_stub, monkeypatch, 30)
+    assert resumes <= 3
+    assert reads.count("agent_support.json") <= 1
+
+
+@pytest.mark.parametrize("event,within", [(None, 10), ("message.complete", 1), ("message.reaction", 1)])
+def test_another_viewers_reaction_reaches_the_watch(native_owner_stub, monkeypatch, event, within):
+    """The owner emits no event for another viewer's reaction: an idle watch reads it within its 10 s poll, and a message or reaction event brings the read forward to the next loop."""
     owner = native_owner_stub
     owner.snapshot_extra = {"messages": [{"role": "assistant", "row_id": 42, "content": "answer", "display_metadata": {}}]}
-    frames = []
-    ctx = SimpleNamespace(cancelled=False, emit=lambda kind, data: frames.append((kind, data)))
-    def tick(home):
-        owner.snapshot_extra["messages"][0]["display_metadata"] = {"reactions": [{"author": "agent", "emoji": "🎉"}]}
-        ctx.cancelled = True
-        return False
-    monkeypatch.setattr(adapter, "_restart_wait", tick)
-    owner.run(ctx, {"session_id": "native", "action": "watch"})
-    snapshots = [data["snapshot"] for kind, data in frames if kind == "snapshot"]
-    assert len(snapshots) == 2
-    assert snapshots[-1]["messages"][0]["reactions"] == [{"author": "agent", "emoji": "🎉"}]
-    assert owner.calls[-1][0] == "session.detach"
+    if event:
+        owner.events = [{"session_id": "native", "type": event, "replay_epoch": "epoch", "seq": 5, "execution_generation": 1}]
+    started = {}
+    def react(kind, at):
+        if kind == "replay_complete":
+            owner.snapshot_extra["messages"][0]["display_metadata"] = {"reactions": [{"author": "agent", "emoji": "🎉"}]}
+            started["at"] = at
+    frames, _ = _simulated_watch(owner, monkeypatch, 12, react)
+    refreshed = [(at, data["snapshot"]) for at, kind, data in frames if kind == "snapshot" and data.get("reaction_only")]
+    assert len(refreshed) == 1
+    assert refreshed[0][0] - started["at"] <= within
+    assert refreshed[0][1]["messages"][0]["reactions"] == [{"author": "agent", "emoji": "🎉"}]
+
+
+def test_a_streaming_token_does_not_read_the_transcript(native_owner_stub, monkeypatch):
+    owner = native_owner_stub
+    owner.events = [{"session_id": "native", "type": "message.delta", "replay_epoch": "epoch", "seq": 5, "execution_generation": 1}]
+    _, resumes = _simulated_watch(owner, monkeypatch, 5)
+    assert resumes == 1
 
 
 @pytest.mark.parametrize("emoji", ["👍", "❤️", None])
@@ -947,6 +1000,9 @@ def test_plan_gauge_snapshot_is_read_from_this_owner_and_cleared_on_omission(nat
     gauge = {"id": "day", "label": "Today", "used_bp": 8300, "resets_at_ms": None}
     owner.usage_stats = {"plan_gauge": gauge}
     assert owner.run(None, {"session_id": "chat", "action": "snapshot"})["snapshot"]["plan_gauge"] == gauge
+    assert [method for method, _ in owner.calls].count("session.resume") == 1
+    owner.usage_stats = {"plan_gauge": gauge, "execution_generation": 2}
+    assert owner.run(None, {"session_id": "chat", "action": "snapshot"})["snapshot"]["plan_gauge"] is None
     owner.usage_stats = {}
     assert owner.run(None, {"session_id": "chat", "action": "snapshot"})["snapshot"]["plan_gauge"] is None
 

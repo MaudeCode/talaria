@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "An open chat in Talaria Web rereads its history at most every 10 seconds while idle, instead of twice every 2 seconds, so long chats cost less to keep open.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}
