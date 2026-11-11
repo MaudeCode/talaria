@@ -41,7 +41,10 @@ struct SessionInteractiveRow: View {
     @ViewBuilder
     private var draggableRowContent: some View {
         if rowStyle == .sidebar, !viewModel.isSelectingSessions, actions.openBeside(session) != nil {
-            rowContent.onDrag { SidebarChatDrag.provider(for: session) }
+            rowContent.onDrag {
+                actions.sidebarChatLifted(session)
+                return SidebarChatDrag.provider(for: session)
+            }
         } else {
             rowContent
         }

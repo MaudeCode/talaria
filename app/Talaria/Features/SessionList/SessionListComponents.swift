@@ -5,7 +5,8 @@ import UniformTypeIdentifiers
 
 /// A sidebar navigation drag is distinct from text/files dropped into a composer.
 enum SidebarChatDrag {
-    static let typeIdentifier = UTType(exportedAs: "dev.kil.talaria.sidebar-chat", conformingTo: .data).identifier
+    static let type = UTType(exportedAs: "dev.kil.talaria.sidebar-chat", conformingTo: .data)
+    static let typeIdentifier = type.identifier
 
     static func provider(for session: SessionSummary) -> NSItemProvider {
         let provider = NSItemProvider()
@@ -17,6 +18,35 @@ enum SidebarChatDrag {
         }
         return provider
     }
+
+    /// A lifted row on its way to the conversation. Hovering there shows it beside the primary; the drop keeps it
+    /// shown until navigation opens it beside the primary, or refuses it and the open secondary returns.
+    struct Preview: Equatable {
+        var session: SessionSummary?
+        var isOverChat = false
+        var isDropped = false
+
+        var shown: SessionSummary? { isOverChat || isDropped ? session : nil }
+    }
+}
+
+/// The conversation's one destination for a sidebar chat drag. SwiftUI gives a drag to the innermost drop destination
+/// under it, so a composer inside the conversation forwards sidebar chats here instead of refusing them. One instance
+/// per chat, so handing it down the environment invalidates nothing.
+@MainActor
+final class SidebarChatDropDelegate: DropDelegate {
+    var hover: (Bool) -> Void = { _ in }
+    var drop: ([NSItemProvider]) -> Bool = { _ in false }
+
+    func validateDrop(info: DropInfo) -> Bool { info.hasItemsConforming(to: [SidebarChatDrag.type]) }
+    func dropEntered(info: DropInfo) { hover(true) }
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .copy) }
+    func dropExited(info: DropInfo) { hover(false) }
+    func performDrop(info: DropInfo) -> Bool { drop(info.itemProviders(for: [SidebarChatDrag.type])) }
+}
+
+extension EnvironmentValues {
+    @Entry var sidebarChatDropDelegate: SidebarChatDropDelegate?
 }
 
 struct SessionListRowActions {
@@ -34,6 +64,8 @@ struct SessionListRowActions {
     /// Stops a run card's live run (TAL-1460).
     let stopRun: (SessionSummary) -> Void
     var openBeside: (SessionSummary) -> (() -> Void)? = { _ in nil }
+    /// A row lifted for a chat drag.
+    var sidebarChatLifted: (SessionSummary) -> Void = { _ in }
 }
 
 /// Reads the hinge for the session list root, the only place the App does (TAL-1460). The UI fixture's tent pose

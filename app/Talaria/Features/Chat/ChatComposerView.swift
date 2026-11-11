@@ -11,6 +11,7 @@ struct MessageComposerView: View {
 #endif
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.sidebarChatDropDelegate) private var sidebarChatDropDelegate
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.tabletopComposerHeight) private var tabletopHeight
@@ -379,7 +380,8 @@ struct MessageComposerView: View {
                 }
                 .onDrop(
                     of: ComposerDropItem.types,
-                    delegate: ComposerDropDelegate(accepted: droppableItems, isTargeted: $isDropTargeted, perform: acceptDrop)
+                    delegate: ComposerDropDelegate(accepted: droppableItems, isTargeted: $isDropTargeted, perform: acceptDrop,
+                                                   sidebarChat: sidebarChatDropDelegate)
                 )
                 .padding(.horizontal)
                 .padding(.bottom, showsStripUnderCard ? 4 : 0)
@@ -1773,28 +1775,38 @@ private struct ComposerDropDelegate: DropDelegate {
     let accepted: ([NSItemProvider]) -> [(NSItemProvider, ComposerDropItem)]
     @Binding var isTargeted: Bool
     let perform: ([(NSItemProvider, ComposerDropItem)]) -> Void
+    /// The surrounding conversation's sidebar chat destination, which takes such a drag over the composer too.
+    let sidebarChat: SidebarChatDropDelegate?
+
+    private func forwarded(_ info: DropInfo) -> SidebarChatDropDelegate? {
+        sidebarChat.flatMap { $0.validateDrop(info: info) ? $0 : nil }
+    }
 
     private func items(_ info: DropInfo) -> [(NSItemProvider, ComposerDropItem)] {
         accepted(info.itemProviders(for: ComposerDropItem.types))
     }
 
     func validateDrop(info: DropInfo) -> Bool {
-        !items(info).isEmpty
+        forwarded(info) != nil || !items(info).isEmpty
     }
 
     func dropEntered(info: DropInfo) {
+        if let sidebarChat = forwarded(info) { return sidebarChat.dropEntered(info: info) }
         isTargeted = true
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: validateDrop(info: info) ? .copy : .forbidden)
+        if let sidebarChat = forwarded(info) { return sidebarChat.dropUpdated(info: info) }
+        return DropProposal(operation: validateDrop(info: info) ? .copy : .forbidden)
     }
 
     func dropExited(info: DropInfo) {
+        if let sidebarChat = forwarded(info) { return sidebarChat.dropExited(info: info) }
         isTargeted = false
     }
 
     func performDrop(info: DropInfo) -> Bool {
+        if let sidebarChat = forwarded(info) { return sidebarChat.performDrop(info: info) }
         isTargeted = false
         let items = items(info)
         guard !items.isEmpty else { return false }

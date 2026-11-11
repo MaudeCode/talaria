@@ -141,6 +141,7 @@ struct SessionListView: View {
     }
     @State private var appSidebar = AppSidebarPresentation()
     @State private var chatSplitFraction: CGFloat = 0.5
+    @State private var sidebarChatPreview = SidebarChatDrag.Preview()
     @State private var isPresentingUpdateNotifications: Bool
     @AccessibilityFocusState private var openNavigationIsFocused: Bool
     @AccessibilityFocusState private var archiveUndoIsFocused: Bool
@@ -575,7 +576,8 @@ struct SessionListView: View {
             overlaysContent: sidebarPresentation.overlaysContent,
             collapsesNativeSidebar: sidebarPresentation.toggleTarget == .drawer,
             onPresentationChange: appSidebarPresentationChanged,
-            onChatDrop: sidebarChatDropHandler
+            onChatDrop: sidebarChatDropHandler,
+            onChatDropHover: sidebarChatDropHovered
         ) { presented in
             if sidebarPresentation.toggleTarget == .drawer {
                 sharedSidebar(isPresented: presented, isDrawer: true)
@@ -975,13 +977,13 @@ struct SessionListView: View {
             storedChoice: storedChoice,
             drawerIsPresented: appSidebar.isPresented,
             columnIsVisible: nativeColumnVisibility != .detailOnly,
-            hidesSidebarColumn: navigationState.chatNeedsSecondaryPaneRoom && widensForCompanionPage,
+            hidesSidebarColumn: chatNeedsSecondaryPaneRoom && widensForCompanionPage,
             hasVerticalDivision: foldedSidebarWidth != nil,
-            hasSecondaryChat: navigationState.secondarySessionID != nil && canSplitChats,
+            hasSecondaryChat: shownSecondarySession != nil,
             filesInspectorPresented: navigationState.filesInspectorPresented,
             filesInspectorIsEligible: regularWidthChat != nil
                 && (navigationState.section == .chats || navigationState.selectedSectionSession != nil)
-                && !(navigationState.chatNeedsSecondaryPaneRoom && RegularSplitLayout.splitsCompanionPage(
+                && !(chatNeedsSecondaryPaneRoom && RegularSplitLayout.splitsCompanionPage(
                     width: regularSplitWidth, height: regularSplitFullHeight)),
             filesInspectorOpeningIsLandscape: filesInspectorOpeningIsLandscape
         )
@@ -1081,7 +1083,7 @@ struct SessionListView: View {
 
     private func regularChatLayoutWidth(for presentation: SidebarPresentation) -> CGFloat? {
         guard presentation.tiled, regularSplitWidth > 0,
-              !navigationState.filesInspectorPresented, !navigationState.chatNeedsSecondaryPaneRoom else { return nil }
+              !navigationState.filesInspectorPresented, !chatNeedsSecondaryPaneRoom else { return nil }
         if let foldedColumnWidth { return regularSplitWidth - foldedColumnWidth }
         return max(0, regularSplitWidth - (presentation.showsColumn
             ? sidebarColumnWidth : 0))
@@ -1096,7 +1098,7 @@ struct SessionListView: View {
     /// A chat takes the whole width while its Files inspector or companion page needs the room.
     private var hidesSidebarColumn: Bool {
         (sidebarPresentation.showsFilesInspector && widensForFilesInspector)
-            || (navigationState.chatNeedsSecondaryPaneRoom && widensForCompanionPage)
+            || (chatNeedsSecondaryPaneRoom && widensForCompanionPage)
     }
 
     /// Whether hiding the sidebar column is what lets a chat's companion page split beside it (TAL-1458).
@@ -1136,19 +1138,52 @@ struct SessionListView: View {
         return hingeStatus != .fullyOpen
     }
 
+    /// The shown chat stays from the drop until navigation opens it beside the primary or refuses it.
     private func acceptSidebarChatDrop(_ providers: [NSItemProvider]) -> Bool {
         guard canDropSidebarChat,
               let provider = providers.first(where: { $0.hasItemConformingToTypeIdentifier(SidebarChatDrag.typeIdentifier) })
         else { return false }
+        if sidebarChatPreview.shown != nil { sidebarChatPreview.isDropped = true }
         _ = provider.loadDataRepresentation(forTypeIdentifier: SidebarChatDrag.typeIdentifier) { data, _ in
-            guard let data, let id = String(data: data, encoding: .utf8) else { return }
+            let id = data.flatMap { String(data: $0, encoding: .utf8) }
             Task { @MainActor in
-                guard canSplitChats, let session = viewModel.sessions.first(where: { $0.sessionId == id }),
-                      navigationState.canOpenBeside(session) else { return }
-                await openSession(session, beside: true)
+                if let id, canSplitChats, let session = viewModel.sessions.first(where: { $0.sessionId == id }),
+                   navigationState.canOpenBeside(session) {
+                    await openSession(session, beside: true)
+                }
+                if sidebarChatPreview.isDropped { sidebarChatPreview = .init() }
             }
         }
         return true
+    }
+
+    /// A sidebar row lifted for a drag. Its own drag end is not observed: opening room for the shown chat collapses
+    /// the column the row sits in, and SwiftUI reports that teardown as the end of a drag still in flight. Leaving
+    /// both drop destinations, or the drag ending over one, hides what it showed.
+    private func sidebarChatLifted(_ session: SessionSummary) {
+        sidebarChatPreview = .init(session: session)
+    }
+
+    /// The one hover report from both chat drop destinations: the conversation and the drawer's scrim above it.
+    private func sidebarChatDropHovered(_ isOver: Bool) {
+        guard sidebarChatPreview.session != nil, sidebarChatPreview.isOverChat != isOver else { return }
+        sidebarChatPreview.isOverChat = isOver
+        // The drawer would cover the chat the drag shows; it closes as the drag reaches the conversation.
+        if isOver, appSidebar.isPresented { appSidebar.isPresented = false }
+    }
+
+    /// The chat a sidebar drag shows beside the primary before the drop. It stays out of navigation state.
+    private var previewSecondarySession: SessionSummary? {
+        guard let session = sidebarChatPreview.shown, navigationState.canOpenBeside(session) else { return nil }
+        return session
+    }
+
+    private var shownSecondarySession: SessionSummary? {
+        canSplitChats ? previewSecondarySession ?? navigationState.secondarySession : nil
+    }
+
+    private var chatNeedsSecondaryPaneRoom: Bool {
+        navigationState.chatNeedsSecondaryPaneRoom || shownSecondarySession != nil
     }
 
     private var sidebarChatDropHandler: (([NSItemProvider]) -> Bool)? {
@@ -1162,7 +1197,7 @@ struct SessionListView: View {
 
     /// Both panes use the same retained-chat and draft owners as a normal session destination.
     private var secondaryChat: AnyView? {
-        guard canSplitChats, let session = navigationState.secondarySession else { return nil }
+        guard let session = shownSecondarySession else { return nil }
         let retained = chats.chat(for: session, server: server) {
             ChatView.makeViewModel(session: session, server: server, sessionListOwner: viewModel)
         }
@@ -1182,16 +1217,6 @@ struct SessionListView: View {
         .environment(\.appearedNavigationRoot, nil))
     }
 
-    private var splitChatNavigationActions: AnyView {
-        AnyView(VStack(spacing: 4) {
-            regularSidebarToggleButton.frame(minWidth: 44, minHeight: 44)
-            regularNewChatButton.frame(minWidth: 44, minHeight: 44)
-            if updateNotificationViewModel.supportsNotifications {
-                updateNotificationsButton.frame(minWidth: 44, minHeight: 44)
-            }
-        })
-    }
-
     private func makeSplitFilesInspector() -> SplitFilesInspector {
         SplitFilesInspector(
             isPresented: Binding {
@@ -1209,8 +1234,8 @@ struct SessionListView: View {
                 if horizontalSizeClass == .regular { regularWidthChat = session }
             },
             offersCompanionPage: horizontalSizeClass == .regular,
-            navigationActions: { splitChatNavigationActions },
             onChatDrop: { providers in acceptSidebarChatDrop(providers) },
+            onChatDropHover: { sidebarChatDropHovered($0) },
             chatSplitFraction: $chatSplitFraction,
             chatUsesFoldRegions: chatUsesFoldRegions,
             reportCompanionPage: { navigationState.chatShowsCompanionPage = $0 },
@@ -1251,7 +1276,7 @@ struct SessionListView: View {
             switch sidebarPresentation.toggleTarget {
             case .column:
                 let opensColumn = (navigationState.filesInspectorPresented && widensForFilesInspector)
-                    || (navigationState.chatNeedsSecondaryPaneRoom && widensForCompanionPage)
+                    || (chatNeedsSecondaryPaneRoom && widensForCompanionPage)
                 updateSidebarColumn(storedChoice: opensColumn || !regularSidebarIsShown)
             case .drawer:
                 if sidebarPresentation.drawerEnabled { appSidebar.isPresented.toggle() }
@@ -1998,6 +2023,7 @@ struct SessionListView: View {
                 guard canSplit, navigation.canOpenBeside(session) else { return nil }
                 return { Task { await openSession(session, beside: true) } }
             }
+            actions.sidebarChatLifted = { sidebarChatLifted($0) }
         }
         return actions
     }
@@ -2123,7 +2149,7 @@ struct SessionListView: View {
     private var retainedChatSessionIDs: Set<String> {
         Set([navigationState.lastSelectedSessionID, navigationState.selectedSessionID,
              navigationState.selectedSectionSession?.sessionId, navigationState.displayedSessionID,
-             navigationState.secondarySessionID].compactMap { $0 })
+             navigationState.secondarySessionID, previewSecondarySession?.sessionId].compactMap { $0 })
     }
 
     private var sessionActionAnimation: Animation? {
@@ -2507,6 +2533,7 @@ struct SessionListView: View {
     private func selectSession(_ session: SessionSummary, in list: AppSection = .chats, beside: Bool = false) {
         closeAppSidebar {
             if beside {
+                sidebarChatPreview = .init()
                 if session.sessionId == (navigationState.displayedSessionID ?? navigationState.selectedSessionID) {
                     navigationState.closeSecondaryChat()
                 } else {

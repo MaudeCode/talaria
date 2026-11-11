@@ -279,7 +279,8 @@ final class ComposerDropHostedTests: XCTestCase {
 /// An external drop session over a hosted window, at the window point `point` returns when asked: what UIKit hands a
 /// drop interaction's delegate.
 final class HostedDropSession: NSObject, UIDropSession, UIDragSession {
-    let items: [UIDragItem]
+    /// A drag lifted from an App source carries the items its delegate supplied once it began.
+    var items: [UIDragItem]
     private let point: @MainActor () -> CGPoint
     private weak var window: UIWindow?
     private let isLocal: Bool
@@ -341,6 +342,33 @@ extension XCTestCase {
                 guard let delegate = interaction.delegate,
                       delegate.dropInteraction?(interaction, canHandle: session) ?? true else { continue }
                 return (interaction, delegate)
+            }
+            view = candidate.superview
+        }
+        return nil
+    }
+
+    /// Begins `session` at its location the way UIKit does: the first drag source under it or its nearest ancestor,
+    /// a collection's drag delegate or a view's drag interaction, supplies the items. Returns the call that ends it.
+    func liftDrag(_ session: HostedDropSession, in window: UIWindow) -> ((UIDropOperation) -> Void)? {
+        var view = window.hitTest(session.location(in: window), with: nil)
+        while let candidate = view {
+            if let collection = candidate as? UICollectionView, let delegate = collection.dragDelegate,
+               let indexPath = collection.indexPathForItem(at: session.location(in: collection)) {
+                let items = delegate.collectionView(collection, itemsForBeginning: session, at: indexPath)
+                if !items.isEmpty {
+                    session.items = items
+                    delegate.collectionView?(collection, dragSessionWillBegin: session)
+                    return { _ in delegate.collectionView?(collection, dragSessionDidEnd: session) }
+                }
+            }
+            for case let interaction as UIDragInteraction in candidate.interactions {
+                guard let delegate = interaction.delegate else { continue }
+                let items = delegate.dragInteraction(interaction, itemsForBeginning: session)
+                guard !items.isEmpty else { continue }
+                session.items = items
+                delegate.dragInteraction?(interaction, sessionWillBegin: session)
+                return { delegate.dragInteraction?(interaction, session: session, didEndWith: $0) }
             }
             view = candidate.superview
         }

@@ -69,8 +69,9 @@ struct SplitFilesInspector {
     var reportSession: (SessionSummary, RetainedChat?) -> Void = { _, _ in }
     var offersCompanionPage = false
     var secondaryChat: AnyView?
-    var navigationActions: (() -> AnyView)?
     var onChatDrop: (([NSItemProvider]) -> Bool)?
+    /// Whether a sidebar chat drag is over this chat; the window shows the dragged chat beside it meanwhile.
+    var onChatDropHover: (Bool) -> Void = { _ in }
     var chatDropIsEnabled = false
     var chatSplitFraction: Binding<CGFloat> = .constant(0.5)
     var chatUsesFoldRegions = false
@@ -253,7 +254,10 @@ struct ChatView: View {
     @Environment(\.sessionActions) private var sessionActions
     @Environment(\.navigationHasVerticalToolbar) private var navigationHasVerticalToolbar
     @State private var observedVerticalToolbar = false
-    private var hasVerticalToolbar: Bool { makePrimary != nil || secondaryChatIsBeside || navigationHasVerticalToolbar == true || observedVerticalToolbar }
+    private var hasVerticalToolbar: Bool { navigationHasVerticalToolbar == true || observedVerticalToolbar }
+    /// The Duo's vertical bar inset, which the leading pane's copy of the bar mirrors.
+    @State private var verticalBarWidth: CGFloat = 0
+    @State private var sidebarChatDrop = SidebarChatDropDelegate()
 
     @Environment(\.appearedNavigationRoot) private var appearedNavigationRoot
     @State private var observedInitialAppearance = false
@@ -916,13 +920,15 @@ struct ChatView: View {
             .navigationDestination(isPresented: $showsFilesBrowser) {
                 FileBrowserView(session: session, server: server, onAPIError: onAPIError)
             }
-            .navigationTitle(displayTitle)
+            // Two chats show their titles inline, so neither offers the bar a title.
+            .navigationTitle(isSplitPane ? "" : displayTitle)
             .navigationBarTitleDisplayMode(.inline)
             .onToolbarVerticalEdgeChange { observedVerticalToolbar = $0 }
-            .toolbarTitleMenu { sessionMenu }
+            .toolbarTitleMenu { if !isSplitPane { sessionMenu } }
             .toolbar {
-                let actions = chatActionButtons
-                ToolbarItem(placement: .principal) { paneTitle }
+                // The trailing chat of two owns the system bar; the leading one draws its copy of it.
+                let actions = secondaryChatIsBeside ? [] : chatActionButtons
+                if !isSplitPane { ToolbarItem(placement: .principal) { paneTitle } }
                 // Native toolbar metadata stays current only when each item has a static identity.
                 nativeChatToolbarItem(.chatMore, from: actions)
                 nativeChatToolbarItem(.chatGoal, from: actions)
@@ -931,6 +937,8 @@ struct ChatView: View {
                 nativeChatToolbarItem(.chatGit, from: actions)
                 nativeChatToolbarItem(.chatBackgroundTasks, from: actions)
                 nativeChatToolbarItem(.chatQueuedMessages, from: actions)
+                nativeChatToolbarItem(.chatMakePrimary, from: actions)
+                nativeChatToolbarItem(.chatClose, from: actions)
                 nativeChatToolbarItem(.dismissKeyboard, from: actions)
             }
     }
@@ -949,12 +957,29 @@ struct ChatView: View {
         }
     }
 
+    /// A native bar item badges itself; the App-drawn copy of the bar draws the same count.
     @ViewBuilder
-    private func chatActionView(_ action: ChatActionButton) -> some View {
+    private func chatActionView(_ action: ChatActionButton, isNative: Bool = true) -> some View {
         if let identifier = action.accessibilityIdentifier {
             action.content.accessibilityIdentifier(identifier)
         } else if let count = action.badgeCount {
-            action.content.badge(count)
+            if isNative {
+                action.content.badge(count)
+            } else {
+                action.content
+                    .overlay(alignment: .topTrailing) {
+                        if count > 0 {
+                            Text(count, format: .number)
+                                .font(.caption2.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 4)
+                                .frame(minWidth: 16, minHeight: 16)
+                                .background(Capsule().fill(.red))
+                                .accessibilityHidden(true)
+                        }
+                    }
+                    .accessibilityValue(count > 0 ? Text(count, format: .number) : Text(""))
+            }
         } else {
             action.content
         }
@@ -989,7 +1014,7 @@ struct ChatView: View {
         if viewModel.hasSession, viewModel.hasActivatedGoalCommand {
             add(.chatGoal) { goalControlMenu }
         }
-        if showsFilesButton, secondaryChatIsBeside || makePrimary != nil || !companionPageOffered {
+        if showsFilesButton, isSplitPane || !companionPageOffered {
             add(.chatFiles) { filesButton.disabled(viewModel.isViewingCachedData).accessibilityLabel("Files") }
         }
         if #available(iOS 27.1, *), companionPageOffered, !secondaryChatIsBeside {
@@ -1009,6 +1034,16 @@ struct ChatView: View {
         if queuedMessagesCount > 0 {
             add(.chatQueuedMessages, badgeCount: queuedMessagesCount) {
                 Button(action: queuedMessagesAction) { Label("Queued messages", systemImage: "tray.full") }
+            }
+        }
+        if let makePrimary {
+            add(.chatMakePrimary, accessibilityIdentifier: "chat-secondary-make-primary") {
+                Button(action: makePrimary) { Label("Make Primary", systemImage: "arrow.left.arrow.right") }
+            }
+        }
+        if let closeSecondary {
+            add(.chatClose, accessibilityIdentifier: "chat-secondary-close") {
+                Button(action: closeSecondary) { Label("Close", systemImage: "xmark") }
             }
         }
         if hasVerticalToolbar, composerIsFocused {
@@ -1085,6 +1120,9 @@ struct ChatView: View {
         companionPageFits && !viewModel.companionFocus.isHidden && !secondaryChatIsBeside
     }
 
+    /// One of two chats side by side: the leading chat with a secondary beside it, or that secondary.
+    private var isSplitPane: Bool { makePrimary != nil || secondaryChatIsBeside }
+
     private var secondaryChatIsBeside: Bool {
         splitFilesInspector?.offersCompanionPage == true && splitFilesInspector?.secondaryChat != nil
             && RegularSplitLayout.splitsCompanionPage(width: arrangementSize.width, height: arrangementSize.height)
@@ -1149,6 +1187,7 @@ struct ChatView: View {
                 guard !holdsForegroundLayout, size.width > 0, size.height > 0 else { return }
                 arrangementSize = size
             }
+            .onGeometryChange(for: CGFloat.self, of: { $0.safeAreaInsets.trailing }) { verticalBarWidth = $0 }
         } else {
             chat
         }
@@ -1158,58 +1197,63 @@ struct ChatView: View {
     private func withSidebarChatDrop(_ chat: some View) -> some View {
         // Empty registered types still alter native toolbar presentation; omit the modifier where splits cannot fit.
         if splitFilesInspector?.chatDropIsEnabled == true {
-            chat.onDrop(of: [SidebarChatDrag.typeIdentifier], isTargeted: nil) { providers in
-                splitFilesInspector?.onChatDrop?(providers) ?? false
-            }
+            let _ = sidebarChatDrop.hover = { splitFilesInspector?.onChatDropHover($0) }
+            let _ = sidebarChatDrop.drop = { splitFilesInspector?.onChatDrop?($0) ?? false }
+            chat.onDrop(of: [SidebarChatDrag.type], delegate: sidebarChatDrop)
+                .environment(\.sidebarChatDropDelegate, sidebarChatDrop)
         } else {
             chat
         }
     }
 
+    /// Each of two chats titles itself inline. The trailing chat's actions stay in the system bar; one window has one,
+    /// so the leading chat draws a copy of it at its outer edge, with the same actions in the same order.
     @ViewBuilder
     private var presentedChat: some View {
-        if makePrimary != nil || secondaryChatIsBeside {
-            HStack(spacing: 0) {
-                if makePrimary == nil { paneActionBar }
+        if isSplitPane {
+            HStack(alignment: .top, spacing: 0) {
+                if secondaryChatIsBeside, hasVerticalToolbar { paneActionBar(axis: .vertical) }
                 VStack(spacing: 0) {
-                    paneTitle
-                        .frame(height: 52)
-                        .padding(.horizontal, 12)
+                    HStack(spacing: 12) {
+                        if secondaryChatIsBeside, !hasVerticalToolbar { paneActionBar(axis: .horizontal) }
+                        paneTitle.frame(maxWidth: .infinity)
+                    }
+                    .frame(minHeight: 52)
+                    .padding(.horizontal, 12)
                     chatWithToolbar
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                if makePrimary != nil { paneActionBar }
             }
-            .toolbar(.hidden, for: .navigationBar, .bottomBar)
         } else {
             chatWithToolbar
         }
     }
 
-    private var paneActionBar: some View {
-        ScrollView(.vertical) {
-            VStack(spacing: 4) {
-                if makePrimary == nil { splitFilesInspector?.navigationActions?() }
-                ForEach(chatActionButtons) { action in
-                    chatActionView(action).frame(minWidth: 44, minHeight: 44)
-                }
-                if let makePrimary, let closeSecondary {
-                    Button(action: makePrimary) { Label("Make Primary", systemImage: "arrow.left.arrow.right") }
-                        .frame(minWidth: 44, minHeight: 44)
-                        .accessibilityIdentifier("chat-secondary-make-primary")
-                    Button(action: closeSecondary) { Label("Close", systemImage: "xmark") }
-                        .frame(minWidth: 44, minHeight: 44)
-                        .accessibilityIdentifier("chat-secondary-close")
-                }
+    private func paneActionBar(axis: Axis) -> some View {
+        let actions = chatActionButtons
+        let layout = axis == .vertical ? AnyLayout(VStackLayout(spacing: 4)) : AnyLayout(HStackLayout(spacing: 4))
+        let items = layout {
+            ForEach(actions) { action in
+                chatActionView(action, isNative: false).frame(minWidth: 44, minHeight: 44)
             }
-            .frame(width: 52)
         }
-        .scrollIndicators(.hidden)
+        // A bar too long for the pane scrolls rather than dropping actions.
+        return AdaptiveGlassContainer {
+            ViewThatFits(in: axis == .vertical ? .vertical : .horizontal) {
+                items
+                ScrollView(axis == .vertical ? .vertical : .horizontal) { items }
+                    .scrollIndicators(.hidden)
+            }
+            .padding(4)
+            .adaptiveGlass(in: Capsule())
+        }
         .labelStyle(.iconOnly)
         .buttonStyle(.borderless)
-        .controlSize(.large)
-        .frame(width: 52)
-        .background(Color(.systemBackground))
+        .tint(.primary)
+        .padding(axis == .vertical ? 6 : 0)
+        .frame(width: axis == .vertical ? min(72, max(56, verticalBarWidth)) : nil)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("chat-pane-actions")
     }
 
     var body: some View {

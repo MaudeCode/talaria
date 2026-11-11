@@ -162,6 +162,18 @@ extension HostedAccessibility {
         return candidates.first { !NSStringFromClass(type(of: $0)).contains("Inspector") }
     }
 
+    /// The navigation controller whose visible page shows `item`, as `toolbarItems(in:)` gathers them.
+    static func navigationController(showing item: UIBarButtonItem, in window: UIWindow) -> UINavigationController? {
+        func find(_ controller: UIViewController) -> UINavigationController? {
+            if let navigation = controller as? UINavigationController,
+               toolbarItems(under: navigation).contains(where: { $0 === item }) {
+                return navigation.children.lazy.compactMap(find).first ?? navigation
+            }
+            return controller.children.lazy.compactMap(find).first
+        }
+        return window.rootViewController.flatMap(find)
+    }
+
     static func toolbarItem(_ title: String, in window: UIWindow) -> UIBarButtonItem? {
         toolbarItems(in: window).first { $0.title == title || $0.accessibilityLabel == title || $0.primaryAction?.title == title }
     }
