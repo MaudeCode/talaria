@@ -1,11 +1,12 @@
 import { mkdirSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SIDECAR_SERVER_METHODS } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../../test/harness.js'
 import { browserKeys, fakeRelay, stubPushService, type FakeRelay, type Push } from '../../test/notifications.js'
 import { Session } from '../session.js'
+import { ActivityStates } from './activity.js'
 
 type Json = Record<string, unknown>
 const fixture = (JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts/fixtures/sidecar/notify.json'), 'utf8')) as Record<'server.notify', { params: Json; result: Json }[]>)['server.notify'][0]!
@@ -136,6 +137,22 @@ describe('the notify agent tool (TAL-1970)', () => {
     expect(await notify({ title: 'x'.repeat(80), body: 'é'.repeat(300) })).toMatchObject({ status: 'sent' })
     await settle()
     expect(push.pushes).toHaveLength(1)
+  })
+
+  it('builds the activity rows once per session event and shares them with the Relay and Web Push (TAL-1722)', async () => {
+    const builds = vi.spyOn(s.deps.background, 'sessionIds')
+    const states = vi.spyOn(ActivityStates.prototype, 'states')
+    try {
+      const snapshots = relay.snapshots().length
+      s.deps.events.publish('turn_started', { sessionId: CALLER })
+      await vi.waitFor(() => { expect(relay.snapshots().length).toBeGreaterThan(snapshots) })
+      await s.deps.webPush.idle()
+      expect(builds).toHaveBeenCalledTimes(1)
+      const rows = await Promise.all(states.mock.results.map((result) => result.value as ReturnType<ActivityStates['states']>))
+      expect(rows).toHaveLength(2)
+      expect(rows[1]).toBe(rows[0])
+      expect(rows[0]!.map((row) => row.sessionId)).toEqual([CALLER])
+    } finally { builds.mockRestore(); states.mockRestore() }
   })
 })
 

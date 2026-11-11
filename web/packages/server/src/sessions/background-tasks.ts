@@ -52,6 +52,8 @@ export interface DelegationRow { delegation_id: string; state: string; dispatche
 export interface ProcessRow { process_id: string; command: string; started_at: number | null; exited: boolean; exited_at: number | null; exit_code: number | null; completion_reason: string; watched: boolean }
 
 const RECORD_LIMIT = 200
+/** TAL-1722: sessions whose receipts stay in memory; the least recently read goes first. */
+const CACHED_SESSIONS = 64
 const RESULT_LIMIT = 64_000
 const TITLE_LIMIT = 160
 const TERMINAL: ReadonlySet<Status> = new Set(['completed', 'failed', 'cancelled'])
@@ -184,9 +186,20 @@ export function taskView(r: Receipt, opts: { unconfirmed?: boolean; canStop?: bo
   }
 }
 
-/** The receipts of every session, one small file each, cached after the first read. */
+/** When a session last had background work: Infinity while any of it is live, else its newest completion; null with none. */
+function lastActive(receipts: Receipt[]): number | null {
+  if (receipts.some((receipt) => LIVE.has(receipt.status))) return Infinity
+  return receipts.length ? Math.max(...receipts.map((receipt) => receipt.completed_at ?? 0)) : null
+}
+
+/** The receipts of every session, one small file each; the recently read ones stay cached. */
 export class BackgroundTaskStore {
   private readonly cache = new Map<string, Receipt[]>()
+  /** TAL-1722: when each session last had background work, kept by every write once storage was read through. */
+  private readonly active = new Map<string, number>()
+  private loaded: Promise<void> | null = null
+  /** Sessions written while the first listing runs, whose stored receipts that listing may predate. */
+  private writtenDuringLoad: Set<string> | null = new Set()
   private readonly generations = new Map<string, number>()
   /** TAL-1299: bumped by every cache write or eviction, so a read that started earlier never caches over it. */
   private readonly epochs = new Map<string, number>()
@@ -214,9 +227,33 @@ export class BackgroundTaskStore {
       if (epoch !== this.epochs.get(sid)) continue
       // A failed read shows as empty but is not cached, so the next read tries storage again.
       if (!receipts) return []
-      this.cache.set(sid, receipts)
+      this.remember(sid, receipts)
       return receipts
     }
+  }
+
+  private remember(sid: string, receipts: Receipt[]): void {
+    this.cache.delete(sid)
+    this.cache.set(sid, receipts)
+    if (this.cache.size > CACHED_SESSIONS) this.cache.delete(this.cache.keys().next().value!)
+  }
+
+  private track(sid: string, receipts: Receipt[] | null): void {
+    this.writtenDuringLoad?.add(sid)
+    const at = receipts && lastActive(receipts)
+    if (at === null) this.active.delete(sid)
+    else this.active.set(sid, at)
+  }
+
+  /** Read every session's receipts once, so later listings come from the writes this store makes. */
+  private async load(): Promise<void> {
+    for (const { key: sid } of await this.documents.list(this.namespace)) {
+      if (!isSafeSessionId(sid) || this.writtenDuringLoad!.has(sid)) continue
+      let receipts: Receipt[]
+      try { receipts = this.parse((await this.documents.get(this.namespace, sid))?.value) } catch { continue }
+      if (!this.writtenDuringLoad!.has(sid)) this.track(sid, receipts)
+    }
+    this.writtenDuringLoad = null
   }
 
   async get(sid: string, taskId: string): Promise<Receipt | undefined> { return (await this.list(sid)).find((receipt) => receipt.task_id === taskId) }
@@ -231,7 +268,7 @@ export class BackgroundTaskStore {
       const tasks = this.bounded(receipts)
       return { value: { version: 1, tasks }, result: { tasks, result }, skip: opts.skipUnchanged === true && before === JSON.stringify(tasks) }
     }, { replaceInvalid: true })
-    if (generation === this.generation(sid)) { this.invalidate(sid); this.cache.set(sid, committed.tasks) }
+    if (generation === this.generation(sid)) { this.invalidate(sid); this.remember(sid, committed.tasks); this.track(sid, committed.tasks) }
     return committed.result
   }
 
@@ -265,13 +302,21 @@ export class BackgroundTaskStore {
     return receipt
   }
 
-  async sessionIds(): Promise<string[]> { return (await this.documents.list(this.namespace)).map((entry) => entry.key).filter(isSafeSessionId) }
+  /** Sessions with live background work or work that finished at or after `since`; storage is listed only the first time. */
+  async sessionIds(since: number): Promise<string[]> {
+    try { await (this.loaded ??= this.load()) } catch (error) { this.loaded = null; throw error }
+    const ids: string[] = []
+    // Work cannot become recent again without a write, which tracks it anew.
+    for (const [sid, at] of this.active) if (at >= since) ids.push(sid); else this.active.delete(sid)
+    return ids
+  }
 
   evict(sid: string): void { this.invalidate(sid); this.cache.delete(sid) }
 
   async delete(sid: string): Promise<void> {
     this.generations.set(sid, this.generation(sid) + 1)
     this.evict(sid)
+    this.track(sid, null)
     try { await this.documents.delete(this.namespace, sid) } catch { /* best effort */ }
   }
 
@@ -399,7 +444,7 @@ export interface BackgroundActivityDeps {
 export class BackgroundActivity {
   constructor(private readonly deps: BackgroundActivityDeps) {}
 
-  async sessionIds(): Promise<string[]> { return this.deps.store.sessionIds() }
+  async sessionIds(since: number): Promise<string[]> { return this.deps.store.sessionIds(since) }
 
   async activityPhase(sid: string, profile: string | null, opts: { excludeStreamId?: string; terminalPhase?: SessionActivityPhase } = {}): Promise<SessionActivityPhase> {
     if (opts.terminalPhase || opts.excludeStreamId || (await this.receipts(sid)).length) return (await this.snapshot(sid, profile, { ...opts, owner: false })).activity_phase

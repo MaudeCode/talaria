@@ -22,7 +22,7 @@ import type { Session } from './session.js'
 import type { SessionPrefixIndex } from './prefix-index.js'
 import type { SessionStore } from './store.js'
 import { str } from '../util.js'
-import { ActivityStates, hasSessionData, type AgentNotice } from './notify/activity.js'
+import { ActivityStates, hasSessionData, TERMINAL_PHASES, type AgentNotice } from './notify/activity.js'
 import type { NotificationChannel } from './notify/channel.js'
 import { completionNotification } from './notify/alerts.js'
 
@@ -212,6 +212,8 @@ export interface RelayPublisherDeps {
   profilesMatch: (row: string | null | undefined, active: string | null | undefined) => boolean
   /** The profile's messageful Agent `state.db` sessions (`readImportableAgentSessionRows`). */
   agentSessions: (profile: string) => Promise<Record<string, unknown>[]>
+  /** TAL-1722: the identity of the profile's `state.db` as it stands (`stateDbStamp`); null while unknown. Without it every idle tick rereads the sessions. */
+  agentSessionsStamp?: (profile: string) => string | null
   /** Shared with the other notification channels; a standalone publisher tracks its own. */
   activity?: ActivityStates
   /**
@@ -237,6 +239,10 @@ export class RelayPublisher {
   private startedUnsupportedLogged = false
   private lastRevision = 0
   private readonly activity: ActivityStates
+  /** TAL-1722: profiles whose last snapshot held live activity, whose relay lease idle ticks refresh; all of them until the first. */
+  private readonly liveProfiles: Set<string>
+  /** TAL-1722: each profile's `state.db` identity when its sessions were last read. */
+  private readonly agentStamps = new Map<string, string>()
   private readonly disabledProfiles = new Set<string>()
   private readonly views = new Map<string, QueuedView>()
   private viewedUnsupportedLogged = false
@@ -244,11 +250,16 @@ export class RelayPublisher {
   private stopped = false
   private loop: Promise<void> | null = null
   private dirty = false
+  /** The hub change the next pass answers, while no other change followed it. */
+  private change: number | undefined
   private wake: (() => void) | null = null
   private timer: NodeJS.Timeout | null = null
   private failures = 0
 
-  constructor(readonly config: RelayConfig, private readonly deps: RelayPublisherDeps) { this.activity = deps.activity ?? new ActivityStates(deps) }
+  constructor(readonly config: RelayConfig, private readonly deps: RelayPublisherDeps) {
+    this.activity = deps.activity ?? new ActivityStates(deps)
+    this.liveProfiles = new Set(Object.keys(config.profiles))
+  }
 
   async initialize(): Promise<void> {
     this.key = await loadKey(this.deps.documents, this.config)
@@ -275,7 +286,8 @@ export class RelayPublisher {
     this.wake?.()
   }
 
-  changed(): void {
+  changed(change?: number): void {
+    this.change = change
     this.dirty = true
     this.wake?.()
   }
@@ -355,16 +367,33 @@ export class RelayPublisher {
     })
   }
 
+  /** Whether a profile's `state.db` changed since its sessions were last read; an unknown identity counts as changed. */
+  private agentSessionsMoved(): boolean {
+    return Object.keys(this.config.profiles).some((profile) => {
+      const stamp = this.deps.agentSessionsStamp?.(profile) ?? null
+      return stamp === null || stamp !== this.agentStamps.get(profile)
+    })
+  }
+
   private async run(): Promise<void> {
     while (!this.stopped) {
-      if (!this.dirty) await this.sleep(60)
+      let idle = false
+      if (!this.dirty) { await this.sleep(60); idle = !this.dirty }
       if (this.stopped) return
       this.dirty = false
+      const change = idle ? undefined : this.change
+      this.change = undefined
       try {
-        const ready: (readonly [string, QueuedView])[] = [...this.views, ...(await this.pendingDeleted()).map((view) => [view.sessionId, { profile: view.profile, through: view.through, deleted: view }] as const)]
-        await this.publishSnapshot(true)
-        await this.flushViews(ready)
-        await this.publishStarted()
+        // TAL-1722: a tick with no change republishes only to refresh live activity's lease or deliver queued views, and
+        // rereads the session lists only after an Agent wrote state.db, since every Web change arrives as a change.
+        const snapshot = !idle || this.liveProfiles.size > 0 || this.views.size > 0 || (await loadDeletedViews(this.deps.documents)).length > 0
+        const started = !idle || this.agentSessionsMoved()
+        if (snapshot) {
+          const ready: (readonly [string, QueuedView])[] = [...this.views, ...(await this.pendingDeleted()).map((view) => [view.sessionId, { profile: view.profile, through: view.through, deleted: view }] as const)]
+          await this.publishSnapshot(true, change)
+          await this.flushViews(ready)
+        }
+        if (started) await this.publishStarted()
         if (this.failures) this.deps.log('[relay] Talaria relay snapshot recovered')
         this.failures = 0
       } catch (error) {
@@ -408,8 +437,8 @@ export class RelayPublisher {
   }
 
   /** Python `build_states`: the shared activity rows, numbered with this relay's revisions. */
-  async buildStates(profile: string): Promise<RelayState[]> {
-    const states: RelayState[] = (await this.activity.states(profile, () => { this.changed() })).filter((row) => this.publishesOwner(row.ownerPersonId)).map((row) => {
+  async buildStates(profile: string, change?: number): Promise<RelayState[]> {
+    const states: RelayState[] = (await this.activity.states(profile, () => { this.changed() }, change)).filter((row) => this.publishesOwner(row.ownerPersonId)).map((row) => {
       const state: RelayState = { sessionId: row.sessionId, streamId: row.streamId, eventId: 'snapshot:0:' + row.sessionId, revision: 0, ...(row.activityPhase ? { activityPhase: row.activityPhase } : {}), title: row.title, phase: row.phase, startedAt: row.startedAt, updatedAt: row.updatedAt, deepLink: row.deepLink, ...(row.approvalHeadId ? { approvalHeadId: row.approvalHeadId } : {}), ...(row.decisionReviewId ? { decisionReviewId: row.decisionReviewId, decisionReviewTitle: row.decisionReviewTitle ?? '' } : {}), ...(row.agentNotices ? { agentNotices: row.agentNotices } : {}) }
       if (this.alertEligibilitySupported && !row.alertEligible) state.alertEligible = false
       return state
@@ -424,12 +453,12 @@ export class RelayPublisher {
     return states
   }
 
-  async publishSnapshot(isolatePermanent = false): Promise<void> {
+  async publishSnapshot(isolatePermanent = false, change?: number): Promise<void> {
     let retryable: RelayHttpError | null = null
     for (const [profile, cfg] of Object.entries(this.config.profiles)) {
-      if (!(await this.publishes(profile, cfg))) continue
+      if (!(await this.publishes(profile, cfg))) { this.liveProfiles.delete(profile); continue }
       try {
-        await this.publishProfileSnapshot(profile, cfg.profile_id)
+        await this.publishProfileSnapshot(profile, cfg.profile_id, change)
       } catch (error) {
         if (!(error instanceof RelayHttpError) || !isolatePermanent) throw error
         if (error.retryable) { retryable ??= error; continue }
@@ -504,6 +533,11 @@ export class RelayPublisher {
   private async observeStarted(): Promise<StartedLedger> {
     // Agent rows come from the listing worker first, so the ledger's load-to-save stays synchronous.
     const agentRows = new Map<string, Record<string, unknown>[]>()
+    for (const profile of Object.keys(this.config.profiles)) {
+      const stamp = this.deps.agentSessionsStamp?.(profile) ?? null
+      if (stamp === null) this.agentStamps.delete(profile)
+      else this.agentStamps.set(profile, stamp)
+    }
     for (const [profile, cfg] of Object.entries(this.config.profiles)) {
       if (!(await this.publishes(profile, cfg))) continue
       try { agentRows.set(profile, await this.publishedAgentRows(profile, await this.deps.agentSessions(profile))) } catch { agentRows.set(profile, []) }
@@ -561,8 +595,10 @@ export class RelayPublisher {
     }
   }
 
-  private async publishProfileSnapshot(profile: string, profileId: string): Promise<void> {
-    const states = (await this.buildStates(profile))
+  private async publishProfileSnapshot(profile: string, profileId: string, change?: number): Promise<void> {
+    const states = (await this.buildStates(profile, change))
+    if (states.some((state) => !(TERMINAL_PHASES as readonly string[]).includes(state.phase))) this.liveProfiles.add(profile)
+    else this.liveProfiles.delete(profile)
     const config = this.config.profiles[profile]
     if (config?.profile_id !== profileId || !await this.publishes(profile, config)) return
     try {
@@ -646,7 +682,7 @@ export class RelayService implements NotificationChannel {
   }
 
   /** The notification hub forwards every session event; only the adopted publisher republishes. */
-  changed(): void { this.publisher?.changed() }
+  changed(change?: number): void { this.publisher?.changed(change) }
 
   /** TAL-1970: the adopted publisher sends a session's agent notice to the relay; without one it reaches no device. */
   async noticeReach(profile: string | null, owner: string | null): Promise<boolean> { return await this.publisher?.reaches(profile, owner) ?? false }

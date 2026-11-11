@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web does less work while idle: Relay and Web Push alerts no longer reread every chat list each minute or build the same activity twice for one change, and finished background work no longer stays in memory.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

@@ -15,8 +15,11 @@ export interface NotificationChannel {
   readonly id: string
   start?(): unknown
   stop(): void
-  /** Something in the activity rows may differ; channels coalesce and never block the caller. */
-  changed(): void
+  /**
+   * Something in the activity rows may differ; channels coalesce and never block the caller. A hub `change` lets the
+   * channels passing for it share one build of the rows (TAL-1722).
+   */
+  changed(change?: number): void
   noteTerminal?(streamId: string, phase: string): void
   markViewed?(sid: string): Promise<void>
   clearDeleted?(sid: string, profile: string | null): Promise<void>
@@ -33,7 +36,12 @@ export class NotificationHub {
   }
 
   async start(): Promise<void> { for (const channel of this.channels) await channel.start?.() }
-  changed(): void { for (const channel of this.channels) channel.changed() }
+  private change = 0
+
+  changed(): void {
+    const change = ++this.change
+    for (const channel of this.channels) channel.changed(change)
+  }
 
   /** Record a finished run before the registry tears it down, then let every channel see it. */
   noteTerminal(streamId: string, phase: string): void {

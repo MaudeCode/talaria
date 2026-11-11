@@ -5,7 +5,7 @@ import { generateKeyPairSync } from 'node:crypto'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PresenceLeases, RelayPublisher, type RelayConfig, type RelayPublisherDeps } from './relay.js'
 import { StreamRegistry } from './streams.js'
 
@@ -19,21 +19,23 @@ let agent: Record<string, Row[]>
 let sent: Sent[]
 let respond: (url: string) => Promise<Response>
 let config: RelayConfig
+let reads: { agent: number; index: number }
 
 const PUB = 'https://pub.example'
 const startedPath = (profileId: string, sid: string): string => `https://relay.example/v1/publishers/${encodeURIComponent(PUB)}/profiles/${profileId}/sessions/${sid}/started`
 const started = (): Sent[] => sent.filter((s) => s.url.endsWith('/started'))
 
-async function publisher(): Promise<RelayPublisher> {
+async function publisher(extra: Partial<RelayPublisherDeps> = {}): Promise<RelayPublisher> {
   const deps = {
     documents: new JsonDocuments(home, (profile) => join(home, profile)),
     registry: new StreamRegistry(), presence: new PresenceLeases(() => clock), now: () => clock, log: vi.fn(),
     pending: { approvalPending: () => ({ pending: null, pending_count: 0 }), clarifyPending: () => ({ pending: null, pending_count: 0 }) },
-    store: { get: () => { throw new Error('unused') }, readIndexEntries: () => index },
-    agentSessions: (profile: string) => Promise.resolve(agent[profile] ?? []),
+    store: { get: () => { throw new Error('unused') }, readIndexEntries: () => { reads.index += 1; return index } },
+    agentSessions: (profile: string) => { reads.agent += 1; return Promise.resolve(agent[profile] ?? []) },
     profileHome: (profile: string) => join(home, profile),
     profilesMatch: (row: string | null | undefined, active: string | null | undefined) => (row ?? 'default') === active,
     fetch: () => (url: string, init: { body: string }) => { sent.push({ url, body: JSON.parse(init.body) as Row }); return respond(url) },
+    ...extra,
   } as unknown as RelayPublisherDeps
   return (await initializeStore(new RelayPublisher(config, deps)))
 }
@@ -44,6 +46,7 @@ beforeEach(async () => {
   index = []
   agent = {}
   sent = []
+  reads = { agent: 0, index: 0 }
   respond = () => Promise.resolve(new Response('{}'))
   const keyPath = join(home, 'publisher.pem')
   writeFileSync(keyPath, generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' }))
@@ -145,4 +148,46 @@ it('announces the chat whose change wakes the first pass after an upgrade', asyn
   clock += 1
   await p.publishStarted()
   expect(started().map((s) => s.body.sessionId)).toEqual(['web-first'])
+})
+
+describe('idle passes (TAL-1722)', () => {
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }) })
+  afterEach(() => { vi.useRealTimers() })
+  /** The loop is asleep until its next 60 s tick. */
+  const asleep = (): Promise<void> => vi.waitFor(() => { expect(vi.getTimerCount()).toBe(1) })
+  const tick = async (): Promise<void> => { clock += 60; await vi.advanceTimersByTimeAsync(60_000); await asleep() }
+
+  it('reads and sends nothing on idle ticks while no event arrived and state.db is unchanged, and observes a state.db write', async () => {
+    let stamp = 'state-db-1'
+    const p = await publisher({ agentSessionsStamp: () => stamp })
+    await p.start()
+    await vi.waitFor(() => { expect(reads.agent).toBeGreaterThan(0) })
+    await asleep()
+    const before = { ...reads, sent: sent.length }
+    for (let i = 0; i < 10; i++) await tick()
+    expect({ ...reads, sent: sent.length }).toEqual(before)
+
+    // A session an Agent CLI started moves state.db without any Web event; the next tick announces it.
+    agent = { default: [{ id: 'cli-new', started_at: clock }] }
+    stamp = 'state-db-2'
+    await tick()
+    expect(started().map((s) => s.body.sessionId)).toEqual(['cli-new'])
+    p.stop()
+  })
+
+  it('keeps refreshing the lease of live activity on idle ticks without rereading the session lists', async () => {
+    const live = { session_id: 'live', profile: null, title: 'Live', owner_person_id: null }
+    const registry = new StreamRegistry()
+    registry.activeRuns.set('stream-live', { stream_id: 'stream-live', session_id: 'live', started_at: clock, phase: 'running', workspace: home, model: null, provider: null, ephemeral: false })
+    const p = await publisher({ registry, agentSessionsStamp: () => 'state-db-1', store: { get: () => Promise.resolve(live), readIndexEntries: () => { reads.index += 1; return index } } as unknown as RelayPublisherDeps['store'] })
+    await p.start()
+    await vi.waitFor(() => { expect(reads.agent).toBeGreaterThan(0) })
+    await asleep()
+    const snapshots = (): Sent[] => sent.filter((s) => s.url.endsWith('/prf_default/snapshot'))
+    const before = { ...reads, snapshots: snapshots().length }
+    for (let i = 0; i < 3; i++) await tick()
+    expect(reads).toEqual({ agent: before.agent, index: before.index })
+    expect(snapshots().slice(before.snapshots).map((s) => (s.body.states as Row[]).map((state) => state.phase))).toEqual([['running'], ['running'], ['running']])
+    p.stop()
+  })
 })

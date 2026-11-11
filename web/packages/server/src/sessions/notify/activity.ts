@@ -80,6 +80,8 @@ export class ActivityStates {
   private readonly terminal = new Map<string, ActiveRun & { relay_phase: string; terminal_at: number }>()
   /** TAL-1970: per session, when each notice of the window was accepted, and the unmuted ones the rows carry, with their time. */
   private readonly notices = new Map<string, { sent: { at: number; level: AgentNotifyLevel }[]; shown: { notice: AgentNotice; at: number }[] }>()
+  /** TAL-1722: per profile, the rows built for the latest hub change, shared by every channel passing for it. */
+  private readonly built = new Map<string, { rows: Promise<ActivityState[]>; retries: Set<() => void>; change: number }>()
 
   constructor(private readonly deps: ActivityDeps) {}
 
@@ -118,7 +120,7 @@ export class ActivityStates {
     const runs = [...this.deps.registry.activeRuns.values()].filter((run) => run.session_id.trim() === sid && !(run as { health_only?: boolean }).health_only)
     const run = runs[0] ?? this.terminal.get(sid)
     if (run) return run.activity_parent_session_id || sid
-    return (await this.deps.background?.sessionIds())?.includes(sid) ? sid : null
+    return (await this.deps.background?.sessionIds(this.deps.now() - TERMINAL_RETENTION_S))?.includes(sid) ? sid : null
   }
 
   /**
@@ -150,13 +152,28 @@ export class ActivityStates {
     for (const [sid, run] of previous.terminal) this.terminal.set(sid, run)
   }
 
-  /** `retry` runs when a newer run for a session appeared mid-build, so the caller builds again. */
-  async states(profile: string, retry: () => void): Promise<ActivityState[]> {
-    const cutoff = this.deps.now() - TERMINAL_RETENTION_S
-    const backgroundIds = new Set<string>()
-    for (const sid of await this.deps.background?.sessionIds() ?? []) {
-      if ((await this.deps.background!.receipts(sid)).some((receipt) => ['running', 'attention', 'unknown'].includes(receipt.status) || (receipt.completed_at ?? 0) >= cutoff)) backgroundIds.add(sid)
+  /**
+   * The profile's rows. Channels passing for the same hub `change` share one build; without one the rows are built
+   * fresh. `retry` runs when a newer run for a session appeared mid-build, so the caller builds again.
+   */
+  states(profile: string, retry: () => void, change?: number): Promise<ActivityState[]> {
+    if (change === undefined) return this.build(profile, retry)
+    let entry = this.built.get(profile)
+    if (entry?.change !== change) {
+      const created = { rows: Promise.resolve<ActivityState[]>([]), retries: new Set<() => void>(), change }
+      const drop = (): void => { if (this.built.get(profile) === created) this.built.delete(profile) }
+      created.rows = this.build(profile, () => { drop(); for (const caller of created.retries) caller() })
+      created.rows.catch(drop)
+      this.built.set(profile, created)
+      entry = created
     }
+    entry.retries.add(retry)
+    return entry.rows
+  }
+
+  private async build(profile: string, retry: () => void): Promise<ActivityState[]> {
+    const cutoff = this.deps.now() - TERMINAL_RETENTION_S
+    const backgroundIds = new Set(await this.deps.background?.sessionIds(cutoff) ?? [])
     for (const [sid, run] of this.terminal) if (run.terminal_at < cutoff && !backgroundIds.has(sid)) this.terminal.delete(sid)
     this.pruneNotices(this.deps.now())
     const bySession = new Map<string, TrackedRun>()
