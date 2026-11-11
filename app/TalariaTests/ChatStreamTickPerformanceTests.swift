@@ -144,12 +144,15 @@ private struct ChatStreamTickHarness {
     func run(ticks: Int, keystrokes: Int) async throws -> ChatStreamTickSample {
         recorder.reset()
         var expected = Self.token(0)
+        var tickLineWork: [Int] = []
         let tickStart = DispatchTime.now().uptimeNanoseconds
         for tick in 1...ticks {
+            let previousLines = recorder.counts["codeLine", default: 0]
             let token = Self.token(tick)
             expected += token
             stream.emit(.token(token))
             await turn()
+            tickLineWork.append(recorder.counts["codeLine", default: 0] - previousLines)
         }
         let tickSeconds = Self.seconds(since: tickStart)
         XCTAssertEqual(viewModel.messages.last?.content, expected, "A stream tick was dropped")
@@ -175,7 +178,8 @@ private struct ChatStreamTickHarness {
                       "The measured keystrokes must reach the mounted composer's delegate")
         XCTAssertEqual(composer.text.count, keystrokes, "A keystroke was dropped")
         return ChatStreamTickSample(tickWork: tickWork, keystrokeWork: recorder.counts,
-                                    tickSeconds: tickSeconds, keystrokeSeconds: keystrokeSeconds)
+                                    tickSeconds: tickSeconds, keystrokeSeconds: keystrokeSeconds,
+                                    tickLineWork: tickLineWork)
     }
 
     private static func focusComposer(in window: UIWindow, test: XCTestCase) async throws -> UITextView {
@@ -272,6 +276,7 @@ private struct ChatStreamTickSample {
     let keystrokeWork: [String: Int]
     let tickSeconds: Double
     let keystrokeSeconds: Double
+    let tickLineWork: [Int]
     var totalSeconds: Double { tickSeconds + keystrokeSeconds }
 
     static func table(_ samples: [Self]) -> String {
@@ -280,8 +285,10 @@ private struct ChatStreamTickSample {
             return "run \(run): \(phase) \(String(format: "%.0f", seconds * 1000)) ms \(counts)"
         }
         return samples.enumerated().flatMap { index, sample in
-            [line(index + 1, "ticks", sample.tickSeconds, sample.tickWork),
-             line(index + 1, "keystrokes", sample.keystrokeSeconds, sample.keystrokeWork)]
+            let ticks = sample.tickLineWork.enumerated().map { "\($0.offset + 1)=\($0.element)" }.joined(separator: " ")
+            return [line(index + 1, "ticks", sample.tickSeconds, sample.tickWork),
+                    line(index + 1, "keystrokes", sample.keystrokeSeconds, sample.keystrokeWork),
+                    "run \(index + 1): codeLine by tick \(ticks)"]
         }.joined(separator: "\n")
     }
 }
