@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Expanded live reasoning follows new text until you scroll up to read earlier steps.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
