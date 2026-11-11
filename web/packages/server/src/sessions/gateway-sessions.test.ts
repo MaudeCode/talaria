@@ -851,6 +851,22 @@ describe('owner stream and projection cost (TAL-1723)', () => {
     expect(show).toHaveBeenCalledTimes(2)
   })
 
+  it('retries a failed Show reasoning read after the throttle instead of keeping it hidden', async () => {
+    const owner = s.deps.sessions.owner as unknown as { deps: { showReasoning: (home: string) => Promise<boolean>; now: () => number } }
+    let now = 1000
+    vi.spyOn(owner.deps, 'now').mockImplementation(() => now)
+    const show = vi.spyOn(owner.deps, 'showReasoning').mockRejectedValueOnce(new Error('config.get failed'))
+    const watch = await observeOwner(running())
+    watch.event('reasoning.delta', { text: 'hidden while unreadable ' })
+    await vi.waitFor(() => { expect(show).toHaveBeenCalledTimes(1) })
+    now += 2
+    watch.event('reasoning.delta', { text: 'shown once readable ' })
+    watch.finish()
+    const frames = await watch.read
+    expect(frames.filter((frame) => frame.event === 'reasoning').map((frame) => (frame.data as { text: string }).text)).toEqual(['shown once readable '])
+    expect(show).toHaveBeenCalledTimes(2)
+  })
+
   it('parses each owner snapshot frame once', async () => {
     const watch = await observeOwner(running())
     const parse = vi.spyOn(GatewaySessionResultSchema, 'parse')

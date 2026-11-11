@@ -1188,13 +1188,15 @@ export class GatewaySessions {
       let titles = new ReasoningTitleTracker()
       // TAL-1723: the Show reasoning preference, read once, again after `session.info`, and when the config file's
       // fingerprint changed (checked at most once per second), never once per streamed frame.
-      let show: { value: boolean; fingerprint: string; checkedAt: number } | null = null
+      // A failed read hides reasoning but keeps no fingerprint, so the next check reads again.
+      let show: { value: boolean; fingerprint: string | null; checkedAt: number } | null = null
       const showReasoning = async (): Promise<boolean> => {
         const at = this.deps.now()
         if (show && at - show.checkedAt < 1) return show.value
         const fingerprint = this.deps.configFingerprint?.(target.home) ?? ''
-        if (show?.fingerprint !== fingerprint) show = { value: await this.deps.showReasoning(target.home).catch(() => false), fingerprint, checkedAt: at }
-        else show.checkedAt = at
+        if (show?.fingerprint !== fingerprint) {
+          show = await this.deps.showReasoning(target.home).then((value) => ({ value, fingerprint, checkedAt: at }), () => ({ value: false, fingerprint: null, checkedAt: at }))
+        } else show.checkedAt = at
         return show.value
       }
       const calls = registry.liveToolCalls.get(watch.stream)!
