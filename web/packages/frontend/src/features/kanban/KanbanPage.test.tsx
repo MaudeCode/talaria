@@ -83,6 +83,26 @@ describe('Kanban board motion (TAL-1754)', () => {
     expect(motion.calls).toHaveLength(0)
   })
 
+  it('lets card travel finish when a move shrinks the tallest column', async () => {
+    const resized = new Map<Element, () => void>()
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(private callback: () => void) {}
+      observe(el: Element) { resized.set(el, this.callback) }
+      unobserve(el: Element) { resized.delete(el) }
+      disconnect = vi.fn()
+    })
+    vi.mocked(api.fetchKanbanBoard).mockResolvedValue(snapshot([task(), task('B'), task('C')]))
+    vi.mocked(api.kanbanTaskAction).mockReturnValue(new Promise(() => undefined))
+    renderPage()
+    await openTask()
+    await choose('Column', 'done')
+    const travel = motion.calls.find(c => c.el.getAttribute('data-task-id') === 'A' && 'transform' in c.keyframes[0]!)!
+    expect(travel).toBeDefined()
+    expect(travel.cancel).not.toHaveBeenCalled()
+    act(() => { for (const [el, callback] of resized) if (el.id === 'kanbanMotion') callback() })
+    expect(travel.cancel).not.toHaveBeenCalled()
+  })
+
   it.each(['menu', 'dialog', 'bulk', 'dispatch', 'refetch'])('animates the moved card and both columns\' shifted cards after a %s move', async (trigger) => {
     const target = trigger === 'dispatch' || trigger === 'refetch' ? 'running' : 'done'
     const write = deferred<Awaited<ReturnType<typeof api.kanbanTaskAction>>>()

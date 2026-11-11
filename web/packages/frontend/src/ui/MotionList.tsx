@@ -59,7 +59,7 @@ export class MotionList<T> extends Component<Props<T>, State<T>, { rows: ListSna
   }
   override componentDidMount() {
     this.positionSelection(null)
-    if (typeof ResizeObserver !== 'undefined' && this.container.current) {
+    if (this.props.selection && typeof ResizeObserver !== 'undefined' && this.container.current) {
       this.resize = new ResizeObserver(() => this.positionSelection(null))
       this.resize.observe(this.container.current)
     }
