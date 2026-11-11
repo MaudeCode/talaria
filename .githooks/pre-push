@@ -46,6 +46,10 @@ selected() {
   ! printf '%s\n' "$selection" | grep -qx "$1=false"
 }
 
+if selected app || selected app_tooling || ! git diff --quiet origin/main...HEAD -- app/; then
+  run_check . node scripts/check-ui-rules.mjs --config app/ci/ui-rules.json
+fi
+
 if selected web_server || selected web_frontend; then
   # Server and frontend resolve the contracts package from its build output.
   run_check web npm run build -w packages/contracts

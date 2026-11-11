@@ -205,7 +205,7 @@ screenshot of every page: `<page>-<project>.png` (dark), `<page>-<viewport>.png`
 
 ### UI rules
 
-The frontend `lint` ends with `node scripts/check-ui-rules.mjs`, which counts patterns `docs/design-system.md` forbids
+The frontend `lint` ends with `node ../../../scripts/check-ui-rules.mjs --config scripts/ui-rules.json`, which counts patterns `docs/design-system.md` forbids
 in non-test `.tsx` under `src/features` and `src/shell` (`src/ui` defines the primitives and is not scanned): card
 containers (`card`), bracket text sizes other than 11px, 13px and 20px (`text-size`), raw checkbox, radio and range
 inputs (`raw-control`), and, in `src/features/settings`, page-local `<h2>`–`<h6>` (`settings-heading`) and
@@ -214,7 +214,7 @@ inputs (`raw-control`), and, in `src/features/settings`, page-local `<h2>`–`<h
 `connectors`, any `Badge` or `rounded-full` element with a border (`pill`) and any `<Button` outside a `<DialogFooter>`
 (`word-button`). `scripts/ui-rules-baseline.json` holds today's count per rule
 and file. A count above it fails with each `file:line`; a count below it fails until
-`node scripts/check-ui-rules.mjs --update` lowers the baseline, which never raises a count. The only way to allow a
+`node ../../../scripts/check-ui-rules.mjs --config scripts/ui-rules.json --update` lowers the baseline, which never raises a count. The only way to allow a
 new instance is a hand-written entry in the baseline's `exceptions` array,
 `{ "rule": "card", "file": "src/features/…/Page.tsx", "count": 1, "reason": "Why the rule does not fit here." }`;
 an entry without a reason fails the check.

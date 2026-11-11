@@ -56,6 +56,7 @@ WORKFLOWS = {
 }
 SCRIPTS = {
     "changed-components.py": {"tooling"},
+    "check-ui-rules.mjs": {"app_tooling", "web_frontend", "tooling"},
     "test-changed-components.py": {"tooling"},
     "check-web-server": {"web_server", "tooling"},
     "check-web-browser": {"web_frontend", "tooling"},
@@ -103,7 +104,8 @@ def path_suites(path):
                                      or local.startswith("Talaria/Resources/ProviderIcons.xcassets/")) else set()
         # The live Web fixture test runs only in PR CI's contracts step, so it selects contracts too. TalariaKit
         # (TAL-399) holds the networking and models, and its package job runs that test.
-        return icons | ({"app", "contracts"} if local.startswith(("Talaria/Networking/", "Talaria/Models/", "Talaria/LiveActivities/",
+        ui_rules = {"app_tooling"} if local.startswith("Talaria/Features/") and local.endswith(".swift") else set()
+        return ui_rules | icons | ({"app", "contracts"} if local.startswith(("Talaria/Networking/", "Talaria/Models/", "Talaria/LiveActivities/",
                                                           "TalariaTests/APIClientSessionListTests.swift", "TalariaKit/Package.",
                                                           "TalariaKit/Sources/TalariaKit/Networking/",
                                                           "TalariaKit/Sources/TalariaKit/Models/",
@@ -153,7 +155,9 @@ def path_suites(path):
     if component == "scripts":
         return SCRIPTS.get(local, SUITES)
     if component == "app":
-        if local in ("ci/check-string-catalogs", "ci/check_string_catalogs_test.py", "ci/release_notes.py"):
+        if local == "ci/ui-rules.json":
+            return {"app_tooling", "web_frontend", "tooling"}  # The shared checker tests load the App rule set too.
+        if local in ("ci/ui-rules-baseline.json", "ci/check-string-catalogs", "ci/check_string_catalogs_test.py", "ci/release_notes.py"):
             return {"app_tooling", "tooling"}
         if local in ("ci/build-for-testing", "ci/check-swift-warnings", "ci/wait-for-job", "ci/gh-api-poll", "ci/package-coverage"):
             return {"app", "tooling"}  # They build, select and sequence the App CI jobs.

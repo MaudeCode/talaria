@@ -28,6 +28,14 @@ Talaria is a native SwiftUI iPhone client for a self-hosted Talaria Web server
 - Do not modify or restart the user's Hermes server, tunnel, macOS services, or
   Apple resources unless explicitly asked.
 
+App UI rules run from the repository root with
+`node scripts/check-ui-rules.mjs --config app/ci/ui-rules.json`. After removing a
+counted violation, rerun with `--update` to lower `app/ci/ui-rules-baseline.json`.
+It never raises counts. An approved exception is a hand-written entry in that
+baseline's `exceptions` array, `{ "rule": "settings-footnote", "file":
+"app/Talaria/Features/Settings/Example.swift", "count": 1, "reason": "status text" }`.
+Every exception requires a non-empty reason.
+
 ## API and code rules
 
 - For API requests, JSON decoding, SSE or streaming, and server-version

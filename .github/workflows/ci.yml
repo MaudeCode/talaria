@@ -85,6 +85,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-bash
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: web/.nvmrc
+      - name: Check App UI rules
+        working-directory: .
+        run: node scripts/check-ui-rules.mjs --config app/ci/ui-rules.json
       - name: Check string catalogs and test their checker
         run: |
           ci/check-string-catalogs

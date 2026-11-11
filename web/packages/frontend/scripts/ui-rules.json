@@ -1,0 +1,104 @@
+{
+  "root": "..",
+  "roots": [
+    "src/features",
+    "src/shell"
+  ],
+  "filePattern": "\\.tsx$",
+  "excludeFilePattern": "\\.test\\.tsx$",
+  "baseline": "scripts/ui-rules-baseline.json",
+  "rules": {
+    "card": {
+      "paths": [
+        "src/features/",
+        "src/shell/"
+      ],
+      "patterns": [
+        "rounded-(?:lg|xl|2xl) border border-border bg-surface"
+      ],
+      "message": "design-system §1.1: no card containers; use rows or SettingsGroup"
+    },
+    "raw-control": {
+      "paths": [
+        "src/features/",
+        "src/shell/"
+      ],
+      "patterns": [
+        "type=\"(?:checkbox|radio|range)\""
+      ],
+      "message": "use Switch, MenuCheckboxItem, MenuRadioItem or Slider"
+    },
+    "pill": {
+      "paths": [
+        "src/features/settings/",
+        "src/features/profiles/",
+        "src/features/workspaces/",
+        "src/features/logs/",
+        "src/features/connectors/"
+      ],
+      "patterns": [
+        "<Badge(?![\\w$])",
+        "(?<![\\w-])rounded-full(?![\\w-])[^\"'`]*?(?<![\\w-])border(?:-[0-9]+|-[xytblr])?(?![\\w-])|(?<![\\w-])border(?:-[0-9]+|-[xytblr])?(?![\\w-])[^\"'`]*?(?<![\\w-])rounded-full(?![\\w-])"
+      ],
+      "message": "design-system §7: no Badge or pill here; a state is a StatusDot, a selection a Mark, a plan or kind word joins the second line"
+    },
+    "success-text": {
+      "paths": [
+        "src/features/",
+        "src/shell/"
+      ],
+      "patterns": [
+        "(?<![\\w-])text-success(?![\\w-])"
+      ],
+      "message": "design-system §7: success is a StatusDot (ui/Badge.tsx) or a meter, never green text"
+    },
+    "word-button": {
+      "paths": [
+        "src/features/settings/",
+        "src/features/profiles/",
+        "src/features/workspaces/",
+        "src/features/logs/",
+        "src/features/connectors/"
+      ],
+      "patterns": [
+        "<Button(?![\\w$])"
+      ],
+      "message": "design-system §12: a symbol IconButton with an aria-label and tooltip; words stay only in a DialogFooter",
+      "blankPattern": "<DialogFooter(?![\\w$])[\\s\\S]*?</DialogFooter>"
+    },
+    "settings-heading": {
+      "paths": [
+        "src/features/settings/"
+      ],
+      "patterns": [
+        "<h[2-6][ >]"
+      ],
+      "message": "use SettingsGroup or SectionHeader"
+    },
+    "settings-row": {
+      "paths": [
+        "src/features/settings/"
+      ],
+      "patterns": [
+        "<FieldRow(?![\\w$])"
+      ],
+      "message": "use a SettingsRows.tsx row",
+      "excludeFilePattern": "^src/features/settings/(?:SettingsRows|SettingsGroup)\\.tsx$"
+    },
+    "text-size": {
+      "paths": [
+        "src/features/",
+        "src/shell/"
+      ],
+      "patterns": [
+        "text-\\[([0-9.]+px)\\]"
+      ],
+      "message": "design-system §10: use text-xs, text-sm or text-md (bracket sizes only 11px, 13px, 20px)",
+      "ignoreValues": [
+        "11px",
+        "13px",
+        "20px"
+      ]
+    }
+  }
+}

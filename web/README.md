@@ -64,7 +64,7 @@ From a source checkout (for contributors; it never updates itself):
 
 ```bash
 git clone --filter=blob:none --sparse --single-branch https://github.com/MaudeCode/talaria.git talaria
-git -C talaria sparse-checkout set web contracts scripts
+git -C talaria sparse-checkout set web contracts scripts app/ci
 cd talaria/web
 npm ci
 npm run build:fast    # contracts, server, and the frontend bundle in static/dist

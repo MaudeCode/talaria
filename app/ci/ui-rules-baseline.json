@@ -1,0 +1,69 @@
+{
+  "counts": {
+    "card-fill": {
+      "app/Talaria/Features/Insights/InsightsDailyChart.swift": 1,
+      "app/Talaria/Features/Settings/ProviderQuotaWidgetAppearanceView.swift": 2,
+      "app/Talaria/Features/Settings/SettingsPickerSearchField.swift": 1,
+      "app/Talaria/Features/Settings/StreamingLabView.swift": 1,
+      "app/Talaria/Features/Shared/AccessorySurface.swift": 1,
+      "app/Talaria/Features/Tasks/TaskDetailView.swift": 1,
+      "app/Talaria/Features/Tasks/TaskRunHistoryViews.swift": 1,
+      "app/Talaria/Features/Workspace/GitCommitFileRow.swift": 1,
+      "app/Talaria/Features/Workspace/GitFileCard.swift": 1
+    },
+    "grouped-list": {
+      "app/Talaria/Features/Chat/EditMessageSheet.swift": 1,
+      "app/Talaria/Features/Chat/GoalSubmissionSheet.swift": 1,
+      "app/Talaria/Features/Kanban/KanbanCardDetailContent.swift": 1,
+      "app/Talaria/Features/Shared/AdaptiveGlassDebugFixture.swift": 1,
+      "app/Talaria/Features/Workspace/GitBranchPickerSheet.swift": 1
+    },
+    "page-form": {
+      "app/Talaria/Features/Kanban/KanbanBulkActionsView.swift": 1,
+      "app/Talaria/Features/Kanban/KanbanFiltersView.swift": 1,
+      "app/Talaria/Features/Settings/AppleAccountSettingsView.swift": 1
+    },
+    "raw-settings-control": {
+      "app/Talaria/Features/Settings/CreateProfileSheet.swift": 2,
+      "app/Talaria/Features/Settings/FeedbackSheet.swift": 2
+    }
+  },
+  "exceptions": [
+    {
+      "rule": "settings-footnote",
+      "file": "app/Talaria/Features/Settings/AddServerView.swift",
+      "count": 2,
+      "reason": "status text"
+    },
+    {
+      "rule": "settings-footnote",
+      "file": "app/Talaria/Features/Settings/AuxiliaryModelsSettingsView.swift",
+      "count": 3,
+      "reason": "status text"
+    },
+    {
+      "rule": "settings-footnote",
+      "file": "app/Talaria/Features/Settings/CreateProfileSheet.swift",
+      "count": 1,
+      "reason": "status text"
+    },
+    {
+      "rule": "settings-footnote",
+      "file": "app/Talaria/Features/Settings/PersonalizationSettingsViews.swift",
+      "count": 1,
+      "reason": "status text"
+    },
+    {
+      "rule": "settings-footnote",
+      "file": "app/Talaria/Features/Settings/RelayLiveActivitySettingsSection.swift",
+      "count": 1,
+      "reason": "status text"
+    },
+    {
+      "rule": "settings-footnote",
+      "file": "app/Talaria/Features/Settings/SystemSettingsViews.swift",
+      "count": 1,
+      "reason": "status text"
+    }
+  ]
+}

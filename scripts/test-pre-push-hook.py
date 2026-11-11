@@ -28,10 +28,12 @@ FRONTEND = [
 RELAY = ["relay: pnpm typecheck"]
 TOOLING = ["self-test"]
 WEB = [CONTRACTS_BUILD, *SERVER, *FRONTEND]
-EVERY_CHECK = [*WEB, *RELAY, *TOOLING]
+APP = ["repo: node scripts/check-ui-rules.mjs --config app/ci/ui-rules.json"]
+EVERY_CHECK = [*APP, *WEB, *RELAY, *TOOLING]
 
 STUB_TOOL = """#!/bin/sh
 entry="${PWD##*/}: ${0##*/} $*"
+[ "${0##*/}" != node ] || entry="repo: node $*"
 echo "$entry" >>"$STUB_LOG"
 if [ "$entry" = "$STUB_FAIL" ]; then
   echo "stub check output"
@@ -55,7 +57,7 @@ class PrePushHookTests(unittest.TestCase):
         self.env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1", STUB_LOG=str(self.log), STUB_FAIL="")
         stubs = self.root / "bin"
         stubs.mkdir()
-        for tool in ("npm", "pnpm"):
+        for tool in ("npm", "pnpm", "node"):
             (stubs / tool).write_text(STUB_TOOL)
             (stubs / tool).chmod(0o755)
         self.env["PATH"] = f"{stubs}{os.pathsep}{self.env['PATH']}"
@@ -109,9 +111,12 @@ class PrePushHookTests(unittest.TestCase):
             ("relay/convex/x.ts", RELAY),
             ("scripts/check", TOOLING),
             ("unknown/x.txt", EVERY_CHECK),
-            # No suite for documentation, and no App build in the hook.
+            # App paths run the UI rules check without an App build.
             ("docs/x.md", []),
-            ("app/Talaria/x.swift", []),
+            ("app/Talaria/x.swift", APP),
+            ("app/ci/ui-rules.json", [*APP, CONTRACTS_BUILD, *FRONTEND, *TOOLING]),
+            ("app/AGENTS.md", APP),
+            ("scripts/check-ui-rules.mjs", [*APP, CONTRACTS_BUILD, *FRONTEND, *TOOLING]),
         ]
         for index, (path, expected) in enumerate(cases):
             with self.subTest(path):

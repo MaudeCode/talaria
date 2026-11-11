@@ -1,0 +1,75 @@
+{
+  "root": "../..",
+  "roots": [
+    "app/Talaria/Features"
+  ],
+  "filePattern": "\\.swift$",
+  "excludeFilePattern": "(?:^|/)[^/]*Tests?(?:/|\\.swift$)",
+  "baseline": "app/ci/ui-rules-baseline.json",
+  "rules": {
+    "settings-card": {
+      "paths": [
+        "app/Talaria/Features/Settings/"
+      ],
+      "patterns": [
+        "SettingsCard\\(|settingsGroupedCell\\("
+      ],
+      "message": "TAL-1697: use SidebarList sections"
+    },
+    "grouped-list": {
+      "paths": [
+        "app/Talaria/Features/"
+      ],
+      "patterns": [
+        "\\.insetGrouped|\\.listStyle\\(\\.grouped|systemGroupedBackground"
+      ],
+      "message": "design-system §2: plain lists on the system background"
+    },
+    "page-form": {
+      "paths": [
+        "app/Talaria/Features/"
+      ],
+      "excludeFilePattern": "(?:Sheet|EditorView|AddServerView)\\.swift$",
+      "patterns": [
+        "\\bForm\\s*\\{"
+      ],
+      "message": "design-system §2: forms are for modal editors only"
+    },
+    "card-fill": {
+      "paths": [
+        "app/Talaria/Features/"
+      ],
+      "excludePaths": [
+        "app/Talaria/Features/Chat/",
+        "app/Talaria/Features/Onboarding/"
+      ],
+      "patterns": [
+        "RoundedRectangle\\(|\\.cornerRadius\\("
+      ],
+      "nearby": {
+        "pattern": "secondarySystemBackground|secondarySystemGroupedBackground|tertiarySystemFill",
+        "lines": 2
+      },
+      "message": "design-system §1.1: no cards"
+    },
+    "raw-settings-control": {
+      "paths": [
+        "app/Talaria/Features/Settings/"
+      ],
+      "excludeFilePattern": "(?:^|/)Settings[^/]*Row\\.swift$",
+      "patterns": [
+        "\\b(?:Toggle|Picker|Slider|Stepper|ColorPicker)\\("
+      ],
+      "message": "design-system §12: use the shared Settings rows"
+    },
+    "settings-footnote": {
+      "paths": [
+        "app/Talaria/Features/Settings/"
+      ],
+      "patterns": [
+        "SettingsFootnote\\(|\\} footer: \\{"
+      ],
+      "message": "design-system §9: explanations go in the section help"
+    }
+  }
+}
