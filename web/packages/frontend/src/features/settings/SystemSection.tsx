@@ -12,7 +12,7 @@ import { Select } from '../../ui/Select'
 import { ConfirmDialog, Dialog, DialogFooter } from '../../ui/Dialog'
 import { ErrorState, LoadingState } from '../../ui/States'
 import { Figure, SectionHeader } from '../../ui/List'
-import { DOT_FILL, StatusDot, type DotState } from '../../ui/Badge'
+import { StatusDot, type DotState } from '../../ui/Badge'
 import { RowIcon } from '../../ui/Field'
 import { HubHeadActions } from '../../shell/hubHeadSlots'
 import { useLocale } from '../../i18n/useLocale'
@@ -206,7 +206,7 @@ const AGENT = 'Hermes Agent'
 type Target = z.infer<typeof UpdateTargetSchema>
 type UpdateVersion = z.infer<typeof UpdateVersionSchema>
 interface ApplyRequest { refreshToken?: string; version?: string; confirmedRevision?: string; agentChannel?: 'stable' | 'experimental'; interruptToken?: string }
-type Tone = 'update' | 'ok' | 'warn' | 'error' | 'quiet'
+type Tone = 'update' | 'ok' | 'warn' | 'quiet'
 interface Support { label: string; unchecked: boolean }
 
 /** The newest Agent target's one-line support status. */
@@ -221,13 +221,13 @@ interface PathStatus { tone: Tone; text: string; target?: string | undefined; de
 /** One component's update state in the words its channel uses: Stable names releases, Experimental counts commits. */
 function pathStatus(t: Target | null | undefined, name: string, { failed, pending }: { failed: boolean; pending: boolean }): PathStatus {
   if (pending && !t) return { tone: 'quiet', text: m.system_checking_named({ name }) }
-  if (failed) return { tone: 'error', text: m.system_check_failed_named({ name }), detail: t?.error }
+  if (failed) return { tone: 'warn', text: m.system_check_failed_named({ name }), detail: t?.error }
   if (!t) return { tone: 'quiet', text: m.system_status_unknown_named({ name }) }
   const target = t.target_version ?? undefined
   const detail = typeof t.message === 'string' ? t.message : undefined
   switch (t.state) {
     case 'off': return { tone: 'quiet', text: m.system_checks_off({ name }) }
-    case 'check_failed': return { tone: 'error', text: m.system_check_failed_named({ name }), detail: t.error }
+    case 'check_failed': return { tone: 'warn', text: m.system_check_failed_named({ name }), detail: t.error }
     case 'local_changes': return { tone: 'warn', text: m.system_local_changes_named({ name }), detail }
     case 'finish': return { tone: 'update', text: m.system_finish_named({ name }), target, detail }
     case 'manual': return { tone: 'warn', text: m.system_manual_named({ name }), target, detail }
@@ -274,15 +274,19 @@ function UpdateSummary({ target, name, info }: { target: 'webui' | 'agent'; name
   )
 }
 
-// TAL-2140: a node is a dot in the `StatusDot` colours; the installed version is the neutral one.
+// A node is a ring (inset, so it keeps its 11px), filled when it marks a version that is or will be installed.
 const NODE: Record<Tone | 'installed', string> = {
-  installed: 'bg-text', update: DOT_FILL.warning, ok: DOT_FILL.ok, warn: DOT_FILL.warning, error: DOT_FILL.error, quiet: DOT_FILL.idle,
+  installed: 'ring-text bg-text',
+  update: 'ring-accent bg-accent',
+  ok: 'ring-success bg-success',
+  warn: 'ring-warning bg-bg',
+  quiet: 'ring-border2 bg-bg',
 }
 
 function PathNode({ tone, children }: { tone: Tone | 'installed'; children: ReactNode }) {
   return (
     <li className="relative pb-4 last:pb-0">
-      <span aria-hidden="true" className={cn('absolute top-[5px] -left-[21px] size-[9px] rounded-full', NODE[tone])} />
+      <span aria-hidden="true" className={cn('absolute top-[5px] -left-[22px] size-[11px] rounded-full ring-2 ring-inset', NODE[tone])} />
       {children}
     </li>
   )
@@ -308,13 +312,13 @@ function UpdatePath({ id, title, icon, installed, installedNote, status, channel
         <span id={`${id}Heading`} className="flex min-w-0 items-center gap-2.5 text-sm font-semibold text-text"><RowIcon icon={icon} />{title}</span>
         {channel}
       </div>
-      <ol className="ml-[5px] self-start border-l border-border pl-4">
-        <PathNode tone="installed">
+      <ol className={cn('ml-[5px] self-start border-l pl-4', next && status.tone === 'update' ? 'border-accent' : 'border-border')}>
+        <PathNode tone={next ? 'installed' : 'ok'}>
           <div className="text-xs text-muted">{m.system_path_installed()}</div>
           <div className="font-mono text-sm text-text break-all">{installed}</div>
           {installedNote ? <p className="mt-1 flex min-w-0"><StatusDot state="warning" title={installedNote}>{installedNote}</StatusDot></p> : null}
+          {!next ? <p role="status" className="mt-1 text-xs text-muted">{status.text}</p> : null}
         </PathNode>
-        {!next ? <PathNode tone="ok"><p role="status" className="text-xs text-muted">{status.text}</p></PathNode> : null}
         {next && folded.length ? (
           <PathNode tone="quiet">
             <div className="-my-2 flex items-center gap-1 text-xs text-muted">
@@ -335,7 +339,7 @@ function UpdatePath({ id, title, icon, installed, installedNote, status, channel
         {next ? (
           <PathNode tone={status.tone}>
             {status.target ? <div className="font-mono text-sm text-text break-all">{status.target}</div> : null}
-            <p role="status" className="text-xs text-muted">{status.text}</p>
+            <p role="status" className={cn('text-xs', status.tone === 'update' ? 'text-accent-text' : status.tone === 'warn' ? 'text-warning' : 'text-muted')}>{status.text}</p>
             {status.detail ? <p className="mt-0.5 text-xs text-muted">{status.detail}</p> : null}
             {manualLink ? <a className="inline-flex min-h-11 items-center text-xs text-accent-text underline" href="https://github.com/MaudeCode/talaria/releases" target="_blank" rel="noreferrer">{m.system_manual_updates()}</a> : null}
             <SupportLine support={support ?? null} />
