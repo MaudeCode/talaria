@@ -137,7 +137,8 @@ class PostgresSessions implements SessionBackend {
       }
       const from = edit.kind === 'splice' ? Math.min(Math.max(0, edit.from), before) : 0
       const removed = edit.kind === 'splice' ? Math.max(0, Math.min(edit.deleteCount, before - from)) : 0
-      const after = edit.kind === 'append' ? before + edit.rows.length : edit.kind === 'splice' ? before - removed + edit.rows.length : edit.kind === 'replace' ? edit.rows.length : before
+      const count = rows.bodies.length
+      const after = edit.kind === 'append' ? before + count : edit.kind === 'splice' ? before - removed + count : edit.kind === 'replace' ? count : before
       const stored = Object.hasOwn(change.doc, 'message_count') && doc.message_count !== after ? JSON.stringify({ ...JSON.parse(docText) as Dict, message_count: after }) : docText
       const updatedAt = typeof doc.updated_at === 'number' ? doc.updated_at : null
       let revision: string | undefined
@@ -155,7 +156,7 @@ class PostgresSessions implements SessionBackend {
       if (edit.kind === 'append') await this.insert(tx, sid, before, rows)
       else if (edit.kind === 'replace') { if (before) await tx.run(`DELETE FROM ${this.s}messages WHERE session_id = $1`, sid); await this.insert(tx, sid, 0, rows) }
       else if (edit.kind === 'splice') {
-        const delta = edit.rows.length - removed
+        const delta = count - removed
         if (removed) await tx.run(`DELETE FROM ${this.s}messages WHERE session_id = $1 AND idx >= $2 AND idx < $3`, sid, from, from + removed)
         const tail = delta !== 0 && from + removed < before
         if (tail) await tx.run(`UPDATE ${this.s}messages SET idx = idx + $2 WHERE session_id = $1 AND idx >= $3`, sid, SHIFT, from + removed)

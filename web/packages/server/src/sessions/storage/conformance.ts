@@ -49,6 +49,7 @@ export function runSessionBackendConformance(name: string, makeStorage: () => Se
       calls[0]!.name = 'after'
       await writing
       expect(await sessions.readDocument('session')).toMatchObject({ doc: { tool_calls: [{ name: 'before' }] }, messages: [{ role: 'user', content: 'before' }], messageCount: 1 })
+      expect((await sessions.readDocument('session', { metadataOnly: true }))?.messageCount).toBe(1)
     })
 
     it('serves a public share only while its owner exists, without loading or rewriting the session', async () => {
