@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Send smoothly becomes Stop during a response. Hold Control to switch between steering and queuing, or Option/Alt to interrupt and send.",
+      "highlight": false,
+      "components": ["web"],
+      "announcement": {
+        "title": "Send while a response runs",
+        "description": "Hold Control for the alternate send action, or Option/Alt to interrupt and send.",
+        "icon": "chat"
+      }
+    }
+  ]
+}

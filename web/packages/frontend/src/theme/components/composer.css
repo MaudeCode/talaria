@@ -183,3 +183,28 @@
 .composer-box.is-resting .composer-left{display:none}
 }
 }
+
+/* Send and Stop share a circle; only the active button can take focus or pointers. */
+.send-actions{display:flex;align-items:center}
+.send-primary{display:grid;border-radius:50%;background:var(--send-bg);transition:background .28s ease}
+.send-actions[data-stopping="true"] .send-primary{background:var(--error)}
+.send-actions[data-stopping="false"] .send-primary:has(>.send-btn:not(.stop):disabled){background:var(--send-disabled-bg)}
+.send-primary>.send-btn{grid-area:1/1;background:transparent;box-shadow:none;transition:opacity .16s ease,scale .28s cubic-bezier(.25,.8,.25,1),rotate .28s cubic-bezier(.25,.8,.25,1)}
+.send-primary>.send-btn[aria-hidden="true"]{opacity:0;scale:.5;rotate:-45deg;pointer-events:none}
+.send-primary>.send-btn:disabled{background:transparent}
+.send-busy{display:grid;grid-template-columns:0fr;margin-left:0;opacity:0;transition:grid-template-columns .26s cubic-bezier(.45,0,.1,1),margin-left .26s cubic-bezier(.45,0,.1,1),opacity .2s ease}
+.send-busy[data-visible="true"]{grid-template-columns:1fr;margin-left:6px;opacity:1}
+.send-busy>.send-btn{min-width:0;width:auto;display:grid;position:relative}
+.send-mode-icon{grid-area:1/1;display:grid;place-items:center;width:32px;max-width:100%;opacity:0;scale:.7;translate:0 6px;transition:opacity .14s ease,scale .22s cubic-bezier(.25,.8,.25,1),translate .22s cubic-bezier(.25,.8,.25,1)}
+.send-mode-icon[data-active="true"]{opacity:1;scale:1;translate:0 0}
+.send-mode-label{position:absolute;right:0;bottom:calc(100% + 10px);padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);box-shadow:var(--shadow-md);color:var(--text);font-size:var(--font-size-sm);white-space:nowrap;pointer-events:none;opacity:0;translate:0 4px;transition:opacity .14s ease,translate .2s cubic-bezier(.25,.8,.25,1)}
+.send-mode:is(:hover,:focus-visible,[data-mode-held="true"]) .send-mode-label{opacity:1;translate:0 0}
+@media(max-width:768px),(hover:none) and (pointer:coarse){.send-mode-icon{width:36px}}
+/* Reuse the status pill's presence lifecycle so the queue opens and closes with its segment. */
+.composer-notice[data-notice="queue"]{overflow:hidden;white-space:nowrap;animation:composer-queue-in .22s cubic-bezier(.45,0,.1,1)}
+.composer-notice[data-notice="queue"].is-leaving{animation:composer-queue-in .22s cubic-bezier(.45,0,.1,1) reverse forwards}
+@keyframes composer-queue-in{from{max-width:0;padding-inline:0;opacity:0}to{max-width:24rem;opacity:1}}
+@media(prefers-reduced-motion:reduce){
+.send-primary,.send-primary>.send-btn,.send-busy,.send-mode-icon,.send-mode-label{transition:none}
+.composer-notice[data-notice="queue"],.composer-notice[data-notice="queue"].is-leaving{animation:none}
+}

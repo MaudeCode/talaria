@@ -139,7 +139,7 @@ it('renders the composer once for a draft while only its status pill follows thr
   act(() => qc.setQueryData(keys.sessions.detail(session.session_id), { session: { ...session, model: 'updated-model' } }))
   await waitFor(() => expect(view.container.querySelector('#composerModelChip')).toHaveTextContent('updated-model'))
   emit({ event: 'done', data: {} })
-  await waitFor(() => expect(view.container.querySelector('#btnStop')).not.toBeInTheDocument())
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Stop response' })).toBeNull())
   expect(screen.getByRole('textbox')).toHaveValue('Check the logs too')
   view.unmount()
   qc.clear()

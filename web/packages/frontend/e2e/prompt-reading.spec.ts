@@ -78,7 +78,7 @@ test('prompt-reading progress uses the existing status and survives a cold attac
     await page.locator('#btnStop').click()
     await expect.poll(() => stopped).toBe(true)
     await expect(pill).toHaveCount(0)
-    await expect(page.locator('#btnStop')).toBeHidden()
+    await expect(page.getByRole('button').and(page.locator('#btnStop'))).toHaveCount(0)
     await shot('stopped')
   } finally {
     stream?.end()

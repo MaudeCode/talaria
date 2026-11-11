@@ -44,7 +44,7 @@ vi.mock('./ComposerNotices', async (original) => {
   const { countRenders } = await import('../../test/countRenders')
   return { ...notices, ComposerNotices: countRenders(notices.ComposerNotices, () => renders.notices++) }
 })
-import { Composer, type ComposerProps } from './Composer'
+import { Composer, effectiveBusyMode, type ComposerProps, type BusyMode } from './Composer'
 import type { ExecutionModes } from '@maudecode/talaria-web-contracts'
 import { dictateLive, NoSpeechError } from '../voice/liveDictation'
 import * as browserDictation from '../voice/dictation'
@@ -68,6 +68,63 @@ function renderComposer(session: Session | null, live: LiveTurn | null = null, o
 }
 
 describe('Composer', () => {
+  it.each([
+    ['MacIntel', 'enter', {}, ['steer', 'queue', 'interrupt']],
+    ['Linux x86_64', 'enter', {}, ['steer', 'queue', 'interrupt']],
+    ['MacIntel', 'enter', { ctrlKey: true }, ['queue', 'steer', 'queue']],
+    ['Linux x86_64', 'enter', { ctrlKey: true }, ['queue', 'steer', 'queue']],
+    ['MacIntel', 'enter', { altKey: true, ctrlKey: true }, ['interrupt', 'interrupt', 'interrupt']],
+    ['Linux x86_64', 'enter', { altKey: true }, ['interrupt', 'interrupt', 'interrupt']],
+    ['MacIntel', 'enter', { shiftKey: true }, ['steer', 'queue', 'interrupt']],
+    ['MacIntel', 'ctrl+enter', {}, ['steer', 'queue', 'interrupt']],
+    ['MacIntel', 'ctrl+enter', { ctrlKey: true }, ['queue', 'steer', 'queue']],
+    ['MacIntel', 'ctrl+enter', { altKey: true }, ['interrupt', 'interrupt', 'interrupt']],
+    ['Win32', 'ctrl+enter', { ctrlKey: true }, ['steer', 'queue', 'interrupt']],
+    ['Linux x86_64', 'ctrl+enter', { ctrlKey: true, shiftKey: true }, ['queue', 'steer', 'queue']],
+    ['Win32', 'ctrl+enter', { ctrlKey: true, altKey: true, shiftKey: true }, ['interrupt', 'interrupt', 'interrupt']],
+    ['Linux x86_64', 'ctrl+enter', { shiftKey: true }, ['steer', 'queue', 'interrupt']],
+  ] as const)('resolves the three busy defaults on %s, %s, %j (TAL-1796)', (platform, sendKey, held, expected) => {
+    expect((['steer', 'queue', 'interrupt'] as BusyMode[]).map((mode) => effectiveBusyMode(mode, { ctrlKey: false, altKey: false, shiftKey: false, ...held }, platform, sendKey))).toEqual(expected)
+  })
+
+  it.each([
+    ['MacIntel', 'ctrl+enter', 'queue', { metaKey: true }, 'queue'],
+    ['MacIntel', 'ctrl+enter', 'queue', { ctrlKey: true }, 'steer'],
+    ['MacIntel', 'ctrl+enter', 'queue', { altKey: true, metaKey: true }, 'interrupt'],
+    ['Win32', 'ctrl+enter', 'queue', { ctrlKey: true }, 'queue'],
+    ['Linux x86_64', 'ctrl+enter', 'queue', { ctrlKey: true, shiftKey: true }, 'steer'],
+    ['Win32', 'ctrl+enter', 'queue', { altKey: true, ctrlKey: true }, 'interrupt'],
+    ['MacIntel', 'enter', 'steer', { ctrlKey: true }, 'queue'],
+    ['MacIntel', 'enter', 'queue', { ctrlKey: true }, 'steer'],
+    ['MacIntel', 'enter', 'steer', { altKey: true }, 'interrupt'],
+  ] as const)('routes %s %s with default %s and %j to %s (TAL-1796)', async (platform, sendKey, defaultMode, held, mode) => {
+    const platformGetter = vi.spyOn(navigator, 'platform', 'get').mockReturnValue(platform)
+    const queue = vi.fn()
+    vi.mocked(api.steerChat).mockResolvedValue({ accepted: true, steer_id: 'ignored' })
+    vi.mocked(api.cancelChat).mockResolvedValue({ ok: true, cancelled: true })
+    renderComposer(writable, running(), queue, { send_key: sendKey, default_message_mode: defaultMode })
+    platformGetter.mockRestore()
+    const box = screen.getByRole('textbox')
+    fireEvent.change(box, { target: { value: 'Next step' } })
+    fireEvent.keyDown(box, { key: 'Enter', ...held })
+    await waitFor(() => expect(box).toHaveValue(''))
+    if (mode === 'steer') expect(api.steerChat).toHaveBeenCalledWith(expect.objectContaining({ text: 'Next step' }))
+    else expect(queue).toHaveBeenCalledWith(expect.objectContaining({ text: 'Next step' }))
+    expect(api.cancelChat).toHaveBeenCalledTimes(mode === 'interrupt' ? 1 : 0)
+  })
+
+  it('keeps Shift+Enter as a newline and modifiers out of idle send presentation (TAL-1796)', () => {
+    renderComposer(writable)
+    const box = screen.getByRole('textbox')
+    fireEvent.change(box, { target: { value: 'Draft' } })
+    fireEvent.keyDown(box, { key: 'Alt', altKey: true })
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Interrupt and send' })).toBeNull()
+    expect(fireEvent.keyDown(box, { key: 'Enter', shiftKey: true })).toBe(true)
+    expect(box).toHaveValue('Draft')
+    expect(api.startChat).not.toHaveBeenCalled()
+  })
+
   it.each([false, true])('does not render unrelated controls, attachments or notices while typing ten characters, busy: %s', async (busy) => {
     renderComposer(writable, busy ? running() : null)
     const box = screen.getByRole('textbox')
@@ -1106,6 +1163,46 @@ describe('Composer', () => {
     const popup = await screen.findByRole('dialog')
     expect(popup).toHaveTextContent('Estimated cost: $0.00')
     expect(within(popup).queryByRole('button', { name: 'Compress now' })).toBeNull()
+  })
+
+  it('updates the busy action for held modifiers and clears it on release or blur (TAL-1796)', () => {
+    renderComposer(writable, running())
+    const box = screen.getByRole('textbox')
+    fireEvent.change(box, { target: { value: 'Next step' } })
+    fireEvent.keyDown(box, { key: 'Control', ctrlKey: true })
+    expect(screen.getByRole('button', { name: 'Queue message' })).toHaveAttribute('title', 'Queue message')
+    expect(document.querySelector('.send-mode-icon[data-active="true"] svg')).toHaveClass('lucide-list-plus')
+    expect(document.querySelector('.send-mode-label')).toHaveTextContent('Queue message')
+    fireEvent.keyUp(box, { key: 'Control' })
+    expect(screen.getByRole('button', { name: 'Steer current response' })).toBeInTheDocument()
+    fireEvent.keyDown(box, { key: 'Alt', altKey: true })
+    expect(screen.getByRole('button', { name: 'Interrupt and send' })).toBeInTheDocument()
+    expect(document.querySelector('.send-mode-icon[data-active="true"] svg')).toHaveClass('lucide-skip-forward')
+    fireEvent.blur(window)
+    expect(screen.getByRole('button', { name: 'Steer current response' })).toBeInTheDocument()
+    fireEvent.keyDown(box, { key: 'Control', ctrlKey: true })
+    fireEvent.blur(box)
+    expect(screen.getByRole('button', { name: 'Steer current response' })).toBeInTheDocument()
+  })
+
+  it('keeps Send and Stop in one cell with only the active action accessible (TAL-1796)', () => {
+    const view = renderComposer(writable)
+    const stop = document.querySelector('#btnStop')!
+    expect(stop).toHaveAttribute('inert')
+    expect(stop).toHaveAttribute('aria-hidden', 'true')
+    view.rerenderWith(running())
+    expect(document.querySelector('#btnStop')).toBe(stop)
+    expect(screen.getByRole('button', { name: 'Stop response' }).parentElement).toHaveClass('send-primary')
+    expect(stop.parentElement?.querySelector('.send-btn:not(.stop)')).toHaveAttribute('inert')
+    const box = screen.getByRole('textbox')
+    fireEvent.change(box, { target: { value: 'Draft' } })
+    expect(document.querySelector('.send-busy')).toHaveAttribute('data-visible', 'true')
+    fireEvent.change(box, { target: { value: '' } })
+    expect(document.querySelector('.send-busy')).toHaveAttribute('data-visible', 'false')
+    expect(screen.queryByRole('button', { name: 'Steer current response' })).toBeNull()
+    view.rerenderWith(null)
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled()
+    expect(stop).toHaveAttribute('inert')
   })
 
   it('keeps only Stop while a turn runs and the draft is empty', () => {
