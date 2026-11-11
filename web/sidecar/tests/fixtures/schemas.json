@@ -1422,6 +1422,10 @@
               "description": "The installed provider implements all three Agent device-login hooks.",
               "type": "boolean"
             },
+            "account_usage": {
+              "description": "TAL-2187: the loaded provider overrides the Agent's account-usage hook; `usage.account` reads it. Absent on a provider or Agent without one.",
+              "type": "boolean"
+            },
             "aliases": {
               "description": "Lowercased names the loaded provider declares for itself.",
               "type": "array",

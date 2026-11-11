@@ -390,6 +390,22 @@ def _reads_read_only(fetch) -> bool:
         return False
 
 
+def _own_plugin(provider: str) -> bool:
+    """Whether the Agent's ``provider`` is an enabled plugin installed in the scoped home, so a process-wide registry never
+    lends another profile's usage hook (and its sign-in) to this one. Listing first loads a plugin the launch skipped."""
+    try:
+        import providers as agent_providers
+
+        from .providers import installed_plugin_profiles
+
+        installed = [profile for _name, profile in installed_plugin_profiles() if profile is not None]
+        profile = agent_providers.get_provider_profile(provider)
+        return profile is not None and any(p is profile for p in installed)
+    except Exception:  # noqa: BLE001 - an unverified owner cannot authorize a read
+        log.debug("plugin ownership check for %r failed", provider, exc_info=True)
+        return False
+
+
 def account(provider: str, *, base_url: str | None, api_key: str | None, credential_id: str | None = None) -> dict | None:
     entry = None
     if credential_id:
@@ -402,9 +418,15 @@ def account(provider: str, *, base_url: str | None, api_key: str | None, credent
             return {"provider": provider, "available": False, "unavailable_reason": "No runtime token available.", "windows": [], "details": []}
         base_url = str(getattr(entry, "runtime_base_url", None) or getattr(entry, "base_url", None) or "").strip() or base_url
     try:
+        from agent import account_usage as agent_usage
         from agent.account_usage import fetch_account_usage
     except Exception as exc:  # noqa: BLE001
         raise RpcError(f"account usage unavailable: {exc}", condition="usage_unavailable") from exc
+    # Without the Agent's table of built-in fetchers, only the built-ins the server reads skip the plugin owner check.
+    builtin = getattr(agent_usage, "_USAGE_FETCHERS", None) or ("anthropic", "openai-codex")
+    if provider not in builtin and not _own_plugin(provider):
+        # TAL-2187: any other provider reads through its plugin's own hook, and only this profile's plugin answers.
+        return {"provider": provider, "available": False, "unavailable_reason": f"{provider} is not an enabled provider plugin in this profile.", "windows": [], "details": []}
     try:
         if entry is not None and _reads_read_only(fetch_account_usage):
             # A display read never repairs the account: a rejected key reads as unavailable, never as a credential refresh.
@@ -430,8 +452,14 @@ def account(provider: str, *, base_url: str | None, api_key: str | None, credent
     if provider == "openai-codex":
         _backfill_codex_durations(row["windows"], raw)
     row["details"] = list(row.get("details") or [])
+    # A hosted plugin's snapshot crosses the Agent's plugin-host wire as a plain record (TAL-2187): its datetimes arrive
+    # as opaque placeholders and its `available` property is gone, so both are read as unknown and recomputed.
+    for holder, key in ((row, "fetched_at"), *((w, "reset_at") for w in row["windows"])):
+        if key in holder and not isinstance(holder[key], (str, type(None))):
+            holder[key] = None
     # The Agent's `available` is a property, which `_plain` (asdict/vars) never sees; read it off the snapshot.
-    row["available"] = bool(getattr(snapshot, "available", row.get("available")))
+    available = getattr(snapshot, "available", None)
+    row["available"] = available if isinstance(available, bool) else bool(row["windows"] or row["details"]) and not row.get("unavailable_reason")
     return row
 
 
