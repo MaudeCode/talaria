@@ -16,19 +16,11 @@ import { stripPublicInternalFields } from '../redact.js'
 import { TerminalItemQueue } from '../tools/terminal.js'
 import { ifNoneMatchMatches } from '../workspace/media.js'
 
-const KANBAN_POLL_MS = 1_000
 const KANBAN_HEARTBEAT_MS = 15_000
 const PROXY_MAX_RESPONSE = 512 * 1024
 const PROXY_MAX_REDIRECTS = 10
 const PROXY_RE = /^\/api\/extensions\/([^/]+)\/sidecar(?:\/(.*))?$/
 const HOP_BY_HOP = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade'])
-
-const sleep = (ms: number, signal: AbortSignal): Promise<void> => new Promise((resolve) => {
-  if (signal.aborted) { resolve(); return }
-  const t = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve() }, ms)
-  const onAbort = (): void => { clearTimeout(t); resolve() }
-  signal.addEventListener('abort', onAbort, { once: true })
-})
 
 /** A nonnegative safe-integer event cursor, or null for a missing, empty, or malformed one. */
 function eventCursor(raw: string | null | undefined): number | null {
@@ -37,11 +29,11 @@ function eventCursor(raw: string | null | undefined): number | null {
   return Number.isSafeInteger(n) ? n : null
 }
 
-/** Python `_handle_events_sse_stream`: `hello`, then `events` batches with `id: <cursor>`, 1 s poll, 15 s keepalive. */
+/** Python `_handle_events_sse_stream`: `hello`, then `events` batches with `id: <cursor>` from the board's shared poll, 15 s keepalive. */
 export async function handleKanbanEventsStream(ctx: RequestContext): Promise<void> {
   const board = str(ctx.query.get('board')).trim() || null
   // An EventSource reconnect keeps its original `?since=` URL; its `Last-Event-ID` is the newer resume point.
-  let cursor = eventCursor(ctx.header('last-event-id')) ?? eventCursor(ctx.query.get('since')) ?? 0
+  const cursor = eventCursor(ctx.header('last-event-id')) ?? eventCursor(ctx.query.get('since')) ?? 0
   const home = ctx.deps.profileHome(activeProfileName(ctx))
   // Python `_resolve_board` normalised the slug before the `hello` frame carried it.
   let helloBoard = board
@@ -55,23 +47,21 @@ export async function handleKanbanEventsStream(ctx: RequestContext): Promise<voi
   if (!sse) return
   const abort = new AbortController()
   ctx.res.on('close', () => { abort.abort() })
+  const sub = ctx.deps.kanban.subscribe(home, helloBoard, cursor)
   try {
     sse.start()
     sse.event('hello', { cursor, board: helloBoard })
     let lastWrite = Date.now()
     while (await sse.ready() && !abort.signal.aborted) {
-      let events: unknown[] = []
-      try {
-        const page = await ctx.deps.kanban.events(home, board, cursor, 200)
-        events = Array.isArray(page.events) ? page.events : []
-        if (events.length) cursor = Number(page.cursor) || cursor
-      } catch { events = [] }
-      if (sse.isClosed) return
-      if (events.length) { sse.event('events', { events: events.map((e) => projectRunnerEventPayload(e)), cursor }, String(cursor)); lastWrite = Date.now() }
-      else if (Date.now() - lastWrite >= KANBAN_HEARTBEAT_MS) { sse.comment('keepalive'); lastWrite = Date.now() }
-      await sleep(sse.waitMs(KANBAN_POLL_MS), abort.signal)
+      const idle = KANBAN_HEARTBEAT_MS - (Date.now() - lastWrite)
+      if (idle <= 0) { sse.comment('keepalive'); lastWrite = Date.now(); continue }
+      const batch = await sub.next(sse.waitMs(idle), abort.signal)
+      if (!batch || sse.isClosed) continue
+      sse.event('events', { events: batch.events.map((e) => projectRunnerEventPayload(e)), cursor: batch.cursor }, String(batch.cursor))
+      lastWrite = Date.now()
     }
   } finally {
+    sub.close()
     sse.end()
   }
 }

@@ -170,7 +170,7 @@ export const KanbanBoardSchema = z.union([
   }),
 ])
 export const KANBAN_METHODS = {
-  'kanban.inspection': { params: Board.extend({ include_archived: z.boolean().optional() }), result: KanbanInspectionSnapshotSchema },
+  'kanban.inspection': { params: Board.extend({ include_archived: z.boolean().optional(), search: z.string().nullable().optional(), assignee: z.string().nullable().optional() }), result: KanbanInspectionSnapshotSchema },
   'kanban.board': { params: Board.extend({ tenant: z.string().nullable().optional(), assignee: z.string().nullable().optional(), include_archived: z.boolean().optional(), only_mine: z.boolean().optional(), since: z.number().int().nullable().optional(), profile: z.string().nullable().optional() }), result: KanbanBoardSchema },
   'kanban.boards': { params: ProfileHomeParams.extend({ include_archived: z.boolean().optional() }), result: z.object({ boards: z.array(KanbanBoardMetaSchema.extend({ is_current: z.boolean(), counts: z.record(z.string(), z.number().int()), total: z.number().int() })), current: z.string(), read_only: z.boolean() }) },
   'kanban.create_board': { params: ProfileHomeParams.extend({ board_spec: Loose }), result: z.object({ board: KanbanBoardMetaSchema, current: z.string(), read_only: z.boolean() }) },

@@ -28,6 +28,33 @@ describe('Kanban inspection projection', () => {
     expect(view.nodes.find(n => n.key === 'a/done')?.timing).toMatchObject({ start: 20, end: 80, duration_seconds: 60 })
   })
 
+  it('matches a per-node walk on a full-budget graph with cycles', () => {
+    let seed = 1713
+    const rand = (n: number): number => { seed = (seed * 1103515245 + 12345) % 2 ** 31; return seed % n }
+    const nodes = Array.from({ length: 500 }, (_, i) => task('a', String(i)))
+    const edges = Array.from({ length: 2000 }, () => edge(`a/${rand(500)}`, `a/${rand(500)}`))
+    const adjacency = (dir: 'up' | 'down') => {
+      const map = new Map<string, string[]>()
+      for (const e of edges) { const [from, to] = dir === 'down' ? [e.source, e.target] : [e.target, e.source]; map.set(from, [...(map.get(from) ?? []), to]) }
+      return map
+    }
+    const walk = (id: string, map: Map<string, string[]>) => {
+      const seen = new Set<string>(), stack = [...(map.get(id) ?? [])]
+      while (stack.length) { const next = stack.pop()!; if (!seen.has(next)) { seen.add(next); stack.push(...(map.get(next) ?? [])) } }
+      return seen
+    }
+    const up = adjacency('up'), down = adjacency('down')
+    const golden = nodes.map(({ key }) => {
+      const ancestors = walk(key, up), descendants = walk(key, down)
+      const cycle = ancestors.has(key) || descendants.has(key)
+      ancestors.delete(key); descendants.delete(key)
+      return { key, ancestors: [...ancestors].sort(), descendants: [...descendants].sort(), cycle }
+    }).sort((a, b) => a.key.localeCompare(b.key))
+    const view = inspect(nodes, edges)
+    expect(view.nodes.map(({ key, ancestors, descendants, cycle }) => ({ key, ancestors, descendants, cycle }))).toEqual(golden)
+    expect(golden.some(n => n.cycle) && golden.some(n => !n.cycle && n.descendants.length > 0)).toBe(true)
+  })
+
   it('bounds hostile large graphs and never retains another profile between reads', () => {
     const view = inspect(Array.from({ length: 700 }, (_, i) => task('a', String(i))), Array.from({ length: 3000 }, () => edge('a/0', 'a/1')))
     expect(view.nodes.length).toBeLessThanOrEqual(500)
