@@ -769,7 +769,7 @@ export const SettingsSchema = z.looseObject({
   kanban_pinned_boards: KanbanPinnedBoardsSchema.optional().describe('TAL-1851: replace the active profile ordered board pins; stored in Talaria settings, independently of the Agent.'),
   bot_name: z.string().optional(), default_model: z.string().optional(), default_workspace: z.string().optional(), language: z.string().optional(), send_key: z.string().optional(), font_size: z.string().optional(),
   full_width_chat: z.boolean().optional(), chat_width: z.enum(['comfortable', 'wide', 'full']).optional(), auto_scroll_follow: z.boolean().optional(), render_user_markdown: z.boolean().optional(), chat_activity_display_mode: z.string().optional(), default_message_mode: z.string().optional(),
-  fade_text_effect: z.boolean().optional().describe('TAL-2148: fade the streaming reply\'s new words in (default false); clients skip code and honour reduced motion.'),
+  fade_text_effect: z.boolean().optional().describe('TAL-2148: fade the streaming reply\'s new words in (default true); clients skip code and honour reduced motion.'),
   show_busy_placeholder_hint: z.boolean().optional().describe('TAL-2148: while a chat is busy and the draft is empty, the composer placeholder names the busy action (default true).'),
   session_endless_scroll: z.boolean().optional().describe('TAL-2148: older messages load while scrolling up (default true); off, a Load earlier messages button loads them.'),
   composer_controls_shown: z.number().int().nonnegative().optional().describe('TAL-2172, every settings read and save: how many of the composer controls Settings › Chat draws are shown (each `hide_composer_*` key while false, `show_quota_chip` while true).'),

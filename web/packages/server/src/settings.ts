@@ -27,10 +27,13 @@ const PERSISTED_SPEECH_KEYS_FIELD = 'persisted_speech_keys'
 const CHOSEN_ONLY_KEYS = new Set([...SETTINGS_SPEECH_KEYS, 'language'])
 /**
  * TAL-2148: the busy hint and load-on-scroll were always on while their stored switches (written with every save)
- * defaulted off, so a `false` stored before they worked carries no choice. This marker records that it was discarded.
+ * defaulted off, so a `false` stored before they worked carries no choice. TAL-1763 also turns streamed fade on
+ * once, even for documents already migrated by TAL-2148. Each marker preserves choices saved after its flip.
  */
-const CHAT_SWITCHES_MARKER = 'chat_switches_migrated'
-const CHAT_SWITCHES = ['show_busy_placeholder_hint', 'session_endless_scroll'] as const
+const DEFAULT_ON_MIGRATIONS = {
+  chat_switches_migrated: ['show_busy_placeholder_hint', 'session_endless_scroll'],
+  stream_fade_migrated: ['fade_text_effect'],
+} as const
 const LEGACY_DROP_KEYS = new Set(['assistant_language', 'bubble_layout', 'default_model', 'activity_feed_expanded_default', 'simplified_tool_calling'])
 export const SETTINGS_THEME_VALUES = new Set(['light', 'dark', 'system'])
 export const SETTINGS_SKIN_VALUES = new Set([
@@ -66,7 +69,7 @@ export function settingsDefaults(opts: { defaultWorkspace: string; botName: stri
     virtualize_transcript: false,
     virtualize_transcript_optin: false,
     show_tps: false,
-    fade_text_effect: false,
+    fade_text_effect: true,
     show_cli_sessions: true,
     show_claude_code_sessions: true,
     show_messaging_sessions: true,
@@ -478,7 +481,9 @@ export class SettingsStore {
       settings.show_claude_code_sessions = false
     }
     if (!pyBool(stored.virtualize_transcript_optin)) settings.virtualize_transcript = false
-    if (stored[CHAT_SWITCHES_MARKER] !== true) for (const key of CHAT_SWITCHES) settings[key] = true
+    for (const [marker, keys] of Object.entries(DEFAULT_ON_MIGRATIONS)) {
+      if (stored[marker] !== true) for (const key of keys) settings[key] = true
+    }
     settings.trusted_link_hosts = normalizeTrustedLinkHosts(settings.trusted_link_hosts)
     settings.sidebar_quota_sources = normalizeSidebarQuotaSources(settings.sidebar_quota_sources)
     const hasStoredAppearance = 'theme' in stored || 'skin' in stored
@@ -659,7 +664,7 @@ export class SettingsStore {
       }
       // An explicit toggle records the opt-in marker so `fromRaw` keeps it on after a reload.
       if ('virtualize_transcript' in settings) current.virtualize_transcript_optin = current.virtualize_transcript
-      current[CHAT_SWITCHES_MARKER] = true
+      for (const marker of Object.keys(DEFAULT_ON_MIGRATIONS)) current[marker] = true
       let skinValue = pendingSkin
       if (themeExplicit && !skinExplicit) {
         const rawTheme = typeof pendingTheme === 'string' ? pendingTheme.trim().toLowerCase() : ''

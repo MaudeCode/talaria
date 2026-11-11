@@ -539,7 +539,7 @@
                             },
                             "fade_text_effect": {
                               "type": "boolean",
-                              "description": "TAL-2148: fade the streaming reply's new words in (default false); clients skip code and honour reduced motion."
+                              "description": "TAL-2148: fade the streaming reply's new words in (default true); clients skip code and honour reduced motion."
                             },
                             "show_busy_placeholder_hint": {
                               "type": "boolean",
@@ -88800,7 +88800,7 @@
                     },
                     "fade_text_effect": {
                       "type": "boolean",
-                      "description": "TAL-2148: fade the streaming reply's new words in (default false); clients skip code and honour reduced motion."
+                      "description": "TAL-2148: fade the streaming reply's new words in (default true); clients skip code and honour reduced motion."
                     },
                     "show_busy_placeholder_hint": {
                       "type": "boolean",
@@ -89269,7 +89269,7 @@
                     },
                     "fade_text_effect": {
                       "type": "boolean",
-                      "description": "TAL-2148: fade the streaming reply's new words in (default false); clients skip code and honour reduced motion."
+                      "description": "TAL-2148: fade the streaming reply's new words in (default true); clients skip code and honour reduced motion."
                     },
                     "show_busy_placeholder_hint": {
                       "type": "boolean",

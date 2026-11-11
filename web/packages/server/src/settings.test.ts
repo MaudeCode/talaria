@@ -218,9 +218,9 @@ describe('load', () => {
     expect([(await store().load()).show_messaging_sessions, (await store().load()).show_claude_code_sessions]).toEqual([true, true])
   })
 
-  it('shows the busy hint and loads older messages on scroll by default, and fades nothing (TAL-2148)', async () => {
+  it('shows the busy hint, loads older messages and fades streamed text by default', async () => {
     const s = await store().load()
-    expect([s.show_busy_placeholder_hint, s.session_endless_scroll, s.fade_text_effect]).toEqual([true, true, false])
+    expect([s.show_busy_placeholder_hint, s.session_endless_scroll, s.fade_text_effect]).toEqual([true, true, true])
   })
 
   it('reads a false stored before the busy hint and load-on-scroll worked as on, and keeps one saved after (TAL-2148)', async () => {
@@ -228,7 +228,7 @@ describe('load', () => {
     write({ show_busy_placeholder_hint: false, session_endless_scroll: false, fade_text_effect: false, theme: 'light' })
     const s = store()
     const old = await s.load()
-    expect([old.show_busy_placeholder_hint, old.session_endless_scroll, old.fade_text_effect]).toEqual([true, true, false])
+    expect([old.show_busy_placeholder_hint, old.session_endless_scroll, old.fade_text_effect]).toEqual([true, true, true])
     await s.save({ theme: 'dark' })
     expect(onDisk()).toMatchObject({ show_busy_placeholder_hint: true, session_endless_scroll: true })
     await s.save({ show_busy_placeholder_hint: false, session_endless_scroll: false })
@@ -237,6 +237,17 @@ describe('load', () => {
     // A document written after the migration ran keeps its choice across restarts.
     write(onDisk())
     expect((await store().load()).session_endless_scroll).toBe(false)
+  })
+
+  it.each([{}, { chat_switches_migrated: true }])('flips stored fade once independently of earlier chat migrations: %j', async (markers) => {
+    write({ ...markers, fade_text_effect: false, show_busy_placeholder_hint: false, session_endless_scroll: false })
+    const s = store()
+    expect((await s.load()).fade_text_effect).toBe(true)
+    await s.save({ theme: 'light' })
+    expect(onDisk()).toMatchObject({ fade_text_effect: true, chat_switches_migrated: true, stream_fade_migrated: true })
+    await s.save({ fade_text_effect: false })
+    expect((await store().load()).fade_text_effect).toBe(false)
+    expect((await store().load()).show_busy_placeholder_hint).toBe(!markers.chat_switches_migrated)
   })
 
   it('treats a malformed file as empty unless strict', async () => {

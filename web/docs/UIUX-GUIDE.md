@@ -284,8 +284,13 @@ below; each tool or reasoning row that arrives in a running turn opens its
 height; a changing activity or row label crossfades in its slot (`ui/SwapText`,
 about 180 ms) while the slot eases to the new width; and clicking a settled
 "Worked" summary opens or shuts its body over about 300 ms as the chevron turns.
-All height motion goes through `revealHeight` in `lib/motion.ts`, which also
-folds a settling turn (`SettleSpacer`). It uses the Web Animations API because
+Disclosure height motion goes through `revealHeight` in `lib/motion.ts`, which also
+folds a settling turn (`SettleSpacer`). Streamed answers use `followHeight` beside it
+to glide to their content height over 200 ms without clipping. The existing
+"Fade in streamed text" switch is on by default and also fades new words from
+a soft blur over 400 ms with a short stagger and a bounded backlog. Turning it
+off restores instant text and height; settled text and reduced motion never animate.
+Height motion uses the Web Animations API because
 `.msg-row` disables CSS transitions for streaming rows. Rows a turn already had
 when it mounted never replay live-turn motion; the separate switch entrance above is the only exception.
 A virtual row scrolling back and earlier steps never animate, and everything is instant under reduced motion.
