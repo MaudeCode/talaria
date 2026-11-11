@@ -190,7 +190,7 @@ struct InsightsView: View {
                                 referenceDate: context.date,
                                 open: { selection = .quotaSource(id: source.id) }
                             )
-                            .listRowInsets(EdgeInsets(top: 10, leading: 20, bottom: 10, trailing: 20))
+                            .plainSectionRow()
                             .swipeActions(edge: .trailing) {
                                 Button {
                                     hideProvider(source.providerID)
@@ -217,7 +217,7 @@ struct InsightsView: View {
                                     displayName: providerDisplayName(source),
                                     open: { selection = .quotaSource(id: source.id) }
                                 )
-                                .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 8, trailing: 20))
+                                .plainSectionRow(compact: true)
                                 .swipeActions(edge: .trailing) {
                                     Button {
                                         hideProvider(source.providerID)
@@ -231,7 +231,7 @@ struct InsightsView: View {
                         }
                     }
                 }
-                .listStyle(.plain)
+                .plainSectionList()
                 .environment(\.editMode, .constant(isReorderingQuotas ? .active : .inactive))
             }
             .accessibilityIdentifier("provider-quota-section")
@@ -307,7 +307,7 @@ struct InsightsView: View {
             List {
                 analyticsSections
             }
-            .listStyle(.plain)
+            .plainSectionList()
             .refreshable {
                 await loadInsights()
             }
@@ -356,24 +356,21 @@ struct InsightsView: View {
             }
         }
         .pickerStyle(.segmented)
-        .listRowInsets(Self.usageInsets)
-        .listRowSeparator(.hidden)
+        .plainSectionRow(separator: .hidden)
 
         Section {
             InsightsStatGrid(stats: summaryStats)
-                .listRowInsets(Self.usageInsets)
-                .listRowSeparator(.hidden)
+                .plainSectionRow(separator: .hidden)
         } header: {
-            usageHeader(viewModel.periodTitle, isRefreshing: viewModel.isLoading)
+            PlainSectionHeader(title: viewModel.periodTitle, isRefreshing: viewModel.isLoading, refreshingLabel: "Refreshing usage analytics")
         }
 
         if viewModel.dailyTokens.count > 1 {
             Section {
                 InsightsDailyChart(days: viewModel.dailyTokens, metric: $dailyMetric)
-                    .listRowInsets(Self.usageInsets)
-                    .listRowSeparator(.hidden)
+                    .plainSectionRow(separator: .hidden)
             } header: {
-                usageHeader(String(localized: "Daily"))
+                PlainSectionHeader(title: String(localized: "Daily"))
             }
         }
 
@@ -381,10 +378,10 @@ struct InsightsView: View {
             Section {
                 ForEach(Array(viewModel.modelBreakdowns.prefix(10).enumerated()), id: \.offset) { _, model in
                     ModelBreakdownRow(model: model)
-                        .listRowInsets(Self.usageInsets)
+                        .plainSectionRow()
                 }
             } header: {
-                usageHeader(String(localized: "Models"))
+                PlainSectionHeader(title: String(localized: "Models"))
             }
         }
 
@@ -396,10 +393,9 @@ struct InsightsView: View {
                     summary: InsightsActivitySummary.weekday(viewModel.peakDay),
                     identifier: "insights-weekday-chart"
                 )
-                .listRowInsets(Self.usageInsets)
-                .listRowSeparator(.hidden)
+                .plainSectionRow(separator: .hidden)
             } header: {
-                usageHeader(String(localized: "By weekday"), detail: InsightsActivitySummary.weekday(viewModel.peakDay))
+                PlainSectionHeader(title: String(localized: "By weekday"), detail: InsightsActivitySummary.weekday(viewModel.peakDay))
             }
         }
 
@@ -411,10 +407,9 @@ struct InsightsView: View {
                     summary: InsightsActivitySummary.hour(viewModel.peakHour),
                     identifier: "insights-hour-chart"
                 )
-                .listRowInsets(Self.usageInsets)
-                .listRowSeparator(.hidden)
+                .plainSectionRow(separator: .hidden)
             } header: {
-                usageHeader(String(localized: "By hour"), detail: InsightsActivitySummary.hour(viewModel.peakHour))
+                PlainSectionHeader(title: String(localized: "By hour"), detail: InsightsActivitySummary.hour(viewModel.peakHour))
             }
         }
 
@@ -422,38 +417,8 @@ struct InsightsView: View {
             Text(viewModel.sourceDescription)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .listRowInsets(Self.usageInsets)
-                .listRowSeparator(.hidden)
+                .plainSectionRow(separator: .hidden)
         }
-    }
-
-    /// The Quotas rows' insets, so both tabs share one left edge.
-    private static let usageInsets = EdgeInsets(top: 10, leading: 20, bottom: 10, trailing: 20)
-
-    /// A plain-list section header: the title, an optional detail (the peak) on the right, and the refresh spinner.
-    private func usageHeader(_ title: String, detail: String? = nil, isRefreshing: Bool = false) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(title)
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-            if isRefreshing {
-                ProgressView()
-                    .controlSize(.small)
-                    .accessibilityLabel("Refreshing usage analytics")
-            }
-            Spacer(minLength: 8)
-            if let detail {
-                Text(detail)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.systemBackground))
-        .listRowInsets(EdgeInsets())
     }
 
     private var summaryStats: [InsightsStat] {

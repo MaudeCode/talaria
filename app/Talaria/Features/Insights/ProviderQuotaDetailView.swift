@@ -131,7 +131,7 @@ struct ProviderQuotaDetailView: View {
                 }
             }
         }
-        .listStyle(.plain)
+        .plainSectionList()
     }
 
     private var header: some View {

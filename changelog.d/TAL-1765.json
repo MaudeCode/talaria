@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Keep Insights list spacing and section headings consistent across the app.",
+      "highlight": false,
+      "announce": false,
+      "components": ["app"]
+    }
+  ]
+}
