@@ -5,6 +5,7 @@ import TalariaKit
 struct SettingsItemRow<Leading: View, Badges: View, Accessory: View>: View {
     let title: String
     var subtitle: String?
+    var detail: String?
     var accessibilityIdentifier: String?
     var containsActions = false
     var isSelected = false
@@ -15,7 +16,7 @@ struct SettingsItemRow<Leading: View, Badges: View, Accessory: View>: View {
     @ViewBuilder var accessory: Accessory
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    init(title: String, subtitle: String? = nil, accessibilityIdentifier: String? = nil,
+    init(title: String, subtitle: String? = nil, detail: String? = nil, accessibilityIdentifier: String? = nil,
          containsActions: Bool = false, isSelected: Bool = false, isLoading: Bool = false,
          accessorySystemImage: String? = nil,
          @ViewBuilder leading: () -> Leading = { EmptyView() },
@@ -23,6 +24,7 @@ struct SettingsItemRow<Leading: View, Badges: View, Accessory: View>: View {
          @ViewBuilder accessory: () -> Accessory = { EmptyView() }) {
         self.title = title
         self.subtitle = subtitle
+        self.detail = detail
         self.accessibilityIdentifier = accessibilityIdentifier
         self.containsActions = containsActions
         self.isSelected = isSelected
@@ -77,13 +79,19 @@ struct SettingsItemRow<Leading: View, Badges: View, Accessory: View>: View {
                 .font(AppFont.subheadline(weight: .medium))
                 .foregroundStyle(.primary)
                 .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
-            if let subtitle {
-                Text(subtitle)
-                    .font(AppFont.caption())
-                    .foregroundStyle(.secondary)
-                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
-            }
+            secondaryText(subtitle)
+            secondaryText(detail)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func secondaryText(_ text: String?) -> some View {
+        if let text, !text.isEmpty {
+            Text(text)
+                .font(AppFont.caption())
+                .foregroundStyle(.secondary)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+        }
     }
 }
