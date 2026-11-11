@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, expectNoOverflow, test } from './fixtures'
+import { DUO_VIEWPORTS, expect, expectNoOverflow, expectPromptReachable, test } from './fixtures'
 import terminalFixture from '../../../../contracts/fixtures/native-captured-command.json' with { type: 'json' }
 
 test.use({ serviceWorkers: 'block', video: 'on' })
@@ -93,6 +93,52 @@ test('terminal opens, accepts input, resizes, and closes', async ({ page }, test
   await expect(panel).toHaveCount(0)
   await expect.poll(() => closes).toBe(1)
   await page.screenshot({ path: testInfo.outputPath('terminal-closed.png') })
+})
+
+/** The terminal's controls stay above the composer, and a shorter surface resizes the real xterm PTY. */
+test('terminal header stays reachable while the viewport and preferred height change', async ({ page }, testInfo) => {
+  const sid = 'terminal-layout'
+  const sizes: { rows: number }[] = []
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Terminal', workspace: '/tmp/term', messages: [] } } }))
+  await page.route('**/api/terminal/**', async (route) => {
+    const path = new URL(route.request().url()).pathname
+    if (path.endsWith('/output')) return route.fulfill({ headers: { 'content-type': 'text/event-stream' }, body: 'retry: 60000\n\n' })
+    if (path.endsWith('/start') || path.endsWith('/resize')) sizes.push(route.request().postDataJSON() as { rows: number })
+    await route.fulfill({ json: path.endsWith('/start') ? terminalStart(sid) : { ok: true } })
+  })
+  const original = page.viewportSize()!
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto(`/session/${sid}`)
+  await page.locator('#msg').fill('/terminal')
+  await page.locator('#btnSend').click()
+  const panel = page.locator('#composerTerminalPanel')
+  const header = panel.locator('.composer-terminal-header')
+  const surface = panel.getByRole('application', { name: 'Workspace terminal' })
+  await expect(panel).toHaveAttribute('data-status', 'running')
+  await expect.poll(() => sizes.at(-1)?.rows ?? 0).toBeGreaterThan(0)
+  const desktopRows = sizes.at(-1)!.rows
+  const desktopHeight = (await surface.boundingBox())!.height
+  for (const { name, width, height } of [DUO_VIEWPORTS[1], { name: testInfo.project.name, ...original }, ...DUO_VIEWPORTS.filter(({ name }) => name != 'outer-landscape')]) {
+    await page.setViewportSize({ width, height })
+    await page.screenshot({ path: testInfo.outputPath(`terminal-before-check-${name}.png`) })
+    const reachable = () => expectPromptReachable(page, panel, [header, ...['Clear', 'Copy output', 'Restart', 'Collapse', 'Close'].map((name) => panel.getByRole('button', { name, exact: true }))])
+    await reachable()
+    if (name === 'outer-landscape') {
+      await expect.poll(async () => (await surface.boundingBox())!.height).toBeLessThan(desktopHeight)
+      await expect.poll(() => sizes.at(-1)!.rows).toBeLessThan(desktopRows)
+    }
+    const handle = (await panel.getByRole('separator', { name: 'Resize terminal' }).boundingBox())!
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(handle.x + handle.width / 2, 0, { steps: 5 })
+    await page.mouse.up()
+    await reachable()
+    await page.screenshot({ path: testInfo.outputPath(`terminal-open-${name}.png`) })
+    await panel.getByRole('button', { name: 'Collapse', exact: true }).click()
+    await expectPromptReachable(page, panel, [header, panel.getByRole('button', { name: 'Expand', exact: true }), panel.getByRole('button', { name: 'Close', exact: true })])
+    await page.screenshot({ path: testInfo.outputPath(`terminal-collapsed-${name}.png`) })
+    await panel.getByRole('button', { name: 'Expand', exact: true }).click()
+  }
 })
 
 /** TAL-2156: collapsing keeps the shell behind a header bar whose dot marks output printed meanwhile; neither state scrolls sideways. */

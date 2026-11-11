@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Terminal controls stay reachable in short windows, including when resizing the panel.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
