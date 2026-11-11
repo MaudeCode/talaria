@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { notifyManager, QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { ReactNode } from 'react'
+import { useSyncExternalStore, type ReactNode } from 'react'
 import { SessionsListSchema, type SessionRow } from '../../contracts'
 import { ApiError } from '../../contracts/common'
 
@@ -17,12 +17,13 @@ vi.mock('./useNewChat', () => ({ useNewChat: () => newChat }))
 const rowRender = vi.hoisted(() => vi.fn())
 vi.mock('./SessionContextMenu', () => ({ SessionActions: ({ children }: { children: ReactNode }) => children, SessionContextMenu: ({ row }: { row: SessionRow }) => { rowRender(row.session_id); return null }, SessionMenuItems: () => null }))
 const navigate = vi.hoisted(() => vi.fn())
+const route = vi.hoisted(() => ({ sessionId: undefined as string | undefined, listeners: new Set<() => void>() }))
 const toast = vi.hoisted(() => vi.fn())
 vi.mock('../toast/toast', () => ({ showToast: toast }))
 vi.mock('@tanstack/react-router', () => ({
-  useParams: () => ({}),
+  useParams: () => ({ sessionId: useSyncExternalStore((callback) => { route.listeners.add(callback); return () => { route.listeners.delete(callback) } }, () => route.sessionId) }),
   useNavigate: () => navigate,
-  Link: ({ children, className, ...rest }: { children: ReactNode; className?: string; 'data-sid'?: string }) => <a className={className} data-sid={rest['data-sid']}>{children}</a>,
+  Link: ({ children, className, ...rest }: { children: ReactNode; className?: string; 'data-sid'?: string; 'aria-current'?: 'page' }) => <a className={className} data-sid={rest['data-sid']} aria-current={rest['aria-current']}>{children}</a>,
 }))
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -51,6 +52,7 @@ const pick = async (name: string | RegExp) => {
 }
 
 beforeEach(() => {
+  route.sessionId = undefined
   vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('min-width'), media: query, addEventListener: () => undefined, removeEventListener: () => undefined }))
   vi.mocked(api.fetchSessions).mockReset().mockResolvedValue({ sessions: [alpha, delta, other, cli], webui_session_count: 3, cli_session_count: 1 } as never)
   vi.mocked(api.fetchProjects).mockReset().mockResolvedValue({ projects: [{ project_id: 'p1', name: 'Proj' }] } as never)
@@ -82,6 +84,29 @@ describe('sidebar list motion (TAL-1756)', () => {
     await act(async () => { client.setQueryData(keys.sessions.list({}), { sessions, webui_session_count: sessions.length, cli_session_count: 0 }); await Promise.resolve() })
   }
   const sid = (el: Element) => (el.matches('[data-sid]') ? el : el.querySelector('[data-sid]'))?.getAttribute('data-sid')
+
+  it.each([false, true])('moves one selection from its current screen position on interrupted chat switches, reduced=%s', async (reduced) => {
+    if (reduced) { motion.restore(); motion = stubAnimate({ reduced: true }) }
+    route.sessionId = 'alpha'
+    await mount()
+    expect(motion.calls).toHaveLength(0)
+    const highlight = document.querySelector<HTMLElement>('[data-list-selection]')!
+    expect(highlight).not.toBeNull()
+    const highlightRect = vi.fn(() => ({ top: 0, left: 0, width: 240, height: 40 } as DOMRect))
+    Object.defineProperty(highlight, 'getBoundingClientRect', { configurable: true, value: highlightRect })
+    act(() => { route.sessionId = 'delta'; route.listeners.forEach((notify) => notify()) })
+    expect(document.querySelector('[data-sid="delta"]')).toHaveAttribute('aria-current', 'page')
+    const first = motion.calls.find((c) => c.el === highlight)
+    if (!reduced) expect(first?.keyframes[0]).toMatchObject({ transform: 'translate(0px, -40px)' })
+    highlightRect.mockReturnValue({ top: 20, left: 0, width: 240, height: 40 } as DOMRect)
+    act(() => { route.sessionId = 'other'; route.listeners.forEach((notify) => notify()) })
+    expect(document.querySelectorAll('[data-list-selection]')).toHaveLength(1)
+    expect(document.querySelector('[data-sid="other"]')).toHaveClass('active')
+    if (!reduced) {
+      expect(first?.animation.cancel).toHaveBeenCalled()
+      expect(motion.calls.filter((c) => c.el === highlight).at(-1)?.keyframes[0]).toMatchObject({ transform: 'translate(0px, -60px)' })
+    } else expect(motion.calls).toHaveLength(0)
+  })
 
   it('slides server reorders and cross-group pin moves by their old rect, leaving stationary rows alone', async () => {
     const client = await mount()

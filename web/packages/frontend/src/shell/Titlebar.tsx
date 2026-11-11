@@ -1,4 +1,4 @@
-import { Link, useLocation, useNavigate } from '@tanstack/react-router'
+import { Link, useLocation, useNavigate, useParams } from '@tanstack/react-router'
 import { NAV_ITEMS, panelForPath } from './nav'
 import { Menu as MenuIcon, PanelRight, Plus, RotateCw } from 'lucide-react'
 import { m } from '../paraglide/messages.js'
@@ -9,6 +9,17 @@ import { toggleMobileSidebar, toggleSidePanel, useIsDesktop, useShellState } fro
 import { useNewChat } from '../features/sessions/useNewChat'
 import { Brandmark } from './Brandmark'
 import { UpdateNotificationCenterButton } from '../features/notifications/UpdateNotificationCenter'
+import { useChatSwitch, useSessionTitle } from '../features/sessions/useSessionTitle'
+import { SwapText } from '../ui/SwapText'
+import { cn } from '../ui/cn'
+
+/** Keep session subscriptions inside the title slot, so route changes do not rerender the surrounding chrome. */
+function ChatTitle({ fallback }: { fallback: string }) {
+  const sessionId = useParams({ strict: false, select: (params) => params.sessionId ?? null })
+  const title = useSessionTitle(sessionId, fallback)
+  const from = useChatSwitch(sessionId, title)
+  return <SwapText text={title} animate={from !== null} fixed id="appTitlebarTitle" className="app-titlebar-title block w-full min-w-0 text-xs font-semibold text-text tracking-(--titlebar-title-tracking) whitespace-nowrap overflow-hidden text-ellipsis" />
+}
 
 /** The destination the titlebar names. TAL-2089: a hub page with this title leaves its heading to assistive technology on a phone. */
 export function usePanelTitle(): string {
@@ -37,9 +48,9 @@ export function Titlebar({ subtitle }: { subtitle?: string | undefined }) {
           <MenuIcon size={22} aria-hidden="true" />
         </button>}
       </div>
-      <div className="app-titlebar-inner flex items-center gap-2 min-w-0 max-w-full justify-center max-[641px]:flex-[1_1_auto]">
+      <div className={cn('app-titlebar-inner flex items-center gap-2 min-w-0 max-w-full justify-center max-[641px]:flex-[1_1_auto]', inChat && 'w-[60vw]')}>
         <Link to="/" className="app-titlebar-icon inline-flex items-center text-accent" aria-hidden="true" tabIndex={-1}><Brandmark className="brandmark" size={16} /></Link>
-        <span className="app-titlebar-title text-[12px] font-semibold text-text tracking-(--titlebar-title-tracking) whitespace-nowrap overflow-hidden text-ellipsis max-w-[60vw] max-[641px]:max-w-[72vw]" id="appTitlebarTitle">{panelLabel}</span>
+        {inChat ? <ChatTitle fallback={panelLabel} /> : <span className="app-titlebar-title text-[12px] font-semibold text-text tracking-(--titlebar-title-tracking) whitespace-nowrap overflow-hidden text-ellipsis max-w-[60vw] max-[641px]:max-w-[72vw]" id="appTitlebarTitle">{panelLabel}</span>}
         {subtitle && <span className="app-titlebar-sub text-xs text-muted bg-hover py-0.5 px-[7px] rounded-[4px] font-mono whitespace-nowrap shrink-0 max-[641px]:py-px max-[641px]:px-[5px]" id="appTitlebarSub">{subtitle}</span>}
       </div>
       <div className="app-titlebar-spacer hidden size-11 shrink-0 max-[901px]:flex" aria-hidden="true" />

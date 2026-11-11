@@ -8,6 +8,8 @@ import { sessionFixture } from '../../test/fixtures'
 import { dispatch, resetStreamStoreForTests } from '../../stream/store'
 import { resetConnectionsForTests } from '../../stream/connection'
 import { ApiError } from '../../contracts/common'
+import { stubAnimate } from '../../test/animate'
+import { ChatPage } from './ChatPage'
 
 const { renders, navigate, composer, chatRenders, sidePanel, references, search, projects } = vi.hoisted(() => ({ renders: vi.fn(), navigate: vi.fn(), composer: vi.fn(), chatRenders: vi.fn(), sidePanel: vi.fn(), references: vi.fn(), search: vi.fn((): Record<string, string> => ({})), projects: vi.fn((): { data?: unknown } => ({})) }))
 vi.mock('@tanstack/react-router', async (original) => ({ ...await original<object>(), useNavigate: () => navigate, useSearch: () => search() }))
@@ -77,6 +79,47 @@ function chat(streaming = true) {
   const view = render(<QueryClientProvider client={qc}><ChatView sessionId={session.session_id} /></QueryClientProvider>)
   return { ...view, qc, session }
 }
+
+it.each([{ cached: true, reduced: false }, { cached: false, reduced: false }, { cached: true, reduced: true }])('settles only switched transcripts, cached=$cached reduced=$reduced', async ({ cached, reduced }) => {
+  const motion = stubAnimate({ reduced })
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  const make = (id: string) => sessionFixture({ session_id: id, title: id, messages: Array.from({ length: 6 }, (_, i) => ({ id: i, role: 'user' as const, content: `${id} message ${i}` })) })
+  qc.setQueryData(keys.sessions.detail('first'), { session: make('first') })
+  qc.setQueryData(keys.sessions.detail('third'), { session: make('third') })
+  if (cached) qc.setQueryData(keys.sessions.detail('second'), { session: make('second') })
+  let resolve!: (value: { session: ReturnType<typeof make> }) => void
+  vi.mocked(api.fetchSession).mockImplementation(() => new Promise((done) => { resolve = done }))
+  const rects = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ top: 0, bottom: 100, left: 0, right: 500, width: 500, height: 100 } as DOMRect)
+  const renderPage = (id: string | null) => <QueryClientProvider client={qc}><ChatPage sessionId={id} /></QueryClientProvider>
+  const view = render(renderPage('first'))
+  try {
+    await screen.findByText('first message 5')
+    expect(motion.calls).toHaveLength(0)
+    view.rerender(renderPage('second'))
+    if (!cached) {
+      expect(view.container.querySelector('[data-message-key]')).toBeNull()
+      expect(view.container.querySelector('.transcript-skeleton')).not.toBeNull()
+      await act(async () => { resolve({ session: make('second') }); await Promise.resolve() })
+    }
+    await screen.findByText('second message 5')
+    const enters = motion.calls.filter((c) => c.el.matches('.msg-row') && 'transform' in (c.keyframes[0] ?? {}))
+    if (reduced) expect(motion.calls).toHaveLength(0)
+    else {
+      expect(enters.map((c) => c.el.textContent)).toEqual([2, 3, 4, 5].map((i) => expect.stringContaining(`second message ${i}`)))
+      expect(enters.map((c) => c.options.delay)).toEqual([40, 80, 120, 160])
+      expect(enters[0]?.keyframes).toEqual([{ transform: 'translateY(10px)' }, { transform: 'none' }])
+      expect(motion.calls.filter((c) => c.el.matches('.msg-row') && 'opacity' in (c.keyframes[0] ?? {}))).toHaveLength(4)
+    }
+    view.rerender(renderPage('third'))
+    await screen.findByText('third message 5')
+    expect(screen.queryByText('second message 5')).toBeNull()
+    for (const enter of enters) expect(enter.animation.cancel).toHaveBeenCalled()
+    view.rerender(renderPage(null))
+    const count = motion.calls.length
+    view.rerender(renderPage('first'))
+    expect(motion.calls).toHaveLength(count)
+  } finally { view.unmount(); rects.mockRestore(); motion.restore(); vi.unstubAllGlobals() }
+})
 
 it.each(['safe', 'ignore_config'])('clears draft references and hides selection when switching to %s', async (mode) => {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })

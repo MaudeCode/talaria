@@ -1,5 +1,5 @@
 import { Component, createRef, type ReactNode } from 'react'
-import { flipList, measureList, motionOn, revealHeight, type ListSnapshot } from '../lib/motion'
+import { flipList, measureList, motionOn, moveSelection, revealHeight, type ListSnapshot } from '../lib/motion'
 
 interface Props<T> {
   items: T[]
@@ -9,6 +9,7 @@ interface Props<T> {
   ready: boolean
   id: string
   className: string
+  selection?: { key: string | null; className: string }
   children: (items: T[], previous: T[], animate: boolean) => ReactNode
 }
 interface State<T> {
@@ -17,8 +18,11 @@ interface State<T> {
 }
 
 /** RowList owns plain list markup; this wrapper owns presence and the pre-mutation snapshot grouped lists need. */
-export class MotionList<T> extends Component<Props<T>, State<T>, ListSnapshot | null> {
+export class MotionList<T> extends Component<Props<T>, State<T>, { rows: ListSnapshot | null; selection: DOMRect | null }> {
   private container = createRef<HTMLDivElement>()
+  private selection = createRef<HTMLSpanElement>()
+  private selectionMove: Animation | null = null
+  private resize: ResizeObserver | null = null
   private animations = new Set<Animation>()
   private closing = new Map<string, Animation>()
   private moves: Animation[] = []
@@ -35,8 +39,26 @@ export class MotionList<T> extends Component<Props<T>, State<T>, ListSnapshot | 
     return { input: props.items, items, previous: animate ? state.input : [], exiting, scope: props.scope, context: props.context, ready: props.ready, animate }
   }
 
-  override getSnapshotBeforeUpdate(): ListSnapshot | null {
-    return this.state.animate && motionOn() && this.container.current ? measureList(this.container.current) : null
+  override getSnapshotBeforeUpdate() {
+    return { rows: this.state.animate && motionOn() && this.container.current ? measureList(this.container.current) : null,
+      selection: this.selection.current && !this.selection.current.hidden ? this.selection.current.getBoundingClientRect() : null }
+  }
+
+  private positionSelection(from: DOMRect | null) {
+    const container = this.container.current, el = this.selection.current
+    if (!container || !el) return
+    this.selectionMove?.cancel()
+    const key = this.props.selection?.key
+    const row = key ? container.querySelector<HTMLElement>(`[data-motion-key="${CSS.escape(key)}"] [aria-current="page"]`) : null
+    this.selectionMove = moveSelection(el, container, row, from)
+    void this.selectionMove?.finished.catch(() => undefined)
+  }
+  override componentDidMount() {
+    this.positionSelection(null)
+    if (typeof ResizeObserver !== 'undefined' && this.container.current) {
+      this.resize = new ResizeObserver(() => this.positionSelection(null))
+      this.resize.observe(this.container.current)
+    }
   }
 
   private track(animation: Animation) {
@@ -45,9 +67,11 @@ export class MotionList<T> extends Component<Props<T>, State<T>, ListSnapshot | 
     void animation.finished.then(forget, forget)
   }
 
-  override componentDidUpdate(_props: Props<T>, _state: State<T>, before: ListSnapshot | null) {
+  override componentDidUpdate(props: Props<T>, _state: State<T>, snapshot: { rows: ListSnapshot | null; selection: DOMRect | null }) {
     const container = this.container.current
     if (!container) return
+    this.positionSelection(this.props.ready && props.ready && props.scope === this.props.scope && props.context === this.props.context && props.selection?.key && this.props.selection?.key ? snapshot.selection : null)
+    const before = snapshot.rows
     const mounted = new Set<string>()
     for (const el of container.querySelectorAll<HTMLElement>('[data-motion-key]')) {
       const key = el.getAttribute('data-motion-key') ?? ''
@@ -92,8 +116,11 @@ export class MotionList<T> extends Component<Props<T>, State<T>, ListSnapshot | 
     for (const animation of this.closing.values()) animation.cancel()
     this.animations.clear(); this.closing.clear(); this.moves = []
   }
-  override componentWillUnmount() { this.cancel() }
+  override componentWillUnmount() { this.cancel(); this.selectionMove?.cancel(); this.resize?.disconnect() }
   override render() {
-    return <div ref={this.container} id={this.props.id} className={this.props.className} role="list">{this.props.children(this.state.items, this.state.previous, this.state.animate)}</div>
+    return <div ref={this.container} id={this.props.id} className={this.props.className} role="list" data-shared-selection={this.props.selection ? '' : undefined}>
+      {this.props.selection && <span ref={this.selection} data-list-selection className={this.props.selection.className} aria-hidden="true" hidden />}
+      {this.props.children(this.state.items, this.state.previous, this.state.animate)}
+    </div>
   }
 }

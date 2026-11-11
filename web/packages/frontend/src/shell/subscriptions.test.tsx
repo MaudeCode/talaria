@@ -7,6 +7,7 @@ import { keys } from '../api/queryKeys'
 import { Sidebar } from './Sidebar'
 import { Titlebar } from './Titlebar'
 import { Tabbar } from './Tabbar'
+import { stubAnimate } from '../test/animate'
 
 const { rendered } = vi.hoisted(() => ({ rendered: vi.fn() }))
 vi.mock('../i18n/useLocale', () => ({ useLocale: () => { rendered(); return 'en' } }))
@@ -23,8 +24,9 @@ beforeEach(() => {
   vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('min-width'), media: query, addEventListener: () => undefined, removeEventListener: () => undefined }))
 })
 
-async function setup(Component: ComponentType, settings: Record<string, unknown> = {}) {
+async function setup(Component: ComponentType, settings: Record<string, unknown> = {}, seed?: (client: QueryClient) => void) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  seed?.(client)
   client.setQueryData(keys.settings, { hidden_tabs: [], ...settings })
   const root = createRootRoute({ component: () => <QueryClientProvider client={client}><Component /><Outlet /></QueryClientProvider> })
   const paths = ['/', '/session/$sessionId', '/settings', '/ext/$extensionId'] as const
@@ -34,6 +36,24 @@ async function setup(Component: ComponentType, settings: Record<string, unknown>
   render(<RouterProvider router={router} />)
   return router
 }
+
+it.each([false, true])('cross-fades chat names only on switches, reduced=%s', async (reduced) => {
+  const motion = stubAnimate({ reduced })
+  try {
+    const router = await setup(Titlebar, {}, (client) => client.setQueryData(keys.sessions.list({}), { sessions: [{ session_id: 'first', title: 'First chat' }, { session_id: 'second', title: 'A longer second chat' }] }))
+    const slot = document.querySelector('#appTitlebarTitle')!
+    expect(slot).toHaveTextContent('First chat')
+    expect(motion.calls).toHaveLength(0)
+    await act(async () => { await router.navigate({ to: '/session/$sessionId', params: { sessionId: 'second' } }) })
+    expect(slot).toHaveTextContent('A longer second chat')
+    if (reduced) expect(motion.calls).toHaveLength(0)
+    else {
+      expect(slot.querySelector('[data-swap-out]')).toHaveTextContent('First chat')
+      expect(motion.calls.filter((c) => c.el.parentElement === slot).map((c) => c.keyframes)).toEqual([[{ opacity: 1 }, { opacity: 0 }], [{ opacity: 0 }, { opacity: 1 }]])
+      expect(motion.calls.some((c) => 'width' in (c.keyframes[0] ?? {}))).toBe(false)
+    }
+  } finally { motion.restore(); vi.unstubAllGlobals() }
+})
 
 const FixtureSidebar = () => <Sidebar panel={null} />
 

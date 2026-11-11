@@ -77,3 +77,48 @@ export function flipList(container: HTMLElement, before: ListSnapshot, keyAttr =
   }
   return animations
 }
+
+/** Position the shared selection in scroll-content coordinates; an interrupted move starts at its painted rect. */
+export function moveSelection(el: HTMLElement, container: HTMLElement, target: HTMLElement | null, from: DOMRect | null): Animation | null {
+  if (!target || target.closest('[hidden],[style*="display: none"]')) { el.hidden = true; return null }
+  const rect = target.getBoundingClientRect(), box = container.getBoundingClientRect()
+  if (!rect.width || !rect.height) { el.hidden = true; return null }
+  el.hidden = false
+  Object.assign(el.style, { left: `${rect.left - box.left + container.scrollLeft}px`, top: `${rect.top - box.top + container.scrollTop}px`, width: `${rect.width}px`, height: `${rect.height}px` })
+  if (!from || !motionOn() || container.closest('[hidden]')) return null
+  const x = from.left - rect.left, y = from.top - rect.top
+  return Math.abs(x) < 0.5 && Math.abs(y) < 0.5 ? null : el.animate([{ transform: `translate(${x}px, ${y}px)` }, { transform: 'none' }], { duration: 360, easing: TRAVEL_EASE })
+}
+
+/** The label renderer owns presence; all of its animation writes stay here. Fixed title slots only cross-fade. */
+export function swapLabel(el: HTMLElement, incoming: HTMLElement, outgoing: HTMLElement, fixed: boolean): { animations: Animation[]; enter: Animation } {
+  const animations: Animation[] = []
+  const from = outgoing.getBoundingClientRect().width, to = incoming.getBoundingClientRect().width
+  if (!fixed && Math.abs(from - to) > 0.5) animations.push(el.animate([{ width: `${from}px` }, { width: `${to}px` }], { duration: SWAP_MS, easing: TRAVEL_EASE }))
+  const step = fixed ? 200 : SWAP_MS * 2 / 3
+  animations.push(outgoing.animate([{ opacity: 1 }, { opacity: 0, ...(!fixed && { transform: 'translateY(-3px)' }) }], { duration: step, easing: 'ease-in', fill: 'forwards' }))
+  const enter = incoming.animate([{ opacity: 0 }, { opacity: 1 }], { duration: step, delay: fixed ? 0 : SWAP_MS - step, easing: ARRIVE_EASE, fill: 'backwards' })
+  animations.push(enter)
+  for (const animation of animations) void animation.finished.catch(() => undefined)
+  return { animations, enter }
+}
+
+/** Only the tail's painted rows enter, after the transcript has pinned itself. No height changes or interaction lock. */
+export function enterTranscript(pane: HTMLElement): Animation[] {
+  if (!motionOn()) return []
+  const bounds = pane.getBoundingClientRect()
+  const rows = [...pane.querySelectorAll<HTMLElement>('.msg-row[data-message-key], .msg-row[data-live]')].slice(-4).filter((el) => {
+    if (el.checkVisibility && !el.checkVisibility({ contentVisibilityAuto: true, visibilityProperty: true })) return false
+    const rect = el.getBoundingClientRect()
+    return rect.height > 0 && rect.bottom > bounds.top && rect.top < bounds.bottom
+  })
+  return rows.flatMap((el, i) => {
+    const delay = (i + 1) * 40
+    const animations = [
+      el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300, delay, fill: 'backwards', easing: 'ease' }),
+      el.animate([{ transform: 'translateY(10px)' }, { transform: 'none' }], { duration: 420, delay, fill: 'backwards', easing: ARRIVE_EASE }),
+    ]
+    for (const animation of animations) void animation.finished.catch(() => undefined)
+    return animations
+  })
+}

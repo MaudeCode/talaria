@@ -15,6 +15,11 @@
 .session-text,.session-actions{z-index:1}
 @media (hover:hover){.session-item:hover{padding-right:64px}}
 .session-item.active{background:var(--session-active-bg);color:var(--session-active-fg);border:var(--session-active-border);border-left:var(--session-active-rail-width) solid var(--session-active-rail-color);font-weight:var(--session-active-weight)}
+.session-list[data-shared-selection]{position:relative;isolation:isolate}
+.session-selection{position:absolute;pointer-events:none;border-radius:var(--session-radius);background:var(--session-active-bg);z-index:-1}
+.session-list[data-shared-selection]:has(>[data-list-selection]:not([hidden])) .session-item.active{background:transparent}
+.session-title{transition:color .2s ease}
+@media(prefers-reduced-motion:reduce){.session-title{transition:none}}
 .session-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;overflow:hidden}
 .session-title-row{display:flex;align-items:center;gap:6px;min-width:0}
 .session-title{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);user-select:none}

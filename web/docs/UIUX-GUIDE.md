@@ -257,6 +257,15 @@ row's swipe transform. Time labels reuse `SwapText`, and the running and attenti
 grow through CSS. Initial loads, profile/project and filter changes, group disclosures, View all and
 skipped content do not animate. Reduced motion renders the end state immediately.
 
+### Switching chats
+
+`MotionList` owns one selection highlight, sliding it from its painted position to the newly active row over
+360 ms. Both chat headers reuse `SwapText` in a fixed slot with a 200 ms cross-fade. `ChatPage` keeps the
+per-session `ChatView` remount; only the previous title and entrance intent survive it. After the transcript
+pins to its latest message, its last four painted rows fade in and rise 10px, staggered 40ms apart. An uncached
+chat keeps its skeleton until those rows arrive. A second switch replaces the transcript immediately and
+retargets the highlight. First load, deep links, new chats and reduced motion skip switch animations.
+
 ### Live turn motion
 
 Send morphs into Stop in the same circle. A draft during a run opens a second
@@ -278,8 +287,8 @@ about 180 ms) while the slot eases to the new width; and clicking a settled
 All height motion goes through `revealHeight` in `lib/motion.ts`, which also
 folds a settling turn (`SettleSpacer`). It uses the Web Animations API because
 `.msg-row` disables CSS transitions for streaming rows. Rows a turn already had
-when it mounted (entering a chat, a virtual row scrolling back, earlier steps)
-never animate, and everything is instant under reduced motion.
+when it mounted never replay live-turn motion; the separate switch entrance above is the only exception.
+A virtual row scrolling back and earlier steps never animate, and everything is instant under reduced motion.
 Interrupt stages its replacement in the existing queue immediately. Stop shows Stopping until the server
 confirms worker release, including after a terminal event; a failed Stop keeps the queue held and can be
 retried. Accepted queue mutations persist before their view renders, so an admission that finishes after
