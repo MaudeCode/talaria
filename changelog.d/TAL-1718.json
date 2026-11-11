@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Long chats with many tool calls finish turns and open their activity details faster in Talaria Web.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

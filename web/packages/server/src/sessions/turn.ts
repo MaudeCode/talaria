@@ -1374,7 +1374,9 @@ export class TurnRunner {
         s.served_model_provider = fellBack ? str(result.provider) || null : null
       }
       if (result.compressed) (await put('compressed', this.compressedFrame(s)))
-      s.tool_calls = extractToolCallsFromMessages(s.messages, liveToolCalls, s.tool_calls)
+      // TAL-1718: rows before this turn's keep their recorded outcomes; only this turn's results are classified.
+      const turnStart = s.messages.findIndex((m) => m._turn_id === streamId)
+      s.tool_calls = extractToolCallsFromMessages(s.messages, liveToolCalls, s.tool_calls, Math.max(0, turnStart))
       this.clearPendingTurn(s)
       // TAL-576: a turn that ran means the provider has usable credentials again.
       s.process_wakeup_pause = null
