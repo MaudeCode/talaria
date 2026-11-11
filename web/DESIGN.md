@@ -57,6 +57,10 @@ A tool card is a debug event row, not a chat message. Show icon, name, short tar
 
 Same visual family as tool-call metadata. They should be quieter than assistant prose and should not use bright tinted full cards unless the user expands them.
 
+An open live reasoning body follows its own tail until the reader scrolls up. Reaching the bottom resumes following;
+collapse and reopen preserve that choice. This local scroll intent is independent of the transcript, and settled
+reasoning never follows updates.
+
 Automatic compression follows a quiet live-only divider treatment rather than a
 tool-card row. Use `Compressing context` for the active barrier and
 `Context auto-compressed` after continuation/completion; render both as centered
