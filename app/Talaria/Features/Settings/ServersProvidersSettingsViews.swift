@@ -9,27 +9,17 @@ struct UserProfileSettingsRow: View {
     @AppStorage(HeaderLogoColor.storageKey) private var headerLogoColorHex = HeaderLogoColor.defaultHex
 
     var body: some View {
-        HStack(spacing: 14) {
+        SettingsItemRow(
+            title: displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? String(localized: "User Profile") : displayName,
+            subtitle: server.host ?? server.absoluteString
+        ) {
             Text(previewInitials)
                 .font(.headline)
                 .foregroundStyle(previewForeground)
                 .frame(width: 48, height: 48)
                 .background(previewColor, in: Circle())
                 .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "User Profile" : displayName)
-                    .font(.body.weight(.semibold))
-                    .lineLimit(1)
-
-                Text(server.host ?? server.absoluteString)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
         }
-        .padding(.vertical, 4)
-        .accessibilityElement(children: .combine)
     }
 
     private var previewInitials: String {

@@ -7,6 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C21121000000000000000006 /* SettingsDivider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C21120000000000000000006 /* SettingsDivider.swift */; };
+		C21121000000000000000005 /* SettingsStatusRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C21120000000000000000005 /* SettingsStatusRow.swift */; };
+		C21121000000000000000004 /* SettingsColorRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C21120000000000000000004 /* SettingsColorRow.swift */; };
+		C21121000000000000000003 /* SettingsStepperRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C21120000000000000000003 /* SettingsStepperRow.swift */; };
+		C21121000000000000000002 /* SettingsSliderRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C21120000000000000000002 /* SettingsSliderRow.swift */; };
+		C21121000000000000000001 /* SettingsItemRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C21120000000000000000001 /* SettingsItemRow.swift */; };
 		A16950000000000000000011 /* NavigationSettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A16950000000000000000012 /* NavigationSettingsViews.swift */; };
 		A16950000000000000000001 /* ModelsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A16950000000000000000002 /* ModelsSettingsView.swift */; };
 		C10620000000000000000001 /* ChatTranscriptRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10620000000000000000002 /* ChatTranscriptRow.swift */; };
@@ -487,6 +493,12 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		C21120000000000000000006 /* SettingsDivider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsDivider.swift; sourceTree = "<group>"; };
+		C21120000000000000000005 /* SettingsStatusRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStatusRow.swift; sourceTree = "<group>"; };
+		C21120000000000000000004 /* SettingsColorRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsColorRow.swift; sourceTree = "<group>"; };
+		C21120000000000000000003 /* SettingsStepperRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStepperRow.swift; sourceTree = "<group>"; };
+		C21120000000000000000002 /* SettingsSliderRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsSliderRow.swift; sourceTree = "<group>"; };
+		C21120000000000000000001 /* SettingsItemRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsItemRow.swift; sourceTree = "<group>"; };
 		A16950000000000000000012 /* NavigationSettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationSettingsViews.swift; sourceTree = "<group>"; };
 		A16950000000000000000002 /* ModelsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelsSettingsView.swift; sourceTree = "<group>"; };
 		C10620000000000000000002 /* ChatTranscriptRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscriptRow.swift; sourceTree = "<group>"; };
@@ -1369,6 +1381,12 @@
 				C107J0000000000000000110 /* SettingsRowLabel.swift */,
 				C107J0000000000000000111 /* SettingsFootnote.swift */,
 				C107J0000000000000000112 /* SettingsErrorFootnote.swift */,
+				C21120000000000000000001 /* SettingsItemRow.swift */,
+				C21120000000000000000002 /* SettingsSliderRow.swift */,
+				C21120000000000000000003 /* SettingsStepperRow.swift */,
+				C21120000000000000000004 /* SettingsColorRow.swift */,
+				C21120000000000000000005 /* SettingsStatusRow.swift */,
+				C21120000000000000000006 /* SettingsDivider.swift */,
 				C107J0000000000000000113 /* SettingsValueRow.swift */,
 				C107J0000000000000000114 /* SettingsInfoRow.swift */,
 				C107J0000000000000000115 /* SettingsAccessoryRow.swift */,
@@ -1839,6 +1857,12 @@
 				C107J0000000000000000010 /* SettingsRowLabel.swift in Sources */,
 				C107J0000000000000000011 /* SettingsFootnote.swift in Sources */,
 				C107J0000000000000000012 /* SettingsErrorFootnote.swift in Sources */,
+				C21121000000000000000001 /* SettingsItemRow.swift in Sources */,
+				C21121000000000000000002 /* SettingsSliderRow.swift in Sources */,
+				C21121000000000000000003 /* SettingsStepperRow.swift in Sources */,
+				C21121000000000000000004 /* SettingsColorRow.swift in Sources */,
+				C21121000000000000000005 /* SettingsStatusRow.swift in Sources */,
+				C21121000000000000000006 /* SettingsDivider.swift in Sources */,
 				C107J0000000000000000013 /* SettingsValueRow.swift in Sources */,
 				C107J0000000000000000014 /* SettingsInfoRow.swift in Sources */,
 				C107J0000000000000000015 /* SettingsAccessoryRow.swift in Sources */,

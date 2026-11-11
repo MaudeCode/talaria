@@ -29,17 +29,8 @@ struct ServerIdentityEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
+            SettingsItemRow(title: String(localized: "Server Avatar"), subtitle: String(localized: "Stored on this device only.")) {
                 ServerAvatarBadge(initials: previewInitials, colorHex: colorHex, size: 36)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Server Avatar")
-                        .font(AppFont.subheadline(weight: .medium))
-
-                    Text("Stored on this device only.")
-                        .font(AppFont.caption())
-                        .foregroundStyle(.secondary)
-                }
             }
 
             SettingsTextFieldRow(

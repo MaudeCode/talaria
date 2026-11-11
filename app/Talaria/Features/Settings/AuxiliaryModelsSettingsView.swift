@@ -9,7 +9,6 @@ struct AuxiliaryModelsSettingsView: View {
     @State private var viewModel: AuxiliaryModelsViewModel
     @State private var editingTask: AuxiliaryModelTask?
     @State private var isConfirmingReset = false
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     init(server: URL) {
         self.server = server
@@ -17,7 +16,7 @@ struct AuxiliaryModelsSettingsView: View {
     }
 
     var body: some View {
-        SidebarList {
+        SettingsPage(title: String(localized: "Auxiliary Models")) {
             content
         }
         .background(Color(.systemBackground))
@@ -95,26 +94,11 @@ struct AuxiliaryModelsSettingsView: View {
             viewModel.clearSaveError()
             editingTask = task
         } label: {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(task.label)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.primary)
-                    Text(task.description)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    AuxiliaryModelValueText(task: task)
-                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
-                }
-                Spacer(minLength: 12)
-                Image(systemName: "chevron.forward")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-                    .accessibilityHidden(true)
+            SettingsItemRow(title: task.label, subtitle: task.description, accessorySystemImage: "chevron.forward") {
+                Image(systemName: "cpu").accessibilityHidden(true)
+            } badges: {
+                AuxiliaryModelValueText(task: task)
             }
-            .padding(.vertical, 10)
-            .frame(minHeight: 44)
-            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
@@ -156,13 +140,12 @@ private struct AuxiliaryModelPickerSheet: View {
     @State private var searchText = ""
     @State private var customModel = ""
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var task: AuxiliaryModelTask? { viewModel.task(id: taskID) }
 
     var body: some View {
         NavigationStack {
-            SidebarList {
+            SettingsPage(title: task?.label ?? String(localized: "Auxiliary Model")) {
                 SettingsPickerSearchField(text: $searchText, prompt: "Search models", clearLabel: "Clear model search")
 
                 if let saveError = viewModel.saveErrorMessage {
@@ -179,7 +162,7 @@ private struct AuxiliaryModelPickerSheet: View {
                                 await save(model: "", provider: "auto")
                             }
                             if task.inCatalog == false {
-                                Divider()
+                                SettingsDivider()
                                 optionRow(title: task.valueLabel ?? task.model, subtitle: [task.providerLabel, String(localized: "Not in catalog")].compactMap { $0 }.joined(separator: " · "), isSelected: true) {
                                     await save(model: task.model, provider: task.provider)
                                 }
@@ -189,13 +172,8 @@ private struct AuxiliaryModelPickerSheet: View {
                 }
 
                 SettingsSection(title: String(localized: "Custom")) {
-                    TextField("Custom model ID", text: $customModel)
-                        .font(.subheadline)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    SettingsTextFieldRow(title: String(localized: "Custom model ID"), text: $customModel,
+                                         placeholder: String(localized: "Custom model ID"), autocapitalization: .never)
                     Text("Use @provider:model to pin a provider.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -258,30 +236,9 @@ private struct AuxiliaryModelPickerSheet: View {
         Button {
             Task { await action() }
         } label: {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.primary)
-                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
-                    if let subtitle {
-                        Text(subtitle)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
-                    }
-                }
-                Spacer(minLength: 12)
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.accentColor)
-                        .accessibilityHidden(true)
-                }
+            SettingsItemRow(title: title, subtitle: subtitle, isSelected: isSelected) {
+                Image(systemName: "cpu").accessibilityHidden(true)
             }
-            .padding(.vertical, 9)
-            .frame(minHeight: 44)
-            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(viewModel.savingTaskID != nil)

@@ -9,7 +9,7 @@ struct SettingsView: View {
     @Binding var selection: SettingsPane?
 
     var body: some View {
-        SidebarList {
+        SettingsPage(title: String(localized: "Settings")) {
             SectionSelectionRow(item: .userProfile, selection: $selection) {
                 UserProfileSettingsRow(server: server)
             }

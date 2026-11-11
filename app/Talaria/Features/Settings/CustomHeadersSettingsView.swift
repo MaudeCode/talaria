@@ -12,12 +12,10 @@ struct CustomHeadersSettingsView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+        SettingsPage(title: String(localized: "Connection Headers")) {
+            SettingsSection(title: String(localized: "Connection Headers")) {
                 CustomHeadersEditor(headers: $headers)
             }
-            .padding(20)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .navigationTitle("Connection Headers")
         .navigationBarTitleDisplayMode(.inline)

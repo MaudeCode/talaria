@@ -23,16 +23,15 @@ struct StreamingLabView: View {
 
     var body: some View {
         ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+            SettingsPage(title: String(localized: "Streaming Lab")) {
+                Group {
                     controls
-                    Divider()
+                    SettingsDivider()
                     transcript
                     Color.clear
                         .frame(height: 1)
                         .id(Self.tailAnchorID)
                 }
-                .padding(16)
             }
             .onChange(of: displayedContent) { _, _ in
                 guard followsTail else { return }
@@ -72,10 +71,10 @@ struct StreamingLabView: View {
                 .buttonStyle(.bordered)
             }
 
-            Toggle("Follow tail while streaming", isOn: $followsTail)
+            SettingsToggleRow(title: String(localized: "Follow tail while streaming"), systemImage: "text.line.last.and.arrowtriangle.forward", isOn: $followsTail)
                 .font(.subheadline)
 
-            Toggle("Streamed text animation (user setting)", isOn: $isStreamedTextAnimationEnabled)
+            SettingsToggleRow(title: String(localized: "Streamed text animation (user setting)"), systemImage: "textformat", isOn: $isStreamedTextAnimationEnabled)
                 .font(.subheadline)
 
             if !isStreamedTextAnimationEnabled {
@@ -131,20 +130,8 @@ struct StreamingLabView: View {
         range: ClosedRange<Double>,
         display: String
     ) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                Text(title)
-                    .font(.subheadline.weight(.medium))
-
-                Spacer()
-
-                Text(display)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-            }
-
-            Slider(value: value, in: range)
-        }
+        SettingsSliderRow(title: title, value: value, in: range,
+                          format: { _ in display })
     }
 
     /// Paste-ready values for `StreamingTextFadeDefaults` once a feel is

@@ -7,7 +7,6 @@ struct DefaultModelPickerView: View {
     let onSave: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var isLoading = false
     @State private var groups: [ModelCatalogGroup] = []
@@ -24,7 +23,7 @@ struct DefaultModelPickerView: View {
 
     var body: some View {
         NavigationStack {
-            SidebarList {
+            SettingsPage(title: String(localized: "Default Model")) {
                 SettingsPickerSearchField(
                     text: $searchText,
                     prompt: "Search models",
@@ -39,13 +38,8 @@ struct DefaultModelPickerView: View {
                 }
 
                 SettingsSection(title: String(localized: "Custom")) {
-                    TextField("Custom model ID", text: $customModel)
-                        .font(.subheadline)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    SettingsTextFieldRow(title: String(localized: "Custom model ID"), text: $customModel,
+                                         placeholder: String(localized: "Custom model ID"), autocapitalization: .never)
 
                     Text("Type a model ID exactly as the server expects it.")
                         .font(.caption)
@@ -150,35 +144,11 @@ struct DefaultModelPickerView: View {
         Button {
             Task { await save(model.id, providerID: model.providerID) }
         } label: {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(model.displayName)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.primary)
-                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-
-                    if !model.id.isEmpty && model.id != model.displayName {
-                        Text(model.id)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-                    }
-                }
-
-                Spacer(minLength: 12)
-
-                if isSavingRow(model) {
-                    ProgressView()
-                } else if isCurrentDefault(model) {
-                    Image(systemName: "checkmark")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.accentColor)
-                        .accessibilityHidden(true)
-                }
+            SettingsItemRow(title: model.displayName,
+                            subtitle: !model.id.isEmpty && model.id != model.displayName ? model.id : nil,
+                            isSelected: isCurrentDefault(model), isLoading: isSavingRow(model)) {
+                Image(systemName: "cpu").accessibilityHidden(true)
             }
-            .padding(.vertical, 9)
-            .frame(minHeight: 44)
-            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(isSaving)

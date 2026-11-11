@@ -12,7 +12,6 @@ struct DefaultProfilePickerView: View {
     let currentDefaultProfileName: String?
     let onSave: (DefaultProfileSelection) -> Void
 
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var isLoading = false
     @State private var profiles: [ProfileSummary] = []
@@ -26,7 +25,7 @@ struct DefaultProfilePickerView: View {
     @State private var showsCreateProfile = false
 
     var body: some View {
-        SidebarList {
+        SettingsPage(title: String(localized: "Profiles")) {
             SettingsPickerSearchField(
                 text: $searchText,
                 prompt: "Search profiles",
@@ -73,19 +72,10 @@ struct DefaultProfilePickerView: View {
         Button {
             showsCreateProfile = true
         } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "plus.circle")
-                    .font(.subheadline)
-                    .accessibilityHidden(true)
-
-                Text("New Profile")
-                    .font(.subheadline.weight(.medium))
-
-                Spacer()
+            SettingsItemRow(title: String(localized: "New Profile")) {
+                Image(systemName: "plus.circle").accessibilityHidden(true)
             }
             .sidebarRowPadding()
-            .frame(minHeight: 44)
-            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .foregroundStyle(Color.accentColor)
@@ -149,43 +139,13 @@ struct DefaultProfilePickerView: View {
         Button {
             Task { await save(profile) }
         } label: {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 6) {
-                        Text(profile.displayName)
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.primary)
-                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-
-                        if isSelected(profile) {
-                            ProfileStatusBadge(title: String(localized: "Selected"))
-                        } else if profile.isDefault == true {
-                            ProfileStatusBadge(title: String(localized: "Server Default"))
-                        }
-                    }
-
-                    if let details = profileDetails(profile) {
-                        Text(details)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-                    }
-                }
-
-                Spacer(minLength: 12)
-
-                if isSaving && selectedProfileName == profile.normalizedName {
-                    ProgressView()
-                } else if isSelected(profile) {
-                    Image(systemName: "checkmark")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.accentColor)
-                        .accessibilityHidden(true)
-                }
+            SettingsItemRow(title: profile.displayName, subtitle: profileDetails(profile),
+                            isSelected: isSelected(profile), isLoading: isSaving && selectedProfileName == profile.normalizedName) {
+                Image(systemName: "person.crop.circle").accessibilityHidden(true)
+            } badges: {
+                if isSelected(profile) { ProfileStatusBadge(title: String(localized: "Selected")) }
+                else if profile.isDefault == true { ProfileStatusBadge(title: String(localized: "Server Default")) }
             }
-            .padding(.vertical, 9)
-            .frame(minHeight: 44)
-            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(isSaving || profile.normalizedName == nil)

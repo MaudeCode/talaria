@@ -10,22 +10,22 @@ struct ProviderQuotaSidebarDisplayView: View {
     @AppStorage(ProviderQuotaSidebarSettings.colorsByStateKey) private var colorsByState = true
 
     var body: some View {
-        SidebarList {
+        SettingsPage(title: String(localized: "Sidebar Quotas")) {
             SettingsSection(title: String(localized: "Quotas Group")) {
-                Picker("Detail", selection: $detailRawValue) {
+                SettingsPickerRow(title: String(localized: "Detail"), systemImage: "list.bullet", selection: $detailRawValue) {
                     ForEach(ProviderQuotaSidebarDetail.allCases) { detail in
                         Text(detail.title).tag(detail.rawValue)
                     }
                 }
 
-                Toggle("Provider Icon", isOn: $showsIcon)
-                Toggle("Quota Rail", isOn: $showsRail)
+                SettingsToggleRow(title: String(localized: "Provider Icon"), systemImage: "app", isOn: $showsIcon)
+                SettingsToggleRow(title: String(localized: "Quota Rail"), systemImage: "gauge", isOn: $showsRail)
                 if showsRail {
-                    Toggle("Pace Marker", isOn: $showsMarker)
+                    SettingsToggleRow(title: String(localized: "Pace Marker"), systemImage: "gauge", isOn: $showsMarker)
                 }
             }
 
-            Toggle("Color by State", isOn: $colorsByState)
+            SettingsToggleRow(title: String(localized: "Color by State"), systemImage: "paintpalette", isOn: $colorsByState)
                 .sidebarRowPadding()
                 .sidebarRow(isSelected: false)
         }

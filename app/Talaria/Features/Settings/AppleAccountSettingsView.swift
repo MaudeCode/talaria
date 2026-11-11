@@ -8,31 +8,16 @@ struct AppleAccountSettingsRow: View {
     private var coordinator = ConfigurationSyncCoordinator.shared
 
     var body: some View {
-        HStack(spacing: 12) {
+        SettingsItemRow(
+            title: String(localized: "Apple Account"),
+            subtitle: coordinator.isSignedInWithApple ? coordinator.status.summary
+                : String(localized: "Sign in for iCloud sync, remote Live Activities, and alerts")
+        ) {
             Image(systemName: "apple.logo")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.primary)
                 .frame(width: 40, height: 40)
-                .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
                 .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Apple Account")
-                    .font(.body.weight(.semibold))
-                Group {
-                    if coordinator.isSignedInWithApple {
-                        Text(coordinator.status.summary)
-                    } else {
-                        Text("Sign in for iCloud sync, remote Live Activities, and alerts")
-                    }
-                }
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            }
         }
-        .frame(minHeight: 48)
-        .accessibilityElement(children: .combine)
         .task { coordinator.adoptRelayIdentityIfNeeded() }
     }
 }
@@ -63,7 +48,7 @@ struct AppleAccountSettingsView: View {
     }
 
     var body: some View {
-        SidebarList {
+        SettingsPage(title: String(localized: "Apple Account")) {
             accountSection
             syncSection
             if coordinator.isSignedInWithApple {
@@ -168,27 +153,17 @@ struct AppleAccountSettingsView: View {
 
     private var syncSection: some View {
         SettingsSection {
-            Toggle("Sync Servers & Settings", isOn: isEnabledBinding)
+            SettingsToggleRow(title: String(localized: "Sync Servers & Settings"), systemImage: "icloud", isOn: isEnabledBinding)
                 .disabled(!coordinator.isSignedInWithApple)
                 .accessibilityIdentifier("settings-icloud-sync-toggle")
 
-            HStack(spacing: 10) {
-                Image(systemName: coordinator.status.systemImage)
-                    .foregroundStyle(coordinator.status.tint)
-                Text(coordinator.status.summary)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-                if coordinator.status.isSyncing {
-                    ProgressView()
-                }
-            }
-            .font(.subheadline)
-            .accessibilityElement(children: .combine)
+            SettingsStatusRow(title: String(localized: "iCloud Sync"), systemImage: coordinator.status.systemImage,
+                              status: coordinator.status.summary, tone: coordinator.status.tint,
+                              isLoading: coordinator.status.isSyncing)
             .copyableError(coordinator.status.copyableError)
             .accessibilityIdentifier("settings-icloud-sync-status")
 
-            Button("Sync Now") {
+            SettingsButton(String(localized: "Sync Now")) {
                 errorMessage = nil
                 Task { await coordinator.sync() }
             }
@@ -228,21 +203,8 @@ struct AppleAccountSettingsView: View {
     }
 
     private var relaySummary: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Talaria Relay")
-                    .font(.body)
-                Text(relaySummaryText)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 8)
-            if isConnectingRelay {
-                ProgressView()
-            }
-        }
-        .accessibilityElement(children: .combine)
+        SettingsStatusRow(title: String(localized: "Talaria Relay"), systemImage: "antenna.radiowaves.left.and.right",
+                          status: relaySummaryText, isLoading: isConnectingRelay)
     }
 
     private var relaySummaryText: String {
@@ -271,23 +233,15 @@ struct AppleAccountSettingsView: View {
     private var passwordsSection: some View {
         SettingsSection {
             ForEach(serversMissingPassword) { account in
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(account.displayName.isEmpty ? account.urlString : account.displayName)
-                            .lineLimit(1)
-                        Text(URL(string: account.urlString)?.host ?? account.urlString)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    Spacer(minLength: 12)
-                    Button("Add Password") {
-                        passwordAccount = account
-                    }
-                    .buttonStyle(.borderless)
-                    .font(.subheadline.weight(.semibold))
+                SettingsItemRow(
+                    title: account.displayName.isEmpty ? account.urlString : account.displayName,
+                    subtitle: URL(string: account.urlString)?.host ?? account.urlString,
+                    containsActions: true
+                ) { Image(systemName: "server.rack").accessibilityHidden(true) } accessory: {
+                    Button("Add Password") { passwordAccount = account }
+                        .buttonStyle(.borderless)
+                        .font(.subheadline.weight(.semibold))
                 }
-                .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("settings-icloud-sync-password-\(account.id)")
             }
         } header: {
@@ -302,13 +256,13 @@ struct AppleAccountSettingsView: View {
 
     private var dangerSection: some View {
         SettingsSection {
-            Button("Disconnect", role: .destructive) {
+            SettingsButton(String(localized: "Disconnect"), role: .destructive) {
                 isConfirmingDisconnect = true
             }
             .disabled(isConnectingRelay || isDeleting)
             .accessibilityIdentifier("settings-disconnect-relay")
 
-            Button("Delete Synced Data…", role: .destructive) {
+            SettingsButton(String(localized: "Delete Synced Data…"), role: .destructive) {
                 isConfirmingDelete = true
             }
             .disabled(isDeleting)

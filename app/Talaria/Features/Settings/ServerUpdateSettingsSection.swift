@@ -21,11 +21,11 @@ struct ServerUpdateSettingsSection: View {
 
     var body: some View {
         Group {
-            SettingsValueRow(title: String(localized: "Status")) {
+            SettingsValueRow(title: String(localized: "Status"), systemImage: "server.rack") {
                 serverStatusPill
             }
 
-            SettingsValueRow(title: String(localized: "Version")) {
+            SettingsValueRow(title: String(localized: "Version"), systemImage: "number") {
                 serverVersionContent
             }
 
@@ -180,14 +180,7 @@ private extension ServerUpdateSettingsSection {
     }
 
     private func updateNoteRow(systemImage: String, tint: Color, text: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: systemImage)
-                .foregroundStyle(tint)
-            Text(text)
-                .font(AppFont.footnote())
-                .foregroundStyle(.secondary)
-        }
-        .accessibilityElement(children: .combine)
+        SettingsStatusRow(title: String(localized: "Status"), systemImage: systemImage, status: text, tone: tint)
     }
 
     @ViewBuilder
@@ -223,25 +216,13 @@ private extension ServerUpdateSettingsSection {
     }
 
     private func updateProgressRow(_ text: String) -> some View {
-        HStack(spacing: 8) {
-            ProgressView()
-            Text(text)
-                .font(AppFont.footnote())
-                .foregroundStyle(.secondary)
-        }
-        .padding(.top, 4)
-        .accessibilityElement(children: .combine)
+        SettingsStatusRow(title: String(localized: "Status"), systemImage: "arrow.triangle.2.circlepath",
+                          status: text, isLoading: true)
     }
 
     private func updateMessageRow(systemImage: String, tint: Color) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: systemImage)
-                .foregroundStyle(tint)
-            Text(updateApplyMessage ?? String(localized: "The update could not be applied."))
-                .font(AppFont.footnote())
-                .foregroundStyle(.secondary)
-        }
-        .accessibilityElement(children: .combine)
+        SettingsStatusRow(title: String(localized: "Status"), systemImage: systemImage,
+                          status: updateApplyMessage ?? String(localized: "The update could not be applied."), tone: tint)
     }
 
     @MainActor
