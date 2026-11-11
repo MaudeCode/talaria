@@ -365,12 +365,15 @@ describe('crons, kanban, extensions, terminal', () => {
 
   it('routes inspection through the active profile and returns shared timing, lineage and card capabilities', async () => {
     sidecar.respond('kanban.inspection', () => ({ nodes: [{ key: 'ops/a', board: 'ops', board_name: 'Operations', task: { id: 'a', title: 'Inspect', status: 'running', priority: 0, claim_live: false, has_completion_evidence: false, agent_move_targets: null, current_run_started_at: 100 } }], edges: [], generated_at: 160, truncated: false, read_only: false }))
-    const res = await s.get('/api/kanban/inspection?board=ops&running_only=1')
+    const res = await s.get('/api/kanban/inspection?board=ops&running_only=1&search=%20Insp%20&assignee=ops-bot')
     expect(res.status).toBe(200)
-    expect(((await json(res)).nodes as Json[])[0]).toMatchObject({ key: 'ops/a', running_lineage: true, timing: { start: 100, end: null, duration_seconds: 60 }, task: { available_actions: { archive: true } } })
     const params = sidecar.calls.filter(c => c.method === 'kanban.inspection').at(-1)?.params as Json
-    expect(params.board).toBe('ops')
+    // The sidecar filters before the snapshot crosses the RPC; Only mine filters by the active profile.
+    expect(params).toMatchObject({ board: 'ops', search: 'Insp', assignee: 'ops-bot' })
     expect(typeof params.profile_home).toBe('string')
+    expect(((await json(res)).nodes as Json[])[0]).toMatchObject({ key: 'ops/a', running_lineage: true, timing: { start: 100, end: null, duration_seconds: 60 }, task: { available_actions: { archive: true } } })
+    await s.get('/api/kanban/inspection?only_mine=1&assignee=ops-bot')
+    expect(sidecar.calls.filter(c => c.method === 'kanban.inspection').at(-1)?.params).toMatchObject({ search: null, assignee: 'default' })
   })
 
   it('blocks Web updates while an embedded terminal is alive and releases the blocker on exit', () => {
@@ -405,6 +408,22 @@ describe('crons, kanban, extensions, terminal', () => {
       expect(await open('/api/kanban/events/stream?since=10', bad)).toEqual({ hello: 10, firstRead: 10 })
     }
     expect(await open('/api/kanban/events/stream?since=nope', 'x')).toEqual({ hello: 0, firstRead: 0 })
+  })
+
+  it('kanban event streams on one board share one sidecar poll and each receives every event', async () => {
+    const reads: number[] = []
+    const opened = Date.now()
+    // The event lands after all three streams have joined, so each must get it from a later shared poll.
+    sidecar.respond('kanban.events', (params) => {
+      reads.push(Date.now())
+      const since = params.since ?? 0
+      const events = Date.now() - opened > 1_500 && since < 5 ? [{ id: 5, task_id: 't_1', run_id: null, kind: 'created', payload: null, created_at: 1 }] : []
+      return { events, cursor: events.length ? 5 : since, latest_event_id: events.length ? 5 : 0, read_only: false }
+    })
+    const streams = await Promise.all([1, 2, 3].map(() => s.sse('/api/kanban/events/stream?since=0', (f: SseFrame) => f.event === 'events', { timeoutMs: 8_000 })))
+    for (const frames of streams) expect(frames.find((f) => f.event === 'events')).toMatchObject({ id: '5', data: { cursor: 5, events: [{ id: 5 }] } })
+    // Three independent loops would read within milliseconds of each other on every interval.
+    expect(reads.slice(1).map((t, i) => t - reads[i]!).filter((gap) => gap < 500)).toEqual([])
   })
 
   it('kanban routes map to the sidecar, including path-parameter actions and the event stream', async () => {

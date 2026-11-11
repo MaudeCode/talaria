@@ -111,34 +111,68 @@ export function withKanbanPolicy<T>(payload: T): T {
   return out as T
 }
 
-/** Bounded profile snapshot. Traversal sees only visible nodes, never a hidden bridge. */
+/**
+ * Every node's reachable set over `adj`, holding the node itself only on a cycle. Tarjan's strongly connected components
+ * finish successors first, so each component's set is built once from its successors' sets.
+ */
+function reachability(ids: string[], adj: Map<string, string[]>): Map<string, Set<string>> {
+  const index = new Map<string, number>(), low = new Map<string, number>(), onStack = new Set<string>(), stack: string[] = []
+  const reach = new Map<string, Set<string>>()
+  const open = (id: string): void => { index.set(id, index.size); low.set(id, index.get(id)!); stack.push(id); onStack.add(id) }
+  for (const root of ids) {
+    if (index.has(root)) continue
+    open(root)
+    const work: [string, number][] = [[root, 0]]
+    while (work.length) {
+      const frame = work[work.length - 1]!
+      const [v, i] = frame
+      const next = adj.get(v) ?? []
+      if (i < next.length) {
+        frame[1] += 1
+        const w = next[i]!
+        if (!index.has(w)) { open(w); work.push([w, 0]) } else if (onStack.has(w)) low.set(v, Math.min(low.get(v)!, index.get(w)!))
+        continue
+      }
+      work.pop()
+      const parent = work[work.length - 1]?.[0]
+      if (parent !== undefined) low.set(parent, Math.min(low.get(parent)!, low.get(v)!))
+      if (low.get(v) !== index.get(v)) continue
+      const members = new Set<string>()
+      for (let w = stack.pop()!; ; w = stack.pop()!) { onStack.delete(w); members.add(w); if (w === v) break }
+      const set = new Set<string>()
+      let cycle = members.size > 1
+      for (const m of members) for (const w of adj.get(m) ?? []) {
+        if (members.has(w)) { cycle = true; continue }
+        set.add(w)
+        for (const x of reach.get(w)!) set.add(x)
+      }
+      if (cycle) for (const m of members) set.add(m)
+      for (const m of members) reach.set(m, set)
+    }
+  }
+  return reach
+}
+
+/** Bounded profile snapshot. Traversal sees only visible nodes, never a hidden bridge. The sidecar applies `search` and `assignee`. */
 function inspectionProjection(p: Dict): Dict {
   const filters = dict(p.inspection_filters)
   const visible = (p.nodes as Dict[]).filter(n => {
     const t = dict(n.task)
-    return (filters.include_archived === true || t.status !== 'archived') &&
-      (!filters.assignee || t.assignee === filters.assignee) && (!filters.tenant || t.tenant === filters.tenant) &&
-      (!filters.search || [t.id, t.title, t.body, t.assignee, t.tenant].some(v => str(v).toLowerCase().includes(str(filters.search).toLowerCase())))
+    return (filters.include_archived === true || t.status !== 'archived') && (!filters.tenant || t.tenant === filters.tenant)
   })
   const nodes = visible.slice(0, 500)
   const ids = new Set(nodes.map(n => str(n.key)))
   const validEdges = (p.edges as Dict[]).filter(e => ids.has(str(e.source)) && ids.has(str(e.target)))
   const edges = validEdges.slice(0, 2000)
   const up = new Map<string, string[]>(), down = new Map<string, string[]>()
-  for (const e of edges) {
-    const s = str(e.source), t = str(e.target)
-    up.set(t, [...(up.get(t) ?? []), s]); down.set(s, [...(down.get(s) ?? []), t])
-  }
-  const walk = (id: string, map: Map<string, string[]>) => {
-    const seen = new Set<string>(), stack = [...(map.get(id) ?? [])]
-    while (stack.length) { const next = stack.pop()!; if (!seen.has(next)) { seen.add(next); stack.push(...(map.get(next) ?? [])) } }
-    return seen
-  }
+  const link = (map: Map<string, string[]>, from: string, to: string): void => { const list = map.get(from); if (list) list.push(to); else map.set(from, [to]) }
+  for (const e of edges) { const s = str(e.source), t = str(e.target); link(up, t, s); link(down, s, t) }
+  const above = reachability([...ids], up), below = reachability([...ids], down)
   const running = new Set(nodes.filter(n => dict(n.task).status === 'running').map(n => str(n.key)))
   const epoch = (v: unknown): number | null => typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null
   const now = epoch(p.generated_at) ?? Date.now() / 1000
   let projected = nodes.map(n => {
-    const key = str(n.key), task = dict(n.task), ancestors = walk(key, up), descendants = walk(key, down)
+    const key = str(n.key), task = dict(n.task), ancestors = new Set(above.get(key)), descendants = new Set(below.get(key))
     const cycle = ancestors.delete(key) || descendants.has(key)
     descendants.delete(key)
     const start = epoch(task.status === 'running' ? task.current_run_started_at : task.started_at)
@@ -205,8 +239,134 @@ export function boardSlug(name: string): string {
   return `board-${createHash('sha256').update(name.trim()).digest('hex').slice(0, 8)}`
 }
 
+const KANBAN_POLL_MS = 1_000
+const KANBAN_POLL_MAX_MS = 5_000
+/** Empty pages before an idle board's poll starts doubling its interval. */
+const KANBAN_IDLE_PAGES = 5
+
+export interface KanbanEventBatch { events: unknown[]; cursor: number }
+
+/** One event stream's place on a shared board poll: its own cursor and at most one undelivered batch. */
+export class KanbanSubscription {
+  private pending: KanbanEventBatch | null = null
+  private wake: (() => void) | null = null
+
+  constructor(public cursor: number, readonly close: () => void) {}
+
+  get busy(): boolean { return this.pending !== null }
+
+  deliver(batch: KanbanEventBatch): void {
+    this.pending = batch
+    this.cursor = batch.cursor
+    this.wake?.()
+  }
+
+  /** The next batch, or null after `ms` or the abort. */
+  async next(ms: number, signal: AbortSignal): Promise<KanbanEventBatch | null> {
+    if (!this.pending && ms > 0 && !signal.aborted) {
+      await new Promise<void>((resolve) => {
+        const done = (): void => { clearTimeout(timer); signal.removeEventListener('abort', done); this.wake = null; resolve() }
+        const timer = setTimeout(done, ms)
+        this.wake = done
+        signal.addEventListener('abort', done, { once: true })
+      })
+    }
+    const batch = this.pending
+    this.pending = null
+    return batch
+  }
+}
+
+/**
+ * One `kanban.events` poll per board for every open stream on it: streams at the same cursor share one read, so a stream
+ * replaying history never holds back one already at the head. After five empty polls the interval doubles up to 5 s; any
+ * event resets it.
+ */
+class KanbanBoardPoll {
+  readonly subscribers = new Set<KanbanSubscription>()
+  private interval = KANBAN_POLL_MS
+  private empty = 0
+  private timer: ReturnType<typeof setTimeout> | null = null
+  private due = 0
+  private polling = false
+
+  constructor(private readonly read: (since: number) => Promise<Dict>, private readonly stopped: () => void) {}
+
+  join(sub: KanbanSubscription): void {
+    this.subscribers.add(sub)
+    // A new stream waits at most one base interval for its first page.
+    this.interval = KANBAN_POLL_MS
+    this.empty = 0
+    if (this.polling) return
+    if (this.timer === null) this.schedule(0)
+    else if (this.due - Date.now() > KANBAN_POLL_MS) this.schedule(KANBAN_POLL_MS)
+  }
+
+  leave(sub: KanbanSubscription): void {
+    if (!this.subscribers.delete(sub) || this.subscribers.size) return
+    if (this.timer !== null) clearTimeout(this.timer)
+    this.timer = null
+    this.stopped()
+  }
+
+  private schedule(ms: number): void {
+    if (this.timer !== null) clearTimeout(this.timer)
+    this.due = Date.now() + ms
+    this.timer = setTimeout(() => { void this.poll() }, ms)
+  }
+
+  private async poll(): Promise<void> {
+    this.timer = null
+    this.polling = true
+    // A stream still writing its last batch is skipped and keeps its cursor, so a slow reader never holds back the rest.
+    const byCursor = new Map<number, KanbanSubscription[]>()
+    for (const sub of this.subscribers) {
+      if (sub.busy) continue
+      const group = byCursor.get(sub.cursor)
+      if (group) group.push(sub); else byCursor.set(sub.cursor, [sub])
+    }
+    let fresh: boolean | null = null
+    if (byCursor.size) {
+      const pages = await Promise.all([...byCursor].map(async ([since, group]) => {
+        let events: unknown[] = []
+        let cursor = since
+        try {
+          const page = await this.read(since)
+          events = Array.isArray(page.events) ? page.events : []
+          cursor = Number(page.cursor) || since
+        } catch { events = [] }
+        if (events.length) for (const sub of group) if (this.subscribers.has(sub)) sub.deliver({ events, cursor })
+        return events.length > 0
+      }))
+      fresh = pages.includes(true)
+    }
+    this.polling = false
+    if (!this.subscribers.size) return
+    if (fresh) { this.interval = KANBAN_POLL_MS; this.empty = 0 }
+    else if (fresh === false && ++this.empty >= KANBAN_IDLE_PAGES) this.interval = Math.min(KANBAN_POLL_MAX_MS, this.interval * 2)
+    this.schedule(this.interval)
+  }
+}
+
 export class KanbanService {
+  private readonly polls = new Map<string, KanbanBoardPoll>()
+
   constructor(private readonly deps: { sidecar: () => SidecarLike | null; config: AgentConfig; settings: SettingsStore }) {}
+
+  /** A stream's place on the board's shared event poll, which starts with the first stream and stops with the last. */
+  subscribe(home: string, board: string | null, cursor: number): KanbanSubscription {
+    const key = JSON.stringify([home, board])
+    let poll = this.polls.get(key)
+    if (!poll) {
+      const created = new KanbanBoardPoll((since) => this.events(home, board, since, 200), () => { if (this.polls.get(key) === created) this.polls.delete(key) })
+      this.polls.set(key, created)
+      poll = created
+    }
+    const owner = poll
+    const sub: KanbanSubscription = new KanbanSubscription(cursor, () => { owner.leave(sub) })
+    owner.join(sub)
+    return sub
+  }
 
   sidecar(): SidecarLike {
     const s = this.deps.sidecar()
@@ -222,8 +382,10 @@ export class KanbanService {
   }
 
   async inspection(home: string, q: { board?: string | undefined; search?: string | undefined; assignee?: string | undefined; tenant?: string | undefined; only_mine?: string | undefined; include_archived?: string | undefined; running_only?: string | undefined }, activeProfile: string): Promise<Dict> {
-    const snapshot = await this.sidecar().call('kanban.inspection', { profile_home: home, board: str(q.board).trim() || null, include_archived: truthyQuery(q.include_archived) }).catch(kanbanFailure)
-    return withKanbanPolicy({ ...snapshot, inspection_filters: { search: str(q.search).trim(), assignee: truthyQuery(q.only_mine) ? activeProfile || 'default' : str(q.assignee), tenant: str(q.tenant), include_archived: truthyQuery(q.include_archived), running_only: truthyQuery(q.running_only) } })
+    // Only mine filters by the active profile, so it replaces any chosen assignee.
+    const assignee = truthyQuery(q.only_mine) ? activeProfile || 'default' : str(q.assignee).trim() || null
+    const snapshot = await this.sidecar().call('kanban.inspection', { profile_home: home, board: str(q.board).trim() || null, include_archived: truthyQuery(q.include_archived), search: str(q.search).trim() || null, assignee }).catch(kanbanFailure)
+    return withKanbanPolicy({ ...snapshot, inspection_filters: { tenant: str(q.tenant), include_archived: truthyQuery(q.include_archived), running_only: truthyQuery(q.running_only) } })
   }
 
   async board(home: string, q: { board?: string | undefined; tenant?: string | undefined; assignee?: string | undefined; include_archived?: string | undefined; only_mine?: string | undefined; since?: string | undefined; search?: string | undefined }, activeProfile: string): Promise<Dict> {

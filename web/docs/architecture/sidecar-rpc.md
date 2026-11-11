@@ -1,5 +1,8 @@
 # Sidecar RPC (TAL-245)
 
+RPC v99 adds optional `search` and `assignee` to `kanban.inspection` (TAL-1713): the sidecar filters
+rows in SQL before the row budget, so only matches cross the RPC.
+
 RPC v98 adds `default_toolsets` to `toolsets.catalog`, the profile's default selection whatever
 `enabled_toolsets` it is read with, and a `group` (`available` or `not_available`) to each row
 (TAL-2144). See "Toolset policy" in `agent-api-contract.md`.

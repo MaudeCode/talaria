@@ -86,6 +86,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("kanban.create_task", {"profile_home": "{home}", "task": {"title": "second task"}}),
     ("kanban.board", {"profile_home": "{home}"}),
     ("kanban.inspection", {"profile_home": "{home}"}),
+    ("kanban.inspection", {"profile_home": "{home}", "search": "SECOND", "assignee": None}),
     ("kanban.board", {"profile_home": "{home}", "since": 10_000}),
     ("kanban.config", {"profile_home": "{home}"}),
     ("kanban.stats", {"profile_home": "{home}"}),

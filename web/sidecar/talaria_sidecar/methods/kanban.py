@@ -221,13 +221,27 @@ def _fenced(conn, task_id: str, write, *, confirm_running_exit: bool, releases_c
                 conn.execute("UPDATE tasks SET claim_lock = NULL WHERE id = ? AND claim_lock = ?", (task_id, fence))
 
 
-def _task_dict(task, conn):
+def _running_claims(conn) -> dict:
+    """Every running task's row in one read, for a board that judges many cards' liveness."""
+    return {row["id"]: row for row in conn.execute("SELECT * FROM tasks WHERE status = 'running'")}
+
+
+def _task_dict(task, conn, claims=None):
+    """``claims`` holds already loaded claim rows by task id; a row that carries the claim columns itself needs no read."""
     data = _obj_dict(task)
     if not data:
         return data
     # Facts the server's card policy needs (TAL-557): the Agent completes a non-review task only with
     # stored or supplied evidence, and refuses to release a live worker's claim.
-    data["claim_live"] = data.get("status") == "running" and _claim_live(conn, data.get("id"))
+    running = data.get("status") == "running"
+    if not running:
+        data["claim_live"] = False
+    elif claims is not None:
+        data["claim_live"] = _row_claim_live(claims.get(data.get("id")))
+    elif "worker_started_at" in data:
+        data["claim_live"] = _row_claim_live(data)
+    else:
+        data["claim_live"] = _claim_live(conn, data.get("id"))
     data["has_completion_evidence"] = bool(str(data.get("result") or "").strip())
     manual = _workflow().manual
     data["agent_move_targets"] = None if manual is None else list(manual.get(data.get("status"), []))
@@ -467,9 +481,21 @@ def _bool(params: dict, key: str, default: bool = False) -> bool:
 # ── payload builders ──────────────────────────────────────────────────────
 
 def inspection_payload(params: dict) -> dict:
-    """Read only the selected profile's live boards, with shared global row/edge budgets."""
+    """Read only the selected profile's live boards, with shared global row/edge budgets.
+
+    ``search`` (case-insensitive, over id, title, body, assignee and tenant) and ``assignee`` filter in SQL, so the
+    row budget holds matches and only they cross the RPC.
+    """
     kb = _kb()
     selected = _board(params)
+    search, assignee = (_str(params, "search") or "").lower(), _str(params, "assignee")
+    clauses, args = ([] if _bool(params, "include_archived") else ["t.status != 'archived'"]), []
+    if assignee:
+        clauses.append("t.assignee = ?")
+        args.append(assignee)
+    if search:
+        clauses.append("(" + " OR ".join(f"talaria_contains(t.{c})" for c in ("id", "title", "body", "assignee", "tenant")) + ")")
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     boards = sorted((b for b in kb.list_boards(include_archived=False) if not b.get("archived")), key=lambda b: b["slug"])
     if selected is not None:
         boards = [b for b in boards if b["slug"] == selected]
@@ -486,11 +512,11 @@ def inspection_payload(params: dict) -> dict:
         uri = Path(kb.kanban_db_path(slug)).resolve().as_uri() + "?mode=ro"
         with closing(sqlite3.connect(uri, uri=True)) as conn:
             conn.row_factory = sqlite3.Row
+            conn.create_function("talaria_contains", 1, lambda value: search in str(value or "").lower(), deterministic=True)
             conn.execute("BEGIN")
-            where = "" if _bool(params, "include_archived") else "WHERE t.status != 'archived'"
             rows = conn.execute(
                 f"SELECT t.*, r.started_at AS current_run_started_at FROM tasks t LEFT JOIN task_runs r ON r.id = t.current_run_id {where} ORDER BY t.id LIMIT ?",
-                (501 - len(nodes),),
+                (*args, 501 - len(nodes)),
             ).fetchall()
             remaining = 500 - len(nodes)
             truncated = truncated or len(rows) > remaining
@@ -521,15 +547,15 @@ def board_payload(params: dict) -> dict:
         profile = _str(params, "profile") or "default"
         assignee = profile
     with _conn(board=board) as conn:
-        _clear_stale_fences(conn)
         latest = _latest_event_id(conn)
         if since is not None and since >= latest:
             return {"changed": False, "latest_event_id": latest, "read_only": False}
+        _clear_stale_fences(conn)
         tasks = kb.list_tasks(conn, tenant=tenant, assignee=assignee, include_archived=include_archived)
-        link_counts, comment_counts = _link_counts(conn, tasks), _comment_counts(conn)
+        link_counts, comment_counts, claims = _link_counts(conn, tasks), _comment_counts(conn), _running_claims(conn)
 
         def row(task):
-            data = _task_dict(task, conn)
+            data = _task_dict(task, conn, claims)
             data["link_counts"] = link_counts.get(task.id, {"parents": 0, "children": 0})
             data["comment_count"] = comment_counts.get(task.id, 0)
             return data
