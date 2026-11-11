@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { flushSync } from 'react-dom'
 import { Link, useLocation, useNavigate } from '@tanstack/react-router'
 import { ChevronDown, ChevronLeft, ChevronRight, Menu as MenuIcon, MessageSquareWarning, Puzzle, Search, ShieldAlert, SquarePen, X } from 'lucide-react'
 import { m } from '../paraglide/messages.js'
@@ -138,10 +139,19 @@ function NoPasswordWarning() {
 function SettingsNav({ panel }: { panel: ReactNode }) {
   useLocale()
   const navigate = useNavigate()
+  const isDesktop = useIsDesktop()
+  const rail = useIsSidebarRail()
   const back = () => { closeMobileSidebar(); void navigate({ href: settingsBackHref() }) }
+  // The rail's Search opens the column and focuses the settings search, as the other pages' rail Search opens the chat filter.
+  const search = () => { flushSync(() => toggleSidebarCollapsed(false)); document.getElementById('settingsSearch')?.focus() }
   return (
     <nav className="sidebar-primary flex min-h-0 flex-1 flex-col min-[641px]:p-(--island-gap)" aria-label="Primary navigation">
-      <div className="sidebar-rows flex flex-none flex-col"><button type="button" className={SIDEBAR_ROW} aria-label={m.back()} onClick={back}><SidebarRowContent icon={ChevronLeft} label={m.back()} /></button></div>
+      <div className="sidebar-scroll flex flex-none flex-col">
+        <div className="sidebar-rows flex flex-col">
+          <button type="button" className={SIDEBAR_ROW} aria-label={m.back()} onClick={back}><SidebarRowContent icon={ChevronLeft} label={m.back()} /></button>
+          {isDesktop && <button type="button" className={cn(SIDEBAR_ROW, 'sidebar-rail-only')} inert={!rail} aria-label={m.search()} onClick={search}><SidebarRowContent icon={Search} label={m.search()} /></button>}
+        </div>
+      </div>
       {panel}
     </nav>
   )

@@ -97,8 +97,7 @@
   .sidebar-brandmark{transition:width var(--morph),height var(--morph)}
   .sidebar .sidebar-row > svg{transition:translate var(--morph)}
   :is(.sidebar-rows,.sidebar-footer,.sidebar-alert,.sidebar-brand) .sidebar-row-label{transition:opacity calc(var(--sidebar-dur) / 2) linear calc(var(--sidebar-dur) / 2)}
-  /* The caption spans its row, not the 64px rail: the rows' scrollers clip at the row's edges, so a wider box lost both ends of a long caption, its ellipsis included (TAL-2183). */
-  :is(.sidebar-rows,.sidebar-footer,.sidebar-alert) .sidebar-row-caption{display:block;position:absolute;inset-inline:0;bottom:7px;overflow:hidden;font-size:10px;font-weight:500;line-height:1;letter-spacing:-.01em;text-align:center;white-space:nowrap;text-overflow:ellipsis;opacity:0;pointer-events:none;transition:opacity calc(var(--sidebar-dur) / 2) linear}
+  :is(.sidebar-rows,.sidebar-footer,.sidebar-alert) .sidebar-row-caption{display:block;position:absolute;inset-inline-start:-5px;bottom:7px;width:64px;overflow:hidden;font-size:10px;font-weight:500;line-height:1;letter-spacing:-.01em;text-align:center;white-space:nowrap;text-overflow:ellipsis;opacity:0;pointer-events:none;transition:opacity calc(var(--sidebar-dur) / 2) linear}
   .sidebar-row-caption::before{content:attr(data-caption)}
   .sidebar-fold{grid-template-rows:1fr;transition:grid-template-rows var(--morph),opacity var(--morph),var(--hide-transition,opacity var(--morph))}
   .sidebar-panel{overflow-x:clip;transition:opacity calc(var(--sidebar-dur) / 2) linear calc(var(--sidebar-dur) / 2),var(--hide-transition,opacity var(--morph))}
@@ -121,8 +120,9 @@
   /* The rail. */
   .layout.sidebar-collapsed .sidebar{width:64px;min-width:64px;flex-shrink:0}
   .layout.sidebar-collapsed .sidebar-primary{padding:8px 5px}
-  /* The rows pin and scroll themselves while the panel stays in flow, hidden, so the shared scroller keeps its position for the way back. */
-  .layout.sidebar-collapsed .sidebar-scroll{overflow:hidden}
+  /* The rows pin and scroll themselves while the panel stays in flow, hidden, so the shared scroller keeps its position for the way back.
+     It reaches the rail's edges so its clip leaves the 64px captions whole: clipped at the row's edges, a long caption lost both ends, its ellipsis included (TAL-2183). */
+  .layout.sidebar-collapsed .sidebar-scroll{overflow:hidden;margin-inline:-5px;padding-inline:5px}
   .layout.sidebar-collapsed .sidebar-scroll > .sidebar-rows{position:sticky;top:0;z-index:1;max-height:100%;margin-inline:-5px;padding-inline:5px;overflow:hidden auto;background:linear-gradient(var(--rail-bg),var(--rail-bg)) var(--canvas)}
   .layout.sidebar-collapsed :is(.sidebar-rows,.sidebar-more,.sidebar-group,.sidebar-footer,.sidebar-alert) > .sidebar-row:not(.sidebar-expanded-only){height:48px;padding-inline:18px 0}
   .layout.sidebar-collapsed .sidebar-rows > .sidebar-rail-menu{height:36px}
@@ -160,7 +160,8 @@ html[data-sidebar-collapsed="1"] .sidebar{transition:none}
 main.main > #mainChat,main.main > #mainSettings{display:none}
 main.main:not(.showing-settings):not(.showing-skills):not(.showing-memory):not(.showing-tasks):not(.showing-kanban):not(.showing-workspaces):not(.showing-profiles):not(.showing-insights):not(.showing-logs):not(.showing-plugin) > #mainChat{display:flex}
 main.main.showing-settings > #mainSettings{display:flex;overflow-y:auto}
-.panel-view#panelSettings{gap:0;padding:0}
+/* Its scrollers clip its rows; the view itself must not, or the rail's captions lose their ends (TAL-2183). */
+.panel-view#panelSettings{gap:0;padding:0;overflow:visible}
 .mobile-sidebar-close{display:none}
 .panel-head-btn:disabled,.panel-head-btn[aria-busy="true"]{opacity:.5;cursor:wait}
 .panel-head-btn:disabled:hover,.panel-head-btn[aria-busy="true"]:hover{background:transparent;color:var(--muted)}

@@ -1,5 +1,4 @@
 import { useState, type KeyboardEvent, type ReactNode } from 'react'
-import { flushSync } from 'react-dom'
 import { Link, useMatchRoute, useNavigate, useParams } from '@tanstack/react-router'
 import { MAIN_VIEW } from '../../shell/AppShell'
 import { PanelHead } from '../../shell/PanelHead'
@@ -7,7 +6,7 @@ import { m } from '../../paraglide/messages.js'
 import { cn } from '../../ui/cn'
 import { SETTINGS_SECTION_GROUPS, SettingsSectionGroupSchema, SettingsSectionSchema, type SettingsSection as Section, type SettingsSectionGroup } from '../../contracts/url'
 import { useLocale } from '../../i18n/useLocale'
-import { closeMobileSidebar, toggleSidebarCollapsed, useIsDesktop, useIsSidebarRail } from '../../shell/useShellState'
+import { closeMobileSidebar, useIsDesktop, useIsSidebarRail } from '../../shell/useShellState'
 import { SIDEBAR_ROW } from '../../shell/nav'
 import { SidebarFold, SidebarRowContent } from '../../shell/SidebarRowContent'
 import { useActiveProfileName } from '../../shell/ProfileMenu'
@@ -73,8 +72,6 @@ export function SectionMenu() {
   const rail = useIsSidebarRail()
   // The rail has no search field, so it always shows the sections; the query waits for the way back.
   const results = query.trim() && !rail ? searchSettings(query) : null
-  // The rail's Search row opens the column and its field, as the other pages' rail Search opens the chat filter.
-  const openSearch = () => { flushSync(() => toggleSidebarCollapsed(false)); document.getElementById('settingsSearch')?.focus() }
   const choose = (entry: SettingsIndexEntry) => {
     setQuery('')
     closeMobileSidebar()
@@ -101,7 +98,6 @@ export function SectionMenu() {
   // icons over captions; the head, the search field and the group headers fold away there, and separators take the headers' place.
   return (
     <div className="panel-view active flex min-h-0 flex-1 flex-col" id="panelSettings">
-      {isDesktop && <div className="sidebar-rows flex flex-none flex-col"><button type="button" className={cn(SIDEBAR_ROW, 'sidebar-rail-only')} inert={!rail} aria-label={m.search()} onClick={openSearch}><SidebarRowContent icon={Search} label={m.search()} /></button></div>}
       <SidebarFold rail={rail} className="settings-menu-head">
         <PanelHead title={m.tab_settings()} />
         <div className="sidebar-search">

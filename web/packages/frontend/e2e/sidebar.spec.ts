@@ -710,8 +710,8 @@ test('Settings collapses to a rail of Back, Search and its sections by the one s
   expect(await stored(page, 'hermes-webui-sidebar-collapsed')).toBe('1')
 })
 
-/** TAL-2183: a caption wider than its row ends in an ellipsis inside the row, on Settings' rail and every other page's. */
-test('a rail caption wider than its row stays inside the row and ends in an ellipsis', async ({ page }, info) => {
+/** TAL-2183: no container clips a rail caption, so one wider than the rail ends in its own ellipsis, on Settings' rail and every other page's. */
+test('a rail caption wider than the rail is never clipped and ends in an ellipsis', async ({ page }, info) => {
   desktopOnly(info.project.name)
   await page.setViewportSize({ width: 1440, height: 900 })
   for (const path of ['/skills', '/settings/system']) {
@@ -722,12 +722,18 @@ test('a rail caption wider than its row stays inside the row and ends in an elli
       if (!caption) return []
       caption.setAttribute('data-caption', 'Benachrichtigungseinstellungen')
       const box = caption.getBoundingClientRect()
-      const own = row.getBoundingClientRect()
+      // Every ancestor that clips must hold the whole caption box, or both its ends (the ellipsis included) are cut.
+      let unclipped = true
+      for (let node = row.parentElement; node && node.tagName !== 'ASIDE'; node = node.parentElement) {
+        if (getComputedStyle(node).overflowX === 'visible') continue
+        const left = node.getBoundingClientRect().left + node.clientLeft
+        if (box.left < left - 0.5 || box.right > left + node.clientWidth + 0.5) unclipped = false
+      }
       const style = getComputedStyle(caption)
-      return [{ name: row.getAttribute('aria-label'), inside: box.left >= own.left && box.right <= own.right, overflows: caption.scrollWidth > caption.clientWidth, ellipsis: style.textOverflow === 'ellipsis' && style.overflow === 'hidden' }]
+      return [{ name: row.getAttribute('aria-label'), unclipped, overflows: caption.scrollWidth > caption.clientWidth, ellipsis: style.textOverflow === 'ellipsis' && style.overflow === 'hidden' }]
     }))
     expect(fit.length, path).toBeGreaterThan(5)
-    for (const caption of fit) expect(caption, `${path} ${String(caption.name)}`).toMatchObject({ inside: true, overflows: true, ellipsis: true })
+    for (const caption of fit) expect(caption, `${path} ${String(caption.name)}`).toMatchObject({ unclipped: true, overflows: true, ellipsis: true })
   }
 })
 
