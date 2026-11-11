@@ -278,8 +278,9 @@ export class KanbanSubscription {
 }
 
 /**
- * One `kanban.events` poll per board for every open stream on it, from the oldest cursor among streams ready for more. Each
- * stream gets the events past its own cursor. After five empty pages the interval doubles up to 5 s; any event resets it.
+ * One `kanban.events` poll per board for every open stream on it: streams at the same cursor share one read, so a stream
+ * replaying history never holds back one already at the head. After five empty polls the interval doubles up to 5 s; any
+ * event resets it.
  */
 class KanbanBoardPoll {
   readonly subscribers = new Set<KanbanSubscription>()
@@ -318,23 +319,26 @@ class KanbanBoardPoll {
     this.timer = null
     this.polling = true
     // A stream still writing its last batch is skipped and keeps its cursor, so a slow reader never holds back the rest.
-    const ready = [...this.subscribers].filter((s) => !s.busy)
+    const byCursor = new Map<number, KanbanSubscription[]>()
+    for (const sub of this.subscribers) {
+      if (sub.busy) continue
+      const group = byCursor.get(sub.cursor)
+      if (group) group.push(sub); else byCursor.set(sub.cursor, [sub])
+    }
     let fresh: boolean | null = null
-    if (ready.length) {
-      const since = Math.min(...ready.map((s) => s.cursor))
-      let events: unknown[] = []
-      let cursor = since
-      try {
-        const page = await this.read(since)
-        events = Array.isArray(page.events) ? page.events : []
-        cursor = Number(page.cursor) || since
-      } catch { events = [] }
-      for (const sub of ready) {
-        if (!this.subscribers.has(sub)) continue
-        const mine = events.filter((e) => !(Number(dict(e).id) <= sub.cursor))
-        if (mine.length) sub.deliver({ events: mine, cursor: Math.max(cursor, sub.cursor) })
-      }
-      fresh = events.length > 0
+    if (byCursor.size) {
+      const pages = await Promise.all([...byCursor].map(async ([since, group]) => {
+        let events: unknown[] = []
+        let cursor = since
+        try {
+          const page = await this.read(since)
+          events = Array.isArray(page.events) ? page.events : []
+          cursor = Number(page.cursor) || since
+        } catch { events = [] }
+        if (events.length) for (const sub of group) if (this.subscribers.has(sub)) sub.deliver({ events, cursor })
+        return events.length > 0
+      }))
+      fresh = pages.includes(true)
     }
     this.polling = false
     if (!this.subscribers.size) return
