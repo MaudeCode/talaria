@@ -30,7 +30,8 @@ import { groupSessionRows, SessionListItem, SessionListPanel } from './SessionLi
 import { useSessionListStream } from './useSessionListStream'
 import { requestSessionSearch } from '../../shell/useShellState'
 
-const now = Date.now() / 1000
+// Keep relative fixture timestamps on one local date, even just after midnight.
+const now = new Date().setHours(12, 0, 0, 0) / 1000
 const row = (session_id: string, title: string, extra: Partial<SessionRow> = {}): SessionRow => ({
   session_id, title, last_message_at: now, sort_ts: now, is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true, source_kind: 'webui', is_messaging_session: false, ...extra,
 })

@@ -1,0 +1,3 @@
+{
+  "skip": "Test-only change: keep session-list fixture timestamps on one local date to avoid midnight-dependent ordering failures."
+}
