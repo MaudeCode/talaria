@@ -47,6 +47,8 @@ const likeContaining = (term: string): string => `%${term.replace(/[\\%_]/g, (c)
 const searchable = (text: string): string => text.replaceAll('\0', '')
 /** Whether the stored search text is the text itself, so a match on it is a real match. */
 const exact = (text: string): boolean => !text.includes('\0') && !/\p{Cs}/u.test(text)
+interface SerializedRows { bodies: string[]; texts: string[] }
+const serializeRows = (rows: readonly Message[]): SerializedRows => ({ bodies: rows.map((row) => JSON.stringify(row)), texts: rows.map((row) => sessionSearchMessageText(row).toLowerCase()) })
 /** Rows as one JSON array, so a whole transcript reads in one statement without parsing each row separately. */
 const parseRows = (text: string): Message[] => JSON.parse(text) as Message[]
 const AGGREGATE_BODIES = (s: string, sid: string) => `(SELECT '[' || coalesce(string_agg(body, ',' ORDER BY idx), '') || ']' FROM ${s}messages WHERE session_id = ${sid})`
@@ -123,6 +125,9 @@ class PostgresSessions implements SessionBackend {
     const edit = change.messages
     const doc: Dict = {}
     for (const [key, value] of Object.entries(change.doc)) if (key !== 'messages') doc[key] = value
+    // TAL-1739: the store hands over live session state, so the document and rows are serialized before the first await.
+    const docText = JSON.stringify(doc)
+    const rows = edit.kind === 'unchanged' ? { bodies: [], texts: [] } : serializeRows(edit.rows)
     return await this.db.transaction(async (tx) => {
       let before = 0
       if (expected !== null) {
@@ -133,11 +138,11 @@ class PostgresSessions implements SessionBackend {
       const from = edit.kind === 'splice' ? Math.min(Math.max(0, edit.from), before) : 0
       const removed = edit.kind === 'splice' ? Math.max(0, Math.min(edit.deleteCount, before - from)) : 0
       const after = edit.kind === 'append' ? before + edit.rows.length : edit.kind === 'splice' ? before - removed + edit.rows.length : edit.kind === 'replace' ? edit.rows.length : before
-      if (Object.hasOwn(change.doc, 'message_count')) doc.message_count = after
+      const stored = Object.hasOwn(change.doc, 'message_count') && doc.message_count !== after ? JSON.stringify({ ...JSON.parse(docText) as Dict, message_count: after }) : docText
       const updatedAt = typeof doc.updated_at === 'number' ? doc.updated_at : null
       let revision: string | undefined
       if (expected === null) {
-        revision = (await tx.row<{ revision: string }>(`INSERT INTO ${this.s}sessions (id, doc, message_count, revision, updated_at) VALUES ($1, $2, $3, ${NEXT_REVISION('0')}, $4) ON CONFLICT (id) DO NOTHING RETURNING revision`, sid, JSON.stringify(doc), after, updatedAt))?.revision
+        revision = (await tx.row<{ revision: string }>(`INSERT INTO ${this.s}sessions (id, doc, message_count, revision, updated_at) VALUES ($1, $2, $3, ${NEXT_REVISION('0')}, $4) ON CONFLICT (id) DO NOTHING RETURNING revision`, sid, stored, after, updatedAt))?.revision
         if (revision === undefined) throw new RevisionConflict(sid)
       } else {
         // The same rule as the JSON `.bak`: keep the transcript a shrinking write is about to drop.
@@ -145,27 +150,26 @@ class PostgresSessions implements SessionBackend {
           await tx.run(`INSERT INTO ${this.s}shrink_backups (session_id, doc, messages, saved_at, revision) SELECT id, doc, ${AGGREGATE_BODIES(this.s, '$1')}, $2, ${NEXT_REVISION('0')} FROM ${this.s}sessions WHERE id = $1
             ON CONFLICT (session_id) DO UPDATE SET doc = excluded.doc, messages = excluded.messages, saved_at = excluded.saved_at, revision = excluded.revision`, sid, Date.now() / 1000)
         }
-        revision = (await tx.row<{ revision: string }>(`UPDATE ${this.s}sessions SET doc = $2, message_count = $3, revision = ${NEXT_REVISION('revision')}, updated_at = $4 WHERE id = $1 RETURNING revision`, sid, JSON.stringify(doc), after, updatedAt))!.revision
+        revision = (await tx.row<{ revision: string }>(`UPDATE ${this.s}sessions SET doc = $2, message_count = $3, revision = ${NEXT_REVISION('revision')}, updated_at = $4 WHERE id = $1 RETURNING revision`, sid, stored, after, updatedAt))!.revision
       }
-      if (edit.kind === 'append') await this.insert(tx, sid, before, edit.rows)
-      else if (edit.kind === 'replace') { if (before) await tx.run(`DELETE FROM ${this.s}messages WHERE session_id = $1`, sid); await this.insert(tx, sid, 0, edit.rows) }
+      if (edit.kind === 'append') await this.insert(tx, sid, before, rows)
+      else if (edit.kind === 'replace') { if (before) await tx.run(`DELETE FROM ${this.s}messages WHERE session_id = $1`, sid); await this.insert(tx, sid, 0, rows) }
       else if (edit.kind === 'splice') {
         const delta = edit.rows.length - removed
         if (removed) await tx.run(`DELETE FROM ${this.s}messages WHERE session_id = $1 AND idx >= $2 AND idx < $3`, sid, from, from + removed)
         const tail = delta !== 0 && from + removed < before
         if (tail) await tx.run(`UPDATE ${this.s}messages SET idx = idx + $2 WHERE session_id = $1 AND idx >= $3`, sid, SHIFT, from + removed)
-        await this.insert(tx, sid, from, edit.rows)
+        await this.insert(tx, sid, from, rows)
         if (tail) await tx.run(`UPDATE ${this.s}messages SET idx = idx - $2 WHERE session_id = $1 AND idx >= $3`, sid, SHIFT - delta, SHIFT)
       }
       return revision
     })
   }
   /** Every row in one statement, whatever the count. */
-  private async insert(tx: Queries, sid: string, start: number, rows: readonly Message[]): Promise<void> {
-    if (!rows.length) return
-    const texts = rows.map((row) => sessionSearchMessageText(row).toLowerCase())
+  private async insert(tx: Queries, sid: string, start: number, { bodies, texts }: SerializedRows): Promise<void> {
+    if (!bodies.length) return
     await tx.run(`INSERT INTO ${this.s}messages (session_id, idx, body, search_text, search_exact) SELECT $1, $2 + u.n - 1, u.body, u.search_text, u.search_exact FROM unnest($3::text[], $4::text[], $5::boolean[]) WITH ORDINALITY AS u(body, search_text, search_exact, n)`,
-      sid, start, rows.map((row) => JSON.stringify(row)), texts.map(searchable), texts.map(exact))
+      sid, start, bodies, texts.map(searchable), texts.map(exact))
   }
   async delete(sid: string, opts: { tombstone: boolean }): Promise<boolean> {
     this.checked(sid)
@@ -219,7 +223,7 @@ class PostgresSessions implements SessionBackend {
       const updatedAt = found.bakDoc.updated_at
       await tx.run(`UPDATE ${this.s}sessions SET doc = $2, message_count = $3, revision = ${NEXT_REVISION('revision')}, updated_at = $4 WHERE id = $1`, sid, found.backup.doc, rows.length, typeof updatedAt === 'number' ? updatedAt : null)
       await tx.run(`DELETE FROM ${this.s}messages WHERE session_id = $1`, sid)
-      await this.insert(tx, sid, 0, rows)
+      await this.insert(tx, sid, 0, serializeRows(rows))
       return true
     })
   }

@@ -3,7 +3,7 @@ import { JsonJournal } from './json-journal.js'
 import { JsonDocuments } from './json-documents.js'
 import { dirname } from 'node:path'
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, utimesSync } from 'node:fs'
-import { unlink } from 'node:fs/promises'
+import { readFile, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { isSafeSessionId, type Message } from '../session.js'
 import { RevisionConflict, type MessageMatch, type SessionBackend, type SessionChange, type SessionIndexEntry, type ShrinkBackup, type StorageBackend, type StorageIssue, type StoredSession } from './backend.js'
@@ -31,6 +31,24 @@ export class JsonStorage implements StorageBackend {
     await this.sessions.close()
     await this.documents.close()
   }
+}
+
+/**
+ * The session file: `doc` with `message_count` set and the already-serialized `rows` as `messages`, placed after
+ * `anchor_scene_index` (or last) so a metadata prefix read stops at the transcript. Byte-identical to stringifying the
+ * assembled document, without serializing any row a second time (TAL-1739).
+ */
+function documentJson(doc: Record<string, unknown>, rows: readonly string[]): string {
+  const head: Record<string, unknown> = {}
+  const tail: Record<string, unknown> = {}
+  let part = head
+  for (const [key, value] of Object.entries(doc)) {
+    if (key === 'messages') continue
+    part[key] = key === 'message_count' ? rows.length : value
+    if (key === 'anchor_scene_index') part = tail
+  }
+  const members = [JSON.stringify(head).slice(1, -1), `"messages":[${rows.join(',')}]`, JSON.stringify(tail).slice(1, -1)]
+  return `{${members.filter(Boolean).join(',')}}`
 }
 
 // ponytail: fixed entry cap without eviction, so a larger library keeps its first sessions warm; add LRU if hit rates matter.
@@ -88,7 +106,7 @@ class JsonSessions implements SessionBackend {
     let revision: string | null = null
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const before = statSignature(path)
-      const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'))
+      const parsed: unknown = JSON.parse(await readFile(path, 'utf8'))
       doc = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}
       const after = statSignature(path)
       if (before !== null && before === after) { revision = after; break }
@@ -100,7 +118,7 @@ class JsonSessions implements SessionBackend {
   async readMessages(sid: string, range: { start: number; end: number }): Promise<Message[]> {
     const path = this.path(sid)
     if (!existsSync(path)) return []
-    const doc = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
+    const doc = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>
     return Array.isArray(doc.messages) ? (doc.messages as Message[]).slice(Math.max(0, range.start), Math.max(0, range.end)) : []
   }
   /** The leading `depth` messages (all when 0), parsed without reading or parsing the rest of the file. */
@@ -162,14 +180,8 @@ class JsonSessions implements SessionBackend {
     else if (edit.kind === 'replace') rows = [...edit.rows]
     else if (edit.kind === 'append') rows = rows.concat(edit.rows)
     else if (edit.kind === 'splice') rows = [...rows.slice(0, edit.from), ...edit.rows, ...rows.slice(edit.from + edit.deleteCount)]
-    const document: Record<string, unknown> = {}
-    for (const [key, value] of Object.entries(change.doc)) {
-      if (key === 'messages') continue
-      document[key] = key === 'message_count' ? rows.length : value
-      if (key === 'anchor_scene_index') document.messages = rows
-    }
-    document.messages ??= rows
-    const payload = JSON.stringify(document)
+    const serialized = change.all && change.serializedRows?.length === rows.length ? change.serializedRows : rows.map((row) => JSON.stringify(row))
+    const payload = documentJson(change.doc, serialized)
     mkdirSync(this.options.directory, { recursive: true })
     // TAL-1304: stage and fsync off the event loop; the revision check and both renames below run without an await.
     let backup: string | null = null

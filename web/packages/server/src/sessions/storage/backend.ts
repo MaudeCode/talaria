@@ -22,6 +22,8 @@ export interface SessionChange {
     | { kind: 'replace'; rows: Message[] }
   /** The complete message list after the change, when the writer holds it; a backend may use it instead of re-reading its base. */
   all?: Message[]
+  /** `JSON.stringify` of each row of `all`, in order, when the writer already serialized them; a backend may write these instead. */
+  serializedRows?: readonly string[]
 }
 /** A session's transcript before a shrinking write; `savedAt` (epoch seconds) decides whether it predates shrink stamping. */
 export interface ShrinkBackup { doc: SessionDocument; messages: Message[]; savedAt: number }
