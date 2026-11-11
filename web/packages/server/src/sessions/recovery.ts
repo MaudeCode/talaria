@@ -9,15 +9,13 @@
  * `recovery_stamping_since` marker may predate that provenance, so next to a readable live transcript it goes to manual
  * review instead.
  */
-import { existsSync } from 'node:fs'
-import { DatabaseSync } from 'node:sqlite'
 import type { RecoveryAudit, RecoveryAuditItem, RecoveryRepair } from '@maudecode/talaria-web-contracts'
 import type { DocumentBackend } from './storage/backend.js'
 import { updateDocument } from './storage/document.js'
 import { str } from '../util.js'
 import type { StorageIssue } from './storage/backend.js'
 import { isSafeSessionId, Session, type Message } from './session.js'
-import { normalizeAgentSessionSource } from './state-db.js'
+import { normalizeAgentSessionSource, RECOVERY_WORKTREE_FIELDS, stateDbSessionReadAsync, type StateDbRecoveryRow, type StateDbRecoveryScan } from './state-db.js'
 import type { SessionStore } from './store.js'
 
 type Dict = Record<string, unknown>
@@ -34,12 +32,8 @@ export interface RecoveryDeps {
   log: (line: string) => void
 }
 
-
-/** Python `STATE_DB_RECOVERY_BUSY_TIMEOUT_MS`: a recovery scan waits out a writer rather than read a lock as "nothing missing". */
-const STATE_DB_RECOVERY_BUSY_TIMEOUT_MS = 5000
 const TERMINAL_TURN_EVENTS = new Set(['completed', 'interrupted'])
 const createdAt = (event: Dict): number => { const value = Number(event.created_at ?? 0); return Number.isFinite(value) ? value : 0 }
-const WORKTREE_FIELDS = ['worktree_path', 'worktree_branch', 'worktree_repo_root', 'worktree_created_at'] as const
 
 const isDict = (v: unknown): v is Dict => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
 
@@ -58,65 +52,37 @@ export async function recoveryStampingSince(documents: DocumentBackend): Promise
 
 // ── state.db ─────────────────────────────────────────────────────────────
 
-interface MissingRow extends Dict { id: string; messages: Message[] }
 interface StateDbView {
   /** Python `_state_db_has_session`: fail-open, so a missing, older, or unreadable db never blocks a backup restore. */
   has: (sid: string) => boolean
-  /** WebUI-origin rows whose sidecar is missing, each with its transcript. */
-  missing: MissingRow[]
+  /** WebUI-origin rows whose sidecar is missing, each with its transcript's length. */
+  missing: StateDbRecoveryRow[]
   /** The db exists but could not be read; the audit reports it rather than call the scan clean. */
   unreadable: boolean
 }
 
-function columns(db: DatabaseSync, table: string): Set<string> {
-  return new Set((db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((r) => r.name))
+/** One read on the state.db worker: it may wait out a writer, so it never runs on the event loop (TAL-1745). */
+async function readStateDb(path: string): Promise<StateDbRecoveryScan> {
+  return await stateDbSessionReadAsync({ ids: null, rows: [], unreadable: true }, 'stateDbRecoveryCounts', path)
 }
 
-/** Python `_read_state_db_missing_sidecar_rows` (with empty rows) plus the session ids, from one read-only handle. */
-function readStateDb(path: string, persisted: Set<string>): StateDbView {
-  const absent: StateDbView = { has: () => true, missing: [], unreadable: false }
-  if (!existsSync(path)) return absent
-  let db: DatabaseSync
-  try { db = new DatabaseSync(path, { readOnly: true, timeout: STATE_DB_RECOVERY_BUSY_TIMEOUT_MS }) } catch { return { ...absent, unreadable: true } }
-  try {
-    const cols = columns(db, 'sessions')
-    if (!cols.has('id')) return absent
-    const ids = new Set((db.prepare('SELECT id FROM sessions').all() as Dict[]).map((r) => str(r.id)))
-    const view: StateDbView = { has: (sid) => ids.has(sid), missing: [], unreadable: false }
-    if (!cols.has('source')) return view
-    const opt = (name: string, fallback = 'NULL'): string => (cols.has(name) ? name : `${fallback} AS ${name}`)
-    const select = ['id', opt('title'), opt('model'), opt('started_at', '0'), opt('parent_session_id'), opt('workspace'), ...WORKTREE_FIELDS.map((f) => opt(f))]
-    const order = cols.has('started_at') ? 'COALESCE(started_at, 0) DESC' : 'rowid'
-    const rows = db.prepare(`SELECT ${select.join(', ')} FROM sessions WHERE source = 'webui' ORDER BY ${order}`).all() as Dict[]
-    const msgCols = columns(db, 'messages')
-    const messages = ['session_id', 'role', 'content'].every((c) => msgCols.has(c))
-      ? db.prepare(`SELECT role, content, ${msgCols.has('timestamp') ? 'timestamp' : 'NULL AS timestamp'} FROM messages WHERE session_id = ? ORDER BY ${msgCols.has('timestamp') && msgCols.has('id') ? 'timestamp, id' : 'rowid'}`)
-      : null
-    for (const row of rows) {
-      const sid = str(row.id).trim()
-      if (!isSafeSessionId(sid) || persisted.has(sid)) continue
-      const transcript = ((messages?.all(sid) as Dict[] | undefined) ?? []).map((m) => ({ role: m.role, content: m.content || '', ...(m.timestamp !== null ? { timestamp: m.timestamp } : {}) }))
-      view.missing.push({ ...row, id: sid, messages: transcript })
-    }
-    return view
-  } catch {
-    return { ...absent, unreadable: true }
-  } finally {
-    db.close()
-  }
+/** The scan against the sidecars that exist now; repair never writes state.db, so its read serves both audits. */
+function stateDbView(read: StateDbRecoveryScan, persisted: Set<string>): StateDbView {
+  const ids = read.ids && new Set(read.ids)
+  return { has: (sid) => !ids || ids.has(sid), missing: read.rows.filter((row) => isSafeSessionId(row.id) && !persisted.has(row.id)), unreadable: read.unreadable }
 }
 
 /** Python `_state_db_row_to_sidecar`, through `Session` so the document matches every field the store persists. */
-async function sidecarFromStateDbRow(row: MissingRow, store: SessionStore, profile: string): Promise<Dict> {
+async function sidecarFromStateDbRow(row: StateDbRecoveryRow, messages: Message[], store: SessionStore, profile: string): Promise<Dict> {
   const source = 'webui' // the scan reads only WebUI-origin rows
   const started = Number(row.started_at) || 0
-  const last = Number(row.messages.at(-1)?.timestamp) || 0
+  const last = Number(messages.at(-1)?.timestamp) || 0
   const workspace = typeof row.workspace === 'string' && row.workspace ? { workspace: row.workspace } : {}
-  const worktree = Object.fromEntries(WORKTREE_FIELDS.map((f) => [f, row[f] || null]))
+  const worktree = Object.fromEntries(RECOVERY_WORKTREE_FIELDS.map((f) => [f, row[f] || null]))
   const session = new Session({
     session_id: row.id, title: str(row.title) || 'Recovered WebUI Session', ...workspace, model: str(row.model) || 'unknown', profile,
     created_at: started, updated_at: last || started, parent_session_id: row.parent_session_id ?? null, ...worktree,
-    source_tag: source, ...normalizeAgentSessionSource(source), messages: row.messages,
+    source_tag: source, ...normalizeAgentSessionSource(source), messages,
   }, (await store.deps.defaults(profile)))
   return session.toDocument()
 }
@@ -178,11 +144,13 @@ function item(session_id: string, kind: RecoveryItem['kind'], category: Recovery
   return { session_id, kind, category, recommendation, live_messages, bak_messages }
 }
 
-interface Scan { liveIds: string[]; issues: StorageIssue[]; db: StateDbView; tombstoned: Set<string> }
+interface Scan { liveIds: string[]; issues: StorageIssue[]; stateDb: StateDbRecoveryScan; db: StateDbView; tombstoned: Set<string> }
 
-async function scan(deps: RecoveryDeps): Promise<Scan> {
+async function scan(deps: RecoveryDeps, stateDb?: StateDbRecoveryScan): Promise<Scan> {
   const persisted = await deps.store.persistedIds()
-  return { liveIds: [...persisted].sort(), issues: await deps.store.diagnose(), db: readStateDb(deps.stateDbPath, persisted), tombstoned: await deps.store.loadDeletedTombstone() }
+  const issues = await deps.store.diagnose()
+  stateDb ??= await readStateDb(deps.stateDbPath)
+  return { liveIds: [...persisted].sort(), issues, stateDb, db: stateDbView(stateDb, persisted), tombstoned: await deps.store.loadDeletedTombstone() }
 }
 
 async function readOnlyRecovery(deps: RecoveryDeps, sid: string, profile?: string): Promise<boolean> {
@@ -193,7 +161,10 @@ async function readOnlyRecovery(deps: RecoveryDeps, sid: string, profile?: strin
 }
 
 export async function auditSessionRecovery(deps: RecoveryDeps): Promise<RecoveryAudit> {
-  const s = await scan(deps)
+  return await auditScan(deps, await scan(deps))
+}
+
+async function auditScan(deps: RecoveryDeps, s: Scan): Promise<RecoveryAudit> {
   const items: RecoveryItem[] = []
   const reportedDeleted = new Set<string>()
   for (const issue of s.issues) {
@@ -217,7 +188,7 @@ export async function auditSessionRecovery(deps: RecoveryDeps): Promise<Recovery
   for (const row of s.db.missing) {
     if (reportedDeleted.has(row.id)) continue
     if (s.tombstoned.has(row.id)) items.push(item(row.id, 'state_db_deleted_webui_tombstone', 'unsafe_to_repair', 'deleted_session_skipped'))
-    else if (!row.messages.length) items.push(item(row.id, 'state_db_orphan_webui_row', 'unsafe_to_repair', 'manual_review'))
+    else if (!row.count) items.push(item(row.id, 'state_db_orphan_webui_row', 'unsafe_to_repair', 'manual_review'))
     else items.push(item(row.id, 'state_db_missing_sidecar', 'repairable', 'materialize_from_state_db'))
   }
   if (s.db.unreadable) items.push(item('', 'state_db_unreadable', 'unsafe_to_repair', 'manual_review'))
@@ -261,28 +232,31 @@ async function restoreBackups(deps: RecoveryDeps, s: Scan): Promise<RecoveryRepa
 
 async function materializeSidecars(deps: RecoveryDeps, s: Scan): Promise<RecoveryRepair['sidecar_repair']> {
   const { store } = deps
-  const rows = s.db.missing.filter((row) => row.messages.length && !s.tombstoned.has(row.id))
+  const rows = s.db.missing.filter((row) => row.count && !s.tombstoned.has(row.id))
   const result: RecoveryRepair['sidecar_repair'] = { scanned: rows.length, materialized: 0, details: [] }
   for (const row of rows) {
     await store.withLock(row.id, async () => {
+      let messages: Message[] = []
       if (await store.wasDeleted(row.id)) return
       if (await readOnlyRecovery(deps, row.id)) { result.details.push({ session_id: row.id, materialized: false, skipped: 'read_only' }); return }
       if (busy(store, row.id)) { result.details.push({ session_id: row.id, materialized: false, skipped: 'session_active' }); return }
       try {
         if (await store.exists(row.id)) { result.details.push({ session_id: row.id, materialized: false, skipped: 'sidecar_appeared_during_reconcile' }); return }
-        await store.save(new Session((await sidecarFromStateDbRow(row, store, deps.profile)), (await store.deps.defaults(deps.profile))), { touchUpdatedAt: false, skipIndex: true })
+        messages = await stateDbSessionReadAsync(null, 'stateDbRecoveryTranscript', deps.stateDbPath, row.id) ?? []
+        if (!messages.length) throw new Error('state.db transcript is empty or unreadable')
+        await store.save(new Session((await sidecarFromStateDbRow(row, messages, store, deps.profile)), (await store.deps.defaults(deps.profile))), { touchUpdatedAt: false, skipIndex: true })
       } catch (error) { result.details.push({ session_id: row.id, materialized: false, error: (error as Error).message }); return }
       store.sessions.delete(row.id)
       result.materialized += 1
-      result.details.push({ session_id: row.id, materialized: true, messages: row.messages.length })
+      result.details.push({ session_id: row.id, materialized: true, messages: messages.length })
     })
   }
   return result
 }
 
 export async function repairSafeSessionRecovery(deps: RecoveryDeps): Promise<RecoveryRepair> {
-  const before = await auditSessionRecovery(deps)
   const s = await scan(deps)
+  const before = await auditScan(deps, s)
   const backupRepair = await restoreBackups(deps, s)
   let searchRepairs = 0
   for (const issue of s.issues) if (issue.recommendation === 'rebuild_search_index' && await deps.store.repair(issue)) searchRepairs += 1
@@ -291,7 +265,7 @@ export async function repairSafeSessionRecovery(deps: RecoveryDeps): Promise<Rec
   if (reindex) {
     try { await deps.store.rebuildIndex({ diskOnly: true }) } catch (error) { deps.log(`[webui] WARNING: session recovery index rebuild failed: ${(error as Error).message}`) }
   }
-  const after = await auditSessionRecovery(deps)
+  const after = await auditScan(deps, await scan(deps, s.stateDb))
   const clean = after.summary.repairable === 0 && after.summary.unsafe_to_repair === 0
   return { clean, ok: clean, repaired: backupRepair.restored + searchRepairs + sidecarRepair.materialized, before, backup_repair: backupRepair, sidecar_repair: sidecarRepair, after }
 }

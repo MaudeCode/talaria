@@ -1,23 +1,31 @@
-import { closeSync, existsSync, fsyncSync, linkSync, openSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync } from 'node:fs'
+import { closeSync, existsSync, fsyncSync, linkSync, openSync, readFileSync, renameSync, statSync, unlinkSync } from 'node:fs'
+import { readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { writeFully } from '../../fs/atomic.js'
 import { str } from '../../util.js'
 import { isContextCompressionMarker } from '../merge.js'
 import { isSafeSessionId } from '../session.js'
 import type { StorageIssue } from './backend.js'
-import { statSignature } from './json-files.js'
+import { statSignature, statSignatureAsync } from './json-files.js'
 type Dict = Record<string, unknown>
 const isDict = (v: unknown): v is Dict => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
 const isEmptyList = (v: unknown): boolean => Array.isArray(v) && v.length === 0
 const SHRINK_GENERATION_RE = /^[0-9a-f]{12}4[0-9a-f]{3}[89ab][0-9a-f]{15}$/
 let tmpCounter = 0
-function readDoc(path: string): Dict | null {
+function parseDoc(text: string): Dict | null {
   try {
-    const value = JSON.parse(readFileSync(path, 'utf8')) as unknown
+    const value = JSON.parse(text) as unknown
     return isDict(value) ? value : null
   } catch {
     return null
   }
+}
+function readDoc(path: string): Dict | null {
+  try { return parseDoc(readFileSync(path, 'utf8')) } catch { return null }
+}
+/** The audit's read, off the event loop (TAL-1745). */
+async function readDocAsync(path: string): Promise<Dict | null> {
+  try { return parseDoc(await readFile(path, 'utf8')) } catch { return null }
 }
 
 /** Python `_msg_count`: the transcript length, or -1 when the file is missing, unparseable, or not a session. */
@@ -81,9 +89,15 @@ export interface BackupStatus {
 /** Python `inspect_session_recovery_status`: whether `<sid>.json.bak` should replace `<sid>.json`. */
 function inspectBackup(dir: string, sid: string, stampingSince: number): BackupStatus {
   const livePath = join(dir, `${sid}.json`)
-  let bakMtime: number
-  try { bakMtime = statSync(`${livePath}.bak`).mtimeMs / 1000 } catch { return { session_id: sid, live_messages: messageCount(readDoc(livePath)), bak_messages: -1, recommend: 'no_backup' } }
-  return backupStatus(sid, readDoc(livePath), readDoc(`${livePath}.bak`), bakMtime, stampingSince)
+  let bakSavedAt: number | null = null
+  try { bakSavedAt = statSync(`${livePath}.bak`).mtimeMs / 1000 } catch { /* no backup */ }
+  return inspectDocs(sid, readDoc(livePath), bakSavedAt === null ? null : readDoc(`${livePath}.bak`), bakSavedAt, stampingSince)
+}
+
+/** `inspectBackup` over documents already read; a null `bakSavedAt` means there is no backup. */
+function inspectDocs(sid: string, live: Dict | null, bak: Dict | null, bakSavedAt: number | null, stampingSince: number): BackupStatus {
+  if (bakSavedAt === null) return { session_id: sid, live_messages: messageCount(live), bak_messages: -1, recommend: 'no_backup' }
+  return backupStatus(sid, live, bak, bakSavedAt, stampingSince)
 }
 
 /** The restore decision for a live document and its pre-shrink backup (each with `messages`), shared by every backend. */
@@ -130,31 +144,43 @@ function publish(target: string, text: string, create: boolean): boolean {
   }
 }
 
-export function diagnoseJson(dir: string, stampingSince: number): StorageIssue[] {
+/** Every backup and index finding; each document is read and parsed once, through `fs/promises` (TAL-1745). */
+export async function diagnoseJson(dir: string, stampingSince: number): Promise<StorageIssue[]> {
   let names: string[] = []
-  try { names = readdirSync(dir).sort() } catch { /* empty */ }
+  try { names = (await readdir(dir)).sort() } catch { /* empty */ }
   const live = new Set(names.filter((n) => n.endsWith('.json') && !n.startsWith('_')).map((n) => n.slice(0, -5)))
+  const liveDocs = new Map<string, Dict | null>()
+  const liveDoc = async (sid: string): Promise<Dict | null> => {
+    if (!liveDocs.has(sid)) liveDocs.set(sid, await readDocAsync(join(dir, `${sid}.json`)))
+    return liveDocs.get(sid)!
+  }
   const issues: StorageIssue[] = []
   for (const name of names.filter((n) => n.endsWith('.json.bak') && !n.startsWith('_'))) {
     const sid = name.slice(0, -9)
     const path = join(dir, `${sid}.json`)
-    const status = inspectBackup(dir, sid, stampingSince)
-    const doc = readDoc(path) ?? readDoc(`${path}.bak`)
-    const base = { session_id: sid, live_messages: status.live_messages, bak_messages: status.bak_messages, profile: doc ? str(doc.profile) || 'default' : 'default', revision: statSignature(path), backupRevision: statSignature(`${path}.bak`) }
+    const liveDocument = await liveDoc(sid)
+    let bakSavedAt: number | null = null
+    try { bakSavedAt = (await stat(`${path}.bak`)).mtimeMs / 1000 } catch { /* gone since the listing */ }
+    const bak = bakSavedAt === null ? null : await readDocAsync(`${path}.bak`)
+    const status = inspectDocs(sid, liveDocument, bak, bakSavedAt, stampingSince)
+    const doc = liveDocument ?? bak
+    const base = { session_id: sid, live_messages: status.live_messages, bak_messages: status.bak_messages, profile: doc ? str(doc.profile) || 'default' : 'default', revision: await statSignatureAsync(path), backupRevision: await statSignatureAsync(`${path}.bak`) }
     if (live.has(sid)) {
       const found = backupIssue(status, base)
       if (found) issues.push(found)
     } else if (status.bak_messages < 0 || !isSafeSessionId(sid)) issues.push({ ...base, kind: 'malformed_orphan_backup', category: 'unsafe_to_repair', recommendation: 'manual_review' })
     else issues.push({ ...base, kind: 'orphan_backup', category: 'repairable', recommendation: 'restore_from_bak' })
   }
-  const indexPath = join(dir, '_index.json')
-  if (existsSync(indexPath)) {
+  // Absent (undefined) is no finding; present but unreadable (null) is.
+  const index = await readFile(join(dir, '_index.json'), 'utf8').catch((error: unknown) => ((error as NodeJS.ErrnoException).code === 'ENOENT' ? undefined : null))
+  if (index !== undefined) {
     let indexed: Set<string> | null = null
     try {
-      const entries = JSON.parse(readFileSync(indexPath, 'utf8')) as Dict[]
+      const entries = JSON.parse(index ?? '') as Dict[]
       indexed = new Set(entries.map((e) => e.session_id).filter((id): id is string => typeof id === 'string'))
     } catch { /* reported as unreadable */ }
-    issues.push(...indexIssues(indexed, live, (sid) => messageCount(readDoc(join(dir, `${sid}.json`)))))
+    if (indexed) for (const sid of live) if (!indexed.has(sid)) await liveDoc(sid)
+    issues.push(...indexIssues(indexed, live, (sid) => messageCount(liveDocs.get(sid) ?? null)))
   }
   return issues
 }

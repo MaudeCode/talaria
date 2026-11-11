@@ -1194,8 +1194,9 @@ export async function agentSessionRowsExistingAsync(dbPath: string, sessionIds: 
  * TAL-923: the single-session readers behind chat start, session detail, and the mutation gates, run on the worker.
  * TAL-1162: and the transcript reads behind turn history, settlement, and the detail's page tail.
  * TAL-1256: shared cron admission identities and completion links use this same dispatcher.
+ * TAL-1745: the session recovery scan, which may wait out a writer for its full busy timeout.
  */
-export const SESSION_READS = { stateDbHasSession, stateDbSessionHasMessages, stateDbSessionMessageSummary, insightsSessionRows, countConversationRounds, stateDbTailToolContent, stateDbLineageReport, stateDbCronJobIds, latestCronSessionInfo, stateDbLocalTargetRead, stateDbSessionRow, stateDbSessionMessages, stateDbCompressionLineage, stateDbSessionRead, stateDbSessionTailRead, stateDbSettlementRead }
+export const SESSION_READS = { stateDbHasSession, stateDbSessionHasMessages, stateDbSessionMessageSummary, insightsSessionRows, countConversationRounds, stateDbTailToolContent, stateDbLineageReport, stateDbCronJobIds, latestCronSessionInfo, stateDbLocalTargetRead, stateDbSessionRow, stateDbSessionMessages, stateDbCompressionLineage, stateDbSessionRead, stateDbSessionTailRead, stateDbSettlementRead, stateDbRecoveryCounts, stateDbRecoveryTranscript }
 type SessionReadName = keyof typeof SESSION_READS
 
 /** Exhaustive policy: authority never waits for transcript materialization; sidebar-scoped probes stay on listing. */
@@ -1204,6 +1205,7 @@ const SESSION_READ_LANES = {
   insightsSessionRows: 'session', countConversationRounds: 'session', stateDbTailToolContent: 'session', stateDbLineageReport: 'session',
   stateDbCronJobIds: 'session', latestCronSessionInfo: 'session', stateDbSessionMessages: 'session', stateDbCompressionLineage: 'session',
   stateDbSessionRead: 'session', stateDbSessionTailRead: 'session', stateDbSettlementRead: 'session',
+  stateDbRecoveryCounts: 'session', stateDbRecoveryTranscript: 'session',
 } satisfies Record<SessionReadName, StateDbWorkerLane>
 
 /**
@@ -1451,6 +1453,63 @@ export function stateDbSettlementRead(dbPath: string, sid: string, recorded: str
   const lineage = stateDbCompressionLineage(dbPath, sid)
   const moved = JSON.stringify(lineage) !== JSON.stringify(recorded ?? [sid])
   return { ...read, lineage, rotated: moved ? stateDbSessionRead(dbPath, sid, { stitch: false, lineage: lineage.length > 1 && lineage[0] === sid ? lineage : null }) : null }
+}
+
+// ── session recovery (TAL-259, off-thread since TAL-1745) ─────────────────
+
+/** Python `STATE_DB_RECOVERY_BUSY_TIMEOUT_MS`: a recovery scan waits out a writer rather than read a lock as "nothing missing". */
+const STATE_DB_RECOVERY_BUSY_TIMEOUT_MS = 5000
+export const RECOVERY_WORKTREE_FIELDS = ['worktree_path', 'worktree_branch', 'worktree_repo_root', 'worktree_created_at'] as const
+
+/** A WebUI-origin `sessions` row with its transcript's length. */
+export interface StateDbRecoveryRow extends Dict { id: string; count: number }
+/** `ids` is null when the db is missing or older (fail-open); `unreadable` when it exists but could not be read. */
+export interface StateDbRecoveryScan { ids: string[] | null; rows: StateDbRecoveryRow[]; unreadable: boolean }
+
+/** Python `_read_state_db_missing_sidecar_rows` without the transcripts: every session id, and each WebUI row's counts. */
+function stateDbRecoveryCounts(dbPath: string): StateDbRecoveryScan {
+  const absent: StateDbRecoveryScan = { ids: null, rows: [], unreadable: false }
+  if (!existsSync(dbPath)) return absent
+  let db: DatabaseSync
+  try { db = openStateDbReadonly(dbPath, STATE_DB_RECOVERY_BUSY_TIMEOUT_MS) } catch { return { ...absent, unreadable: true } }
+  try {
+    const cols = tableColumns(db, 'sessions')
+    if (!cols.has('id')) return absent
+    const ids = (db.prepare('SELECT id FROM sessions').all() as Dict[]).map((r) => str(r.id))
+    if (!cols.has('source')) return { ids, rows: [], unreadable: false }
+    const opt = (name: string, fallback = 'NULL'): string => (cols.has(name) ? name : `${fallback} AS ${name}`)
+    const select = ['id', opt('title'), opt('model'), opt('started_at', '0'), opt('parent_session_id'), opt('workspace'), ...RECOVERY_WORKTREE_FIELDS.map((f) => opt(f))]
+    const order = cols.has('started_at') ? 'COALESCE(started_at, 0) DESC' : 'rowid'
+    const rows = db.prepare(`SELECT ${select.join(', ')} FROM sessions WHERE source = 'webui' ORDER BY ${order}`).all() as Dict[]
+    const msgCols = tableColumns(db, 'messages')
+    const counts = new Map<string, number>()
+    if (['session_id', 'role', 'content'].every((c) => msgCols.has(c))) {
+      for (const r of db.prepare("SELECT session_id, COUNT(*) AS count FROM messages WHERE session_id IN (SELECT TRIM(id) FROM sessions WHERE source = 'webui') GROUP BY session_id").all() as Dict[]) counts.set(str(r.session_id), Number(r.count))
+    }
+    return { ids, rows: rows.map((row) => { const id = str(row.id).trim(); return { ...row, id, count: counts.get(id) ?? 0 } }), unreadable: false }
+  } catch {
+    return { ...absent, unreadable: true }
+  } finally {
+    finishStateDbRead(db)
+  }
+}
+
+/** The transcript a recovered sidecar is built from (Python `_state_db_row_to_sidecar`), or null when unreadable. */
+function stateDbRecoveryTranscript(dbPath: string, sid: string): Dict[] | null {
+  if (!existsSync(dbPath)) return null
+  let db: DatabaseSync
+  try { db = openStateDbReadonly(dbPath, STATE_DB_RECOVERY_BUSY_TIMEOUT_MS) } catch { return null }
+  try {
+    const cols = tableColumns(db, 'messages')
+    if (!['session_id', 'role', 'content'].every((c) => cols.has(c))) return []
+    const order = cols.has('timestamp') && cols.has('id') ? 'timestamp, id' : 'rowid'
+    const rows = db.prepare(`SELECT role, content, ${cols.has('timestamp') ? 'timestamp' : 'NULL AS timestamp'} FROM messages WHERE session_id = ? ORDER BY ${order}`).all(sid) as Dict[]
+    return rows.map((m) => ({ role: m.role, content: m.content || '', ...(m.timestamp !== null ? { timestamp: m.timestamp } : {}) }))
+  } catch {
+    return null
+  } finally {
+    finishStateDbRead(db)
+  }
 }
 
 /** The same snapshot and provenance projection, restricted to physical rows past the seen marker. */
