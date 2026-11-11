@@ -32,11 +32,11 @@ FAKE_POOL = '''lease_dir="$repo_root/leases"
 simulator_id=""
 ios_pool_acquire() {
     simulator_id="11111111-2222-3333-4444-555555555555"
-    print acquire >> "$CALL_LOG"
+    echo acquire >> "$CALL_LOG"
     touch "$lease_dir/$simulator_id.lock"
 }
 ios_pool_release() {
-    print release >> "$CALL_LOG"
+    echo release >> "$CALL_LOG"
     rm -f "$lease_dir/$simulator_id.lock"
 }
 '''
@@ -70,7 +70,7 @@ def run(options=(), *, failure=None, fail_launch=False):
             env['FAIL_TOOL'] = failure
         if fail_launch:
             env['FAIL_LAUNCH'] = '1'
-        with subprocess.Popen(['zsh', str(scripts / 'run-ios'), *options], env=env,
+        with subprocess.Popen(['bash', str(scripts / 'run-ios'), *options], env=env,
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as process:
             try:
                 deadline = time.monotonic() + 10

@@ -66,7 +66,7 @@ Duo is already booted:
 
 ```sh
 env IOS_SIMULATOR_DEVICE_TYPE=com.apple.CoreSimulator.SimDeviceType.iPhone-Duo \
-  scripts/ios-simulator-pool /bin/zsh -c \
+  scripts/ios-simulator-pool bash -c \
   'exec scripts/duo-pose "$IOS_SIMULATOR_ID" book --screenshot /tmp/duo-book.png'
 scripts/test-duo-pose --live
 ```
@@ -137,7 +137,7 @@ carries over; a device whose erase fails is quarantined until a later erase
 succeeds, and an explicitly selected non-pool simulator is never erased:
 
 ```sh
-scripts/ios-simulator-pool zsh -c '
+scripts/ios-simulator-pool bash -c '
   exec xcodebuild test -project Example.xcodeproj -scheme Example \
     -destination "platform=iOS Simulator,id=$IOS_SIMULATOR_ID" \
     -derivedDataPath .codex-tmp/tests -parallel-testing-enabled NO
@@ -145,7 +145,7 @@ scripts/ios-simulator-pool zsh -c '
 ```
 
 Use a foreground command that owns its children; do not detach work from the
-lease. Existing shell runners may source the helper, call `ios_pool_acquire`,
+lease. Existing bash runners may source the helper, call `ios_pool_acquire`,
 and call `ios_pool_release` in their EXIT trap after stopping/waiting for their
 child process. Preserve worktree-local build products and app-specific test
 identities. Run `scripts/test-ios-simulator-pool` for the synthetic contract check.

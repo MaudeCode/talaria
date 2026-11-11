@@ -30,20 +30,20 @@ with tempfile.TemporaryDirectory(prefix='ios-pool-check-') as directory:
         fixture.write_text(json.dumps({'devices': {'com.apple.CoreSimulator.SimRuntime.iOS-27-0': devices + [personal, duo]}}))
     save()
     fake = tools / 'xcrun'
-    fake.write_text('''#!/bin/zsh
+    fake.write_text('''#!/usr/bin/env bash
 if [[ "$1 $2 $3" == "simctl list devices" ]]; then
     cat "$POOL_FIXTURE"
 elif [[ "$1 $2 $3" == "simctl list runtimes" ]]; then
     cat "$POOL_RUNTIMES"
 elif [[ "$1 $2" == "simctl delete" ]]; then
-    print "$3" >> "$POOL_DELETIONS"
+    echo "$3" >> "$POOL_DELETIONS"
 elif [[ "$1 $2" == "simctl create" ]]; then
-    print -r -- "$3|$4|$5" >> "$POOL_CREATIONS"
-    print 00000000-0000-0000-0000-00000000c0de
+    echo "$3|$4|$5" >> "$POOL_CREATIONS"
+    echo 00000000-0000-0000-0000-00000000c0de
 elif [[ "$1 $2" == "simctl bootstatus" ]]; then
     [[ ! -e "$POOL_BOOT_FAIL" ]] || exit 1
 elif [[ "$1 $2" == "simctl erase" ]]; then
-    print "$3" >> "$POOL_ERASURES"
+    echo "$3" >> "$POOL_ERASURES"
     [[ ! -e "$POOL_ERASE_FAIL" ]] || exit 1
 fi
 ''')
@@ -61,8 +61,8 @@ fi
         env.pop(key, None)
     processes = []
     def invoke(project='two', expected=0, **overrides):
-        result = subprocess.run([str(work / project / 'pool'), '/bin/zsh', '-c',
-                                 'print -r -- "$IOS_SIMULATOR_ID"'], env=dict(env, **overrides),
+        result = subprocess.run([str(work / project / 'pool'), 'bash', '-c',
+                                 'echo "$IOS_SIMULATOR_ID"'], env=dict(env, **overrides),
                                 capture_output=True, text=True, timeout=10)
         assert result.returncode == expected, (result.returncode, result.stdout, result.stderr)
         return result.stdout.strip()
@@ -206,7 +206,7 @@ fi
         save()
         time.sleep(1.1)  # macOS shlock reclaims a dead owner's lock only once it is a second old.
         assert invoke() == devices[0]['udid']  # shlock recovers the dead PID.
-        result = subprocess.run([str(work / 'two' / 'pool'), '/bin/zsh', '-c', 'exit 42'], env=env)
+        result = subprocess.run([str(work / 'two' / 'pool'), 'bash', '-c', 'exit 42'], env=env)
         assert result.returncode == 42
         assert invoke() == devices[0]['udid']
         # A device whose erase fails is quarantined until an erase succeeds.
@@ -231,9 +231,9 @@ fi
             if explicit:
                 repeated_env['IOS_SIMULATOR_ID'] = devices[0]['udid']
             repeated = subprocess.Popen(
-                ['/bin/zsh', '-c', 'set -euo pipefail; source "$POOL_HELPER"; '
+                ['bash', '-c', 'set -euo pipefail; source "$POOL_HELPER"; '
                  'trap ios_pool_release EXIT; ios_pool_acquire; ios_pool_release; '
-                 'print ready; read -r proceed; ios_pool_acquire; print -r -- "$simulator_id"'],
+                 'echo ready; read -r proceed; ios_pool_acquire; echo "$simulator_id"'],
                 env=repeated_env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE, text=True)
             processes.append(repeated)
@@ -255,7 +255,7 @@ fi
                 fixture.unlink()
             else:
                 fixture.write_text(report)
-            result = subprocess.run([str(work / 'two' / 'pool'), '/bin/zsh', '-c', 'print ran'], env=env,
+            result = subprocess.run([str(work / 'two' / 'pool'), 'bash', '-c', 'echo ran'], env=env,
                                     capture_output=True, text=True, timeout=10)
             assert result.returncode != 0 and result.stdout == '', (report, result)
             assert erasures() == before
@@ -265,7 +265,7 @@ fi
         # A lease whose boot fails is shut down, erased and returned before the command could run.
         (work / 'boot-fail').touch()
         before = erasures()
-        result = subprocess.run([str(work / 'two' / 'pool'), '/bin/zsh', '-c', 'print ran'], env=env,
+        result = subprocess.run([str(work / 'two' / 'pool'), 'bash', '-c', 'echo ran'], env=env,
                                 capture_output=True, text=True, timeout=10)
         assert result.returncode != 0 and result.stdout == '', result
         assert erasures() == before + [devices[0]['udid']]

@@ -1,0 +1,20 @@
+# Interface (stable; setup-xcode and the App tooling job share it):
+#   uses: ./.github/actions/setup-bash
+# Hosted macOS images ship only /bin/bash 3.2. The App's `#!/usr/bin/env bash` scripts need bash 5 (EPOCHREALTIME,
+# fractional `read -t`, globstar, empty arrays under `set -u`), so this installs Homebrew's bash when the image lacks it
+# and puts it first on PATH for every later step, then fails unless that bash is version 5 or newer.
+name: Set up bash 5
+description: Put Homebrew's bash 5 first on PATH on a hosted macOS runner.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        prefix=$(brew --prefix)
+        "$prefix/bin/bash" -c '(( BASH_VERSINFO[0] >= 5 ))' 2>/dev/null \
+          || HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install --quiet bash
+        "$prefix/bin/bash" -c '(( BASH_VERSINFO[0] >= 5 ))' \
+          || { echo "::error::$prefix/bin/bash is not bash 5 or newer"; exit 1; }
+        echo "$prefix/bin" >> "$GITHUB_PATH"
+        echo "bash ${prefix}/bin/bash $("$prefix/bin/bash" -c 'echo "$BASH_VERSION"')"

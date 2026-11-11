@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Bash, not zsh: the Linux contract probe runs it on a stock runner without installing packages (TAL-2190).
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"

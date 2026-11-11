@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/usr/bin/env bash
 
 set -euo pipefail
 
@@ -17,7 +17,7 @@ requested_type=${IOS_SIMULATOR_DEVICE_TYPE:-}
 # become the default test runtime. Request one explicitly with
 # IOS_SIMULATOR_RUNTIME.
 # ponytail: build-number heuristic, revisit if Apple renumbers builds.
-prerelease=$(print -r -- "$runtimes_json" | /usr/bin/jq -c '
+prerelease=$(printf '%s\n' "$runtimes_json" | /usr/bin/jq -c '
     [.runtimes[] | select(.buildversion | test("^[0-9]+[A-Z]([5-9][0-9]{3}|[0-9]{5,})[a-z]$")) | .identifier]')
 eligible='select(if $requested == "" then . as $runtime | ($prerelease | index($runtime)) == null else . == $requested end)'
 newest_first='sort_by(capture("iOS-(?<version>[0-9]+(?:-[0-9]+)*)").version | split("-") | map(tonumber)) | reverse'
@@ -43,7 +43,7 @@ selection=$(
 if [[ -z "$selection" ]]; then
     # supportedDeviceTypes lists the newest models first.
     target=$(
-        print -r -- "$runtimes_json" |
+        printf '%s\n' "$runtimes_json" |
             /usr/bin/jq -r --arg requested "$requested_runtime" --arg type "$requested_type" \
                 --argjson prerelease "$prerelease" "
                 first(
@@ -63,14 +63,14 @@ if [[ -z "$selection" ]]; then
     if [[ -n "$target" ]]; then
         IFS=$'\t' read -r runtime_id device_type_id device_name <<< "$target"
         udid=$(xcrun simctl create "$device_name" "$device_type_id" "$runtime_id")
-        print -u2 "Created $device_name ($udid) on $runtime_id."
+        echo "Created $device_name ($udid) on $runtime_id." >&2
         selection="$udid"$'\t'"$runtime_id"$'\t'"$device_type_id"
     fi
 fi
 
 [[ -n "$selection" ]] || {
-    print -u2 "No available iPhone simulator was found."
+    echo "No available iPhone simulator was found." >&2
     exit 69
 }
 
-print -r -- "$selection"
+printf '%s\n' "$selection"

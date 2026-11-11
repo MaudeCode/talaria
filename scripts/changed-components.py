@@ -142,6 +142,8 @@ def path_suites(path):
         return {"docker", "tooling"}  # Compose/Buildx setup for the Docker smoke.
     if path == ".github/actions/app-package-tests/action.yml":
         return WORKFLOWS["app-tests.yml"]  # The package tests' steps, called only from app-tests.yml.
+    if path == ".github/actions/setup-bash/action.yml":
+        return {"app", "app_tooling", "tooling"}  # bash 5 for the App's scripts in the macOS App and App tooling jobs.
     if path == ".github/actions/setup-xcode/action.yml":
         return {"app", "tooling"}  # Xcode selection for the App build and tests.
     if path.startswith((".github/actions/", ".githooks/", "releases/")) or path in (

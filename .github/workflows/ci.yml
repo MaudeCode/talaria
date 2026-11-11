@@ -84,6 +84,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-bash
       - name: Check string catalogs and test their checker
         run: |
           ci/check-string-catalogs

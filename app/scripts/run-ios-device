@@ -1,8 +1,8 @@
-#!/bin/zsh
+#!/usr/bin/env bash
 
 set -euo pipefail
 
-repo_root=${0:A:h:h}
+repo_root=$(cd "$(dirname "$(realpath "$0")")/.." && pwd -P)
 [[ "${_TALARIA_ENV_LOADED:-}" == 1 ]] || exec "$repo_root/scripts/load-env" "$repo_root/scripts/run-ios-device" "$@"
 build_dir="$repo_root/.codex-tmp/device-build"
 # Talaria Dev (Config/Dev.xcconfig) installs beside the App Store/TestFlight app and never replaces it.
@@ -11,14 +11,14 @@ fresh=false
 no_launch=false
 
 usage() {
-    print "Usage: scripts/run-ios-device [--fresh] [--no-launch]"
-    print
-    print "Builds, installs, and launches Talaria Dev on the connected physical iPhone."
-    print "  --fresh  Clear the local device build cache first. Phone data is preserved."
-    print "  --no-launch  Install the app without launching it."
-    print
-    print "Set TALARIA_DEVICE_ID to a hardware UDID or CoreDevice identifier when"
-    print "more than one physical iPhone is paired."
+    echo "Usage: scripts/run-ios-device [--fresh] [--no-launch]"
+    echo
+    echo "Builds, installs, and launches Talaria Dev on the connected physical iPhone."
+    echo "  --fresh  Clear the local device build cache first. Phone data is preserved."
+    echo "  --no-launch  Install the app without launching it."
+    echo
+    echo "Set TALARIA_DEVICE_ID to a hardware UDID or CoreDevice identifier when"
+    echo "more than one physical iPhone is paired."
 }
 
 while (( $# > 0 )); do
@@ -34,7 +34,7 @@ while (( $# > 0 )); do
             exit 0
             ;;
         *)
-            print -u2 "Unknown option: $1"
+            echo "Unknown option: $1" >&2
             usage >&2
             exit 64
             ;;
@@ -44,10 +44,10 @@ done
 
 if [[ "$fresh" == true && -d "$build_dir" ]]; then
     [[ ! -L "$build_dir" ]] || {
-        print -u2 "Refusing to clear symlinked build directory: $build_dir"
+        echo "Refusing to clear symlinked build directory: $build_dir" >&2
         exit 1
     }
-    print "Clearing $build_dir"
+    echo "Clearing $build_dir"
     find "$build_dir" -mindepth 1 -delete
 fi
 mkdir -p "$build_dir"
@@ -55,7 +55,7 @@ mkdir -p "$build_dir"
 device_id=$("$repo_root/scripts/select-ios-device") || exit
 
 cd "$repo_root"
-print "Building for iPhone $device_id"
+echo "Building for iPhone $device_id"
 build_log="$build_dir/build.log"
 if ! xcodebuild build -quiet \
     -project Talaria.xcodeproj \
@@ -68,39 +68,39 @@ if ! xcodebuild build -quiet \
     cat "$build_log" >&2
     exit 1
 fi
-print "Build complete"
+echo "Build complete"
 
 app_path="$build_dir/Build/Products/Debug-iphoneos/Talaria.app"
 [[ -d "$app_path" ]] || {
-    print -u2 "Build succeeded but the app was not found at $app_path"
+    echo "Build succeeded but the app was not found at $app_path" >&2
     exit 1
 }
 codesign --verify --deep --strict "$app_path"
-path+=(/usr/libexec)
+PATH="$PATH:/usr/libexec"
 bundle_id=$(PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Info.plist")
 [[ "$bundle_id" == "$dev_bundle_id" ]] || {
-    print -u2 "Refusing to install $bundle_id; expected Talaria Dev ($dev_bundle_id)."
+    echo "Refusing to install $bundle_id; expected Talaria Dev ($dev_bundle_id)." >&2
     exit 1
 }
 
-print "Installing $bundle_id"
+echo "Installing $bundle_id"
 xcrun devicectl device install app --device "$device_id" "$app_path"
 
 if [[ "$no_launch" == true ]]; then
-    print "Launch skipped"
+    echo "Launch skipped"
     exit 0
 fi
 
-print "Launching $bundle_id"
+echo "Launching $bundle_id"
 if ! launch_output=$(xcrun devicectl device process launch \
     --device "$device_id" \
     --terminate-existing \
     "$bundle_id" 2>&1); then
     if [[ "$launch_output" == *"reason: Locked"* ]]; then
-        print -u2 "Installed successfully. Unlock the iPhone and rerun; the cached build will be fast."
+        echo "Installed successfully. Unlock the iPhone and rerun; the cached build will be fast." >&2
     else
-        print -u2 "$launch_output"
+        printf '%s\n' "$launch_output" >&2
     fi
     exit 1
 fi
-print "$launch_output"
+printf '%s\n' "$launch_output"
