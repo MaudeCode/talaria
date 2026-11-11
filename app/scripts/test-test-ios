@@ -24,6 +24,14 @@ cleanup() {
     return "$exit_status"
 }
 trap cleanup EXIT
+# A bare assertion fails silently under errexit; name it and show the newest synthetic run's log.
+report_failure() {
+    echo "test-test-ios: line $1 failed: $2" >&2
+    local latest
+    latest=$(ls -t "$test_root"/state/*.log 2>/dev/null | head -n 1) || true
+    [[ -z "$latest" ]] || { echo "--- $latest" >&2; tail -n 20 "$latest" >&2; }
+}
+trap 'report_failure "$LINENO" "$BASH_COMMAND"' ERR
 
 repo="$test_root/repo"
 peer="$test_root/peer"

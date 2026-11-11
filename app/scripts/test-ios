@@ -112,6 +112,8 @@ fi
 # never reaches the foreground, and reports a hang only after minutes. Stop a host that never connects and reboot
 # once (TAL-1547). A connected host can warm its bundle before the first suite, so use Xcode's acknowledgement too.
 connect_timeout=${TALARIA_RUNNER_CONNECT_TIMEOUT:-30}
+# Bash's SECONDS ticks on wall-clock second boundaries, so a 1 s budget could expire at once; time it in microseconds.
+now_us() { local now=$EPOCHREALTIME; echo $(( 10#${now//[.,]/} )); }
 preparation_timeout=${TALARIA_RUNNER_PREPARATION_TIMEOUT:-30}
 runner_session_matches() {
     local -a session_logs=("$result_bundle"/Staging/1_Test/Diagnostics/**/Session-*.log)
@@ -143,7 +145,7 @@ while true; do
         -resultStreamPath "$result_stream" \
         "${filters[@]}" &
     xcodebuild_pid=$!
-    connect_started=$SECONDS
+    connect_started=$(now_us)
     preparation_started=0
     runner_phase=connecting
     host_launched=0
@@ -151,21 +153,21 @@ while true; do
         if (( ! host_launched )) && runner_session_matches 'Launched app with identifier: .*[(]pid = [0-9]+[)]'; then
             host_launched=1
             runner_phase=connecting
-            connect_started=$SECONDS
+            connect_started=$(now_us)
         elif (( ! host_launched )) && [[ "$runner_phase" != preparing ]] && runner_session_matches 'Installing app at path:'; then
             # Xcode can spend the connection budget installing an app whose host has not launched yet.
             runner_phase=preparing
-            preparation_started=$SECONDS
+            preparation_started=$(now_us)
         fi
         if [[ "$runner_phase" == preparing ]]; then
-            (( SECONDS - preparation_started < preparation_timeout )) || break
+            (( $(now_us) - preparation_started < preparation_timeout * 1000000 )) || break
         else
-            (( SECONDS - connect_started < connect_timeout )) || break
+            (( $(now_us) - connect_started < connect_timeout * 1000000 )) || break
         fi
         sleep 1
     done
     if ! kill -0 "$xcodebuild_pid" 2>/dev/null || runner_connected; then
-        ! runner_connected || echo "The test runner connected after $(( SECONDS - connect_started ))s."
+        ! runner_connected || echo "The test runner connected after $(( ($(now_us) - connect_started) / 1000000 ))s."
         wait "$xcodebuild_pid" || exit $?
         xcodebuild_pid=""
         exit 0
