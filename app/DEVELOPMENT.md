@@ -3,6 +3,10 @@
 Run commands in this document from `app/`. Workflows live in `../.github/`.
 Release and TestFlight operations are in [`TESTFLIGHT.md`](TESTFLIGHT.md).
 
+The scripts under `scripts/` and `ci/` run with `#!/usr/bin/env bash` and need bash 5; macOS ships 3.2, so
+install Homebrew's (`brew install bash`) and keep it first on `PATH`. CI does the same through
+`.github/actions/setup-bash`.
+
 `scripts/test-ios` builds once and launches the generated `.xctestrun`, as hosted CI does. The test phase retains its runner-connection guard without reopening the project or resolving its workspace again. A missing or ambiguous build receipt stops before test launch.
 
 ## Server

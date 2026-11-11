@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/usr/bin/env bash
 # Boots a simulator and waits until its notification service answers (TAL-651). After a fresh boot the
 # iOS 27 simulator's dasd can hang in its own launch, and SpringBoard starts its notification
 # server only once dasd answers: until then every notification settings, permission and delivery
@@ -10,20 +10,18 @@
 # --already-booted requires a successful command inside this simulator immediately before the call.
 
 set -euo pipefail
-zmodload zsh/datetime
-zmodload zsh/zselect
 already_booted=false
 if [[ "${1:-}" == --already-booted ]]; then
     already_booted=true
     shift
 fi
-(( $# == 1 )) || { print -u2 "Usage: scripts/ready-simulator-notifications [--already-booted] <simulator-udid>"; exit 64; }
+(( $# == 1 )) || { echo "Usage: scripts/ready-simulator-notifications [--already-booted] <simulator-udid>" >&2; exit 64; }
 simulator_id=$1
 readonly client_budget=5
 if [[ "$already_booted" == false ]]; then
-    print -u2 "Notification bootstrap start (elapsed ${SECONDS}s)."
+    echo "Notification bootstrap start (elapsed ${SECONDS}s)." >&2
     xcrun simctl bootstatus "$simulator_id" -b >/dev/null
-    print -u2 "Notification bootstrap finished (elapsed ${SECONDS}s)."
+    echo "Notification bootstrap finished (elapsed ${SECONDS}s)." >&2
 fi
 
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/talaria-notification-probe.XXXXXX")
@@ -45,35 +43,44 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 trap 'exit 129' HUP
-print -r -- '{"aps":{"alert":"probe"}}' > "$payload"
+printf '%s\n' '{"aps":{"alert":"probe"}}' > "$payload"
+
+# Bash arithmetic is integral: EPOCHREALTIME (bash 5) as microseconds, whatever the locale's decimal separator.
+now_us() { local now=$EPOCHREALTIME; echo $(( 10#${now//[.,]/} )); }
+# A builtin pause: an external sleep would be one more client that must start promptly on a busy host. Nothing writes
+# to this FIFO, so a read waits out its timeout; the open descriptor outlives the unlinked file.
+mkfifo "$scratch/pause"
+exec {pause_fd}<>"$scratch/pause"
+rm -f "$scratch/pause"
+pause() { read -rt "$1" -u "$pause_fd" _ || true; }
 
 # A hung simctl restart must not prevent the next probe; both clients own the same bounded lifecycle.
 client_finishes_within_budget() {
-    local label=$1 started=$SECONDS deadline=$(( EPOCHREALTIME + client_budget )) command_status=0
+    local label=$1 started=$SECONDS deadline=$(( $(now_us) + client_budget * 1000000 )) command_status=0
     shift
-    print -u2 "$label start (elapsed ${SECONDS}s)."
+    echo "$label start (elapsed ${SECONDS}s)." >&2
     "$@" >"$client_log" 2>&1 &
     command_pid=$!
-    while kill -0 "$command_pid" 2>/dev/null && (( EPOCHREALTIME < deadline - 0.1 )); do
-        zselect -t 10 || true
+    while kill -0 "$command_pid" 2>/dev/null && (( $(now_us) < deadline - 100000 )); do
+        pause 0.1
     done
     if kill -0 "$command_pid" 2>/dev/null; then
         kill "$command_pid" 2>/dev/null || true
-        while kill -0 "$command_pid" 2>/dev/null && (( EPOCHREALTIME < deadline )); do
-            zselect -t 1 || true
+        while kill -0 "$command_pid" 2>/dev/null && (( $(now_us) < deadline )); do
+            pause 0.01
         done
         kill -KILL "$command_pid" 2>/dev/null || true
         wait "$command_pid" 2>/dev/null || true
         command_pid=""
-        print -u2 "$label timed out after $(( SECONDS - started ))s."
-        if [[ -s "$client_log" ]]; then print -u2 -r -- "$label output: $(<"$client_log")"; fi
+        echo "$label timed out after $(( SECONDS - started ))s." >&2
+        if [[ -s "$client_log" ]]; then printf '%s\n' "$label output: $(<"$client_log")" >&2; fi
         return 1
     fi
     wait "$command_pid" 2>/dev/null || command_status=$?
     command_pid=""
-    print -u2 "$label finished after $(( SECONDS - started ))s (status $command_status)."
+    echo "$label finished after $(( SECONDS - started ))s (status $command_status)." >&2
     if (( command_status != 0 )) && [[ -s "$client_log" ]]; then
-        print -u2 -r -- "$label output: $(<"$client_log")"
+        printf '%s\n' "$label output: $(<"$client_log")" >&2
     fi
     return 0
 }
@@ -88,11 +95,11 @@ notification_service_answers() {
 # so its setup moves on by at least one call per restart.
 for attempt in {1..30}; do
     notification_service_answers && exit 0
-    print -u2 "The simulator's notification service did not answer; restarting its dasd (attempt $attempt)."
+    echo "The simulator's notification service did not answer; restarting its dasd (attempt $attempt)." >&2
     client_finishes_within_budget "Dasd restart client" \
         xcrun simctl spawn "$simulator_id" launchctl kill SIGKILL user/foreground/com.apple.dasd ||
-        print -u2 "The simulator's restart client did not finish within ${client_budget}s; probing again."
+        echo "The simulator's restart client did not finish within ${client_budget}s; probing again." >&2
 done
 notification_service_answers && exit 0
-print -u2 "The notification service of simulator $simulator_id never answered."
+echo "The notification service of simulator $simulator_id never answered." >&2
 exit 1

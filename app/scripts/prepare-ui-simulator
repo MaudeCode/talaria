@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/usr/bin/env bash
 # Prepares a booted simulator for hosted tests: the keyboard's one-time slide-to-type introduction is marked as shown,
 # the notification service answers (scripts/ready-simulator-notifications, TAL-651), photo import is warmed on a
 # best-effort basis (scripts/seed-simulator-photo, TAL-633), and the document picker's frameworks are warm
@@ -10,24 +10,25 @@
 # Usage: scripts/prepare-ui-simulator [--keyboard-only] <simulator-udid>
 
 set -euo pipefail
-zmodload zsh/datetime
 keyboard_only=false
 recover_notifications=${GITHUB_ACTIONS:-false}
 if [[ "${1:-}" == --keyboard-only ]]; then
     keyboard_only=true
     shift
 fi
-(( $# == 1 )) || { print -u2 "Usage: scripts/prepare-ui-simulator [--keyboard-only] <simulator-udid>"; exit 64; }
+(( $# == 1 )) || { echo "Usage: scripts/prepare-ui-simulator [--keyboard-only] <simulator-udid>" >&2; exit 64; }
 simulator_id=$1
-scripts=${0:A:h}
+scripts=$(cd "$(dirname "$(realpath "$0")")" && pwd -P)
 
 prepare_step() {
     local name=$1 started=$SECONDS exit_status=0 budget=60
     # Match CI's initial boot limit; notification attempts retain their own 60-second limit.
     [[ "$name" == reboot ]] && budget=600
-    local deadline=$(( EPOCHREALTIME + budget ))
+    # An absolute epoch deadline for the Python supervisor; EPOCHREALTIME needs bash 5.
+    local now=$EPOCHREALTIME
+    local deadline="$(( ${now%[.,]*} + budget )).${now#*[.,]}"
     shift
-    print -r -- "$(date -u '+%Y-%m-%dT%H:%M:%SZ') $name start elapsed=0s"
+    echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') $name start elapsed=0s"
     if [[ "$name" == notifications || "$name" == photo || "$name" == reboot ]]; then
         # Hosted timing exceeded 60s in these clients; include their cleanup in the same budget.
         python3 - "$deadline" "$budget" "$name" "$@" <<'PYTHON' || exit_status=$?
@@ -75,7 +76,7 @@ PYTHON
     else
         "$@" || exit_status=$?
     fi
-    print -r -- "$(date -u '+%Y-%m-%dT%H:%M:%SZ') $name end elapsed=$(( SECONDS - started ))s"
+    echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') $name end elapsed=$(( SECONDS - started ))s"
     return "$exit_status"
 }
 
@@ -91,8 +92,8 @@ for attempt in 1 2; do
     if [[ "$recover_notifications" != true || "$attempt" == 2 || "$notification_status" != 124 ]]; then
         exit "$notification_status"
     fi
-    print -u2 "Notification readiness timed out; rebooting the disposable simulator once."
-    prepare_step reboot zsh -c 'xcrun simctl shutdown "$1" && xcrun simctl bootstatus "$1" -b' -- "$simulator_id"
+    echo "Notification readiness timed out; rebooting the disposable simulator once." >&2
+    prepare_step reboot bash -c 'xcrun simctl shutdown "$1" && xcrun simctl bootstatus "$1" -b' -- "$simulator_id"
 done
 prepare_step photo "$scripts/seed-simulator-photo" "$simulator_id"
 prepare_step documents "$scripts/ready-simulator-documents" "$simulator_id"

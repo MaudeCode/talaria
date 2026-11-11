@@ -137,6 +137,7 @@ class RoutingTests(unittest.TestCase):
             ([".github/workflows/ci.yml"], {"app", "app_tooling", "web_sidecar", "contracts", "tooling"}),
             ([".github/workflows/app-tests.yml"], {"app", "contracts", "tooling"}),
             ([".github/actions/setup-xcode/action.yml"], {"app", "tooling"}),
+            ([".github/actions/setup-bash/action.yml"], {"app", "app_tooling", "tooling"}),
             ([".github/actions/app-package-tests/action.yml"], {"app", "contracts", "tooling"}),
             (["app/ci/build-for-testing", "app/ci/package-coverage"], {"app", "tooling"}),
             (["app/ci/build-for-testing", "app/ci/check-swift-warnings", "app/ci/wait-for-job", "app/ci/gh-api-poll"], {"app", "tooling"}),

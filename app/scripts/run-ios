@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/usr/bin/env bash
 
 set -euo pipefail
 
@@ -8,11 +8,11 @@ if [[ "${1:-}" == --no-open ]]; then
     shift
 fi
 if (( $# != 0 )); then
-    print -u2 "Usage: scripts/run-ios [--no-open]"
+    echo "Usage: scripts/run-ios [--no-open]" >&2
     exit 64
 fi
 
-repo_root=${0:A:h:h}
+repo_root=$(cd "$(dirname "$(realpath "$0")")/.." && pwd -P)
 runtime_dir="$repo_root/.codex-tmp/run-ios"
 lock_file="$runtime_dir/runner.lock"
 source "$repo_root/scripts/ios-simulator-pool"
@@ -30,7 +30,7 @@ cleanup() {
 }
 
 if ! /usr/bin/shlock -f "$lock_file" -p $$; then
-    print -u2 "Talaria is already running from this worktree (PID $(<"$lock_file"))."
+    echo "Talaria is already running from this worktree (PID $(<"$lock_file"))." >&2
     exit 75
 fi
 trap cleanup EXIT
@@ -41,7 +41,7 @@ ios_pool_acquire
 destination="platform=iOS Simulator,id=$simulator_id"
 app_path="$runtime_dir/derived-data/Build/Products/Debug-iphonesimulator/Talaria.app"
 
-print "Simulator: $destination"
+echo "Simulator: $destination"
 cd "$repo_root"
 xcodebuild build -quiet \
     -project Talaria.xcodeproj \
@@ -58,7 +58,7 @@ xcodebuild_pid=""
 
 bundle_identifier=$(/usr/bin/plutil -extract CFBundleIdentifier raw -o - "$app_path/Info.plist")
 if [[ "$bundle_identifier" != dev.kil.talaria.xctest ]]; then
-    print -u2 "The isolated simulator pool requires dev.kil.talaria.xctest, but the built app uses $bundle_identifier."
+    echo "The isolated simulator pool requires dev.kil.talaria.xctest, but the built app uses $bundle_identifier." >&2
     exit 78
 fi
 
@@ -73,7 +73,7 @@ if [[ "$open_simulator" == true ]]; then
 fi
 xcrun simctl launch "$simulator_id" "$bundle_identifier" --ui-test-fixture
 
-print "Talaria's deterministic fixture is running on $simulator_id. Press Control-C to end the session and release it."
+echo "Talaria's deterministic fixture is running on $simulator_id. Press Control-C to end the session and release it."
 while true; do
     sleep 30
 done

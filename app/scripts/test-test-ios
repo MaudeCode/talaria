@@ -1,11 +1,11 @@
-#!/bin/zsh
+#!/usr/bin/env bash
 
 set -euo pipefail
 
-source_root=${0:A:h:h}
+source_root=$(cd "$(dirname "$(realpath "$0")")/.." && pwd -P)
 rounds=${1:-20}
-[[ "$rounds" =~ '^[1-9][0-9]*$' ]] || {
-    print -u2 "Usage: scripts/test-test-ios [positive-round-count]"
+[[ "$rounds" =~ ^[1-9][0-9]*$ ]] || {
+    echo "Usage: scripts/test-test-ios [positive-round-count]" >&2
     exit 64
 }
 test_root=$(mktemp -d "${TMPDIR:-/tmp}/talaria-test-ios.XXXXXX")
@@ -17,13 +17,21 @@ cleanup() {
         kill "$pid" 2>/dev/null || true
     done
     if [[ -n "${TALARIA_KEEP_SCRIPT_TEST_TMP:-}" ]]; then
-        print -u2 "Preserved test state: $test_root"
+        echo "Preserved test state: $test_root" >&2
     elif [[ -d "$test_root" ]]; then
         rm -rf -- "$test_root"
     fi
     return "$exit_status"
 }
 trap cleanup EXIT
+# A bare assertion fails silently under errexit; name it and show the newest synthetic run's log.
+report_failure() {
+    echo "test-test-ios: line $1 failed: $2" >&2
+    local latest
+    latest=$(ls -t "$test_root"/state/*.log 2>/dev/null | head -n 1) || true
+    [[ -z "$latest" ]] || { echo "--- $latest" >&2; tail -n 20 "$latest" >&2; }
+}
+trap 'report_failure "$LINENO" "$BASH_COMMAND"' ERR
 
 repo="$test_root/repo"
 peer="$test_root/peer"
@@ -40,29 +48,29 @@ defaults:
   simulatorName: "iPhone 17"
 EOF
 cat > "$fake_bin/xcrun" <<'EOF'
-#!/bin/zsh
+#!/usr/bin/env bash
 if [[ "$*" == "simctl list devices available --json" ]]; then
-    <"${TALARIA_DEVICE_FIXTURE:?}"
+    cat "${TALARIA_DEVICE_FIXTURE:?}"
 fi
 EOF
 cat > "$fake_bin/xcodebuild" <<'EOF'
-#!/bin/zsh
+#!/usr/bin/env bash
 set -euo pipefail
 
 state=${TALARIA_TEST_STATE:?}
 if [[ "$1" == build-for-testing ]]; then
-    typeset -a build_args=("$@")
+    build_args=("$@")
     derived=""
-    for (( index = 1; index <= ${#build_args}; index++ )); do
+    for (( index = 0; index < ${#build_args[@]}; index++ )); do
         if [[ "${build_args[index]}" == -derivedDataPath ]]; then
-            (( index++ )); derived=${build_args[index]}
+            index=$(( index + 1 )); derived=${build_args[index]}
         fi
     done
     mkdir -p "$derived/Build/Products"
     [[ "${TALARIA_FAKE_BUILD_RECEIPTS:-single}" != none ]] || exit 0
-    print -r -- 'build-produced fixture receipt' > "$derived/Build/Products/Talaria_Fixture.xctestrun"
+    echo 'build-produced fixture receipt' > "$derived/Build/Products/Talaria_Fixture.xctestrun"
     if [[ "${TALARIA_FAKE_BUILD_RECEIPTS:-single}" == multiple ]]; then
-        print -r -- 'other fixture receipt' > "$derived/Build/Products/Other.xctestrun"
+        echo 'other fixture receipt' > "$derived/Build/Products/Other.xctestrun"
     fi
     exit 0
 fi
@@ -73,31 +81,31 @@ result_stream=""
 parallel=""
 receipt=""
 exit_status=0
-typeset -a selectors=()
-typeset -a args=("$@")
-for (( index = 1; index <= ${#args}; index++ )); do
+selectors=()
+args=("$@")
+for (( index = 0; index < ${#args[@]}; index++ )); do
     case "${args[index]}" in
         -project|-scheme)
-            print -u2 'Test launch reopened the project instead of consuming the build receipt.'
+            echo 'Test launch reopened the project instead of consuming the build receipt.' >&2
             exit 96
             ;;
         -xctestrun)
-            (( index++ )); receipt=${args[index]}
+            index=$(( index + 1 )); receipt=${args[index]}
             ;;
         -destination)
-            (( index++ ))
+            index=$(( index + 1 ))
             destination="${args[index]}"
             ;;
         -resultBundlePath)
-            (( index++ ))
+            index=$(( index + 1 ))
             result_bundle="${args[index]}"
             ;;
         -resultStreamPath)
-            (( index++ ))
+            index=$(( index + 1 ))
             result_stream="${args[index]}"
             ;;
         -parallel-testing-enabled)
-            (( index++ ))
+            index=$(( index + 1 ))
             parallel="${args[index]}"
             ;;
         -only-testing:*)
@@ -107,52 +115,52 @@ for (( index = 1; index <= ${#args}; index++ )); do
     esac
 done
 [[ -f "$receipt" && "$(<"$receipt")" == 'build-produced fixture receipt' ]] || {
-    print -u2 'Test launch did not consume the receipt produced by build-for-testing.'
+    echo 'Test launch did not consume the receipt produced by build-for-testing.' >&2
     exit 96
 }
 
 # Synthetic runners that never connect: ConnectsOnRelaunch connects on its second launch.
-previous_runs=$(grep -c -- "${selectors[1]:-}" "$state/runs" || true)
-if [[ "${selectors[1]:-}" == *NeverConnects* ]] || [[ "${selectors[1]:-}" == *ConnectsOnRelaunch* && $previous_runs == 0 ]]; then
+previous_runs=$(grep -c -- "${selectors[0]:-}" "$state/runs" || true)
+if [[ "${selectors[0]:-}" == *NeverConnects* ]] || [[ "${selectors[0]:-}" == *ConnectsOnRelaunch* && $previous_runs == 0 ]]; then
     mkdir -p "$result_bundle/Staging/1_Test/Diagnostics"
-    print -r -- 'Connected socket 30 to testmanagerd' > "$result_bundle/Staging/1_Test/Diagnostics/Session-Transport.log"
-    print -r -- "$destination|$result_bundle|${(j: :)selectors}|$parallel" >> "$state/runs"
+    printf '%s\n' 'Connected socket 30 to testmanagerd' > "$result_bundle/Staging/1_Test/Diagnostics/Session-Transport.log"
+    printf '%s\n' "$destination|$result_bundle|${selectors[*]}|$parallel" >> "$state/runs"
     exec sleep 30
 fi
 # Xcode acknowledges the connected test host before bundle warm-up finishes and the first suite is reported.
-if [[ "${selectors[1]:-}" == *InstallThen* || "${selectors[1]:-}" == *InstallNeverLaunches* || "${selectors[1]:-}" == *LaunchRequestNeverRuns* || "${selectors[1]:-}" == *LaunchedNeverConnects* ]]; then
+if [[ "${selectors[0]:-}" == *InstallThen* || "${selectors[0]:-}" == *InstallNeverLaunches* || "${selectors[0]:-}" == *LaunchRequestNeverRuns* || "${selectors[0]:-}" == *LaunchedNeverConnects* ]]; then
     session_log="$result_bundle/Staging/1_Test/Diagnostics/TalariaTests/Runner/Session-Preparation.log"
-    mkdir -p "${session_log:h}"
-    if [[ "${selectors[1]:-}" != *LaunchedNeverConnects* ]]; then
-        print -r -- 'Installing app at path: /fixture/Talaria.app' > "$session_log"
+    mkdir -p "$(dirname "$session_log")"
+    if [[ "${selectors[0]:-}" != *LaunchedNeverConnects* ]]; then
+        printf '%s\n' 'Installing app at path: /fixture/Talaria.app' > "$session_log"
     fi
-    if [[ "${selectors[1]:-}" == *LaunchRequestNeverRuns* ]]; then
-        print -r -- 'Launching app with identifier: dev.kil.talaria.xctest and options: {' >> "$session_log"
+    if [[ "${selectors[0]:-}" == *LaunchRequestNeverRuns* ]]; then
+        printf '%s\n' 'Launching app with identifier: dev.kil.talaria.xctest and options: {' >> "$session_log"
     fi
-    if [[ "${selectors[1]:-}" == *LaunchedNeverConnects* ]]; then
-        print -r -- 'Launched app with identifier: dev.kil.talaria.xctest (pid = 1234)' >> "$session_log"
+    if [[ "${selectors[0]:-}" == *LaunchedNeverConnects* ]]; then
+        printf '%s\n' 'Launched app with identifier: dev.kil.talaria.xctest (pid = 1234)' >> "$session_log"
     fi
-    if [[ "${selectors[1]:-}" == *InstallNeverLaunches* || "${selectors[1]:-}" == *LaunchRequestNeverRuns* || "${selectors[1]:-}" == *LaunchedNeverConnects* ]]; then
-        print -r -- "$destination|$result_bundle|${(j: :)selectors}|$parallel" >> "$state/runs"
+    if [[ "${selectors[0]:-}" == *InstallNeverLaunches* || "${selectors[0]:-}" == *LaunchRequestNeverRuns* || "${selectors[0]:-}" == *LaunchedNeverConnects* ]]; then
+        printf '%s\n' "$destination|$result_bundle|${selectors[*]}|$parallel" >> "$state/runs"
         exec sleep 30
     fi
     sleep 2
-    print -r -- 'Launched app with identifier: dev.kil.talaria.xctest (pid = 1234)' >> "$session_log"
-    print -r -- 'Test runner is ready with capabilities: <XCTCapabilities: fixture>' >> "$session_log"
+    printf '%s\n' 'Launched app with identifier: dev.kil.talaria.xctest (pid = 1234)' >> "$session_log"
+    printf '%s\n' 'Test runner is ready with capabilities: <XCTCapabilities: fixture>' >> "$session_log"
 fi
-if [[ "${selectors[1]:-}" == *ConnectedBeforeSuite* || "${selectors[1]:-}" == *ReadyBeforeExecution* ]]; then
+if [[ "${selectors[0]:-}" == *ConnectedBeforeSuite* || "${selectors[0]:-}" == *ReadyBeforeExecution* ]]; then
     mkdir -p "$result_bundle/Staging/1_Test/Diagnostics/TalariaTests/Runner"
     acknowledgement='Test runner started executing tests.'
-    [[ "${selectors[1]:-}" != *ReadyBeforeExecution* ]] || acknowledgement='Test runner is ready with capabilities: <XCTCapabilities: fixture>'
-    print -r -- "xcodebuild[123:456] $acknowledgement" > "$result_bundle/Staging/1_Test/Diagnostics/TalariaTests/Runner/Session-Connected.log"
+    [[ "${selectors[0]:-}" != *ReadyBeforeExecution* ]] || acknowledgement='Test runner is ready with capabilities: <XCTCapabilities: fixture>'
+    printf '%s\n' "xcodebuild[123:456] $acknowledgement" > "$result_bundle/Staging/1_Test/Diagnostics/TalariaTests/Runner/Session-Connected.log"
     sleep 2
 fi
 # The runner connects and reports its first suite.
-print -r -- '{"name":{"_value":"testSuiteStarted"}}' >> "$result_stream"
-[[ ! -e TalariaTests/VisualReferences/.record ]] || print -r -- "${selectors[1]:-}" >> "$state/recorded"
-[[ ! -e .codex-tmp/xctest/test-screenshots ]] || print -r -- "${selectors[1]:-}" >> "$state/screenshots"
+printf '%s\n' '{"name":{"_value":"testSuiteStarted"}}' >> "$result_stream"
+[[ ! -e TalariaTests/VisualReferences/.record ]] || printf '%s\n' "${selectors[0]:-}" >> "$state/recorded"
+[[ ! -e .codex-tmp/xctest/test-screenshots ]] || printf '%s\n' "${selectors[0]:-}" >> "$state/screenshots"
 if [[ -e .codex-tmp/xctest/native-history-drag ]]; then
-    print -r -- "$(<.codex-tmp/xctest/native-history-drag)|${selectors[1]:-}" >> "$state/native-drag"
+    printf '%s\n' "$(<.codex-tmp/xctest/native-history-drag)|${selectors[0]:-}" >> "$state/native-drag"
 fi
 lock="$state/counter.lock"
 while ! mkdir "$lock" 2>/dev/null; do sleep 0.01; done
@@ -160,9 +168,9 @@ read -r active < "$state/active"
 read -r maximum < "$state/maximum"
 active=$(( active + 1 ))
 (( active > maximum )) && maximum=$active
-print -r -- "$active" > "$state/active"
-print -r -- "$maximum" > "$state/maximum"
-print -r -- "$destination|$result_bundle|${(j: :)selectors}|$parallel" >> "$state/runs"
+printf '%s\n' "$active" > "$state/active"
+printf '%s\n' "$maximum" > "$state/maximum"
+printf '%s\n' "$destination|$result_bundle|${selectors[*]}|$parallel" >> "$state/runs"
 rmdir "$lock"
 
 sleep "${TALARIA_FAKE_XCODEBUILD_SECONDS:-0.08}"
@@ -170,7 +178,7 @@ mkdir -p "$result_bundle"
 
 while ! mkdir "$lock" 2>/dev/null; do sleep 0.01; done
 read -r active < "$state/active"
-print -r -- "$(( active - 1 ))" > "$state/active"
+printf '%s\n' "$(( active - 1 ))" > "$state/active"
 rmdir "$lock"
 exit "$exit_status"
 EOF
@@ -182,8 +190,8 @@ EOF
 cat > "$state/fallback-devices" <<'EOF'
 {"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-27-0":[{"name":"iPhone 16","udid":"DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD","state":"Shutdown"}]}}
 EOF
-print 0 > "$state/active"
-print 0 > "$state/maximum"
+echo 0 > "$state/active"
+echo 0 > "$state/maximum"
 : > "$state/runs"
 
 git -C "$repo" init -q
@@ -205,11 +213,11 @@ wait_until_active() {
         kill -0 "$pid" 2>/dev/null || break
         sleep 0.01
     done
-    print -u2 "Timed out waiting for $target synthetic xcodebuild run(s)."
+    echo "Timed out waiting for $target synthetic xcodebuild run(s)." >&2
     return 1
 }
 
-for round in {1..$rounds}; do
+for (( round = 1; round <= rounds; round++ )); do
     "$repo/scripts/test-ios" "TalariaTests/Primary$round" > "$state/primary-$round.log" 2>&1 &
     primary_pid=$!
     wait_until_active "$primary_pid"
@@ -221,7 +229,7 @@ done
 
 read -r maximum < "$state/maximum"
 [[ "$maximum" == 1 ]] || {
-    print -u2 "Expected one xcodebuild at a time within a worktree, observed $maximum."
+    echo "Expected one xcodebuild at a time within a worktree, observed $maximum." >&2
     exit 1
 }
 [[ $(wc -l < "$state/runs" | tr -d ' ') == $(( rounds * 2 )) ]]
@@ -232,9 +240,10 @@ grep -Eq "Waiting for this worktree's XCTest run: owner PID [0-9]+, elapsed [0-9
 manifest_repo="$test_root/manifest-repo"
 git -C "$repo" worktree add -qb manifest "$manifest_repo"
 before_manifest_checks=$(wc -l < "$state/runs" | tr -d ' ')
-for mode expected in none 0 multiple 2; do
+for case in none:0 multiple:2; do
+    mode=${case%%:*} expected=${case#*:}
     if TALARIA_FAKE_BUILD_RECEIPTS=$mode "$manifest_repo/scripts/test-ios" TalariaTests/InvalidReceipt > "$state/receipt-$mode.log" 2>&1; then
-        print -u2 "Expected the $mode build receipt to fail before test launch."
+        echo "Expected the $mode build receipt to fail before test launch." >&2
         exit 1
     else
         [[ $? == 65 ]]
@@ -256,19 +265,19 @@ wait "$primary_pid"
 wait "$peer_pid"
 unset TALARIA_FAKE_XCODEBUILD_SECONDS
 if grep -q "Waiting for" "$state/concurrent-peer.log"; then
-    print -u2 "A run in another worktree waited for admission."
+    echo "A run in another worktree waited for admission." >&2
     exit 1
 fi
 [[ $(sed -n 's/^\([^|]*\)|.*Concurrent.*$/\1/p' "$state/runs" | sort -u | wc -l | tr -d ' ') == 2 ]]
-print 0 > "$state/maximum"
+echo 0 > "$state/maximum"
 
-print 'defaults:\n  simulatorName: "Missing simulator"' > "$repo/.xcodebuildmcp/config.yaml"
+printf 'defaults:\n  simulatorName: "Missing simulator"\n' > "$repo/.xcodebuildmcp/config.yaml"
 export TALARIA_DEVICE_FIXTURE="$state/fallback-devices"
 IOS_SIMULATOR_ID=DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD "$repo/scripts/test-ios" TalariaTests/Fallback > "$state/fallback.log" 2>&1
 grep -Eq "platform=iOS Simulator,id=DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD" "$state/fallback.log"
 export TALARIA_DEVICE_FIXTURE="$state/pool-devices"
 if "$repo/scripts/test-ios" TalariaTests/Failure > "$state/failure.log" 2>&1; then
-    print -u2 "Expected the synthetic xcodebuild failure to propagate."
+    echo "Expected the synthetic xcodebuild failure to propagate." >&2
     exit 1
 else
     [[ $? == 42 ]]
@@ -278,14 +287,15 @@ runs_for() { grep -c -- "$1" "$state/runs" || true; }
 [[ $(runs_for TalariaTests/Failure) == 1 ]]  # A real failure never retries.
 
 # A connected host can spend longer than the connection budget warming up before its first suite.
-for selector expected_status in ConnectedBeforeSuite 0 ConnectedBeforeSuiteFailure 42 ReadyBeforeExecution 0 ReadyBeforeExecutionFailure 42; do
+for case in ConnectedBeforeSuite:0 ConnectedBeforeSuiteFailure:42 ReadyBeforeExecution:0 ReadyBeforeExecutionFailure:42; do
+    selector=${case%%:*} expected_status=${case#*:}
     if TALARIA_RUNNER_CONNECT_TIMEOUT=1 "$repo/scripts/test-ios" "TalariaTests/$selector" > "$state/$selector.log" 2>&1; then
         observed_status=0
     else
         observed_status=$?
     fi
     [[ "$observed_status" == "$expected_status" ]] || {
-        print -u2 "A connected host awaiting its first suite returned $observed_status instead of $expected_status."
+        echo "A connected host awaiting its first suite returned $observed_status instead of $expected_status." >&2
         exit 1
     }
     [[ $(runs_for "TalariaTests/$selector|") == 1 ]]
@@ -293,14 +303,15 @@ for selector expected_status in ConnectedBeforeSuite 0 ConnectedBeforeSuiteFailu
 done
 
 # App installation is preparation, not time a running host spent failing to connect.
-for selector expected_status in InstallThenConnect 0 InstallThenFailure 42; do
+for case in InstallThenConnect:0 InstallThenFailure:42; do
+    selector=${case%%:*} expected_status=${case#*:}
     if TALARIA_RUNNER_CONNECT_TIMEOUT=1 TALARIA_RUNNER_PREPARATION_TIMEOUT=3 "$repo/scripts/test-ios" "TalariaTests/$selector" > "$state/$selector.log" 2>&1; then
         observed_status=0
     else
         observed_status=$?
     fi
     [[ "$observed_status" == "$expected_status" ]] || {
-        print -u2 "Installation consumed the connection budget: $selector returned $observed_status instead of $expected_status."
+        echo "Installation consumed the connection budget: $selector returned $observed_status instead of $expected_status." >&2
         exit 1
     }
     [[ $(runs_for "TalariaTests/$selector|") == 1 ]]
@@ -309,30 +320,30 @@ done
 for selector in InstallNeverLaunches LaunchRequestNeverRuns LaunchedNeverConnects; do
     started=$SECONDS
     if TALARIA_RUNNER_CONNECT_TIMEOUT=1 TALARIA_RUNNER_PREPARATION_TIMEOUT=1 "$repo/scripts/test-ios" "TalariaTests/$selector" > "$state/$selector.log" 2>&1; then
-        print -u2 "A stalled $selector unexpectedly passed."
+        echo "A stalled $selector unexpectedly passed." >&2
         exit 1
     else
         [[ $? == 70 ]]
     fi
     [[ $(runs_for "TalariaTests/$selector|") == 2 ]]
-    (( SECONDS - started < 15 )) || { print -u2 "A stalled $selector exceeded its bounded relaunches."; exit 1; }
+    (( SECONDS - started < 15 )) || { echo "A stalled $selector exceeded its bounded relaunches." >&2; exit 1; }
 done
 
 # A runner that never connects gets one relaunch on a rebooted simulator, then stops the run with its name, without
 # waiting out xcodebuild. A previous result bundle cannot supply the current attempt's acknowledgement.
 stale_session="$repo/.codex-tmp/xctest/results/previous.xcresult/Staging/1_Test/Diagnostics/Session-Stale.log"
-mkdir -p "${stale_session:h}"
-print -r -- 'xcodebuild[123:456] Test runner started executing tests.' > "$stale_session"
-print -r -- 'xcodebuild[123:456] Test runner is ready with capabilities: <XCTCapabilities: fixture>' >> "$stale_session"
+mkdir -p "$(dirname "$stale_session")"
+printf '%s\n' 'xcodebuild[123:456] Test runner started executing tests.' > "$stale_session"
+printf '%s\n' 'xcodebuild[123:456] Test runner is ready with capabilities: <XCTCapabilities: fixture>' >> "$stale_session"
 started=$SECONDS
 if TALARIA_RUNNER_CONNECT_TIMEOUT=1 "$repo/scripts/test-ios" TalariaTests/NeverConnects > "$state/never-connects.log" 2>&1; then
-    print -u2 "Expected a runner that never connects to fail the run."
+    echo "Expected a runner that never connects to fail the run." >&2
     exit 1
 else
     [[ $? == 70 ]]
 fi
 (( SECONDS - started < 15 )) || {
-    print -u2 "A runner that never connected held the run for $(( SECONDS - started ))s."
+    echo "A runner that never connected held the run for $(( SECONDS - started ))s." >&2
     exit 1
 }
 grep -Eq "The test runner on iOS Test [12] \([A-F-]+\) did not connect within 1s; rebooting" "$state/never-connects.log"
@@ -345,7 +356,7 @@ lock_file="$repo/.codex-tmp/xctest/runner.lock"
 sleep 0.01 &
 dead_pid=$!
 wait "$dead_pid"
-print -r -- "$dead_pid" > "$lock_file"
+printf '%s\n' "$dead_pid" > "$lock_file"
 "$repo/scripts/test-ios" TalariaTests/StaleLock > "$state/stale.log" 2>&1
 
 export TALARIA_DEVICE_FIXTURE="$state/pool-devices"
@@ -363,7 +374,7 @@ done
 grep -Eq "Waiting for this worktree's XCTest run: owner PID [0-9]+, elapsed [0-9]+s" "$state/cancelled-waiter.log"
 kill -TERM "$waiter"
 if wait "$waiter"; then
-    print -u2 "Expected the waiting runner to exit after cancellation."
+    echo "Expected the waiting runner to exit after cancellation." >&2
     exit 1
 else
     [[ $? == 130 ]]
@@ -388,7 +399,7 @@ read -r active < "$state/active"
 before=$(wc -l < "$state/runs")
 "$repo/scripts/test-ios" > "$state/default.log" 2>&1
 [[ "$(tail -n "+$(( before + 1 ))" "$state/runs" | cut -d'|' -f3-)" == '-only-testing:TalariaTests|NO' ]] || {
-    print -u2 "Expected a run without selectors to test TalariaTests in one pass without clones:"
+    echo "Expected a run without selectors to test TalariaTests in one pass without clones:" >&2
     tail -n "+$(( before + 1 ))" "$state/runs" | cut -d'|' -f3- >&2
     exit 1
 }
@@ -396,7 +407,7 @@ before=$(wc -l < "$state/runs")
 # The visual-reference record marker exists only during a recording run, even one that fails,
 # and a stale marker never turns an ordinary run into a re-record.
 marker="$repo/TalariaTests/VisualReferences/.record"
-mkdir -p "${marker:h}"
+mkdir -p "$(dirname "$marker")"
 : > "$marker"
 : > "$state/recorded"
 "$repo/scripts/test-ios" TalariaTests/Ordinary > "$state/ordinary.log" 2>&1
@@ -429,7 +440,7 @@ pkill -TERM -P "$waiter" lockf || true
 wait "$waiter" || true
 kill -0 "$owner"  # The owner is still recording.
 [[ -e "$marker" ]] || {
-    print -u2 "A cancelled waiter removed the active recording run's marker."
+    echo "A cancelled waiter removed the active recording run's marker." >&2
     exit 1
 }
 wait "$owner"
@@ -439,15 +450,15 @@ unset TALARIA_FAKE_XCODEBUILD_SECONDS
 # Native gesture mode is scoped to its owning run, including failed runs;
 # a stale marker must never make unattended hosted tests wait for a driver.
 native_marker="$repo/.codex-tmp/xctest/native-history-drag"
-print stale > "$native_marker"
+echo stale > "$native_marker"
 : > "$state/native-drag"
 "$repo/scripts/test-ios" TalariaTests/NativeOrdinary > "$state/native-ordinary.log" 2>&1
 TALARIA_NATIVE_HISTORY_DRAG=first "$repo/scripts/test-ios" TalariaTests/NativeDriver > "$state/native-driver.log" 2>&1
 TALARIA_NATIVE_HISTORY_DRAG=second "$repo/scripts/test-ios" TalariaTests/NativeFailure > "$state/native-failure.log" 2>&1 || true
 [[ "$(<"$state/native-drag")" == $'first|-only-testing:TalariaTests/NativeDriver\nsecond|-only-testing:TalariaTests/NativeFailure' ]] || {
-    print -u2 "Native gesture mode leaked into an ordinary run or was missing from its owning run."
+    echo "Native gesture mode leaked into an ordinary run or was missing from its owning run." >&2
     exit 1
 }
 [[ ! -e "$native_marker" ]]
 
-print "test-ios worktree admission, selection, runner connection and cleanup checks passed ($rounds concurrent rounds)."
+echo "test-ios worktree admission, selection, runner connection and cleanup checks passed ($rounds concurrent rounds)."

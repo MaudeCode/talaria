@@ -1,17 +1,17 @@
-#!/bin/zsh
+#!/usr/bin/env bash
 
 set -euo pipefail
 
-repo_root=${0:A:h:h}
+repo_root=$(cd "$(dirname "$(realpath "$0")")/.." && pwd -P)
 pool_size=${IOS_SIMULATOR_POOL_SIZE:-6}
 pool_runtime_dir=${IOS_SIMULATOR_POOL_DIR:-/tmp/ios-simulator-pool-$EUID}
 pool_lock="$pool_runtime_dir/pool.lock"
 lease_dir="$pool_runtime_dir/leases"
 refresh=false
-typeset -a held_lease_files=()
+held_lease_files=()
 
 usage() {
-    print "Usage: scripts/setup-ios-test-pool [--refresh]"
+    echo "Usage: scripts/setup-ios-test-pool [--refresh]"
 }
 
 if (( $# > 1 )); then
@@ -25,8 +25,8 @@ if (( $# == 1 )); then
     }
     refresh=true
 fi
-if [[ "$pool_size" != <-> || "$pool_size" -lt 1 ]]; then
-    print -u2 "IOS_SIMULATOR_POOL_SIZE must be a positive integer."
+if [[ ! "$pool_size" =~ ^[0-9]+$ ]] || (( 10#$pool_size < 1 )); then
+    echo "IOS_SIMULATOR_POOL_SIZE must be a positive integer." >&2
     exit 64
 fi
 
@@ -40,7 +40,7 @@ cleanup() {
 }
 
 if ! /usr/bin/shlock -f "$pool_lock" -p $$; then
-    print -u2 "The iOS simulator pool is already being configured. Retry when it finishes."
+    echo "The iOS simulator pool is already being configured. Retry when it finishes." >&2
     exit 75
 fi
 trap cleanup EXIT
@@ -70,7 +70,7 @@ if [[ "$refresh" == true ]]; then
         [[ -n "$simulator_id" ]] || continue
         lease_file="$lease_dir/$simulator_id.lock"
         if ! /usr/bin/shlock -f "$lease_file" -p $$; then
-            print -u2 "An iOS pool simulator is leased. Retry when its test run finishes."
+            echo "An iOS pool simulator is leased. Retry when its test run finishes." >&2
             exit 75
         fi
         held_lease_files+=("$lease_file")
@@ -78,50 +78,50 @@ if [[ "$refresh" == true ]]; then
 
     after=$(pool_snapshot)
     [[ "$before" == "$after" ]] || {
-        print -u2 "The iOS simulator pool changed during refresh preflight. No devices were removed."
+        echo "The iOS simulator pool changed during refresh preflight. No devices were removed." >&2
         exit 75
     }
-    if print -r -- "$after" | awk -F '\t' 'NF && $3 != "Shutdown" { found=1 } END { exit !found }'; then
-        print -u2 "An iOS pool simulator is active. No devices were removed."
+    if printf '%s\n' "$after" | awk -F '\t' 'NF && $3 != "Shutdown" { found=1 } END { exit !found }'; then
+        echo "An iOS pool simulator is active. No devices were removed." >&2
         exit 75
     fi
 
     while IFS=$'\t' read -r _ simulator_id _; do
         [[ -n "$simulator_id" ]] || continue
         xcrun simctl delete "$simulator_id"
-        print "Removed iOS pool simulator $simulator_id"
+        echo "Removed iOS pool simulator $simulator_id"
     done <<< "$after"
 fi
 
 for (( slot = 1; slot <= pool_size; slot++ )); do
     simulator_name="iOS Test $slot"
     devices_json=$(xcrun simctl list devices --json)
-    match_count=$(print -r -- "$devices_json" | /usr/bin/jq --arg name "$simulator_name" \
+    match_count=$(printf '%s\n' "$devices_json" | /usr/bin/jq --arg name "$simulator_name" \
         '[.devices[][] | select(.name == $name)] | length')
 
     if (( match_count > 1 )); then
-        print -u2 "Multiple simulators are named $simulator_name. Run with --refresh."
+        echo "Multiple simulators are named $simulator_name. Run with --refresh." >&2
         exit 69
     fi
     if (( match_count == 1 )); then
-        matches_source=$(print -r -- "$devices_json" | /usr/bin/jq -e \
+        matches_source=$(printf '%s\n' "$devices_json" | /usr/bin/jq -e \
             --arg name "$simulator_name" --arg runtime "$runtime_id" --arg type "$device_type_id" '
                 any(.devices | to_entries[];
                     .key == $runtime and any(.value[]; .name == $name and .deviceTypeIdentifier == $type)
                 )
-            ' >/dev/null && print yes || print no)
+            ' >/dev/null && echo yes || echo no)
         [[ "$matches_source" == yes ]] || {
-            print -u2 "$simulator_name uses a stale runtime or device type. Run with --refresh."
+            echo "$simulator_name uses a stale runtime or device type. Run with --refresh." >&2
             exit 69
         }
-        print "Reusing $simulator_name"
+        echo "Reusing $simulator_name"
         continue
     fi
 
     simulator_id=$(xcrun simctl create "$simulator_name" "$device_type_id" "$runtime_id")
-    print "Created $simulator_name ($simulator_id)"
+    echo "Created $simulator_name ($simulator_id)"
     xcrun simctl boot "$simulator_id"
     xcrun simctl bootstatus "$simulator_id" -b >/dev/null
     xcrun simctl shutdown "$simulator_id"
-    print "Warmed $simulator_name"
+    echo "Warmed $simulator_name"
 done

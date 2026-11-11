@@ -5,6 +5,7 @@
 # Selects that Xcode with maxim-lobanov/setup-xcode, then fails unless xcodebuild reports the same major.minor;
 # there is no fallback to another version. It prints `xcodebuild -version`, the iOS SDK and the simulator runtimes,
 # and exports IOS_SIMULATOR_OS: the newest SDK-compatible runtime with the iPhone 17 used by CI and contract jobs.
+# It also puts bash 5 first on PATH (setup-bash), which the App's scripts need.
 # The image can ship a newer runtime with only a different device, so build and test select the same usable runtime.
 name: Set up Xcode
 description: Select an exact Xcode major.minor on a hosted macOS runner and fail if the image lacks it.
@@ -16,6 +17,7 @@ inputs:
 runs:
   using: composite
   steps:
+    - uses: ./.github/actions/setup-bash
     - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
       with:
         xcode-version: ${{ inputs.xcode-version }}

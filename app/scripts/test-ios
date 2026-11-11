@@ -1,18 +1,19 @@
-#!/bin/zsh
+#!/usr/bin/env bash
 
 if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
-    print 'Usage: scripts/test-ios [test-identifier ...]'
-    print 'Runs the identifiers once through the shared simulator pool; defaults to TalariaTests.'
-    print 'Set IOS_SIMULATOR_ID to lease a specific disposable simulator.'
-    print 'A test runner that does not connect within TALARIA_RUNNER_CONNECT_TIMEOUT seconds (default 30) gets one'
-    print 'relaunch on a rebooted simulator, then stops the run.'
-    print 'Explicit app installation has its own TALARIA_RUNNER_PREPARATION_TIMEOUT budget (default 30).'
+    echo 'Usage: scripts/test-ios [test-identifier ...]'
+    echo 'Runs the identifiers once through the shared simulator pool; defaults to TalariaTests.'
+    echo 'Set IOS_SIMULATOR_ID to lease a specific disposable simulator.'
+    echo 'A test runner that does not connect within TALARIA_RUNNER_CONNECT_TIMEOUT seconds (default 30) gets one'
+    echo 'relaunch on a rebooted simulator, then stops the run.'
+    echo 'Explicit app installation has its own TALARIA_RUNNER_PREPARATION_TIMEOUT budget (default 30).'
     exit 0
 fi
 
 set -euo pipefail
+shopt -s nullglob globstar
 
-repo_root=${0:A:h:h}
+repo_root=$(cd "$(dirname "$(realpath "$0")")/.." && pwd -P)
 [[ "${_TALARIA_ENV_LOADED:-}" == 1 ]] || exec "$repo_root/scripts/load-env" "$repo_root/scripts/test-ios" "$@"
 runtime_dir="$repo_root/.codex-tmp/xctest"
 # Per worktree: runs here share derived data. Worktrees run concurrently, each on
@@ -26,7 +27,7 @@ xcodebuild_pid=""
 # process, so the visual-reference record switch travels as a marker file the
 # tests can stat. It never outlives the run that created it.
 visual_reference_marker="$repo_root/TalariaTests/VisualReferences/.record"
-typeset -a owned_run_markers=()
+owned_run_markers=()
 mkdir -p "$runtime_dir/results"
 mkdir -p "$lease_dir"
 exec 9>"$lock_file"
@@ -59,16 +60,16 @@ while true; do
     now=$SECONDS
     owner_pid=$(sed -n '1p' "$owner_file" 2>/dev/null || true)
     [[ -n "$owner_pid" ]] || owner_pid=unknown
-    print -u2 "Waiting for this worktree's XCTest run: owner PID $owner_pid, elapsed $(( now - wait_started ))s."
+    echo "Waiting for this worktree's XCTest run: owner PID $owner_pid, elapsed $(( now - wait_started ))s." >&2
     lock_timeout=5
 done
-print -r -- $$ > "$owner_file"
+echo $$ > "$owner_file"
 
 ios_pool_acquire
 destination="platform=iOS Simulator,id=$simulator_id"
 
 (( $# )) || set -- TalariaTests
-typeset -a filters=("${@/#/-only-testing:}")
+filters=("${@/#/-only-testing:}")
 
 cd "$repo_root"
 # A killed owner can leave a marker behind. Clear each mode only after this
@@ -77,8 +78,8 @@ prepare_run_marker() {
     local marker_path=$1 marker_value=$2
     rm -f "$marker_path"
     if [[ -n "$marker_value" ]]; then
-        mkdir -p "${marker_path:h}"
-        print -rn -- "$marker_value" > "$marker_path"
+        mkdir -p "$(dirname "$marker_path")"
+        printf '%s' "$marker_value" > "$marker_path"
         owned_run_markers+=("$marker_path")
     fi
 }
@@ -86,7 +87,7 @@ prepare_run_marker "$visual_reference_marker" "${TALARIA_RECORD_VISUAL_REFERENCE
 prepare_run_marker "$runtime_dir/native-history-drag" "${TALARIA_NATIVE_HISTORY_DRAG:-}"
 prepare_run_marker "$runtime_dir/test-screenshots" "${TALARIA_TEST_SCREENSHOTS:-}"
 
-typeset -a project=(
+project=(
     -project Talaria.xcodeproj
     -scheme Talaria
     -derivedDataPath "$runtime_dir/derived-data"
@@ -100,9 +101,9 @@ wait "$xcodebuild_pid" || exit $?
 xcodebuild_pid=""
 
 # CI consumes the build receipt too: reopening the project here repeats workspace resolution inside the launch guard.
-typeset -a test_runs=("$runtime_dir"/derived-data/Build/Products/*.xctestrun(N))
-if (( ${#test_runs} != 1 )); then
-    print -u2 "Expected one build-produced .xctestrun in $runtime_dir/derived-data/Build/Products; found ${#test_runs}."
+test_runs=("$runtime_dir"/derived-data/Build/Products/*.xctestrun)
+if (( ${#test_runs[@]} != 1 )); then
+    echo "Expected one build-produced .xctestrun in $runtime_dir/derived-data/Build/Products; found ${#test_runs[@]}." >&2
     exit 65
 fi
 
@@ -111,10 +112,12 @@ fi
 # never reaches the foreground, and reports a hang only after minutes. Stop a host that never connects and reboot
 # once (TAL-1547). A connected host can warm its bundle before the first suite, so use Xcode's acknowledgement too.
 connect_timeout=${TALARIA_RUNNER_CONNECT_TIMEOUT:-30}
+# Bash's SECONDS ticks on wall-clock second boundaries, so a 1 s budget could expire at once; time it in microseconds.
+now_us() { local now=$EPOCHREALTIME; echo $(( 10#${now//[.,]/} )); }
 preparation_timeout=${TALARIA_RUNNER_PREPARATION_TIMEOUT:-30}
 runner_session_matches() {
-    local -a session_logs=("$result_bundle"/Staging/1_Test/Diagnostics/**/Session-*.log(N))
-    (( ${#session_logs} )) || return 1
+    local -a session_logs=("$result_bundle"/Staging/1_Test/Diagnostics/**/Session-*.log)
+    (( ${#session_logs[@]} )) || return 1
     grep -Eq -- "$1" "${session_logs[@]}"
 }
 runner_connected() {
@@ -129,9 +132,9 @@ while true; do
     result_bundle="$runtime_dir/results/$run_name.xcresult"
     result_stream="$runtime_dir/results/$run_name.stream.json"
     : > "$result_stream"
-    print "Simulator: $simulator_name, $destination"
-    print "Result bundle: $result_bundle"
-    xcodebuild test-without-building -quiet -xctestrun "${test_runs[1]}" \
+    echo "Simulator: $simulator_name, $destination"
+    echo "Result bundle: $result_bundle"
+    xcodebuild test-without-building -quiet -xctestrun "${test_runs[0]}" \
         -enableCodeCoverage NO \
         -destination "$destination" \
         -testLanguage en \
@@ -142,7 +145,7 @@ while true; do
         -resultStreamPath "$result_stream" \
         "${filters[@]}" &
     xcodebuild_pid=$!
-    connect_started=$SECONDS
+    connect_started=$(now_us)
     preparation_started=0
     runner_phase=connecting
     host_launched=0
@@ -150,21 +153,21 @@ while true; do
         if (( ! host_launched )) && runner_session_matches 'Launched app with identifier: .*[(]pid = [0-9]+[)]'; then
             host_launched=1
             runner_phase=connecting
-            connect_started=$SECONDS
+            connect_started=$(now_us)
         elif (( ! host_launched )) && [[ "$runner_phase" != preparing ]] && runner_session_matches 'Installing app at path:'; then
             # Xcode can spend the connection budget installing an app whose host has not launched yet.
             runner_phase=preparing
-            preparation_started=$SECONDS
+            preparation_started=$(now_us)
         fi
         if [[ "$runner_phase" == preparing ]]; then
-            (( SECONDS - preparation_started < preparation_timeout )) || break
+            (( $(now_us) - preparation_started < preparation_timeout * 1000000 )) || break
         else
-            (( SECONDS - connect_started < connect_timeout )) || break
+            (( $(now_us) - connect_started < connect_timeout * 1000000 )) || break
         fi
         sleep 1
     done
     if ! kill -0 "$xcodebuild_pid" 2>/dev/null || runner_connected; then
-        ! runner_connected || print "The test runner connected after $(( SECONDS - connect_started ))s."
+        ! runner_connected || echo "The test runner connected after $(( ($(now_us) - connect_started) / 1000000 ))s."
         wait "$xcodebuild_pid" || exit $?
         xcodebuild_pid=""
         exit 0
@@ -178,10 +181,10 @@ while true; do
         timeout_reason="The test runner on $simulator_name ($simulator_id) did not connect within ${connect_timeout}s"
     fi
     if (( attempt == 2 )); then
-        print -u2 "$timeout_reason after a reboot; stopping the run."
+        echo "$timeout_reason after a reboot; stopping the run." >&2
         exit 70
     fi
-    print -u2 "$timeout_reason; rebooting it for one more launch."
+    echo "$timeout_reason; rebooting it for one more launch." >&2
     ios_pool_release
     ios_pool_acquire || exit $?
     destination="platform=iOS Simulator,id=$simulator_id"
