@@ -124,6 +124,7 @@ public struct ProfileSummary: Decodable, Equatable, Hashable, Identifiable, Send
     let hasEnv: Bool?
     public let skillCount: Int?
     public let botDisplayName: String?
+    public let nameDiffers: Bool?
     public let description: String?
     public let canonicalSession: CanonicalSession?
 
@@ -136,12 +137,13 @@ public struct ProfileSummary: Decodable, Equatable, Hashable, Identifiable, Send
     private enum CodingKeys: String, CodingKey {
         case name, path, isDefault, isActive, gatewayRunning, model, provider, hasEnv, skillCount
         case botDisplayName = "displayName"
-        case description, canonicalSession
+        case description, canonicalSession, nameDiffers
     }
 
     init(name: String?, path: String?, isDefault: Bool?, isActive: Bool?, gatewayRunning: Bool?,
          model: String?, provider: String?, hasEnv: Bool?, skillCount: Int?,
-         botDisplayName: String? = nil, description: String? = nil, canonicalSession: CanonicalSession? = nil) {
+         botDisplayName: String? = nil, description: String? = nil, canonicalSession: CanonicalSession? = nil,
+         nameDiffers: Bool? = nil) {
         self.name = name
         self.path = path
         self.isDefault = isDefault
@@ -152,6 +154,7 @@ public struct ProfileSummary: Decodable, Equatable, Hashable, Identifiable, Send
         self.hasEnv = hasEnv
         self.skillCount = skillCount
         self.botDisplayName = botDisplayName
+        self.nameDiffers = nameDiffers
         self.description = description
         self.canonicalSession = canonicalSession
     }

@@ -585,15 +585,16 @@ final class APIClientConfigurationTests: APIClientTestCase {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let response = try decoder.decode(ProfilesResponse.self, from: Data(#"""
         {"profiles":[
-          {"name":"research","display_name":"Research Bot","description":"Finds primary sources.",
+          {"name":"research","display_name":"Research Bot","name_differs":true,"description":"Finds primary sources.",
            "canonical_session":{"session_id":"bot-root","tip_session_id":"bot-tip"},"future_field":true},
           {"name":"default"},
-          {"name":"personal","display_name":"","canonical_session":null}
+          {"name":"personal","display_name":"","name_differs":false,"canonical_session":null}
         ]}
         """#.utf8))
         XCTAssertEqual(response.profiles?.map(\.displayName), ["Research Bot", "Default", "personal"])
         let bot = try XCTUnwrap(response.profiles?.first)
         XCTAssertEqual(bot.botDisplayName, "Research Bot")
+        XCTAssertEqual(response.profiles?.map(\.nameDiffers), [true, nil, false])
         XCTAssertEqual(bot.description, "Finds primary sources.")
         XCTAssertEqual(bot.canonicalSession?.sessionId, "bot-root")
         XCTAssertEqual(bot.canonicalSession?.tipSessionId, "bot-tip")

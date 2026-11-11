@@ -481,17 +481,20 @@ final class SettingsPlacementHostedTests: XCTestCase {
                 switchedNames.value.append(body?["name"] ?? "")
             }
             let canonical: Any
-            if let tip = switching ? returnedTip.value : "bot-old-tip" {
+            if let tip = switching || !switchedNames.value.isEmpty ? returnedTip.value : "bot-old-tip" {
                 canonical = ["session_id": "bot-root", "tip_session_id": tip]
             } else {
                 canonical = NSNull()
             }
+            var bot: [String: Any] = ["name": "alpha", "display_name": "Research Bot", "description": "Finds primary sources.",
+                                      "canonical_session": canonical]
+            // Only the list endpoint carries the server's row presentation fields.
+            if !switching { bot["name_differs"] = true }
             let data = try JSONSerialization.data(withJSONObject: [
-                "active": switching ? "alpha" : "beta",
+                "active": switchedNames.value.isEmpty ? "beta" : "alpha",
                 "profiles": [
-                    ["name": "alpha", "display_name": "Research Bot", "description": "Finds primary sources.",
-                     "canonical_session": canonical],
-                    ["name": "beta", "canonical_session": NSNull()],
+                    bot,
+                    ["name": "beta", "display_name": "beta", "name_differs": false, "canonical_session": NSNull()],
                     ["name": "gamma"]
                 ],
                 "single_profile_mode": false
@@ -516,6 +519,8 @@ final class SettingsPlacementHostedTests: XCTestCase {
         let window = try hostWindow(screen())
         _ = try await requireElement(in: window, label: "gamma")
         attachHostedScreenshot(window, name: "profiles-bot-identity")
+        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "beta"),
+                        "A server name_differs=false row must not repeat its display name as a slug")
         let action = try await requireElement(in: window, "Missing Open Bot Chat for a canonical profile") {
             HostedAccessibility.identifier(of: $0) == "profile-open-bot-chat-alpha"
         }
@@ -534,6 +539,8 @@ final class SettingsPlacementHostedTests: XCTestCase {
         let url = try XCTUnwrap(opened.value.first)
         XCTAssertEqual(TalariaDeepLink.sessionID(from: url), "bot-current-tip")
         XCTAssertEqual(TalariaDeepLink.publisherID(from: url), server.absoluteString)
+        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Research Bot, alpha, Finds primary sources."),
+                        "A switch response without name_differs must reconcile through the list's server projection")
         attachHostedScreenshot(window, name: "profiles-bot-selected")
 
         // The canonical chat can disappear between listing and switching. Never reuse the list's old tip.
@@ -551,6 +558,7 @@ final class SettingsPlacementHostedTests: XCTestCase {
         window.isHidden = true
         window.rootViewController = nil
 
+        returnedTip.value = "bot-current-tip"
         let layouts: [(String, CGSize, DynamicTypeSize, UIUserInterfaceStyle)] = [
             ("landscape", HostedSize.phoneLandscape, .large, .light),
             ("wide", HostedSize.padLandscape, .large, .light),

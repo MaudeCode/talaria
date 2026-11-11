@@ -199,7 +199,7 @@ struct DefaultProfilePickerView: View {
     private func profileDetails(_ profile: ProfileSummary) -> String? {
         var details: [String] = []
 
-        if let botDisplayName = profile.botDisplayName, !botDisplayName.isEmpty, let name = profile.name {
+        if profile.nameDiffers == true, let name = profile.name {
             details.append(name)
         }
 
@@ -252,7 +252,8 @@ struct DefaultProfilePickerView: View {
         }
 
         do {
-            let response = try await APIClient(baseURL: server).switchProfile(name: name)
+            let client = APIClient(baseURL: server)
+            let response = try await client.switchProfile(name: name)
             if let error = response.error?.trimmingCharacters(in: .whitespacesAndNewlines), !error.isEmpty {
                 saveError = error
                 return
@@ -260,7 +261,8 @@ struct DefaultProfilePickerView: View {
 
             let returnedActiveName = response.active?.trimmingCharacters(in: .whitespacesAndNewlines)
             let resolvedName = returnedActiveName?.isEmpty == false ? returnedActiveName : name
-            let updatedProfiles = response.profiles ?? profiles
+            // The list owns row presentation fields such as name_differs; the switch owns the chat tip.
+            let updatedProfiles = (try? await client.profiles())?.profiles ?? response.profiles ?? profiles
             let selectionResponse = ProfilesResponse(profiles: updatedProfiles, active: resolvedName)
             profiles = updatedProfiles
             activeProfileName = selectionResponse.effectiveDefaultProfileName ?? name
