@@ -10,7 +10,7 @@
     "build": "node scripts/i18n-gate.mjs && npm run i18n:compile && npm run routes:generate && tsc --noEmit -p tsconfig.json && oxlint --type-aware -c ../../.oxlintrc.json && npm run fonts:subset && vite build && npm run check:bundle && node scripts/finalize-dist.mjs && node scripts/build-sw.mjs",
     "build:fast": "npm run fonts:subset && vite build && npm run check:bundle && node scripts/finalize-dist.mjs && node scripts/build-sw.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "lint": "oxlint --type-aware -c ../../.oxlintrc.json && node scripts/i18n-gate.mjs && node scripts/check-ui-rules.mjs",
+    "lint": "oxlint --type-aware -c ../../.oxlintrc.json && node scripts/i18n-gate.mjs && node ../../../scripts/check-ui-rules.mjs --config scripts/ui-rules.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
