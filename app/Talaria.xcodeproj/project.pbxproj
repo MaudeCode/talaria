@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A16950000000000000000011 /* NavigationSettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A16950000000000000000012 /* NavigationSettingsViews.swift */; };
+		A16950000000000000000001 /* ModelsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A16950000000000000000002 /* ModelsSettingsView.swift */; };
 		C10620000000000000000001 /* ChatTranscriptRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10620000000000000000002 /* ChatTranscriptRow.swift */; };
 		D1477000000000000000B001 /* RetainedChats.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1477000000000000000B002 /* RetainedChats.swift */; };
 		AA1900000000000000000001 /* ReauthenticationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1900000000000000000002 /* ReauthenticationSheet.swift */; };
@@ -486,6 +488,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		A16950000000000000000012 /* NavigationSettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationSettingsViews.swift; sourceTree = "<group>"; };
+		A16950000000000000000002 /* ModelsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelsSettingsView.swift; sourceTree = "<group>"; };
 		C10620000000000000000002 /* ChatTranscriptRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscriptRow.swift; sourceTree = "<group>"; };
 		D1477000000000000000B002 /* RetainedChats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RetainedChats.swift; sourceTree = "<group>"; };
 		AA1900000000000000000002 /* ReauthenticationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReauthenticationSheet.swift; sourceTree = "<group>"; };
@@ -1350,6 +1354,8 @@
 				C108A0000000000000000104 /* SystemSettingsViews.swift */,
 				157500000000000000000002 /* FeedbackSheet.swift */,
 				C108A0000000000000000105 /* ServersProvidersSettingsViews.swift */,
+				A16950000000000000000012 /* NavigationSettingsViews.swift */,
+				A16950000000000000000002 /* ModelsSettingsView.swift */,
 				C108A0000000000000000106 /* ServerUpdateSettingsSection.swift */,
 				759A00000000000000000002 /* UpdateSummarySheet.swift */,
 				182A00000000000000000002 /* WhatsNewSheet.swift */,
@@ -1819,6 +1825,8 @@
 				C108A0000000000000000004 /* SystemSettingsViews.swift in Sources */,
 				157500000000000000000001 /* FeedbackSheet.swift in Sources */,
 				C108A0000000000000000005 /* ServersProvidersSettingsViews.swift in Sources */,
+				A16950000000000000000011 /* NavigationSettingsViews.swift in Sources */,
+				A16950000000000000000001 /* ModelsSettingsView.swift in Sources */,
 				C108A0000000000000000006 /* ServerUpdateSettingsSection.swift in Sources */,
 				759A00000000000000000001 /* UpdateSummarySheet.swift in Sources */,
 				182A00000000000000000001 /* WhatsNewSheet.swift in Sources */,

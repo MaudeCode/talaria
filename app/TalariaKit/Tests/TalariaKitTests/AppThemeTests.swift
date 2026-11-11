@@ -90,28 +90,36 @@ final class AppThemeTests: XCTestCase {
 
 final class SettingsNavigationTests: XCTestCase {
     func testRootContainsOnlyCategoryDestinations() {
-        var expected: [SettingsCategory] = [
-            .appearance,
-            .notificationsAndHaptics,
-            .chats,
-            .liveActivitiesAndWidgets,
-            .siriAndShortcuts,
-            .servers,
-            .providers,
-            .dataAndStorage,
-            .about,
+        var expected = [
+            "appearance", "chat", "navigation", "notifications", "speech", "models", "providers",
+            "profiles", "workspaces", "system", "servers", "liveActivitiesAndWidgets",
+            "siriAndShortcuts", "dataAndStorage", "about"
         ]
         #if DEBUG
-        expected.append(.developer)
+        expected.append("developer")
         #endif
+        XCTAssertEqual(SettingsCategory.rootCategories.map(\.rawValue), expected)
+    }
 
-        XCTAssertEqual(SettingsCategory.rootCategories, expected)
+    func testSharedSettingsTaxonomyMatchesContractExceptAppAbout() throws {
+        struct Taxonomy: Decodable {
+            let sections: [String]
+            let groups: [String: String]
+        }
+        let taxonomy = try JSONDecoder().decode(Taxonomy.self, from: sharedContractFixture("settings-sections"))
+        let shared = SettingsCategory.rootCategories.filter { taxonomy.sections.contains($0.rawValue) && $0 != .about }
+        XCTAssertEqual(shared.map(\.rawValue), taxonomy.sections.filter { id in shared.contains { $0.rawValue == id } })
+        for category in shared {
+            XCTAssertEqual(category.group.rawValue, taxonomy.groups[category.rawValue], category.rawValue)
+        }
+        // About describes the installed App, so it is the one shared id with a device-local home.
+        XCTAssertEqual(SettingsCategory.about.group, .device)
     }
 
     func testExternalSettingsDestinationsOpenTheirOwningCategory() {
         XCTAssertEqual(SettingsScrollAnchor.servers.category, .servers)
         XCTAssertEqual(SettingsScrollAnchor.providerQuotas.category, .providers)
-        XCTAssertEqual(SettingsScrollAnchor.system.category, .servers)
+        XCTAssertEqual(SettingsScrollAnchor.system.category.rawValue, "system")
     }
 }
 

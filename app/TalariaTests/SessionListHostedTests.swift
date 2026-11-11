@@ -353,7 +353,7 @@ final class SessionListHostedTests: XCTestCase {
         }
     }
 
-    func testSidebarFeedbackIsOptInAndControlledByTheAppearanceToggle() async throws {
+    func testSidebarFeedbackIsOptInAndControlledByTheNavigationToggle() async throws {
         let fixture = try FixtureApp(for: self)
         let key = "sectionVisibility.sidebarFeedback"
         UserDefaults.standard.removeObject(forKey: key)
@@ -365,8 +365,9 @@ final class SessionListHostedTests: XCTestCase {
 
         func setPreference(_ enabled: Bool) async throws {
             HostedAccessibility.activate(try await requireElement(in: window, where: isSettingsAvatar))
+            attachHostedScreenshot(window, name: "feedback-settings-root")
             HostedAccessibility.activate(try await requireElement(in: window) {
-                HostedAccessibility.identifier(of: $0) == "settings-category-appearance"
+                HostedAccessibility.identifier(of: $0) == "settings-category-navigation"
             })
             let toggle = try await requireElement(in: window) {
                 HostedAccessibility.identifier(of: $0) == "settings-sidebar-feedback-toggle"
@@ -385,6 +386,68 @@ final class SessionListHostedTests: XCTestCase {
         try await setPreference(false)
         let hiddenAgain = await awaitNoElement(in: window) { HostedAccessibility.identifier(of: $0) == "sidebar-send-feedback" }
         XCTAssertTrue(hiddenAgain, "Turning the preference off must remove the shortcut")
+    }
+
+    func testNavigationSectionSwitchesImmediatelyHideAndRestoreSidebarRows() async throws {
+        let keys = ["tasks", "kanban", "skills", "memory", "insights"]
+        let fixture = try FixtureApp(for: self)
+        for key in keys { UserDefaults.standard.set(true, forKey: "sectionVisibility." + key) }
+        defer { for key in keys { UserDefaults.standard.removeObject(forKey: "sectionVisibility." + key) } }
+        let window = try hostWindow(fixture.sessionList())
+        try await openSidebar(in: window)
+        for key in keys {
+            for enabled in [false, true] {
+                HostedAccessibility.activate(try await requireElement(in: window, where: isSettingsAvatar))
+                HostedAccessibility.activate(try await requireElement(in: window) {
+                    HostedAccessibility.identifier(of: $0) == "settings-category-navigation"
+                })
+                HostedAccessibility.activate(try await requireElement(in: window) {
+                    HostedAccessibility.identifier(of: $0) == "settings-navigation-section-" + key
+                })
+                XCTAssertEqual(UserDefaults.standard.bool(forKey: "sectionVisibility." + key), enabled)
+                HostedAccessibility.activate(try await requireElement(in: window, label: "Close"))
+                let label = key.prefix(1).uppercased() + key.dropFirst()
+                if enabled {
+                    _ = try await requireElement(in: window, label: label)
+                } else {
+                    let hidden = await awaitNoElement(in: window) { $0.accessibilityLabel == label }
+                    XCTAssertTrue(hidden, "\(label) must disappear as soon as its switch is off")
+                }
+                attachHostedScreenshot(window, name: "sidebar-\(key)-\(enabled ? "visible" : "hidden")")
+            }
+        }
+    }
+
+    func testFiltersOpenArchivedChatsAtItsExistingRoot() async throws {
+        let fixture = try FixtureApp(for: self)
+        let window = try hostWindow(fixture.sessionList())
+        try await openSidebar(in: window)
+        let filters = try await requireElement(in: window, label: "Filters")
+        let point = window.convert(CGPoint(x: filters.accessibilityFrame.midX, y: filters.accessibilityFrame.midY), from: nil)
+        var hit = window.hitTest(point, with: nil)
+        while hit != nil && !(hit is UIControl) { hit = hit?.superview }
+        let control = try XCTUnwrap(hit as? UIControl)
+        control.performPrimaryAction()
+        let archived = try await requireElement(in: window) {
+            HostedAccessibility.identifier(of: $0) == "sidebar-archived-chats"
+        }
+        // Read the resolved native menu, then run its actual action after dismissing its presentation.
+        let interaction = try XCTUnwrap(control.interactions.compactMap { $0 as? UIContextMenuInteraction }.first)
+        var visibleMenu: UIMenu?
+        interaction.updateVisibleMenu { menu in
+            visibleMenu = menu
+            return menu
+        }
+        let resolved = await awaitCondition { visibleMenu != nil }
+        XCTAssertTrue(resolved)
+        let action = try XCTUnwrap(HostedAccessibility.menuActions(in: try XCTUnwrap(visibleMenu)).first { $0.title == "Archived Chats" })
+        XCTAssertEqual(HostedAccessibility.identifier(of: archived), "sidebar-archived-chats")
+        interaction.dismissMenu()
+        XCTAssertTrue(HostedAccessibility.activate(action))
+        _ = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Fixture Archived Session,") == true }
+        _ = try await requireElement(in: window, label: "Open navigation")
+        XCTAssertTrue(window.navigationStacks.allSatisfy { $0.viewControllers.count == 1 })
+        attachHostedScreenshot(window, name: "archived-chats-from-filters")
     }
 
     func testSidebarFeedbackKeepsItsToolbarLayoutUntilTheDrawerFinishesClosing() async throws {

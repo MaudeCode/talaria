@@ -4,6 +4,8 @@ import TalariaKit
 /// The category directory at the root of the Settings modal.
 struct SettingsView: View {
     let server: URL
+    var profileName: String?
+    var serverName: String?
     @Binding var selection: SettingsPane?
 
     var body: some View {
@@ -19,22 +21,38 @@ struct SettingsView: View {
             .accessibilityHint("Opens Apple account, iCloud sync, and Talaria Relay settings.")
             .accessibilityIdentifier("settings-apple-account")
 
-            SidebarSectionHeader(String(localized: "Categories"))
-
-            ForEach(SettingsCategory.rootCategories) { category in
-                SectionSelectionRow(item: .category(category), selection: $selection) {
-                    Label {
-                        Text(category.title)
-                    } icon: {
-                        Image(systemName: category.systemImage)
-                            .foregroundStyle(.tint)
+            ForEach(SettingsCategory.Group.allCases) { group in
+                SidebarSectionHeader(title: group.title) {
+                    if let detail = groupDetail(group) {
+                        Text(detail)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
                 }
-                .accessibilityIdentifier("settings-category-\(category.id)")
+                ForEach(SettingsCategory.rootCategories.filter { $0.group == group }) { category in
+                    SectionSelectionRow(item: .category(category), selection: $selection) {
+                        Label {
+                            Text(category.title)
+                        } icon: {
+                            Image(systemName: category.systemImage)
+                                .foregroundStyle(.tint)
+                        }
+                    }
+                    .accessibilityIdentifier("settings-category-\(category.id)")
+                }
             }
         }
         .navigationTitle("Settings")
         .adaptiveSecondaryNavigationTitle(title: String(localized: "Settings"))
+    }
+
+    private func groupDetail(_ group: SettingsCategory.Group) -> String? {
+        switch group {
+        case .profile: profileName
+        case .server: serverName?.isEmpty == false ? serverName : server.host ?? server.absoluteString
+        case .interface, .device: nil
+        }
     }
 }
 
@@ -43,6 +61,7 @@ struct SettingsPaneView: View {
     @Bindable var authManager: AuthManager
     let server: URL
     let pane: SettingsPane
+    var onProfileChanged: () async -> Void = {}
 
     var body: some View {
         switch pane {
@@ -64,14 +83,32 @@ struct SettingsPaneView: View {
             AppearanceSettingsView(authManager: authManager)
         case .notificationsAndHaptics:
             NotificationsHapticsSettingsView(authManager: authManager)
+        case .navigation:
+            NavigationSettingsView(server: server)
+        case .speech:
+            SpeechSettingsView()
+        case .models:
+            ModelsSettingsView(server: server)
+        case .profiles:
+            DefaultProfilePickerView(server: server, currentDefaultProfileName: nil) { _ in
+                Task { await onProfileChanged() }
+            }
+        case .workspaces:
+            WorkspaceManagerView(server: server, isPage: true, onRegistryChanged: {})
+        case .system:
+            SettingsCategoryPage(category: .system) {
+                SettingsCard(title: String(localized: "System")) {
+                    ServerUpdateSettingsSection(authManager: authManager, server: server)
+                }
+            }
         case .chats:
-            ChatsSettingsView(authManager: authManager, server: server)
+            ChatsSettingsView()
         case .liveActivitiesAndWidgets:
             LiveActivitiesWidgetsSettingsView()
         case .siriAndShortcuts:
             SiriShortcutsSettingsView()
         case .servers:
-            ServersSettingsView(authManager: authManager, server: server)
+            ServersSettingsView(authManager: authManager)
         case .providers:
             ProvidersSettingsView(server: server)
         case .dataAndStorage:

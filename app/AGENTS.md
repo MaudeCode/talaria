@@ -47,6 +47,17 @@ Talaria is a native SwiftUI iPhone client for a self-hosted Talaria Web server
   owning category. A new root category needs a distinct user-facing concern;
   a direct root action needs explicit justification as unusually important.
   User Profile and Sign in with Apple are the approved root exceptions.
+  Settings categories are owned by scope, in this order:
+
+  | Group | Categories |
+  | --- | --- |
+  | Interface | Appearance, Chats, Navigation, Notifications & Haptics, Speech |
+  | Profile (active profile name) | Models, Providers |
+  | Server (active server name) | Profiles, Workspaces, System |
+  | This iPhone | Servers, Live Activities & Widgets, Siri & Shortcuts, Data & Storage, About, Developer (DEBUG) |
+
+  Shared ids, grouping and relative order follow `contracts/fixtures/settings-sections.json`.
+  About describes the installed app and is the one shared id under This iPhone.
 - Automated tests must run from deterministic, isolated, test-owned state in a
   clean environment. Fixture identifiers must be synthetic, and the harness must
   create every dependency it uses. Treat reliance on pre-existing accounts,
