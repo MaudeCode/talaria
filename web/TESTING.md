@@ -172,6 +172,9 @@ Pele behind the Streamdown adapter, with KaTeX MathML labels, live theme tokens,
 and links and images disabled. The diagram browser tests cover invalid-source
 fallback and SVG safety, and attach gzip bytes and Chromium main-thread task
 time for 15 synthetic diagrams.
+Inter ships as six unicode-range subsets that `npm run fonts:subset` builds before Vite (TAL-1709); the build-output checks
+require six `@font-face` rules, a single latin preload in the shell, every subset under 140,000 bytes (latin under 120,000)
+with its variation axes, and `e2e/fonts.spec.ts` checks that a cold Latin load fetches one subset and Cyrillic text adds one.
 The chat route graphs also exclude xterm's runtime and stylesheet. Terminal browser
 tests hold those assets to exercise the closeable loading chrome, then verify
 terminal input, resize requests, and closing on desktop and mobile.
