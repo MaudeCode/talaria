@@ -614,10 +614,11 @@ test('the phone drawer shows pinned quotas and a row closes it into Insights', a
 })
 
 /** TAL-1868: Settings shows Back and its section list in the one column, never the destinations or a second column. */
-test('Settings swaps the column for Back and its sections, whatever the stored choice, and leaving restores it', async ({ page }, info) => {
+test('Settings swaps the column for Back and its sections, and leaving restores it', async ({ page }, info) => {
   desktopOnly(info.project.name)
   await page.setViewportSize({ width: 1440, height: 900 })
-  await collapsedOn(page, '/skills')
+  await page.goto('/skills')
+  await settle(page)
   await sidebar(page).evaluate((el) => { el.dataset.shellMarker = 'kept' })
   await row(page, 'Settings').click()
   await expect(page).toHaveURL(/\/settings\/appearance$/)
@@ -628,23 +629,112 @@ test('Settings swaps the column for Back and its sections, whatever the stored c
   await expect(page.locator('nav[aria-label="Primary navigation"]')).toHaveCount(1)
   await expect(sidebar(page).locator('#settingsMenu [data-settings-section="system"]')).toBeVisible()
   await expect(sidebar(page).locator('[data-panel], .sidebar-brand, .sidebar-footer, #sessionList')).toHaveCount(0)
-  await expect(page.locator('#btnSidebarEdgeToggle')).toHaveCount(0)
   await expect(page.locator('main#main')).toHaveClass(/showing-settings/)
   await expect(page.locator('html')).not.toHaveClass(/hub-active/)
   await page.screenshot({ path: info.outputPath('settings-desktop.png') })
-
-  await page.keyboard.press('ControlOrMeta+b')
-  expect(await width(page, 'aside.sidebar')).toBe(300)
-  expect(await stored(page, 'hermes-webui-sidebar-collapsed')).toBe('1')
 
   // Moving between sections does not change where Back goes.
   await page.locator('[data-settings-section="system"]').click()
   await expect(page).toHaveURL(/\/settings\/system$/)
   await button(page, 'Back').click()
   await expect(page).toHaveURL(/\/skills$/)
+  await expect(sidebar(page).locator('#sessionList')).toBeVisible()
+})
+
+/** The rail's visible rows by name and its separators as `|`, top to bottom. */
+const railItems = (page: Page) => sidebar(page).locator('.sidebar-row:visible, .sidebar-rail-separator:visible').evaluateAll((nodes) => nodes.map((node) => (node.classList.contains('sidebar-rail-separator') ? '|' : node.getAttribute('aria-label'))))
+const SETTINGS_RAIL = ['Back', 'Search', '|', 'Appearance', 'Chat', 'Navigation', 'Notifications', 'Speech', '|', 'Models', 'Providers', 'Tools', '|', 'Profiles', 'Spaces', 'Extensions', 'Access', 'System', 'Logs', 'About']
+
+/** TAL-2183: the stored choice applies on Settings too; collapsed, its column is a rail of Back, Search and the sections. */
+test('Settings collapses to a rail of Back, Search and its sections by the one stored choice', async ({ page }, info) => {
+  desktopOnly(info.project.name)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await collapsedOn(page, '/skills')
+  await row(page, 'Settings').click()
+  await expect(page).toHaveURL(/\/settings\/appearance$/)
+  await expect.poll(() => width(page, 'aside.sidebar')).toBe(64)
+  expect(await left(page, '#main')).toBe(64)
+  expect(await railItems(page)).toEqual(SETTINGS_RAIL)
+  for (const name of SETTINGS_RAIL.filter((name) => name !== '|')) await expect(sidebar(page).getByRole(name === 'Back' || name === 'Search' ? 'button' : 'link', { name, exact: true }), name).toBeInViewport({ ratio: 1 })
+  // Three labels are too wide for the rail and show a short caption; the row's name stays the label.
+  expect(await sidebar(page).locator('[data-settings-section] .sidebar-row-caption').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-caption')))).toEqual(['Appear.', 'Chat', 'Nav', 'Notifs', 'Speech', 'Models', 'Providers', 'Tools', 'Profiles', 'Spaces', 'Extensions', 'Access', 'System', 'Logs', 'About'])
+  const appearance = sidebar(page).locator('[data-settings-section="appearance"]')
+  await expect(appearance).toHaveAttribute('aria-current', 'page')
+  await expect(appearance).toHaveClass(/\bactive\b/)
+  // One list in both states: the head, the field, the group headers and the profile link fold away and are inert.
+  await expect(sidebar(page).locator('[data-settings-section="system"]')).toHaveCount(1)
+  for (const selector of ['#panelSettings .panel-head', '#settingsSearch', '[data-settings-group] h3', '[data-settings-profile-link]']) {
+    const part = sidebar(page).locator(selector).first()
+    await expect(part, selector).toBeHidden()
+    expect(await part.evaluate((el) => el.closest('[inert]') !== null), selector).toBe(true)
+  }
+  await page.locator('aside.sidebar').screenshot({ path: info.outputPath('settings-rail.png') })
+
+  // A section row keeps the rail.
+  await sidebar(page).getByRole('link', { name: 'System', exact: true }).click()
+  await expect(page).toHaveURL(/\/settings\/system$/)
+  await expect(sidebar(page).locator('[data-settings-section="system"]')).toHaveAttribute('aria-current', 'page')
+  expect(await width(page, 'aside.sidebar')).toBe(64)
+
+  // The edge tab and the shortcut write the one stored choice.
+  const edge = page.locator('#btnSidebarEdgeToggle')
+  await edge.click()
+  await expect.poll(() => width(page, 'aside.sidebar')).toBe(300)
+  expect(await stored(page, 'hermes-webui-sidebar-collapsed')).toBe('0')
+  await expect(sidebar(page).locator('#settingsSearch')).toBeVisible()
+  await expect(sidebar(page).locator('[data-settings-group] h3')).toHaveText(['Interface', 'Profile', 'Server'])
+  await edge.click()
   await expect.poll(() => width(page, 'aside.sidebar')).toBe(64)
   expect(await stored(page, 'hermes-webui-sidebar-collapsed')).toBe('1')
-  await expect(page.locator('#btnSidebarEdgeToggle')).toHaveCount(1)
+  await page.evaluate(() => { (document.activeElement as HTMLElement | null)?.blur() })
+  await page.keyboard.press('ControlOrMeta+b')
+  await expect.poll(() => width(page, 'aside.sidebar')).toBe(300)
+  expect(await stored(page, 'hermes-webui-sidebar-collapsed')).toBe('0')
+  await page.keyboard.press('ControlOrMeta+b')
+  await expect.poll(() => width(page, 'aside.sidebar')).toBe(64)
+  expect(await stored(page, 'hermes-webui-sidebar-collapsed')).toBe('1')
+
+  // The rail's Search opens the column with focus in the settings search.
+  await button(page, 'Search').click()
+  await expect(sidebar(page).locator('#settingsSearch')).toBeFocused()
+  await expect.poll(() => width(page, 'aside.sidebar')).toBe(300)
+  expect(await stored(page, 'hermes-webui-sidebar-collapsed')).toBe('0')
+
+  // Leaving keeps the stored rail.
+  await page.locator('#settingsSearch').blur()
+  await page.keyboard.press('ControlOrMeta+b')
+  await expect.poll(() => width(page, 'aside.sidebar')).toBe(64)
+  await button(page, 'Back').click()
+  await expect(page).toHaveURL(/\/skills$/)
+  await expect.poll(() => width(page, 'aside.sidebar')).toBe(64)
+  expect(await stored(page, 'hermes-webui-sidebar-collapsed')).toBe('1')
+})
+
+/** TAL-2183: no container clips a rail caption, so one wider than the rail ends in its own ellipsis, on Settings' rail and every other page's. */
+test('a rail caption wider than the rail is never clipped and ends in an ellipsis', async ({ page }, info) => {
+  desktopOnly(info.project.name)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  for (const path of ['/skills', '/settings/system']) {
+    await collapsedOn(page, path)
+    expect(await width(page, 'aside.sidebar'), path).toBe(64)
+    const fit = await sidebar(page).locator('.sidebar-row:visible').evaluateAll((rows) => rows.flatMap((row) => {
+      const caption = row.querySelector('.sidebar-row-caption')
+      if (!caption) return []
+      caption.setAttribute('data-caption', 'Benachrichtigungseinstellungen')
+      const box = caption.getBoundingClientRect()
+      // Every ancestor that clips must hold the whole caption box, or both its ends (the ellipsis included) are cut.
+      let unclipped = true
+      for (let node = row.parentElement; node && node.tagName !== 'ASIDE'; node = node.parentElement) {
+        if (getComputedStyle(node).overflowX === 'visible') continue
+        const left = node.getBoundingClientRect().left + node.clientLeft
+        if (box.left < left - 0.5 || box.right > left + node.clientWidth + 0.5) unclipped = false
+      }
+      const style = getComputedStyle(caption)
+      return [{ name: row.getAttribute('aria-label'), unclipped, overflows: caption.scrollWidth > caption.clientWidth, ellipsis: style.textOverflow === 'ellipsis' && style.overflow === 'hidden' }]
+    }))
+    expect(fit.length, path).toBeGreaterThan(5)
+    for (const caption of fit) expect(caption, `${path} ${String(caption.name)}`).toMatchObject({ unclipped: true, overflows: true, ellipsis: true })
+  }
 })
 
 test('Back keeps the query of the page it returns to, and goes to the chat after a direct load of Settings', async ({ page }, info) => {
@@ -676,6 +766,7 @@ test('at tablet width Settings tiles its section list, and an open overlay does 
   await expect(page).toHaveURL(/\/settings\/appearance$/)
   await expect(page.locator('.sidebar-scrim')).toHaveCount(0)
   await expect(page.locator('#btnHamburger')).toHaveCount(0)
+  await expect(page.locator('#btnSidebarEdgeToggle')).toHaveCount(0)
   await expect.poll(() => width(page, 'aside.sidebar')).toBe(300)
   expect(await left(page, '#main')).toBe(300)
   await page.keyboard.press('ControlOrMeta+b')
@@ -688,16 +779,17 @@ test('at tablet width Settings tiles its section list, and an open overlay does 
   await expect(page.locator('.sidebar-scrim')).toHaveCount(0)
 })
 
-test('first paint on Settings draws the expanded column whatever the stored choice', async ({ page }, info) => {
+test('first paint on Settings draws the stored state like any other page', async ({ page }, info) => {
   desktopOnly(info.project.name)
-  await page.addInitScript(() => { localStorage.setItem('hermes-webui-sidebar-collapsed', '1') })
   // Only the pre-paint script runs, so the frame is what the page shows before the module entry mounts.
   await page.route(/\.js(\?|$)/, (route) => (route.request().url().includes('prepaint') ? route.continue() : route.fulfill({ contentType: 'text/javascript', body: '' })))
   const frame = () => page.locator('#app').evaluate((el) => (el.childElementCount === 0 ? getComputedStyle(el, '::before').width : 'mounted'))
-  for (const [viewport, path, expected] of [[1440, '/settings/appearance', '300px'], [800, '/settings/appearance', '300px'], [1440, '/skills', '64px'], [800, '/skills', '64px']] as const) {
-    await page.setViewportSize({ width: viewport, height: 900 })
+  await page.setViewportSize({ width: 1440, height: 900 })
+  for (const [collapsed, path, expected] of [['1', '/settings/appearance', '64px'], ['1', '/skills', '64px'], ['0', '/settings/appearance', '300px'], ['0', '/skills', '300px']] as const) {
+    await page.goto('/skills')
+    await page.evaluate((value) => { localStorage.setItem('hermes-webui-sidebar-collapsed', value) }, collapsed)
     await page.goto(path)
-    expect(await frame(), `${path} at ${String(viewport)}`).toBe(expected)
+    expect(await frame(), `${path} stored ${collapsed}`).toBe(expected)
   }
 })
 

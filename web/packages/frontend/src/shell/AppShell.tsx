@@ -42,7 +42,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const subtitle = extensionId && (manifests.data?.manifests.find((manifest) => manifest.id === extensionId)?.name ?? extensionId)
   // The html attribute is the pre-paint marker (prepaint.js/boot.ts); its CSS has no transition. Once the shell
   // owns the state through .layout.sidebar-collapsed the marker goes, so collapsing animates like expanding.
-  useEffect(() => { delete document.documentElement.dataset.sidebarCollapsed; delete document.documentElement.dataset.settingsPage }, [])
+  useEffect(() => { delete document.documentElement.dataset.sidebarCollapsed }, [])
   useEffect(() => {
     document.documentElement.classList.toggle('hub-active', hub)
     return () => document.documentElement.classList.remove('hub-active')

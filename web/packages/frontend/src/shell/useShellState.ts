@@ -44,7 +44,7 @@ export function openMobileSidebar(): void { set({ mobileOpen: true }) }
 export function closeMobileSidebar(): void { set({ mobileOpen: false }) }
 export function toggleMobileSidebar(): void { set({ mobileOpen: !state.mobileOpen }) }
 /** The stored choice only tiles from 901px; below that the panel opens over the page and the choice stays as it is. */
-const TILED = '(min-width: 901px)'
+export const TILED = '(min-width: 901px)'
 export function toggleSidebar(): void { if (window.matchMedia(TILED).matches) toggleSidebarCollapsed(); else toggleMobileSidebar() }
 /** Sidebar Search: shows the panel and asks `SessionListPanel`, which may mount only after a navigation, to open its filter. */
 export function requestSessionSearch(): void {
@@ -83,13 +83,16 @@ export function useMediaQuery(query: string): boolean {
 export const useIsDesktop = () => useMediaQuery('(min-width: 641px)')
 export const useIsTiled = () => useMediaQuery(TILED)
 export const useIsSettings = () => useLocation({ select: (location) => panelForPath(location.pathname) === 'settings' })
-/** Whether the column shows as the icon rail: the stored choice from 901px, unless opened over the page at 641-900px, never on a phone or on Settings. */
+/**
+ * Whether the column shows as the icon rail: the stored choice from 901px on every page, Settings included (TAL-2183); at
+ * 641-900px the rail unless opened over the page, except on Settings, whose section list tiles expanded; never on a phone.
+ */
 export function useIsSidebarRail(): boolean {
   const { collapsed, mobileOpen } = useShellState()
   const isDesktop = useIsDesktop()
   const isTiled = useIsTiled()
   const settings = useIsSettings()
-  return isDesktop && !settings && (isTiled ? collapsed : !mobileOpen)
+  return isDesktop && (isTiled ? collapsed : !settings && !mobileOpen)
 }
 export const useIsNarrow = () => useMediaQuery('(max-width: 768px)')
 export const useIsPhone = () => useMediaQuery(PHONE_QUERY)

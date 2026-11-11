@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Settings now has the sidebar's edge tab: it collapses to an icon rail of Back, Search and the sections, and ⌘B toggles it as on every other page. Long rail captions now end in an ellipsis instead of being cut off.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

@@ -6,7 +6,9 @@ import { m } from '../../paraglide/messages.js'
 import { cn } from '../../ui/cn'
 import { SETTINGS_SECTION_GROUPS, SettingsSectionGroupSchema, SettingsSectionSchema, type SettingsSection as Section, type SettingsSectionGroup } from '../../contracts/url'
 import { useLocale } from '../../i18n/useLocale'
-import { closeMobileSidebar } from '../../shell/useShellState'
+import { closeMobileSidebar, useIsDesktop, useIsSidebarRail } from '../../shell/useShellState'
+import { SIDEBAR_ROW } from '../../shell/nav'
+import { SidebarFold, SidebarRowContent } from '../../shell/SidebarRowContent'
 import { useActiveProfileName } from '../../shell/ProfileMenu'
 import { SectionHeader } from '../../ui/List'
 import { MessageSquare, AudioLines, Bell, SunMedium, PanelLeft, Cpu, KeyRound, Wrench, Puzzle, Lock, Server, Info, UserRound, FolderOpen, FileText, Search, type LucideIcon } from 'lucide-react'
@@ -36,6 +38,13 @@ export const SECTION_LABEL: Record<Section, () => string> = {
   about: () => m.settings_section_about_title(),
 }
 
+/** TAL-2183: the rail's short captions for the labels too wide for it; every other section's caption is its label. */
+const SECTION_CAPTION: Partial<Record<Section, () => string>> = {
+  appearance: () => m.settings_rail_appearance(),
+  notifications: () => m.settings_rail_notifications(),
+  navigation: () => m.settings_rail_navigation(),
+}
+
 const GROUP_LABEL: Record<SettingsSectionGroup, () => string> = {
   interface: () => m.settings_menu_group_interface(),
   profile: () => m.settings_menu_group_profile(),
@@ -59,7 +68,10 @@ export function SectionMenu() {
   // TAL-2086: device-local UI state over the rows' own wording; while it has text, the matches replace the section list.
   const [query, setQuery] = useState('')
   const [highlight, setHighlight] = useState(0)
-  const results = query.trim() ? searchSettings(query) : null
+  const isDesktop = useIsDesktop()
+  const rail = useIsSidebarRail()
+  // The rail has no search field, so it always shows the sections; the query waits for the way back.
+  const results = query.trim() && !rail ? searchSettings(query) : null
   const choose = (entry: SettingsIndexEntry) => {
     setQuery('')
     closeMobileSidebar()
@@ -82,19 +94,23 @@ export function SectionMenu() {
       if (entry) choose(entry)
     }
   }
+  // TAL-2183: one set of rows in both states. The sections are sidebar rows, so `shell.css` morphs them into the rail's
+  // icons over captions; the head, the search field and the group headers fold away there, and separators take the headers' place.
   return (
-    <div className="panel-view active" id="panelSettings">
-      <PanelHead title={m.tab_settings()} />
-      <div className="sidebar-search">
-        <div className="hub-search relative">
-          <Search size={14} className="sidebar-search-icon" aria-hidden="true" />
-          <input id="settingsSearch" type="search" role="combobox" aria-expanded={!!results?.length} aria-controls={RESULTS_ID} aria-autocomplete="list" aria-activedescendant={results?.length ? resultId(highlight) : undefined}
-            value={query} onChange={(e) => { setQuery(e.target.value); setHighlight(0) }} onKeyDown={onKeyDown} placeholder={m.settings_search_placeholder()} aria-label={m.settings_search_placeholder()} autoComplete="off" data-1p-ignore data-lpignore="true" />
+    <div className="panel-view active flex min-h-0 flex-1 flex-col" id="panelSettings">
+      <SidebarFold rail={rail} className="settings-menu-head">
+        <PanelHead title={m.tab_settings()} />
+        <div className="sidebar-search">
+          <div className="hub-search relative">
+            <Search size={14} className="sidebar-search-icon" aria-hidden="true" />
+            <input id="settingsSearch" type="search" role="combobox" aria-expanded={!!results?.length} aria-controls={RESULTS_ID} aria-autocomplete="list" aria-activedescendant={results?.length ? resultId(highlight) : undefined}
+              value={query} onChange={(e) => { setQuery(e.target.value); setHighlight(0) }} onKeyDown={onKeyDown} placeholder={m.settings_search_placeholder()} aria-label={m.settings_search_placeholder()} autoComplete="off" data-1p-ignore data-lpignore="true" />
+          </div>
         </div>
-      </div>
+      </SidebarFold>
       <span role="status" aria-live="polite" className="sr-only">{results ? results.length ? m.settings_search_results({ count: results.length }) : m.settings_search_no_results() : ''}</span>
-      <nav className="side-menu flex flex-col gap-px p-2 overflow-visible min-h-0" id="settingsMenu" aria-label={m.tab_settings()}>
-        <div className="settings-menu-items flex flex-col gap-4 min-h-0 flex-1 overflow-y-auto">
+      <div className="sidebar-scroll flex min-h-0 flex-1 flex-col">
+        <nav className="side-menu sidebar-rows flex flex-col gap-0.5" id="settingsMenu" aria-label={m.tab_settings()}>
           {results && (results.length === 0
             ? <p className="px-2.5 py-[7px] text-[13px] text-muted">{m.settings_search_no_results()}</p>
             : <ul id={RESULTS_ID} role="listbox" aria-label={m.settings_search_placeholder()} className="flex flex-col gap-0.5">
@@ -108,23 +124,25 @@ export function SectionMenu() {
                 </li>
               ))}
             </ul>)}
-          {!results && GROUPS.map(({ group, sections }) => (
-            <div key={group} role="group" aria-labelledby={`settingsGroup-${group}`} data-settings-group={group} className="flex flex-col gap-0.5">
-              <SectionHeader className="px-2.5 pb-1" detail={group === 'profile' && profile ? <Link to="/settings/$section" params={{ section: 'profiles' }} search={{ name: profile }} onClick={closeMobileSidebar} data-settings-profile-link="" className="hover:text-text hover:underline">{profile}</Link> : undefined}><span id={`settingsGroup-${group}`}>{GROUP_LABEL[group]()}</span></SectionHeader>
+          {!results && GROUPS.map(({ group, sections }, index) => (
+            <div key={group} role="group" aria-labelledby={`settingsGroup-${group}`} data-settings-group={group} className="sidebar-group contents">
+              {isDesktop && <span className="sidebar-rail-only sidebar-rail-separator" aria-hidden="true" />}
+              <SidebarFold rail={rail}>
+                <SectionHeader className={cn('px-2.5 pb-1 min-[641px]:pb-1.5', index > 0 && 'pt-3.5')} detail={group === 'profile' && profile ? <Link to="/settings/$section" params={{ section: 'profiles' }} search={{ name: profile }} onClick={closeMobileSidebar} data-settings-profile-link="" className="hover:text-text hover:underline">{profile}</Link> : undefined}><span id={`settingsGroup-${group}`}>{GROUP_LABEL[group]()}</span></SectionHeader>
+              </SidebarFold>
               {sections.map((section) => {
                 const active = current === section
-                const Icon = SECTION_ICON[section]
+                const label = SECTION_LABEL[section]()
                 return (
-                  <Link key={section} to="/settings/$section" params={{ section }} onClick={closeMobileSidebar} aria-current={active ? 'page' : undefined} className={cn('side-menu-item flex w-full items-center gap-2 px-2.5 py-[7px] rounded-(--r-sm) border-0 bg-transparent text-text cursor-pointer text-left text-[13px] font-medium transition-[background,color] duration-(--dur) ease-(--ease) hover:bg-hover [&.active]:bg-(--menu-active-bg) [&.active]:text-(--menu-active-fg) [&.active]:shadow-(--menu-active-shadow) [&.active]:[font-weight:var(--menu-active-weight)] [&_svg]:shrink-0 [&_svg]:size-4 [&_svg]:opacity-90 [&.active_svg]:text-(--menu-active-fg)', active && 'active')} data-settings-section={section}>
-                    <Icon size={16} strokeWidth={1.5} aria-hidden="true" />
-                    <span>{SECTION_LABEL[section]()}</span>
+                  <Link key={section} to="/settings/$section" params={{ section }} onClick={closeMobileSidebar} aria-label={label} aria-current={active ? 'page' : undefined} className={cn(SIDEBAR_ROW, active && 'active')} data-settings-section={section}>
+                    <SidebarRowContent icon={SECTION_ICON[section]} label={label} caption={SECTION_CAPTION[section]?.()} />
                   </Link>
                 )
               })}
             </div>
           ))}
-        </div>
-      </nav>
+        </nav>
+      </div>
     </div>
   )
 }
