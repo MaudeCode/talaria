@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Sidebar search is now a magnifying glass on the Chats and Settings title rows that opens the field in place, without the dark box behind it. The Search row and the rail's search button are gone.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

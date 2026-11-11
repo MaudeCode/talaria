@@ -193,6 +193,20 @@ main.main > .main-view:not([id="mainChat"]):not([id="mainSettings"]) .main-view-
 .main-view.hub-page .main-view-header{padding-top:14px;padding-bottom:6px}
 .hub-search{padding:0}
 .hub-search .sidebar-search-icon{left:10px}
+/* PanelSearch (TAL-2184): a panel head's search. The bar lies over the head with nothing painted behind it; open, the
+   title and the glass hide (the row keeps its height) and the bar reveals from the glass's trailing edge over --sidebar-dur,
+   which is 0s under reduced motion. Opening never transitions visibility, so the field takes focus in the same frame; closing
+   holds it visible until the bar has collapsed. With head actions the bar stops short of them so they stay usable. */
+.panel-search{position:relative}
+.panel-search .panel-search-bar{position:absolute;inset-block:0;inset-inline:0;margin:0;padding:7px 8px 7px 10px;display:flex;align-items:center;gap:4px;background:transparent;z-index:3;visibility:hidden;opacity:0;pointer-events:none;clip-path:inset(0 0 0 100%);transition:clip-path var(--sidebar-dur) ease,opacity var(--sidebar-dur) ease,visibility 0s linear var(--sidebar-dur)}
+[dir="rtl"] .panel-search .panel-search-bar{clip-path:inset(0 100% 0 0)}
+.panel-search[data-actions] .panel-search-bar{inset-inline-end:44px}
+@media (pointer:coarse){.panel-search[data-actions] .panel-search-bar{inset-inline-end:58px}}
+.panel-search[data-open] .panel-search-bar{visibility:inherit;opacity:1;pointer-events:auto;clip-path:inset(0);transition:clip-path var(--sidebar-dur) ease,opacity var(--sidebar-dur) ease}
+.panel-search[data-open] > .panel-head > :not(.panel-head-actions),.panel-search[data-open] .panel-search-trigger{visibility:hidden}
+.panel-search-field{position:relative;display:flex;flex:1;align-items:center;min-width:0}
+.panel-search .panel-search-bar input{height:30px;background:var(--input-bg);border-color:var(--border);padding-left:34px !important}
+.panel-search .panel-search-bar .sidebar-search-icon{left:11px;top:50%;color:var(--accent);opacity:1}
 .has-tooltip::after{font-size:11px}
 html.hub-active .rightpanel{width:0 !important;min-width:0 !important;opacity:0;pointer-events:none;overflow:hidden;border-color:transparent;margin-left:0;content-visibility:hidden}
 html.hub-active .rightpanel .workspace-panel-edge-toggle{display:none !important}

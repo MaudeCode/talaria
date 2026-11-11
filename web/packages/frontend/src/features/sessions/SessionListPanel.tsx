@@ -1,25 +1,24 @@
 import { Fragment, memo, useEffect, useId, useLayoutEffect, useRef, useState, type DragEvent } from 'react'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, ArchiveRestore, GitBranch, Search, X } from 'lucide-react'
+import { Archive, ArchiveRestore, GitBranch, Search } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import type { SessionRow } from '../../contracts'
-import { PanelHead } from '../../shell/PanelHead'
+import { PanelSearch } from '../../shell/PanelSearch'
 import { cn } from '../../ui/cn'
 import { useDebounced } from '../../lib/useDebounced'
 import { HelpTip } from '../../ui/Field'
 import { SectionHeader } from '../../ui/List'
 import { Dialog } from '../../ui/Dialog'
-import { Button } from '../../ui/Button'
 import { useProjectsQuery } from '../../app/queries'
 import { useSettingsQuery } from '../../app/settings'
 import { OUTSIDE_SOURCE_SETTING_KEYS } from '@maudecode/talaria-web-contracts'
 import { SessionActions, SessionContextMenu, SessionMenuItems } from './SessionContextMenu'
 import { ContextMenu } from '../../ui/Menu'
 import { NO_PROJECT, SessionFilterMenu, type SessionSource } from './SessionFilterMenu'
-import { clearSessionSearchRequest, closeMobileSidebar, useShellState } from '../../shell/useShellState'
+import { closeMobileSidebar } from '../../shell/useShellState'
 import { inTextField } from '../../shell/useShortcuts'
 import { useLocale } from '../../i18n/useLocale'
 import { showToast } from '../toast/toast'
@@ -204,16 +203,6 @@ export function SessionListPanel() {
   const qc = useQueryClient()
   const [filter, setFilter] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
-  const searchInput = useRef<HTMLInputElement>(null)
-  const closeSearch = () => { setFilter(''); setSearchOpen(false) }
-  // The sidebar's Search row asks from outside this panel; the open filter commits before the effect focuses it.
-  const { sessionSearchRequested } = useShellState()
-  if (sessionSearchRequested && !searchOpen) setSearchOpen(true)
-  useEffect(() => {
-    if (!sessionSearchRequested) return
-    searchInput.current?.focus()
-    clearSessionSearchRequest()
-  }, [sessionSearchRequested])
   const [source, setSource] = useState<SessionSource>('webui')
   const [project, setProject] = useState<string | null>(null)
   const [showArchived, setShowArchived] = useState(false)
@@ -379,24 +368,14 @@ export function SessionListPanel() {
 
   return (
     <SessionActions rows={filtered}>
-    <div className={cn('panel-view active', searchOpen && 'search-open')} id="panelChat">
-      <PanelHead
+    <div className="panel-view active" id="panelChat">
+      <PanelSearch
         title={<SectionHeader detail={filterDetail ? <span data-chats-detail title={filterDetail}>{filterDetail}</span> : null}>{m.sidebar_chats()}</SectionHeader>}
         actions={<SessionFilterMenu source={source} onSource={setSource} webuiCount={webuiCount} cliCount={cliCount} project={project} onProject={setProject} projects={projectList} hasUnprojected={hasUnprojected} showArchived={showArchived} onShowArchived={setShowArchived} onImport={() => importInput.current?.click()} />}
+        open={searchOpen} onOpenChange={setSearchOpen} value={filter} onValueChange={setFilter} clearLabel={m.clear_conversation_filter()} className="session-search"
+        id="sessionSearch" placeholder={m.filter_conversations()} aria-label={m.filter_conversations()}
       />
       <input ref={importInput} type="file" accept=".json,application/json" hidden aria-label={m.import_session_json_tooltip()} onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) importSession.mutate(file) }} />
-      <div className="session-search sidebar-search">
-        <div className="session-search-field">
-          <Search size={14} className="sidebar-search-icon" aria-hidden="true" />
-          <input ref={searchInput} id="sessionSearch" type="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={m.filter_conversations()} aria-label={m.filter_conversations()} autoComplete="off" data-1p-ignore data-lpignore="true" onKeyDown={(e) => { if (e.key === 'Escape') closeSearch() }} />
-          {filter && (
-            <button type="button" className="sidebar-search-clear" aria-label={m.clear_conversation_filter()} onClick={() => { setFilter(''); searchInput.current?.focus() }}>
-              <X size={14} aria-hidden="true" />
-            </button>
-          )}
-        </div>
-        <Button variant="ghost" className="min-h-11 shrink-0 px-2" onClick={closeSearch}>{m.close()}</Button>
-      </div>
       <div className="session-list" id="sessionList" role="list">
         <span className="sr-only" role="status">{dropTarget === null ? '' : dropTarget ? m.session_pin() : m.session_unpin()}</span>
         {storageNotice && (

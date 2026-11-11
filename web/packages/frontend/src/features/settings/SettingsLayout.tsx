@@ -1,7 +1,7 @@
 import { useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Link, useMatchRoute, useNavigate, useParams } from '@tanstack/react-router'
 import { MAIN_VIEW } from '../../shell/AppShell'
-import { PanelHead } from '../../shell/PanelHead'
+import { PanelSearch } from '../../shell/PanelSearch'
 import { m } from '../../paraglide/messages.js'
 import { cn } from '../../ui/cn'
 import { SETTINGS_SECTION_GROUPS, SettingsSectionGroupSchema, SettingsSectionSchema, type SettingsSection as Section, type SettingsSectionGroup } from '../../contracts/url'
@@ -11,7 +11,7 @@ import { SIDEBAR_ROW } from '../../shell/nav'
 import { SidebarFold, SidebarRowContent } from '../../shell/SidebarRowContent'
 import { useActiveProfileName } from '../../shell/ProfileMenu'
 import { SectionHeader } from '../../ui/List'
-import { MessageSquare, AudioLines, Bell, SunMedium, PanelLeft, Cpu, KeyRound, Wrench, Puzzle, Lock, Server, Info, UserRound, FolderOpen, FileText, Search, type LucideIcon } from 'lucide-react'
+import { MessageSquare, AudioLines, Bell, SunMedium, PanelLeft, Cpu, KeyRound, Wrench, Puzzle, Lock, Server, Info, UserRound, FolderOpen, FileText, type LucideIcon } from 'lucide-react'
 import { PAGE_TITLE, searchSettings, type SettingsIndexEntry } from './settingsIndex'
 
 const SECTION_ICON: Record<Section, LucideIcon> = {
@@ -67,6 +67,7 @@ export function SectionMenu() {
   const navigate = useNavigate()
   // TAL-2086: device-local UI state over the rows' own wording; while it has text, the matches replace the section list.
   const [query, setQuery] = useState('')
+  const [searchOpen, setSearchOpen] = useState(false)
   const [highlight, setHighlight] = useState(0)
   const isDesktop = useIsDesktop()
   const rail = useIsSidebarRail()
@@ -74,6 +75,7 @@ export function SectionMenu() {
   const results = query.trim() && !rail ? searchSettings(query) : null
   const choose = (entry: SettingsIndexEntry) => {
     setQuery('')
+    setSearchOpen(false)
     closeMobileSidebar()
     // A row on a page under its section (TAL-2136, TAL-2138) opens that page.
     if (entry.page === 'quota-alerts') void navigate({ to: '/settings/providers/quota-alerts', hash: entry.id })
@@ -95,18 +97,13 @@ export function SectionMenu() {
     }
   }
   // TAL-2183: one set of rows in both states. The sections are sidebar rows, so `shell.css` morphs them into the rail's
-  // icons over captions; the head, the search field and the group headers fold away there, and separators take the headers' place.
+  // icons over captions; the head with its search and the group headers fold away there, and separators take the headers' place.
   return (
     <div className="panel-view active flex min-h-0 flex-1 flex-col" id="panelSettings">
       <SidebarFold rail={rail} className="settings-menu-head">
-        <PanelHead title={m.tab_settings()} />
-        <div className="sidebar-search">
-          <div className="hub-search relative">
-            <Search size={14} className="sidebar-search-icon" aria-hidden="true" />
-            <input id="settingsSearch" type="search" role="combobox" aria-expanded={!!results?.length} aria-controls={RESULTS_ID} aria-autocomplete="list" aria-activedescendant={results?.length ? resultId(highlight) : undefined}
-              value={query} onChange={(e) => { setQuery(e.target.value); setHighlight(0) }} onKeyDown={onKeyDown} placeholder={m.settings_search_placeholder()} aria-label={m.settings_search_placeholder()} autoComplete="off" data-1p-ignore data-lpignore="true" />
-          </div>
-        </div>
+        <PanelSearch title={m.tab_settings()} open={searchOpen} onOpenChange={setSearchOpen} value={query} onValueChange={(value) => { setQuery(value); setHighlight(0) }}
+          id="settingsSearch" role="combobox" aria-expanded={!!results?.length} aria-controls={RESULTS_ID} aria-autocomplete="list" aria-activedescendant={results?.length ? resultId(highlight) : undefined}
+          onKeyDown={onKeyDown} placeholder={m.settings_search_placeholder()} aria-label={m.settings_search_placeholder()} />
       </SidebarFold>
       <span role="status" aria-live="polite" className="sr-only">{results ? results.length ? m.settings_search_results({ count: results.length }) : m.settings_search_no_results() : ''}</span>
       <div className="sidebar-scroll flex min-h-0 flex-1 flex-col">
