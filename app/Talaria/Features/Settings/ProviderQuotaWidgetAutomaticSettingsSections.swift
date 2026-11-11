@@ -30,31 +30,35 @@ struct ProviderQuotaWidgetAutomaticSettingsSections: View {
                 colorPicker("Unavailable", selection: $unavailableColor, customHex: $customUnavailableColorHex)
             }
 
-            if let thresholds {
+            if thresholds != nil {
                 if colorBasis == .pace {
                     SettingsSection(title: String(localized: "Pace Breakpoints")) {
                         Group {
-                            Stepper(
-                                "Over pace at \(thresholds.paceTolerancePercent)%",
+                            SettingsStepperRow(
+                                title: String(localized: "Over pace at"),
                                 value: threshold(\.paceTolerancePercent),
-                                in: 0...25
+                                in: 0...25,
+                                format: { String(localized: "\($0)%") }
                             )
-                            Stepper(
-                                "Warning burn rate: \(thresholds.paceWarningBurnRatePercent)%",
+                            SettingsStepperRow(
+                                title: String(localized: "Warning burn rate"),
                                 value: threshold(\.paceWarningBurnRatePercent),
                                 in: 100...300,
-                                step: 5
+                                step: 5,
+                                format: { String(localized: "\($0)%") }
                             )
-                            Stepper(
-                                "Critical burn rate: \(thresholds.paceCriticalBurnRatePercent)%",
+                            SettingsStepperRow(
+                                title: String(localized: "Critical burn rate"),
                                 value: threshold(\.paceCriticalBurnRatePercent),
                                 in: 100...400,
-                                step: 5
+                                step: 5,
+                                format: { String(localized: "\($0)%") }
                             )
-                            Stepper(
-                                "Projection after \(thresholds.paceMinimumElapsedHours) hr",
+                            SettingsStepperRow(
+                                title: String(localized: "Projection after"),
                                 value: threshold(\.paceMinimumElapsedHours),
-                                in: 0...72
+                                in: 0...72,
+                                format: { String(localized: "\($0) hr") }
                             )
                         }
                         .disabled(thresholdsAreCached)
@@ -63,15 +67,17 @@ struct ProviderQuotaWidgetAutomaticSettingsSections: View {
                 } else {
                     SettingsSection(title: String(localized: "Overall Breakpoints")) {
                         Group {
-                            Stepper(
-                                "Warning at \(thresholds.warningRemainingPercent)% remaining",
+                            SettingsStepperRow(
+                                title: String(localized: "Warning at"),
                                 value: threshold(\.warningRemainingPercent),
-                                in: 1...99
+                                in: 1...99,
+                                format: { String(localized: "\($0)% remaining") }
                             )
-                            Stepper(
-                                "Critical at \(thresholds.criticalRemainingPercent)% remaining",
+                            SettingsStepperRow(
+                                title: String(localized: "Critical at"),
                                 value: threshold(\.criticalRemainingPercent),
-                                in: 0...99
+                                in: 0...99,
+                                format: { String(localized: "\($0)% remaining") }
                             )
                         }
                         .disabled(thresholdsAreCached)
@@ -113,13 +119,13 @@ struct ProviderQuotaWidgetAutomaticSettingsSections: View {
         selection: Binding<String>,
         customHex: Binding<String>
     ) -> some View {
-        Picker(title, selection: selection) {
+        SettingsPickerRow(title: title, systemImage: "paintpalette", selection: selection) {
             ForEach(ProviderQuotaWidgetArcColor.allCases.filter { $0 != .automatic }) { color in
                 Text(color.title).tag(color.rawValue)
             }
         }
         if selection.wrappedValue == ProviderQuotaWidgetArcColor.custom.rawValue {
-            ColorPicker("Custom \(title) Color", selection: HeaderLogoColor.binding(customHex))
+            SettingsColorRow(title: String(localized: "Custom \(title) Color"), selection: HeaderLogoColor.binding(customHex))
         }
     }
 

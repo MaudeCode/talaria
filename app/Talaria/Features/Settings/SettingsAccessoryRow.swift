@@ -53,18 +53,8 @@ struct SettingsAccessoryRow: View {
     }
 
     private var leadingLabel: some View {
-        HStack(spacing: 10) {
-            Image(systemName: systemImage)
-                .font(AppFont.subheadline(weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 24)
-                .accessibilityHidden(true)
-
-            Text(title)
-                .font(AppFont.subheadline(weight: .medium))
-                .layoutPriority(1)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+        SettingsRowLabel(title: title, systemImage: systemImage)
+            .layoutPriority(1)
     }
 
     private var accessoryIcon: some View {

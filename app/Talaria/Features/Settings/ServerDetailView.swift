@@ -26,13 +26,12 @@ struct ServerDetailView: View {
     private var hostFallback: String { URL(string: account.urlString)?.host ?? account.urlString }
 
     var body: some View {
-        SidebarList {
+        SettingsPage(title: displayName.isEmpty ? hostFallback : displayName) {
             SettingsSection(title: String(localized: "Server")) {
                 SettingsInfoRow(title: String(localized: "URL"), value: account.urlString, valueIsSelectable: true)
 
-                SettingsValueRow(title: String(localized: "Status")) {
-                    SettingsStatusPill(label: isActive ? String(localized: "Active") : String(localized: "Inactive"))
-                }
+                SettingsStatusRow(title: String(localized: "Status"), systemImage: "server.rack",
+                                  status: isActive ? String(localized: "Active") : String(localized: "Inactive"))
             }
 
             SettingsSection(title: String(localized: "Identity")) {

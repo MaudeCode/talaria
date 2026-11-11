@@ -9,7 +9,7 @@ struct ProviderQuotaWidgetProfilesView: View {
     @State private var newProfileName = ""
 
     var body: some View {
-        SidebarList {
+        SettingsPage(title: String(localized: "Widget Profiles")) {
             SettingsSection(title: String(localized: "Widget Profiles")) {
                 HStack {
                     Label("App Default", systemImage: "slider.horizontal.3")

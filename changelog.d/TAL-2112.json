@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Use consistent controls and aligned values across Settings pages.",
+      "highlight": false,
+      "components": ["app"],
+      "announce": false
+    }
+  ]
+}

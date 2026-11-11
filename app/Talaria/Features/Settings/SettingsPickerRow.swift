@@ -5,71 +5,44 @@ struct SettingsPickerRow<SelectionValue: Hashable, Options: View>: View {
     let systemImage: String
     @Binding var selection: SelectionValue
     @ViewBuilder let options: Options
-
+    var accessibilityIdentifier: String? = nil
+    var usesSegmentedControl = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @ScaledMetric(relativeTo: .body) private var menuChromeWidth: CGFloat = 44
 
-    init(
-        title: String,
-        systemImage: String,
-        selection: Binding<SelectionValue>,
-        @ViewBuilder options: () -> Options
-    ) {
+    init(title: String, systemImage: String, selection: Binding<SelectionValue>,
+         accessibilityIdentifier: String? = nil, usesSegmentedControl: Bool = false,
+         @ViewBuilder options: () -> Options) {
         self.title = title
         self.systemImage = systemImage
         _selection = selection
+        self.accessibilityIdentifier = accessibilityIdentifier
+        self.usesSegmentedControl = usesSegmentedControl
         self.options = options()
     }
 
     var body: some View {
         Group {
-            if dynamicTypeSize.isAccessibilitySize {
-                stacked
+            if usesSegmentedControl {
+                Picker(title, selection: $selection) { options }
+                    .pickerStyle(.segmented)
+            } else if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) {
+                    label
+                    picker
+                        // Native menu values ignore lineLimit and wrap at accessibility sizes.
+                        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
             } else {
-                // Side by side only while the title and the widest value each fit on one line;
-                // otherwise the value moves under the title instead of either wrapping. Sizing for
-                // the widest value keeps the layout fixed when the selection changes.
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 0) {
-                        label
-                            .fixedSize()
-
-                        Spacer(minLength: 12)
-
-                        ZStack(alignment: .trailing) {
-                            widestValue
-                            picker
-                                .fixedSize()
-                        }
-                    }
-
-                    stacked
+                HStack(spacing: 12) {
+                    label.lineLimit(1)
+                    Spacer(minLength: 0)
+                    picker
                 }
             }
         }
+        .accessibilityIdentifier(accessibilityIdentifier ?? "")
         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-    }
-
-    private var stacked: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            label
-
-            picker
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    /// Every option overlaid and hidden: as wide as the widest value plus the menu's chevron.
-    /// ponytail: `menuChromeWidth` covers the iOS 26 menu's chevron and padding (about 40 pt);
-    /// a menu style wider than that lets a row switch layout with its value again.
-    private var widestValue: some View {
-        ZStack(alignment: .trailing) {
-            options
-        }
-        .padding(.trailing, menuChromeWidth)
-        .fixedSize()
-        .hidden()
-        .accessibilityHidden(true)
     }
 
     private var label: some View {
@@ -78,13 +51,12 @@ struct SettingsPickerRow<SelectionValue: Hashable, Options: View>: View {
     }
 
     private var picker: some View {
-        Picker(title, selection: $selection) {
-            options
-        }
-        .pickerStyle(.menu)
-        .labelsHidden()
-        // Secondary like the other settings values; outside a glass card a menu picker turns blue.
-        .tint(.secondary)
-        .accessibilityLabel(Text(title))
+        Picker(title, selection: $selection) { options }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .tint(.secondary)
+            .fixedSize()
+            .layoutPriority(1)
+            .accessibilityLabel(title)
     }
 }

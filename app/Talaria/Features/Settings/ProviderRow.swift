@@ -14,25 +14,12 @@ struct ProviderRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center, spacing: 8) {
+            SettingsItemRow(title: displayName, containsActions: true) {
                 ProviderIconView(providerID: provider.id, label: displayName, size: 20)
-
-                Text(displayName)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-
+            } badges: {
                 if isActive {
-                    Text("Active")
-                        .font(.caption2.weight(.semibold))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(Capsule().fill(Color.green.opacity(0.16)))
-                        .foregroundStyle(.green)
+                    SettingsStatusPill(label: String(localized: "Active"), tint: .green)
                 }
-
-                Spacer(minLength: 0)
 
                 if let badge = ProvidersViewModel.keySourceBadge(for: provider) {
                     // Technical token (env / OAuth / config) — deliberately not localized.

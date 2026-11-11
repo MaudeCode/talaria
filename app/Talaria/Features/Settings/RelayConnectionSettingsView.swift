@@ -17,7 +17,6 @@ struct RelayConnectionManagementView: View {
 
     @Bindable var authManager: AuthManager
 
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var credentials: TalariaRelayCredentials?
     @State private var publisherLabels: [String: String] = [:]
     @State private var connectingServerID: String?
@@ -30,7 +29,7 @@ struct RelayConnectionManagementView: View {
     @State private var isDisconnecting = false
 
     var body: some View {
-        SidebarList {
+        SettingsPage(title: String(localized: "Talaria Relay")) {
             if let errorMessage {
                 SettingsErrorFootnote(errorMessage)
                     .sidebarRowPadding()
@@ -44,7 +43,7 @@ struct RelayConnectionManagementView: View {
             }
 
             SettingsSection(title: String(localized: "Talaria Relay")) {
-                Button("Sign Out of Talaria Relay", role: .destructive) {
+                SettingsButton(String(localized: "Sign Out of Talaria Relay"), role: .destructive) {
                     isConfirmingDisconnect = true
                 }
                 .disabled(isBusy || credentials == nil)
@@ -88,39 +87,15 @@ struct RelayConnectionManagementView: View {
     @ViewBuilder
     private func serverRow(_ server: RelayPublisherRow) -> some View {
         let state = state(for: server)
-        Group {
-            if dynamicTypeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: 10) {
-                    serverDetails(server)
-                    serverStatus(server, state: state)
-                }
-            } else {
-                HStack(spacing: 12) {
-                    serverDetails(server)
-                    Spacer(minLength: 12)
-                    serverStatus(server, state: state)
-                }
-            }
-        }
-        .padding(.vertical, 4)
-        .accessibilityIdentifier("settings-relay-server-\(server.id)")
-    }
-
-    private func serverDetails(_ server: RelayPublisherRow) -> some View {
         let host = server.server.host ?? server.id
-        return VStack(alignment: .leading, spacing: 3) {
-            Text(server.displayName)
-                .font(.body)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-            if host.localizedCaseInsensitiveCompare(server.displayName) != .orderedSame {
-                Text(host)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            }
+        SettingsItemRow(title: server.displayName,
+                        subtitle: host.localizedCaseInsensitiveCompare(server.displayName) == .orderedSame ? nil : host,
+                        containsActions: true) {
+            Image(systemName: "server.rack").accessibilityHidden(true)
+        } accessory: {
+            serverStatus(server, state: state)
         }
+        .accessibilityIdentifier("settings-relay-server-\(server.id)")
     }
 
     @ViewBuilder

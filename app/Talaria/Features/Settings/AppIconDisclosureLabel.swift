@@ -4,25 +4,12 @@ import TalariaKit
 
 struct AppIconDisclosureLabel: View {
     let selectedAppIcon: AppIconChoice
+    var isExpanded = false
 
     var body: some View {
-        HStack(spacing: 12) {
+        SettingsItemRow(title: String(localized: "App Icon"), subtitle: selectedAppIcon.title,
+                        accessorySystemImage: isExpanded ? "chevron.down" : "chevron.forward") {
             AppIconChoicePreview(icon: selectedAppIcon)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("App Icon")
-                    .font(AppFont.body(weight: .semibold))
-                    .foregroundStyle(.primary)
-
-                Text(selectedAppIcon.title)
-                    .font(AppFont.footnote())
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer(minLength: 8)
         }
-        .frame(minHeight: 44)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
     }
 }

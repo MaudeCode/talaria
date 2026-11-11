@@ -257,6 +257,106 @@ final class HostedViewTests: XCTestCase {
 /// Settings placement is a user-facing navigation contract, shared with the Web taxonomy.
 @MainActor
 final class SettingsPlacementHostedTests: XCTestCase {
+    func testPickerKeepsItsValueAtTheTrailingEdgeOnPhone() async throws {
+        for size in [DynamicTypeSize.large, .accessibility5] {
+            let window = try hostWindow(
+                VStack {
+                    SettingsPickerRow(title: "Send While Responding", systemImage: "paperplane",
+                                      selection: .constant("Queue after response")) {
+                        Text("Queue after response").tag("Queue after response")
+                    }
+                    Spacer()
+                }.padding(.horizontal, 16).dynamicTypeSize(size), size: CGSize(width: 390, height: 844))
+            let found = await awaitElement(in: window) {
+                $0.accessibilityLabel?.contains("Send While Responding") == true
+            }
+            let value = try XCTUnwrap(found, "Picker missing: \(HostedAccessibility.labels(in: window))")
+            if !size.isAccessibilitySize {
+                XCTAssertLessThan(value.accessibilityFrame.minY, window.safeAreaInsets.top + 30,
+                                  "The picker value must stay beside its title, rather than below it")
+                XCTAssertGreaterThan(value.accessibilityFrame.midX, window.bounds.midX,
+                                     "The selected value belongs at the trailing edge")
+            }
+            XCTAssertGreaterThan(value.accessibilityFrame.maxX, window.bounds.maxX - 40,
+                                 "The selected value must align to the trailing edge at every text size")
+            XCTAssertLessThanOrEqual(value.accessibilityFrame.maxX, window.bounds.maxX,
+                                     "The selected value must remain inside the phone at the largest text size")
+            XCTAssertLessThan(value.accessibilityFrame.maxY, window.bounds.maxY,
+                              "Wrapping the title must not push the selected value off the phone")
+            attachHostedScreenshot(window, name: "settings-picker-\(size)")
+            attachFailureScreenshot(window, name: "settings-picker-\(size)-failure")
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+    }
+
+    func testAppIconDisclosureKeepsItsOwnHitTargetWhenExpanded() async throws {
+        try XCTSkipUnless(UIApplication.shared.supportsAlternateIcons)
+        let window = try hostWindow(NavigationStack {
+            SettingsPage(title: "Appearance") {
+                SettingsSection(title: "App Icon") { AppIconSettingsSection() }
+            }
+        }, size: CGSize(width: 390, height: 844))
+        func header() -> NSObject? {
+            HostedAccessibility.elements(in: window).first { $0.accessibilityLabel?.hasPrefix("App Icon,") == true }
+        }
+        let collapsed = try XCTUnwrap(header(), HostedAccessibility.labels(in: window).description)
+        XCTAssertTrue(HostedAccessibility.activate(collapsed))
+        let expanded = await awaitElement(in: window) {
+            $0.accessibilityLabel?.hasPrefix("System. Matches device appearance") == true
+        }
+        let firstChoice = try XCTUnwrap(expanded, "Opening the disclosure must reveal its choices")
+        XCTAssertLessThan(firstChoice.accessibilityFrame.height, 100,
+                          "An icon choice must have its own hit target, separate from the other choices")
+        let expandedHeader = try XCTUnwrap(header())
+        XCTAssertLessThan(expandedHeader.accessibilityFrame.height, 100,
+                          "The disclosure hit target must cover its header, not the icon choices below it")
+        attachFailureScreenshot(window, name: "app-icon-disclosure-hit-target")
+    }
+
+    func testSharedSettingsRowsExposeTheirLabelValueAndIdentifierTogether() async throws {
+        let stepperValue = LockedTestValue(5)
+        let rows: [(String, String, AnyView)] = [
+            ("slider", "25%", AnyView(SettingsSliderRow(title: "Fixture slider", value: .constant(25),
+                in: 0...100, format: { "\(Int($0))%" }, accessibilityIdentifier: "fixture-slider"))),
+            ("stepper", "5", AnyView(SettingsStepperRow(title: "Fixture stepper", value: Binding(get: { stepperValue.value }, set: { stepperValue.value = $0 }),
+                in: 0...6, accessibilityIdentifier: "fixture-stepper"))),
+            ("color", "red", AnyView(SettingsColorRow(title: "Fixture color", selection: .constant(.red),
+                accessibilityIdentifier: "fixture-color"))),
+            ("status", "Connected", AnyView(SettingsStatusRow(title: "Fixture status", systemImage: "checkmark",
+                status: "Connected", accessibilityIdentifier: "fixture-status"))),
+            ("item", "Ready", AnyView(SettingsItemRow(title: "Fixture item", subtitle: "Ready",
+                accessibilityIdentifier: "fixture-item")))
+        ]
+        for (kind, expectedValue, row) in rows {
+            let window = try hostWindow(row.padding(), size: CGSize(width: 390, height: 300))
+            let found = await awaitElement(in: window) {
+                HostedAccessibility.identifier(of: $0) == "fixture-\(kind)" && $0.isAccessibilityElement
+            }
+            let element = try XCTUnwrap(found, "Missing \(kind): \(HostedAccessibility.labels(in: window))")
+            let speech = [element.accessibilityLabel, element.accessibilityValue].compactMap { $0 }.joined(separator: ", ")
+            XCTAssertTrue(speech.contains("Fixture \(kind)"), speech)
+            XCTAssertTrue(speech.contains(expectedValue), speech)
+            if kind == "color" { XCTAssertFalse(element.accessibilityValue?.isEmpty ?? true) }
+            let matches = HostedAccessibility.elements(in: window).filter {
+                HostedAccessibility.identifier(of: $0) == "fixture-\(kind)" && $0.isAccessibilityElement
+            }
+            XCTAssertEqual(matches.count, 1, "Each row must have one accessible control, not duplicated labels")
+            if kind == "stepper" {
+                element.accessibilityIncrement()
+                XCTAssertEqual(stepperValue.value, 6)
+                settle()
+                element.accessibilityIncrement()
+                XCTAssertEqual(stepperValue.value, 6, "VoiceOver must honor the upper bound")
+                element.accessibilityDecrement()
+                XCTAssertEqual(stepperValue.value, 5)
+            }
+            attachHostedScreenshot(window, name: "settings-row-\(kind)")
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+    }
+
     // The rendered list, rather than the SwiftUI type, owns Settings' chrome contract.
     func testSettingsPagesUseChatsListChrome() async throws {
         let fixture = try FixtureApp(for: self)

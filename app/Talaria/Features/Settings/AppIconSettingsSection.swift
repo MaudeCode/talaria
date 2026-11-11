@@ -4,6 +4,7 @@ import TalariaKit
 
 struct AppIconSettingsSection: View {
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selectedAppIcon = AppIconChoice.system
     @State private var updatingAppIcon: AppIconChoice?
     @State private var appIconErrorMessage: String?
@@ -11,14 +12,17 @@ struct AppIconSettingsSection: View {
 
     var body: some View {
         if UIApplication.shared.supportsAlternateIcons {
-            VStack(alignment: .leading, spacing: 12) {
-                DisclosureGroup(isExpanded: $isAppIconPickerExpanded) {
-                    appIconChoices
-                        .padding(.top, 12)
+            Group {
+                Button {
+                    withAnimation(reduceMotion ? nil : .default) { isAppIconPickerExpanded.toggle() }
                 } label: {
-                    AppIconDisclosureLabel(selectedAppIcon: selectedAppIcon)
+                    AppIconDisclosureLabel(selectedAppIcon: selectedAppIcon, isExpanded: isAppIconPickerExpanded)
                 }
-                .tint(.secondary)
+                .buttonStyle(.plain)
+                .accessibilityValue(isAppIconPickerExpanded ? String(localized: "Expanded") : String(localized: "Collapsed"))
+                if isAppIconPickerExpanded {
+                    appIconChoices
+                }
 
                 if let appIconErrorMessage {
                     Text(appIconErrorMessage)
@@ -41,7 +45,7 @@ struct AppIconSettingsSection: View {
         VStack(alignment: .leading, spacing: 12) {
             ForEach(Array(AppIconChoice.allCases.enumerated()), id: \.element.id) { index, icon in
                 if index > 0 {
-                    appIconDivider
+                    SettingsDivider()
                 }
 
                 HapticButton(feedbackStyle: .light) {
@@ -57,12 +61,6 @@ struct AppIconSettingsSection: View {
                 .disabled(updatingAppIcon != nil)
             }
         }
-    }
-
-    private var appIconDivider: some View {
-        Divider()
-            .padding(.leading, 2)
-            .opacity(0.72)
     }
 
     private func refreshSelectedAppIcon() {
