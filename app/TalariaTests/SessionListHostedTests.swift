@@ -1738,6 +1738,7 @@ extension RegularSplitHostedTests {
         let previewed = await awaitCondition { secondaryReplyShows("Fixture Session 01") && composerCount() == 2 }
         XCTAssertTrue(previewed, "The dragged chat must appear beside the primary before the drop")
         guard previewed else { return drag.cancel() }
+        attachHostedScreenshot(window, name: "drag-first-split-before-drop")
         let settledLoads = await awaitQuiet(transcriptLoads)
         let shownLoads = try XCTUnwrap(settledLoads, "The shown chat's transcript must settle")
         let secondaryComposer = try await requireElement(in: window) {
@@ -1764,11 +1765,17 @@ extension RegularSplitHostedTests {
         XCTAssertEqual(drag.hover(at: conversation), .copy)
         let replaced = await awaitCondition { secondaryReplyShows("Fixture Session 02") && !secondaryReplyShows("Fixture Session 01") }
         XCTAssertTrue(replaced, "Hovering a split must show the dragged chat in the secondary pane before the drop")
+        attachHostedScreenshot(window, name: "drag-replacement-before-drop")
         drag.cancel()
         let restored = await awaitCondition {
             secondaryReplyShows("Fixture Session 01") && self.splitComposers(in: window).map(\.text) == ["Primary draft", "Secondary draft"]
         }
         XCTAssertTrue(restored, "A cancelled drag must restore the open secondary chat and its draft")
+        // Capture the settled restore, not the composer's fade from its shell to the restored draft.
+        let restoredLayout = await awaitQuiet { self.splitComposers(in: window).map { $0.convert($0.bounds, to: window) } }
+        XCTAssertNotNil(restoredLayout, "The restored composers must settle before capture")
+        settle(window: window)
+        attachHostedScreenshot(window, name: "drag-cancelled-restores-secondary")
 
         try openDrawerOverTheSplit()
         drag = try await liftSidebarChat("Fixture Session 02", in: window)
