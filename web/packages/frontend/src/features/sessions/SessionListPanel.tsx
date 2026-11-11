@@ -381,7 +381,7 @@ export function SessionListPanel() {
       <input ref={importInput} type="file" accept=".json,application/json" hidden aria-label={m.import_session_json_tooltip()} onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) importSession.mutate(file) }} />
       <MotionList items={groups.flatMap((g) => g.rows.flatMap((r) => [r, ...(children.get(r.session_id) ?? [])]))} itemKey={(r) => r.session_id}
         scope={JSON.stringify([scope, q, collapsedGroups, data?.active_profile, q.length >= 2 ? search.dataUpdatedAt : null])} context={context} ready={list.isSuccess}
-        className="session-list" id="sessionList">
+        className="session-list" id="sessionList" selection={{ key: activeId, className: 'session-selection' }}>
         {(present, previous, animate) => {
           const tree = nestSessionRows(present)
           const renderedGroups = groupSessionRows(tree.roots).map((g) => ({ ...g, label: GROUP_LABEL[g.id]() }))

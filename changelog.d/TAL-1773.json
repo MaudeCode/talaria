@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Switch chats with a sliding selection, fading title, and a gentle transcript entrance.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

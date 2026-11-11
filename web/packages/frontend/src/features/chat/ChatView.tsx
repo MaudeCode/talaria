@@ -14,7 +14,7 @@ import { invalidateSessionQueries } from '../../api/sessionQueries'
 import { useBootstrap } from '../../app/bootstrap'
 import { useExecutionModesQuery, useProjectsQuery, useSettingsQuery, useWorkspacesQuery } from '../../app/queries'
 import { reasoningResource, useReasoningDisplayChoice, useReasoningQuery, useSetReasoningDisplay, useSetReasoningEffort } from '../composer/reasoning'
-import type { Session, SessionsList } from '../../contracts'
+import type { Session } from '../../contracts'
 import { configureStream, cancelTurn, getStreamContext, startTurn } from '../../stream/connection'
 import { dispatch, useTurnIntent } from '../../stream/store'
 import { isTerminal, runStart, type LiveTurn } from '../../stream/reducer'
@@ -22,6 +22,8 @@ import { useTranscript, type VisibleMessage } from './useTranscript'
 import { chosenFields, useSessionUpdate, useSessionWrite } from './useSessionUpdate'
 import { transcriptCut, useEditMessage } from './useEditMessage'
 import { Transcript } from './Transcript'
+import { SwapText } from '../../ui/SwapText'
+import { useSessionTitle } from '../sessions/useSessionTitle'
 import { TranscriptSkeleton } from './TranscriptSkeleton'
 import { Composer, turnRequest, type DraftHandover } from '../composer/Composer'
 import { reasoningLevelLabel } from '../composer/chips'
@@ -69,7 +71,7 @@ type AdmissionRequest = Extract<OwnerActionRequest, { admission_id: string }>
 const reactionResource = (sid: string, row: number) => `reaction:${sid}:${row}`
 const admissionResource = (sessionId: string, admissionId: string) => `owner-admission:${sessionId}:${admissionId}`
 
-export function ChatView({ sessionId }: { sessionId: string | null }) {
+export function ChatView({ sessionId, fromTitle = null }: { sessionId: string | null; fromTitle?: string | null }) {
   const bootstrap = useBootstrap()
   const qc = useQueryClient()
   const { mutate: renameSession } = useResourceMutation({ resource: () => `session:${sessionId}`, effect: (title: string) => ({ fields: { title } }), mutationFn: (title) => { if (!sessionId) throw new Error(m.error_generic()); return api.renameSession(sessionId, title) }, onError: (e) => showErrorToast(e) })
@@ -436,8 +438,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     return { ...shownSession, ...(confirming ? chosenFields(confirming) : {}), ...(owner && admissions ? { owner_attachment: { ...owner, admissions, queued_input_count: Math.max(0, owner.queued_input_count - (owner.admissions.length - admissions.length)) } } : {}) }
   })()
   // Until the transcript arrives the header shows the title the sidebar already has for this session.
-  const listedTitle = sessionId ? qc.getQueryData<SessionsList>(keys.sessions.list({}))?.sessions.find((r) => r.session_id === sessionId)?.title : undefined
-  const title = shownSession?.title ?? listedTitle ?? ''
+  const title = useSessionTitle(sessionId, bootstrap.bot_name)
   // TAL-639: an existing chat names only its own workspace, none until its record loads, so the Files page and
   // terminal never mount on the default and remount; the default stands in only for the unsaved chat.
   const workspace = sessionId ? session?.workspace : settings.data?.default_workspace
@@ -519,7 +520,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       <div id="mainChat" data-show-reasoning={showReasoning} className={cn(MAIN_VIEW, 'active')}>
         <div className="chat-header flex items-center gap-3 min-h-[52px] px-5 py-1.5 border-b border-border shrink-0 max-[641px]:hidden">
           <div className="chat-header-text min-w-0 flex-1 flex flex-col gap-px">
-            <h1 className="chat-header-title m-0 text-[13.5px] font-[550] text-text whitespace-nowrap overflow-hidden text-ellipsis tracking-[-.01em]" id="topbarTitle">{session || listedTitle ? (title || m.untitled()) : bootstrap.bot_name}</h1>
+            <h1 className="chat-header-title m-0 text-[13.5px] font-[550] text-text whitespace-nowrap overflow-hidden text-ellipsis tracking-[-.01em]" id="topbarTitle"><SwapText text={title} initialText={fromTitle ?? title} animate={fromTitle !== null} fixed className="block w-full" /></h1>
             {session && meta && <div className="chat-header-meta hidden text-[11px] text-muted whitespace-nowrap overflow-hidden text-ellipsis font-mono" id="topbarMeta">{meta}</div>}
           </div>
           {/* T3 Code keeps the terminal toggle in the thread header; phones reach it from the composer's overflow menu. */}
@@ -536,6 +537,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
         <div ref={stage} className="chat-stage relative flex flex-1 min-h-0 flex-col">
         {!query.isError && (
           <Transcript
+            switching={fromTitle !== null}
             showReasoning={showReasoning}
             disclosureScope={JSON.stringify([bootstrap.profile?.name ?? 'default', sessionId])}
             rows={shownRows}

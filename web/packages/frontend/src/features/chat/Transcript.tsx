@@ -21,6 +21,7 @@ import { useLiveTurn } from '../../stream/store'
 import { VirtualHistory, type HistoryVirtualizer } from './VirtualHistory'
 import { firstRowPast, nextBoxed, readerAnchorRow, revealQuestion, rowBoxes } from './viewportAnchor'
 import { LIVE_INDEX, Outline } from './Outline'
+import { enterTranscript } from '../../lib/motion'
 
 const VIRTUALIZE_AT = 200
 const NO_ACTIONS: RowActions = {}
@@ -29,6 +30,7 @@ const NO_ATTACHMENTS: Attachment[] = []
 const HAND_SCROLL_MS = 250
 
 export interface TranscriptProps {
+  switching?: boolean
   rows: VisibleMessage[]
   showReasoning?: boolean | undefined
   disclosureScope?: string | undefined
@@ -381,6 +383,13 @@ export function Transcript(props: TranscriptProps) {
     }
     rememberReaderAnchor()
   }, [rows, loadedFrom, virtualize, truncated, loadingOlder, olderError, jumps, requestOlder, pin, scrollToBottom, rememberReaderAnchor])
+
+  const entrance = useRef<Animation[] | null>(null)
+  useLayoutEffect(() => {
+    if (!props.switching || focusKey || !scrollRef.current || entrance.current || (!rows.length && !showLive)) return
+    entrance.current = enterTranscript(scrollRef.current)
+  }, [props.switching, focusKey, rows.length, showLive])
+  useLayoutEffect(() => () => { for (const animation of entrance.current ?? []) animation.cancel(); entrance.current = null }, [])
 
   const sentinelRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
