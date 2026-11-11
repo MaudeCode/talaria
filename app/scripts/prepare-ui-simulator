@@ -6,11 +6,13 @@
 # down, and the composer collapses with it, on every freshly booted simulator (TAL-668); iOS 27 records it under
 # TextInput's DidShowContinuousPathIntroduction preference. --keyboard-only does just that, for a simulator whose
 # tests need no notifications, photos or document picker.
+# GitHub Actions owns a disposable simulator and may reboot it once after notification readiness times out.
 # Usage: scripts/prepare-ui-simulator [--keyboard-only] <simulator-udid>
 
 set -euo pipefail
 zmodload zsh/datetime
 keyboard_only=false
+recover_notifications=${GITHUB_ACTIONS:-false}
 if [[ "${1:-}" == --keyboard-only ]]; then
     keyboard_only=true
     shift
@@ -20,12 +22,15 @@ simulator_id=$1
 scripts=${0:A:h}
 
 prepare_step() {
-    local name=$1 started=$SECONDS exit_status=0 deadline=$(( EPOCHREALTIME + 60 ))
+    local name=$1 started=$SECONDS exit_status=0 budget=60
+    # Match CI's initial boot limit; notification attempts retain their own 60-second limit.
+    [[ "$name" == reboot ]] && budget=600
+    local deadline=$(( EPOCHREALTIME + budget ))
     shift
     print -r -- "$(date -u '+%Y-%m-%dT%H:%M:%SZ') $name start elapsed=0s"
-    if [[ "$name" == notifications || "$name" == photo ]]; then
+    if [[ "$name" == notifications || "$name" == photo || "$name" == reboot ]]; then
         # Hosted timing exceeded 60s in these clients; include their cleanup in the same budget.
-        python3 - "$deadline" "$name" "$@" <<'PYTHON' || exit_status=$?
+        python3 - "$deadline" "$budget" "$name" "$@" <<'PYTHON' || exit_status=$?
 import os
 import signal
 import subprocess
@@ -33,8 +38,9 @@ import sys
 import time
 
 deadline = float(sys.argv[1])
-step = sys.argv[2]
-process = subprocess.Popen(sys.argv[3:], start_new_session=True)
+budget = sys.argv[2]
+step = sys.argv[3]
+process = subprocess.Popen(sys.argv[4:], start_new_session=True)
 
 def signal_clients(signum):
     try:
@@ -53,7 +59,7 @@ try:
         # Reserve the final second of the budget for helper/probe cleanup.
         exit_status = process.wait(timeout=max(0, deadline - time.time() - 1))
     except subprocess.TimeoutExpired:
-        print(f"{step} timed out (60-second budget including cleanup).", file=sys.stderr)
+        print(f"{step} timed out ({budget}-second budget including cleanup).", file=sys.stderr)
         # Hosted tests inject image bytes; the library asset only warms Photos. Readiness remains mandatory.
         exit_status = 0 if step == "photo" else 124
 finally:
@@ -73,9 +79,20 @@ PYTHON
     return "$exit_status"
 }
 
-prepare_step keyboard xcrun simctl spawn "$simulator_id" defaults write com.apple.keyboard.preferences DidShowContinuousPathIntroduction -bool true
-[[ "$keyboard_only" == true ]] && exit 0
-# The successful keyboard spawn just verified this simulator is running; do not repeat its boot wait.
-prepare_step notifications "$scripts/ready-simulator-notifications" --already-booted "$simulator_id"
+for attempt in 1 2; do
+    prepare_step keyboard xcrun simctl spawn "$simulator_id" defaults write com.apple.keyboard.preferences DidShowContinuousPathIntroduction -bool true
+    [[ "$keyboard_only" == true ]] && exit 0
+    # The successful keyboard spawn just verified this simulator is running; do not repeat its boot wait.
+    if prepare_step notifications "$scripts/ready-simulator-notifications" --already-booted "$simulator_id"; then
+        break
+    else
+        notification_status=$?
+    fi
+    if [[ "$recover_notifications" != true || "$attempt" == 2 || "$notification_status" != 124 ]]; then
+        exit "$notification_status"
+    fi
+    print -u2 "Notification readiness timed out; rebooting the disposable simulator once."
+    prepare_step reboot zsh -c 'xcrun simctl shutdown "$1" && xcrun simctl bootstatus "$1" -b' -- "$simulator_id"
+done
 prepare_step photo "$scripts/seed-simulator-photo" "$simulator_id"
 prepare_step documents "$scripts/ready-simulator-documents" "$simulator_id"

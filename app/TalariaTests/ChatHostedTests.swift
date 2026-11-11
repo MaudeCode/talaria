@@ -1651,7 +1651,9 @@ final class ChatHostedTests: XCTestCase {
         func actions(_ title: String) -> [UIAccessibilityCustomAction] {
             HostedAccessibility.elements(in: window).filter(containing(title)).flatMap { $0.accessibilityCustomActions ?? [] }
         }
-        func run(_ name: String, on title: String) throws {
+        func run(_ name: String, on title: String) async throws {
+            // Dialog dismissal precedes the owner's roster refresh, during which the row is still busy.
+            _ = await awaitCondition { actions(title).contains { $0.name == name } }
             let action = try XCTUnwrap(actions(title).first { $0.name == name }, "\(title) offers no \(name)")
             XCTAssertTrue(action.actionHandler?(action) ?? false, "\(name) did not run")
         }
@@ -1661,7 +1663,7 @@ final class ChatHostedTests: XCTestCase {
             return controller as? UIAlertController
         }
         func steer(_ text: String) async throws {
-            try run("Steer", on: "Read the logs")
+            try await run("Steer", on: "Read the logs")
             let asked = await awaitCondition { alert()?.textFields?.isEmpty == false }
             XCTAssertTrue(asked, "Steer asked for no message")
             let field = try XCTUnwrap(alert()?.textFields?.first)
@@ -1697,13 +1699,13 @@ final class ChatHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "owner-work-steer-refused")
         XCTAssertTrue(HostedAccessibility.tap("OK", in: try XCTUnwrap(alert())))
         _ = await awaitCondition { alert() == nil }
-        try run("Steer", on: "Read the logs")
+        try await run("Steer", on: "Read the logs")
         let kept = await awaitCondition { alert()?.textFields?.first?.text == "please refuse this" }
         XCTAssertTrue(kept, "The refused message was not kept")
         XCTAssertTrue(HostedAccessibility.tap("Cancel", in: try XCTUnwrap(alert())))
         _ = await awaitCondition { alert() == nil }
 
-        try run("Stop", on: "npm run dev")
+        try await run("Stop", on: "npm run dev")
         let stopped = await awaitNoElement(in: window, where: containing("npm run dev"))
         XCTAssertTrue(stopped, "The owner's roster after Stop still pins the process")
         XCTAssertEqual(UITestFixtureURLProtocol.ownerWorkControls.withLock { $0 }.filter { $0.hasPrefix("stop:") }, ["stop:owner-work-server"])

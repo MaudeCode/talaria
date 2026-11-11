@@ -98,7 +98,7 @@ class PreparationTests(unittest.TestCase):
         tool.write_text(FAKE_XCRUN)
         tool.chmod(0o755)
         self.env = dict(os.environ, PATH=f'{self.bin}:{os.environ["PATH"]}',
-                        PREPARE_TEST_STATE=str(self.root), TMPDIR=str(self.scratch) + '/')
+                        PREPARE_TEST_STATE=str(self.root), TMPDIR=str(self.scratch) + '/', GITHUB_ACTIONS='false')
 
     def stop_process(self, process, *pid_files):
         if process in self.stopped:
@@ -233,6 +233,40 @@ class PreparationTests(unittest.TestCase):
         self.assertTrue((self.root / 'notification-probed').exists(), output)
         self.assertIn('documents end', output)
         self.assertEqual(list(self.scratch.iterdir()), [], 'Notification scratch files leaked')
+
+    def test_owned_simulator_recovery_repeats_readiness_once(self):
+        script = self.copy_prepare_script()
+        for name in ('ready-simulator-notifications', 'seed-simulator-photo', 'ready-simulator-documents'):
+            helper = script.with_name(name)
+            helper.write_text('#!/bin/sh\n'
+                              'if [ "${0##*/}" = ready-simulator-notifications ]; then\n'
+                              '  marker="$PREPARE_TEST_STATE/notification-attempts"\n'
+                              '  count=$(cat "$marker" 2>/dev/null || echo 0)\n'
+                              '  count=$((count + 1)); echo "$count" > "$marker"\n'
+                              '  if [ "$count" = 1 ] || [ "$PREPARE_RECOVERY_MODE" = permanent ]; then\n'
+                              '    exit "$PREPARE_NOTIFICATION_EXIT"\n'
+                              '  fi\n'
+                              'fi\n')
+            helper.chmod(0o755)
+        for ci, mode, failure, expected, attempts in [
+                ('false', 'once', 124, 124, 1),
+                ('true', 'once', 124, 0, 2),
+                ('true', 'permanent', 124, 124, 2),
+                ('true', 'once', 42, 42, 1)]:
+            with self.subTest(ci=ci, mode=mode, failure=failure):
+                (self.root / 'notification-attempts').unlink(missing_ok=True)
+                (self.root / 'calls').unlink(missing_ok=True)
+                result = subprocess.run([str(script), 'synthetic-simulator'],
+                                        env=dict(self.env, GITHUB_ACTIONS=ci, PREPARE_RECOVERY_MODE=mode,
+                                                 PREPARE_NOTIFICATION_EXIT=str(failure)),
+                                        capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+                self.assertEqual(int((self.root / 'notification-attempts').read_text()), attempts)
+                calls = (self.root / 'calls').read_text().splitlines()
+                self.assertEqual(calls.count('simctl shutdown synthetic-simulator'), attempts - 1)
+                self.assertEqual(calls.count('simctl bootstatus synthetic-simulator -b'), attempts - 1)
+                self.assertEqual(sum('defaults write' in call for call in calls), attempts)
+                self.assertEqual('documents end' in result.stdout, expected == 0)
 
     def test_photo_warmup_deadline_continues_preparation(self):
         script = self.copy_prepare_script('seed-simulator-photo')
