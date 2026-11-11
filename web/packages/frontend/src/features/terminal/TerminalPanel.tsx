@@ -238,8 +238,16 @@ export function TerminalPanel({ sessionId, workspace, onClose, onReopen = () => 
   const startResize = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault()
     const startY = e.clientY
-    const startH = height
-    const move = (ev: PointerEvent) => setHeight(Math.min(600, Math.max(120, startH - (ev.clientY - startY))))
+    const surface = host.current
+    const panel = surface?.closest<HTMLElement>('.composer-terminal-panel')
+    if (!surface || !panel) return
+    const startH = surface.getBoundingClientRect().height
+    const move = (ev: PointerEvent) => {
+      // Use the same CSS cap as the frame, less its header, handle and captured-command form.
+      const chrome = panel.getBoundingClientRect().height - surface.getBoundingClientRect().height
+      const max = Math.max(0, Math.min(600, parseFloat(getComputedStyle(panel).maxHeight) - chrome))
+      setHeight(Math.min(max, Math.max(Math.min(120, max), startH - (ev.clientY - startY))))
+    }
     const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)

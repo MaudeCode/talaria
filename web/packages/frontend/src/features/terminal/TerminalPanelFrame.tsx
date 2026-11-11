@@ -33,7 +33,7 @@ export function TerminalPanelFrame({ workspace, title, status, onClose, onResize
           <IconButton variant="ghost" label={m.terminal_close()} onClick={onClose}><X aria-hidden="true" /></IconButton>
         </div>
       </div>
-      <div id="composerTerminalBody" hidden={collapsed}>{children}</div>
+      <div id="composerTerminalBody" className="composer-terminal-body" hidden={collapsed}>{children}</div>
     </div>
   )
 }
