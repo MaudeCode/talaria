@@ -40,5 +40,6 @@ struct SettingsPickerSearchField: View {
         .padding(.horizontal, 12)
         .frame(minHeight: 44)
         .background(Color(.tertiarySystemFill).opacity(0.5), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .sidebarRow(isSelected: false)
     }
 }

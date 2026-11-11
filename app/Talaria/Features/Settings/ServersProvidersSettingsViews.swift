@@ -58,7 +58,7 @@ struct UserProfileSettingsView: View {
 
     var body: some View {
         SettingsPage(title: String(localized: "User Profile")) {
-            SettingsCard(title: String(localized: "User Profile")) {
+            SettingsSection(title: String(localized: "User Profile")) {
                 SessionIdentitySettingsEditor(
                     displayName: $displayName,
                     initials: initialsBinding,
@@ -110,9 +110,9 @@ struct ServersSettingsView: View {
 
     var body: some View {
         SettingsCategoryPage(category: .servers) {
-            serversCard
+            serversSection
 
-            SettingsCard(title: String(localized: "Server Access")) {
+            SettingsSection(title: String(localized: "Server Access")) {
                 SettingsFootnote(signOutFootnote)
 
                 SettingsButton(String(localized: "Sign Out of This Server"), role: .destructive) {
@@ -136,12 +136,9 @@ struct ServersSettingsView: View {
         }
     }
 
-    private var serversCard: some View {
-        SettingsCard(title: String(localized: "Servers")) {
+    private var serversSection: some View {
+        SettingsSection(title: String(localized: "Servers")) {
             ForEach(authManager.servers) { account in
-                if account.id != authManager.servers.first?.id {
-                    SettingsDivider()
-                }
 
                 NavigationLink {
                     ServerDetailView(authManager: authManager, account: account)
@@ -154,8 +151,6 @@ struct ServersSettingsView: View {
                 .buttonStyle(.plain)
             }
 
-            SettingsDivider()
-
             HapticButton {
                 isPresentingAddServer = true
             } label: {
@@ -163,8 +158,6 @@ struct ServersSettingsView: View {
             }
             .buttonStyle(.plain)
             .accessibilityHint("Adds another Hermes server.")
-
-            SettingsDivider()
 
             NavigationLink {
                 CustomHeadersSettingsView(authManager: authManager)
@@ -207,7 +200,7 @@ struct ProvidersSettingsView: View {
 
     var body: some View {
         SettingsCategoryPage(category: .providers) {
-            SettingsCard(title: String(localized: "Providers")) {
+            SettingsSection(title: String(localized: "Providers")) {
                 NavigationLink {
                     ProvidersView(server: server)
                 } label: {
@@ -220,7 +213,7 @@ struct ProvidersSettingsView: View {
                 .accessibilityHint("Opens provider rename and Insights visibility settings.")
             }
 
-            SettingsCard(title: String(localized: "Quota Display")) {
+            SettingsSection(title: String(localized: "Quota Display")) {
                 SettingsPickerRow(
                     title: String(localized: "Provider Icons"),
                     systemImage: "paintpalette",
@@ -231,8 +224,6 @@ struct ProvidersSettingsView: View {
                     }
                 }
 
-                SettingsDivider()
-
                 SettingsPickerRow(
                     title: String(localized: "Quota Percentage"),
                     systemImage: "percent",
@@ -242,8 +233,6 @@ struct ProvidersSettingsView: View {
                         Text(mode.title).tag(mode.rawValue)
                     }
                 }
-
-                SettingsDivider()
 
                 SettingsPickerRow(
                     title: String(localized: "Quota Refresh"),

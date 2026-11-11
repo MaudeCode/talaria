@@ -40,7 +40,7 @@ struct WorkspaceManagerView: View {
     }
 
     private var pageContent: some View {
-        List {
+        SidebarList {
             if let errorMessage = viewModel.errorMessage {
                 Section {
                     Label(errorMessage, systemImage: "exclamationmark.triangle")
@@ -80,7 +80,9 @@ struct WorkspaceManagerView: View {
                         viewModel.requestRemoval(of: viewModel.rows[index])
                     }
                 } footer: {
-                    Text("Removing a workspace only unregisters its path from the server's list. No files are deleted.")
+                    SettingsFootnote(String(localized: "Removing a workspace only unregisters its path from the server's list. No files are deleted."))
+                        .sidebarRowPadding()
+                        .sidebarRow(isSelected: false)
                 }
             } else if !viewModel.isLoading {
                 ContentUnavailableView {
@@ -187,6 +189,8 @@ struct WorkspaceManagerView: View {
                     .lineLimit(2)
             }
         }
+        .sidebarRowPadding()
+        .sidebarRow(isSelected: false)
         .swipeActions(edge: .leading) {
             Button {
                 renameText = workspace.name ?? ""

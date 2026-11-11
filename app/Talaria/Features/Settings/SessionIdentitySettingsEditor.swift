@@ -33,8 +33,6 @@ struct SessionIdentitySettingsEditor: View {
 
             SettingsTextFieldRow(title: String(localized: "Display Name"), text: $displayName, placeholder: NSFullUserName())
 
-            SettingsDivider()
-
             SettingsTextFieldRow(title: String(localized: "Initials"), text: $initials, placeholder: previewInitials)
         }
     }

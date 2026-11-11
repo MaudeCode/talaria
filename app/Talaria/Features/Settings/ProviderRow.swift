@@ -87,9 +87,7 @@ struct ProviderRow: View {
                 modelsDisclosure(models)
             }
         }
-        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .settingsGroupedCell()
     }
 
     @ViewBuilder

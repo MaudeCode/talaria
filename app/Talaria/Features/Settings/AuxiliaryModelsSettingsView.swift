@@ -17,14 +17,10 @@ struct AuxiliaryModelsSettingsView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                content
-            }
-            .padding(20)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        SidebarList {
+            content
         }
-        .background(Color(.systemGroupedBackground))
+        .background(Color(.systemBackground))
         .navigationTitle("Auxiliary Models")
         .navigationBarTitleDisplayMode(.inline)
         .task { await viewModel.load() }
@@ -45,13 +41,13 @@ struct AuxiliaryModelsSettingsView: View {
     @ViewBuilder
     private var content: some View {
         if viewModel.isUnavailable {
-            SettingsCard(title: String(localized: "Auxiliary Models")) {
+            SettingsSection(title: String(localized: "Auxiliary Models")) {
                 Label("Not Available on This Server", systemImage: "exclamationmark.triangle")
                     .font(.subheadline.weight(.semibold))
                 SettingsFootnote(String(localized: "Update the Talaria Web server to choose models for side tasks."))
             }
         } else if viewModel.tasks.isEmpty, viewModel.isLoading || viewModel.errorMessage == nil {
-            SettingsCard(title: String(localized: "Tasks")) {
+            SettingsSection(title: String(localized: "Tasks")) {
                 HStack(spacing: 8) {
                     ProgressView()
                     Text("Loading auxiliary models...")
@@ -61,7 +57,7 @@ struct AuxiliaryModelsSettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         } else if viewModel.tasks.isEmpty, let errorMessage = viewModel.errorMessage {
-            SettingsCard(title: String(localized: "Tasks")) {
+            SettingsSection(title: String(localized: "Tasks")) {
                 Label("Could Not Load Auxiliary Models", systemImage: "exclamationmark.triangle")
                     .font(.subheadline.weight(.semibold))
                 SettingsFootnote(errorMessage)
@@ -70,33 +66,27 @@ struct AuxiliaryModelsSettingsView: View {
                 }
             }
         } else {
-            SettingsFootnote(String(localized: "Models for side tasks such as session titles, vision, and compression. Auto uses the main model."))
-
-            SettingsCard(title: String(localized: "Tasks")) {
-                VStack(spacing: 0) {
-                    ForEach(Array(viewModel.tasks.enumerated()), id: \.element.id) { index, task in
-                        taskRow(task)
-                        if index < viewModel.tasks.count - 1 {
-                            Divider()
-                        }
-                    }
+            SettingsSection(title: String(localized: "Tasks")) {
+                ForEach(viewModel.tasks) { task in
+                    taskRow(task)
                 }
-            }
+                SettingsFootnote(String(localized: "Models for side tasks such as session titles, vision, and compression. Auto uses the main model."))
 
-            if let saveError = viewModel.saveErrorMessage, editingTask == nil {
-                Text(saveError)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-            }
+                if let saveError = viewModel.saveErrorMessage, editingTask == nil {
+                    Text(saveError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
 
-            SettingsButton(
-                String(localized: "Reset All to Auto"),
-                role: .destructive,
-                isLoading: viewModel.savingTaskID == AuxiliaryModelsViewModel.resetTaskID
-            ) {
-                isConfirmingReset = true
+                SettingsButton(
+                    String(localized: "Reset All to Auto"),
+                    role: .destructive,
+                    isLoading: viewModel.savingTaskID == AuxiliaryModelsViewModel.resetTaskID
+                ) {
+                    isConfirmingReset = true
+                }
+                .disabled(viewModel.savingTaskID != nil)
             }
-            .disabled(viewModel.savingTaskID != nil)
         }
     }
 
@@ -172,55 +162,52 @@ private struct AuxiliaryModelPickerSheet: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 24) {
-                    SettingsPickerSearchField(text: $searchText, prompt: "Search models", clearLabel: "Clear model search")
+            SidebarList {
+                SettingsPickerSearchField(text: $searchText, prompt: "Search models", clearLabel: "Clear model search")
 
-                    if let saveError = viewModel.saveErrorMessage {
-                        Text(saveError)
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
+                if let saveError = viewModel.saveErrorMessage {
+                    Text(saveError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
 
-                    if let task {
-                        SettingsCard(title: String(localized: "Current")) {
-                            VStack(spacing: 0) {
-                                optionRow(title: String(localized: "Auto"), subtitle: String(localized: "Use the main model"), isSelected: task.isAuto == true) {
-                                    await save(model: "", provider: "auto")
-                                }
-                                if task.inCatalog == false {
-                                    Divider()
-                                    optionRow(title: task.valueLabel ?? task.model, subtitle: [task.providerLabel, String(localized: "Not in catalog")].compactMap { $0 }.joined(separator: " · "), isSelected: true) {
-                                        await save(model: task.model, provider: task.provider)
-                                    }
+                if let task {
+                    SettingsSection(title: String(localized: "Current")) {
+                        Group {
+                            optionRow(title: String(localized: "Auto"), subtitle: String(localized: "Use the main model"), isSelected: task.isAuto == true) {
+                                await save(model: "", provider: "auto")
+                            }
+                            if task.inCatalog == false {
+                                Divider()
+                                optionRow(title: task.valueLabel ?? task.model, subtitle: [task.providerLabel, String(localized: "Not in catalog")].compactMap { $0 }.joined(separator: " · "), isSelected: true) {
+                                    await save(model: task.model, provider: task.provider)
                                 }
                             }
                         }
                     }
-
-                    SettingsCard(title: String(localized: "Custom")) {
-                        TextField("Custom model ID", text: $customModel)
-                            .font(.subheadline)
-                            .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 10)
-                            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        Text("Use @provider:model to pin a provider.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        ModelPickerButton(String(localized: "Save Custom Model"), isLoading: viewModel.savingTaskID != nil && !customModel.isEmpty) {
-                            Task { await save(model: customModel.trimmingCharacters(in: .whitespacesAndNewlines), provider: nil) }
-                        }
-                        .disabled(customModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.savingTaskID != nil)
-                    }
-
-                    catalogContent
                 }
-                .padding()
+
+                SettingsSection(title: String(localized: "Custom")) {
+                    TextField("Custom model ID", text: $customModel)
+                        .font(.subheadline)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    Text("Use @provider:model to pin a provider.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ModelPickerButton(String(localized: "Save Custom Model"), isLoading: viewModel.savingTaskID != nil && !customModel.isEmpty) {
+                        Task { await save(model: customModel.trimmingCharacters(in: .whitespacesAndNewlines), provider: nil) }
+                    }
+                    .disabled(customModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.savingTaskID != nil)
+                }
+
+                catalogContent
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Color(.systemBackground))
             .navigationTitle(task?.label ?? String(localized: "Auxiliary Model"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -237,31 +224,28 @@ private struct AuxiliaryModelPickerSheet: View {
     private var catalogContent: some View {
         let groups = viewModel.pickerGroups(matching: searchText)
         if viewModel.isLoadingCatalog && viewModel.catalogGroups.isEmpty {
-            SettingsCard(title: String(localized: "Models")) {
+            SettingsSection(title: String(localized: "Models")) {
                 ProgressView()
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         } else if let error = viewModel.catalogErrorMessage, viewModel.catalogGroups.isEmpty {
-            SettingsCard(title: String(localized: "Models")) {
+            SettingsSection(title: String(localized: "Models")) {
                 Label("Could Not Load Models", systemImage: "exclamationmark.triangle")
                     .font(.subheadline.weight(.semibold))
                 SettingsFootnote(error)
             }
         } else if groups.isEmpty {
-            SettingsCard(title: String(localized: "Models")) {
+            SettingsSection(title: String(localized: "Models")) {
                 Label("No Matching Models", systemImage: "magnifyingglass")
                     .font(.subheadline.weight(.semibold))
             }
         } else {
             ForEach(groups) { group in
-                SettingsCard(title: group.name) {
-                    VStack(spacing: 0) {
-                        ForEach(Array(group.models.enumerated()), id: \.element.id) { index, model in
+                SettingsSection(title: group.name) {
+                    Group {
+                        ForEach(group.models) { model in
                             optionRow(title: model.displayName, subtitle: model.id == model.displayName ? nil : model.id, isSelected: model.id == task?.selectedOptionID) {
                                 await save(model: model.id, provider: group.providerID)
-                            }
-                            if index < group.models.count - 1 {
-                                Divider()
                             }
                         }
                     }

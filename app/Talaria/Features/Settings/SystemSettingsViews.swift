@@ -6,9 +6,9 @@ import TalariaKit
 struct LiveActivitiesWidgetsSettingsView: View {
     var body: some View {
         SettingsCategoryPage(category: .liveActivitiesAndWidgets) {
-            RelayLiveActivitySettingsCard()
+            RelayLiveActivitySettingsSection()
 
-            SettingsCard(title: String(localized: "Widgets")) {
+            SettingsSection(title: String(localized: "Widgets")) {
                 NavigationLink(value: SettingsPane.providerQuotaWidget) {
                     SettingsAccessoryRow(
                         title: String(localized: "Provider Quotas"),
@@ -25,7 +25,7 @@ struct LiveActivitiesWidgetsSettingsView: View {
 struct SiriShortcutsSettingsView: View {
     var body: some View {
         SettingsCategoryPage(category: .siriAndShortcuts) {
-            SettingsCard(title: String(localized: "Siri & Shortcuts")) {
+            SettingsSection(title: String(localized: "Siri & Shortcuts")) {
                 if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
                     Link(destination: settingsURL) {
                         SettingsAccessoryRow(
@@ -55,7 +55,7 @@ struct DataStorageSettingsView: View {
 
     var body: some View {
         SettingsCategoryPage(category: .dataAndStorage) {
-            SettingsCard(title: String(localized: "Offline Data")) {
+            SettingsSection(title: String(localized: "Offline Data")) {
                 // swiftlint:disable:next line_length
                 SettingsFootnote(cacheStatusMessage ?? String(localized: "Cached sessions and messages are kept for offline viewing. Clearing removes this server's cache only — other servers and the Hermes server are not affected."))
 
@@ -65,7 +65,7 @@ struct DataStorageSettingsView: View {
                 .disabled(isClearingCache)
             }
 
-            AppLockSettingsCard()
+            AppLockSettingsSection()
         }
         .alert("Clear this server's cache?", isPresented: $isConfirmingClearCache) {
             Button("Cancel", role: .cancel) {}
@@ -91,13 +91,13 @@ struct DataStorageSettingsView: View {
     }
 }
 
-private struct AppLockSettingsCard: View {
+private struct AppLockSettingsSection: View {
     @State private var lock = AppLockModel.shared
     @State private var needsPasscode = false
 
     var body: some View {
         let method = lock.method
-        SettingsCard(title: String(localized: "App Lock")) {
+        SettingsSection(title: String(localized: "App Lock")) {
             SettingsToggleRow(
                 title: method.settingsTitle,
                 systemImage: method.systemImage,
@@ -130,13 +130,11 @@ struct AboutSettingsView: View {
 
     var body: some View {
         SettingsCategoryPage(category: .about) {
-            SettingsCard(title: String(localized: "App")) {
+            SettingsSection(title: String(localized: "App")) {
                 SettingsInfoRow(title: String(localized: "Version"), value: appVersion)
                 SettingsInfoRow(title: String(localized: "Build"), value: appBuild)
 
                 if let whatsNew {
-                    SettingsDivider()
-
                     Button { replayedWhatsNew = whatsNew } label: {
                         SettingsAccessoryRow(title: String(localized: "What's New"), systemImage: "sparkles")
                     }
@@ -144,16 +142,12 @@ struct AboutSettingsView: View {
                     .accessibilityIdentifier("settings-whats-new")
                 }
 
-                SettingsDivider()
-
                 Button { feedback.isPresented = true } label: {
                     SettingsAccessoryRow(title: FeedbackSheet.title, systemImage: FeedbackSheet.systemImage)
                 }
                 .buttonStyle(.plain)
                 .disabled(feedback.server == nil || feedback.isSending)
                 .accessibilityIdentifier("settings-send-feedback")
-
-                SettingsDivider()
 
                 Link(destination: AppConfig.privacyPolicyURL) {
                     SettingsAccessoryRow(
@@ -165,8 +159,6 @@ struct AboutSettingsView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Privacy Policy")
 
-                SettingsDivider()
-
                 Link(destination: AppConfig.supportURL) {
                     SettingsAccessoryRow(
                         title: String(localized: "Support"),
@@ -176,8 +168,6 @@ struct AboutSettingsView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Support")
-
-                SettingsDivider()
 
                 NavigationLink {
                     AcknowledgementsView()
@@ -208,11 +198,8 @@ struct AcknowledgementsView: View {
 
     var body: some View {
         SettingsPage(title: String(localized: "Acknowledgements")) {
-            SettingsCard(title: String(localized: "Open Source")) {
-                ForEach(Array(Self.acknowledgements.enumerated()), id: \.element.id) { index, acknowledgement in
-                    if index > 0 {
-                        SettingsDivider()
-                    }
+            SettingsSection(title: String(localized: "Open Source")) {
+                ForEach(Self.acknowledgements) { acknowledgement in
 
                     NavigationLink {
                         AcknowledgementDetailView(acknowledgement: acknowledgement)
@@ -236,7 +223,7 @@ private struct AcknowledgementDetailView: View {
 
     var body: some View {
         SettingsPage(title: acknowledgement.name) {
-            SettingsCard(title: String(localized: "License")) {
+            SettingsSection(title: String(localized: "License")) {
                 Text(verbatim: notice)
                     .font(AppFont.footnote())
                     .textSelection(.enabled)
@@ -255,7 +242,7 @@ private struct AcknowledgementDetailView: View {
 struct DeveloperSettingsView: View {
     var body: some View {
         SettingsCategoryPage(category: .developer) {
-            SettingsCard(title: String(localized: "Developer")) {
+            SettingsSection(title: String(localized: "Developer")) {
                 NavigationLink {
                     StreamingLabView()
                 } label: {

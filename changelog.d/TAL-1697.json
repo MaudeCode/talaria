@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Settings pages use the same plain lists and section headings as the rest of the app.",
+      "highlight": false,
+      "components": [
+        "app"
+      ],
+      "announcement": {
+        "title": "Consistent Settings",
+        "description": "Settings pages now match your chat and sidebar lists.",
+        "icon": "settings"
+      }
+    }
+  ]
+}

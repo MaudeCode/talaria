@@ -63,7 +63,7 @@ struct AppleAccountSettingsView: View {
     }
 
     var body: some View {
-        List {
+        SidebarList {
             accountSection
             syncSection
             if coordinator.isSignedInWithApple {
@@ -74,12 +74,11 @@ struct AppleAccountSettingsView: View {
                 dangerSection
             }
             if let errorMessage {
-                Section {
-                    SettingsErrorFootnote(errorMessage)
-                }
+                SettingsErrorFootnote(errorMessage)
+                    .sidebarRowPadding()
+                    .sidebarRow(isSelected: false)
             }
         }
-        .listStyle(.insetGrouped)
         .navigationTitle("Apple Account")
         .navigationBarTitleDisplayMode(.inline)
         .task {
@@ -126,7 +125,7 @@ struct AppleAccountSettingsView: View {
     }
 
     private var accountSection: some View {
-        Section {
+        SettingsSection {
             if coordinator.isSignedInWithApple {
                 Label("Signed in with Apple", systemImage: "checkmark.circle.fill")
             }
@@ -168,7 +167,7 @@ struct AppleAccountSettingsView: View {
     }
 
     private var syncSection: some View {
-        Section {
+        SettingsSection {
             Toggle("Sync Servers & Settings", isOn: isEnabledBinding)
                 .disabled(!coordinator.isSignedInWithApple)
                 .accessibilityIdentifier("settings-icloud-sync-toggle")
@@ -205,13 +204,14 @@ struct AppleAccountSettingsView: View {
     }
 
     private var relaySection: some View {
-        Section {
+        SettingsSection {
             if server != nil, relayState == .unpaired || relayState == .connected {
                 NavigationLink {
                     RelayConnectionManagementView(authManager: authManager)
                 } label: {
                     relaySummary
                 }
+                .navigationLinkIndicatorVisibility(.visible)
                 .accessibilityHint("Opens Talaria Relay connection management.")
                 .accessibilityIdentifier("settings-manage-relay")
             } else {
@@ -269,7 +269,7 @@ struct AppleAccountSettingsView: View {
     }
 
     private var passwordsSection: some View {
-        Section {
+        SettingsSection {
             ForEach(serversMissingPassword) { account in
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
@@ -301,7 +301,7 @@ struct AppleAccountSettingsView: View {
     }
 
     private var dangerSection: some View {
-        Section {
+        SettingsSection {
             Button("Disconnect", role: .destructive) {
                 isConfirmingDisconnect = true
             }
@@ -578,12 +578,11 @@ struct SettingsSectionHeader: View {
     let onHelp: () -> Void
 
     var body: some View {
-        HStack {
-            Text(title)
-            Spacer()
+        SidebarSectionHeader(title: title) {
             Button(action: onHelp) {
                 Image(systemName: "questionmark.circle")
                     .font(.body)
+                    .frame(minWidth: 44, minHeight: 44)
             }
             .buttonStyle(.borderless)
             .textCase(nil)

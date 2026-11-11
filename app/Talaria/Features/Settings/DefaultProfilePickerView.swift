@@ -26,32 +26,29 @@ struct DefaultProfilePickerView: View {
     @State private var showsCreateProfile = false
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                SettingsPickerSearchField(
-                    text: $searchText,
-                    prompt: "Search profiles",
-                    clearLabel: "Clear profile search"
-                )
+        SidebarList {
+            SettingsPickerSearchField(
+                text: $searchText,
+                prompt: "Search profiles",
+                clearLabel: "Clear profile search"
+            )
 
-                if let saveError {
-                    Text(saveError)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                profileListContent
-
-                // The server 403s profile creation in single-profile mode,
-                // so the affordance is hidden there (#24).
-                if !isSingleProfileMode {
-                    newProfileButton
-                }
+            if let saveError {
+                Text(saveError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding()
+
+            profileListContent
+
+            // The server 403s profile creation in single-profile mode,
+            // so the affordance is hidden there (#24).
+            if !isSingleProfileMode {
+                newProfileButton
+            }
         }
-        .background(Color(.systemGroupedBackground))
+        .background(Color(.systemBackground))
         .navigationTitle("Profiles")
         .navigationBarTitleDisplayMode(.inline)
         .task {
@@ -86,13 +83,13 @@ struct DefaultProfilePickerView: View {
 
                 Spacer()
             }
-            .padding(.horizontal, 16)
+            .sidebarRowPadding()
             .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .foregroundStyle(Color.accentColor)
-        .settingsGroupedCell()
+        .sidebarRow(isSelected: false)
         .disabled(isLoading)
         .accessibilityHint("Opens the new profile form.")
     }
@@ -100,7 +97,7 @@ struct DefaultProfilePickerView: View {
     @ViewBuilder
     private var profileListContent: some View {
         if isLoading && profiles.isEmpty {
-            SettingsCard(title: String(localized: "Profiles")) {
+            SettingsSection(title: String(localized: "Profiles")) {
                 HStack(spacing: 8) {
                     ProgressView()
                     Text("Loading profiles...")
@@ -110,7 +107,7 @@ struct DefaultProfilePickerView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         } else if let errorMessage, profiles.isEmpty {
-            SettingsCard(title: String(localized: "Profiles")) {
+            SettingsSection(title: String(localized: "Profiles")) {
                 Label("Could Not Load Profiles", systemImage: "exclamationmark.triangle")
                     .font(.subheadline.weight(.semibold))
 
@@ -119,7 +116,7 @@ struct DefaultProfilePickerView: View {
                     .foregroundStyle(.secondary)
             }
         } else if filteredProfiles.isEmpty {
-            SettingsCard(title: String(localized: "Profiles")) {
+            SettingsSection(title: String(localized: "Profiles")) {
                 Label("No Matching Profiles", systemImage: "magnifyingglass")
                     .font(.subheadline.weight(.semibold))
 
@@ -128,15 +125,9 @@ struct DefaultProfilePickerView: View {
                     .foregroundStyle(.secondary)
             }
         } else {
-            SettingsCard(title: String(localized: "Profiles")) {
-                VStack(spacing: 0) {
-                    ForEach(Array(filteredProfiles.enumerated()), id: \.element) { index, profile in
-                        profileRow(profile)
-
-                        if index < filteredProfiles.count - 1 {
-                            Divider()
-                        }
-                    }
+            SettingsSection(title: String(localized: "Profiles")) {
+                ForEach(filteredProfiles, id: \.self) { profile in
+                    profileRow(profile)
                 }
             }
         }

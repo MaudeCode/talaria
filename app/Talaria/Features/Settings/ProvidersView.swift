@@ -26,8 +26,6 @@ struct ProvidersView: View {
 
     var body: some View {
         content
-            .navigationTitle("Providers")
-            .background(Color(.systemGroupedBackground))
             .task {
                 await viewModel.load()
             }
@@ -55,12 +53,10 @@ struct ProvidersView: View {
 
     @ViewBuilder
     private var content: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 24) {
+        SettingsPage(title: String(localized: "Providers")) {
+            SettingsSection(title: String(localized: "Providers")) {
                 providersSection
             }
-            .padding(.top, 20)
-            .padding(.bottom, 44)
         }
     }
 
@@ -68,9 +64,8 @@ struct ProvidersView: View {
     private var providersSection: some View {
         if viewModel.isLoading && viewModel.providers.isEmpty {
             ProvidersStatusRow(title: String(localized: "Loading providers…"), systemImage: "key.horizontal")
-                .padding(.horizontal, 24)
         } else if let errorMessage = viewModel.errorMessage, viewModel.providers.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
+            Group {
                 ProvidersStatusRow(title: String(localized: "Could not load providers"), systemImage: "exclamationmark.triangle")
                 Text(errorMessage)
                     .font(.footnote)
@@ -81,12 +76,10 @@ struct ProvidersView: View {
                 }
                 .font(.subheadline.weight(.medium))
             }
-            .padding(.horizontal, 24)
         } else if viewModel.providers.isEmpty {
             ProvidersStatusRow(title: String(localized: "No providers reported by this server."), systemImage: "key.horizontal")
-                .padding(.horizontal, 24)
         } else {
-            VStack(alignment: .leading, spacing: 10) {
+            Group {
                 if let errorMessage = viewModel.errorMessage {
                     refreshFailureBanner(detail: errorMessage)
                 }
@@ -120,7 +113,6 @@ struct ProvidersView: View {
                     .padding(.top, 6)
                     .padding(.horizontal, 4)
             }
-            .padding(.horizontal, 16)
         }
     }
 
@@ -145,12 +137,7 @@ struct ProvidersView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
         }
-        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.orange.opacity(0.14))
-        )
         .accessibilityElement(children: .combine)
     }
 

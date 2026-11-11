@@ -24,7 +24,7 @@ struct ChatsSettingsView: View {
     @AppStorage(ComposerVisibilitySettings.contextUsageKey) private var showsComposerContextUsage = true
     var body: some View {
         SettingsCategoryPage(category: .chats) {
-            SettingsCard(title: String(localized: "Composer")) {
+            SettingsSection(title: String(localized: "Composer")) {
                 SettingsPickerRow(
                     title: String(localized: "Send While Responding"),
                     systemImage: "arrow.up.message",
@@ -34,8 +34,6 @@ struct ChatsSettingsView: View {
                         Text(behavior.settingsDescription).tag(behavior.rawValue)
                     }
                 }
-
-                SettingsDivider()
 
                 SettingsPickerRow(
                     title: String(localized: "Send With"),
@@ -49,15 +47,11 @@ struct ChatsSettingsView: View {
 
                 SettingsFootnote(String(localized: "Hardware keyboard only. While a reply runs, Control-Return queues the message, or steers it if Send While Responding queues."))
 
-                SettingsDivider()
-
                 SettingsToggleRow(
                     title: String(localized: "Workspace"),
                     systemImage: "folder",
                     isOn: $showsComposerWorkspace
                 )
-
-                SettingsDivider()
 
                 SettingsToggleRow(
                     title: String(localized: "Profile"),
@@ -65,15 +59,11 @@ struct ChatsSettingsView: View {
                     isOn: $showsComposerProfile
                 )
 
-                SettingsDivider()
-
                 SettingsToggleRow(
                     title: String(localized: "Git Branch"),
                     systemImage: "arrow.triangle.branch",
                     isOn: $showsComposerGitBranch
                 )
-
-                SettingsDivider()
 
                 SettingsToggleRow(
                     title: String(localized: "Context Usage"),
@@ -84,14 +74,12 @@ struct ChatsSettingsView: View {
                 SettingsFootnote(String(localized: "Choose which session controls appear below the composer. They hide while you type or read older messages."))
             }
 
-            SettingsCard(title: String(localized: "Conversation")) {
+            SettingsSection(title: String(localized: "Conversation")) {
                 SettingsToggleRow(
                     title: String(localized: "Thinking & Tools"),
                     systemImage: "brain.head.profile",
                     isOn: $showsThinkingAndToolCards
                 )
-
-                SettingsDivider()
 
                 SettingsToggleRow(
                     title: String(localized: "Expand Thinking by Default"),
@@ -99,15 +87,11 @@ struct ChatsSettingsView: View {
                     isOn: $thinkingCardsStartExpanded
                 )
 
-                SettingsDivider()
-
                 SettingsToggleRow(
                     title: String(localized: "Expand Tools by Default"),
                     systemImage: "wrench.and.screwdriver",
                     isOn: $toolCardsStartExpanded
                 )
-
-                SettingsDivider()
 
                 SettingsToggleRow(
                     title: String(localized: "Streamed Text Animation"),
@@ -115,19 +99,11 @@ struct ChatsSettingsView: View {
                     isOn: $isStreamedTextAnimationEnabled
                 )
 
-                SettingsFootnote(String(localized: "Fades words in as a response streams. Turn off to show text instantly."))
-
-                SettingsDivider()
-
                 SettingsToggleRow(
                     title: String(localized: "Response Timestamps"),
                     systemImage: "clock",
                     isOn: $showsAssistantTurnTimestamps
                 )
-
-                SettingsFootnote(String(localized: "Adds a small marker and the time above each response so back-to-back replies are easier to tell apart."))
-
-                SettingsDivider()
 
                 SettingsToggleRow(
                     title: String(localized: "Response Speed"),
@@ -135,17 +111,11 @@ struct ChatsSettingsView: View {
                     isOn: $showsResponseSpeed
                 )
 
-                SettingsDivider()
-
                 SettingsToggleRow(
                     title: String(localized: "Wrap Code Block Lines"),
                     systemImage: "arrow.turn.down.left",
                     isOn: $wrapsCodeBlockLines
                 )
-
-                SettingsFootnote(String(localized: "Wraps long lines in code blocks to fit the screen instead of scrolling sideways. You can also tap the wrap button in any code block."))
-
-                SettingsDivider()
 
                 SettingsPickerRow(
                     title: String(localized: "Scroll Button Side"),
@@ -157,10 +127,6 @@ struct ChatsSettingsView: View {
                     }
                 }
 
-                SettingsFootnote(String(localized: "Places the jump-to-latest button beside the status chip while you read older messages."))
-
-                SettingsDivider()
-
                 SettingsToggleRow(
                     title: String(localized: "Right-to-Left Chat Layout"),
                     systemImage: "text.alignright",
@@ -170,23 +136,17 @@ struct ChatsSettingsView: View {
                 // swiftlint:disable:next line_length
                 SettingsFootnote(String(localized: "Lays out messages and the composer right-to-left for Arabic, Hebrew, Persian, and Urdu. Code, math, tables, and tool output stay left-to-right. Other screens are unaffected."))
 
-                SettingsDivider()
-
                 SettingsToggleRow(
                     title: String(localized: "Files Button"),
                     systemImage: "folder",
                     isOn: $showsChatFilesButton
                 )
 
-                SettingsDivider()
-
                 SettingsToggleRow(
                     title: String(localized: "Open the Agent's File Automatically"),
                     systemImage: "sidebar.trailing",
                     isOn: $opensCompanionPage
                 )
-
-                SettingsDivider()
 
                 SettingsToggleRow(
                     title: String(localized: "Git Actions"),

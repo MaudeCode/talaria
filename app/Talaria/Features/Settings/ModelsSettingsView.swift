@@ -9,7 +9,7 @@ struct ModelsSettingsView: View {
 
     var body: some View {
         SettingsCategoryPage(category: .models) {
-            SettingsCard(title: String(localized: "Models")) {
+            SettingsSection(title: String(localized: "Models")) {
                 HapticButton {
                     showDefaultModelPicker = true
                 } label: {
@@ -21,8 +21,6 @@ struct ModelsSettingsView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityHint("Opens the default model picker.")
-
-                SettingsDivider()
 
                 NavigationLink {
                     AuxiliaryModelsSettingsView(server: server)

@@ -10,8 +10,8 @@ struct ProviderQuotaSidebarDisplayView: View {
     @AppStorage(ProviderQuotaSidebarSettings.colorsByStateKey) private var colorsByState = true
 
     var body: some View {
-        Form {
-            Section("Quotas Group") {
+        SidebarList {
+            SettingsSection(title: String(localized: "Quotas Group")) {
                 Picker("Detail", selection: $detailRawValue) {
                     ForEach(ProviderQuotaSidebarDetail.allCases) { detail in
                         Text(detail.title).tag(detail.rawValue)
@@ -25,11 +25,9 @@ struct ProviderQuotaSidebarDisplayView: View {
                 }
             }
 
-            Section {
-                Toggle("Color by State", isOn: $colorsByState)
-            } footer: {
-                Text("Pinned accounts appear in the Quotas group below the sidebar destinations. Rows stay the same height; these controls choose their detail, rail and icon.")
-            }
+            Toggle("Color by State", isOn: $colorsByState)
+                .sidebarRowPadding()
+                .sidebarRow(isSelected: false)
         }
         .navigationTitle("Sidebar Quotas")
         .adaptiveSecondaryNavigationTitle(title: String(localized: "Sidebar Quotas"))

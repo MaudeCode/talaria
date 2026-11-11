@@ -28,67 +28,58 @@ struct AddServerView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 18) {
-                    SettingsCard(title: String(localized: "Server")) {
+            Form {
+                SettingsSection(title: String(localized: "Server")) {
+                    SettingsTextFieldRow(
+                        title: String(localized: "URL"),
+                        text: $serverURLString,
+                        placeholder: "100.64.0.1:8787",
+                        keyboardType: .URL,
+                        autocapitalization: .never,
+                        submitLabel: .go,
+                        onSubmit: { Task { await submit() } }
+                    )
+
+                    if needsPassword {
                         SettingsTextFieldRow(
-                            title: String(localized: "URL"),
-                            text: $serverURLString,
-                            placeholder: "100.64.0.1:8787",
-                            keyboardType: .URL,
+                            title: String(localized: "Password"),
+                            text: $password,
+                            placeholder: String(localized: "Server password"),
                             autocapitalization: .never,
+                            isSecure: true,
                             submitLabel: .go,
                             onSubmit: { Task { await submit() } }
                         )
+                    }
 
-                        if needsPassword {
-                            SettingsDivider()
-
-                            SettingsTextFieldRow(
-                                title: String(localized: "Password"),
-                                text: $password,
-                                placeholder: String(localized: "Server password"),
-                                autocapitalization: .never,
-                                isSecure: true,
-                                submitLabel: .go,
-                                onSubmit: { Task { await submit() } }
-                            )
+                    if canUseOIDC {
+                        Button {
+                            Task { await submitOIDC() }
+                        } label: {
+                            Label("Continue with SSO", systemImage: "person.badge.key.fill")
+                                .frame(maxWidth: .infinity)
                         }
-
-                        if canUseOIDC {
-                            SettingsDivider()
-
-                            Button {
-                                Task { await submitOIDC() }
-                            } label: {
-                                Label("Continue with SSO", systemImage: "person.badge.key.fill")
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(!canSubmit)
-                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!canSubmit)
                     }
-
-                    SettingsCard(title: String(localized: "Connection Headers")) {
-                        CustomHeadersEditor(headers: $customHeaders)
-                    }
-
-                    SettingsCard(title: String(localized: "Identity")) {
-                        ServerIdentityEditor(
-                            displayName: $displayName,
-                            initials: $initials,
-                            colorHex: $colorHex,
-                            fallbackName: derivedHost
-                        )
-                    }
-
-                    statusBanner
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 18)
-                .padding(.bottom, 36)
+
+                SettingsSection(title: String(localized: "Connection Headers")) {
+                    CustomHeadersEditor(headers: $customHeaders)
+                }
+
+                SettingsSection(title: String(localized: "Identity")) {
+                    ServerIdentityEditor(
+                        displayName: $displayName,
+                        initials: $initials,
+                        colorHex: $colorHex,
+                        fallbackName: derivedHost
+                    )
+                }
+
+                statusBanner
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Color(.systemBackground))
             .navigationTitle("Add Server")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

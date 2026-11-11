@@ -14,7 +14,7 @@ struct AppearanceSettingsView: View {
 
     var body: some View {
         SettingsCategoryPage(category: .appearance) {
-            SettingsCard(title: String(localized: "Appearance")) {
+            SettingsSection(title: String(localized: "Appearance")) {
                 SettingsPickerRow(
                     title: String(localized: "Theme"),
                     systemImage: "circle.lefthalf.filled",
@@ -25,14 +25,10 @@ struct AppearanceSettingsView: View {
                     }
                 }
 
-                SettingsDivider()
-
                 AccentColorSettings(
                     selectedHex: $headerLogoColorHex,
                     customColor: HeaderLogoColor.binding($headerLogoColorHex)
                 )
-
-                SettingsDivider()
 
                 SettingsToggleRow(
                     title: String(localized: "Tint New Chat & Send"),
@@ -40,15 +36,10 @@ struct AppearanceSettingsView: View {
                     isOn: $tintsPrimaryActions
                 )
 
-                SettingsFootnote(String(localized: "Apply your accent color to these primary buttons."))
-
-                SettingsDivider()
-
                 AppIconSettingsSection()
 
                 IdentitySaveErrorNotice(authManager: authManager)
             }
-
 
         }
         .onChange(of: headerLogoColorHex) {
@@ -71,27 +62,21 @@ struct NotificationsHapticsSettingsView: View {
 
     var body: some View {
         SettingsCategoryPage(category: .notificationsAndHaptics) {
-            SettingsCard(title: String(localized: "Alerts & Haptics")) {
+            SettingsSection(title: String(localized: "Alerts & Haptics")) {
                 SettingsToggleRow(
                     title: String(localized: "Haptic Feedback"),
                     systemImage: "iphone.radiowaves.left.and.right",
                     isOn: $isHapticsEnabled
                 )
 
-                SettingsDivider()
-
                 NotificationPermissionToggle(kind: .responseCompletion)
 
-                SettingsDivider()
-
                 NotificationPermissionToggle(kind: .approval)
-
-                SettingsDivider()
 
                 RelayNotificationSettingsRow(authManager: authManager)
             }
 
-            SettingsCard(title: String(localized: "Provider Quotas")) {
+            SettingsSection(title: String(localized: "Provider Quotas")) {
                 NotificationPermissionToggle(kind: .providerQuota)
                 ProviderQuotaAlertLevelToggles()
             }
@@ -110,8 +95,6 @@ private struct ProviderQuotaAlertLevelToggles: View {
     private var timeSensitive = ProviderQuotaAlertSettings.defaultCriticalTimeSensitive
 
     var body: some View {
-        SettingsDivider()
-
         SettingsToggleRow(
             title: String(localized: "Warning Alerts"),
             systemImage: "exclamationmark.triangle",
@@ -119,16 +102,12 @@ private struct ProviderQuotaAlertLevelToggles: View {
         )
         .disabled(!isEnabled)
 
-        SettingsDivider()
-
         SettingsToggleRow(
             title: String(localized: "Critical Alerts"),
             systemImage: "exclamationmark.octagon",
             isOn: $critical
         )
         .disabled(!isEnabled)
-
-        SettingsDivider()
 
         SettingsToggleRow(
             title: String(localized: "Time Sensitive"),

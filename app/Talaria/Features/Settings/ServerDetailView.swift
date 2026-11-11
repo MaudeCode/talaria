@@ -26,67 +26,59 @@ struct ServerDetailView: View {
     private var hostFallback: String { URL(string: account.urlString)?.host ?? account.urlString }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 18) {
-                SettingsCard(title: String(localized: "Server")) {
-                    SettingsInfoRow(title: String(localized: "URL"), value: account.urlString, valueIsSelectable: true)
+        SidebarList {
+            SettingsSection(title: String(localized: "Server")) {
+                SettingsInfoRow(title: String(localized: "URL"), value: account.urlString, valueIsSelectable: true)
 
-                    SettingsDivider()
-
-                    SettingsValueRow(title: String(localized: "Status")) {
-                        SettingsStatusPill(label: isActive ? String(localized: "Active") : String(localized: "Inactive"))
-                    }
-                }
-
-                SettingsCard(title: String(localized: "Identity")) {
-                    ServerIdentityEditor(
-                        displayName: $displayName,
-                        initials: $initials,
-                        colorHex: $colorHex,
-                        fallbackName: hostFallback
-                    )
-                }
-
-                if !isActive {
-                    SettingsCard(title: String(localized: "Active Server")) {
-                        SettingsFootnote(String(localized: "Makes this the active server. Sessions, chats, and settings reload for it."))
-
-                        SettingsButton(String(localized: "Switch to This Server")) {
-                            authManager.switchActiveServer(to: account)
-                        }
-                    }
-                }
-
-                SettingsCard(title: isActive ? String(localized: "Account") : String(localized: "Remove Server")) {
-                    // TAL-48: a server that keeps sessions per person names who is signed in.
-                    if isActive, let person = authManager.activePerson {
-                        SettingsInfoRow(title: String(localized: "Signed In As"), value: personName(person))
-                        SettingsButton(String(localized: "Sign In Again")) {
-                            authManager.reauthenticateActivePerson()
-                        }
-                        SettingsDivider()
-                    }
-
-                    SettingsFootnote(removeFootnote)
-
-                    SettingsButton(removeButtonTitle, role: .destructive, isLoading: isRemoving) {
-                        isConfirmingRemove = true
-                    }
-                    .disabled(isRemoving)
-                }
-
-                if let errorMessage {
-                    Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                        .font(AppFont.footnote())
-                        .foregroundStyle(.orange)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                SettingsValueRow(title: String(localized: "Status")) {
+                    SettingsStatusPill(label: isActive ? String(localized: "Active") : String(localized: "Inactive"))
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 18)
-            .padding(.bottom, 36)
+
+            SettingsSection(title: String(localized: "Identity")) {
+                ServerIdentityEditor(
+                    displayName: $displayName,
+                    initials: $initials,
+                    colorHex: $colorHex,
+                    fallbackName: hostFallback
+                )
+            }
+
+            if !isActive {
+                SettingsSection(title: String(localized: "Active Server")) {
+                    SettingsFootnote(String(localized: "Makes this the active server. Sessions, chats, and settings reload for it."))
+
+                    SettingsButton(String(localized: "Switch to This Server")) {
+                        authManager.switchActiveServer(to: account)
+                    }
+                }
+            }
+
+            SettingsSection(title: isActive ? String(localized: "Account") : String(localized: "Remove Server")) {
+                // TAL-48: a server that keeps sessions per person names who is signed in.
+                if isActive, let person = authManager.activePerson {
+                    SettingsInfoRow(title: String(localized: "Signed In As"), value: personName(person))
+                    SettingsButton(String(localized: "Sign In Again")) {
+                        authManager.reauthenticateActivePerson()
+                    }
+                }
+
+                SettingsFootnote(removeFootnote)
+
+                SettingsButton(removeButtonTitle, role: .destructive, isLoading: isRemoving) {
+                    isConfirmingRemove = true
+                }
+                .disabled(isRemoving)
+            }
+
+            if let errorMessage {
+                Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                    .font(AppFont.footnote())
+                    .foregroundStyle(.orange)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
-        .background(Color(.systemGroupedBackground))
+        .background(Color(.systemBackground))
         .navigationTitle(displayName.isEmpty ? hostFallback : displayName)
         .navigationBarTitleDisplayMode(.inline)
         // Stage identity edits for this server's registry entry; the manager

@@ -18,8 +18,6 @@ struct SettingsCategoryPage<Content: View>: View {
 }
 
 struct SettingsPage<Content: View>: View {
-    @ScaledMetric(relativeTo: .body) private var cardSpacing: CGFloat = 18
-
     let title: String
     @ViewBuilder let content: Content
 
@@ -29,16 +27,9 @@ struct SettingsPage<Content: View>: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: cardSpacing) {
-                content
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 18)
-            .padding(.bottom, 36)
-            .adaptiveReadableContent(maxWidth: AdaptiveReadableContentWidth.secondaryDestination)
+        SidebarList {
+            content
         }
-        .background(Color(.systemGroupedBackground))
         .navigationTitle(title)
         .adaptiveSecondaryNavigationTitle(title: title)
     }
