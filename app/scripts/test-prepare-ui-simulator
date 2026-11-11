@@ -182,6 +182,10 @@ class PreparationTests(unittest.TestCase):
 
     def test_stalled_restart_allows_next_notification_probe(self):
         self.env['PREPARE_TEST_MODE'] = 'notification-restart'
+        # The deadline must not depend on another external client starting promptly on a busy runner.
+        sleeper = self.bin / 'sleep'
+        sleeper.write_text('#!/bin/sh\nexec python3 -c "import time; time.sleep(30)"\n')
+        sleeper.chmod(0o755)
         process = subprocess.Popen([str(SCRIPTS / 'ready-simulator-notifications'), 'synthetic-simulator'],
                                    env=self.env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                    text=True, start_new_session=True)

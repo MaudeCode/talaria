@@ -11,6 +11,7 @@
 
 set -euo pipefail
 zmodload zsh/datetime
+zmodload zsh/zselect
 already_booted=false
 if [[ "${1:-}" == --already-booted ]]; then
     already_booted=true
@@ -54,12 +55,12 @@ client_finishes_within_budget() {
     "$@" >"$client_log" 2>&1 &
     command_pid=$!
     while kill -0 "$command_pid" 2>/dev/null && (( EPOCHREALTIME < deadline - 0.1 )); do
-        sleep 0.1
+        zselect -t 10 || true
     done
     if kill -0 "$command_pid" 2>/dev/null; then
         kill "$command_pid" 2>/dev/null || true
         while kill -0 "$command_pid" 2>/dev/null && (( EPOCHREALTIME < deadline )); do
-            sleep 0.01
+            zselect -t 1 || true
         done
         kill -KILL "$command_pid" 2>/dev/null || true
         wait "$command_pid" 2>/dev/null || true
