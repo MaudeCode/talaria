@@ -590,12 +590,14 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
             stale = False  # a message or reaction event arrived since the last reaction read
             while not ctx.cancelled:
                 now = asyncio.get_running_loop().time()
-                if not restarting and now - checked >= _RESTART_CHECK_S:
+                read = snap.get("reactions_supported") and (stale or now - polled >= _REACTION_POLL_S)
+                # A read sends on this socket, so it always follows a fresh probe.
+                if not restarting and (read or now - checked >= _RESTART_CHECK_S):
                     checked = now
                     if restarting := await asyncio.to_thread(_restart_wait, home):
                         result["restarting"] = True
                         ctx.emit("restarting", {"restarting": True})
-                if not restarting and snap.get("reactions_supported") and (stale or now - polled >= _REACTION_POLL_S):
+                if not restarting and read:
                     # The owner emits no event for another viewer's reaction. Read through this viewer's existing
                     # subscription, including while tokens keep the event queue busy.
                     polled, stale = now, False

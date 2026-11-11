@@ -891,14 +891,14 @@ def test_snapshot_skips_model_only_micro_compaction_rows(native_owner_stub):
     assert [row["content"] for row in result["snapshot"]["messages"]] == ["q0", "q1", "answer"]
 
 
-def _simulated_watch(owner, monkeypatch, seconds, on_emit=lambda kind, at: None):
+def _simulated_watch(owner, monkeypatch, seconds, on_emit=lambda kind, at: None, restart_wait=lambda home: False):
     """Run a watch on a virtual clock until ``seconds`` have passed: the loop jumps to its next timer instead of
     sleeping. Returns the emitted frames with their clock time, and the resumes issued before the deadline."""
     import asyncio
     import selectors
     from types import SimpleNamespace
     from talaria_sidecar.methods import gateway_sessions as adapter
-    monkeypatch.setattr(adapter, "_restart_wait", lambda home: False)
+    monkeypatch.setattr(adapter, "_restart_wait", restart_wait)
     clock = {"now": 0.0}
     frames, ctx = [], SimpleNamespace(cancelled=False)
 
@@ -951,6 +951,15 @@ def test_another_viewers_reaction_reaches_the_watch(native_owner_stub, monkeypat
     assert len(refreshed) == 1
     assert refreshed[0][0] - started["at"] <= within
     assert refreshed[0][1]["messages"][0]["reactions"] == [{"author": "agent", "emoji": "🎉"}]
+
+
+def test_an_event_triggered_read_waits_for_the_restart_probe(native_owner_stub, monkeypatch):
+    """A socket opened before the owner's restart wait is cut when it sends, so no read runs before the probe."""
+    owner = native_owner_stub
+    owner.events = [{"session_id": "native", "type": "message.complete", "replay_epoch": "epoch", "seq": 5, "execution_generation": 1}]
+    frames, resumes = _simulated_watch(owner, monkeypatch, 12, restart_wait=lambda home: True)
+    assert resumes == 1
+    assert [kind for _, kind, _ in frames].count("restarting") == 1
 
 
 def test_a_streaming_token_does_not_read_the_transcript(native_owner_stub, monkeypatch):
