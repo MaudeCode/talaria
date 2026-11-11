@@ -22,9 +22,10 @@ const reveals = new WeakMap<HTMLElement, Animation>()
  * first half of the travel; `from: 'below'` also lifts it a few pixels, for a message landing at the end of a feed.
  * Shutting, it dims fast and dissolves as the edge passes. A reveal already running on the element is reversed from
  * where it is. Styles live only in the animation, so nothing is left inline; the caller hides a shut element once
- * `finished` resolves. Returns null, leaving the end state to the caller, under reduced motion or inside a hidden box.
+ * `finished` resolves. `hold` keeps the end state until the caller cancels after its removal commit. Returns null,
+ * leaving the end state to the caller, under reduced motion or inside a hidden box.
  */
-export function revealHeight(el: HTMLElement, { open, from, arrive = false }: { open: boolean; from?: 'below'; /** New content landing rather than a disclosure travelling. */ arrive?: boolean }): Animation | null {
+export function revealHeight(el: HTMLElement, { open, from, arrive = false, hold = false }: { open: boolean; from?: 'below'; /** New content landing rather than a disclosure travelling. */ arrive?: boolean; hold?: boolean }): Animation | null {
   if (!motionOn() || typeof el.animate !== 'function' || el.closest('[hidden]')) return null
   const box = (style: CSSStyleDeclaration, height: number) => Object.fromEntries(BOX.map((p) => [p, p === 'height' ? `${height}px` : style[p]]))
   const zero = Object.fromEntries(BOX.map((p) => [p, '0px']))
@@ -38,9 +39,9 @@ export function revealHeight(el: HTMLElement, { open, from, arrive = false }: { 
     : [{ ...(now ?? settled), overflow: 'hidden' }, { opacity: Math.min(0.33, now?.opacity ?? 1), offset: 0.3 }, { ...zero, opacity: 0, overflow: 'hidden' }]
   const animation = el.animate(keyframes, { duration: REVEAL_MS, easing: arrive ? ARRIVE_EASE : TRAVEL_EASE, fill: 'forwards' })
   reveals.set(el, animation)
-  // Held until the caller's own `finished` handlers run in the same task, then handed back to the stylesheet.
+  // A retained exit must stay collapsed while React schedules its removal and takes the next layout snapshot.
   const forget = () => { if (reveals.get(el) === animation) reveals.delete(el) }
-  void animation.finished.then(() => { forget(); animation.cancel() }, forget)
+  void animation.finished.then(() => { if (!hold) { forget(); animation.cancel() } }, forget)
   return animation
 }
 

@@ -120,6 +120,7 @@ describe('sidebar list motion (TAL-1756)', () => {
     expect(exit).toBeDefined()
     await act(async () => { exit.finish(); await exit.animation.finished })
     expect(screen.queryByText('Delta')).toBeNull()
+    expect(exit.animation.cancel).toHaveBeenCalled()
     await update(client, [alpha, delta, other])
     expect(motion.reveals().some((c) => sid(c.el) === 'delta' && c.keyframes[0]?.height === '0px')).toBe(true)
   })

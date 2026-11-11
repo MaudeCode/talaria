@@ -48,11 +48,15 @@ export class MotionList<T> extends Component<Props<T>, State<T>, ListSnapshot | 
   override componentDidUpdate(_props: Props<T>, _state: State<T>, before: ListSnapshot | null) {
     const container = this.container.current
     if (!container) return
+    const mounted = new Set<string>()
     for (const el of container.querySelectorAll<HTMLElement>('[data-motion-key]')) {
-      const exiting = this.state.exiting.has(el.getAttribute('data-motion-key') ?? '')
+      const key = el.getAttribute('data-motion-key') ?? ''
+      mounted.add(key)
+      const exiting = this.state.exiting.has(key)
       el.toggleAttribute('inert', exiting)
       if (exiting) el.setAttribute('aria-hidden', 'true'); else el.removeAttribute('aria-hidden')
     }
+    for (const [key, animation] of this.closing) if (!mounted.has(key)) { animation.cancel(); this.closing.delete(key) }
     if (!before || !motionOn()) { this.cancel(); return }
     for (const animation of this.moves) animation.cancel()
     const current = measureList(container)
@@ -65,11 +69,11 @@ export class MotionList<T> extends Component<Props<T>, State<T>, ListSnapshot | 
     for (const [key, { el }] of current) {
       const exiting = this.state.exiting.has(key)
       if (exiting && !this.closing.has(key)) {
-        const animation = revealHeight(el, { open: false })
+        const animation = revealHeight(el, { open: false, hold: true })
         if (!animation) { retire(key); continue }
         this.closing.set(key, animation); this.track(animation)
         void animation.finished.then(() => {
-          if (this.closing.get(key) === animation) { this.closing.delete(key); retire(key) }
+          if (this.closing.get(key) === animation) retire(key)
         }, () => undefined)
       } else if (!exiting && (this.closing.has(key) || (!previousKeys.has(key) && !before.has(key)))) {
         this.closing.delete(key)
@@ -85,6 +89,7 @@ export class MotionList<T> extends Component<Props<T>, State<T>, ListSnapshot | 
 
   private cancel() {
     for (const animation of this.animations) animation.cancel()
+    for (const animation of this.closing.values()) animation.cancel()
     this.animations.clear(); this.closing.clear(); this.moves = []
   }
   override componentWillUnmount() { this.cancel() }

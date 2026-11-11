@@ -45,6 +45,17 @@ test('background activity travels between groups and archive folds in the real s
     const travel = travels.find((sample) => sample.id === sid)
     expect(travel?.boxes.length).toBeGreaterThan(2)
     expect(Math.max(...travel!.boxes.map((box) => box.y)) - Math.min(...travel!.boxes.map((box) => box.y))).toBeGreaterThan(10)
+    await page.evaluate(() => {
+      const tops: number[] = []
+      const state = { tops, frame: 0 }
+      Object.assign(window, { followingRow: state })
+      const draw = () => {
+        const row = document.querySelector('[data-sid="20261101_090000_demo"]')
+        if (row) tops.push(row.getBoundingClientRect().top)
+        state.frame = requestAnimationFrame(draw)
+      }
+      draw()
+    })
     if (info.project.name === 'mobile') {
       await longPress(page, mover)
       await page.getByRole('menuitem', { name: 'Archive conversation', exact: true }).click()
@@ -58,6 +69,14 @@ test('background activity travels between groups and archive folds in the real s
       const heights = sample.boxes.map((box) => box.height)
       return heights.length > 2 && Math.max(...heights) - Math.min(...heights) > 10
     })).toBe(true)
+    await page.evaluate(() => Promise.all((document.getElementById('sessionList')?.getAnimations({ subtree: true }) ?? []).map((animation) => animation.finished.catch(() => undefined))))
+    const followingTops = await page.evaluate(() => {
+      const state = (window as unknown as { followingRow: { tops: number[]; frame: number } }).followingRow
+      cancelAnimationFrame(state.frame)
+      return state.tops
+    })
+    expect(followingTops.length).toBeGreaterThan(2)
+    expect(Math.max(...followingTops.slice(1).map((top, index) => top - followingTops[index]!)), 'the following row never bounces down after the collapse').toBeLessThanOrEqual(1)
     await page.screenshot({ animations: 'disabled', path: info.outputPath('after.png') })
 
     if (info.project.name === 'desktop') {
