@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Provider plugins that report account usage, such as a Claude subscription plugin, now show their own limits in Quotas, and stay listed with the reason when their sign-in is missing.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

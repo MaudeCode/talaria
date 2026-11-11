@@ -388,3 +388,82 @@ def test_a_provider_that_left_core_offers_its_catalog_plugin(tmp_path: pathlib.P
         assert [(row["name"], row["setup"], row.get("install_hint")) for row in rows(profile["off"])] == [("copilot", "not_loaded", None)]
     finally:
         sidecar.close()
+
+
+USAGE_PROFILES = textwrap.dedent(
+    '''
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    from agent.account_usage import AccountUsageSnapshot, AccountUsageWindow
+    from providers import register_provider
+    from providers.base import ProviderProfile
+
+    # The plugin's own sign-in, beside its code: each installed copy reads only its own account.
+    ACCOUNT = Path(__file__).resolve().parent / "synthetic-account"
+
+
+    class UsageProfile(ProviderProfile):
+        def fetch_account_usage(self, *, base_url=None, api_key=None):
+            at = datetime(2027, 1, 15, 8, 0, tzinfo=timezone.utc)
+            if not ACCOUNT.is_file():
+                return AccountUsageSnapshot(provider=self.name, source="synthetic", fetched_at=at, unavailable_reason="no synthetic subscription login found")
+            used = float(ACCOUNT.read_text())
+            return AccountUsageSnapshot(provider=self.name, source="synthetic", fetched_at=at, title="Synthetic plan", plan="max",
+                                        windows=(AccountUsageWindow(label="Current session", used_percent=used),), details=(f"account {used:g}",))
+
+
+    fake_usage = UsageProfile(name="fake-usage", display_name="Fake Usage", auth_type="api_key", base_url="https://usage.invalid/v1")
+    fake_plain = ProviderProfile(name="fake-plain", display_name="Fake Plain", auth_type="api_key", base_url="https://plain.invalid/v1")
+    register_provider(fake_usage)
+    register_provider(fake_plain)
+    '''
+)
+
+
+@requires_agent
+@pytest.mark.parametrize("isolation", ["in_process", "host"])
+def test_a_plugin_usage_hook_is_declared_and_read_only_in_its_own_profile(tmp_path: pathlib.Path, isolation: str) -> None:
+    """TAL-2187: an overridden ``fetch_account_usage`` advertises account usage and ``usage.account`` reads that profile's own copy."""
+    home = tmp_path / "home" / ".hermes"
+    other, bare = home / "profiles" / "other", home / "profiles" / "bare"
+    for profile, used in ((home, "12"), (other, "64"), (bare, None)):
+        profile.mkdir(parents=True, exist_ok=True)
+        (profile / "config.yaml").write_text(f"plugins:\n  isolation: {isolation}\n")
+        if used is None:
+            continue
+        root = profile / "plugins" / "fake-usage"
+        root.mkdir(parents=True)
+        (root / "plugin.yaml").write_text("name: fake-usage-provider\nkind: model-provider\nversion: 0.0.1\n")
+        (root / "__init__.py").write_text(USAGE_PROFILES)
+        (root / "synthetic-account").write_text(used)
+    sidecar = SidecarProcess(home)
+    try:
+        listing = sidecar.result("plugins.providers", {"profile_home": str(home)})
+        assert validate(listing, load_schema("plugins.providers")) == []
+        rows = {row["name"]: row for row in listing["providers"]}
+        assert rows["fake-usage"].get("account_usage") is True, rows
+        # The base no-op hook is not a usage capability; detection never calls a hook.
+        assert "account_usage" not in rows["fake-plain"], rows
+
+        def read(profile: pathlib.Path) -> dict:
+            result = sidecar.result("usage.account", {"profile_home": str(profile), "provider": "fake-usage"})
+            assert validate(result, load_schema("usage.account")) == []
+            return result["snapshot"]
+
+        own = read(home)
+        assert (own["provider"], own["available"], own["title"], own["details"]) == ("fake-usage", True, "Synthetic plan", ["account 12"]), own
+        assert [(w["label"], w["used_percent"]) for w in own["windows"]] == [("Current session", 12.0)]
+        # The plugin-host wire carries no datetime, so a hosted snapshot's time reads as unknown rather than malformed.
+        assert own["fetched_at"] == ("2027-01-15T08:00:00Z" if isolation == "in_process" else None), own
+        # A same-named plugin in another profile reads its own account, never this one's.
+        named = read(other)
+        assert (named["available"], [w["used_percent"] for w in named["windows"]]) == (True, [64.0]), named
+        # A profile without the plugin never borrows another profile's hook.
+        assert read(bare) == {"provider": "fake-usage", "available": False, "unavailable_reason": "fake-usage is not an enabled provider plugin in this profile.", "windows": [], "details": []}
+        # A lost sign-in keeps the plugin's own reason.
+        (home / "plugins" / "fake-usage" / "synthetic-account").unlink()
+        signed_out = read(home)
+        assert (signed_out["available"], signed_out["unavailable_reason"]) == (False, "no synthetic subscription login found"), signed_out
+    finally:
+        sidecar.close()

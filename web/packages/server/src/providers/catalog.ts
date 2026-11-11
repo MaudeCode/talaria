@@ -198,6 +198,9 @@ const PLUGIN_SETUP_ERRORS: Record<Exclude<PluginProvider['setup'], 'ready'>, str
   unavailable: "This provider's setup status is unavailable.",
 }
 const PLUGIN_NO_MODELS = 'This provider listed no models.'
+const BUILTIN_PROVIDER_IDS: ReadonlySet<string> = new Set([...Object.keys(PROVIDER_DISPLAY), ...Object.keys(PROVIDER_MODELS), ...OAUTH_PROVIDERS])
+/** A plugin never stands in for a built-in provider, by id or alias: that would route to the built-in's billing. */
+const ownPlugins = (plugins: PluginProvider[]): PluginProvider[] => plugins.filter((p) => !BUILTIN_PROVIDER_IDS.has(p.name) && !BUILTIN_PROVIDER_IDS.has(providerIdentity(p.name)))
 const COST_SNAPSHOT_MAX_DAYS = 365
 
 interface CostSnapshot { date: string; used: number | null; limit: number | null }
@@ -973,11 +976,19 @@ export class ProviderCatalog {
    * TAL-288: the model-provider plugins installed and enabled in this profile, as the sidecar reads them from the Agent.
    * A failed lookup lists none, so every other provider stays usable; an id that cannot be a provider routing hint is dropped.
    */
-  private async pluginProviders(profileHome: string): Promise<CatalogLookup<PluginProvider[]>> {
+  private async pluginProviders(profileHome: string, maxAgeS?: number): Promise<CatalogLookup<PluginProvider[]>> {
     return this.poolLookup(profileHome, 'plugins', async (sidecar) => {
       const { providers } = await sidecar.call('plugins.providers', { profile_home: profileHome }, { timeoutMs: PLUGIN_LIST_TIMEOUT_MS })
       return providers.filter((p, i, all) => /^[a-z0-9][a-z0-9._-]{0,63}$/.test(p.name) && all.findIndex((q) => q.name === p.name) === i)
-    })
+    }, maxAgeS)
+  }
+
+  /**
+   * TAL-2187: this profile's own plugins whose loaded provider overrides the Agent's account-usage hook. `usage.account`
+   * reads each under its own plugin identity, signed in or not. Empty while the listing is unknown.
+   */
+  private async usagePlugins(profileHome: string): Promise<Set<string>> {
+    return new Set(ownPlugins((await this.pluginProviders(profileHome, PROVIDERS_TTL_S)).value ?? []).filter((p) => p.account_usage === true).map((p) => p.name))
   }
 
   /**
@@ -1015,10 +1026,9 @@ export class ProviderCatalog {
     const pluginLookup = await this.pluginProviders(profileHome)
     let authoritative = pool.authoritative && pluginLookup.authoritative
     const pooled = new Set(pooledIds ?? [])
-    const known = new Set<string>([...Object.keys(PROVIDER_DISPLAY), ...Object.keys(PROVIDER_MODELS), ...OAUTH_PROVIDERS])
-    // A plugin never stands in for a built-in provider, by id or alias (that would route to the built-in's billing); it
-    // does own a `providers.<id>` config entry.
-    const plugins = (pluginLookup.value ?? []).filter((p) => !known.has(p.name) && !known.has(providerIdentity(p.name)))
+    const known = new Set<string>(BUILTIN_PROVIDER_IDS)
+    // A plugin does own a `providers.<id>` config entry.
+    const plugins = ownPlugins(pluginLookup.value ?? [])
     const pluginIds = new Set(plugins.map((p) => p.name))
     const pluginAliases = pluginAliasTargets(config, plugins)
     const active = activeProviderFromConfig(config, pluginIds, pluginAliases)
@@ -1661,7 +1671,7 @@ export class ProviderCatalog {
         return answer(true, group.plan_stale ? 'stale' : 'available', '', { account_limits: limits })
       }
     }
-    if (ACCOUNT_USAGE_PROVIDERS.has(provider)) {
+    if (ACCOUNT_USAGE_PROVIDERS.has(provider) || (!BUILTIN_PROVIDER_IDS.has(provider) && (await this.usagePlugins(profileHome)).has(provider))) {
       const sidecar = this.deps.sidecar()
       let limits: Dict | null = null
       // Python `_ACCOUNT_USAGE_CACHE_TTL_SECONDS`: a snapshot answers repeat polls for 45 s unless `refresh` is set.
@@ -1854,7 +1864,10 @@ export class ProviderCatalog {
     let poolUnknown = !status.availability.authoritative
     const pooled = new Set(pooledIds ?? [])
     const config = await this.deps.config.read(profileHome)
-    const perProvider = await Promise.all(status.providers.filter((p) => p.has_key || p.is_custom || pooled.has(str(p.id))).map(async (p) => {
+    const usagePlugins = await this.usagePlugins(profileHome)
+    // TAL-2187: a usage-capable plugin stays a source while signed out, so its own read can say why.
+    const reportsUsage = (p: Dict): boolean => p.is_plugin_provider === true && usagePlugins.has(str(p.id))
+    const perProvider = await Promise.all(status.providers.filter((p) => p.has_key || p.is_custom || pooled.has(str(p.id)) || reportsUsage(p)).map(async (p) => {
       const pid = str(p.id)
       const label = str(p.display_name) || pid
       const apiKey = this.apiKeyFor(pid, profileHome, config)
@@ -1863,7 +1876,7 @@ export class ProviderCatalog {
       const entries = found.value?.entries ?? []
       const accounts = entries.map((e) => ({ source_id: sourceId(pid, e.credential_id), provider_id: pid, provider_label: label, account_label: e.label, credential: e }))
       // The provider's own key is a source unless a pool account already holds it.
-      const ownKey = found.authoritative && ((pid === 'nous' && p.has_key === true && !entries.some((e) => e.matches_api_key)) || (!entries.length && (p.has_key === true || p.is_custom === true) && !pooled.has(pid)) || ((apiKey !== null || found.value?.has_api_key === true) && !entries.some((e) => e.matches_api_key)))
+      const ownKey = found.authoritative && ((pid === 'nous' && p.has_key === true && !entries.some((e) => e.matches_api_key)) || (!entries.length && (p.has_key === true || p.is_custom === true || reportsUsage(p)) && !pooled.has(pid)) || ((apiKey !== null || found.value?.has_api_key === true) && !entries.some((e) => e.matches_api_key)))
       return ownKey ? [{ source_id: sourceId(pid, 'provider'), provider_id: pid, provider_label: label, account_label: label, credential: null }, ...accounts] : accounts
     }))
     let descriptors = uniqueQuotaSources(perProvider.flat())

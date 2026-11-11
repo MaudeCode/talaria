@@ -322,6 +322,15 @@ def supports_device_login(profile: Any) -> bool:
     return all(callable(getattr(profile, hook, None)) for hook in ("start_device_login", "poll_device_login", "save_device_login"))
 
 
+def supports_account_usage(profile: Any) -> bool:
+    """Whether the provider overrides the Agent's no-op ``fetch_account_usage``, checked as the Agent's own dispatch does,
+    without calling it. A hosted proxy's class carries only the hooks its plugin overrides."""
+    from providers.base import ProviderProfile
+
+    base = getattr(ProviderProfile, "fetch_account_usage", None)
+    return base is not None and getattr(type(profile), "fetch_account_usage", base) is not base
+
+
 def plugin_providers() -> list[dict]:
     """Sanitized rows for this profile's enabled model-provider plugins: identity and setup state, no paths or secrets."""
     rows = []
@@ -334,6 +343,8 @@ def plugin_providers() -> list[dict]:
         rows.append({"name": name, "display_name": str(profile.display_name or name).strip(), "auth_type": str(profile.auth_type), "setup": _setup_state(profile), "aliases": aliases})
         if supports_device_login(profile):
             rows[-1]["device_login"] = True
+        if supports_account_usage(profile):
+            rows[-1]["account_usage"] = True
     return rows + _left_core_rows()
 
 

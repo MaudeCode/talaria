@@ -9,6 +9,7 @@ import { writeEnvFile } from '../test/env-file.js'
 type Json = Record<string, unknown>
 interface Row { id: string; display_name?: string; has_key?: boolean; is_active?: boolean; is_custom?: boolean; install_hint?: string | null; is_plugin_provider?: boolean; configurable?: boolean; is_oauth?: boolean; key_source?: string; removable?: boolean; auth_error?: string | null; models?: { id: string }[]; models_total?: number }
 interface Group { provider: string; provider_id: string; models: { id: string }[] }
+interface Source { source_id: string; provider_id: string; provider_label: string; status: string; supported: boolean; unavailable_reason: string | null; windows: { label: string; used_percent: number }[]; details: string[] }
 const post = (s: TestServer, path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...headers } })
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
 const profileRow = (name: string, path: string, isDefault: boolean) => ({ name, path, is_default: isDefault, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 })
@@ -19,7 +20,7 @@ describe('installed model-provider plugins in the provider catalog', () => {
   let sidecar: FakeSidecar
   let other: string
   const configs = new Map<string, Json>()
-  let plugins: (home: string) => { name: string; display_name: string; auth_type: string; setup: 'ready' | 'missing_cli' | 'needs_setup' | 'not_loaded' | 'unavailable' }[]
+  let plugins: (home: string) => { name: string; display_name: string; auth_type: string; setup: 'ready' | 'missing_cli' | 'needs_setup' | 'not_loaded' | 'unavailable'; account_usage?: boolean }[]
   const providers = async (headers: Record<string, string> = {}): Promise<Json> => json(await s.get('/api/providers', { headers }))
   const models = async (headers: Record<string, string> = {}): Promise<Json> => json(await s.get('/api/models', { headers }))
 
@@ -138,6 +139,73 @@ describe('installed model-provider plugins in the provider catalog', () => {
       expect(((await models()).groups as Group[]).some((g) => g.provider_id === 'fake-sub')).toBe(false)
     } finally {
       plugins = installed
+      s.deps.catalog.invalidate()
+    }
+  })
+
+  it('reads a usage-capable plugin\'s own account limits per profile and keeps its source while signed out (TAL-2187)', async () => {
+    const original = plugins
+    const usage = { name: 'fake-usage', display_name: 'Fake Usage', auth_type: 'api_key' }
+    // The same plugin name in two profiles, each signed in to a different synthetic account, or not at all.
+    const accounts = new Map<string, number | null>([[s.state, null], [other, 64]])
+    let listing: (home: string) => ReturnType<typeof plugins> = (home) => [
+      { ...usage, setup: accounts.get(home) === null ? 'needs_setup' : 'ready', account_usage: true },
+      { name: 'fake-plain', display_name: 'Fake Plain', auth_type: 'api_key', setup: 'ready' },
+    ]
+    plugins = (home) => listing(home)
+    sidecar.respond('usage.pool_providers', () => ({ providers: [], keys: {} }))
+    sidecar.respond('usage.pool', () => ({ entries: [], has_api_key: false }))
+    sidecar.respond('usage.account', (p) => {
+      if (p.provider !== 'fake-usage') return { snapshot: null }
+      const used = accounts.get(p.profile_home)
+      return { snapshot: used === null || used === undefined
+        ? { provider: 'fake-usage', available: false, unavailable_reason: 'no synthetic subscription login found', windows: [], details: [] }
+        : { provider: 'fake-usage', available: true, title: 'Synthetic plan', fetched_at: '2027-01-15T08:00:00Z', windows: [{ label: 'Current session', used_percent: used }], details: [`account ${used}`] } }
+    })
+    const quotas = async (query = '', headers: Record<string, string> = {}): Promise<{ availability: { status: string }; sources: Source[] }> => (await json(await s.get(`/api/provider/quotas${query}`, { headers }))) as never
+    const plugin = (body: { sources: Source[] }): Source | undefined => body.sources.find((row) => row.provider_id === 'fake-usage')
+    try {
+      s.deps.catalog.invalidate()
+      // Signed out: still a source, with the plugin's own reason rather than a missing row or local pool status.
+      const signedOut = plugin(await quotas('?refresh=true'))
+      expect(signedOut).toMatchObject({ provider_label: 'Fake Usage', supported: true, status: 'unavailable', windows: [] })
+      expect(signedOut?.unavailable_reason).toContain('no synthetic subscription login found')
+      // A plugin without the hook keeps its existing unsupported row and is never read.
+      expect((await quotas()).sources.find((row) => row.provider_id === 'fake-plain')).toMatchObject({ supported: false, status: 'unsupported' })
+      expect(sidecar.calls.some((c) => c.method === 'usage.account' && (c.params as { provider: string }).provider === 'fake-plain')).toBe(false)
+      // Read through the plugin's own identity: no key, base URL or pool account borrowed from a built-in.
+      expect(sidecar.calls.filter((c) => c.method === 'usage.account' && (c.params as { provider: string }).provider === 'fake-usage').at(-1)?.params).toEqual({ profile_home: s.state, provider: 'fake-usage' })
+
+      // The other profile's same-named plugin answers with its own account only.
+      const cookie = ((await post(s, '/api/profile/switch', { name: 'other' })).headers.get('set-cookie') ?? '').split(';')[0] ?? ''
+      try {
+        const named = plugin(await quotas('?refresh=true', { cookie }))
+        expect(named).toMatchObject({ status: 'available', details: ['account 64'] })
+        expect(named?.windows.map((w) => w.used_percent)).toEqual([64])
+        expect(named?.source_id).not.toBe(signedOut?.source_id)
+      } finally {
+        await post(s, '/api/profile/switch', { name: 'default' }, { cookie })
+      }
+      expect(plugin(await quotas())).toMatchObject({ status: 'unavailable', windows: [] })
+
+      // A later sign-in recovers the same source.
+      accounts.set(s.state, 12)
+      s.deps.catalog.invalidate()
+      const recovered = plugin(await quotas('?refresh=true'))
+      expect(recovered).toMatchObject({ source_id: signedOut?.source_id, status: 'available', details: ['account 12'] })
+
+      // A failed plugin listing keeps the last-confirmed source stale; a confirmed uninstall removes it.
+      sidecar.respond('plugins.providers', () => { throw new SidecarError('plugin manager unavailable', { condition: 'plugins_unavailable' }) })
+      s.deps.catalog.invalidate(undefined, undefined, { preserveConfirmed: true })
+      expect(plugin(await quotas('?refresh=true'))).toMatchObject({ source_id: signedOut?.source_id, status: 'stale' })
+      sidecar.respond('plugins.providers', (p) => ({ providers: plugins(p.profile_home) }))
+      listing = () => []
+      s.deps.catalog.invalidate(undefined, undefined, { preserveConfirmed: true })
+      expect(plugin(await quotas('?refresh=true'))).toBeUndefined()
+    } finally {
+      plugins = original
+      for (const method of ['usage.pool_providers', 'usage.pool', 'usage.account'] as const) sidecar.respond(method, undefined)
+      sidecar.respond('plugins.providers', (p) => ({ providers: plugins(p.profile_home) }))
       s.deps.catalog.invalidate()
     }
   })
