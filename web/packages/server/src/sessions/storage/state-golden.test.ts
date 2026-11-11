@@ -3,7 +3,7 @@ import { FakeAuthenticator } from '../../test/passkeys.js'
 import { testSessionDocuments } from '../../test/storage.js'
 import { JsonJournal, JsonJournalWriter } from './json-journal.js'
 import { JsonDocuments } from '../../test/storage.js'
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { gunzipSync } from 'node:zlib'
 import { dirname, join, relative } from 'node:path'
@@ -24,7 +24,7 @@ import { Session } from '../session.js'
 vi.mock('node:crypto', async (original) => ({ ...await original<typeof import('node:crypto')>(), randomBytes: (size: number) => Buffer.alloc(size, 7), randomUUID: () => '00000000-0000-4000-8000-000000000007' }))
 
 it('preserves main JSON bytes for every document namespace and run-journal compaction', async () => {
-  const state = mkdtempSync(join(tmpdir(), 'talaria-state-golden-'))
+  const state = realpathSync(mkdtempSync(join(tmpdir(), 'talaria-state-golden-')))
   const sessions = join(state, 'sessions')
   const workspace = join(state, 'workspace')
   mkdirSync(sessions)
