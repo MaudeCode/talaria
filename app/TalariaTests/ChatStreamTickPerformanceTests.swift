@@ -87,7 +87,6 @@ private struct ChatStreamTickHarness {
     let viewModel: ChatViewModel
     let stream: ScriptedSSEStreamingClient
     let window: UIWindow
-    let composer: UITextView
     let recorder: ChatBodyEvaluationRecorder
     private let test: XCTestCase
 
@@ -125,14 +124,7 @@ private struct ChatStreamTickHarness {
         stream.emit(.token(Self.token(0)))
         let opened = await test.awaitCondition { viewModel.messages.last?.content == Self.token(0) }
         XCTAssertTrue(opened, "The streaming reply never reached the transcript")
-        var activatedShell = false
-        let found = await test.composerTextView(in: window) {
-            guard !activatedShell, let shell = HostedAccessibility.element(in: window, label: "Message") else { return }
-            HostedAccessibility.activate(shell)
-            activatedShell = true
-        }
-        let composer = try XCTUnwrap(found, "The chat has no composer text view")
-        composer.becomeFirstResponder()
+        _ = try await Self.focusComposer(in: window, test: test)
         let quiet = await test.awaitQuiet { recorder.counts.values.reduce(0, +) }
         XCTAssertNotNil(quiet, "The chat must stop re-evaluating after the send before measuring")
         // Opening the chat renders settled rows, so a zero count while measuring means none re-rendered.
@@ -141,7 +133,6 @@ private struct ChatStreamTickHarness {
         self.viewModel = viewModel
         self.stream = stream
         self.window = window
-        self.composer = composer
         self.recorder = recorder
         self.test = test
     }
@@ -168,6 +159,9 @@ private struct ChatStreamTickHarness {
         stream.emit(.streamEnd)
         let ended = await test.awaitCondition { viewModel.activeStreamID == nil }
         XCTAssertTrue(ended, "The reply never ended")
+        // Ending a reply can replace the empty editor with its collapsed shell. Measure input in the mounted
+        // composer, rather than retaining a dismantled UITextView whose delegate no longer publishes draft edits.
+        let composer = try await Self.focusComposer(in: window, test: test)
         let quiet = await test.awaitQuiet { recorder.counts.values.reduce(0, +) }
         XCTAssertNotNil(quiet, "The chat must stop re-evaluating after the reply ends before typing")
         recorder.reset()
@@ -177,9 +171,25 @@ private struct ChatStreamTickHarness {
             await turn()
         }
         let keystrokeSeconds = Self.seconds(since: keystrokeStart)
+        XCTAssertTrue(composer.window === window && composer.delegate != nil,
+                      "The measured keystrokes must reach the mounted composer's delegate")
         XCTAssertEqual(composer.text.count, keystrokes, "A keystroke was dropped")
         return ChatStreamTickSample(tickWork: tickWork, keystrokeWork: recorder.counts,
                                     tickSeconds: tickSeconds, keystrokeSeconds: keystrokeSeconds)
+    }
+
+    private static func focusComposer(in window: UIWindow, test: XCTestCase) async throws -> UITextView {
+        test.settle(window: window)
+        var activatedShell = false
+        let found = await test.composerTextView(in: window) {
+            guard !activatedShell, let shell = HostedAccessibility.element(in: window, label: "Message") else { return }
+            activatedShell = HostedAccessibility.activate(shell)
+        }
+        let composer = try XCTUnwrap(found, "The chat has no composer text view")
+        XCTAssertTrue(composer.window === window && composer.delegate != nil,
+                      "The benchmark must focus a mounted composer")
+        composer.becomeFirstResponder()
+        return composer
     }
 
     /// Renders the change and runs the main-actor work it queued, without waiting on a clock.

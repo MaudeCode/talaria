@@ -7,6 +7,9 @@ import Speech
 @MainActor
 @Observable
 public final class ComposerVoiceInputController {
+    /// Microphone capture belongs to one composer, including across split panes and windows.
+    private static weak var recordingOwner: ComposerVoiceInputController?
+
     public enum State: Equatable, Sendable {
         case idle
         case requestingPermission
@@ -102,6 +105,11 @@ public final class ComposerVoiceInputController {
 
     private func start(currentDraft: String) async {
         guard state == .idle else { return }
+        if let previous = Self.recordingOwner, previous !== self, previous.state != .transcribing {
+            // Stop capture while keeping recognized text and finishing an existing server recording.
+            previous.stopKeepingTranscript()
+        }
+        Self.recordingOwner = self
 
         logger.info("Voice input start requested")
         errorMessage = nil
@@ -683,7 +691,9 @@ public final class ComposerVoiceInputController {
     }
 
     private func stopAudio(cancelTask: Bool) {
-        ComposerAudioCaptureState.shared.setCapturing(false)
+        if Self.recordingOwner == nil || Self.recordingOwner === self {
+            ComposerAudioCaptureState.shared.setCapturing(false)
+        }
 
         if let recorder = audioRecorder, recorder.isRecording {
             recorder.stop()

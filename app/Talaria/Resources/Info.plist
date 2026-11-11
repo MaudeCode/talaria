@@ -31,6 +31,17 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>dev.kil.talaria.sidebar-chat</string>
+			<key>UTTypeDescription</key>
+			<string>Talaria chat</string>
+			<key>UTTypeConformsTo</key>
+			<array><string>public.data</string></array>
+		</dict>
+	</array>
 	<key>TalariaRelease</key>
 	<dict>
 		<key>contracts</key>

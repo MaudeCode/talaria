@@ -104,11 +104,11 @@ public struct SidebarPresentation: Equatable, Sendable {
 
     public init(isRegularWidth: Bool, splitSize: CGSize, hasVerticalBar: Bool, storedChoice: Bool,
                 drawerIsPresented: Bool = false, columnIsVisible: Bool = false,
-                hidesSidebarColumn: Bool = false, hasVerticalDivision: Bool = false,
+                hidesSidebarColumn: Bool = false, hasVerticalDivision: Bool = false, hasSecondaryChat: Bool = false,
                 filesInspectorPresented: Bool = false, filesInspectorIsEligible: Bool = true,
                 filesInspectorOpeningIsLandscape: Bool? = nil) {
         isLandscape = Self.isLandscape(splitSize)
-        columnIsForced = isRegularWidth && hasVerticalDivision
+        columnIsForced = isRegularWidth && hasVerticalDivision && !hasSecondaryChat
         tiled = isRegularWidth && (columnIsForced || (isLandscape && splitSize.width >= 900))
         // Rotation consumes this explicit presentation; a Files tap can reopen it in the new layout.
         filesInspectorFits = isRegularWidth && !hasVerticalDivision
@@ -118,10 +118,11 @@ public struct SidebarPresentation: Equatable, Sendable {
         dismissesFilesInspector = filesInspectorPresented && !showsFilesInspector
         let filesNeedsRoom = showsFilesInspector && RegularSplitLayout.hidesSidebarForFilesInspector(splitWidth: splitSize.width)
         showsColumn = columnIsForced || (tiled && storedChoice && !hidesSidebarColumn && !filesNeedsRoom && !drawerIsPresented)
-        drawerEnabled = !tiled && !columnIsVisible
+        let secondaryUsesDrawer = hasSecondaryChat && hidesSidebarColumn
+        drawerEnabled = secondaryUsesDrawer || (!tiled && !columnIsVisible)
         overlaysContent = isRegularWidth
         hostsSidebarActionsInDetail = tiled && hasVerticalBar
-        toggleTarget = tiled ? .column : .drawer
+        toggleTarget = secondaryUsesDrawer ? .drawer : (tiled ? .column : .drawer)
     }
 
     public static func isLandscape(_ size: CGSize) -> Bool {

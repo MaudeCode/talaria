@@ -29,6 +29,8 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
     private let overlaysContent: Bool
     private let collapsesNativeSidebar: Bool
     private let onPresentationChange: (Bool) -> Void
+    private let onChatDrop: (([NSItemProvider]) -> Bool)?
+    private let onChatDropHover: (Bool) -> Void
     private let sidebar: (Bool) -> Sidebar
     private let content: Content
 
@@ -39,6 +41,8 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
         overlaysContent: Bool = false,
         collapsesNativeSidebar: Bool = false,
         onPresentationChange: @escaping (Bool) -> Void,
+        onChatDrop: (([NSItemProvider]) -> Bool)? = nil,
+        onChatDropHover: @escaping (Bool) -> Void = { _ in },
         @ViewBuilder sidebar: @escaping (_ isPresented: Bool) -> Sidebar,
         @ViewBuilder content: () -> Content
     ) {
@@ -48,6 +52,8 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
         self.overlaysContent = overlaysContent
         self.collapsesNativeSidebar = collapsesNativeSidebar
         self.onPresentationChange = onPresentationChange
+        self.onChatDrop = onChatDrop
+        self.onChatDropHover = onChatDropHover
         self.sidebar = sidebar
         self.content = content()
     }
@@ -67,7 +73,9 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
                     if isPresented { transaction.disablesAnimations = true }
                 }
             }),
-            onPresentationChange: onPresentationChange
+            onPresentationChange: onPresentationChange,
+            onChatDrop: onChatDrop,
+            onChatDropHover: onChatDropHover
         )
         .ignoresSafeArea()
     }
@@ -92,6 +100,8 @@ private struct AppSidebarHost: UIViewControllerRepresentable {
     let sidebar: AnyView
     let content: AnyView
     let onPresentationChange: (Bool) -> Void
+    let onChatDrop: (([NSItemProvider]) -> Bool)?
+    let onChatDropHover: (Bool) -> Void
 
     func makeUIViewController(context: Context) -> AppSidebarController {
         AppSidebarController(presentation: presentation)
@@ -104,6 +114,8 @@ private struct AppSidebarHost: UIViewControllerRepresentable {
         controller.collapsesNativeSidebar = collapsesNativeSidebar
         controller.isEnabled = isEnabled
         controller.onPresentationChange = onPresentationChange
+        controller.onChatDrop = onChatDrop
+        controller.onChatDropHover = onChatDropHover
         controller.isRightToLeft = environment.layoutDirection == .rightToLeft
         controller.reduceMotion = environment.accessibilityReduceMotion
         // Each hosting controller starts its own environment; hand it this one whole, so the
@@ -117,7 +129,7 @@ private struct AppSidebarHost: UIViewControllerRepresentable {
     }
 }
 
-final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate {
+final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate, UIDropInteractionDelegate {
     private enum Motion {
         static let duration: TimeInterval = 0.28
         static let bounce: CGFloat = 0.15
@@ -129,6 +141,8 @@ final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate 
     }
 
     var onPresentationChange: (Bool) -> Void = { _ in }
+    var onChatDrop: (([NSItemProvider]) -> Bool)?
+    var onChatDropHover: (Bool) -> Void = { _ in }
     var isRightToLeft = false {
         didSet {
             guard isRightToLeft != oldValue, isViewLoaded else { return }
@@ -215,6 +229,8 @@ final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate 
             (traits.userInterfaceStyle == .dark ? UIColor.white : .black).withAlphaComponent(0.12)
         }
         tint.accessibilityElementsHidden = true
+        // The drawer scrim is above the chat's SwiftUI host and needs its own drop receiver.
+        tint.addInteraction(UIDropInteraction(delegate: self))
         tint.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tintTapped)))
         surfacePan.addTarget(self, action: #selector(surfacePanned(_:)))
         surfacePan.delegate = self
@@ -238,6 +254,30 @@ final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate 
         reflect(isPresented: presentation.isPresented)
         progress = presentation.isPresented ? 1 : 0
         presentation.isVisible = isEnabled && presentation.isPresented
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, canHandle session: UIDropSession) -> Bool {
+        onChatDrop != nil && session.hasItemsConforming(toTypeIdentifiers: [SidebarChatDrag.typeIdentifier])
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidUpdate session: UIDropSession) -> UIDropProposal {
+        UIDropProposal(operation: dropInteraction(interaction, canHandle: session) ? .copy : .cancel)
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidEnter session: UIDropSession) {
+        onChatDropHover(dropInteraction(interaction, canHandle: session))
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidExit session: UIDropSession) {
+        onChatDropHover(false)
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, performDrop session: UIDropSession) {
+        _ = onChatDrop?(session.items.map(\.itemProvider))
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidEnd session: UIDropSession) {
+        onChatDropHover(false)
     }
 
     override func viewSafeAreaInsetsDidChange() {

@@ -18,7 +18,7 @@ struct SessionInteractiveRow: View {
     var searchText = ""
 
     var body: some View {
-        rowContent
+        draggableRowContent
             .id(session.id)
             // While picking chats the checkmarks carry selection, so the open chat stops reading as selected.
             .sidebarRow(isSelected: !viewModel.isSelectingSessions && session.sessionId == selectedSessionID)
@@ -31,10 +31,23 @@ struct SessionInteractiveRow: View {
             }
             .contextMenu { contextMenuContent(includesSelection: canEnterSelection) }
             .accessibilityActions {
+                rowMenu(placement: .menu).openBesideButton
                 if canEnterSelection, !selectionIsDisabled {
                     Button("Select Chats…") { viewModel.beginSelectingSessions() }
                 }
             }
+    }
+
+    @ViewBuilder
+    private var draggableRowContent: some View {
+        if rowStyle == .sidebar, !viewModel.isSelectingSessions, actions.openBeside(session) != nil {
+            rowContent.onDrag {
+                actions.sidebarChatLifted(session)
+                return SidebarChatDrag.provider(for: session)
+            }
+        } else {
+            rowContent
+        }
     }
 
     /// Select is a row-only prefix; all session actions use the same menu placement as the chat.
@@ -124,10 +137,15 @@ struct SessionInteractiveRow: View {
         !viewModel.isViewingCachedData && SessionRowActionPolicy.isBulkSelectable(session)
     }
 
+    private func rowMenu(placement: SessionRowContextMenu.Placement) -> SessionRowContextMenu {
+        SessionRowContextMenu(viewModel: viewModel, session: session, actions: actions, placement: placement,
+            openBeside: rowStyle == .sidebar && !viewModel.isSelectingSessions ? actions.openBeside(session) : nil)
+    }
+
     @ViewBuilder
     func sessionActions(placement: SessionRowContextMenu.Placement) -> some View {
         if !viewModel.isSelectingSessions {
-            SessionRowContextMenu(viewModel: viewModel, session: session, actions: actions, placement: placement)
+            rowMenu(placement: placement)
         }
     }
 }

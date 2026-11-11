@@ -33,6 +33,7 @@ public struct SessionNavigationState: Equatable, Sendable {
             filesInspectorPresented = false
             chatShowsFilesInspector = false
             chatShowsCompanionPage = false
+            secondarySession = nil
         }
     }
     /// Explicit Files presentation for the current chat, cleared on navigation or layout dismissal.
@@ -43,6 +44,36 @@ public struct SessionNavigationState: Equatable, Sendable {
     /// Whether the open chat has a companion page to show beside it, which can hide the regular-width sidebar column
     /// to make room (TAL-1458).
     public var chatShowsCompanionPage = false
+    /// Device-local split selection. A fold keeps it; replacing the chat root clears it.
+    public private(set) var secondarySession: SessionSummary?
+    public var secondarySessionID: String? { secondarySession?.sessionId }
+    public var chatNeedsSecondaryPaneRoom: Bool { secondarySession != nil || chatShowsCompanionPage }
+
+    public func canOpenBeside(_ session: SessionSummary) -> Bool {
+        guard let primaryID = displayedSessionID ?? selectedSessionID,
+              let secondaryID = Self.normalized(session.sessionId) else { return false }
+        return primaryID != secondaryID
+    }
+
+    public mutating func openBeside(_ session: SessionSummary) {
+        guard canOpenBeside(session) else { return }
+        startedOpens += 1
+        secondarySession = session
+        filesInspectorPresented = false
+        chatShowsFilesInspector = false
+    }
+
+    public mutating func closeSecondaryChat() {
+        startedOpens += 1
+        secondarySession = nil
+    }
+
+    public mutating func makeSecondaryPrimary(replacing primary: SessionSummary) {
+        guard let secondary = secondarySession, let primaryID = Self.normalized(primary.sessionId),
+              primaryID == (displayedSessionID ?? selectedSessionID) else { return }
+        select(secondary)
+        secondarySession = primary
+    }
     /// Counts requests that the open chat hide its companion page: the sidebar column takes its room (TAL-1539).
     public var companionPageHideRequest = 0
     public private(set) var lastSelectedSessionID: String?
@@ -51,6 +82,8 @@ public struct SessionNavigationState: Equatable, Sendable {
 
     public mutating func reportDisplayedSession(_ session: SessionSummary) {
         displayedSessionID = Self.normalized(session.sessionId)
+        // Back from a fork can show the chat opened beside it as the primary; one chat never fills both panes.
+        if let displayedSessionID, Self.normalized(secondarySessionID) == displayedSessionID { secondarySession = nil }
     }
     /// Consumed synchronously from local summaries before a launch root is displayed, including a cache miss.
     public private(set) var launchRestoreResolved = false
@@ -225,6 +258,7 @@ public struct SessionNavigationState: Equatable, Sendable {
     public mutating func remove(sessionID: String?) {
         guard let sessionID = Self.normalized(sessionID) else { return }
 
+        if secondarySessionID == sessionID { secondarySession = nil }
         if selectedSectionSession?.sessionId == sessionID {
             rootRevision += 1
             selectedSectionSession = nil
@@ -249,6 +283,7 @@ public struct SessionNavigationState: Equatable, Sendable {
         // Removing a remembered chat only changes launch restoration, never the page above it.
         if rootRevision == previous.rootRevision, chatRootRevision == previous.chatRootRevision {
             lastSelectedSessionID = previous.lastSelectedSessionID
+            secondarySession = previous.secondarySession
             return
         }
         guard selectedSessionID == nil, selectedSectionSession == nil else { return }

@@ -7,6 +7,20 @@ import XCTest
 /// delivers a drop session, to the drop interaction on the view under the drop point or its nearest ancestor.
 @MainActor
 final class ComposerDropHostedTests: XCTestCase {
+    func testSidebarChatDragsAreNotComposerAttachments() async throws {
+        let window = try await hostFixtureChat(size: HostedSize.padLandscape)
+        try await typeIntoComposer("Keep this draft", in: window)
+        let provider = NSItemProvider()
+        provider.suggestedName = "Fixture Session 01"
+        provider.registerDataRepresentation(forTypeIdentifier: "dev.kil.talaria.sidebar-chat", visibility: .ownProcess) { completion in
+            completion(Data("ui-fixture-session-1".utf8), nil)
+            return nil
+        }
+        let operation = try await drop([provider], in: window, isLocal: true)
+        XCTAssertNotEqual(operation, .copy, "A sidebar navigation drag must not be consumed as a composer attachment")
+        XCTAssertEqual(composerDraftText(in: window), "Keep this draft")
+    }
+
     func testDropsLandAsDraftTextAndAttachmentsOnTheDuoInnerDisplay() async throws {
         try await assertDropsLand(size: HostedSize.duoInnerLandscape)
     }
@@ -158,6 +172,7 @@ final class ComposerDropHostedTests: XCTestCase {
         _ providers: [NSItemProvider],
         in window: UIWindow,
         at point: CGPoint? = nil,
+        isLocal: Bool = false,
         hoverScreenshot: String? = nil,
         hovering: (() async -> Void)? = nil
     ) async throws -> UIDropOperation {
@@ -168,10 +183,10 @@ final class ComposerDropHostedTests: XCTestCase {
         let aim = { try point ?? self.composerCentre(in: window) }
         // The chat holds its composer transparent until its first appearance completes, while its editor is already laid
         // out and takes typing; SwiftUI targets no drop at a transparent view, so a drop then proposes .cancel (TAL-1662).
-        let ready = await awaitCondition { (try? aim()).map { self.proposal(for: providers, at: $0, in: window) != .cancel } ?? false }
+        let ready = await awaitCondition { (try? aim()).map { self.proposal(for: providers, at: $0, in: window, isLocal: isLocal) != .cancel } ?? false }
         XCTAssertTrue(ready, "No drop destination answered at \(String(describing: try? aim()))")
         let start = try aim()
-        let session = HostedDropSession(providers: providers, window: window) { (try? aim()) ?? start }
+        let session = HostedDropSession(providers: providers, window: window, isLocal: isLocal) { (try? aim()) ?? start }
         guard let (interaction, delegate) = dropTarget(for: session, at: start, in: window) else { return .cancel }
         delegate.dropInteraction?(interaction, sessionDidEnter: session)
         settle()
@@ -192,28 +207,9 @@ final class ComposerDropHostedTests: XCTestCase {
         return operation
     }
 
-    /// The drop interaction UIKit hands `session` at `point`: the first that takes it on the view under the point or its
-    /// nearest ancestor.
-    private func dropTarget(
-        for session: UIDropSession,
-        at point: CGPoint,
-        in window: UIWindow
-    ) -> (UIDropInteraction, UIDropInteractionDelegate)? {
-        var view = window.hitTest(point, with: nil)
-        while let candidate = view {
-            for case let interaction as UIDropInteraction in candidate.interactions {
-                guard let delegate = interaction.delegate,
-                      delegate.dropInteraction?(interaction, canHandle: session) ?? true else { continue }
-                return (interaction, delegate)
-            }
-            view = candidate.superview
-        }
-        return nil
-    }
-
     /// The operation a drop of `providers` at `point` would propose, entered and left without dropping.
-    private func proposal(for providers: [NSItemProvider], at point: CGPoint, in window: UIWindow) -> UIDropOperation {
-        let session = HostedDropSession(providers: providers, window: window) { point }
+    private func proposal(for providers: [NSItemProvider], at point: CGPoint, in window: UIWindow, isLocal: Bool = false) -> UIDropOperation {
+        let session = HostedDropSession(providers: providers, window: window, isLocal: isLocal) { point }
         guard let (interaction, delegate) = dropTarget(for: session, at: point, in: window) else { return .cancel }
         delegate.dropInteraction?(interaction, sessionDidEnter: session)
         let operation = delegate.dropInteraction?(interaction, sessionDidUpdate: session).operation ?? .cancel
@@ -282,22 +278,26 @@ final class ComposerDropHostedTests: XCTestCase {
 
 /// An external drop session over a hosted window, at the window point `point` returns when asked: what UIKit hands a
 /// drop interaction's delegate.
-private final class HostedDropSession: NSObject, UIDropSession {
-    let items: [UIDragItem]
+final class HostedDropSession: NSObject, UIDropSession, UIDragSession {
+    /// A drag lifted from an App source carries the items its delegate supplied once it began.
+    var items: [UIDragItem]
     private let point: @MainActor () -> CGPoint
     private weak var window: UIWindow?
+    private let isLocal: Bool
+    var localContext: Any?
     let progress = Progress(totalUnitCount: 1)
 
-    init(providers: [NSItemProvider], window: UIWindow, point: @escaping @MainActor () -> CGPoint) {
+    init(providers: [NSItemProvider], window: UIWindow, isLocal: Bool = false, point: @escaping @MainActor () -> CGPoint) {
         items = providers.map(UIDragItem.init(itemProvider:))
         self.point = point
         self.window = window
+        self.isLocal = isLocal
     }
 
-    var localDragSession: UIDragSession? { nil }
+    var localDragSession: UIDragSession? { isLocal ? self : nil }
     var progressIndicatorStyle: UIDropSessionProgressIndicatorStyle = .none
     var allowsMoveOperation: Bool { false }
-    var isRestrictedToDraggingApplication: Bool { false }
+    var isRestrictedToDraggingApplication: Bool { isLocal }
 
     func location(in view: UIView) -> CGPoint {
         view.convert(point(), from: window)
@@ -324,5 +324,54 @@ private final class HostedDropSession: NSObject, UIDropSession {
         }
         group.notify(queue: .main) { completion.value(objects.value.compactMap { $0 }) }
         return progress
+    }
+}
+
+@MainActor
+extension XCTestCase {
+    /// The drop interaction UIKit hands `session` at `point`: the first that takes it on the view under the point or its
+    /// nearest ancestor.
+    func dropTarget(
+        for session: UIDropSession,
+        at point: CGPoint,
+        in window: UIWindow
+    ) -> (UIDropInteraction, UIDropInteractionDelegate)? {
+        var view = window.hitTest(point, with: nil)
+        while let candidate = view {
+            for case let interaction as UIDropInteraction in candidate.interactions {
+                guard let delegate = interaction.delegate,
+                      delegate.dropInteraction?(interaction, canHandle: session) ?? true else { continue }
+                return (interaction, delegate)
+            }
+            view = candidate.superview
+        }
+        return nil
+    }
+
+    /// Begins `session` at its location the way UIKit does: the first drag source under it or its nearest ancestor,
+    /// a collection's drag delegate or a view's drag interaction, supplies the items. Returns the call that ends it.
+    func liftDrag(_ session: HostedDropSession, in window: UIWindow) -> ((UIDropOperation) -> Void)? {
+        var view = window.hitTest(session.location(in: window), with: nil)
+        while let candidate = view {
+            if let collection = candidate as? UICollectionView, let delegate = collection.dragDelegate,
+               let indexPath = collection.indexPathForItem(at: session.location(in: collection)) {
+                let items = delegate.collectionView(collection, itemsForBeginning: session, at: indexPath)
+                if !items.isEmpty {
+                    session.items = items
+                    delegate.collectionView?(collection, dragSessionWillBegin: session)
+                    return { _ in delegate.collectionView?(collection, dragSessionDidEnd: session) }
+                }
+            }
+            for case let interaction as UIDragInteraction in candidate.interactions {
+                guard let delegate = interaction.delegate else { continue }
+                let items = delegate.dragInteraction(interaction, itemsForBeginning: session)
+                guard !items.isEmpty else { continue }
+                session.items = items
+                delegate.dragInteraction?(interaction, sessionWillBegin: session)
+                return { delegate.dragInteraction?(interaction, session: session, didEndWith: $0) }
+            }
+            view = candidate.superview
+        }
+        return nil
     }
 }

@@ -162,6 +162,18 @@ extension HostedAccessibility {
         return candidates.first { !NSStringFromClass(type(of: $0)).contains("Inspector") }
     }
 
+    /// The navigation controller whose visible page shows `item`, as `toolbarItems(in:)` gathers them.
+    static func navigationController(showing item: UIBarButtonItem, in window: UIWindow) -> UINavigationController? {
+        func find(_ controller: UIViewController) -> UINavigationController? {
+            if let navigation = controller as? UINavigationController,
+               toolbarItems(under: navigation).contains(where: { $0 === item }) {
+                return navigation.children.lazy.compactMap(find).first ?? navigation
+            }
+            return controller.children.lazy.compactMap(find).first
+        }
+        return window.rootViewController.flatMap(find)
+    }
+
     static func toolbarItem(_ title: String, in window: UIWindow) -> UIBarButtonItem? {
         toolbarItems(in: window).first { $0.title == title || $0.accessibilityLabel == title || $0.primaryAction?.title == title }
     }
@@ -202,6 +214,11 @@ extension XCTestCase {
             _ = windowImage(window, size: CGSize(width: 1, height: 1))
             return
         }
+        // The first drawing commits offscreen SwiftUI updates. Capture the following frame, so a newly mounted
+        // header or composer is not photographed with its previous presentation.
+        _ = windowImage(window, size: CGSize(width: 1, height: 1))
+        window.layoutIfNeeded()
+        settle()
         attachWindowImage(window, name: name, lifetime: .keepAlways)
     }
 
@@ -270,7 +287,8 @@ extension XCTestCase {
     /// Lets SwiftUI apply pending updates: a few run-loop turns, which is how long state changes and `.task` starts take
     /// to reach the hosted tree.
     @MainActor
-    func settle(_ seconds: TimeInterval = 0.05) {
+    func settle(_ seconds: TimeInterval = 0.05, window: UIWindow? = nil) {
+        if let window { _ = windowImage(window, size: CGSize(width: 1, height: 1)) }
         RunLoop.current.run(until: Date().addingTimeInterval(seconds))
     }
 

@@ -312,18 +312,18 @@ extension XCTestCase {
     /// Waits until `current()` has not changed for 500 ms and returns its settled value, or nil if it kept changing.
     /// On a loaded runner, late layout passes land well after the work that queued them (TAL-1544, TAL-1570).
     @MainActor
-    func awaitQuiet(_ current: @escaping () -> Int) async -> Int? {
-        var count = current()
+    func awaitQuiet<Value: Equatable>(_ current: @escaping () -> Value) async -> Value? {
+        var value = current()
         let clock = ContinuousClock()
         var lastChange = clock.now
         let settled = await awaitCondition {
-            if current() != count {
-                count = current()
+            if current() != value {
+                value = current()
                 lastChange = clock.now
             }
             return clock.now - lastChange >= .milliseconds(500)
         }
-        return settled ? count : nil
+        return settled ? value : nil
     }
 
     /// Reads either composer presentation; a missing composer is not an empty draft.
@@ -342,28 +342,36 @@ extension XCTestCase {
     func composerTextView(
         in window: UIWindow,
         timeout: TimeInterval = 10,
+        region: CGRect? = nil,
         eachPoll: @escaping () -> Void = {}
     ) async -> UITextView? {
         for _ in 0..<Int(timeout / 0.05) {
-            if let text = window.firstView(ofType: UITextView.self, where: \.isEditable) { return text }
+            if let text = window.firstView(ofType: UITextView.self, where: {
+                $0.isEditable && (region?.intersects($0.convert($0.bounds, to: window)) ?? true)
+            }) { return text }
             eachPoll()
             try? await Task.sleep(for: .milliseconds(50))
         }
-        return window.firstView(ofType: UITextView.self, where: \.isEditable)
+        return window.firstView(ofType: UITextView.self, where: {
+            $0.isEditable && (region?.intersects($0.convert($0.bounds, to: window)) ?? true)
+        })
     }
 
     /// Types `text` into the composer the way the keyboard does: through the text view's own input path, so the
     /// composer's draft follows.
     @MainActor
-    func typeIntoComposer(_ text: String, in window: UIWindow) async throws {
+    func typeIntoComposer(_ text: String, in window: UIWindow, region: CGRect? = nil) async throws {
+        // Commit the offscreen navigation frame before the one focus attempt, as a real display does before a tap.
+        settle(window: window)
         // A delayed expanded editor can mount without ever showing a collapsed shell.
         var activatedShell = false
-        let found = await composerTextView(in: window) {
-            guard !activatedShell, let shell = HostedAccessibility.element(in: window, label: "Message") else { return }
-            HostedAccessibility.activate(shell)
-            activatedShell = true
+        let found = await composerTextView(in: window, region: region) {
+            guard !activatedShell, let shell = HostedAccessibility.elements(in: window).first(where: {
+                $0.accessibilityLabel == "Message" && (region?.intersects($0.accessibilityFrame) ?? true)
+            }), !shell.accessibilityTraits.contains(.notEnabled) else { return }
+            activatedShell = HostedAccessibility.activate(shell)
         }
-        let input = try XCTUnwrap(found, "The chat has no composer text view")
+        let input = try XCTUnwrap(found, "The chat has no composer text view (shell activated: \(activatedShell))")
         input.becomeFirstResponder()
         input.insertText(text)
         try? await Task.sleep(for: .milliseconds(100))

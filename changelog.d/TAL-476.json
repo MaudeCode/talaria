@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Open two chats side by side on iPad and iPhone Duo.",
+      "highlight": true,
+      "components": [
+        "app"
+      ],
+      "announcement": {
+        "title": "Two chats side by side",
+        "description": "Drag chats beside each other, resize the split when flat, and control each chat independently.",
+        "icon": "chat"
+      }
+    }
+  ]
+}

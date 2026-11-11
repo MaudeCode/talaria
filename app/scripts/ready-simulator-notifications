@@ -6,18 +6,29 @@
 # uninstalled bundle is the probe: it waits for the notification server, then fails as
 # unauthorized without showing anything. A push to a shut-down simulator fails at once, which the probe
 # would take for an answer, and parallel testing leaves its leased device shut down (TAL-682).
-# Usage: scripts/ready-simulator-notifications <simulator-udid>
+# Usage: scripts/ready-simulator-notifications [--already-booted] <simulator-udid>
+# --already-booted requires a successful command inside this simulator immediately before the call.
 
 set -euo pipefail
 zmodload zsh/datetime
-(( $# == 1 )) || { print -u2 "Usage: scripts/ready-simulator-notifications <simulator-udid>"; exit 64; }
+zmodload zsh/zselect
+already_booted=false
+if [[ "${1:-}" == --already-booted ]]; then
+    already_booted=true
+    shift
+fi
+(( $# == 1 )) || { print -u2 "Usage: scripts/ready-simulator-notifications [--already-booted] <simulator-udid>"; exit 64; }
 simulator_id=$1
 readonly client_budget=5
-print -u2 "Notification bootstrap start (elapsed ${SECONDS}s)."
-xcrun simctl bootstatus "$simulator_id" -b >/dev/null
-print -u2 "Notification bootstrap finished (elapsed ${SECONDS}s)."
+if [[ "$already_booted" == false ]]; then
+    print -u2 "Notification bootstrap start (elapsed ${SECONDS}s)."
+    xcrun simctl bootstatus "$simulator_id" -b >/dev/null
+    print -u2 "Notification bootstrap finished (elapsed ${SECONDS}s)."
+fi
 
-payload=$(mktemp "${TMPDIR:-/tmp}/talaria-notification-probe.XXXXXX")
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/talaria-notification-probe.XXXXXX")
+payload="$scratch/payload.json"
+client_log="$scratch/client.log"
 command_pid=""
 cleanup() {
     local exit_status=$?
@@ -26,7 +37,8 @@ cleanup() {
         kill -KILL "$command_pid" 2>/dev/null
         wait "$command_pid" 2>/dev/null
     fi
-    rm -f "$payload"
+    rm -f "$payload" "$client_log"
+    rmdir "$scratch"
     return "$exit_status"
 }
 trap cleanup EXIT
@@ -40,25 +52,29 @@ client_finishes_within_budget() {
     local label=$1 started=$SECONDS deadline=$(( EPOCHREALTIME + client_budget )) command_status=0
     shift
     print -u2 "$label start (elapsed ${SECONDS}s)."
-    "$@" >/dev/null 2>&1 &
+    "$@" >"$client_log" 2>&1 &
     command_pid=$!
     while kill -0 "$command_pid" 2>/dev/null && (( EPOCHREALTIME < deadline - 0.1 )); do
-        sleep 0.1
+        zselect -t 10 || true
     done
     if kill -0 "$command_pid" 2>/dev/null; then
         kill "$command_pid" 2>/dev/null || true
         while kill -0 "$command_pid" 2>/dev/null && (( EPOCHREALTIME < deadline )); do
-            sleep 0.01
+            zselect -t 1 || true
         done
         kill -KILL "$command_pid" 2>/dev/null || true
         wait "$command_pid" 2>/dev/null || true
         command_pid=""
         print -u2 "$label timed out after $(( SECONDS - started ))s."
+        if [[ -s "$client_log" ]]; then print -u2 -r -- "$label output: $(<"$client_log")"; fi
         return 1
     fi
     wait "$command_pid" 2>/dev/null || command_status=$?
     command_pid=""
     print -u2 "$label finished after $(( SECONDS - started ))s (status $command_status)."
+    if (( command_status != 0 )) && [[ -s "$client_log" ]]; then
+        print -u2 -r -- "$label output: $(<"$client_log")"
+    fi
     return 0
 }
 
