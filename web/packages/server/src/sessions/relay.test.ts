@@ -1033,13 +1033,12 @@ describe('session-started events under person isolation (TAL-48)', () => {
     const s = await bootTestServer({ sidecar: new FakeSidecar(), env: { HERMES_WEBUI_PERSON_ISOLATION: '1' } })
     const relay = fakeRelay()
     s.deps.fetch = relay.fetch
+    // Drive the real publisher explicitly; its background loop is covered by the running-server test above.
+    const start = vi.spyOn(RelayPublisher.prototype, 'start').mockResolvedValue()
     try {
       await s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'x' }, 'default', true)
-      for (let i = 0; i < 2; i++) {
-        const before = relay.snapshots().length
-        s.deps.relay.current()!.changed()
-        await vi.waitFor(() => { expect(relay.snapshots().length).toBeGreaterThan(before) })
-      }
+      const publisher = s.deps.relay.current()!
+      await publisher.publishStarted()
       // Alice's private Web chat delegates the subagent below.
       const webChat = await s.deps.sessionStore.newSession({ profile: 'default' })
       webChat.session_id = 'alicewebchat01'
@@ -1057,15 +1056,12 @@ describe('session-started events under person isolation (TAL-48)', () => {
       }
       db.close()
       const started = (): string[] => relay.calls.filter((c) => c.url.endsWith('/started')).map((c) => String(c.body.sessionId))
-      await vi.waitFor(() => {
-        s.deps.relay.current()!.changed()
-        expect(started()).toContain('cli_unowned_0001')
-      })
-      s.deps.relay.current()!.changed()
-      await new Promise((r) => setTimeout(r, 200))
+      await publisher.publishStarted()
+      expect(started()).toContain('cli_unowned_0001')
       expect(started()).not.toContain('diagnostic_alice_01')
       expect(started()).not.toContain('subagent_alice_01')
     } finally {
+      start.mockRestore()
       s.deps.relay.stop()
       await s.close()
     }
