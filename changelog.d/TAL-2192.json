@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Update Web dependencies with compatibility checks for existing installations.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
