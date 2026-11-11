@@ -1,13 +1,15 @@
 import { closeSync, createReadStream, fstatSync, linkSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, statSync, truncateSync, utimesSync, writeFileSync } from 'node:fs'
+import { createHash, randomBytes } from 'node:crypto'
 import { once } from 'node:events'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { read } from 'node:fs'
 import type { RequestContext } from '../http/context.js'
 import type { Session } from '../sessions/session.js'
 import { mediaAnchorRoot, serveFileBytes, type MediaAccessDeps, type ServeFileOptions } from './media.js'
 
-const io = vi.hoisted(() => ({ bytes: 0, syncBytes: 0, readError: false, intercept: undefined as ((resume: () => void) => void) | undefined }))
+const io = vi.hoisted(() => ({ bytes: 0, syncBytes: 0 }))
 
 vi.mock('node:fs', async (importOriginal) => {
   const fs = await importOriginal<typeof import('node:fs')>()
@@ -19,19 +21,18 @@ vi.mock('node:fs', async (importOriginal) => {
     return n
   })
   const read = vi.fn((fd: number, buffer: Buffer, offset: number, length: number, position: number, callback: (error: NodeJS.ErrnoException | null, bytesRead: number, buffer: Buffer) => void) => {
-    if (io.readError) { io.readError = false; callback(new Error('read failed'), 0, buffer); return }
-    const resume = () => {
-      fs.read(fd, buffer, offset, length, position, (error, bytesRead, result) => {
-        io.bytes += bytesRead ?? 0
-        callback(error, bytesRead, result)
-      })
-    }
-    const intercept = io.intercept
-    io.intercept = undefined
-    if (intercept) intercept(resume)
-    else resume()
+    fs.read(fd, buffer, offset, length, position, (error, bytesRead, result) => {
+      io.bytes += bytesRead ?? 0
+      callback(error, bytesRead, result)
+    })
   })
   return { ...fs, default: { ...fs, closeSync, readSync, read }, closeSync, readSync, read, createReadStream: vi.fn(fs.createReadStream) }
+})
+
+vi.mock('node:crypto', async (importOriginal) => {
+  const crypto = await importOriginal<typeof import('node:crypto')>()
+  const createHash = vi.fn(crypto.createHash)
+  return { ...crypto, default: { ...crypto, createHash }, createHash }
 })
 
 describe('serveFileBytes descriptor ownership (TAL-572)', () => {
@@ -45,31 +46,38 @@ describe('serveFileBytes descriptor ownership (TAL-572)', () => {
   })
   afterEach(() => { rmSync(root, { recursive: true, force: true }) })
 
-  const serve = async (headers: Record<string, string>): Promise<{ status?: number | undefined }> => {
+  const serve = async (headers: Record<string, string>, closes: number): Promise<{ status?: number | undefined }> => {
     const sent: { status?: number | undefined } = {}
+    let streamed: NodeJS.ReadableStream | undefined
     const ctx = {
       header: (name: string) => headers[name],
       send: (opts: { status?: number }) => { sent.status = opts.status },
       json: (_payload: unknown, opts: { status?: number } = {}) => { sent.status = opts.status },
+      sendStream: async (opts: { status?: number }, stream: NodeJS.ReadableStream) => {
+        sent.status = opts.status
+        streamed = stream
+        for await (const _chunk of stream) { /* drain */ }
+      },
     } as unknown as RequestContext
     let thrown: unknown
     try { (await serveFileBytes(ctx, file, { mime: 'image/png', disposition: 'inline', cacheControl: 'private, max-age=0' })) } catch (error) { thrown = error }
-    // A second close of a freed descriptor number can close another request's file.
-    expect(vi.mocked(closeSync)).toHaveBeenCalledTimes(1)
+    // A second close of a freed descriptor number can close another request's file: a streamed body closes its own.
+    if (streamed && !(streamed as unknown as { closed: boolean }).closed) await once(streamed as unknown as NodeJS.EventEmitter, 'close')
+    expect(vi.mocked(closeSync)).toHaveBeenCalledTimes(closes)
     expect(thrown).toBeUndefined()
     return sent
   }
 
-  it('closes a buffered 200 response descriptor once', async () => {
-    expect((await serve({})).status).toBe(200)
+  it('hands a 200 response descriptor to its stream without closing it here', async () => {
+    expect((await serve({}, 0)).status).toBe(200)
   })
 
-  it('closes a 206 range response descriptor once', async () => {
-    expect((await serve({ range: 'bytes=0-2' })).status).toBe(206)
+  it('hands a 206 range response descriptor to its stream without closing it here', async () => {
+    expect((await serve({ range: 'bytes=0-2' }, 0)).status).toBe(206)
   })
 
   it('closes a 416 response descriptor once', async () => {
-    expect((await serve({ range: 'bytes=99-' })).status).toBe(416)
+    expect((await serve({ range: 'bytes=99-' }, 1)).status).toBe(416)
   })
 })
 
@@ -84,10 +92,10 @@ describe('serveFileBytes bounded asynchronous IO (TAL-1243)', () => {
     io.bytes = io.syncBytes = 0
     vi.mocked(closeSync).mockClear()
   })
-  afterEach(() => { io.intercept = undefined; io.readError = false; vi.mocked(createReadStream).mockClear(); rmSync(root, { recursive: true, force: true }) })
+  afterEach(() => { vi.mocked(createReadStream).mockClear(); rmSync(root, { recursive: true, force: true }) })
 
   const serve = async (headers: Record<string, string> = {}, target = file, overrides: Partial<ServeFileOptions> = {}, contextOverrides: Partial<RequestContext> = {}) => {
-    const sent = { status: 0, headers: {} as Record<string, string>, body: Buffer.alloc(0) }
+    const sent = { status: 0, headers: {} as Record<string, string>, body: Buffer.alloc(0), maxChunk: 0 }
     const ctx = {
       header: (name: string) => headers[name],
       send: (opts: { status: number; headers?: Record<string, string>; body?: Buffer }) => { Object.assign(sent, opts) },
@@ -95,7 +103,7 @@ describe('serveFileBytes bounded asynchronous IO (TAL-1243)', () => {
       sendStream: async (opts: { status: number; headers: Record<string, string> }, stream: AsyncIterable<Buffer>) => {
         Object.assign(sent, opts)
         const chunks: Buffer[] = []
-        for await (const chunk of stream) { io.bytes += chunk.length; chunks.push(chunk) }
+        for await (const chunk of stream) { io.bytes += chunk.length; sent.maxChunk = Math.max(sent.maxChunk, chunk.length); chunks.push(chunk) }
         sent.body = Buffer.concat(chunks)
       },
     } as unknown as RequestContext
@@ -103,6 +111,22 @@ describe('serveFileBytes bounded asynchronous IO (TAL-1243)', () => {
     await serveFileBytes(ctx, target, { ...options, ...overrides })
     return sent
   }
+
+  it('streams a 10 MB file in bounded chunks under its descriptor-signature validator without hashing (TAL-1729)', async () => {
+    const bytes = randomBytes(10 * 1024 * 1024)
+    writeFileSync(file, bytes)
+    vi.mocked(createHash).mockClear()
+    vi.mocked(read).mockClear()
+    const response = await serve()
+    expect(response.status).toBe(200)
+    expect(vi.mocked(createHash)).not.toHaveBeenCalled()
+    expect(vi.mocked(read)).not.toHaveBeenCalled()
+    expect(response.maxChunk).toBeGreaterThan(0)
+    expect(response.maxChunk).toBeLessThanOrEqual(256 * 1024)
+    expect(response.body.equals(bytes)).toBe(true)
+    const st = statSync(file, { bigint: true })
+    expect(response.headers.ETag).toBe(`W/"${String(st.ino)}-${String(st.size)}-${String(st.mtimeNs)}-${String(st.ctimeNs)}"`)
+  })
 
   it('reads only the selected byte on repeated uncached ranges', async () => {
     for (let i = 0; i < 2; i++) {
@@ -121,23 +145,10 @@ describe('serveFileBytes bounded asynchronous IO (TAL-1243)', () => {
     const response = await serve({ 'if-none-match': full.headers.ETag! })
     expect(response.status).toBe(304)
     expect(io.bytes).toBe(0)
-    expect(vi.mocked(closeSync)).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(closeSync)).toHaveBeenCalledTimes(1)
   })
 
-  it('yields to controlled asynchronous descriptor IO before responding', async () => {
-    let release: (() => void) | undefined
-    io.intercept = (resume) => { release = resume }
-    let finished = false
-    const pending = serve().then(() => { finished = true })
-    await Promise.resolve()
-    expect(finished).toBe(false)
-    expect(release).toBeTypeOf('function')
-    release!()
-    await pending
-    expect(io.syncBytes).toBe(0)
-  })
-
-  it('keeps cached validators on ranges while reading only the span', async () => {
+  it('keeps the full-response validator on ranges while reading only the span', async () => {
     const full = await serve()
     io.bytes = 0
     const response = await serve({ range: 'bytes=7-9' })
@@ -158,19 +169,14 @@ describe('serveFileBytes bounded asynchronous IO (TAL-1243)', () => {
     expect(response.status).toBe(status)
     expect(response.body).toHaveLength(length)
     expect(io.bytes).toBe(length)
-    expect(vi.mocked(closeSync)).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(closeSync)).toHaveBeenCalledTimes(status === 416 ? 1 : 0)
   })
 
-  it('computes a cold conditional validator and then reuses it before range handling', async () => {
-    writeFileSync(file, 'same content')
+  it('answers a matching conditional before range handling without reading bytes', async () => {
     const full = await serve()
-    const other = join(root, 'other.png')
-    writeFileSync(other, 'same content')
     io.bytes = 0
-    expect((await serve({ 'if-none-match': full.headers.ETag!, range: 'bytes=0-0' }, other)).status).toBe(304)
-    expect(io.bytes).toBe(12)
-    io.bytes = 0
-    expect((await serve({ 'if-none-match': full.headers.ETag!, range: 'bytes=99-' }, other)).status).toBe(304)
+    expect((await serve({ 'if-none-match': full.headers.ETag!, range: 'bytes=0-0' })).status).toBe(304)
+    expect((await serve({ 'if-none-match': full.headers.ETag!, range: 'bytes=99999999-' })).status).toBe(304)
     expect(io.bytes).toBe(0)
   })
 
@@ -184,40 +190,12 @@ describe('serveFileBytes bounded asynchronous IO (TAL-1243)', () => {
     expect(vi.mocked(closeSync)).toHaveBeenCalledTimes(2)
   })
 
-  it('checks a missing or hard-linked file before using a cached validator', async () => {
+  it('checks a missing or hard-linked file before matching a validator', async () => {
     const full = await serve()
     linkSync(file, join(root, 'hard-link'))
     expect((await serve({ 'if-none-match': full.headers.ETag! }, file, { denyHardLinks: true })).status).toBe(403)
     rmSync(file)
     expect((await serve({ 'if-none-match': full.headers.ETag! })).status).toBe(404)
-    expect(vi.mocked(closeSync)).toHaveBeenCalledTimes(2)
-  })
-
-  it('evicts old validators once the bounded cache fills', async () => {
-    writeFileSync(file, 'original')
-    const full = await serve()
-    for (let i = 0; i < 256; i++) {
-      const other = join(root, `other-${i}`)
-      writeFileSync(other, String(i))
-      await serve({}, other)
-    }
-    io.bytes = 0
-    expect((await serve({ 'if-none-match': full.headers.ETag! })).status).toBe(304)
-    expect(io.bytes).toBe(8)
-  })
-
-  it('closes the descriptor on asynchronous read failure', async () => {
-    io.readError = true
-    await expect(serve()).rejects.toThrow('read failed')
-    expect(vi.mocked(closeSync)).toHaveBeenCalledTimes(1)
-  })
-
-  it('does not cache a validator for an inode truncated during asynchronous IO', async () => {
-    io.intercept = (resume) => { truncateSync(file, 0); resume() }
-    const response = await serve()
-    expect(response.status).toBe(200)
-    expect(response.body).toHaveLength(0)
-    expect(response.headers.ETag).toBeUndefined()
     expect(vi.mocked(closeSync)).toHaveBeenCalledTimes(1)
   })
 
