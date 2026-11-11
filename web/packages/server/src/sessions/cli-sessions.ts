@@ -67,6 +67,12 @@ function dbStamp(path: string): string | null {
   try { return settledFileStatKey(path) } catch { return 'missing' }
 }
 
+/** The identity of a `state.db` and its WAL as they stand; null within the Agent's two-second write window. */
+export function stateDbStamp(dbPath: string): string | null {
+  const stamps = [dbStamp(dbPath), dbStamp(`${dbPath}-wal`)]
+  return stamps.includes(null) ? null : stamps.join('\n')
+}
+
 interface CacheSlot { cacheKey: string; key: string | null; dbPath: string; sourceFilter: string | null; sessionIds: readonly string[] | null; keepEmpty: boolean; sidebarRows: boolean }
 /** A query's rows, or the error a background kind's read failed with. */
 type QueryResult = Dict[] | Error
@@ -111,9 +117,9 @@ export class CliSessionSource {
     const dbPath = this.dbPath(profile)
     const sourceFilter = str(opts.sourceFilter).trim().toLowerCase() || null
     const sessionIds = opts.sessionIds ?? null
-    const stamps = [dbStamp(dbPath), dbStamp(`${dbPath}-wal`)]
+    const stamp = stateDbStamp(dbPath)
     const revision = await this.deps.store.index().then((index) => index.revision, () => '')
-    return { cacheKey: JSON.stringify([profile, sourceFilter, sessionIds === null ? null : [...new Set(sessionIds)].sort(), opts.keepEmpty === true, opts.sidebarRows === true]), key: stamps.includes(null) ? null : `${dbPath}\n${stamps.join('\n')}\n${revision}`, dbPath, sourceFilter, sessionIds, keepEmpty: opts.keepEmpty === true, sidebarRows: opts.sidebarRows === true }
+    return { cacheKey: JSON.stringify([profile, sourceFilter, sessionIds === null ? null : [...new Set(sessionIds)].sort(), opts.keepEmpty === true, opts.sidebarRows === true]), key: stamp === null ? null : `${dbPath}\n${stamp}\n${revision}`, dbPath, sourceFilter, sessionIds, keepEmpty: opts.keepEmpty === true, sidebarRows: opts.sidebarRows === true }
   }
 
   private cached(slot: CacheSlot): CliSessionRead | null {

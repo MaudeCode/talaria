@@ -17,7 +17,7 @@ import { PresenceLeases, RelayService } from './sessions/relay.js'
 import { ActivityStates } from './sessions/notify/activity.js'
 import { NotificationHub } from './sessions/notify/channel.js'
 import { liveLoginHashes, loginHash, WebPushChannel } from './sessions/notify/web-push.js'
-import { CliSessionSource } from './sessions/cli-sessions.js'
+import { CliSessionSource, stateDbStamp } from './sessions/cli-sessions.js'
 import { ClaudeCodeSessionSource, claudeCodeProjectsDir } from './sessions/claude-code.js'
 import { GatewayWatcherRegistry } from './sessions/gateway-watcher.js'
 import { GatewaySessions, gatewayStreamVisible } from './sessions/gateway-sessions.js'
@@ -558,7 +558,8 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   const relay = new RelayService({
     events,
     registry, pending, store, background, activitySummary: (session) => sessions.activitySummary(session), presence, activity, profileHome, profilesMatch, fetch: () => lazyFetch, now, log,
-    agentSessions: (profile) => readImportableAgentSessionRowsAsync(join(profileHome(profile), 'state.db')),
+    agentSessions: (profile) => readImportableAgentSessionRowsAsync(cliSessions.dbPath(profile)),
+    agentSessionsStamp: (profile) => stateDbStamp(cliSessions.dbPath(profile)),
     personIsolation: () => personIsolationEnabled(env),
     agentSessionOwner: (sid, profile) => sessions.foreignOwnerOf(sid, profile),
     documents: storage.documents, env, canonicalProfile: (p) => (isRootProfile(p) ? 'default' : p), redactEnabled: sessions.deps.redactEnabled,

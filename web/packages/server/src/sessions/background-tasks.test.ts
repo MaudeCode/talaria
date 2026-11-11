@@ -224,7 +224,7 @@ it('does not recreate deleted background receipts when an earlier Agent read fin
   release()
   await rejected
   expect(await store.list('session')).toEqual([])
-  expect(await store.sessionIds()).toEqual([])
+  expect(await store.sessionIds(0)).toEqual([])
 })
 
 /** TAL-1299: a document backend whose next reads can be held after reading, or fail once, on demand. */
@@ -361,5 +361,44 @@ describe('delegation summary (TAL-1579)', () => {
     expect(derived).toEqual(fixture)
     // Not asked (no sidecar, or the read failed) is unknown, never zero.
     expect(delegationStatus(null, { owned: false, hasDelegations: true })).toEqual(fixture.unknown)
+  })
+})
+
+describe('recent background sessions (TAL-1722)', () => {
+  it('keep receipts for at most 64 sessions in memory and list live or recently finished sessions without reading storage', async () => {
+    const docs = testSessionDocuments(tempDir())
+    let reads = 0
+    const counted: DocumentBackend = {
+      get: (namespace, key, opts) => { reads += 1; return docs.get(namespace, key, opts) },
+      put: (namespace, key, value, expected) => docs.put(namespace, key, value, expected),
+      delete: (namespace, key, expected) => docs.delete(namespace, key, expected),
+      list: (namespace) => { reads += 1; return docs.list(namespace) },
+    }
+    const store = new BackgroundTaskStore(counted, () => 100)
+    expect(await store.sessionIds(0)).toEqual([])
+    await store.update('live', [{ task_id: 'bg', kind: 'background_command', status: 'running', title: 'still going' }])
+    for (let i = 0; i < 100; i++) {
+      await store.update(`s${String(i)}`, [{ task_id: 'bg', kind: 'background_command', status: 'running', title: 'work' }])
+      await store.update(`s${String(i)}`, [{ task_id: 'bg', kind: 'background_command', status: 'completed', result: 'done' }])
+    }
+    expect((store as unknown as { cache: Map<string, unknown> }).cache.size).toBeLessThanOrEqual(64)
+    reads = 0
+    expect(await store.sessionIds(100)).toHaveLength(101)
+    expect(await store.sessionIds(101)).toEqual(['live'])
+    expect(reads).toBe(0)
+    // A restarted server finds the live session again from storage.
+    expect(await new BackgroundTaskStore(counted, () => 200).sessionIds(101)).toEqual(['live'])
+  })
+
+  it('retry a receipt read that failed while first listing storage', async () => {
+    const dir = tempDir()
+    await new BackgroundTaskStore(testSessionDocuments(dir), () => 100).update('live', [{ task_id: 'bg', kind: 'background_command', status: 'running', title: 'still going' }])
+    const reads = controlledReads(testSessionDocuments(dir))
+    const store = new BackgroundTaskStore(reads.backend, () => 200)
+    // The listing's read and the same call's retry both fail; a later call reads it again.
+    reads.failNext()
+    reads.failNext()
+    expect(await store.sessionIds(0)).toEqual([])
+    expect(await store.sessionIds(0)).toEqual(['live'])
   })
 })

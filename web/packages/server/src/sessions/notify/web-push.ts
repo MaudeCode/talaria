@@ -85,6 +85,8 @@ export class WebPushChannel implements NotificationChannel {
   private readonly lastPhase = new Map<string, Map<string, { phase: string; decision: string | null; notices: string[] }>>()
   private readonly inFlight = new Set<Promise<void>>()
   private dirty = false
+  /** The hub change the next pass answers, while no other change followed it. */
+  private change: number | undefined
   private running: Promise<void> | null = null
   private stopped = false
 
@@ -92,8 +94,9 @@ export class WebPushChannel implements NotificationChannel {
 
   stop(): void { this.stopped = true }
 
-  changed(): void {
+  changed(change?: number): void {
     if (this.stopped) return
+    this.change = change
     this.dirty = true
     this.running ??= this.run().finally(() => { this.running = null })
   }
@@ -190,11 +193,13 @@ export class WebPushChannel implements NotificationChannel {
   private async run(): Promise<void> {
     while (this.dirty && !this.stopped) {
       this.dirty = false
-      try { await this.pass() } catch (error) { this.deps.log(`[web-push] notification pass failed (${(error as Error).message})`) }
+      const change = this.change
+      this.change = undefined
+      try { await this.pass(change) } catch (error) { this.deps.log(`[web-push] notification pass failed (${(error as Error).message})`) }
     }
   }
 
-  private async pass(): Promise<void> {
+  private async pass(change: number | undefined): Promise<void> {
     let subs = await this.subscriptions()
     if (!subs.length && !this.lastPhase.size) return
     const live = await this.deps.liveLogins()
@@ -208,7 +213,7 @@ export class WebPushChannel implements NotificationChannel {
     const profiles = new Set(subs.map((s) => s.profile))
     for (const profile of this.lastPhase.keys()) if (!profiles.has(profile)) this.lastPhase.delete(profile)
     for (const profile of profiles) {
-      const rows = await this.deps.activity.states(profile, () => { this.changed() })
+      const rows = await this.deps.activity.states(profile, () => { this.changed() }, change)
       const previous = this.lastPhase.get(profile)
       const next = new Map<string, { phase: string; decision: string | null; notices: string[] }>()
       for (const row of rows) {
