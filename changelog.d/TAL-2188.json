@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Provider quotas now say when an OpenCode Go API key has expired and that it needs a replacement key, instead of a generic rejected-key message, and keep saying so while provider data is briefly unavailable.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

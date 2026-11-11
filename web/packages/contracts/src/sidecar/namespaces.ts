@@ -534,10 +534,10 @@ const BalanceNumber = z.number().nullable()
 /**
  * TAL-548: one key-based balance read. The key is the pool entry's (`credential_id`), a raw `api_key`, or resolved from `env_vars` in the profile's secret scope.
  * `ok` carries the provider's sanitised fields: OpenRouter `quota`/`label`, DeepSeek `balances`/`is_available`, OpenCode Go
- * `windows`; `http_error` carries the status code.
+ * `windows`; `http_error` carries the status code and, for a 401, the provider's `error.code` when it is allowlisted (TAL-2188).
  */
 export const BalanceResultSchema = z.object({
-  status: z.enum(['ok', 'no_key', 'http_error', 'unavailable']), http_status: z.number().int().nullable(),
+  status: z.enum(['ok', 'no_key', 'http_error', 'unavailable']), http_status: z.number().int().nullable(), error_code: z.enum(['api_key_expired']).nullable().default(null),
   quota: z.object({ limit_remaining: BalanceNumber, usage: BalanceNumber, limit: BalanceNumber }).nullable(), label: z.string().nullable(),
   is_available: z.boolean().nullable(), balances: z.array(z.object({ currency: z.enum(['CNY', 'USD']), total: z.number(), granted: BalanceNumber, topped_up: BalanceNumber })),
   windows: z.array(z.object({ key: z.enum(['rolling', 'weekly', 'monthly']), used_percent: z.number(), reset_at: z.string(), rate_limited: z.boolean() })),

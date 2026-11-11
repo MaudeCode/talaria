@@ -10086,6 +10086,20 @@
           }
         ]
       },
+      "error_code": {
+        "default": null,
+        "anyOf": [
+          {
+            "type": "string",
+            "enum": [
+              "api_key_expired"
+            ]
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "quota": {
         "anyOf": [
           {
@@ -10207,6 +10221,7 @@
     "required": [
       "status",
       "http_status",
+      "error_code",
       "quota",
       "label",
       "is_available",

@@ -208,6 +208,9 @@ _BALANCE_URLS = {
 }
 _BALANCE_TIMEOUT_SECONDS = 15.0
 _BALANCE_MAX_BYTES = 256 * 1024
+# TAL-2188: a refusal's `error.code` the server can act on. Only these names leave the sidecar; the body never does.
+_BALANCE_ERROR_CODES = frozenset({"api_key_expired"})
+_BALANCE_ERROR_MAX_BYTES = 4 * 1024
 
 
 class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
@@ -282,9 +285,21 @@ def _opencode_go(payload: Any) -> dict | None:
 _BALANCE_PARSERS = {"openrouter": _openrouter, "deepseek": _deepseek, "opencode-go": _opencode_go}
 
 
+def _error_code(exc: urllib.error.HTTPError) -> str | None:
+    """The allowlisted `error.code` of a small JSON refusal body, read under the request's socket deadline; else None."""
+    try:
+        raw = exc.read(_BALANCE_ERROR_MAX_BYTES + 1)
+        payload = json.loads(raw.decode("utf-8")) if len(raw) <= _BALANCE_ERROR_MAX_BYTES else None
+    except (OSError, ValueError, RecursionError, http.client.HTTPException):
+        return None
+    error = payload.get("error") if isinstance(payload, dict) else None
+    code = error.get("code") if isinstance(error, dict) else None
+    return code if isinstance(code, str) and code in _BALANCE_ERROR_CODES else None
+
+
 def balance(provider: str, *, credential_id: str | None, api_key: str | None, env_vars: list[str] | None = None) -> dict:
     """One key-based balance read. A pool credential's key resolves here; otherwise resolve the configured key inside the profile scope."""
-    result = {"status": "unavailable", "http_status": None, "quota": None, "label": None, "is_available": None, "balances": [], "windows": []}
+    result = {"status": "unavailable", "http_status": None, "error_code": None, "quota": None, "label": None, "is_available": None, "balances": [], "windows": []}
     key = ""
     if credential_id:
         entry = _entry(provider, credential_id)
@@ -301,8 +316,8 @@ def balance(provider: str, *, credential_id: str | None, api_key: str | None, en
             raise ValueError("oversized balance response")
         parsed = _BALANCE_PARSERS[provider](json.loads(raw.decode("utf-8")))
     except urllib.error.HTTPError as exc:
-        exc.close()
-        return {**result, "status": "http_error", "http_status": exc.code}
+        with exc:
+            return {**result, "status": "http_error", "http_status": exc.code, "error_code": _error_code(exc) if exc.code == 401 else None}
     except (OSError, ValueError, http.client.HTTPException):  # URLError and timeouts are OSErrors; malformed JSON or UTF-8 are ValueErrors; a non-HTTP or truncated answer is an HTTPException
         log.debug("%s balance read failed", provider, exc_info=True)
         return result

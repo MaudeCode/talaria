@@ -890,6 +890,68 @@ describe.skipIf(!python)('usage.balance numbers on the wire (TAL-1655)', () => {
   })
 })
 
+describe('OpenCode Go key refusals (TAL-2188)', () => {
+  const expired = 'OpenCode Go API key has expired. Create a replacement API key; signing in again does not renew it.'
+  const refusal = (http_status: number, error_code: 'api_key_expired' | null = null) => ({ status: 'http_error' as const, http_status, error_code, label: null, quota: null, is_available: null, balances: [], windows: [] })
+  const ok = { status: 'ok' as const, http_status: null, label: null, quota: null, is_available: null, balances: [], windows: [{ key: 'rolling' as const, used_percent: 3, reset_at: '2030-01-01T00:00:00Z', rate_limited: false }] }
+
+  it('names an expired key through the available pool account that holds it, keeps it on stale and targeted reads, and recovers on a replacement', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'talaria-expired-key-'))
+    try {
+      writeFileSync(join(home, 'config.yaml'), '# synthetic configuration\n')
+      writeEnvFile(join(home, '.env'), { OPENCODE_GO_API_KEY: 'sk-synthetic-expired' })
+      let balance: Json = ok
+      let poolDown = false
+      const sidecar = new FakeSidecar()
+      sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config: { model: { provider: 'opencode-go' } } }))
+      sidecar.respond('usage.pool_providers', () => ({ providers: ['opencode-go'], keys: {} }))
+      sidecar.respond('usage.pool', (p) => {
+        if (poolDown) throw new Error('synthetic pool outage')
+        return { has_api_key: true, entries: p.provider === 'opencode-go' ? [{ credential_id: 'work', label: 'Work', status: 'available', unavailable_reason: null, retry_after: null, matches_api_key: true }] : [] }
+      })
+      sidecar.respond('usage.balance', () => balance as never)
+      sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: [] }))
+      let clock = 1_800_000_000
+      const catalog = new ProviderCatalog({ sidecar: () => sidecar, config: new AgentConfig({ sidecar: () => sidecar, env: {} }), env: {}, now: () => clock, log: () => undefined, costBudget: () => null, isRootProfileHome: () => true })
+      const rows = async (opts: { sourceId?: string; refresh?: boolean } = {}) => ((await catalog.quotas(home, 'synthetic', { refresh: true, ...opts })).sources as Json[]).filter((s) => s.provider_id === 'opencode-go')
+      const [confirmed] = await rows()
+      expect(confirmed).toMatchObject({ account_label: 'Work', status: 'available' })
+      const id = confirmed!.source_id as string
+
+      balance = refusal(401, 'api_key_expired')
+      clock += 100
+      expect(await catalog.quota(home, 'opencode-go')).toMatchObject({ ok: false, status: 'invalid_key', message: expired })
+      const refused = { source_id: id, status: 'invalid_key', status_message: expired, display_level: 'unavailable' }
+      expect(await rows()).toEqual([expect.objectContaining(refused)])
+      expect(await rows({ sourceId: id })).toEqual([expect.objectContaining(refused)])
+      // An unconfirmed pool keeps the source and its actionable reason, never the generic stale caption.
+      poolDown = true
+      clock += 100
+      expect(await rows()).toEqual([expect.objectContaining(refused)])
+      expect(await rows({ sourceId: id })).toEqual([expect.objectContaining(refused)])
+      expect((await catalog.cachedQuotaSources(home, 'synthetic'))?.filter((s) => s.provider_id === 'opencode-go')).toEqual([expect.objectContaining(refused)])
+
+      poolDown = false
+      for (const [read, status, message] of [
+        [refusal(401), 'invalid_key', 'OpenCode Go rejected the configured API key.'],
+        [refusal(403), 'unavailable', 'OpenCode Go account limits require an active subscription.'],
+        [refusal(503), 'unavailable', 'OpenCode Go account limits are temporarily unavailable.'],
+        [{ ...refusal(0), status: 'unavailable', http_status: null }, 'unavailable', 'OpenCode Go account limits are temporarily unavailable.'],
+        [{ ...refusal(0), status: 'no_key', http_status: null }, 'no_key', 'OpenCode Go account limits need an API key configured on the server.'],
+      ] as const) {
+        balance = read
+        clock += 100
+        expect(await catalog.quota(home, 'opencode-go'), message).toMatchObject({ ok: false, status, message })
+      }
+      balance = ok
+      clock += 100
+      expect(await rows()).toEqual([expect.objectContaining({ source_id: id, status: 'available' })])
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('OpenRouter cost history arithmetic (TAL-1655)', () => {
   it('reports no pace when finite daily usage sums past the largest number', async () => {
     const home = mkdtempSync(join(tmpdir(), 'talaria-cost-overflow-'))

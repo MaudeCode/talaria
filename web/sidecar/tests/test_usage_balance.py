@@ -32,13 +32,14 @@ class _Response(io.BytesIO):
 
 
 def _stub_http(monkeypatch, body=None, *, status: int | None = None) -> list:
-    """Answer every request with ``body`` (JSON, or raw bytes), or an HTTP error ``status``; returns the requests made."""
+    """Answer every request with ``body`` (JSON, or raw bytes), or an HTTP error ``status`` carrying ``body``; returns the requests made."""
     requests = []
 
     def urlopen(request, timeout=None):
         requests.append(request)
         if status is not None:
-            raise urllib.error.HTTPError(request.full_url, status, "error", {}, None)
+            error_body = b"" if body is None else body if isinstance(body, bytes) else json.dumps(body).encode()
+            raise urllib.error.HTTPError(request.full_url, status, "error", {}, io.BytesIO(error_body))
         return _Response(body if isinstance(body, bytes) else json.dumps(body).encode())
 
     monkeypatch.setattr(usage, "_open_balance", urlopen)
@@ -155,6 +156,29 @@ def test_http_errors_carry_the_status_and_failures_read_as_unavailable(monkeypat
     assert _read("openrouter")["status"] == "unavailable"
     _stub_http(monkeypatch, b"{" + b" " * (256 * 1024) + b"}")
     assert _read("openrouter")["status"] == "unavailable"
+
+
+def test_an_expired_key_refusal_carries_only_its_allowlisted_code(monkeypatch):
+    """TAL-2188: a 401's bounded JSON body names a recognised provider code; nothing else in it leaves the sidecar."""
+    secret = "sk-synthetic-expired-key"
+    leaky = {"type": "error", "error": {"code": "api_key_expired", "message": f"Key {secret} for acct@example.test expired; see https://example.test/keys \u2603"}}
+    _stub_http(monkeypatch, leaky, status=401)
+    result = _read("opencode-go", api_key=secret)
+    assert (result["status"], result["http_status"], result.get("error_code")) == ("http_error", 401, "api_key_expired")
+    assert all(term not in json.dumps(result) for term in (secret, "acct@", "example.test", "expired;", "\\u2603"))
+    deep = b"[" * 100_000 + b"]" * 100_000
+    for body in ({"error": {"code": "something_else"}}, {"error": {"code": ["api_key_expired"]}}, {"error": "api_key_expired"}, {"code": "api_key_expired"}, b"<html>api_key_expired</html>", b"not json", deep,
+                 b'{"error":{"code":"api_key_expired"}}' + b" " * (64 * 1024), b"\xff\xfe", None):
+        _stub_http(monkeypatch, body, status=401)
+        result = _read("opencode-go", api_key=secret)
+        assert (result["status"], result["http_status"], result["error_code"]) == ("http_error", 401, None), body if not isinstance(body, bytes) else body[:40]
+        assert secret not in json.dumps(result)
+    for status in (403, 404, 429, 503):
+        _stub_http(monkeypatch, {"error": {"code": "api_key_expired"}}, status=status)
+        result = _read("opencode-go")
+        assert (result["http_status"], result["error_code"]) == (status, None)
+    _stub_http(monkeypatch, b"not json")
+    assert _read("opencode-go")["error_code"] is None
 
 
 def test_no_key_makes_no_request(monkeypatch):
@@ -492,8 +516,10 @@ def test_a_quota_redirect_never_reaches_another_origin(monkeypatch, status):
 
 
 def test_a_loopback_quota_read_still_parses_and_bounds_failures(monkeypatch):
-    """Normal 200s parse over a real socket; malformed, oversized, truncated, slow, and non-HTTP answers read as unavailable."""
+    """Normal 200s parse over a real socket; malformed, oversized, truncated, slow, and non-HTTP answers read as unavailable.
+    A refusal's body is read under the same deadline (TAL-2188): a prompt one keeps its code, a stalled one drops it."""
     body = json.dumps({"data": {"usage": 3, "limit": 100, "label": "synthetic"}}).encode()
+    expired = b'{"error":{"code":"api_key_expired"}}'
     monkeypatch.setattr(usage, "_BALANCE_TIMEOUT_SECONDS", 0.3)
 
     def truncated(h):
@@ -505,6 +531,13 @@ def test_a_loopback_quota_read_still_parses_and_bounds_failures(monkeypatch):
     def not_http(h):
         h.wfile.write(b"NOT HTTP AT ALL\r\n\r\n")
 
+    def stalled_refusal(h):
+        h.send_response(401)
+        h.send_header("Content-Length", str(len(expired)))
+        h.end_headers()
+        h.wfile.flush()
+        time.sleep(1.5)
+
     answers = {
         "ok": lambda h: _send(h, 200, body),
         "malformed": lambda h: _send(h, 200, b"not json"),
@@ -512,13 +545,22 @@ def test_a_loopback_quota_read_still_parses_and_bounds_failures(monkeypatch):
         "truncated": truncated,
         "slow": lambda h: time.sleep(1.5),
         "not_http": not_http,
+        "expired": lambda h: _send(h, 401, expired, {"Content-Type": "application/json"}),
+        "stalled_refusal": stalled_refusal,
     }
+    refusals = {"expired": ("http_error", 401, "api_key_expired"), "stalled_refusal": ("http_error", 401, None)}
     for name, respond in answers.items():
         with _loopback(respond) as (base, _):
             monkeypatch.setitem(usage._BALANCE_URLS, "openrouter", f"{base}/key")
+            started = time.monotonic()
             result = _read("openrouter", api_key="sk-synthetic-bounds")
+            elapsed = time.monotonic() - started
+        assert elapsed < 1.2, name
+        assert "sk-synthetic" not in json.dumps(result), name
+        if name in refusals:
+            assert (result["status"], result["http_status"], result["error_code"]) == refusals[name], name
+            continue
         expected = "ok" if name == "ok" else "unavailable"
         assert result["status"] == expected, name
-        assert "sk-synthetic" not in json.dumps(result), name
         if name == "ok":
             assert result["label"] == "synthetic" and result["quota"]["usage"] == 3
