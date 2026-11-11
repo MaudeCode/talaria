@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
-import { Mic, Paperclip, Square, ArrowUp, ListPlus, Layers } from 'lucide-react'
+import { Mic, Paperclip, Square, ArrowUp, ListPlus, Layers, CornerUpRight, SkipForward } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import type { Session, Settings } from '../../contracts'
@@ -39,6 +39,13 @@ import { stopSpeaking } from '../voice/tts'
 import { PHONE_QUERY } from '../../shell/useShellState'
 
 export type BusyMode = 'steer' | 'queue' | 'interrupt'
+
+/** Keyboard input only: Ctrl is the send chord on Windows/Linux when that setting is enabled. */
+export function effectiveBusyMode(mode: BusyMode, modifiers: { ctrlKey: boolean; altKey: boolean; shiftKey: boolean }, platform: string, sendKey: string): BusyMode {
+  if (modifiers.altKey) return 'interrupt'
+  const alternate = modifiers.ctrlKey && (sendKey !== 'ctrl+enter' || /mac/i.test(platform) || modifiers.shiftKey)
+  return alternate ? mode === 'queue' ? 'steer' : 'queue' : mode
+}
 /** TAL-2155: moves this chat's draft text and staged files to the composer of another chat, which adopts them. */
 export interface DraftHandover { handTo: (sessionId: string) => void }
 
@@ -304,6 +311,18 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
   useEffect(() => dropDictation, [dropDictation])
   const busyMode: BusyMode = (settings?.default_message_mode as BusyMode | undefined) ?? 'steer'
   const sendKey = settings?.send_key ?? 'enter'
+  const [platform] = useState(() => (navigator as Navigator & { userAgentData?: { platform: string } }).userAgentData?.platform ?? navigator.platform)
+  const [modifiers, setModifiers] = useState({ ctrlKey: false, altKey: false, shiftKey: false })
+  const resetModifiers = () => setModifiers((held) => held.ctrlKey || held.altKey || held.shiftKey ? { ctrlKey: false, altKey: false, shiftKey: false } : held)
+  const trackModifiers = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    const { ctrlKey, altKey, shiftKey } = event
+    setModifiers((held) => held.ctrlKey === ctrlKey && held.altKey === altKey && held.shiftKey === shiftKey ? held : { ctrlKey, altKey, shiftKey })
+  }
+  useEffect(() => {
+    window.addEventListener('blur', resetModifiers)
+    return () => window.removeEventListener('blur', resetModifiers)
+  }, [])
+  const effectiveMode = effectiveBusyMode(busyMode, modifiers, platform, sendKey)
   // While a clarification is pending the box edits its answer; the chat draft keeps its own state.
   const [answerDraft, setAnswerDraft] = useState({ key: '', text: '' })
   const answerKey = clarify ? JSON.stringify([sessionId, clarify.pending.clarify_id, clarify.step.qid, clarify.inputRevision]) : ''
@@ -570,7 +589,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
   const { ask: askBtw, notice: btwNotice } = useBtw(sessionId)
   const { run: runCommand, notice: commandNotice } = useCommandOutput(sessionId)
 
-  const send = async () => {
+  const send = async (mode: BusyMode = effectiveMode) => {
     if (locked) return
     const value = text.trim()
     if (submitting.current || sending || (sessionId && getTurnIntent(sessionId).send)) return
@@ -650,8 +669,8 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
         return
       }
       if (busy && sessionId && !nativeOwner) {
-        if (busyMode === 'queue') { onQueue(queueEntry(value)); setText(''); setFiles([]); return }
-        if (busyMode === 'steer') { await trySteer(value); return }
+        if (mode === 'queue') { onQueue(queueEntry(value)); setText(''); setFiles([]); return }
+        if (mode === 'steer') { await trySteer(value); return }
         interrupt(value)
         return
       }
@@ -695,6 +714,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
 
   const applySuggestion = (s: CommandSuggestion) => { setText(`/${s.name} `); textarea.current?.focus() }
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    trackModifiers(e)
     wake()
     if (isImeEnter(e)) return
     if (palette.handleKey(e, applySuggestion)) return
@@ -703,11 +723,15 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
     if (clarify) { if (!e.shiftKey) { e.preventDefault(); clarify.send(value) } return }
     const isNumpad = e.code === 'NumpadEnter'
     const mobile = window.matchMedia(PHONE_QUERY).matches
+    const mac = /mac/i.test(platform)
+    if (e.shiftKey && !(sendKey === 'ctrl+enter' && !mac && e.ctrlKey)) return
+    const mode = effectiveBusyMode(busyMode, e, platform, sendKey)
     if (sendKey === 'ctrl+enter' || mobile) {
-      if (isNumpad || e.ctrlKey || e.metaKey) { e.preventDefault(); void send() }
+      if (isNumpad || e.ctrlKey || (mac || mobile) && e.metaKey) { e.preventDefault(); void send(mode) }
       return
     }
-    if (!e.shiftKey) { e.preventDefault(); void send() }
+    e.preventDefault()
+    void send(mode)
   }
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
     // A clarification answer is text only: pasted files and long text stay out of the parked message.
@@ -840,7 +864,12 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
     ...(sessionId && (queued.length > 0 || ownerInputs) ? [{ id: 'queue', tone: outcomeUnknown ? 'warning' as const : undefined, content: <><ListPlus size={13} className="shrink-0" aria-hidden="true" /><span className="truncate">{outcomeUnknown ? m.owner_outcome_unknown() : m.queued_count({ n: queued.length + ownerInputs })}</span></>, detail: { title: ownerInputs ? m.owner_inputs() : m.queued_count({ n: queued.length }), content: <QueueCard sessionId={sessionId} queued={queued} onChange={onQueueChange} pendingId={intent.send?.queueId} admissions={admissions} onAdmissionAction={props.onOwnerAction} /> } }] : []),
   ]
   // A `/btw` draft asks beside the turn instead of steering, queueing or interrupting it (TAL-518).
-  const busyLabel = nativeOwner ? m.composer_send() : intent.stop ? m.composer_queue() : parseCommand(text)?.name === 'btw' ? m.composer_send() : busyMode === 'queue' ? m.composer_queue() : busyMode === 'interrupt' ? m.composer_interrupt() : m.composer_steer()
+  const plainBusySend = nativeOwner || parseCommand(text)?.name === 'btw'
+  const shownMode = intent.stop ? 'queue' : effectiveMode
+  const busyLabel = plainBusySend ? m.composer_send() : shownMode === 'queue' ? m.composer_queue() : shownMode === 'interrupt' ? m.composer_interrupt() : m.composer_steer()
+  const stopping = busy || !!intent.stop
+  const busySendVisible = stopping && !clarify && canSend
+  const modeHeld = !plainBusySend && (modifiers.altKey || effectiveMode !== busyMode)
 
   // The server marks sessions Web may not continue (TAL-312); it would refuse every send, so none is offered.
   if (readOnly) return <div className="composer-wrap" id="composerWrap"><div className="mx-auto max-w-(--msg-max) px-3 py-2 text-center text-xs text-muted" role="note">{session?.owner_attachment?.reason === 'native_clarify_batch_unavailable' ? m.owner_batch_unavailable() : session?.owner_attachment?.reason === 'served_profile_sessions_unavailable' ? m.owner_profile_unverified() : m.session_read_only_notice()}</div></div>
@@ -875,6 +904,8 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
             if (document.activeElement === el) lastCursor.current = { sessionId, cursor: { start: el.selectionStart, end: el.selectionEnd, direction: el.selectionDirection } }
           }}
           onKeyDown={onKeyDown}
+          onKeyUp={trackModifiers}
+          onBlur={resetModifiers}
           onPaste={onPaste}
           placeholder={placeholder}
           aria-label={clarify ? clarify.step.question : addressee}
@@ -903,23 +934,22 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
                 <ArrowUp size={14} aria-hidden="true" />
               </button>
             )}
-            {busy || intent.stop ? (
-              <>
-                <button type="button" onClick={() => { if (sessionId) void cancelTurn(sessionId) }} disabled={session?.owner_attachment?.can_interrupt === false || !!intent.stop && !intent.stop.failed} className="send-btn stop has-tooltip has-tooltip--left" id="btnStop" data-tooltip={intent.stop && !intent.stop.failed ? m.composer_stopping() : m.composer_stop()} aria-label={intent.stop && !intent.stop.failed ? m.composer_stopping() : m.composer_stop()} title={intent.stop && !intent.stop.failed ? m.composer_stopping() : m.composer_stop()}>
+            {(!clarify || stopping) && <div className="send-actions" data-stopping={stopping}>
+              <div className="send-primary">
+                {!clarify && <button type="button" onClick={() => { void send() }} disabled={stopping || !canSend} inert={stopping} aria-hidden={stopping} className="send-btn has-tooltip has-tooltip--left" id={stopping ? undefined : 'btnSend'} data-tooltip={m.composer_send()} aria-label={m.composer_send()} title={m.composer_send()}>
+                  <ArrowUp size={14} aria-hidden="true" />
+                </button>}
+                <button type="button" onClick={() => { if (sessionId) void cancelTurn(sessionId) }} inert={!stopping} aria-hidden={!stopping} disabled={!stopping || session?.owner_attachment?.can_interrupt === false || !!intent.stop && !intent.stop.failed} className="send-btn stop has-tooltip has-tooltip--left" id="btnStop" data-tooltip={intent.stop && !intent.stop.failed ? m.composer_stopping() : m.composer_stop()} aria-label={intent.stop && !intent.stop.failed ? m.composer_stopping() : m.composer_stop()} title={intent.stop && !intent.stop.failed ? m.composer_stopping() : m.composer_stop()}>
                   <Square size={12} fill="currentColor" strokeWidth={0} aria-hidden="true" />
                 </button>
-                {/* A typed draft steers, queues or interrupts mid-turn like Enter does, so it gets a send arrow beside Stop. */}
-                {!clarify && canSend && (
-                  <button type="button" onClick={() => { void send() }} className="send-btn has-tooltip has-tooltip--left" id="btnSend" data-tooltip={busyLabel} aria-label={busyLabel} title={busyLabel}>
-                    <ArrowUp size={14} aria-hidden="true" />
-                  </button>
-                )}
-              </>
-            ) : !clarify && (
-              <button type="button" onClick={() => { void send() }} disabled={!canSend} className="send-btn has-tooltip has-tooltip--left" id="btnSend" data-tooltip={m.composer_send()} aria-label={m.composer_send()} title={m.composer_send()}>
-                <ArrowUp size={14} aria-hidden="true" />
-              </button>
-            )}
+              </div>
+              <div className="send-busy" data-visible={busySendVisible} inert={!busySendVisible} aria-hidden={!busySendVisible}>
+                <button type="button" onClick={(event) => { void send(effectiveBusyMode(busyMode, event, platform, sendKey)) }} disabled={!busySendVisible} className="send-btn send-mode" id={stopping ? 'btnSend' : undefined} data-mode-held={modeHeld} aria-label={busyLabel} title={busyLabel}>
+                  {([[plainBusySend ? 'send' : 'steer', plainBusySend ? ArrowUp : CornerUpRight], ['queue', ListPlus], ['interrupt', SkipForward]] as const).map(([mode, Icon]) => <span key={mode} className="send-mode-icon" data-active={plainBusySend ? mode === 'send' : mode === shownMode} aria-hidden="true"><Icon size={14} /></span>)}
+                  <span className="send-mode-label" aria-hidden="true">{busyLabel}</span>
+                </button>
+              </div>
+            </div>}
           </div>
           {!room && <ComposerControls {...controls} placement="panel" />}
         </div>

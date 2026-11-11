@@ -250,6 +250,16 @@ transport outcomes keep the payload and block automatic replay until the convers
 
 ### Live turn motion
 
+Send morphs into Stop in the same circle. A draft during a run opens a second
+send circle; its icon and label follow the chosen busy-send action. Holding
+Control selects the alternate action, Queue unless the default is Queue, then
+Steer. Holding Option/Alt selects Interrupt. Release or blur restores the default.
+With the Ctrl+Enter setting, macOS uses Command+Enter for the default and
+Control+Enter for the alternate; Windows/Linux use Ctrl+Enter for the default
+and Ctrl+Shift+Enter for the alternate. Alt plus the send chord interrupts.
+Shift+Enter otherwise remains a newline. Reduced motion swaps states instantly.
+The queued count opens and closes as a segment of the existing status pill.
+
 Every change in a live turn moves instead of appearing in one frame (TAL-1753,
 timed from the owner-approved Stageshow demo). The sent message lands from
 below; each tool or reasoning row that arrives in a running turn opens its
