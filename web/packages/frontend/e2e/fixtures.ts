@@ -65,7 +65,9 @@ export const test = base.extend<{ errors: string[]; shellMocks: undefined }>({
     }
     await use(undefined)
     // A boot or profile switch can still be reading the bootstrap when the test ends; its route must not fail the test then.
-    if (mocked) await Promise.all([page.unrouteAll({ behavior: 'ignoreErrors' }), context.unrouteAll({ behavior: 'ignoreErrors' })])
+    // A spec may already have closed its page or context, which leaves no route running there.
+    const closed = (error: unknown) => { if (!String(error).includes('has been closed')) throw error }
+    if (mocked) await Promise.all([page.unrouteAll({ behavior: 'ignoreErrors' }).catch(closed), context.unrouteAll({ behavior: 'ignoreErrors' }).catch(closed)])
   }, { auto: true }],
   errors: [async ({ page }, use) => {
     const errors: string[] = []
