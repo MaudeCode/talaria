@@ -81,11 +81,12 @@ describe('sidebar conversation rows (TAL-1120)', () => {
 
 describe('sidebar attention (TAL-1964)', () => {
   it('names an open decision review as its own attention kind', async () => {
-    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [row('alpha', 'Alpha'), { ...row('beta', 'Beta'), attention: { kind: 'decision', count: 1, severity: 'question' } }] } as never)
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [{ ...row('alpha', 'Alpha'), is_streaming: true }, { ...row('beta', 'Beta'), attention: { kind: 'decision', count: 1, severity: 'question' } }] } as never)
     await setup()
     const beta = screen.getByRole('link', { name: /^Beta/ })
     expect(beta).toHaveClass('needs-attention')
     expect(beta).toHaveAccessibleName(/Waiting for your decisions/)
     expect(screen.getByRole('link', { name: /^Alpha/ })).not.toHaveClass('needs-attention')
+    expect(screen.getByRole('link', { name: /^Alpha/ })).toHaveClass('streaming')
   })
 })

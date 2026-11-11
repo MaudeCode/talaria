@@ -248,6 +248,15 @@ same pending user-row renderer while admission is unresolved. Only the submitted
 composer; newer typing and files survive. Refused submissions restore their exact payload. Uncertain
 transport outcomes keep the payload and block automatic replay until the conversation is reconciled.
 
+### Chat list motion
+
+The sidebar retains exiting rows while `revealHeight` folds them away, and opens new rows with the
+same helper. `ui/MotionList` captures row positions before a DOM commit; `flipList` in
+`lib/motion.ts` slides changed positions, including moves between date groups, without touching the
+row's swipe transform. Time labels reuse `SwapText`, and the running and attention bars fade and
+grow through CSS. Initial loads, profile/project and filter changes, group disclosures, View all and
+skipped content do not animate. Reduced motion renders the end state immediately.
+
 ### Live turn motion
 
 Send morphs into Stop in the same circle. A draft during a run opens a second

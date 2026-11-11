@@ -22,9 +22,10 @@ const reveals = new WeakMap<HTMLElement, Animation>()
  * first half of the travel; `from: 'below'` also lifts it a few pixels, for a message landing at the end of a feed.
  * Shutting, it dims fast and dissolves as the edge passes. A reveal already running on the element is reversed from
  * where it is. Styles live only in the animation, so nothing is left inline; the caller hides a shut element once
- * `finished` resolves. Returns null, leaving the end state to the caller, under reduced motion or inside a hidden box.
+ * `finished` resolves. `hold` keeps the end state until the caller cancels after its removal commit. Returns null,
+ * leaving the end state to the caller, under reduced motion or inside a hidden box.
  */
-export function revealHeight(el: HTMLElement, { open, from, arrive = false }: { open: boolean; from?: 'below'; /** New content landing rather than a disclosure travelling. */ arrive?: boolean }): Animation | null {
+export function revealHeight(el: HTMLElement, { open, from, arrive = false, hold = false }: { open: boolean; from?: 'below'; /** New content landing rather than a disclosure travelling. */ arrive?: boolean; hold?: boolean }): Animation | null {
   if (!motionOn() || typeof el.animate !== 'function' || el.closest('[hidden]')) return null
   const box = (style: CSSStyleDeclaration, height: number) => Object.fromEntries(BOX.map((p) => [p, p === 'height' ? `${height}px` : style[p]]))
   const zero = Object.fromEntries(BOX.map((p) => [p, '0px']))
@@ -38,8 +39,41 @@ export function revealHeight(el: HTMLElement, { open, from, arrive = false }: { 
     : [{ ...(now ?? settled), overflow: 'hidden' }, { opacity: Math.min(0.33, now?.opacity ?? 1), offset: 0.3 }, { ...zero, opacity: 0, overflow: 'hidden' }]
   const animation = el.animate(keyframes, { duration: REVEAL_MS, easing: arrive ? ARRIVE_EASE : TRAVEL_EASE, fill: 'forwards' })
   reveals.set(el, animation)
-  // Held until the caller's own `finished` handlers run in the same task, then handed back to the stylesheet.
+  // A retained exit must stay collapsed while React schedules its removal and takes the next layout snapshot.
   const forget = () => { if (reveals.get(el) === animation) reveals.delete(el) }
-  void animation.finished.then(() => { forget(); animation.cancel() }, forget)
+  void animation.finished.then(() => { if (!hold) { forget(); animation.cancel() } }, forget)
   return animation
+}
+
+export type ListSnapshot = Map<string, { el: HTMLElement; rect: DOMRect; group: string | null }>
+
+/** Only rendered boxes participate. Measuring skipped content would defeat content-visibility. */
+export function measureList(container: HTMLElement, keyAttr = 'data-motion-key'): ListSnapshot {
+  const snapshot: ListSnapshot = new Map()
+  for (const el of container.querySelectorAll<HTMLElement>(`[${keyAttr}]`)) {
+    if (el.closest('[hidden],[style*="display: none"]') || (el.checkVisibility && !el.checkVisibility({ contentVisibilityAuto: true, visibilityProperty: true }))) continue
+    const key = el.getAttribute(keyAttr)
+    if (!key) continue
+    const rect = el.getBoundingClientRect()
+    if (rect.width && rect.height) snapshot.set(key, { el, rect, group: el.closest('[data-motion-group]')?.getAttribute('data-motion-group') ?? null })
+  }
+  return snapshot
+}
+
+/** FLIP the wrapper, leaving the row's own swipe transform alone. Call after reveals establish their starting size. */
+export function flipList(container: HTMLElement, before: ListSnapshot, keyAttr = 'data-motion-key'): Animation[] {
+  if (!motionOn()) return []
+  const animations: Animation[] = []
+  for (const [key, { el, rect, group }] of measureList(container, keyAttr)) {
+    const old = before.get(key)
+    if (!old) continue
+    const x = old.rect.left - rect.left, y = old.rect.top - rect.top
+    if (Math.abs(x) < 0.5 && Math.abs(y) < 0.5) continue
+    const lifted = old.group !== group
+    animations.push(el.animate([
+      { transform: `translate(${x}px, ${y}px)`, ...(lifted && { background: 'var(--surface)', boxShadow: 'var(--shadow-md)', position: 'relative', zIndex: 1 }) },
+      { transform: 'none', ...(lifted && { background: 'transparent', boxShadow: 'none', position: 'relative', zIndex: 1 }) },
+    ], { duration: 400, easing: TRAVEL_EASE }))
+  }
+  return animations
 }

@@ -27,6 +27,8 @@ import { useResourceEffects, useResourceMutation, withEffects } from './useResou
 import { useSessionPin } from './useSessionPin'
 import { getStreamContext, useStreamContext } from '../../stream/connection'
 import { randomHex } from '../../lib/randomHex'
+import { MotionList } from '../../ui/MotionList'
+import { SwapText } from '../../ui/SwapText'
 
 const SESSION_DRAG_TYPE = 'application/x-talaria-session-pin'
 
@@ -129,7 +131,7 @@ export function nestSessionRows(rows: SessionRow[]): { roots: SessionRow[]; chil
 }
 
 /** The existing sidebar row, memoized so unchanged server rows retain their rendered subtree. */
-export const SessionListItem = memo(function SessionListItem({ row, active, proj, preview, timeLabel, onArchive, selection, onDragStart, onDragEnd, nested = false }: {
+export const SessionListItem = memo(function SessionListItem({ row, active, proj, preview, timeLabel, onArchive, selection, onDragStart, onDragEnd, nested = false, timeMotion }: {
   row: SessionRow
   /** TAL-1151: shown under its parent row. */
   nested?: boolean
@@ -137,6 +139,7 @@ export const SessionListItem = memo(function SessionListItem({ row, active, proj
   proj: Awaited<ReturnType<typeof api.fetchProjects>>['projects'][number] | undefined
   preview: string | undefined
   timeLabel: string
+  timeMotion?: { previous: string; enabled: boolean } | undefined
   onArchive: (id: string, archived: boolean) => void
   selection?: { selected: boolean; disabled: boolean; onSelect: () => void }
   onDragStart?: (event: DragEvent<HTMLAnchorElement>, row: SessionRow) => void
@@ -154,7 +157,7 @@ export const SessionListItem = memo(function SessionListItem({ row, active, proj
           <span className="session-title" title={displayTitle}>{displayTitle}</span>
           {row.worktree_branch && <span className="session-worktree-badge" role="img" aria-label={`${m.session_worktree_badge()}: ${row.worktree_branch}`} title={`${m.session_worktree_badge()}: ${row.worktree_branch}`}><GitBranch size={12} aria-hidden="true" /></span>}
           {proj && <span className="session-project-dot" style={{ background: proj.color ?? 'var(--blue)' }} title={proj.name} />}
-          <span className="session-time">{timeLabel}</span>
+          <SwapText className="session-time" text={timeLabel} initialText={timeMotion?.previous} animate={timeMotion?.enabled ?? false} />
         </div>
         {meta && <div className="truncate text-xs text-muted" title={meta}>{meta}</div>}
         {preview && <div className="session-search-preview truncate text-[11px] text-muted" title={m.session_search_content_matches()}>{preview}</div>}
@@ -166,7 +169,7 @@ export const SessionListItem = memo(function SessionListItem({ row, active, proj
   // TAL-1120: the wrapper is the list item, so the anchor keeps its link role; its name skips the nested action buttons.
   // TAL-699: right-click or long-press on the row opens the kebab's items; a click still navigates.
   return (
-    <div role="listitem" ref={item}>
+    <div role="listitem" ref={item} data-motion-key={row.session_id}>
       <ContextMenu label={m.session_menu()} trigger={<Link
         to="/session/$sessionId"
         params={{ sessionId: row.session_id }}
@@ -376,39 +379,51 @@ export function SessionListPanel() {
         id="sessionSearch" placeholder={m.filter_conversations()} aria-label={m.filter_conversations()}
       />
       <input ref={importInput} type="file" accept=".json,application/json" hidden aria-label={m.import_session_json_tooltip()} onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) importSession.mutate(file) }} />
-      <div className="session-list" id="sessionList" role="list">
-        <span className="sr-only" role="status">{dropTarget === null ? '' : dropTarget ? m.session_pin() : m.session_unpin()}</span>
-        {storageNotice && (
-          <div className="session-list-error" role="status">
-            <div>{storageNotice}{storage?.reason && <HelpTip label={m.field_help_about({ label: storageNotice })}>{storage.reason}</HelpTip>}</div>
-          </div>
-        )}
-        {list.isPending && <div className={LIST_NOTE} role="status">{m.loading()}</div>}
-        {list.isError && (
-          <div className="session-list-error" role="alert">
-            {m.error_generic()} <button type="button" className="linklike" onClick={() => { void list.refetch() }}>{m.retry()}</button>
-          </div>
-        )}
-        {list.isSuccess && filtered.length === 0 && !(q.length >= 2 && search.isPending) && <div className={LIST_NOTE}>{filter ? m.no_matching_sessions() : m.no_sessions_yet()}</div>}
-        {groups.map((g) => {
-          const collapsed = isCollapsed(g.id)
-          const disclosure = isDisclosure(g.id)
-          const toggle = () => setCollapsedGroups((c) => ({ ...c, [g.id]: !c[g.id] }))
+      <MotionList items={groups.flatMap((g) => g.rows.flatMap((r) => [r, ...(children.get(r.session_id) ?? [])]))} itemKey={(r) => r.session_id}
+        scope={JSON.stringify([scope, q, collapsedGroups, data?.active_profile, q.length >= 2 ? search.dataUpdatedAt : null])} context={context} ready={list.isSuccess}
+        className="session-list" id="sessionList">
+        {(present, previous, animate) => {
+          const tree = nestSessionRows(present)
+          const renderedGroups = groupSessionRows(tree.roots).map((g) => ({ ...g, label: GROUP_LABEL[g.id]() }))
+          for (const g of groups) if (!g.rows.length && !renderedGroups.some((r) => r.id === g.id)) renderedGroups.splice(groups.indexOf(g), 0, g)
+          const timeMotion = { previous: new Map(previous.map((r) => [r.session_id, r])), enabled: animate }
           return (
-            <div key={g.id} className={cn('session-date-group', disclosure && 'session-disclosure', dropTarget !== null && dropTarget === (g.id === 'pinned') && 'session-drop-target')} {...(disclosure ? {} : dropHandlers(g.id === 'pinned'))}>
-              <div className={cn('session-date-header', g.id === 'pinned' && 'pinned')} role="button" tabIndex={0} aria-expanded={!collapsed} onClick={toggle} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle() } }}>
-                <span className={cn('session-date-caret', collapsed && 'collapsed')} aria-hidden="true">{'\u25BE'}</span>
-                <span>{g.label}</span>
-                {disclosure && <span className="session-disclosure-count">{disclosureCount[g.id as DisclosureId]}</span>}
-              </div>
-              <div className="session-date-body" style={collapsed ? { display: 'none' } : undefined}>
-                {shownRows(g).map((row) => <SessionTreeItem key={row.session_id} row={row} nested={children.get(row.session_id)} activeId={activeId} projectsById={projectsById} previews={previews} onArchive={onArchive} {...(disclosure ? {} : { onDragStart: startDrag, onDragEnd: endDrag })} />)}
-                {disclosure && !searching && g.rows.length > DISCLOSURE_PREVIEW && <button type="button" className="session-view-all" onClick={() => setViewAll({ id: g.id as DisclosureId, at: activeId })}>{m.session_group_view_all()}</button>}
-              </div>
-            </div>
+            <>
+              <span className="sr-only" role="status">{dropTarget === null ? '' : dropTarget ? m.session_pin() : m.session_unpin()}</span>
+              {storageNotice && (
+                <div className="session-list-error" role="status">
+                  <div>{storageNotice}{storage?.reason && <HelpTip label={m.field_help_about({ label: storageNotice })}>{storage.reason}</HelpTip>}</div>
+                </div>
+              )}
+              {list.isPending && <div className={LIST_NOTE} role="status">{m.loading()}</div>}
+              {list.isError && (
+                <div className="session-list-error" role="alert">
+                  {m.error_generic()} <button type="button" className="linklike" onClick={() => { void list.refetch() }}>{m.retry()}</button>
+                </div>
+              )}
+              {list.isSuccess && filtered.length === 0 && !(q.length >= 2 && search.isPending) && <div className={LIST_NOTE}>{filter ? m.no_matching_sessions() : m.no_sessions_yet()}</div>}
+              {renderedGroups.map((g) => {
+                const collapsed = isCollapsed(g.id)
+                const disclosure = isDisclosure(g.id)
+                const toggle = () => setCollapsedGroups((c) => ({ ...c, [g.id]: !c[g.id] }))
+                return (
+                  <div key={g.id} data-motion-group={g.id} className={cn('session-date-group', disclosure && 'session-disclosure', dropTarget !== null && dropTarget === (g.id === 'pinned') && 'session-drop-target')} {...(disclosure ? {} : dropHandlers(g.id === 'pinned'))}>
+                    <div className={cn('session-date-header', g.id === 'pinned' && 'pinned')} role="button" tabIndex={0} aria-expanded={!collapsed} onClick={toggle} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle() } }}>
+                      <span className={cn('session-date-caret', collapsed && 'collapsed')} aria-hidden="true">{'\u25BE'}</span>
+                      <span>{g.label}</span>
+                      {disclosure && <span className="session-disclosure-count">{disclosureCount[g.id as DisclosureId]}</span>}
+                    </div>
+                    <div className="session-date-body" style={collapsed ? { display: 'none' } : undefined}>
+                      {shownRows(g).map((row) => <SessionTreeItem key={row.session_id} row={row} nested={tree.children.get(row.session_id)} activeId={activeId} projectsById={projectsById} previews={previews} onArchive={onArchive} timeMotion={timeMotion} {...(disclosure ? {} : { onDragStart: startDrag, onDragEnd: endDrag })} />)}
+                      {disclosure && !searching && g.rows.length > DISCLOSURE_PREVIEW && <button type="button" className="session-view-all" onClick={() => setViewAll({ id: g.id as DisclosureId, at: activeId })}>{m.session_group_view_all()}</button>}
+                    </div>
+                  </div>
+                )
+              })}
+            </>
           )
-        })}
-      </div>
+        }}
+      </MotionList>
       {viewAll && <SessionGroupDialog title={GROUP_LABEL[viewAll.id]()} kind={viewAll.id} rows={viewAllGroup?.rows ?? []} nested={children} filters={searchFilters} activeId={activeId} projectsById={projectsById} onArchive={onArchive} onClose={() => setViewAll(null)} />}
     </div>
     </SessionActions>
@@ -418,9 +433,10 @@ export function SessionListPanel() {
 type ProjectsById = Map<string, Awaited<ReturnType<typeof api.fetchProjects>>['projects'][number]>
 
 /** A top-level sidebar row followed by the rows the server nests under it (TAL-1151). */
-function SessionTreeItem({ row, nested, activeId, projectsById, previews, onArchive, onDragStart, onDragEnd }: {
+function SessionTreeItem({ row, nested, activeId, projectsById, previews, onArchive, onDragStart, onDragEnd, timeMotion }: {
   row: SessionRow
   nested: SessionRow[] | undefined
+  timeMotion?: { previous: Map<string, SessionRow>; enabled: boolean }
   activeId: string | null
   projectsById: ProjectsById
   previews: Map<string, string>
@@ -428,7 +444,7 @@ function SessionTreeItem({ row, nested, activeId, projectsById, previews, onArch
   onDragStart?: (event: DragEvent<HTMLAnchorElement>, row: SessionRow) => void
   onDragEnd?: () => void
 }) {
-  const item = (r: SessionRow, isNested: boolean) => <SessionListItem key={r.session_id} row={r} nested={isNested} active={r.session_id === activeId} proj={r.project_id ? projectsById.get(r.project_id) : undefined} preview={previews.get(r.session_id)} timeLabel={relativeTime(r.sort_ts)} onArchive={onArchive} {...(onDragStart ? { onDragStart, onDragEnd } : {})} />
+  const item = (r: SessionRow, isNested: boolean) => <SessionListItem key={r.session_id} row={r} nested={isNested} active={r.session_id === activeId} proj={r.project_id ? projectsById.get(r.project_id) : undefined} preview={previews.get(r.session_id)} timeLabel={relativeTime(r.sort_ts)} timeMotion={timeMotion ? { previous: relativeTime(timeMotion.previous.get(r.session_id)?.sort_ts ?? r.sort_ts), enabled: timeMotion.enabled } : undefined} onArchive={onArchive} {...(onDragStart ? { onDragStart, onDragEnd } : {})} />
   return <Fragment>{item(row, false)}{nested?.map((child) => item(child, true))}</Fragment>
 }
 

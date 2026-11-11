@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { notifyManager, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { SessionsListSchema, type SessionRow } from '../../contracts'
 import { ApiError } from '../../contracts/common'
@@ -28,6 +28,7 @@ import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { groupSessionRows, SessionListItem, SessionListPanel } from './SessionListPanel'
 import { useSessionListStream } from './useSessionListStream'
+import { stubAnimate } from '../../test/animate'
 
 // Keep relative fixture timestamps on one local date, even just after midnight.
 const now = new Date().setHours(12, 0, 0, 0) / 1000
@@ -56,6 +57,128 @@ beforeEach(() => {
   vi.mocked(api.searchSessions).mockReset()
   settings.value = {}
   newChat.mockReset()
+})
+
+describe('sidebar list motion (TAL-1756)', () => {
+  let motion: ReturnType<typeof stubAnimate>
+  beforeEach(() => {
+    notifyManager.setScheduler(queueMicrotask)
+    motion = stubAnimate()
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const link = this.matches('[data-sid]') ? this : this.querySelector('[data-sid]')
+      const links = [...document.querySelectorAll('#sessionList [data-sid]')]
+      const top = link ? links.indexOf(link) * 40 : 0
+      return { top, bottom: top + 40, left: 0, right: 240, width: 240, height: 40, x: 0, y: top, toJSON: () => ({}) }
+    })
+  })
+  afterEach(() => { motion.restore(); vi.restoreAllMocks(); vi.unstubAllGlobals(); notifyManager.setScheduler((callback) => setTimeout(callback, 0)) })
+  const mount = async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    render(<QueryClientProvider client={client}><SessionListPanel /></QueryClientProvider>)
+    await screen.findByText('Other zebra')
+    return client
+  }
+  const update = async (client: QueryClient, sessions: SessionRow[]) => {
+    await act(async () => { client.setQueryData(keys.sessions.list({}), { sessions, webui_session_count: sessions.length, cli_session_count: 0 }); await Promise.resolve() })
+  }
+  const sid = (el: Element) => (el.matches('[data-sid]') ? el : el.querySelector('[data-sid]'))?.getAttribute('data-sid')
+
+  it('slides server reorders and cross-group pin moves by their old rect, leaving stationary rows alone', async () => {
+    const client = await mount()
+    expect(motion.calls).toHaveLength(0)
+    await update(client, [other, alpha, delta])
+    const moves = motion.calls.filter((c) => 'transform' in (c.keyframes[0] ?? {}) && !('height' in (c.keyframes[0] ?? {})))
+    expect(moves.find((c) => sid(c.el) === 'other')?.keyframes[0]).toMatchObject({ transform: 'translate(0px, 80px)' })
+    expect(moves.find((c) => sid(c.el) === 'alpha')?.keyframes[0]).toMatchObject({ transform: 'translate(0px, -40px)' })
+    motion.calls.length = 0
+    await update(client, [other, { ...delta, sidebar_group: 'pinned', pinned: true }, alpha])
+    expect(motion.calls.some((c) => sid(c.el) === 'delta' && c.keyframes[0]?.transform === 'translate(0px, 80px)')).toBe(true)
+    motion.calls.length = 0
+    await update(client, [other, alpha, delta])
+    expect(motion.calls.some((c) => sid(c.el) === 'delta' && c.keyframes[0]?.transform === 'translate(0px, -80px)')).toBe(true)
+    motion.calls.length = 0
+    await update(client, [other, alpha, { ...delta, title: 'Renamed' }])
+    expect(motion.calls).toHaveLength(0)
+  })
+
+  it('retains an optimistic archive until its fold finishes and reverses on refusal, then removes a deleted row', async () => {
+    let refuse!: (error: Error) => void
+    vi.mocked(api.archiveSession).mockImplementation(() => new Promise((_, reject) => { refuse = reject }))
+    const client = await mount()
+    fireEvent.click(within(screen.getByText('Alpha zebra').closest('[data-sid]')!).getByRole('button', { name: 'Archive' }))
+    await waitFor(() => expect(motion.reveals().some((c) => sid(c.el) === 'alpha' && c.keyframes.at(-1)?.height === '0px')).toBe(true))
+    const closing = motion.reveals().find((c) => sid(c.el) === 'alpha')!
+    expect(screen.getByText('Alpha zebra')).toBeInTheDocument()
+    expect(closing.el).toHaveAttribute('inert')
+    await act(async () => { refuse(new ApiError({ kind: 'http', status: 409, path: '/archive', message: 'refused' })); await Promise.resolve() })
+    await waitFor(() => expect(motion.reveals().some((c) => sid(c.el) === 'alpha' && c.keyframes.at(-1)?.height === '40px')).toBe(true))
+    expect(screen.getByText('Alpha zebra').closest('[inert]')).toBeNull()
+    expect(toast).toHaveBeenCalled()
+    motion.calls.length = 0
+    await update(client, [alpha, other])
+    const exit = motion.reveals().find((c) => sid(c.el) === 'delta')!
+    expect(exit).toBeDefined()
+    await act(async () => { exit.finish(); await exit.animation.finished })
+    expect(screen.queryByText('Delta')).toBeNull()
+    expect(exit.animation.cancel).toHaveBeenCalled()
+    await update(client, [alpha, delta, other])
+    expect(motion.reveals().some((c) => sid(c.el) === 'delta' && c.keyframes[0]?.height === '0px')).toBe(true)
+  })
+
+  it.each([false, true])('opens new rows only for an existing list, respecting reduced motion (%s)', async (reduced) => {
+    if (reduced) { motion.restore(); motion = stubAnimate({ reduced: true }) }
+    const client = await mount()
+    await update(client, [row('new', 'New chat'), alpha, delta, other])
+    expect(screen.getByText('New chat')).toBeInTheDocument()
+    expect(motion.reveals().some((c) => sid(c.el) === 'new')).toBe(!reduced)
+    if (reduced) {
+      await update(client, [other])
+      expect(screen.queryByText('New chat')).toBeNull()
+      expect(motion.calls).toHaveLength(0)
+    }
+  })
+
+  it('changes filters and collapses groups without motion', async () => {
+    const scheduled = Array.from({ length: 6 }, (_, i) => row(`cron-${i}`, `Cron run ${i}`, { sidebar_group: 'scheduled' }))
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [alpha, other, ...scheduled] } as never)
+    await mount()
+    fireEvent.click(screen.getByText('Today'))
+    fireEvent.click(screen.getByText('Today'))
+    fireEvent.click(screen.getByText('Scheduled sessions'))
+    fireEvent.click(screen.getByRole('button', { name: 'View all' }))
+    expect(within(screen.getByRole('dialog')).getAllByText(/^Cron run/)).toHaveLength(6)
+    await userEvent.keyboard('{Escape}')
+    await pick('Proj')
+    expect(screen.queryByText('Other zebra')).toBeNull()
+    expect(motion.calls).toHaveLength(0)
+  })
+
+  it('cross-fades the old time when activity remounts its row in a new date group', async () => {
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [alpha, { ...other, sort_ts: now - 86400 }] } as never)
+    const client = await mount()
+    const oldTime = document.querySelector('[data-sid="other"] .session-time')!.textContent
+    await update(client, [other, alpha])
+    const slot = document.querySelector('[data-sid="other"] .session-time')!
+    expect(slot.querySelector('[data-swap-out]')).toHaveTextContent(oldTime)
+    expect(motion.calls.some((c) => c.el === slot.querySelector('[data-swap-in]'))).toBe(true)
+  })
+
+  it('resets retained exits and label motion on a profile switch, and never animates search results', async () => {
+    const client = await mount()
+    await update(client, [alpha, other])
+    expect(screen.getByText('Delta')).toBeInTheDocument()
+    motion.calls.length = 0
+    await act(async () => {
+      client.setQueryData(keys.sessions.list({}), { sessions: [other], active_profile: 'another' })
+      await Promise.resolve()
+    })
+    expect(screen.queryByText('Delta')).toBeNull()
+    expect(motion.calls).toHaveLength(0)
+    vi.mocked(api.searchSessions).mockResolvedValue({ sessions: [other] } as never)
+    fireEvent.change(document.getElementById('sessionSearch')!, { target: { value: 'Other' } })
+    await waitFor(() => expect(api.searchSessions).toHaveBeenCalled())
+    expect(motion.calls).toHaveLength(0)
+  })
 })
 
 describe('chat list settings (TAL-2153)', () => {
