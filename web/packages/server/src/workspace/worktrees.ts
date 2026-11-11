@@ -142,12 +142,15 @@ async function statusPorcelain(worktreePath: string, repoRoot: string | null): P
 
 async function aheadBehind(worktreePath: string): Promise<{ ahead: number; behind: number; available: boolean; upstream: string | null }> {
   const payload = { ahead: 0, behind: 0, available: false, upstream: null as string | null }
-  const upstream = await git(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], worktreePath)
+  // The upstream's name comes from `rev-parse`, its counts from `rev-list`; both fail without an upstream.
+  const [upstream, counts] = await Promise.all([
+    git(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], worktreePath),
+    git(['rev-list', '--left-right', '--count', 'HEAD...@{u}'], worktreePath),
+  ])
   if (upstream?.status !== 0) return payload
   const ref = upstream.stdout.trim()
   if (!ref) return payload
   payload.upstream = ref
-  const counts = await git(['rev-list', '--left-right', '--count', 'HEAD...@{u}'], worktreePath)
   if (counts?.status !== 0) return payload
   const parts = counts.stdout.trim().split(/\s+/)
   if (parts.length !== 2) return payload
@@ -176,9 +179,11 @@ async function probeWorktree(session: Session, locks: WorktreeLocks): Promise<{ 
   const exists = isDir(worktreePath)
   const lockedByStream = locks.lockedByStream(session)
   const lockedByTerminal = locks.lockedByTerminal(session.session_id, worktreePath)
-  const listed = await worktreeListed(worktreePath, session.worktree_repo_root)
-  const [dirty, untracked, includeLinks, hasGitlinks] = exists ? await statusPorcelain(worktreePath, resolvePath(session.worktree_repo_root)) : [false, 0, [], false]
-  const aheadBehindStatus = exists ? await aheadBehind(worktreePath) : { ahead: 0, behind: 0, available: false, upstream: null }
+  const [listed, [dirty, untracked, includeLinks, hasGitlinks], aheadBehindStatus] = await Promise.all([
+    worktreeListed(worktreePath, session.worktree_repo_root),
+    exists ? statusPorcelain(worktreePath, resolvePath(session.worktree_repo_root)) : [false, 0, [], false] as [boolean, number, string[], boolean],
+    exists ? aheadBehind(worktreePath) : { ahead: 0, behind: 0, available: false, upstream: null },
+  ])
   const status: WorktreeStatus = {
     path: worktreePath, exists, dirty, untracked_count: untracked, ahead_behind: aheadBehindStatus,
     locked_by_stream: lockedByStream, locked_by_terminal: lockedByTerminal, listed,

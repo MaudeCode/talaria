@@ -7,7 +7,8 @@
  * against repo-local config, and bounded by a timeout.
  */
 import { execFile } from 'node:child_process'
-import { closeSync, constants as fsConstants, existsSync, fstatSync, futimesSync, lstatSync, mkdtempSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, rmdirSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { closeSync, constants as fsConstants, existsSync, fstatSync, lstatSync, mkdtempSync, mkdirSync, openSync, readFileSync, rmSync, rmdirSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdir, mkdtemp, open, readdir, rm, symlink, writeFile, type FileHandle } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { expandHome, isWithin, resolvePathLikePython } from './paths.js'
@@ -360,17 +361,17 @@ export class GitRunner {
   }
 
   /** Hold the opened inode and reject devices/FIFOs before reading repository-controlled metadata. */
-  private static withStatusFile<T>(path: string, read: (fd: number, size: number, mtimeNs: bigint) => T): T | null {
-    let fd: number
-    try { fd = openSync(path, fsConstants.O_RDONLY | (fsConstants.O_NONBLOCK ?? 0)) } catch (error) {
+  private static async withStatusFile<T>(path: string, read: (file: FileHandle, size: number, mtimeNs: bigint) => Promise<T>): Promise<T | null> {
+    let file: FileHandle
+    try { file = await open(path, fsConstants.O_RDONLY | (fsConstants.O_NONBLOCK ?? 0)) } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
       throw error
     }
     try {
-      const stat = fstatSync(fd, { bigint: true })
+      const stat = await file.stat({ bigint: true })
       if (!stat.isFile()) throw new GitWorkspaceError('Git status metadata must be a regular file', 'git_failed')
-      return read(fd, Number(stat.size), stat.mtimeNs)
-    } finally { closeSync(fd) }
+      return await read(file, Number(stat.size), stat.mtimeNs)
+    } finally { await file.close() }
   }
 
   /** A private metadata view never loads executable repository/global configuration, even if the originals change. */
@@ -385,15 +386,15 @@ export class GitRunner {
       throw new GitWorkspaceError(message, classifyGitError(message, ['rev-parse']))
     }
     let common = gitDir
-    const commonPath = GitRunner.withStatusFile(join(gitDir, 'commondir'), (fd, size) => {
+    const commonPath = await GitRunner.withStatusFile(join(gitDir, 'commondir'), async (file, size) => {
       if (size > DIFF_SIZE_LIMIT) throw new GitWorkspaceError('Git common directory path is too large', 'git_failed')
       const bytes = Buffer.alloc(DIFF_SIZE_LIMIT + 1)
       let offset = 0
       while (offset < bytes.length) {
         remaining()
-        const count = readSync(fd, bytes, offset, bytes.length - offset, null)
-        if (!count) break
-        offset += count
+        const { bytesRead } = await file.read(bytes, offset, bytes.length - offset, null)
+        if (!bytesRead) break
+        offset += bytesRead
       }
       if (offset > DIFF_SIZE_LIMIT) throw new GitWorkspaceError('Git common directory path is too large', 'git_failed')
       return bytes.subarray(0, offset).toString('utf8')
@@ -420,24 +421,24 @@ export class GitRunner {
       if (!['none', 'untracked', 'dirty', 'all'].includes(ignore)) throw new GitWorkspaceError('Invalid submodule ignore setting', 'git_failed')
       ignores.set(path, ignore)
     }
-    const root = mkdtempSync(join(tmpdir(), 'talaria-git-status-'))
+    const root = await mkdtemp(join(tmpdir(), 'talaria-git-status-'))
     try {
       const objectFormat = values.get('extensions.objectformat') ?? 'sha1'
       if (!['sha1', 'sha256'].includes(objectFormat)) throw new GitWorkspaceError('Unsupported Git repository format', 'git_failed')
-      mkdirSync(join(root, 'info'))
-      mkdirSync(join(root, 'refs'))
-      writeFileSync(join(root, 'config'), `[core]\nrepositoryFormatVersion = ${objectFormat === 'sha256' ? '1' : '0'}\nbare = false\n${objectFormat === 'sha256' ? '[extensions]\nobjectFormat = sha256\n' : ''}`)
-      writeFileSync(join(root, 'HEAD'), `${head}\n`)
-      const copy = (directory: string, file: string): void => {
-        GitRunner.withStatusFile(join(directory, file), (source, _size, mtimeNs) => {
-          const target = openSync(join(root, file), 'wx', 0o600)
+      await mkdir(join(root, 'info'))
+      await mkdir(join(root, 'refs'))
+      await writeFile(join(root, 'config'), `[core]\nrepositoryFormatVersion = ${objectFormat === 'sha256' ? '1' : '0'}\nbare = false\n${objectFormat === 'sha256' ? '[extensions]\nobjectFormat = sha256\n' : ''}`)
+      await writeFile(join(root, 'HEAD'), `${head}\n`)
+      const copy = async (directory: string, file: string): Promise<void> => {
+        await GitRunner.withStatusFile(join(directory, file), async (source, _size, mtimeNs) => {
+          const target = await open(join(root, file), 'wx', 0o600)
           try {
             const chunk = Buffer.allocUnsafe(64 * 1024)
             for (;;) {
               remaining()
-              const bytes = readSync(source, chunk, 0, chunk.length, null)
-              if (!bytes) break
-              writeFileSync(target, chunk.subarray(0, bytes))
+              const { bytesRead } = await source.read(chunk, 0, chunk.length, null)
+              if (!bytesRead) break
+              await target.writeFile(chunk.subarray(0, bytesRead))
             }
             if (file === 'index' || file.startsWith('sharedindex.')) {
               // A newer index timestamp would suppress Git's racy-stat content check; round conservatively earlier.
@@ -445,20 +446,20 @@ export class GitRunner {
               do {
                 remaining()
                 const stamp = new Date(Number(mtimeNs / 1_000_000n) - margin)
-                futimesSync(target, stamp, stamp)
+                await target.utimes(stamp, stamp)
                 margin *= 2
-              } while (fstatSync(target, { bigint: true }).mtimeNs > mtimeNs)
+              } while ((await target.stat({ bigint: true })).mtimeNs > mtimeNs)
             }
-          } finally { closeSync(target) }
+          } finally { await target.close() }
         })
       }
-      for (const file of ['index', ...readdirSync(gitDir).filter((name) => /^sharedindex\.[a-f0-9]+$/.test(name))]) {
-        copy(gitDir, file)
+      for (const file of ['index', ...(await readdir(gitDir)).filter((name) => /^sharedindex\.[a-f0-9]+$/.test(name))]) {
+        await copy(gitDir, file)
       }
       for (const file of ['packed-refs', 'shallow', 'info/attributes', 'info/exclude', 'info/sparse-checkout']) {
-        copy(common, file)
+        await copy(common, file)
       }
-      symlinkSync(join(common, 'objects'), join(root, 'objects'), process.platform === 'win32' ? 'junction' : 'dir')
+      await symlink(join(common, 'objects'), join(root, 'objects'), process.platform === 'win32' ? 'junction' : 'dir')
       const originalEnv = this.cleanEnv()
       const home = originalEnv.HOME || homedir()
       const xdg = originalEnv.XDG_CONFIG_HOME || join(home, '.config')
@@ -471,7 +472,7 @@ export class GitRunner {
         prefix.push('-c', `${key}=${value}`)
       }
       return await read(prefix, { HOME: root, XDG_CONFIG_HOME: root, GIT_CONFIG_NOSYSTEM: '1', GIT_OPTIONAL_LOCKS: '0', GIT_INDEX_FILE: join(root, 'index'), GIT_OBJECT_DIRECTORY: join(root, 'objects'), GIT_ALTERNATE_OBJECT_DIRECTORIES: '' }, ignores, { gitDir, commonDir: common, privateDir: root, refStorage: values.get('extensions.refstorage') ?? 'files' })
-    } finally { rmSync(root, { recursive: true, force: true }) }
+    } finally { await rm(root, { recursive: true, force: true }) }
   }
 
   /** Worktree lifecycle probes need only porcelain v1; child worktrees are inspected through the same private view. */
@@ -482,10 +483,16 @@ export class GitRunner {
       visited.add(resolvePathLikePython(path))
       return this.withStatusRepository(path, remaining, async (prefix, env, ignores) => {
         const run = (args: string[]): Promise<GitResult> => this.run(path, [...prefix, ...args], { check: true, timeoutMs: remaining(), env })
-        // Commit differences remain visible; Git must not run a child status against live submodule configuration.
-        const result = await run(['status', '--porcelain', '-z', '--untracked-files=normal', '--ignore-submodules=dirty'])
-        const index = await run(['ls-files', '--stage', '-z'])
-        const gitlinks = index.stdout.split('\0').filter((entry) => entry.startsWith('160000 '))
+        // Gitlinks are looked up only at the `.gitmodules` paths (literal pathspecs) instead of listing the whole index;
+        // a path Git refuses as a pathspec (outside the repository) falls back to the full listing.
+        const modules = [...ignores.keys()]
+        const listing = ['ls-files', '--stage', '-z']
+        const [result, index] = await Promise.all([
+          // Commit differences remain visible; Git must not run a child status against live submodule configuration.
+          run(['status', '--porcelain', '-z', '--untracked-files=normal', '--ignore-submodules=dirty']),
+          modules.length ? run([...listing, '--', ...modules]).catch(() => run(listing)) : null,
+        ])
+        const gitlinks = index ? index.stdout.split('\0').filter((entry) => entry.startsWith('160000 ')) : []
         const records = porcelainStatusEntries(result.stdout)
         for (let i = records.length - 1; i >= 0; i--) {
           const record = records[i]?.[0] ?? ''
