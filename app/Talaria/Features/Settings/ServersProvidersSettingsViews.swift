@@ -48,7 +48,7 @@ struct UserProfileSettingsView: View {
 
     var body: some View {
         SettingsPage(title: String(localized: "User Profile")) {
-            SettingsSection(title: String(localized: "User Profile")) {
+            SettingsSection(title: String(localized: "User Profile"), help: SettingsSectionHelp.identityMessage) {
                 SessionIdentitySettingsEditor(
                     displayName: $displayName,
                     initials: initialsBinding,
@@ -102,9 +102,7 @@ struct ServersSettingsView: View {
         SettingsCategoryPage(category: .servers) {
             serversSection
 
-            SettingsSection(title: String(localized: "Server Access")) {
-                SettingsFootnote(signOutFootnote)
-
+            SettingsSection(title: String(localized: "Server Access"), help: signOutFootnote) {
                 SettingsButton(String(localized: "Sign Out of This Server"), role: .destructive) {
                     isConfirmingSignOut = true
                 }
@@ -203,7 +201,13 @@ struct ProvidersSettingsView: View {
                 .accessibilityHint("Opens provider rename and Insights visibility settings.")
             }
 
-            SettingsSection(title: String(localized: "Quota Display")) {
+            SettingsSection(
+                title: String(localized: "Quota Display"),
+                help: String(localized: """
+                Controls refresh while Talaria is active. Background and widget refreshes request the same interval, \
+                but iOS controls when they run.
+                """)
+            ) {
                 SettingsPickerRow(
                     title: String(localized: "Provider Icons"),
                     systemImage: "paintpalette",
@@ -233,8 +237,6 @@ struct ProvidersSettingsView: View {
                         Text(interval.title).tag(interval.rawValue)
                     }
                 }
-
-                SettingsFootnote(String(localized: "Controls refresh while Talaria is active. Background and widget refreshes request the same interval, but iOS controls when they run."))
             }
         }
         .onChange(of: percentageMode) {

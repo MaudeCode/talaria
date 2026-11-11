@@ -65,11 +65,14 @@ struct AuxiliaryModelsSettingsView: View {
                 }
             }
         } else {
-            SettingsSection(title: String(localized: "Tasks")) {
+            SettingsSection(
+                title: String(localized: "Tasks"),
+                help: ([String(localized: "Models for side tasks such as session titles, vision, and compression. Auto uses the main model.")]
+                    + viewModel.tasks.map { "\($0.label): \($0.description)" }).joined(separator: "\n\n")
+            ) {
                 ForEach(viewModel.tasks) { task in
                     taskRow(task)
                 }
-                SettingsFootnote(String(localized: "Models for side tasks such as session titles, vision, and compression. Auto uses the main model."))
 
                 if let saveError = viewModel.saveErrorMessage, editingTask == nil {
                     Text(saveError)
@@ -94,7 +97,7 @@ struct AuxiliaryModelsSettingsView: View {
             viewModel.clearSaveError()
             editingTask = task
         } label: {
-            SettingsItemRow(title: task.label, subtitle: task.description, accessorySystemImage: "chevron.forward") {
+            SettingsItemRow(title: task.label, accessorySystemImage: "chevron.forward") {
                 Image(systemName: "cpu").accessibilityHidden(true)
             } badges: {
                 AuxiliaryModelValueText(task: task)
@@ -156,9 +159,9 @@ private struct AuxiliaryModelPickerSheet: View {
                 }
 
                 if let task {
-                    SettingsSection(title: String(localized: "Current")) {
+                    SettingsSection(title: String(localized: "Current"), help: String(localized: "Use the main model")) {
                         Group {
-                            optionRow(title: String(localized: "Auto"), subtitle: String(localized: "Use the main model"), isSelected: task.isAuto == true) {
+                            optionRow(title: String(localized: "Auto"), subtitle: nil, isSelected: task.isAuto == true) {
                                 await save(model: "", provider: "auto")
                             }
                             if task.inCatalog == false {
@@ -171,12 +174,12 @@ private struct AuxiliaryModelPickerSheet: View {
                     }
                 }
 
-                SettingsSection(title: String(localized: "Custom")) {
+                SettingsSection(
+                    title: String(localized: "Custom"),
+                    help: String(localized: "Use @provider:model to pin a provider.")
+                ) {
                     SettingsTextFieldRow(title: String(localized: "Custom model ID"), text: $customModel,
                                          placeholder: String(localized: "Custom model ID"), autocapitalization: .never)
-                    Text("Use @provider:model to pin a provider.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                     ModelPickerButton(String(localized: "Save Custom Model"), isLoading: viewModel.savingTaskID != nil && !customModel.isEmpty) {
                         Task { await save(model: customModel.trimmingCharacters(in: .whitespacesAndNewlines), provider: nil) }
                     }

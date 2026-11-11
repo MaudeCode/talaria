@@ -9,6 +9,7 @@ struct CreateProfileSheet: View {
 
     @Environment(\.dismiss) private var dismiss
 
+    @State private var help: SettingsSectionHelp?
     @State private var name = ""
     @State private var cloneConfig = false
     @State private var modelGroups: [ModelCatalogGroup] = []
@@ -26,8 +27,15 @@ struct CreateProfileSheet: View {
                     TextField("Profile name", text: $name)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
-                } footer: {
-                    Text("Lowercase letters, numbers, hyphens, and underscores; must start with a letter or number.")
+                } header: {
+                    SettingsSectionHeader(title: String(localized: "Profile name")) {
+                        help = SettingsSectionHelp(
+                            title: String(localized: "Profile name"),
+                            message: String(localized: """
+                            Lowercase letters, numbers, hyphens, and underscores; must start with a letter or number.
+                            """)
+                        )
+                    }
                 }
 
                 Section {
@@ -36,8 +44,13 @@ struct CreateProfileSheet: View {
 
                 Section {
                     modelPicker
-                } footer: {
-                    Text("Choose from configured providers and models for this new profile.")
+                } header: {
+                    SettingsSectionHeader(title: String(localized: "Model")) {
+                        help = SettingsSectionHelp(
+                            title: String(localized: "Model"),
+                            message: String(localized: "Choose from configured providers and models for this new profile.")
+                        )
+                    }
                 }
 
                 Section {
@@ -47,12 +60,15 @@ struct CreateProfileSheet: View {
                         .textInputAutocapitalization(.never)
 
                     SecureField("API key", text: $apiKey)
+                } header: {
+                    SettingsSectionHeader(title: String(localized: "Connection")) {
+                        help = SettingsSectionHelp(title: String(localized: "Connection"),
+                                                   message: String(localized: "Optional. Base URL example: http://localhost:11434"))
+                    }
                 } footer: {
                     if hasInvalidBaseURL {
                         Text("Base URL must start with http:// or https://.")
                             .foregroundStyle(.red)
-                    } else {
-                        Text("Optional. Base URL example: http://localhost:11434")
                     }
                 }
 
@@ -64,6 +80,7 @@ struct CreateProfileSheet: View {
                     }
                 }
             }
+            .settingsSectionHelp($help)
             .disabled(isCreating)
             .navigationTitle("New Profile")
             .navigationBarTitleDisplayMode(.inline)

@@ -10,7 +10,13 @@ struct ProviderQuotaWidgetProfilesView: View {
 
     var body: some View {
         SettingsPage(title: String(localized: "Widget Profiles")) {
-            SettingsSection(title: String(localized: "Widget Profiles")) {
+            SettingsSection(
+                title: String(localized: "Widget Profiles"),
+                help: String(localized: """
+                Profiles are named snapshots of the current Widget Appearance settings. Load one to edit it, then \
+                update the snapshot.
+                """)
+            ) {
                 HStack {
                     Label("App Default", systemImage: "slider.horizontal.3")
                     Spacer()
@@ -43,7 +49,6 @@ struct ProviderQuotaWidgetProfilesView: View {
                 } label: {
                     Label("Save Current Settings", systemImage: "plus")
                 }
-                SettingsFootnote(String(localized: "Profiles are named snapshots of the current Widget Appearance settings. Load one to edit it, then update the snapshot."))
             }
         }
         .navigationTitle("Widget Profiles")

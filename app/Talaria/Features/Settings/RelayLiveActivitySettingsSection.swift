@@ -9,7 +9,10 @@ struct RelayLiveActivitySettingsSection: View {
     @AppStorage(TalariaLiveActivityMode.storageKey) private var modeRawValue = TalariaLiveActivityMode.perSession.rawValue
 
     var body: some View {
-        SettingsSection(title: String(localized: "Live Activities")) {
+        SettingsSection(
+            title: String(localized: "Live Activities"),
+            help: String(localized: "Shows short response text on the Lock Screen and Dynamic Island.")
+        ) {
             SettingsPickerRow(
                 title: String(localized: "Display"),
                 systemImage: "bolt.horizontal.circle",
@@ -25,8 +28,6 @@ struct RelayLiveActivitySettingsSection: View {
                 systemImage: "lock",
                 isOn: $showsLiveActivityResponseExcerpts
             )
-
-            SettingsFootnote(String(localized: "Shows short response text on the Lock Screen and Dynamic Island."))
         }
         .onChange(of: modeRawValue) {
             Task {

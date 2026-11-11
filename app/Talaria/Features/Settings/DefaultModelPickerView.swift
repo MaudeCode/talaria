@@ -37,13 +37,12 @@ struct DefaultModelPickerView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                SettingsSection(title: String(localized: "Custom")) {
+                SettingsSection(
+                    title: String(localized: "Custom"),
+                    help: String(localized: "Type a model ID exactly as the server expects it.")
+                ) {
                     SettingsTextFieldRow(title: String(localized: "Custom model ID"), text: $customModel,
                                          placeholder: String(localized: "Custom model ID"), autocapitalization: .never)
-
-                    Text("Type a model ID exactly as the server expects it.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
 
                     ModelPickerButton(
                         String(localized: "Save Custom Model"),

@@ -13,8 +13,8 @@ struct CustomHeadersSettingsView: View {
 
     var body: some View {
         SettingsPage(title: String(localized: "Connection Headers")) {
-            SettingsSection(title: String(localized: "Connection Headers")) {
-                CustomHeadersEditor(headers: $headers)
+            SettingsSection(title: String(localized: "Connection Headers"), help: CustomHeadersEditor.helpText) {
+                CustomHeadersEditor(headers: $headers, showsHelpHeader: false)
             }
         }
         .navigationTitle("Connection Headers")
