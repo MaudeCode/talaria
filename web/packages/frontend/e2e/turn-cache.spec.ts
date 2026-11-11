@@ -36,7 +36,7 @@ test('turn boundaries keep the transcript supplied by the terminal frame', async
     expect(reads).toBe(initialReads + (baseline ? 1 : 0))
     session = { ...session, is_streaming: false, active_stream_id: null, messages: [...session.messages!, { role: 'assistant', id: 4, content: 'The settled reply is ready.' }] }
     stream!.write(`event: done\ndata: ${JSON.stringify({ session })}\n\n`)
-    await expect(page.locator('#btnStop')).toHaveCount(0)
+    await expect(page.getByRole('button').and(page.locator('#btnStop'))).toHaveCount(0)
     if (baseline) await expect.poll(() => reads).toBe(initialReads + 2)
     else {
       await expect(page.getByText('The settled reply is ready.', { exact: true })).toBeVisible()
