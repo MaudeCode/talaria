@@ -1,6 +1,7 @@
 import SwiftUI
 import TalariaKit
 
+/// Secondary text for status, errors, or live data only. Put explanations in the section's help.
 struct SettingsFootnote: View {
     let text: String
 

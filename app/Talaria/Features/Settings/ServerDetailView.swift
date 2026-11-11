@@ -34,7 +34,7 @@ struct ServerDetailView: View {
                                   status: isActive ? String(localized: "Active") : String(localized: "Inactive"))
             }
 
-            SettingsSection(title: String(localized: "Identity")) {
+            SettingsSection(title: String(localized: "Identity"), help: SettingsSectionHelp.identityMessage) {
                 ServerIdentityEditor(
                     displayName: $displayName,
                     initials: $initials,
@@ -44,16 +44,18 @@ struct ServerDetailView: View {
             }
 
             if !isActive {
-                SettingsSection(title: String(localized: "Active Server")) {
-                    SettingsFootnote(String(localized: "Makes this the active server. Sessions, chats, and settings reload for it."))
-
+                SettingsSection(
+                    title: String(localized: "Active Server"),
+                    help: String(localized: "Makes this the active server. Sessions, chats, and settings reload for it.")
+                ) {
                     SettingsButton(String(localized: "Switch to This Server")) {
                         authManager.switchActiveServer(to: account)
                     }
                 }
             }
 
-            SettingsSection(title: isActive ? String(localized: "Account") : String(localized: "Remove Server")) {
+            SettingsSection(title: isActive ? String(localized: "Account") : String(localized: "Remove Server"),
+                            help: removeFootnote) {
                 // TAL-48: a server that keeps sessions per person names who is signed in.
                 if isActive, let person = authManager.activePerson {
                     SettingsInfoRow(title: String(localized: "Signed In As"), value: personName(person))
@@ -61,8 +63,6 @@ struct ServerDetailView: View {
                         authManager.reauthenticateActivePerson()
                     }
                 }
-
-                SettingsFootnote(removeFootnote)
 
                 SettingsButton(removeButtonTitle, role: .destructive, isLoading: isRemoving) {
                     isConfirmingRemove = true

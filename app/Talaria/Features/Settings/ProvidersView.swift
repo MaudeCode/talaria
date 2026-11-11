@@ -54,7 +54,13 @@ struct ProvidersView: View {
     @ViewBuilder
     private var content: some View {
         SettingsPage(title: String(localized: "Providers")) {
-            SettingsSection(title: String(localized: "Providers")) {
+            SettingsSection(
+                title: String(localized: "Providers"),
+                help: String(localized: """
+                Provider keys are managed on the server. Use the eye controls to choose which quotas appear in \
+                Insights.
+                """)
+            ) {
                 providersSection
             }
         }
@@ -106,12 +112,6 @@ struct ProvidersView: View {
                         }
                     )
                 }
-
-                Text("Provider keys are managed on the server. Use the eye controls to choose which quotas appear in Insights.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 6)
-                    .padding(.horizontal, 4)
             }
         }
     }

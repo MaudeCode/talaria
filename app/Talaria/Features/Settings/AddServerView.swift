@@ -64,11 +64,11 @@ struct AddServerView: View {
                     }
                 }
 
-                SettingsSection(title: String(localized: "Connection Headers")) {
-                    CustomHeadersEditor(headers: $customHeaders)
+                SettingsSection(title: String(localized: "Connection Headers"), help: CustomHeadersEditor.helpText) {
+                    CustomHeadersEditor(headers: $customHeaders, showsHelpHeader: false)
                 }
 
-                SettingsSection(title: String(localized: "Identity")) {
+                SettingsSection(title: String(localized: "Identity"), help: SettingsSectionHelp.identityMessage) {
                     ServerIdentityEditor(
                         displayName: $displayName,
                         initials: $initials,

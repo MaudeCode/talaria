@@ -112,7 +112,10 @@ struct SpeechSettingsView: View {
 
     var body: some View {
         SettingsCategoryPage(category: .speech) {
-            SettingsSection(title: String(localized: "Speech")) {
+            SettingsSection(
+                title: String(localized: "Speech"),
+                help: String(localized: "On-device only keeps composer dictation audio off your Hermes server.")
+            ) {
                 SettingsPickerRow(
                     title: String(localized: "Dictation Provider"),
                     systemImage: "mic",
@@ -122,11 +125,6 @@ struct SpeechSettingsView: View {
                         Text(preference.title).tag(preference.rawValue)
                     }
                 }
-
-                SettingsFootnote(
-                    String(localized: "On-device only keeps composer dictation audio off your Hermes server.")
-                )
-
             }
         }
     }

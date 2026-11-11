@@ -4,6 +4,8 @@ import SwiftUI
 struct SettingsSection<Content: View, Header: View>: View {
     let content: Content
     let header: Header
+    var help: SettingsSectionHelp?
+    @State private var presentedHelp: SettingsSectionHelp?
 
     init(@ViewBuilder content: () -> Content, @ViewBuilder header: () -> Header) {
         self.content = content()
@@ -12,17 +14,23 @@ struct SettingsSection<Content: View, Header: View>: View {
 
     var body: some View {
         Section {
-            header
+            if let help {
+                SettingsSectionHeader(title: help.title) { presentedHelp = help }
+            } else {
+                header
+            }
             content
                 .sidebarRowPadding()
                 .sidebarRow(isSelected: false)
                 .navigationLinkIndicatorVisibility(.hidden)
         }
+        .settingsSectionHelp($presentedHelp)
     }
 }
 
 extension SettingsSection where Header == SidebarSectionHeader<EmptyView> {
-    init(title: String, @ViewBuilder content: () -> Content) {
+    init(title: String, help: String? = nil, @ViewBuilder content: () -> Content) {
         self.init(content: content, header: { SidebarSectionHeader(title) })
+        self.help = help.map { SettingsSectionHelp(title: title, message: $0) }
     }
 }

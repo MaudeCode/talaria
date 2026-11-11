@@ -8,15 +8,12 @@ struct AppIconChoiceRow: View {
     let isUpdating: Bool
 
     var body: some View {
-        SettingsItemRow(title: icon.title, subtitle: icon.subtitle, isSelected: isSelected, isLoading: isUpdating) {
+        SettingsItemRow(title: icon.title, isSelected: isSelected, isLoading: isUpdating) {
             AppIconChoicePreview(icon: icon)
         }
-        .accessibilityLabel(accessibilityLabel)
+        .accessibilityLabel(icon.title)
         .accessibilityValue(isUpdating ? "Updating app icon" : isSelected ? "Selected" : "")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
-    private var accessibilityLabel: String {
-        "\(icon.title). \(icon.subtitle)"
-    }
 }

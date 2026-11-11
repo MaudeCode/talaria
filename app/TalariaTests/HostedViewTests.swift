@@ -303,7 +303,7 @@ final class SettingsPlacementHostedTests: XCTestCase {
         let collapsed = try XCTUnwrap(header(), HostedAccessibility.labels(in: window).description)
         XCTAssertTrue(HostedAccessibility.activate(collapsed))
         let expanded = await awaitElement(in: window) {
-            $0.accessibilityLabel?.hasPrefix("System. Matches device appearance") == true
+            $0.accessibilityLabel == "System"
         }
         let firstChoice = try XCTUnwrap(expanded, "Opening the disclosure must reveal its choices")
         XCTAssertLessThan(firstChoice.accessibilityFrame.height, 100,
@@ -361,6 +361,15 @@ final class SettingsPlacementHostedTests: XCTestCase {
     func testSettingsPagesUseChatsListChrome() async throws {
         let fixture = try FixtureApp(for: self)
         let server = UITestFixtureEnvironment.serverURL
+        let defaults = ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+        let keys = [ProviderQuotaWidgetArcColor.storageKey, ProviderQuotaWidgetColorBasis.storageKey,
+                    ProviderQuotaThresholds.cacheKey]
+        let saved = keys.map { defaults.object(forKey: $0) }
+        defer { for (key, value) in zip(keys, saved) { defaults.set(value, forKey: key) } }
+        defaults.set(ProviderQuotaWidgetArcColor.automatic.rawValue, forKey: ProviderQuotaWidgetArcColor.storageKey)
+        ProviderQuotaThresholds(warningRemainingPercent: 20, criticalRemainingPercent: 5, paceTolerancePercent: 5,
+                                paceWarningBurnRatePercent: 120, paceCriticalBurnRatePercent: 150,
+                                paceMinimumElapsedHours: 2).cache(defaults: defaults)
         let pages: [(String, AnyView)] = [("root", AnyView(SettingsView(server: server, selection: .constant(nil))))]
             + SettingsCategory.rootCategories.map { category in
                 (category.rawValue, AnyView(SettingsPaneView(authManager: fixture.environment.authManager,
@@ -369,9 +378,15 @@ final class SettingsPlacementHostedTests: XCTestCase {
                 ("apple-account", AnyView(AppleAccountSettingsView(authManager: fixture.environment.authManager, server: server))),
                 ("relay", AnyView(RelayConnectionManagementView(authManager: fixture.environment.authManager))),
                 ("widget-appearance", AnyView(ProviderQuotaWidgetAppearanceView())),
+                ("widget-overall", AnyView(ProviderQuotaWidgetAppearanceView())),
                 ("widget-profiles", AnyView(ProviderQuotaWidgetProfilesView())),
                 ("sidebar-quotas", AnyView(ProviderQuotaSidebarDisplayView())),
                 ("providers-list", AnyView(ProvidersView(server: server))),
+                ("user-profile", AnyView(UserProfileSettingsView(authManager: fixture.environment.authManager))),
+                ("server-detail", AnyView(ServerDetailView(authManager: fixture.environment.authManager,
+                                                          account: fixture.environment.authManager.servers[0]))),
+                ("connection-headers", AnyView(CustomHeadersSettingsView(authManager: fixture.environment.authManager))),
+                ("default-model", AnyView(DefaultModelPickerView(server: server, currentDefaultModel: nil, onSave: { _ in }))),
                 ("auxiliary-models", AnyView(AuxiliaryModelsSettingsView(server: server)))
             ]
         for style in [UIUserInterfaceStyle.light, .dark] {
@@ -386,9 +401,45 @@ final class SettingsPlacementHostedTests: XCTestCase {
             reference.isHidden = true
             reference.rootViewController = nil
             for (name, page) in pages {
+                defaults.set(name == "widget-overall" ? "overall" : "pace", forKey: ProviderQuotaWidgetColorBasis.storageKey)
                 let window = try hostWindow(NavigationStack { page.modelContainer(fixture.cache) },
                                             size: CGSize(width: 390, height: 844)) { $0.userInterfaceStyle = style }
                 await settleSettingsFixture(in: window)
+                let labels = allSettingsRows(in: window).labels
+                let rows = labels.joined(separator: "\n")
+                let helpSections = [
+                    "chat": ["Composer", "Conversation"], "notifications": ["Provider Quotas"], "speech": ["Speech"],
+                    "servers": ["Server Access"], "providers": ["Quota Display"],
+                    "liveActivitiesAndWidgets": ["Live Activities"], "siriAndShortcuts": ["Siri & Shortcuts"],
+                    "dataAndStorage": ["Offline Data"], "developer": ["Developer"],
+                    "relay": ["Talaria Relay"], "widget-profiles": ["Widget Profiles"],
+                    "widget-appearance": ["Pace Breakpoints"], "widget-overall": ["Overall Breakpoints"],
+                    "providers-list": ["Providers"], "auxiliary-models": ["Tasks"],
+                    "user-profile": ["User Profile"], "server-detail": ["Identity", "Account"],
+                    "connection-headers": ["Connection Headers"], "default-model": ["Custom"]
+                ]
+                for section in helpSections[name] ?? [] {
+                    XCTAssertTrue(labels.contains("About \(section)"), "\(name) must expose help for \(section)")
+                }
+                if name.hasPrefix("widget-") && name != "widget-profiles" {
+                    XCTAssertTrue(rows.contains("Offline: showing the breakpoints last read from the server."),
+                                  "Cached breakpoint status must stay visible")
+                }
+                for explanation in [
+                    "Hardware keyboard only.", "Choose which session controls", "Lays out messages and the composer",
+                    "Covers the git menu", "Time Sensitive applies", "Run Talaria actions like New Chat",
+                    "Cached sessions and messages are kept", "Debug builds only.", "Signs out of the active server",
+                    "Controls refresh while Talaria is active", "Shows short response text",
+                    "Signing out stops remote Live Activities", "Profiles are named snapshots",
+                    "Provider keys are managed on the server", "Models for side tasks such as",
+                    "Stored on this device only.", "Sent with every request to your server",
+                    "Type a model ID exactly", "Signs out and returns to onboarding.",
+                    "Signs out and switches to another configured server.", "Pace compares quota remaining",
+                    "Overall Percentage ignores reset time", "On-device only keeps composer dictation audio",
+                    "Makes this the active server.", "Removes this server and its saved settings"
+                ] {
+                    XCTAssertFalse(rows.contains(explanation), "\(name) renders an explanation outside section help: \(explanation)")
+                }
                 attachHostedScreenshot(window, name: "settings-chrome-\(name)-\(style == .light ? "light" : "dark")")
                 let list = window.firstView(ofType: UICollectionView.self)
                 XCTAssertNotNil(list, "\(name) must render a list like Chats")
@@ -405,6 +456,25 @@ final class SettingsPlacementHostedTests: XCTestCase {
                 window.rootViewController = nil
             }
         }
+    }
+
+    func testSectionHelpOpensTheComposerExplanation() async throws {
+        let window = try hostWindow(NavigationStack { ChatsSettingsView() }, size: HostedSize.phone)
+        defer { window.isHidden = true; window.rootViewController = nil }
+        let help = await awaitElement(in: window) { $0.accessibilityLabel == "About Composer" }
+        let button = try XCTUnwrap(help, "Composer must expose its section help to VoiceOver")
+        XCTAssertGreaterThanOrEqual(button.accessibilityFrame.height, 44)
+        XCTAssertTrue(HostedAccessibility.activate(button))
+        let appeared = await awaitCondition {
+            window.rootViewController?.presentedViewController is UIAlertController
+        }
+        XCTAssertTrue(appeared, "Section help must open an alert")
+        let alert = try XCTUnwrap(window.rootViewController?.presentedViewController as? UIAlertController)
+        XCTAssertEqual(alert.title, "Composer")
+        XCTAssertTrue(alert.message?.contains("Control-Return") == true)
+        XCTAssertTrue(alert.message?.contains("They hide while you type or read older messages.") == true)
+        attachHostedScreenshot(window, name: "settings-composer-help")
+        XCTAssertTrue(HostedAccessibility.tap("OK", in: alert))
     }
 
     private func edgePixel(in window: UIWindow) -> [UInt8] {

@@ -76,7 +76,10 @@ struct NotificationsHapticsSettingsView: View {
                 RelayNotificationSettingsRow(authManager: authManager)
             }
 
-            SettingsSection(title: String(localized: "Provider Quotas")) {
+            SettingsSection(
+                title: String(localized: "Provider Quotas"),
+                help: String(localized: "Time Sensitive applies to critical quota alerts only.")
+            ) {
                 NotificationPermissionToggle(kind: .providerQuota)
                 ProviderQuotaAlertLevelToggles()
             }
@@ -116,7 +119,6 @@ private struct ProviderQuotaAlertLevelToggles: View {
         )
         .disabled(!isEnabled || !critical)
 
-        SettingsFootnote(String(localized: "Time Sensitive applies to critical quota alerts only."))
     }
 }
 

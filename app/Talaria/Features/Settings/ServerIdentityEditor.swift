@@ -29,7 +29,7 @@ struct ServerIdentityEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SettingsItemRow(title: String(localized: "Server Avatar"), subtitle: String(localized: "Stored on this device only.")) {
+            SettingsItemRow(title: String(localized: "Server Avatar")) {
                 ServerAvatarBadge(initials: previewInitials, colorHex: colorHex, size: 36)
             }
 

@@ -24,7 +24,19 @@ struct ChatsSettingsView: View {
     @AppStorage(ComposerVisibilitySettings.contextUsageKey) private var showsComposerContextUsage = true
     var body: some View {
         SettingsCategoryPage(category: .chats) {
-            SettingsSection(title: String(localized: "Composer")) {
+            SettingsSection(
+                title: String(localized: "Composer"),
+                help: [
+                    String(localized: "Send With") + ": " + String(localized: """
+                    Hardware keyboard only. While a reply runs, Control-Return queues the message, or steers it if \
+                    Send While Responding queues.
+                    """),
+                    [String(localized: "Workspace"), String(localized: "Profile"), String(localized: "Git Branch"),
+                     String(localized: "Context Usage")].joined(separator: ", ") + ": " + String(localized: """
+                    Choose which session controls appear below the composer. They hide while you type or read older messages.
+                    """)
+                ].joined(separator: "\n\n")
+            ) {
                 SettingsPickerRow(
                     title: String(localized: "Send While Responding"),
                     systemImage: "arrow.up.message",
@@ -44,8 +56,6 @@ struct ChatsSettingsView: View {
                         Text(sendKey.title).tag(sendKey.rawValue)
                     }
                 }
-
-                SettingsFootnote(String(localized: "Hardware keyboard only. While a reply runs, Control-Return queues the message, or steers it if Send While Responding queues."))
 
                 SettingsToggleRow(
                     title: String(localized: "Workspace"),
@@ -70,11 +80,20 @@ struct ChatsSettingsView: View {
                     systemImage: "gauge.with.dots.needle.67percent",
                     isOn: $showsComposerContextUsage
                 )
-
-                SettingsFootnote(String(localized: "Choose which session controls appear below the composer. They hide while you type or read older messages."))
             }
 
-            SettingsSection(title: String(localized: "Conversation")) {
+            SettingsSection(
+                title: String(localized: "Conversation"),
+                help: [
+                    String(localized: "Right-to-Left Chat Layout") + ": " + String(localized: """
+                    Lays out messages and the composer right-to-left for Arabic, Hebrew, Persian, and Urdu. Code, math, \
+                    tables, and tool output stay left-to-right. Other screens are unaffected.
+                    """),
+                    String(localized: "Git Actions") + ": " + String(localized: """
+                    Covers the git menu, composer branch picker, and the turn-end Commit & Push button and File changes recap.
+                    """)
+                ].joined(separator: "\n\n")
+            ) {
                 SettingsToggleRow(
                     title: String(localized: "Thinking & Tools"),
                     systemImage: "brain.head.profile",
@@ -133,9 +152,6 @@ struct ChatsSettingsView: View {
                     isOn: $rtlChatLayoutEnabled
                 )
 
-                // swiftlint:disable:next line_length
-                SettingsFootnote(String(localized: "Lays out messages and the composer right-to-left for Arabic, Hebrew, Persian, and Urdu. Code, math, tables, and tool output stay left-to-right. Other screens are unaffected."))
-
                 SettingsToggleRow(
                     title: String(localized: "Files Button"),
                     systemImage: "folder",
@@ -153,9 +169,6 @@ struct ChatsSettingsView: View {
                     systemImage: "arrow.triangle.branch",
                     isOn: $showsChatGitControls
                 )
-
-                // swiftlint:disable:next line_length
-                SettingsFootnote(String(localized: "Covers the git menu, composer branch picker, and the turn-end Commit & Push button and File changes recap."))
             }
         }
     }

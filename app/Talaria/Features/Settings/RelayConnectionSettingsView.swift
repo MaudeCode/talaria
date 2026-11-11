@@ -42,13 +42,17 @@ struct RelayConnectionManagementView: View {
                 }
             }
 
-            SettingsSection(title: String(localized: "Talaria Relay")) {
+            SettingsSection(
+                title: String(localized: "Talaria Relay"),
+                help: String(localized: """
+                Signing out stops remote Live Activities and alerts. Your server settings stay on this iPhone.
+                """)
+            ) {
                 SettingsButton(String(localized: "Sign Out of Talaria Relay"), role: .destructive) {
                     isConfirmingDisconnect = true
                 }
                 .disabled(isBusy || credentials == nil)
                 .accessibilityIdentifier("settings-disconnect-relay")
-                SettingsFootnote(String(localized: "Signing out stops remote Live Activities and alerts. Your server settings stay on this iPhone."))
             }
         }
         .navigationTitle("Talaria Relay")

@@ -12,7 +12,7 @@ struct SessionIdentitySettingsEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SettingsItemRow(title: String(localized: "Sessions Avatar"), subtitle: String(localized: "Stored on this device only.")) {
+            SettingsItemRow(title: String(localized: "Sessions Avatar")) {
                 Text(previewInitials)
                     .font(AppFont.caption(weight: .semibold))
                     .foregroundStyle(previewForeground)

@@ -25,7 +25,14 @@ struct LiveActivitiesWidgetsSettingsView: View {
 struct SiriShortcutsSettingsView: View {
     var body: some View {
         SettingsCategoryPage(category: .siriAndShortcuts) {
-            SettingsSection(title: String(localized: "Siri & Shortcuts")) {
+            SettingsSection(
+                title: String(localized: "Siri & Shortcuts"),
+                help: String(localized: """
+                Run Talaria actions like New Chat from Siri, Spotlight, the Lock Screen, or the iPhone Action \
+                button. Open Talaria Settings to manage its Siri & Search options. To assign an action to the Action \
+                button, open the iOS Settings app, choose Action Button, then Shortcut, and pick a Talaria action.
+                """)
+            ) {
                 if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
                     Link(destination: settingsURL) {
                         SettingsAccessoryRow(
@@ -37,9 +44,6 @@ struct SiriShortcutsSettingsView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Open Talaria Settings")
                 }
-
-                // swiftlint:disable:next line_length
-                SettingsFootnote(String(localized: "Run Talaria actions like New Chat from Siri, Spotlight, the Lock Screen, or the iPhone Action button. Open Talaria Settings to manage its Siri & Search options. To assign an action to the Action button, open the iOS Settings app, choose Action Button, then Shortcut, and pick a Talaria action."))
             }
         }
     }
@@ -55,9 +59,16 @@ struct DataStorageSettingsView: View {
 
     var body: some View {
         SettingsCategoryPage(category: .dataAndStorage) {
-            SettingsSection(title: String(localized: "Offline Data")) {
-                // swiftlint:disable:next line_length
-                SettingsFootnote(cacheStatusMessage ?? String(localized: "Cached sessions and messages are kept for offline viewing. Clearing removes this server's cache only — other servers and the Hermes server are not affected."))
+            SettingsSection(
+                title: String(localized: "Offline Data"),
+                help: String(localized: """
+                Cached sessions and messages are kept for offline viewing. Clearing removes this server's cache only \
+                — other servers and the Hermes server are not affected.
+                """)
+            ) {
+                if let cacheStatusMessage {
+                    SettingsFootnote(cacheStatusMessage)
+                }
 
                 SettingsButton(String(localized: "Clear Offline Cache"), role: .destructive, isLoading: isClearingCache) {
                     isConfirmingClearCache = true
@@ -242,7 +253,10 @@ private struct AcknowledgementDetailView: View {
 struct DeveloperSettingsView: View {
     var body: some View {
         SettingsCategoryPage(category: .developer) {
-            SettingsSection(title: String(localized: "Developer")) {
+            SettingsSection(
+                title: String(localized: "Developer"),
+                help: String(localized: "Debug builds only. Replay a canned reply and tune the streamed-text fade feel live.")
+            ) {
                 NavigationLink {
                     StreamingLabView()
                 } label: {
@@ -250,7 +264,6 @@ struct DeveloperSettingsView: View {
                 }
                 .buttonStyle(.plain)
 
-                SettingsFootnote(String(localized: "Debug builds only. Replay a canned reply and tune the streamed-text fade feel live."))
             }
         }
     }

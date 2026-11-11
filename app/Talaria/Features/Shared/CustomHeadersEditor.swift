@@ -7,6 +7,15 @@ import TalariaKit
 struct CustomHeadersEditor: View {
     @Binding var headers: [CustomHeader]
     var style: Style = .standard
+    var showsHelpHeader = true
+    @State private var help: SettingsSectionHelp?
+
+    static var helpText: String {
+        String(localized: """
+        Sent with every request to your server, including media and live streams. Use for a reverse proxy \
+        (e.g. Authentik) or token auth, such as an Authorization header.
+        """)
+    }
 
     struct Style {
         var primaryText: Color
@@ -37,6 +46,12 @@ struct CustomHeadersEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            if showsHelpHeader {
+                SettingsSectionHeader(title: String(localized: "Connection Headers")) {
+                    help = SettingsSectionHelp(title: String(localized: "Connection Headers"), message: Self.helpText)
+                }
+                .foregroundStyle(style.secondaryText)
+            }
             ForEach($headers) { $header in
                 headerRow($header)
             }
@@ -54,12 +69,8 @@ struct CustomHeadersEditor: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Add header")
-
-            Text("Sent with every request to your server, including media and live streams. Use for a reverse proxy (e.g. Authentik) or token auth, such as an Authorization header.")
-                .font(.caption)
-                .foregroundStyle(style.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
         }
+        .settingsSectionHelp($help)
     }
 
     private func headerRow(_ header: Binding<CustomHeader>) -> some View {

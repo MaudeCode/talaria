@@ -32,7 +32,13 @@ struct ProviderQuotaWidgetAutomaticSettingsSections: View {
 
             if thresholds != nil {
                 if colorBasis == .pace {
-                    SettingsSection(title: String(localized: "Pace Breakpoints")) {
+                    SettingsSection(
+                        title: String(localized: "Pace Breakpoints"),
+                        help: String(localized: """
+                        Pace compares quota remaining with the share of the weekly reset window remaining. Burn-rate alerts \
+                        apply only when current usage projects exhaustion before reset.
+                        """)
+                    ) {
                         Group {
                             SettingsStepperRow(
                                 title: String(localized: "Over pace at"),
@@ -62,10 +68,15 @@ struct ProviderQuotaWidgetAutomaticSettingsSections: View {
                             )
                         }
                         .disabled(thresholdsAreCached)
-                        thresholdFooter("Pace compares quota remaining with the share of the weekly reset window remaining. Burn-rate alerts apply only when current usage projects exhaustion before reset.")
+                        thresholdStatus
                     }
                 } else {
-                    SettingsSection(title: String(localized: "Overall Breakpoints")) {
+                    SettingsSection(
+                        title: String(localized: "Overall Breakpoints"),
+                        help: String(localized: """
+                        Overall Percentage ignores reset time and colors the widget from the quota remaining.
+                        """)
+                    ) {
                         Group {
                             SettingsStepperRow(
                                 title: String(localized: "Warning at"),
@@ -81,7 +92,7 @@ struct ProviderQuotaWidgetAutomaticSettingsSections: View {
                             )
                         }
                         .disabled(thresholdsAreCached)
-                        thresholdFooter("Overall Percentage ignores reset time and colors the widget from the quota remaining.")
+                        thresholdStatus
                     }
                 }
             } else if thresholdsLoaded {
@@ -138,11 +149,9 @@ struct ProviderQuotaWidgetAutomaticSettingsSections: View {
     }
 
     @ViewBuilder
-    private func thresholdFooter(_ text: LocalizedStringKey) -> some View {
+    private var thresholdStatus: some View {
         if thresholdsAreCached {
             Text("Offline: showing the breakpoints last read from the server.")
-        } else {
-            Text(text)
         }
     }
 

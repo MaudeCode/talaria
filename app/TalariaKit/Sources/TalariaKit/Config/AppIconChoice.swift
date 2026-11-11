@@ -41,27 +41,6 @@ public enum AppIconChoice: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    public var subtitle: String {
-        switch self {
-        case .system:
-            String(localized: "Matches device appearance")
-        case .light:
-            String(localized: "Always use the light icon")
-        case .dark:
-            String(localized: "Always use the dark icon")
-        case .disco:
-            String(localized: "Always use the disco icon")
-        case .monochromeLight:
-            String(localized: "Always use the monochrome light icon")
-        case .monochromeDark:
-            String(localized: "Always use the monochrome dark icon")
-        case .gradientLight:
-            String(localized: "Always use the gradient light icon")
-        case .gradientDark:
-            String(localized: "Always use the gradient dark icon")
-        }
-    }
-
     public var alternateIconName: String? {
         switch self {
         case .system:
