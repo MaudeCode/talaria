@@ -8,7 +8,7 @@ import { reasoningDisclosureKey } from './reasoning-titles.js'
  */
 import { str } from '../util.js'
 import { createHash } from 'node:crypto'
-import { codexCommentary, withoutReasoningParts, hasToolUseBlocks, finalAnswerOf, agentRowKind, agentSteerText, isCompactionRow, isReasoningBlock, joinReasoning, markerKind, messageText, normalizeAssistantDisplay, normalizeUserDisplay, reasoningBlockText, reasoningFieldsText, splitDisplayText, stripToolCallXml, decidedResultView, toolResultView, toolOutcome, approvalAnsweredBy, type ToolResultView } from './merge.js'
+import { codexCommentary, withoutReasoningParts, hasToolUseBlocks, finalAnswerOf, agentRowKind, agentSteerText, isCompactionRow, isReasoningBlock, joinReasoning, markerKind, messageText, normalizeAssistantDisplay, normalizeUserDisplay, reasoningBlockText, reasoningFieldsText, splitDisplayText, stripToolCallXml, decidedResultView, toolResultView, toolOutcome, approvalAnsweredBy, projectedOutcome, withToolCallOutcomes, type ProjectedOutcome, type ToolResultView } from './merge.js'
 import type { Session } from './session.js'
 import { toolMessageForLimitedPayload } from './window.js'
 import { decidedEditDiff, toolArgs, toolEditDiff } from './tool-display.js'
@@ -347,8 +347,6 @@ export function toolReplies(messages: unknown[]): Map<string, Record<string, unk
   return results
 }
 
-const viewCapped = (view: ToolResultView, full: ToolResultView): boolean => Object.entries(full).some(([key, field]) => field !== view[key as keyof ToolResultView])
-
 /** One tool call's whole result: its text as a full scene row shows it and its uncapped view; null when no reply carries that id. */
 export function fullToolResult(messages: unknown[], toolCallId: string): { result: string; result_view: ToolResultView } | null {
   const reply = toolCallId ? toolReplies(messages).get(toolCallId) : undefined
@@ -396,7 +394,7 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
     const [prose, contentThinking] = splitDisplayText(messageText(m.content))
     const inlineThinking = joinReasoning([settledInline, contentThinking])
     if (inlineThinking) push({ row_id: `${ref}:thinking`, role: 'reasoning', text: inlineThinking, titles: [], ...at })
-    const pushTool = (raw: unknown, i: number) => {
+    const pushTool = (raw: unknown, i: number, decided: ProjectedOutcome | undefined = projectedOutcome(raw)) => {
       const call = isDict(raw) ? raw : {}
       const id = str(call.id) || str(call.call_id) || str(call.tool_call_id) || `${ref}-${String(i)}`
       if (seenTools.has(id)) return
@@ -405,13 +403,17 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
       // Full results, except in a limited response, which clips them like its raw tool rows (the full detail keeps them).
       const shown = reply && opts.clipToolResults ? toolMessageForLimitedPayload(reply) as Record<string, unknown> : reply
       const result = shown ? messageText(shown.content) : call.result ?? call.output ?? null
+      const outcomeName = str(call.name) || str(isDict(call.function) ? call.function.name : '')
+      // TAL-1718: the projection (withToolCallOutcomes) already decided this exact reply unflagged; its outcome is this one.
+      const reuse = reply !== undefined && decided !== undefined && !decided.flagged && decided.name === outcomeName && decided.content === reply.content && decided.display_metadata === reply.display_metadata
       // The view always comes from the full result (TAL-315), with each section capped.
-      const resultView = reply ? toolOutcome(reply.content, str(call.name) || str(isDict(call.function) ? call.function.name : '')).result_view : isDict(call.result_view) ? call.result_view as ToolResultView : null
+      const outcome = reuse ? decided.outcome : reply ? toolOutcome(reply.content, outcomeName) : null
+      const resultView = outcome ? { ...outcome.result_view } : isDict(call.result_view) ? call.result_view as ToolResultView : null
       // TAL-331: a clipped result or a capped section is flagged, so a client can fetch the whole from `/api/session/tool-result`.
-      const clipped = shown?._content_truncated === true || (reply !== undefined && resultView !== null && viewCapped(resultView, toolResultView(reply.content, Infinity)))
-      const name = str(call.name) || str(isDict(call.function) ? call.function.name : '') || 'tool'
+      const clipped = shown?._content_truncated === true || outcome?.capped === true
+      const name = outcomeName || 'tool'
       // TAL-448: a file edit's change, likewise from the full result.
-      const editDiff = reply ? toolEditDiff(name, reply.content, reply.display_metadata) : decidedEditDiff(call.edit_diff)
+      const editDiff = reuse ? decided.edit_diff : reply ? toolEditDiff(name, reply.content, reply.display_metadata) : decidedEditDiff(call.edit_diff)
       push({ row_id: `tool:${id}`, role: 'tool', ...at, tool: {
         id, name, args: toolArgs(call),
         ...(call.progress !== undefined ? { progress: call.done === false ? ToolProgressSchema.safeParse(call.progress).data ?? null : null } : {}),
@@ -442,7 +444,7 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
         flush()
         // The server's projection of this call (withToolCallOutcomes) carries its outcome.
         const projected = (Array.isArray(m.tool_calls) ? m.tool_calls as unknown[] : []).find((call) => isDict(call) && str(call.id) === str(part.id))
-        pushTool({ ...(isDict(projected) ? projected : {}), id: part.id, name: part.name, args: part.input ?? null }, i)
+        pushTool({ ...(isDict(projected) ? projected : {}), id: part.id, name: part.name, args: part.input ?? null }, i, projectedOutcome(projected))
       }
       flush()
       // A call only the session-level list recorded follows the model's own blocks.
@@ -464,9 +466,17 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
   }
 }
 
-/** A settled turn's outcome by the scene's rules, so its `done` frame reports what the settled scene then shows. */
+/**
+ * A settled turn's outcome by the scene's rules, so its `done` frame reports what the settled scene then shows. TAL-1718:
+ * that depends only on the turn's reply row, so it is read from that row alone (the rows `turnsOf` and `replyRows` keep).
+ */
 export function turnTerminalState(messages: unknown[], turnId: string): string {
-  return str(buildTurnScene(turnsOf(messages).get(turnId) ?? [])?.terminal_state) || 'no_response'
+  for (let i = turnId ? messages.length - 1 : -1; i >= 0; i -= 1) {
+    const m = messages[i]
+    if (!isDict(m) || m.role !== 'assistant' || str(m._turn_id) !== turnId || agentRowKind(m) || isCompactionRow(m) || markerKind(m)) continue
+    return terminalStateOf(m, finalAnswerOf(m))
+  }
+  return 'no_response'
 }
 
 /**
@@ -509,7 +519,7 @@ function withStoredOutcome(preview: Record<string, unknown>, built: Record<strin
  * their own cards, and the Agent's notice and hidden assistant rows are no reply (TAL-815), so no scene is built from or
  * attached to one. TAL-1810: a hidden row that made tool calls stays, for those calls (see replyRows).
  */
-function turnsOf(messages: unknown[]): Map<string, [Record<string, unknown>, number][]> {
+export function turnsOf(messages: unknown[]): Map<string, [Record<string, unknown>, number][]> {
   const turns = new Map<string, [Record<string, unknown>, number][]>()
   messages.forEach((m, index) => {
     if (!isDict(m) || markerKind(m) || isCompactionRow(m) || (m.role === 'assistant' && agentRowKind(m) && !(isHiddenAssistant(m) && hasToolCalls(m)))) return
@@ -619,7 +629,25 @@ export function storeAnchorScene(session: Session, body: Record<string, unknown>
   return { message_index: idx, message_ref: ref }
 }
 
-/** Page through one stored scene's rows (the GET semantics). */
+/**
+ * TAL-1718: one turn's rows (`turnsOf`) with their tool calls' outcomes (withToolCallOutcomes), projected over the turn's
+ * own span of the transcript only. A turn's calls and their replies sit inside its span, and the session-level list is
+ * matched by absolute index, so the rows equal those of a whole-transcript projection.
+ */
+function projectedTurn(transcript: unknown[], turnId: string, session: Session): [Record<string, unknown>, number][] | undefined {
+  let start = -1
+  let end = -1
+  transcript.forEach((m, i) => {
+    if (!isDict(m) || str(m._turn_id) !== turnId) return
+    if (start < 0) start = i
+    end = i
+  })
+  if (start < 0) return undefined
+  const span = withToolCallOutcomes(transcript.slice(start, end + 1), session.tool_calls ?? [], session.active_stream_id ?? null, start)
+  return turnsOf(span).get(turnId)?.map(([m, i]) => [m, i + start])
+}
+
+/** Page through one stored scene's rows (the GET semantics); `transcript` is `_turn_id`-stamped, without call outcomes. */
 export function readAnchorSceneRows(session: Session, query: { messageRef: string; messageIndex: number | null; before: number | null; limit: number | null }, transcript: unknown[] = [], showReasoning = true): Record<string, unknown> | null {
   const records = anchorSceneRecords(session)
   let record: Record<string, unknown> | null = null
@@ -641,7 +669,7 @@ export function readAnchorSceneRows(session: Session, query: { messageRef: strin
   const matches = transcript.map((m, i) => [m, i] as const).filter(([m, i]) => isDict(m) && m.role === 'assistant' && (query.messageRef ? assistantAnchorSceneMessageRef(m) === query.messageRef : i === query.messageIndex))
   const target = matches.length === 1 ? matches[0] : matches.find(([, i]) => i === query.messageIndex)
   const turnId = target && isDict(target[0]) ? str(target[0]._turn_id) : ''
-  const turn = turnId ? turnsOf(transcript).get(turnId) : undefined
+  const turn = turnId ? projectedTurn(transcript, turnId, session) : undefined
   const built = turn ? buildTurnScene(turn) : null
   const stored = record && isDict(record.scene) ? withStoredFinalAnswer(record.scene, built) : null
   const scene = stored ?? built

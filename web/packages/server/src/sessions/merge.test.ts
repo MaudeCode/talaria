@@ -28,6 +28,42 @@ describe('withFinalAssistantAnswer (TAL-1030)', () => {
   })
 })
 
+describe('settlement tool outcomes (TAL-1718)', () => {
+  // 399 settled turns of one `terminal` call each (every eighth exits non-zero), then the settling turn's two calls.
+  const result = (n: number, j = 0) => JSON.stringify({ output: `out ${String(n)}.${String(j)}`, exit_code: n % 8 === 0 ? 1 : 0 })
+  const turn = (n: number, results: string[]): Record<string, unknown>[] => [
+    { role: 'user', content: `Q${String(n)}`, _turn_id: `run-${String(n)}` },
+    { role: 'assistant', content: '', tool_calls: results.map((_, j) => ({ id: `c${String(n)}-${String(j)}`, function: { name: 'terminal', arguments: '{}' } })), _turn_id: `run-${String(n)}` },
+    ...results.map((content, j) => ({ role: 'tool', tool_call_id: `c${String(n)}-${String(j)}`, content, _turn_id: `run-${String(n)}` })),
+    { role: 'assistant', content: `A${String(n)}`, _turn_id: `run-${String(n)}` },
+  ]
+  const earlier = Array.from({ length: 399 }, (_, n) => turn(n, [result(n)])).flat()
+  const messages = [...earlier, ...turn(399, [result(399, 0), result(399, 1)])]
+  const resultParses = (run: () => unknown): unknown[] => {
+    const texts = new Set(messages.flatMap((m) => (m.role === 'tool' ? [m.content] : [])))
+    const parse = vi.spyOn(JSON, 'parse')
+    try {
+      run()
+      return parse.mock.calls.flatMap(([text]) => (texts.has(text) ? [text] : []))
+    } finally { parse.mockRestore() }
+  }
+
+  it('classifies only the settling turn\'s results and records what classifying every row records', () => {
+    const recorded = extractToolCallsFromMessages(earlier)
+    const expected = extractToolCallsFromMessages(messages, [], recorded)
+    expect(expected.filter((tc) => tc.is_error)).toHaveLength(50)
+    let calls: unknown
+    expect(resultParses(() => { calls = extractToolCallsFromMessages(messages, [], recorded, earlier.length) })).toEqual([result(399, 0), result(399, 1)])
+    expect(calls).toEqual(expected)
+  })
+
+  it('classifies an earlier row again when its record no longer matches its result', () => {
+    const recorded = extractToolCallsFromMessages(earlier)
+    const changed = messages.map((m) => (m.tool_call_id === 'c1-0' ? { ...m, content: '{"error": "boom"}' } : m))
+    expect(extractToolCallsFromMessages(changed, [], recorded, earlier.length).find((tc) => tc.tid === 'c1-0')).toMatchObject({ is_error: true, snippet: '{"error": "boom"}' })
+  })
+})
+
 describe('toolOutcome (TAL-313)', () => {
   it('projects a locator only from a successful draft producer tool reply, across persisted calls', () => {
     const content = JSON.stringify({ draft_id: 'd_1234abcd', version: 1, card: '::draft-card{id="d_1234abcd" v="1"}' })

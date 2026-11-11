@@ -5,9 +5,10 @@ import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { anchorActivitySceneTransportPreview, assistantAnchorSceneMessageRef, buildTurnScene, hydrateAnchorActivityScenes, normalizeSceneRows, withTurnIds } from './anchor.js'
-import { splitDisplayText } from './merge.js'
+import { anchorActivitySceneTransportPreview, assistantAnchorSceneMessageRef, buildTurnScene, hydrateAnchorActivityScenes, normalizeSceneRows, turnsOf, turnTerminalState, withTurnIds } from './anchor.js'
+import { splitDisplayText, withToolCallOutcomes } from './merge.js'
 import { withSceneToolDisplay } from '../redact.js'
+import { str } from '../util.js'
 
 // Pass-through spies: hydration cost is counted in SHA-256 digests (message refs) and prose-row splits (row normalization).
 vi.mock('node:crypto', async (importOriginal) => {
@@ -16,7 +17,7 @@ vi.mock('node:crypto', async (importOriginal) => {
 })
 vi.mock('./merge.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./merge.js')>()
-  return { ...actual, splitDisplayText: vi.fn(actual.splitDisplayText) }
+  return { ...actual, splitDisplayText: vi.fn(actual.splitDisplayText), withToolCallOutcomes: vi.fn(actual.withToolCallOutcomes) }
 })
 
 useJsonStorage()
@@ -401,6 +402,49 @@ describe('worklog_details_expanded_default (TAL-2149)', () => {
   })
 })
 
+describe('turnTerminalState (TAL-1718)', () => {
+  let toolReads = 0
+  // A tool row that counts reads of its result: building the turn's scene reads it, its reply row alone does not.
+  const counted = { role: 'tool', tool_call_id: 'x1', _turn_id: 'done', get content() { toolReads += 1; return '{"output": "ok"}' } }
+  const transcript = withTurnIds<Json>([
+    { role: 'user', content: 'Work', _turn_id: 'done' },
+    { role: 'assistant', content: '', tool_calls: [{ id: 'x1', name: 'terminal' }], _turn_id: 'done' },
+    counted,
+    { role: 'assistant', content: 'Answer.', _turn_id: 'done' },
+    { role: 'user', content: 'Think', _turn_id: 'silent' },
+    { role: 'assistant', content: '<think>only thinking</think>', _turn_id: 'silent' },
+    { role: 'user', content: 'Stop', _turn_id: 'cancel' },
+    { role: 'assistant', content: 'Stopped.', _error: true, provider_details_label: 'Cancellation details', _turn_id: 'cancel' },
+    { role: 'user', content: 'Break', _turn_id: 'interrupt' },
+    { role: 'assistant', content: 'Cut off.', _error: true, provider_details_label: 'Interruption details', _turn_id: 'interrupt' },
+    { role: 'user', content: 'Fail', _turn_id: 'fail' },
+    { role: 'assistant', content: 'Provider error.', _error: true, _turn_id: 'fail' },
+    { role: 'user', content: 'Loop', _turn_id: 'limit' },
+    { role: 'assistant', content: 'Partial summary.', _max_iteration_summary_fallback: true, _turn_id: 'limit' },
+    { role: 'user', content: 'Explicit', _turn_id: 'explicit' },
+    { role: 'assistant', content: 'Degraded answer.', terminal_state: 'degraded', _turn_id: 'explicit' },
+    // The reply is followed by a held row, an Agent notice and a compaction marker; none of them is the reply.
+    { role: 'user', content: 'Held', _turn_id: 'held' },
+    { role: 'assistant', content: 'Visible.', _turn_id: 'held' },
+    { role: 'assistant', content: 'held', display_kind: 'hidden', tool_calls: [{ id: 'h1', name: 'terminal' }], _turn_id: 'held' },
+    { role: 'assistant', content: '', display_kind: 'failed_turn', _turn_id: 'held' },
+    { role: 'assistant', content: '[context compaction] summary', _turn_id: 'held' },
+    { role: 'marker', content: 'Compacted', _turn_id: 'held' },
+    { role: 'user', content: 'Notice only', _turn_id: 'notice' },
+    { role: 'assistant', content: '', display_kind: 'failed_turn', _turn_id: 'notice' },
+  ])
+  const ids = ['done', 'silent', 'cancel', 'interrupt', 'fail', 'limit', 'explicit', 'held', 'notice', 'missing', '']
+
+  it('reports every turn\'s scene outcome without building its scene', () => {
+    const scenes = ids.map((id) => str(buildTurnScene(turnsOf(transcript).get(id) ?? [])?.terminal_state) || 'no_response')
+    toolReads = 0
+    const states = ids.map((id) => turnTerminalState(transcript, id))
+    expect(toolReads, 'no tool result is read').toBe(0)
+    expect(states).toEqual(scenes)
+    expect(states).toEqual(['completed', 'no_response', 'cancelled', 'interrupted', 'error', 'tool_limit_reached', 'degraded', 'completed', 'no_response', 'no_response', 'no_response'])
+  })
+})
+
 describe('hydration cost (TAL-1741)', () => {
   // Two settled turns of two assistant rows each: counting refs over every row costs twice what one ref per turn does.
   const transcript = withTurnIds<Json>([
@@ -715,5 +759,47 @@ describe('anchor scenes over HTTP', () => {
     const rows = (short.at(-1)?._anchor_activity_scene as Json).activity_rows as Json[]
     expect(rows.find((r) => r.row_id === 'tool:big')?.tool).toMatchObject({ result_truncated: true, result_chars: 6000 })
     expect((rows.find((r) => r.row_id === 'tool:small')?.tool as Json).result_truncated).toBeUndefined()
+  })
+
+  // TAL-1718: settled turns of one `terminal` call each, the result naming its turn.
+  const toolTurns = (count: number, result: (n: number) => string): Json[] => Array.from({ length: count }, (_, n) => [
+    { role: 'user', content: `Q${String(n)}`, _turn_id: `run-${String(n)}` },
+    { role: 'assistant', content: '', tool_calls: [{ id: `c${String(n)}`, function: { name: 'terminal', arguments: '{}' } }], _turn_id: `run-${String(n)}` },
+    { role: 'tool', tool_call_id: `c${String(n)}`, content: result(n), _turn_id: `run-${String(n)}` },
+    { role: 'assistant', content: `A${String(n)}`, _turn_id: `run-${String(n)}` },
+  ]).flat()
+  const sessionWith = async (messages: Json[]): Promise<string> => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const session = (await s.deps.sessionStore.get(sid))
+    session.messages = messages
+    await s.deps.sessionStore.save(session)
+    return sid
+  }
+
+  it('parses each tool result at most twice in an unwindowed detail read, and still flags a capped section', async () => {
+    const result = (n: number) => JSON.stringify({ output: n === 0 ? 'x'.repeat(5000) : `out ${String(n)}`, exit_code: 0 })
+    const messages = toolTurns(20, result)
+    const sid = await sessionWith(messages)
+    const parse = vi.spyOn(JSON, 'parse')
+    const parses = new Map<unknown, number>()
+    let detail: Json
+    try {
+      detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+      for (const [text] of parse.mock.calls) if (typeof text === 'string' && text.startsWith('{"output"')) parses.set(text, (parses.get(text) ?? 0) + 1)
+    } finally { parse.mockRestore() }
+    expect(parses.size).toBe(20)
+    expect(Math.max(...parses.values()), 'parses of the most-parsed result').toBeLessThanOrEqual(2)
+    const tool = (((detail.messages as Json[])[3]?._anchor_activity_scene as Json).activity_rows as Json[]).find((row) => row.role === 'tool')?.tool as Json
+    expect(tool).toMatchObject({ result_truncated: true, result_chars: result(0).length, is_error: false })
+    expect(((tool.result_view as Json).stdout as string).length).toBeLessThan(5000)
+  })
+
+  it('projects only the requested turn\'s rows for its anchor scene', async () => {
+    const messages = toolTurns(100, (n) => `result ${String(n)}`)
+    const sid = await sessionWith(messages)
+    vi.mocked(withToolCallOutcomes).mockClear()
+    const page = await json(await s.get(`/api/session/anchor-scene?session_id=${sid}&message_index=${String(50 * 4 + 3)}`))
+    expect(vi.mocked(withToolCallOutcomes).mock.calls.map(([rows]) => rows.length)).toEqual([4])
+    expect((page.rows as Json[]).find((row) => row.role === 'tool')?.tool).toMatchObject({ id: 'c50', result: 'result 50', done: true })
   })
 })
