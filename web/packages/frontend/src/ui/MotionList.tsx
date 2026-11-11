@@ -45,6 +45,8 @@ export class MotionList<T> extends Component<Props<T>, State<T>, { rows: ListSna
   }
 
   private positionSelection(from: DOMRect | null) {
+    // The origin is painted; the destination must be layout, without a still-running row FLIP.
+    for (const animation of this.moves) animation.cancel()
     const container = this.container.current, el = this.selection.current
     if (!container || !el) return
     this.selectionMove?.cancel()
@@ -82,7 +84,6 @@ export class MotionList<T> extends Component<Props<T>, State<T>, { rows: ListSna
     }
     for (const [key, animation] of this.closing) if (!mounted.has(key)) { animation.cancel(); this.closing.delete(key) }
     if (!before || !motionOn()) { this.cancel(); return }
-    for (const animation of this.moves) animation.cancel()
     const current = measureList(container)
     const previousKeys = new Set(this.state.previous.map(this.props.itemKey))
     const retire = (key: string) => this.setState((state) => {

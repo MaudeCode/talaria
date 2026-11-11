@@ -126,6 +126,22 @@ describe('sidebar list motion (TAL-1756)', () => {
     expect(motion.calls).toHaveLength(0)
   })
 
+  it('lands the selection on the layout position when switching during a row reorder', async () => {
+    route.sessionId = 'other'
+    const client = await mount()
+    await update(client, [other, delta, alpha])
+    const rowMove = motion.calls.findLast((c) => c.el.getAttribute('data-motion-key') === 'alpha' && 'transform' in (c.keyframes[0] ?? {}))!
+    expect(rowMove).toBeDefined()
+    const target = document.querySelector<HTMLElement>('[data-sid="alpha"]')!
+    // jsdom does not paint WAAPI: midway the row is at 40px; cancelling its transform exposes layout at 80px.
+    Object.defineProperty(target, 'getBoundingClientRect', { configurable: true, value: () => ({ top: vi.mocked(rowMove.animation.cancel).mock.calls.length ? 80 : 40, left: 0, width: 240, height: 40 } as DOMRect) })
+    const highlight = document.querySelector<HTMLElement>('[data-list-selection]')!
+    Object.defineProperty(highlight, 'getBoundingClientRect', { configurable: true, value: () => ({ top: 20, left: 0, width: 240, height: 40 } as DOMRect) })
+    act(() => { route.sessionId = 'alpha'; route.listeners.forEach((notify) => notify()) })
+    expect(highlight.style.top).toBe('80px')
+    expect(motion.calls.filter((c) => c.el === highlight).at(-1)?.keyframes[0]).toMatchObject({ transform: 'translate(0px, -60px)' })
+  })
+
   it('retains an optimistic archive until its fold finishes and reverses on refusal, then removes a deleted row', async () => {
     let refuse!: (error: Error) => void
     vi.mocked(api.archiveSession).mockImplementation(() => new Promise((_, reject) => { refuse = reject }))
