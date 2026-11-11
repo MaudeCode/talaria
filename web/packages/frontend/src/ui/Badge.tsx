@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react'
+import { useLayoutEffect, useRef, type ReactNode } from 'react'
+import { arriveMark } from '../lib/motion'
 import { Check } from 'lucide-react'
 import { cn } from './cn'
 
@@ -25,8 +26,14 @@ export type DotState = 'ok' | 'warning' | 'error' | 'idle' | 'changed'
 export const DOT_FILL: Record<DotState, string> = { ok: 'bg-success', warning: 'bg-warning', error: 'bg-error', idle: 'bg-muted', changed: 'bg-accent' }
 
 /** The 7px dot alone, before words that keep their own colour (a task's name); `StatusDot` pairs it with muted words. */
-export function Dot({ state, className }: { state: DotState; className?: string | undefined }) {
-  return <span aria-hidden="true" data-dot={state} className={cn('size-[7px] shrink-0 rounded-full', className, DOT_FILL[state])} />
+export function Dot({ state, className, arrive = false }: { state: DotState; className?: string | undefined; arrive?: boolean }) {
+  const el = useRef<HTMLSpanElement>(null)
+  useLayoutEffect(() => {
+    if (!arrive || !el.current) return
+    const animation = arriveMark(el.current)
+    return () => animation?.cancel()
+  }, [arrive])
+  return <span ref={el} aria-hidden="true" data-dot={state} className={cn('size-[7px] shrink-0 rounded-full', className, DOT_FILL[state])} />
 }
 
 /**

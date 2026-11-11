@@ -9,6 +9,8 @@ interface Props<T> {
   ready: boolean
   id: string
   className: string
+  keyAttr?: string
+  cards?: boolean
   selection?: { key: string | null; className: string }
   children: (items: T[], previous: T[], animate: boolean) => ReactNode
 }
@@ -40,7 +42,7 @@ export class MotionList<T> extends Component<Props<T>, State<T>, { rows: ListSna
   }
 
   override getSnapshotBeforeUpdate() {
-    return { rows: this.state.animate && motionOn() && this.container.current ? measureList(this.container.current) : null,
+    return { rows: this.state.animate && motionOn() && this.container.current ? measureList(this.container.current, this.props.keyAttr) : null,
       selection: this.selection.current && !this.selection.current.hidden ? this.selection.current.getBoundingClientRect() : null }
   }
 
@@ -75,8 +77,9 @@ export class MotionList<T> extends Component<Props<T>, State<T>, { rows: ListSna
     this.positionSelection(this.props.ready && props.ready && props.scope === this.props.scope && props.context === this.props.context && props.selection?.key && this.props.selection?.key ? snapshot.selection : null)
     const before = snapshot.rows
     const mounted = new Set<string>()
-    for (const el of container.querySelectorAll<HTMLElement>('[data-motion-key]')) {
-      const key = el.getAttribute('data-motion-key') ?? ''
+    const keyAttr = this.props.keyAttr ?? 'data-motion-key'
+    for (const el of container.querySelectorAll<HTMLElement>(`[${keyAttr}]`)) {
+      const key = el.getAttribute(keyAttr) ?? ''
       mounted.add(key)
       const exiting = this.state.exiting.has(key)
       el.toggleAttribute('inert', exiting)
@@ -84,7 +87,7 @@ export class MotionList<T> extends Component<Props<T>, State<T>, { rows: ListSna
     }
     for (const [key, animation] of this.closing) if (!mounted.has(key)) { animation.cancel(); this.closing.delete(key) }
     if (!before || !motionOn()) { this.cancel(); return }
-    const current = measureList(container)
+    const current = measureList(container, keyAttr)
     const previousKeys = new Set(this.state.previous.map(this.props.itemKey))
     const retire = (key: string) => this.setState((state) => {
       if (!state.exiting.has(key)) return null
@@ -102,13 +105,13 @@ export class MotionList<T> extends Component<Props<T>, State<T>, { rows: ListSna
         }, () => undefined)
       } else if (!exiting && (this.closing.has(key) || (!previousKeys.has(key) && !before.has(key)))) {
         this.closing.delete(key)
-        const animation = revealHeight(el, { open: true, arrive: true })
+        const animation = revealHeight(el, { open: true, arrive: true, ...(this.props.cards && { from: 'below' }) })
         if (animation) this.track(animation)
       }
     }
     // An offscreen or collapsed exit has no motion to wait for.
     for (const key of this.state.exiting) if (!current.has(key)) retire(key)
-    this.moves = flipList(container, before)
+    this.moves = flipList(container, before, keyAttr, this.props.cards)
     for (const animation of this.moves) this.track(animation)
   }
 
@@ -119,7 +122,7 @@ export class MotionList<T> extends Component<Props<T>, State<T>, { rows: ListSna
   }
   override componentWillUnmount() { this.cancel(); this.selectionMove?.cancel(); this.resize?.disconnect() }
   override render() {
-    return <div ref={this.container} id={this.props.id} className={this.props.className} role="list" data-shared-selection={this.props.selection ? '' : undefined}>
+    return <div ref={this.container} id={this.props.id} className={this.props.className} role={this.props.cards ? undefined : 'list'} data-shared-selection={this.props.selection ? '' : undefined}>
       {this.props.selection && <span ref={this.selection} data-list-selection className={this.props.selection.className} aria-hidden="true" hidden />}
       {this.props.children(this.state.items, this.state.previous, this.state.animate)}
     </div>

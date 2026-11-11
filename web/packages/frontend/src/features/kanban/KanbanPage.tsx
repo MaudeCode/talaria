@@ -17,7 +17,9 @@ import { Switch, FieldRow, TextInput } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { ConfirmDialog, Dialog } from '../../ui/Dialog'
 import { ContextMenu, Menu, MenuChoiceItem, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuSeparator } from '../../ui/Menu'
-import { Badge } from '../../ui/Badge'
+import { MotionList } from '../../ui/MotionList'
+import { RollingNumber } from '../../ui/RollingNumber'
+import { Badge, Dot } from '../../ui/Badge'
 import { METER_RAIL, SectionHeader } from '../../ui/List'
 import { EmptyState, ErrorState, LoadingState, formatDate } from '../../ui/States'
 import { showToast } from '../toast/toast'
@@ -62,6 +64,8 @@ const createKind = (board: string | undefined) => `kanban-task-${board ?? ''}`
 
 type KanbanTask = z.infer<typeof KanbanTaskSchema>
 interface KanbanColumn { name: string; label: string; tasks: KanbanTask[] }
+// Layout placement extends the task, retaining its last column while an archive folds away.
+type PlacedTask = KanbanTask & { motionLane: number; motionColumn: string }
 
 /** Cards a pending status write moves leave their column and lead the target column until the server orders them. */
 function withCardEffects(columns: KanbanColumn[], board: string | undefined, effects: Record<string, ResourceEffect>, created = true): KanbanColumn[] {
@@ -226,7 +230,9 @@ export function KanbanPage() {
   const createdLane = board.data?.lanes ? Math.max(0, board.data.lanes.findIndex((lane) => !lane.assignee)) : 0
   // A column the board holds no task in is narrow; lanes follow the board's count so their columns stay aligned.
   const empty = new Set(columns.filter((col) => col.tasks.length === 0).map((col) => col.name))
-  const renderColumns = (cols: KanbanColumn[], lane = 0) => <KanbanColumns board={current} columns={withCardEffects(cols, current, effects, lane === createdLane)} empty={empty} readOnly={serverReadOnly} stale={stale} selected={selected} onToggle={toggleSelected} onOpen={setOpenTaskId} onChanged={() => { void invalidate() }} />
+  const layout = board.data?.lanes && !lanesOff ? board.data.lanes.map((lane, index) => ({ ...lane, columns: withCardEffects(lane.columns, current, effects, index === createdLane) })) : [{ assignee: null, count: 0, columns }]
+  const placed: PlacedTask[] = layout.flatMap((lane, index) => lane.columns.flatMap(col => col.tasks.map(task => ({ ...task, motionLane: index, motionColumn: col.name }))))
+  const motionScope = JSON.stringify([current, mode, filters, searchText, lanesOff, lanesStarting, board.data?.lane_by_profile])
 
   return (
     <HubPage
@@ -311,38 +317,46 @@ export function KanbanPage() {
       {boards.isError && <ErrorState error={boards.error} onRetry={() => { void boards.refetch() }} />}
       {board.isError && <ErrorState error={board.error} onRetry={() => { void board.refetch() }} />}
       {boards.isSuccess && boards.data.boards.length === 0 && <EmptyState>{m.kanban_no_boards()}</EmptyState>}
-      {mode === 'board' && stats.data && (
-        <div role="group" aria-label={m.kanban_stats()} className="kanban-stats mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
-          <span className="font-semibold text-text">{m.kanban_stats_total({ a0: stats.data.total })}</span>
-          {stats.data.status_counts.map((c) => <span key={c.status}><strong className="text-text">{c.count}</strong> {statusLabel(c.status)}</span>)}
-        </div>
-      )}
-      {mode === 'board' && shownSelected.length > 0 && !serverReadOnly && board.data && (
-        <div role="group" aria-label={m.kanban_bulk_action()} className="kanban-bulk-bar mb-3 flex flex-wrap items-center gap-2 border-b border-border pb-3 text-sm">
-          <span className="text-muted">{m.kanban_selected_count({ a0: shownSelected.length })}</span>
-          <Select value={bulkStatus} onValueChange={setBulkStatus} aria-label={m.kanban_status()} placeholder={m.kanban_status()}>
-            {board.data.bulk_move_targets.map((s) => <option key={s} value={s}>{s}</option>)}
-          </Select>
-          <Button variant="primary" disabled={!bulkStatus || stale} onClick={() => bulk.mutate({ ids: shownSelected, status: bulkStatus, board: current })}>{m.kanban_apply()}</Button>
-          <Button onClick={() => setSelected([])}>{m.kanban_clear_selection()}</Button>
-        </div>
-      )}
-      {mode !== 'board' && boards.isSuccess && <KanbanInspection mode={mode} current={current} filters={filters} onChanged={() => { void invalidate() }} />}
-      {mode === 'board' && board.isSuccess && (board.data.lanes && !lanesOff
-        ? (
-          <div className="flex flex-col gap-4">
-            {board.data.lanes.map((lane, laneIndex) => {
-              const name = lane.assignee ?? m.kanban_lane_unassigned()
-              return (
-                <section key={lane.assignee ?? ''} className="kanban-lane flex flex-col gap-2" aria-label={name}>
-                  <header className="flex items-center gap-2 text-sm font-semibold text-text"><span>{name}</span><span className="text-xs font-normal text-muted">{lane.count}</span></header>
-                  {renderColumns(lane.columns, laneIndex)}
-                </section>
-              )
-            })}
-          </div>
-        )
-        : renderColumns(board.data.columns ?? []))}
+      <MotionList items={placed} itemKey={task => String(task.id)} scope={motionScope} context={context} ready={mode === 'board' && board.isSuccess && stats.isSuccess && !board.isPlaceholderData} keyAttr="data-task-id" cards className="kanban-motion" id="kanbanMotion">
+      {(present, previous, animate) => {
+        const prior = new Map(previous.map(task => [String(task.id), task]))
+        const renderColumns = (cols: KanbanColumn[], lane = 0) => <KanbanColumns board={current} columns={cols} present={present.filter(task => task.motionLane === lane)} previous={prior} animate={animate} lane={lane} empty={empty} readOnly={serverReadOnly} stale={stale} selected={selected} onToggle={toggleSelected} onOpen={setOpenTaskId} onChanged={() => { void invalidate() }} />
+        return <>
+          {mode === 'board' && stats.data && (
+            <div role="group" aria-label={m.kanban_stats()} className="kanban-stats mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
+              <span className="font-semibold text-text"><RollingNumber value={stats.data.total} text={m.kanban_stats_total({ a0: stats.data.total })} animate={animate} /></span>
+              {stats.data.status_counts.map((c) => <span key={c.status}><strong className="text-text"><RollingNumber value={c.count} animate={animate} /></strong> {statusLabel(c.status)}</span>)}
+            </div>
+          )}
+          {mode === 'board' && shownSelected.length > 0 && !serverReadOnly && board.data && (
+            <div role="group" aria-label={m.kanban_bulk_action()} className="kanban-bulk-bar mb-3 flex flex-wrap items-center gap-2 border-b border-border pb-3 text-sm">
+              <span className="text-muted">{m.kanban_selected_count({ a0: shownSelected.length })}</span>
+              <Select value={bulkStatus} onValueChange={setBulkStatus} aria-label={m.kanban_status()} placeholder={m.kanban_status()}>
+                {board.data.bulk_move_targets.map((s) => <option key={s} value={s}>{s}</option>)}
+              </Select>
+              <Button variant="primary" disabled={!bulkStatus || stale} onClick={() => bulk.mutate({ ids: shownSelected, status: bulkStatus, board: current })}>{m.kanban_apply()}</Button>
+              <Button onClick={() => setSelected([])}>{m.kanban_clear_selection()}</Button>
+            </div>
+          )}
+          {mode !== 'board' && boards.isSuccess && <KanbanInspection mode={mode} current={current} filters={filters} onChanged={() => { void invalidate() }} />}
+          {mode === 'board' && board.isSuccess && (board.data.lanes && !lanesOff
+            ? (
+              <div className="flex flex-col gap-4">
+                {layout.map((lane, laneIndex) => {
+                  const name = lane.assignee ?? m.kanban_lane_unassigned()
+                  return (
+                    <section key={lane.assignee ?? ''} className="kanban-lane flex flex-col gap-2" aria-label={name}>
+                      <header className="flex items-center gap-2 text-sm font-semibold text-text"><span>{name}</span><span className="text-xs font-normal text-muted">{lane.count}</span></header>
+                      {renderColumns(lane.columns, laneIndex)}
+                    </section>
+                  )
+                })}
+              </div>
+            )
+            : renderColumns(columns))}
+        </>
+      }}
+      </MotionList>
       {openTask && <TaskDialog key={JSON.stringify([current, openTaskId])} board={current} task={openTask} readOnly={readOnly} onClose={() => setOpenTaskId(null)} onChanged={() => { void invalidate() }} />}
       {creating && <CreateTaskDialog columns={board.data?.create_statuses ?? []} onClose={() => setCreating(false)} onSubmit={(task) => { setCreating(false); createTask.mutate({ ...task, board: current, resource: newResource(createKind(current)) }) }} />}
       {creatingBoard && <CreateBoardDialog onClose={() => setCreatingBoard(false)} onCreated={() => { setCreatingBoard(false); setSelected([]); void invalidate() }} />}
@@ -353,14 +367,14 @@ export function KanbanPage() {
 }
 
 /** Shared task identity/metadata presentation; inspection adds timing or relationships beside it. */
-function KanbanTaskButton({ task, onOpen, disabled, selected, row, children }: { task: KanbanTask; onOpen: () => void; disabled?: boolean; selected?: boolean; row?: boolean; children?: ReactNode }) {
+function KanbanTaskButton({ task, onOpen, disabled, selected, row, sessionArrives = false, children }: { task: KanbanTask; sessionArrives?: boolean; onOpen: () => void; disabled?: boolean; selected?: boolean; row?: boolean; children?: ReactNode }) {
   const id = useId()
-  return <button type="button" aria-labelledby={`${id}-title`} aria-describedby={`${id}-metadata`} disabled={disabled} onClick={onOpen} className={cn('w-full min-w-0 text-left text-sm text-text', row ? 'py-2 hover:text-accent-text' : 'kanban-card', selected && 'selected')} data-task-id={String(task.id)}>
+  return <button type="button" aria-labelledby={`${id}-title`} aria-describedby={`${id}-metadata`} disabled={disabled} onClick={onOpen} className={cn('w-full min-w-0 text-left text-sm text-text', row ? 'py-2 hover:text-accent-text' : 'kanban-card', selected && 'selected')} data-task-id={row ? String(task.id) : undefined}>
     <span id={`${id}-title`} className="block font-medium">{task.title ?? String(task.id)}</span>
     <span id={`${id}-metadata`} className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
       {task.assignee && <span>{task.assignee}</span>}
       {task.priority !== undefined && task.priority !== null && <Badge tone="border-border text-muted">{`P${String(task.priority)}`}</Badge>}
-      {task.session_id && <span className="text-accent-text">●</span>}
+      {task.session_id && <Dot state="changed" arrive={sessionArrives} />}
       {children}
     </span>
   </button>
@@ -423,17 +437,17 @@ function KanbanInspection({ mode, current, filters, onChanged }: { mode: string;
   </section>
 }
 
-function KanbanColumns({ board, columns, empty, readOnly, stale, selected, onToggle, onOpen, onChanged }: { board: string | undefined; columns: KanbanColumn[]; empty: Set<string>; readOnly: boolean; stale: boolean; selected: string[]; onToggle: (id: string) => void; onOpen: (id: string) => void; onChanged: () => void }) {
+function KanbanColumns({ board, columns, present, previous, animate, lane, empty, readOnly, stale, selected, onToggle, onOpen, onChanged }: { board: string | undefined; columns: KanbanColumn[]; present: PlacedTask[]; previous: Map<string, PlacedTask>; animate: boolean; lane: number; empty: Set<string>; readOnly: boolean; stale: boolean; selected: string[]; onToggle: (id: string) => void; onOpen: (id: string) => void; onChanged: () => void }) {
   return (
     <div className="kanban-board" id="kanbanList">
       {columns.map((col) => (
-        <section key={col.name} className="kanban-column gap-2" data-empty={empty.has(col.name) ? '' : undefined} aria-label={statusLabel(col.name, col.label)}>
-          <SectionHeader detail={col.tasks.length}>{statusLabel(col.name, col.label)}</SectionHeader>
+        <section key={col.name} className="kanban-column gap-2" data-motion-group={JSON.stringify([lane, col.name])} data-empty={empty.has(col.name) ? '' : undefined} aria-label={statusLabel(col.name, col.label)}>
+          <SectionHeader detail={<RollingNumber value={col.tasks.length} animate={animate} />}>{statusLabel(col.name, col.label)}</SectionHeader>
           <div className="flex flex-col gap-2">
             {col.tasks.length === 0 && <div className="text-xs text-muted">{m.kanban_no_tasks()}</div>}
-            {col.tasks.map((task) => {
+            {present.filter(task => task.motionColumn === col.name).map((task) => {
               const id = String(task.id)
-              return <KanbanCard key={id} board={board} task={task} readOnly={readOnly} stale={stale} selected={selected.includes(id)} onToggle={() => onToggle(id)} onOpen={() => onOpen(id)} onChanged={onChanged} />
+              return <KanbanCard key={id} sessionArrives={animate && previous.has(id) && !previous.get(id)?.session_id} board={board} task={task} readOnly={readOnly} stale={stale} selected={selected.includes(id)} onToggle={() => onToggle(id)} onOpen={() => onOpen(id)} onChanged={onChanged} />
             })}
           </div>
         </section>
@@ -474,7 +488,7 @@ function useKanbanCardActions(board: string | undefined, task: KanbanTask, readO
 }
 
 /** A board card: click opens its dialog; right-click or long-press opens the same actions as a menu (TAL-1157). */
-function KanbanCard({ board, task, readOnly, stale, selected, onToggle, onOpen, onChanged }: { board: string | undefined; task: KanbanTask; readOnly: boolean; stale: boolean; selected: boolean; onToggle: () => void; onOpen: () => void; onChanged: () => void }) {
+function KanbanCard({ board, task, sessionArrives, readOnly, stale, selected, onToggle, onOpen, onChanged }: { board: string | undefined; task: KanbanTask; sessionArrives: boolean; readOnly: boolean; stale: boolean; selected: boolean; onToggle: () => void; onOpen: () => void; onChanged: () => void }) {
   const id = String(task.id)
   // A pending create has no server identity yet, so it cannot be opened or acted on, the same as its checkbox.
   const provisional = id.includes(':new:')
@@ -488,10 +502,10 @@ function KanbanCard({ board, task, readOnly, stale, selected, onToggle, onOpen, 
       <ContextMenu
         label={m.kanban_task_menu()}
         trigger={
-          <div className="flex items-start gap-2">
+          <div data-task-id={id} className="flex items-start gap-2">
             {!readOnly && <input type="checkbox" className="mt-3 shrink-0" checked={selected} disabled={stale || provisional} onChange={onToggle} aria-label={m.kanban_select_task({ a0: task.title ?? id })} />}
             <div className="min-w-0 flex-1">
-              <KanbanTaskButton task={task} disabled={provisional} selected={selected} onOpen={onOpen} />
+              <KanbanTaskButton sessionArrives={sessionArrives} task={task} disabled={provisional} selected={selected} onOpen={onOpen} />
             </div>
           </div>
         }
