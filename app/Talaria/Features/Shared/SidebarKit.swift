@@ -63,11 +63,10 @@ struct SidebarList<Content: View>: View {
         List {
             content
         }
-        .listStyle(.plain)
+        .plainSectionList()
         // Rows hug their content instead of the 44pt default minimum.
         .environment(\.defaultMinListRowHeight, 0)
         .scrollContentBackground(.hidden)
-        .background(Color(.systemBackground))
     }
 }
 
