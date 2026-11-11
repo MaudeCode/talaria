@@ -227,7 +227,11 @@ remote backend, extension platform enabled). It replaces the inline
 `window.__HERMES_CONFIG__`, `__HERMES_WEBUI_BUNDLE_VERSION__`, and
 `__HERMES_EXTENSION_CONFIG__` globals. It is served without authentication
 because it contains no secrets before login; the CSRF token is included only
-for an authenticated session cookie.
+for an authenticated session cookie. An authenticated payload also carries
+`shell`: the bodies of `/api/settings`, `/api/profiles`, `/api/workspaces` and
+`/api/projects`, which the client seeds into those queries so a cold load skips
+the four reads. The server omits `shell` when any of them fails or takes longer
+than its budget, and the client then reads them as before.
 
 ## 8. Chat streaming
 

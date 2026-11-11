@@ -6,13 +6,14 @@
 import { implement, ORPCError } from '@orpc/server'
 import { coreContract, negotiateLocale, type AuthStatus, type Bootstrap, type Health, type PasskeysList } from '@maudecode/talaria-web-contracts'
 import type { RequestContext } from '../http/context.js'
-import { activeProfileName, authStatusPayload, clearAuthCookieHeader, clearProfileCookieHeader, ensureTrustedAuthSession, loginRedirectPath, sessionCanManageServer } from '../auth/gate.js'
+import { activeProfileName, authStatusPayload, bindPersonAccess, clearAuthCookieHeader, clearProfileCookieHeader, ensureTrustedAuthSession, loginRedirectPath, sessionCanManageServer } from '../auth/gate.js'
 import { OidcAuthError, OidcConfigError } from '../auth/oidc.js'
 import { PasskeyError, PasskeyRateLimitError, rpContext } from '../auth/passkeys.js'
 import { requestBaseUrl } from './auth-raw.js'
 import { AuthStore } from '../auth/store.js'
 import { loginHash } from '../sessions/notify/web-push.js'
-import { onboardingGateAllows } from './settings-router.js'
+import { onboardingGateAllows, profileList, settingsPayload } from './settings-router.js'
+import { projectList, workspaceList } from './sessions-router.js'
 import { throttleClientIp } from '../http/origin.js'
 import { STARTUP_RECOVERY_CONDITION } from '../startup.js'
 import { displayBotName } from '../settings.js'
@@ -104,6 +105,40 @@ export async function bootstrapPayload(ctx: RequestContext): Promise<Bootstrap> 
     profile,
     onboarding,
     features,
+    ...(authenticated ? await shellPayload(ctx) : {}),
+  }
+}
+
+/** The longest the bootstrap waits for its shell; past it the client reads the four routes itself. */
+// ponytail: fixed budget; a slow sidecar (profiles) must not hold the whole shell's first paint.
+const SHELL_BUDGET_MS = 1_000
+
+/**
+ * TAL-1712: the bodies of `/api/settings`, `/api/profiles`, `/api/workspaces` and `/api/projects`, from the loaders
+ * those routes call, under the authority the gate would give them. Any refusal, failure or a read slower than
+ * `SHELL_BUDGET_MS` omits the whole shell; the bootstrap itself never fails for it.
+ */
+async function shellPayload(ctx: RequestContext): Promise<Pick<Bootstrap, 'shell'>> {
+  const { deps } = ctx
+  // The gate holds those routes during startup recovery and refuses a profile whose home escapes the profiles root.
+  if (!deps.startup.ready || deps.profiles.escapes(activeProfileName(ctx))) return {}
+  if (await deps.auth.isAuthEnabled()) {
+    const info = await ensureTrustedAuthSession(ctx)
+    if (!info) return {}
+    await bindPersonAccess(ctx, info)
+  }
+  let timer: NodeJS.Timeout | undefined
+  const late = new Promise<null>((resolve) => { timer = setTimeout(() => { resolve(null) }, SHELL_BUDGET_MS) })
+  try {
+    const reads = Promise.all([settingsPayload(ctx), profileList(deps), workspaceList(deps), projectList(deps, false)])
+    const loaded = await Promise.race([reads, late])
+    if (!loaded) return {}
+    const [settings, profiles, workspaces, projects] = loaded
+    return { shell: { settings, profiles, workspaces, projects } }
+  } catch {
+    return {}
+  } finally {
+    clearTimeout(timer)
   }
 }
 

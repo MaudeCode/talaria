@@ -17,7 +17,58 @@ const BENIGN = [
   /503 GET .*\/api\/kanban\/(boards?|tasks?(\/[^/?]+)?|stats)(\?|$)/,
 ]
 
-export const test = base.extend<{ errors: string[] }>({
+/** TAL-1712: the bootstrap's `shell` stands in for these reads, so a spec that mocks one must get a bootstrap without it. */
+const SHELL_READS = ['settings', 'profiles', 'workspaces', 'projects'].map((name) => new URL(`http://127.0.0.1/api/${name}`))
+const BOOTSTRAP = new URL('http://127.0.0.1/api/bootstrap')
+type RouteUrl = Parameters<Page['route']>[0]
+
+/** Playwright's URL glob (`**` any characters, `*` any but `/`), enough for the patterns specs pass. */
+function routeMatches(pattern: RouteUrl, url: URL): boolean {
+  if (typeof pattern === 'function') return pattern(url)
+  if (pattern instanceof RegExp) return new RegExp(pattern.source, pattern.flags.replace('g', '')).test(url.href)
+  if (typeof pattern !== 'string') return pattern.test(url.href)
+  const source = pattern.replace(/[.+^${}()|[\]\\?]/g, '\\$&').replace(/\*\*/g, '\u0000').replace(/\*/g, '[^/]*').replaceAll('\u0000', '.*')
+  return new RegExp(`^${source}$`).test(url.href)
+}
+
+export const test = base.extend<{ errors: string[]; shellMocks: undefined }>({
+  /**
+   * A spec that mocks a shell read keeps reading it through its mock: once it routes one, every bootstrap the page gets
+   * drops `shell`, including one a spec's own `/api/bootstrap` route fulfills from `route.fetch()`.
+   */
+  shellMocks: [async ({ context, page }, use) => {
+    let mocked = false
+    const withoutShell = (json: unknown): unknown => {
+      if (!mocked || !json || typeof json !== 'object') return json
+      const copy = { ...json }
+      Reflect.deleteProperty(copy, 'shell')
+      return copy
+    }
+    // Page and context routes alike: a spec may mock a shell read on either.
+    for (const target of [page, context] as Pick<Page, 'route'>[]) {
+      const route = target.route.bind(target)
+      target.route = async (url, handler, options) => {
+        if (!mocked && SHELL_READS.some((read) => routeMatches(url, read))) {
+          mocked = true
+          await page.route('**/api/bootstrap', async (bootstrap) => {
+            const response = await bootstrap.fetch()
+            await bootstrap.fulfill({ response, json: withoutShell(await response.json()) })
+          })
+        }
+        if (!routeMatches(url, BOOTSTRAP)) return route(url, handler, options)
+        return route(url, (bootstrap, request) => {
+          const fulfill = bootstrap.fulfill.bind(bootstrap)
+          bootstrap.fulfill = (fulfilled) => fulfill(fulfilled && 'json' in fulfilled ? { ...fulfilled, json: withoutShell(fulfilled.json) } : fulfilled)
+          return handler(bootstrap, request)
+        }, options)
+      }
+    }
+    await use(undefined)
+    // A boot or profile switch can still be reading the bootstrap when the test ends; its route must not fail the test then.
+    // A spec may already have closed its page or context, which leaves no route running there.
+    const closed = (error: unknown) => { if (!String(error).includes('has been closed')) throw error }
+    if (mocked) await Promise.all([page.unrouteAll({ behavior: 'ignoreErrors' }).catch(closed), context.unrouteAll({ behavior: 'ignoreErrors' }).catch(closed)])
+  }, { auto: true }],
   errors: [async ({ page }, use) => {
     const errors: string[] = []
     const onConsole = (msg: ConsoleMessage) => {
