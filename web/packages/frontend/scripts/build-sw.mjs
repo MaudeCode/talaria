@@ -2,7 +2,7 @@
 //
 // 1. Bundle src/sw.ts with Vite in library mode (workbox inlined, no hash).
 // 2. Inject the precache manifest: the shell (index.html), the assets the shell
-//    references directly (entry chunks and stylesheet), the web manifest and
+//    references directly (entry chunks, stylesheet, preloaded latin font), the web manifest and
 //    brand icons. Lazy route/library chunks are hashed and cached on first use
 //    by the runtime cache in sw.ts, so the install footprint stays small.
 // The TanStack Start builder does not run vite-plugin-pwa's closeBundle for the
@@ -65,7 +65,7 @@ const { count, size, warnings } = await injectManifest({
   swSrc: resolve(swTmp, 'sw.js'),
   swDest: resolve(distRoot, 'sw.js'),
   globDirectory: distRoot,
-  globPatterns: ['index.html', 'manifest.webmanifest', 'assets/*.{js,css}'],
+  globPatterns: ['index.html', 'manifest.webmanifest', 'assets/*.{js,css,woff2}'],
   globIgnores: ['sw.js', 'FILES.txt'],
   injectionPoint: 'self.__WB_MANIFEST',
   manifestTransforms: [

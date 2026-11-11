@@ -1,7 +1,8 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { expect, it } from 'vitest'
 import { clientDir, layoutFiles, readLayout, totalBytes } from './check-bundle-size.mjs'
+import { featureTags, fontTables, subsetFile, subsets } from './subset-fonts.mjs'
 
 it('chat route static dependency graphs exclude xterm runtime and stylesheet', () => {
   const manifest = JSON.parse(readFileSync(resolve(clientDir, '.vite/manifest.json'), 'utf8'))
@@ -84,4 +85,33 @@ it('SessionListPanel ships React Compiler output', () => {
   const chunks = Object.values<{ file: string }>(manifest).filter(({ file }) => file.endsWith('.js')).map(({ file }) => readFileSync(resolve(clientDir, file), 'utf8')).filter((source) => source.includes('sessionList'))
   // Compiled components compare memo cache slots against this symbol; React DOM defines it in a different chunk.
   expect(chunks.map((source) => source.includes('react.memo_cache_sentinel'))).toEqual([true])
+})
+
+it('Inter ships as six unicode-range subsets and the shell preloads only the latin one', () => {
+  // TAL-1709: the full 352 KB InterVariable.woff2 was one face and the shell preloaded it on every cold load.
+  const assets = resolve(clientDir, 'assets')
+  const css = readdirSync(assets).filter((file) => file.endsWith('.css')).map((file) => readFileSync(resolve(assets, file), 'utf8')).join('\n')
+  const faces = [...css.matchAll(/@font-face\{[^}]*font-family:\s*"?Inter"?[;,][^}]*\}/g)].map(([face]) => face)
+  expect(faces).toHaveLength(6)
+  for (const face of faces) {
+    expect(face).toContain('unicode-range:')
+    const file = /url\("?\.?\/?(?:assets\/)?([^")]+\.woff2)"?\)/.exec(face)?.[1] ?? face
+    expect(statSync(resolve(assets, file)).size, file).toBeLessThan(140_000)
+  }
+  const preloads = [...readFileSync(resolve(clientDir, '_shell.html'), 'utf8').matchAll(/<link[^>]*rel="preload"[^>]*as="font"[^>]*>/g)].map(([link]) => link)
+  expect(preloads).toHaveLength(1)
+  const preloaded = /href="[^"]*\/(InterVariable-[^"]+\.woff2)"/.exec(preloads[0] ?? '')?.[1] ?? 'missing'
+  expect(statSync(resolve(assets, preloaded)).size).toBe(statSync(subsetFile('latin')).size)
+})
+
+it('each Inter subset stays small and keeps its variation axes', async () => {
+  for (const name of Object.keys(subsets)) {
+    const woff2 = readFileSync(subsetFile(name))
+    expect(woff2.length, name).toBeLessThan(name === 'latin' ? 120_000 : 140_000)
+    const { tables } = await fontTables(woff2)
+    expect(['fvar', 'gvar'].filter((table) => tables.has(table)), name).toEqual(['fvar', 'gvar'])
+  }
+  // base.css turns these alternates on for all UI text; the subsetter keeps only the alternates the app enables.
+  const latin = await featureTags(readFileSync(subsetFile('latin')))
+  expect(['cv02', 'cv11', 'ss01', 'kern', 'tnum'].filter((tag) => !latin.has(tag))).toEqual([])
 })

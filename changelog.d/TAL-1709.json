@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web's first load downloads about 260 KB less font data and fetches other alphabets only when a page shows them.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

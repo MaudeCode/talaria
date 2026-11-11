@@ -11,6 +11,8 @@ the [Talaria monorepo](../README.md) next to the iOS app and the Relay.
   is generated from it and consumed by the iOS app.
 - **Frontend** — `packages/frontend`, a TanStack Start / React SPA. CI builds it into `static/dist/`, which ships
   inside the npm package and the container image, so installs need no frontend toolchain. It is not committed.
+  Its builds, `npm test` and `npm run dev` first split the committed Inter font into per-script subsets
+  (`npm run fonts:subset`, into the gitignored `src/theme/fonts/generated/`).
 - **Sidecar** — `sidecar/talaria_sidecar`, stdlib-only Python that wraps the Agent modules (chat turns,
   approvals, profiles, cron, kanban, skills, providers, auxiliary models, STT, `state.db` writes).
 
