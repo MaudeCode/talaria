@@ -1694,6 +1694,8 @@ export class ProviderCatalog {
       const key = credential ? { credential_id: credential.credential_id } : this.usageKey(provider, apiKey)
       const read = await this.balance(profileHome, provider, key)
       const status = read?.status === 'no_key' ? 'no_key' : read?.status === 'ok' ? 'ok' : read?.status === 'http_error' ? read.http_status : null
+      // TAL-2188: a key the provider reports expired needs a replacement, which signing in again never issues.
+      const rejected = (message: string) => read?.error_code === 'api_key_expired' ? `${name} API key has expired. Create a replacement API key; signing in again does not renew it.` : message
       if (provider === 'openrouter') {
         if (status === 'no_key') return answer(false, 'no_key', 'OpenRouter quota status needs an OPENROUTER_API_KEY configured on the server.')
         if (status === 'ok' && read?.quota) {
@@ -1701,7 +1703,7 @@ export class ProviderCatalog {
           if (!credential || credential.matches_api_key) this.recordCostSnapshot(profileHome, read.quota, at)
           return answer(true, 'available', 'OpenRouter quota status loaded.', { label: 'OpenRouter credits', quota: read.quota })
         }
-        return status === 401 || status === 403 ? answer(false, 'invalid_key', 'OpenRouter rejected the configured API key.') : answer(false, 'unavailable', 'OpenRouter quota status is temporarily unavailable.')
+        return status === 401 || status === 403 ? answer(false, 'invalid_key', rejected('OpenRouter rejected the configured API key.')) : answer(false, 'unavailable', 'OpenRouter quota status is temporarily unavailable.')
       }
       if (provider === 'deepseek') {
         if (status === 'no_key') return answer(false, 'no_key', 'DeepSeek balance needs a DEEPSEEK_API_KEY configured on the server.', { balances: [] })
@@ -1709,7 +1711,7 @@ export class ProviderCatalog {
           const available = read.is_available === true
           return answer(available, available ? 'available' : 'exhausted', available ? 'DeepSeek balance loaded.' : 'DeepSeek balance is exhausted.', { label: 'DeepSeek balance', balances: read.balances })
         }
-        return status === 401 || status === 403 ? answer(false, 'invalid_key', 'DeepSeek rejected the configured API key.', { balances: [] }) : answer(false, 'unavailable', 'DeepSeek balance is temporarily unavailable.', { balances: [] })
+        return status === 401 || status === 403 ? answer(false, 'invalid_key', rejected('DeepSeek rejected the configured API key.'), { balances: [] }) : answer(false, 'unavailable', 'DeepSeek balance is temporarily unavailable.', { balances: [] })
       }
       if (status === 'no_key') return answer(false, 'no_key', 'OpenCode Go account limits need an API key configured on the server.', { account_limits: null })
       if (status === 'ok' && read) {
@@ -1718,7 +1720,7 @@ export class ProviderCatalog {
         const limits = { provider, source: 'usage_api', title: 'Account limits', plan: 'Go', details: [], available: true, unavailable_reason: null, fetched_at: isoAt(at), ...normalizeQuotaWindows(windows, at) }
         return answer(true, 'available', 'OpenCode Go account limits loaded.', { label: 'OpenCode Go usage', account_limits: limits })
       }
-      if (status === 401) return answer(false, 'invalid_key', 'OpenCode Go rejected the configured API key.', { account_limits: null })
+      if (status === 401) return answer(false, 'invalid_key', rejected('OpenCode Go rejected the configured API key.'), { account_limits: null })
       return answer(false, 'unavailable', status === 403 ? 'OpenCode Go account limits require an active subscription.' : 'OpenCode Go account limits are temporarily unavailable.', { account_limits: null })
     }
     // Python `_local_pool_snapshot`: any other provider with a credential pool shows its accounts' local state.
@@ -1938,6 +1940,8 @@ export class ProviderCatalog {
   private readonly lastQuotaSources = new Map<string, { source: string; sequence: number; membership: Set<string>; sources: QuotaSourceRow[]; sourceSequences: Map<string, number>; unconfirmed?: boolean }>()
 
   private staleQuotaSource(source: QuotaSourceRow, reason = 'Provider data is temporarily unavailable. Showing last-confirmed data.'): QuotaSourceRow {
+    // TAL-2188: a refused or missing key confirmed no data to go stale, so its row keeps its actionable reason.
+    if (source.status === 'invalid_key' || source.status === 'no_key') return source
     return { ...source, ...(source.plan_usage ? { plan_stale: true } : {}), status: 'stale', unavailable_reason: reason, message: reason, urgency: { remaining: 'stale', pace: 'stale' } }
   }
 

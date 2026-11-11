@@ -1,5 +1,8 @@
 # Sidecar RPC (TAL-245)
 
+RPC v100 adds `error_code` to `usage.balance` (TAL-2188): a 401 whose small JSON body names an allowlisted
+`error.code` (`api_key_expired`) carries it; every other refusal, and the body itself, stays out.
+
 RPC v99 adds optional `search` and `assignee` to `kanban.inspection` (TAL-1713): the sidecar filters
 rows in SQL before the row budget, so only matches cross the RPC.
 
