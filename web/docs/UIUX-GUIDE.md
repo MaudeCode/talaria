@@ -257,6 +257,12 @@ row's swipe transform. Time labels reuse `SwapText`, and the running and attenti
 grow through CSS. Initial loads, profile/project and filter changes, group disclosures, View all and
 skipped content do not animate. Reduced motion renders the end state immediately.
 
+The Kanban board reuses `MotionList` and `lib/motion.ts` across its columns and profile lanes.
+Cards travel from their last painted position, new cards rise in, and archived cards fold away
+with their controls inert. Column and server stats counts reuse `SwapText` through `RollingNumber`
+to roll changed digits; a newly linked session's `Dot` fades in. First loads, board switches,
+filters, search, lanes toggles, inspection modes and reduced motion show their end states immediately.
+
 ### Switching chats
 
 `MotionList` owns one selection highlight, sliding it from its painted position to the newly active row over

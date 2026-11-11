@@ -89,7 +89,7 @@ export function measureList(container: HTMLElement, keyAttr = 'data-motion-key')
 }
 
 /** FLIP the wrapper, leaving the row's own swipe transform alone. Call after reveals establish their starting size. */
-export function flipList(container: HTMLElement, before: ListSnapshot, keyAttr = 'data-motion-key'): Animation[] {
+export function flipList(container: HTMLElement, before: ListSnapshot, keyAttr = 'data-motion-key', cards = false): Animation[] {
   if (!motionOn()) return []
   const animations: Animation[] = []
   for (const [key, { el, rect, group }] of measureList(container, keyAttr)) {
@@ -99,9 +99,9 @@ export function flipList(container: HTMLElement, before: ListSnapshot, keyAttr =
     if (Math.abs(x) < 0.5 && Math.abs(y) < 0.5) continue
     const lifted = old.group !== group
     animations.push(el.animate([
-      { transform: `translate(${x}px, ${y}px)`, ...(lifted && { background: 'var(--surface)', boxShadow: 'var(--shadow-md)', position: 'relative', zIndex: 1 }) },
-      { transform: 'none', ...(lifted && { background: 'transparent', boxShadow: 'none', position: 'relative', zIndex: 1 }) },
-    ], { duration: 400, easing: TRAVEL_EASE }))
+      { transform: `translate(${x}px, ${y}px)${cards && lifted ? ' scale(1.02)' : ''}`, ...(lifted && { background: 'var(--surface)', boxShadow: 'var(--shadow-md)', position: 'relative', zIndex: 1 }) },
+      { transform: 'none', ...(lifted && { background: cards ? 'var(--surface)' : 'transparent', boxShadow: 'none', position: 'relative', zIndex: 1 }) },
+    ], { duration: cards ? 450 : 400, easing: TRAVEL_EASE }))
   }
   return animations
 }
@@ -119,13 +119,13 @@ export function moveSelection(el: HTMLElement, container: HTMLElement, target: H
 }
 
 /** The label renderer owns presence; all of its animation writes stay here. Fixed title slots only cross-fade. */
-export function swapLabel(el: HTMLElement, incoming: HTMLElement, outgoing: HTMLElement, fixed: boolean): { animations: Animation[]; enter: Animation } {
+export function swapLabel(el: HTMLElement, incoming: HTMLElement, outgoing: HTMLElement, fixed: boolean, roll = false): { animations: Animation[]; enter: Animation } {
   const animations: Animation[] = []
   const from = outgoing.getBoundingClientRect().width, to = incoming.getBoundingClientRect().width
-  if (!fixed && Math.abs(from - to) > 0.5) animations.push(el.animate([{ width: `${from}px` }, { width: `${to}px` }], { duration: SWAP_MS, easing: TRAVEL_EASE }))
-  const step = fixed ? 200 : SWAP_MS * 2 / 3
-  animations.push(outgoing.animate([{ opacity: 1 }, { opacity: 0, ...(!fixed && { transform: 'translateY(-3px)' }) }], { duration: step, easing: 'ease-in', fill: 'forwards' }))
-  const enter = incoming.animate([{ opacity: 0 }, { opacity: 1 }], { duration: step, delay: fixed ? 0 : SWAP_MS - step, easing: ARRIVE_EASE, fill: 'backwards' })
+  if (!fixed && !roll && Math.abs(from - to) > 0.5) animations.push(el.animate([{ width: `${from}px` }, { width: `${to}px` }], { duration: SWAP_MS, easing: TRAVEL_EASE }))
+  const step = roll ? 400 : fixed ? 200 : SWAP_MS * 2 / 3
+  animations.push(outgoing.animate([{ opacity: 1 }, { opacity: 0, ...(!fixed && { transform: roll ? 'translateY(-100%)' : 'translateY(-3px)' }) }], { duration: step, easing: 'ease-in', fill: 'forwards' }))
+  const enter = incoming.animate([{ opacity: 0, ...(roll && { transform: 'translateY(100%)' }) }, { opacity: 1, ...(roll && { transform: 'none' }) }], { duration: step, delay: fixed || roll ? 0 : SWAP_MS - step, easing: ARRIVE_EASE, fill: 'backwards' })
   animations.push(enter)
   for (const animation of animations) void animation.finished.catch(() => undefined)
   return { animations, enter }
@@ -149,4 +149,12 @@ export function enterTranscript(pane: HTMLElement): Animation[] {
     for (const animation of animations) void animation.finished.catch(() => undefined)
     return animations
   })
+}
+
+/** A newly set status mark arrives in its existing slot. */
+export function arriveMark(el: HTMLElement): Animation | null {
+  if (!motionOn()) return null
+  const animation = el.animate([{ opacity: 0, transform: 'scale(0.5)' }, { opacity: 1, transform: 'none' }], { duration: 300, easing: ARRIVE_EASE })
+  void animation.finished.catch(() => undefined)
+  return animation
 }

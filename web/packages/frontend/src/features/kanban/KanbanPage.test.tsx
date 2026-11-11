@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { teardownAll } from '../../stream/connection'
 import { ApiError } from '../../contracts/common'
@@ -14,13 +14,14 @@ vi.mock('../../api/endpoints', () => ({ saveSettings: vi.fn(), fetchKanbanInspec
 import * as api from '../../api/endpoints'
 import { openKanbanEventStream } from '../../api/sse'
 import { KanbanPage } from './KanbanPage'
+import { stubAnimate } from '../../test/animate'
 
 function deferred<T>() {
   let resolve!: (value: T) => void, reject!: (error: unknown) => void
   const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no })
   return { promise, resolve, reject }
 }
-const task = (id = 'A', status = 'todo') => ({ id, title: `Task ${id}`, status, priority: 0, claim_live: false, has_completion_evidence: false, current_run_started_at: null, available_actions: { block: true, unblock: false, complete: true, archive: true, move_to: ['ready', 'done'] }, requires_running_exit_confirmation: status === 'running' })
+const task = (id = 'A', status = 'todo') => ({ id, title: `Task ${id}`, status, session_id: null as string | null, priority: 0, claim_live: false, has_completion_evidence: false, current_run_started_at: null, available_actions: { block: true, unblock: false, complete: true, archive: true, move_to: ['ready', 'done'] }, requires_running_exit_confirmation: status === 'running' })
 const STATUSES = ['todo', 'ready', 'running', 'blocked', 'done']
 const byStatus = (tasks: ReturnType<typeof task>[]) => STATUSES.map((name) => ({ name, label: name, tasks: tasks.filter((t) => t.status === name) }))
 const snapshot = (tasks = [task(), task('B')], lanes = false) => ({ columns: byStatus(tasks), bulk_move_targets: ['done'], create_statuses: ['todo'], lane_by_profile: lanes, latest_event_id: 7, read_only: false, ...(lanes ? { lanes: [{ assignee: 'scout', count: tasks.length, columns: byStatus(tasks) }] } : {}) })
@@ -58,6 +59,136 @@ beforeEach(() => {
 const refusal = (message: string) => new ApiError({ kind: 'http', status: 409, path: '/x', message })
 /** The task ids each column shows, in order. */
 const columnIds = (status: string) => [...document.querySelectorAll('section.kanban-column')[STATUSES.indexOf(status)]!.querySelectorAll('[data-task-id]')].map((el) => el.getAttribute('data-task-id'))
+
+describe('Kanban board motion (TAL-1754)', () => {
+  let motion: ReturnType<typeof stubAnimate>
+  beforeEach(() => {
+    motion = stubAnimate()
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const col = this.closest('.kanban-column')
+      const x = col ? [...document.querySelectorAll('.kanban-column')].indexOf(col) * 300 : 0
+      const y = col ? [...col.querySelectorAll('[data-task-id]')].indexOf(this) * 70 + (document.querySelector('.kanban-stats') ? 26 : 0) : 0
+      return { left: x, top: y, width: 260, height: 60, right: x + 260, bottom: y + 60 } as DOMRect
+    })
+  })
+  afterEach(() => { motion.restore(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
+
+  it('keeps the first board still when its stats arrive after its cards', async () => {
+    const read = deferred<Awaited<ReturnType<typeof api.fetchKanbanStats>>>()
+    vi.mocked(api.fetchKanbanStats).mockReturnValue(read.promise)
+    renderPage()
+    await screen.findByRole('button', { name: /^Task A\b/ })
+    await act(async () => { read.resolve({ total: 2, by_status: { todo: 2 }, status_counts: [{ status: 'todo', count: 2 }] }); await Promise.resolve() })
+    await screen.findByRole('group', { name: 'Stats' })
+    expect(motion.calls).toHaveLength(0)
+  })
+
+  it('lets card travel finish when a move shrinks the tallest column', async () => {
+    const resized = new Map<Element, () => void>()
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(private callback: () => void) {}
+      observe(el: Element) { resized.set(el, this.callback) }
+      unobserve(el: Element) { resized.delete(el) }
+      disconnect = vi.fn()
+    })
+    vi.mocked(api.fetchKanbanBoard).mockResolvedValue(snapshot([task(), task('B'), task('C')]))
+    vi.mocked(api.kanbanTaskAction).mockReturnValue(new Promise(() => undefined))
+    renderPage()
+    await openTask()
+    await choose('Column', 'done')
+    const travel = motion.calls.find(c => c.el.getAttribute('data-task-id') === 'A' && 'transform' in c.keyframes[0]!)!
+    expect(travel).toBeDefined()
+    expect(travel.cancel).not.toHaveBeenCalled()
+    act(() => { for (const [el, callback] of resized) if (el.id === 'kanbanMotion') callback() })
+    expect(travel.cancel).not.toHaveBeenCalled()
+  })
+
+  it.each(['menu', 'dialog', 'bulk', 'dispatch', 'refetch'])('animates the moved card and both columns\' shifted cards after a %s move', async (trigger) => {
+    const target = trigger === 'dispatch' || trigger === 'refetch' ? 'running' : 'done'
+    const write = deferred<Awaited<ReturnType<typeof api.kanbanTaskAction>>>()
+    vi.mocked(api.kanbanTaskAction).mockReturnValue(write.promise)
+    vi.mocked(api.bulkKanbanStatus).mockReturnValue(new Promise(() => undefined))
+    vi.mocked(api.fetchKanbanBoard).mockResolvedValue(snapshot([task(), task('B'), task('C', target)]))
+    const { qc } = renderPage()
+    await screen.findByRole('button', { name: /^Task A\b/ })
+    expect(motion.calls).toHaveLength(0)
+    if (trigger === 'menu') {
+      fireEvent.contextMenu(screen.getByRole('button', { name: /^Task A\b/ }))
+      await userEvent.click(await screen.findByRole('menuitemradio', { name: 'Done' }))
+    } else if (trigger === 'dialog') {
+      await openTask()
+      await choose('Column', 'done')
+    } else if (trigger === 'bulk') {
+      await userEvent.click(screen.getByRole('checkbox', { name: 'Select Task A' }))
+      await choose('Status', 'done')
+      await userEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    } else {
+      if (trigger === 'dispatch') {
+        const dialog = await openTask()
+        await userEvent.click(dialog.getByRole('button', { name: 'Dispatch to agent' }))
+        expect(dialog.getByRole('button', { name: 'Dispatch to agent' })).toBeDisabled()
+        expect(columnIds('todo')).toEqual(['A', 'B'])
+        expect(motion.calls).toHaveLength(0)
+        await userEvent.keyboard('{Escape}')
+      }
+      vi.mocked(api.fetchKanbanBoard).mockResolvedValue(snapshot([task('B'), { ...task('A', target), session_id: 'session-A' }, task('C', target)]))
+      if (trigger === 'dispatch') await act(async () => { write.resolve({ task: task('A', target), read_only: false }); await Promise.resolve() })
+      else await act(async () => { await qc.invalidateQueries({ queryKey: ['kanban'] }) })
+    }
+    await waitFor(() => expect(columnIds(target)).toEqual(['A', 'C']))
+    const travel = motion.calls.filter(c => c.el.hasAttribute('data-task-id') && 'transform' in c.keyframes[0]! && !('height' in c.keyframes[0]))
+    expect(travel.map(c => c.el.getAttribute('data-task-id')).sort()).toEqual(['A', 'B', 'C'])
+    expect(travel.find(c => c.el.getAttribute('data-task-id') === 'A')!.keyframes[0]!.transform).toContain(`translate(${-STATUSES.indexOf(target) * 300}px, 0px)`)
+    expect(travel.find(c => c.el.getAttribute('data-task-id') === 'B')!.keyframes[0]!.transform).toBe('translate(0px, 70px)')
+    expect(travel.find(c => c.el.getAttribute('data-task-id') === 'C')!.keyframes[0]!.transform).toBe('translate(0px, -70px)')
+    if (trigger === 'dispatch' || trigger === 'refetch') expect(motion.calls.some(c => c.el.getAttribute('data-dot') === 'changed')).toBe(true)
+  })
+
+  it('rolls column and server stats counts, reveals arrivals, and retains an inert archive until its fold ends', async () => {
+    const { qc } = renderPage()
+    await screen.findByRole('button', { name: /^Task A\b/ })
+    vi.mocked(api.fetchKanbanStats).mockResolvedValue({ total: 3, by_status: { todo: 1, done: 2 }, status_counts: [{ status: 'todo', count: 1 }, { status: 'done', count: 2 }] })
+    vi.mocked(api.fetchKanbanBoard).mockResolvedValue(snapshot([task('B'), task('C', 'done'), task('D', 'done')]))
+    await act(async () => { await qc.invalidateQueries({ queryKey: ['kanban'] }) })
+    await screen.findByRole('button', { name: /^Task D\b/ })
+    expect(motion.calls.some(c => c.el.closest('.kanban-stats') && c.el.closest('[data-rolling-number]'))).toBe(true)
+    expect(motion.calls.some(c => c.el.closest('.kanban-column') && c.el.closest('[data-rolling-number]'))).toBe(true)
+    const exit = motion.reveals().find(c => c.el.getAttribute('data-task-id') === 'A')
+    expect(exit).toBeDefined()
+    expect(exit!.el).toHaveAttribute('inert')
+    expect(exit!.el).toHaveAttribute('aria-hidden', 'true')
+    expect(motion.reveals().filter(c => ['C', 'D'].includes(c.el.getAttribute('data-task-id') ?? ''))).toHaveLength(2)
+    await act(async () => { for (const c of [...motion.calls]) c.finish(); await Promise.resolve() })
+    await waitFor(() => expect(columnIds('todo')).toEqual(['B']))
+    expect(screen.getByRole('group', { name: 'Stats' })).toHaveTextContent('3 total')
+  })
+
+  it.each(['board', 'search', 'filter', 'lanes', 'reduced'])('renders the end state without motion for a %s change', async (change) => {
+    vi.mocked(api.fetchKanbanBoard).mockResolvedValue(snapshot([{ ...task(), session_id: 'existing' }, task('B')]))
+    const { qc } = renderPage()
+    await screen.findByRole('button', { name: /^Task A\b/ })
+    expect(motion.calls).toHaveLength(0)
+    vi.mocked(api.fetchKanbanBoard).mockResolvedValue(snapshot([task('C', 'done')], change === 'lanes'))
+    vi.mocked(api.fetchKanbanStats).mockResolvedValue({ total: 1, by_status: { done: 1 }, status_counts: [{ status: 'done', count: 1 }] })
+    if (change === 'board') {
+      vi.mocked(api.switchKanbanBoard).mockReturnValue(new Promise(() => undefined))
+      await choose('Board', 'Other')
+    } else if (change === 'search') await userEvent.type(screen.getByRole('searchbox', { name: 'Search tasks' }), 'C')
+    else if (change === 'filter') {
+      await userEvent.click(screen.getByRole('button', { name: /^Task filters/ }))
+      await userEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'Only mine' }))
+    } else if (change === 'lanes') {
+      vi.mocked(api.updateKanbanConfig).mockResolvedValue({})
+      await userEvent.click(await lanesItem())
+    } else {
+      vi.stubGlobal('matchMedia', () => ({ matches: true }))
+      await act(async () => { await qc.invalidateQueries({ queryKey: ['kanban'] }) })
+    }
+    await screen.findByRole('button', { name: /^Task C\b/ })
+    expect(columnIds('done')).toEqual(['C'])
+    expect(motion.calls).toHaveLength(0)
+  })
+})
 
 describe('Kanban writes show their result while the server is held (TAL-1179)', () => {
   it('moves the card to the top of its target column at once, keeps controls usable, and leaves the server cache alone', async () => {

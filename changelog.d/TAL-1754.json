@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Kanban cards travel between columns, counts roll, and new session dots fade in.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}
