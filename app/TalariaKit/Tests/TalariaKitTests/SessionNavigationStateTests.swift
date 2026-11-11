@@ -820,6 +820,28 @@ final class AppSectionLayoutTests: XCTestCase {
         XCTAssertNil(state.secondarySessionID)
     }
 
+    func testReturningToTheSecondaryChatAsThePrimaryClosesTheSecondary() {
+        let root = SessionSummary(sessionId: "split-root")
+        let fork = SessionSummary(sessionId: "split-fork")
+        let other = SessionSummary(sessionId: "split-other")
+        var state = SessionNavigationState()
+        state.select(root)
+        state.reportDisplayedSession(root)
+        // A fork pushed above the root is the displayed primary, so the root may open beside it.
+        state.reportDisplayedSession(fork)
+        state.openBeside(root)
+        XCTAssertEqual(state.secondarySessionID, root.sessionId)
+        // Back shows the root as the primary again; one chat must never fill both panes.
+        state.reportDisplayedSession(root)
+        XCTAssertNil(state.secondarySessionID, "The primary and secondary panes must not show the same chat")
+        XCTAssertEqual(state.selectedSessionID, root.sessionId)
+
+        state.reportDisplayedSession(fork)
+        state.openBeside(other)
+        state.reportDisplayedSession(root)
+        XCTAssertEqual(state.secondarySessionID, other.sessionId, "A different secondary survives the fork's pop")
+    }
+
     func testRefusedSecondaryRemovalRestoresOnlyWhileTheSplitIsUnchanged() {
         let first = SessionSummary(sessionId: "split-first")
         let second = SessionSummary(sessionId: "split-second")

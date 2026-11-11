@@ -82,6 +82,8 @@ public struct SessionNavigationState: Equatable, Sendable {
 
     public mutating func reportDisplayedSession(_ session: SessionSummary) {
         displayedSessionID = Self.normalized(session.sessionId)
+        // Back from a fork can show the chat opened beside it as the primary; one chat never fills both panes.
+        if let displayedSessionID, Self.normalized(secondarySessionID) == displayedSessionID { secondarySession = nil }
     }
     /// Consumed synchronously from local summaries before a launch root is displayed, including a cache miss.
     public private(set) var launchRestoreResolved = false
