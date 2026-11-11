@@ -200,7 +200,7 @@ def stop_worker(timeout=None):
     (root / 'providers.py').write_text('def get_provider_profile(provider): return None\n')
     (root / 'agent').mkdir()
     (root / 'agent/__init__.py').write_text('')
-    (root / 'agent/account_usage.py').write_text("def fetch_account_usage(provider,**kw): return {'provider':provider,'available':True,'windows':[{'remaining':7}], 'details':[]}\n")
+    (root / 'agent/account_usage.py').write_text("def fetch_account_usage(provider,**kw): return {'provider':provider,'available':True,'windows':[{'remaining':7}], 'details':[]}\n_USAGE_FETCHERS={'synthetic':fetch_account_usage}\n")
     args = dict(root=str(root), home=str(home), old=str(old / 'bin/python'), revision=revision,
                 facts=str(facts), selectedFacts=facts.read_text(), web=str(SIDECAR_ROOT.parent))
     script = tmp_path / 'recovery.mjs'
