@@ -25,7 +25,7 @@ class InterpreterResolutionTests(unittest.TestCase):
                 shim.write_text(f'#!/bin/sh\n[ "$HOME" = "{Path.home()}" ] || {{ echo "shim needs its HOME" >&2; exit 1; }}\nexec "{target}" "$@"\n')
                 shim.chmod(0o755)
             env = {**os.environ, "PATH": f"{shims}:{os.environ['PATH']}"}
-            output = subprocess.run(["zsh", str(SCRIPT), "--print-interpreters"], env=env, text=True,
+            output = subprocess.run(["bash", str(SCRIPT), "--print-interpreters"], env=env, text=True,
                                     capture_output=True, check=True).stdout.split()
         self.assertEqual(len(output), 2, output)
         for path in output:

@@ -1,0 +1,1 @@
+{"skip": "Repository CI tooling only; the contract probe script runs under bash so CI no longer installs zsh. No app or Web behavior changes."}

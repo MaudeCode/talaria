@@ -1,4 +1,5 @@
-#!/bin/zsh
+#!/usr/bin/env bash
+# Bash, not zsh: the Linux contract probe runs it on a stock runner without installing packages (TAL-2190).
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -47,7 +48,7 @@ done
 node_bin="$(node -p process.execPath)"
 python_bin="$(python3 -c 'import sys; print(sys.executable)')"
 if (( ${print_interpreters:-0} )); then
-  print -r -- "$node_bin" "$python_bin"
+  printf '%s %s\n' "$node_bin" "$python_bin"
   exit 0
 fi
 
@@ -111,7 +112,6 @@ fi
 
 port="$(node -e 'const s=require("node:net").createServer();s.listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')"
 password="talaria-contract-password"
-typeset -a loader_environment
 loader_environment=()
 if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then loader_environment=("LD_LIBRARY_PATH=$LD_LIBRARY_PATH"); fi
 # The fixture replay sidecar answers every Agent-backed route from recorded
@@ -119,7 +119,8 @@ if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then loader_environment=("LD_LIBRARY_PATH=$L
 # provider, or network is involved.
 (
   cd "$upstream_dir"
-  env -i "${loader_environment[@]}" \
+  # The `+` form keeps an empty array legal under `set -u` in macOS bash 3.2.
+  env -i ${loader_environment[@]+"${loader_environment[@]}"} \
     PATH="$(dirname "$node_bin"):$(dirname "$python_bin"):/usr/bin:/bin" \
     HOME="$run_dir/home" \
     HERMES_HOME="$hermes_home" \

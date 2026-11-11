@@ -150,8 +150,6 @@ jobs:
           node-version-file: web/.nvmrc
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - name: Install zsh for the probe script
-        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends zsh
       - name: Probe local Web HTTP and SSE contracts and record the live responses
         run: scripts/validate-upstream-contract --server-only --responses-output "$RUNNER_TEMP/contract-fixture/live-responses.json"
       # The App package tests start without waiting for this job. Before `swift test` they wait for it through the jobs
