@@ -28,7 +28,6 @@ import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { groupSessionRows, SessionListItem, SessionListPanel } from './SessionListPanel'
 import { useSessionListStream } from './useSessionListStream'
-import { requestSessionSearch } from '../../shell/useShellState'
 
 // Keep relative fixture timestamps on one local date, even just after midnight.
 const now = new Date().setHours(12, 0, 0, 0) / 1000
@@ -91,49 +90,79 @@ describe('chat list settings (TAL-2153)', () => {
   })
 })
 
-describe('SessionListPanel search (TAL-308)', () => {
-  it.each(['close control', 'Escape'])('dismisses an empty or populated search with %s and can reopen it', async (dismiss) => {
+describe('SessionListPanel search (TAL-308, TAL-2184)', () => {
+  const mount = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
+  const input = () => document.getElementById('sessionSearch') as HTMLInputElement
+  const glass = () => screen.getByRole('button', { name: 'Search' })
+  const isOpen = () => input().closest('.panel-search')!.hasAttribute('data-open')
+  const open = async () => {
+    await userEvent.click(glass())
+    expect(input()).toHaveFocus()
+    expect(isOpen()).toBe(true)
+    expect(glass()).toHaveAttribute('aria-expanded', 'true')
+  }
+
+  it('opens from a glass on the Chats head, just before Chat filters, and leaves the filters usable', async () => {
     vi.mocked(api.searchSessions).mockResolvedValue({ sessions: [alpha], sidebar_filtered: true, all_profiles: false, active_profile: 'default' })
-    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
-    const input = screen.getByRole('searchbox')
-    const panel = input.closest('#panelChat')!
+    mount()
     await waitFor(() => expect(shown()).toEqual(['alpha', 'delta', 'other']))
-    for (const term of ['', 'zebra']) {
-      act(() => requestSessionSearch())
-      expect(input).toHaveFocus()
-      expect(panel).toHaveClass('search-open')
-      expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument()
-      if (term) {
-        await userEvent.type(input, term)
-        await waitFor(() => expect(shown()).toEqual(['alpha']))
-      }
-      if (dismiss === 'Escape') await userEvent.keyboard('{Escape}')
-      else {
-        await userEvent.tab()
-        expect(input).not.toHaveFocus()
-        await userEvent.click(screen.getByRole('button', { name: 'Close' }))
-      }
-      expect(panel).not.toHaveClass('search-open')
-      expect(input).toHaveValue('')
-      await waitFor(() => expect(shown()).toEqual(['alpha', 'delta', 'other']))
-      expect(screen.getByRole('heading', { name: 'Chats' })).toBeInTheDocument()
-      await openFilters()
-      await userEvent.keyboard('{Escape}')
+    const head = glass().closest('.panel-head')!
+    expect(within(head as HTMLElement).getByRole('heading', { name: 'Chats' })).toBeInTheDocument()
+    expect(within(head as HTMLElement).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(['Search', 'Chat filters'])
+    expect(glass()).toHaveAttribute('aria-expanded', 'false')
+    expect(glass()).toHaveAttribute('aria-controls', 'sessionSearch')
+    expect(isOpen()).toBe(false)
+    await open()
+    await userEvent.type(input(), 'zebra')
+    await waitFor(() => expect(shown()).toEqual(['alpha']))
+    await openFilters()
+    await userEvent.keyboard('{Escape}')
+  })
+
+  it.each([['the x button', 'zebra'], ['the x button', ''], ['Escape', 'zebra'], ['Escape', ''], ['focus leaving', '']])('closes with %s (query %j), clears and returns focus to the glass', async (dismiss, term) => {
+    vi.mocked(api.searchSessions).mockResolvedValue({ sessions: [alpha], sidebar_filtered: true, all_profiles: false, active_profile: 'default' })
+    mount()
+    await waitFor(() => expect(shown()).toEqual(['alpha', 'delta', 'other']))
+    await open()
+    if (term) {
+      await userEvent.type(input(), term)
+      await waitFor(() => expect(shown()).toEqual(['alpha']))
     }
-    act(() => requestSessionSearch())
-    expect(input).toHaveFocus()
-    expect(panel).toHaveClass('search-open')
+    if (dismiss === 'Escape') await userEvent.keyboard('{Escape}')
+    else if (dismiss === 'focus leaving') act(() => input().blur())
+    else {
+      const close = screen.getByRole('button', { name: 'Close' })
+      expect(close).toHaveTextContent('')
+      await userEvent.click(close)
+    }
+    expect(isOpen()).toBe(false)
+    expect(input()).toHaveValue('')
+    expect(glass()).toHaveFocus()
+    expect(glass()).toHaveAttribute('aria-expanded', 'false')
+    await waitFor(() => expect(shown()).toEqual(['alpha', 'delta', 'other']))
+  })
+
+  it('keeps a field with text open when focus leaves it, and leaves focus where the user moved it', async () => {
+    mount()
+    await open()
+    await userEvent.type(input(), 'z')
+    act(() => input().blur())
+    expect(isOpen()).toBe(true)
+    await userEvent.clear(input())
+    await userEvent.click(await screen.findByRole('button', { name: /^Chat filters/ }))
+    expect(isOpen()).toBe(false)
+    expect(glass()).not.toHaveFocus()
+    await userEvent.keyboard('{Escape}')
   })
 
   it('clears the filter without closing search and keeps the input focused', async () => {
-    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
-    act(() => requestSessionSearch())
-    const input = screen.getByRole('searchbox')
-    await userEvent.type(input, 'z')
+    mount()
+    await open()
+    await userEvent.type(input(), 'z')
     await userEvent.click(screen.getByRole('button', { name: 'Clear conversation filter' }))
-    expect(input).toHaveValue('')
-    expect(input).toHaveFocus()
-    expect(input.closest('#panelChat')).toHaveClass('search-open')
+    expect(input()).toHaveValue('')
+    expect(input()).toHaveFocus()
+    expect(isOpen()).toBe(true)
     await waitFor(() => expect(shown()).toEqual(['alpha', 'delta', 'other']))
   })
 

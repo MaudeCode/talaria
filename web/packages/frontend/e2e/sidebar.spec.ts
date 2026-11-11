@@ -71,7 +71,7 @@ test('every route has the one column, and the page starts at its stored width', 
     await expect(page.locator('nav[aria-label="Primary navigation"]'), path).toHaveCount(1)
     await expect(sidebar(page).locator('#sessionList'), path).toBeVisible()
     expect(await left(page, '#main'), path).toBe(300)
-    expect(await controls(page), path).toEqual(['New conversation', 'New chat', 'Search', 'Tasks', 'Kanban', 'Skills', 'Memory', 'Insights', 'More', ...more, 'No password', 'Settings', 'Notifications'])
+    expect(await controls(page), path).toEqual(['New conversation', 'New chat', 'Tasks', 'Kanban', 'Skills', 'Memory', 'Insights', 'More', ...more, 'No password', 'Settings', 'Notifications'])
   }
   await page.goto('/settings')
   await settle(page)
@@ -91,9 +91,11 @@ test('collapsed, the column is the labelled icon rail, and first paint draws the
   await collapsedOn(page, '/skills')
   expect(await width(page, 'aside.sidebar')).toBe(64)
   expect(await left(page, '#main')).toBe(64)
-  expect(await controls(page)).toEqual(['New conversation', 'Search', 'Chat', 'Tasks', 'Kanban', 'Skills', 'Memory', 'Insights', 'Discussions', 'Todos', 'Decisions', 'No password', 'Settings', 'Notifications'])
+  expect(await controls(page)).toEqual(['New conversation', 'Chat', 'Tasks', 'Kanban', 'Skills', 'Memory', 'Insights', 'Discussions', 'Todos', 'Decisions', 'No password', 'Settings', 'Notifications'])
   for (const name of ['Chat', 'Discussions', 'Tasks', 'Kanban', 'Todos', 'Decisions', 'Skills', 'Memory', 'Insights', 'No password', 'Settings']) await expect(row(page, name), name).toBeInViewport({ ratio: 1 })
-  for (const name of ['Search', 'Notifications']) await expect(button(page, name), name).toBeInViewport({ ratio: 1 })
+  await expect(button(page, 'Notifications')).toBeInViewport({ ratio: 1 })
+  // TAL-2184: search lives on the Chats head, which the rail hides.
+  await expect(sidebar(page).locator('button[aria-label="Search"]:visible')).toHaveCount(0)
   await expect(sidebar(page).locator('[aria-current="page"]:visible')).toHaveAttribute('aria-label', 'Skills')
   await page.locator('aside.sidebar').screenshot({ path: info.outputPath('rail.png') })
 
@@ -115,16 +117,13 @@ test('collapsed, the column is the labelled icon rail, and first paint draws the
   expect(await frame()).toBe('64px')
 })
 
-test('collapsed Search expands and focuses the filter; the edge tab and the shortcut persist the choice', async ({ page }, info) => {
+test('the edge tab and the shortcut persist the choice', async ({ page }, info) => {
   desktopOnly(info.project.name)
   await collapsedOn(page, '/skills')
-  await button(page, 'Search').click()
-  await expect(page.locator('#sessionSearch')).toBeFocused()
+  await page.keyboard.press('ControlOrMeta+b')
   await expect.poll(() => width(page, 'aside.sidebar')).toBe(300)
   expect(await stored(page, 'hermes-webui-sidebar-collapsed')).toBe('0')
 
-  await page.keyboard.press('Escape')
-  await expect(page.locator('#sessionSearch')).toBeHidden()
   await page.locator('#btnSidebarEdgeToggle').click()
   expect(await stored(page, 'hermes-webui-sidebar-collapsed')).toBe('1')
   await expect(sidebar(page).locator('#sessionList')).toBeHidden()
@@ -159,14 +158,14 @@ test('the chat list keeps its filter, groups and scroll across pages and is out 
   await header.click()
   await expect(header).toHaveAttribute('aria-expanded', 'false')
   // Leave Skills in view so activating it does not first scroll the shared column.
-  await scroll.evaluate((el) => { el.scrollTop = 120 })
+  await scroll.evaluate((el) => { el.scrollTop = 60 })
 
   await row(page, 'Skills').click()
   await expect(page).toHaveURL(/\/skills$/)
   await page.goBack()
   await expect(page.locator('#sessionSearch')).toHaveValue('R')
   await expect(header).toHaveAttribute('aria-expanded', 'false')
-  expect(await scroll.evaluate((el) => el.scrollTop)).toBe(120)
+  expect(await scroll.evaluate((el) => el.scrollTop)).toBe(60)
 
   await page.locator('#btnSidebarEdgeToggle').click()
   await expect(list).toBeHidden()
@@ -177,7 +176,7 @@ test('the chat list keeps its filter, groups and scroll across pages and is out 
   await expect(page.locator('.session-item').first()).not.toBeFocused()
   await page.locator('#btnSidebarEdgeToggle').click()
   await expect(list).toBeVisible()
-  expect(await scroll.evaluate((el) => el.scrollTop)).toBe(120)
+  expect(await scroll.evaluate((el) => el.scrollTop)).toBe(60)
   await expect(page.locator('#sessionSearch')).toHaveValue('R')
 })
 
@@ -311,12 +310,7 @@ test('at tablet width the rail stays tiled and the hamburger overlays the panel 
   await expect(list).toBeHidden()
   await expect.poll(() => width(page, 'aside.sidebar')).toBe(64)
 
-  await button(page, 'Search').click()
-  await expect(page.locator('#sessionSearch')).toBeFocused()
-  await expect(list).toBeVisible()
-  await page.keyboard.press('Escape')
-  await expect(list).toBeHidden()
-  await expect(hamburger).toBeFocused()
+  await expect(sidebar(page).locator('button[aria-label="Search"]:visible')).toHaveCount(0)
   await page.keyboard.press('ControlOrMeta+b')
   await expect(list).toBeVisible()
   await expect(page.locator('#btnNewChat')).toBeFocused()
@@ -335,7 +329,7 @@ test('the phone drawer has the expanded content and no icon strip, and the tab b
   await page.locator('#btnHamburger').click()
   await expect(drawer).toBeInViewport({ ratio: 1 })
   expect(await width(page, 'aside.sidebar')).toBe(390)
-  expect(await controls(page)).toEqual(['New conversation', 'New chat', 'Search', 'Tasks', 'Kanban', 'Skills', 'Memory', 'Insights', 'More', 'No password', 'Settings', 'Notifications'])
+  expect(await controls(page)).toEqual(['New conversation', 'New chat', 'Tasks', 'Kanban', 'Skills', 'Memory', 'Insights', 'More', 'No password', 'Settings', 'Notifications'])
   await expect(page.locator('#sessionList')).toBeVisible()
   await page.screenshot({ path: info.outputPath('drawer.png') })
   await row(page, 'Memory').click()
@@ -356,7 +350,7 @@ test('tab order follows the column, and J and K stay inert on a page with no act
     await page.keyboard.press('Tab')
     walked.push(await page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? null))
   }
-  expect(walked).toEqual(['New conversation', 'New chat', 'Search', 'Tasks'])
+  expect(walked).toEqual(['New conversation', 'New chat', 'Tasks', 'Kanban'])
   await page.evaluate(() => { (document.activeElement as HTMLElement | null)?.blur() })
   await page.keyboard.press('j')
   await page.keyboard.press('k')
@@ -643,10 +637,10 @@ test('Settings swaps the column for Back and its sections, and leaving restores 
 
 /** The rail's visible rows by name and its separators as `|`, top to bottom. */
 const railItems = (page: Page) => sidebar(page).locator('.sidebar-row:visible, .sidebar-rail-separator:visible').evaluateAll((nodes) => nodes.map((node) => (node.classList.contains('sidebar-rail-separator') ? '|' : node.getAttribute('aria-label'))))
-const SETTINGS_RAIL = ['Back', 'Search', '|', 'Appearance', 'Chat', 'Navigation', 'Notifications', 'Speech', '|', 'Models', 'Providers', 'Tools', '|', 'Profiles', 'Spaces', 'Extensions', 'Access', 'System', 'Logs', 'About']
+const SETTINGS_RAIL = ['Back', '|', 'Appearance', 'Chat', 'Navigation', 'Notifications', 'Speech', '|', 'Models', 'Providers', 'Tools', '|', 'Profiles', 'Spaces', 'Extensions', 'Access', 'System', 'Logs', 'About']
 
-/** TAL-2183: the stored choice applies on Settings too; collapsed, its column is a rail of Back, Search and the sections. */
-test('Settings collapses to a rail of Back, Search and its sections by the one stored choice', async ({ page }, info) => {
+/** TAL-2183: the stored choice applies on Settings too; collapsed, its column is a rail of Back and the sections (TAL-2184: no search). */
+test('Settings collapses to a rail of Back and its sections by the one stored choice', async ({ page }, info) => {
   desktopOnly(info.project.name)
   await page.setViewportSize({ width: 1440, height: 900 })
   await collapsedOn(page, '/skills')
@@ -655,7 +649,7 @@ test('Settings collapses to a rail of Back, Search and its sections by the one s
   await expect.poll(() => width(page, 'aside.sidebar')).toBe(64)
   expect(await left(page, '#main')).toBe(64)
   expect(await railItems(page)).toEqual(SETTINGS_RAIL)
-  for (const name of SETTINGS_RAIL.filter((name) => name !== '|')) await expect(sidebar(page).getByRole(name === 'Back' || name === 'Search' ? 'button' : 'link', { name, exact: true }), name).toBeInViewport({ ratio: 1 })
+  for (const name of SETTINGS_RAIL.filter((name) => name !== '|')) await expect(sidebar(page).getByRole(name === 'Back' ? 'button' : 'link', { name, exact: true }), name).toBeInViewport({ ratio: 1 })
   // Three labels are too wide for the rail and show a short caption; the row's name stays the label.
   expect(await sidebar(page).locator('[data-settings-section] .sidebar-row-caption').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-caption')))).toEqual(['Appear.', 'Chat', 'Nav', 'Notifs', 'Speech', 'Models', 'Providers', 'Tools', 'Profiles', 'Spaces', 'Extensions', 'Access', 'System', 'Logs', 'About'])
   const appearance = sidebar(page).locator('[data-settings-section="appearance"]')
@@ -681,7 +675,7 @@ test('Settings collapses to a rail of Back, Search and its sections by the one s
   await edge.click()
   await expect.poll(() => width(page, 'aside.sidebar')).toBe(300)
   expect(await stored(page, 'hermes-webui-sidebar-collapsed')).toBe('0')
-  await expect(sidebar(page).locator('#settingsSearch')).toBeVisible()
+  await expect(button(page, 'Search')).toBeVisible()
   await expect(sidebar(page).locator('[data-settings-group] h3')).toHaveText(['Interface', 'Profile', 'Server'])
   await edge.click()
   await expect.poll(() => width(page, 'aside.sidebar')).toBe(64)
@@ -694,16 +688,7 @@ test('Settings collapses to a rail of Back, Search and its sections by the one s
   await expect.poll(() => width(page, 'aside.sidebar')).toBe(64)
   expect(await stored(page, 'hermes-webui-sidebar-collapsed')).toBe('1')
 
-  // The rail's Search opens the column with focus in the settings search.
-  await button(page, 'Search').click()
-  await expect(sidebar(page).locator('#settingsSearch')).toBeFocused()
-  await expect.poll(() => width(page, 'aside.sidebar')).toBe(300)
-  expect(await stored(page, 'hermes-webui-sidebar-collapsed')).toBe('0')
-
   // Leaving keeps the stored rail.
-  await page.locator('#settingsSearch').blur()
-  await page.keyboard.press('ControlOrMeta+b')
-  await expect.poll(() => width(page, 'aside.sidebar')).toBe(64)
   await button(page, 'Back').click()
   await expect(page).toHaveURL(/\/skills$/)
   await expect.poll(() => width(page, 'aside.sidebar')).toBe(64)
@@ -908,4 +893,34 @@ test('dragging the edge resizes the column and its content with the pointer, wit
   expect(await width(page, '.sidebar-panel > *')).toBe(384)
   await page.mouse.up()
   expect(await stored(page, 'hermes-webui-sidebar-width')).toBe('400')
+})
+
+/** TAL-2184: the Chats and Settings heads open their search in the row, on the column's own surface, at every width. */
+test('a panel head opens its search in the row with no surface behind it', async ({ page }, info) => {
+  const coarse = info.project.name === 'mobile'
+  for (const [path, panel, field] of [['/', '#panelChat', '#sessionSearch'], ['/settings/system', '#panelSettings', '#settingsSearch']] as const) {
+    await page.goto(path)
+    await settle(page)
+    const hamburger = page.locator('#btnHamburger')
+    if (await hamburger.isVisible()) await hamburger.click()
+    const head = sidebar(page).locator(`${panel} .panel-search`)
+    const glass = head.getByRole('button', { name: 'Search', exact: true })
+    await expect(sidebar(page).locator(field), path).toBeHidden()
+    await expect(glass, path).toHaveAttribute('aria-expanded', 'false')
+    if (coarse) expect(await width(page, `${panel} .panel-search-trigger`), path).toBe(44)
+    await glass.click()
+    await expect(sidebar(page).locator(field), path).toBeFocused()
+    // Nothing is painted behind the field: the title and the glass hide instead of being covered.
+    expect(await head.locator('.panel-search-bar').evaluate((el) => getComputedStyle(el).backgroundColor), path).toBe('rgba(0, 0, 0, 0)')
+    await expect.poll(() => head.locator('.panel-head > :first-child').evaluate((el) => getComputedStyle(el).visibility), path).toBe('hidden')
+    await expect(glass, path).toBeHidden()
+    if (panel === '#panelChat') await expect(head.getByRole('button', { name: /^Chat filters/ })).toBeVisible()
+    const close = head.getByRole('button', { name: 'Close', exact: true })
+    if (coarse) expect(await close.evaluate((el) => el.getBoundingClientRect().width), path).toBe(44)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), path).toBe(true)
+    await page.screenshot({ path: info.outputPath(`${panel.slice(1)}-search-open.png`) })
+    await close.click()
+    await expect(glass, path).toBeFocused()
+    await expect(sidebar(page).locator(field), path).toBeHidden()
+  }
 })

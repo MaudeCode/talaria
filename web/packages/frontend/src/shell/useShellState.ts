@@ -6,8 +6,8 @@ import { TabIdListSchema } from '../contracts/persisted'
 import { panelForPath } from './nav'
 import { useSetting } from '../app/settings'
 
-interface ShellState { collapsed: boolean; mobileOpen: boolean; sidebarWidth: number; sidePanelOpen: boolean; sessionSearchRequested: boolean }
-let state: ShellState = { collapsed: readPersisted('hermes-webui-sidebar-collapsed') === '1', mobileOpen: false, sidebarWidth: Number(readPersisted('hermes-webui-sidebar-width')) || 300, sidePanelOpen: readPersisted('hermes-webui-workspace-panel') === 'open', sessionSearchRequested: false }
+interface ShellState { collapsed: boolean; mobileOpen: boolean; sidebarWidth: number; sidePanelOpen: boolean }
+let state: ShellState = { collapsed: readPersisted('hermes-webui-sidebar-collapsed') === '1', mobileOpen: false, sidebarWidth: Number(readPersisted('hermes-webui-sidebar-width')) || 300, sidePanelOpen: readPersisted('hermes-webui-workspace-panel') === 'open' }
 const listeners = new Set<() => void>()
 const set = (patch: Partial<ShellState>) => { state = { ...state, ...patch }; for (const l of listeners) l() }
 
@@ -46,12 +46,6 @@ export function toggleMobileSidebar(): void { set({ mobileOpen: !state.mobileOpe
 /** The stored choice only tiles from 901px; below that the panel opens over the page and the choice stays as it is. */
 export const TILED = '(min-width: 901px)'
 export function toggleSidebar(): void { if (window.matchMedia(TILED).matches) toggleSidebarCollapsed(); else toggleMobileSidebar() }
-/** Sidebar Search: shows the panel and asks `SessionListPanel`, which may mount only after a navigation, to open its filter. */
-export function requestSessionSearch(): void {
-  if (window.matchMedia(TILED).matches) toggleSidebarCollapsed(false)
-  set({ sessionSearchRequested: true, mobileOpen: !window.matchMedia(TILED).matches })
-}
-export function clearSessionSearchRequest(): void { set({ sessionSearchRequested: false }) }
 export function setSidebarWidth(width: number): void {
   const w = Math.min(480, Math.max(180, Math.round(width)))
   writePersisted('hermes-webui-sidebar-width', String(w))

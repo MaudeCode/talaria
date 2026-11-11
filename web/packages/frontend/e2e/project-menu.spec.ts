@@ -75,11 +75,15 @@ test('the filter menu selects, renames, recolors, creates and deletes projects',
   await expect(page.getByRole('menu')).toHaveCount(0)
 
   // Search: the field leaves the trigger reachable, so a search can change its own scope.
-  await page.locator('.sidebar-row:visible', { hasText: 'Search' }).click()
+  await page.locator('#panelChat').getByRole('button', { name: 'Search', exact: true }).click()
   await expect(page.locator('#sessionSearch')).toBeFocused()
+  await page.locator('#sessionSearch').fill('e')
   await (await openChatFilters(page)).getByRole('menuitemradio', { name: 'All' }).click()
   await expect(detail).toHaveCount(0)
   await expect(page.locator('#sessionSearch')).toBeVisible()
+  await expect(page.locator('#sessionSearch')).toHaveValue('e')
+  await page.locator('#panelChat').getByRole('button', { name: 'Close', exact: true }).click()
+  await expect(page.locator('#sessionSearch')).toBeHidden()
   await (await row(`${name} renamed`)).click()
   await expect(detail).toHaveText(`${name} renamed`)
 

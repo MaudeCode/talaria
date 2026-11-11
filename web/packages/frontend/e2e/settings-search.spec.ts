@@ -1,4 +1,8 @@
+import type { Page } from '@playwright/test'
 import { expect, settle, test } from './fixtures'
+
+/** TAL-2184: the field rests closed behind the glass on the Settings head. */
+const openSearch = (page: Page) => page.locator('#panelSettings').getByRole('button', { name: 'Search', exact: true }).click()
 
 // TAL-2086: the Settings sidebar search lists rows from every section and opens the chosen row with its control focused.
 // The desktop and mobile projects run it at 1280px and in the 390px drawer.
@@ -7,6 +11,7 @@ test('Settings search finds a row on another section and focuses its control', a
   await settle(page)
   const hamburger = page.locator('#btnHamburger')
   if (await hamburger.isVisible()) await hamburger.click()
+  await openSearch(page)
   const field = page.getByRole('combobox', { name: 'Search settings…' })
   const menu = page.getByRole('navigation', { name: 'Settings' })
   const status = page.locator('#panelSettings [role="status"]')
@@ -33,6 +38,7 @@ test('Settings search finds a row on another section and focuses its control', a
 
   // Arrow keys move through the results; a click chooses too.
   if (await hamburger.isVisible()) await hamburger.click()
+  await openSearch(page)
   await field.fill('this device')
   await expect(results.getByRole('option')).not.toHaveCount(0)
   await field.press('ArrowDown')
@@ -60,12 +66,14 @@ test('Settings search opens a Chat sub-page row and a composer control in the dr
   const field = page.getByRole('combobox', { name: 'Search settings…' })
   const results = page.getByRole('navigation', { name: 'Settings' }).getByRole('listbox')
   if (await hamburger.isVisible()) await hamburger.click()
+  await openSearch(page)
   await field.fill('event timestamps')
   await expect(results.getByRole('option', { name: /Event timestamps/ })).toContainText('Chat › Advanced · Transcript')
   await field.press('Enter')
   await expect(page).toHaveURL(/\/settings\/chat\/advanced#settings-transparent_stream_event_timestamps$/)
   await expect(page.getByRole('switch', { name: 'Event timestamps' })).toBeFocused()
   if (await hamburger.isVisible()) await hamburger.click()
+  await openSearch(page)
   await field.fill('microphone')
   await field.press('Enter')
   await expect(page).toHaveURL(/\/settings\/chat#settings-hide_composer_mic$/)
@@ -80,6 +88,7 @@ test('Settings search opens a sidebar item at its toggle in the drawing', async 
   const field = page.getByRole('combobox', { name: 'Search settings…' })
   const results = page.getByRole('navigation', { name: 'Settings' }).getByRole('listbox')
   if (await hamburger.isVisible()) await hamburger.click()
+  await openSearch(page)
   await field.fill('decisions')
   await expect(results.getByRole('option', { name: /Decisions/ })).toContainText('Navigation · Sidebar')
   await field.press('Enter')
