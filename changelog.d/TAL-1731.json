@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web checks a chat's worktree status faster, especially in large repositories: its Git checks run side by side and no longer list every tracked file to find submodules.",
+      "highlight": false,
+      "announce": false,
+      "components": ["web"]
+    }
+  ]
+}

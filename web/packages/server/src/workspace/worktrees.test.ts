@@ -1,5 +1,5 @@
-import { execFile, spawnSync } from 'node:child_process'
-import { closeSync, existsSync, futimesSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { execFile, spawnSync, type ChildProcess } from 'node:child_process'
+import { closeSync, existsSync, futimesSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, realpathSync, rmSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it, vi } from 'vitest'
@@ -10,6 +10,10 @@ import { GitRunner } from './git.js'
 vi.mock('node:child_process', async (original) => {
   const childProcess = await original<typeof import('node:child_process')>()
   return { ...childProcess, execFile: vi.fn(childProcess.execFile) }
+})
+vi.mock('node:fs', async (original) => {
+  const fs = await original<typeof import('node:fs')>()
+  return { ...fs, mkdtempSync: vi.fn(fs.mkdtempSync), openSync: vi.fn(fs.openSync), readSync: vi.fn(fs.readSync), rmSync: vi.fn(fs.rmSync), writeFileSync: vi.fn(fs.writeFileSync) }
 })
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), 'talaria-worktrees-')))
@@ -89,7 +93,7 @@ describe('hardened worktree Git calls', () => {
     vi.mocked(execFile).mockClear()
     expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ dirty: false, listed: true, ahead_behind: { available: true } })
     const commands = vi.mocked(execFile).mock.calls.map((call) => call[1] as string[])
-    expect(commands.filter((args) => args.includes('ls-files'))).toHaveLength(3)
+    expect(commands.filter((args) => args.includes('ls-files'))).toHaveLength(2)
     expect(commands.length).toBeLessThanOrEqual(16)
   })
 
@@ -379,6 +383,98 @@ describe('hardened worktree Git calls', () => {
     expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ dirty: true, untracked_count: 1, force_required: true })
     expect(await removeWorktreeForSession(session, unlocked, { force: true })).toMatchObject({ ok: true, warnings: ['1 untracked file(s) will be removed.', '1 unpushed commit(s) will be removed.'] })
     expect(existsSync(worktree)).toBe(false)
+  })
+
+  it('reports the same status for clean, dirty, untracked, gitlink, detached and no-upstream worktrees', async () => {
+    const base = (path: string): Record<string, unknown> => ({ path, exists: true, dirty: false, untracked_count: 0, ahead_behind: { ahead: 0, behind: 0, available: true, upstream: 'main' }, locked_by_stream: false, locked_by_terminal: false, listed: true, removable: true, force_required: false })
+    const clean = setup()
+    expect(await worktreeStatusForSession(clean.session, unlocked)).toEqual(base(clean.worktree))
+    writeFileSync(join(clean.worktree, 'tracked.txt'), 'changed\n')
+    expect(await worktreeStatusForSession(clean.session, unlocked)).toEqual({ ...base(clean.worktree), dirty: true, force_required: true })
+    const untracked = setup()
+    writeFileSync(join(untracked.worktree, 'notes.txt'), 'new\n')
+    expect(await worktreeStatusForSession(untracked.session, unlocked)).toEqual({ ...base(untracked.worktree), dirty: true, untracked_count: 1, force_required: true })
+    const gitlink = setup(1)
+    expect(await worktreeStatusForSession(gitlink.session, unlocked)).toEqual({ ...base(gitlink.worktree), force_required: true })
+    const detached = setup()
+    git(detached.worktree, 'checkout', '-q', '--detach')
+    expect(await worktreeStatusForSession(detached.session, unlocked)).toEqual({ ...base(detached.worktree), ahead_behind: { ahead: 0, behind: 0, available: false, upstream: null } })
+    const noUpstream = setup()
+    git(noUpstream.worktree, 'branch', '--unset-upstream')
+    expect(await worktreeStatusForSession(noUpstream.session, unlocked)).toEqual({ ...base(noUpstream.worktree), ahead_behind: { ahead: 0, behind: 0, available: false, upstream: null } })
+  })
+
+  it('runs the listing, status and upstream probes concurrently', async () => {
+    const { worktree, session } = setup()
+    const original = await vi.importActual<typeof import('node:child_process')>('node:child_process')
+    const probe = (argv: string[]): string | null => argv.includes('list') ? 'listed' : argv.includes('--absolute-git-dir') ? 'status' : argv.some((arg) => arg.includes('@{u}')) ? 'upstream' : null
+    const started = new Set<string>()
+    const held: (() => void)[] = []
+    let concurrent = false
+    // Each probe's first spawn waits until all three have started; a serial caller only gets it back from the fallback timer.
+    vi.mocked(execFile).mockImplementation((...args: Parameters<typeof execFile>) => {
+      const kind = probe(args[1] as string[])
+      if (!kind || started.has(kind)) return original.execFile(...args)
+      started.add(kind)
+      held.push(() => { original.execFile(...args) })
+      if (held.length === 3) { concurrent = true; for (const release of held.splice(0)) release() }
+      else setTimeout(() => { for (const release of held.splice(0)) release() }, 300)
+      return undefined as unknown as ChildProcess
+    })
+    try {
+      expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ path: worktree, listed: true, dirty: false, ahead_behind: { available: true, upstream: 'main' } })
+    } finally { vi.mocked(execFile).mockImplementation(original.execFile) }
+    expect(started).toEqual(new Set(['listed', 'status', 'upstream']))
+    expect(concurrent).toBe(true)
+  })
+
+  it('copies the status metadata without synchronous file I/O', async () => {
+    const { session } = setup(1)
+    const sync = [mkdtempSync, openSync, readSync, rmSync, writeFileSync].map((fn) => vi.mocked(fn))
+    for (const fn of sync) fn.mockClear()
+    expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ dirty: false, force_required: true })
+    for (const fn of sync) expect(fn).not.toHaveBeenCalled()
+  })
+
+  it('lists only the .gitmodules paths to find gitlinks in a large index', async () => {
+    const repo = join(root, `large-repo-${String(++n)}`)
+    git(root, 'init', '-q', '-b', 'main', repo)
+    writeFileSync(join(repo, 'seed.txt'), 'seed\n')
+    const blob = git(repo, 'hash-object', '-w', 'seed.txt').trim()
+    // 5,000 tracked files staged straight into the index and kept out of the working tree with skip-worktree.
+    const paths = Array.from({ length: 5_000 }, (_, i) => `files/${String(i)}.txt`)
+    const input = (args: string[], stdin: string): void => {
+      const r = spawnSync('git', args, { cwd: repo, input: stdin, encoding: 'utf8' })
+      if (r.status !== 0) throw new Error(r.stderr)
+    }
+    input(['update-index', '--index-info'], paths.map((path) => `100644 ${blob}\t${path}\n`).join(''))
+    input(['update-index', '--skip-worktree', '-z', '--stdin'], paths.map((path) => `${path}\0`).join(''))
+    git(repo, 'add', 'seed.txt')
+    git(repo, 'commit', '-q', '-m', 'files')
+    const source = join(root, `large-module-${String(n)}`)
+    git(root, 'init', '-q', '-b', 'main', source)
+    writeFileSync(join(source, 'child.txt'), 'child\n')
+    git(source, 'add', '.')
+    git(source, 'commit', '-q', '-m', 'child')
+    git(repo, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', source, 'module')
+    git(repo, 'commit', '-q', '-m', 'submodule')
+    expect(git(repo, 'ls-files').split('\n').filter(Boolean)).toHaveLength(5_003)
+    const session = { session_id: `large-${String(n)}`, worktree_path: repo, worktree_repo_root: repo } as unknown as Session
+    vi.mocked(execFile).mockClear()
+    expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ listed: true, dirty: false, force_required: true })
+    const listings = vi.mocked(execFile).mock.calls.map((call) => call[1] as string[]).filter((argv) => argv.includes('ls-files'))
+    expect(listings).toHaveLength(1)
+    expect(listings[0]?.slice(listings[0].indexOf('ls-files'))).toEqual(['ls-files', '--stage', '-z', '--', 'module'])
+  })
+
+  it('falls back to the full index listing when a .gitmodules path is outside the repository', async () => {
+    const { worktree, session } = setup(1)
+    git(worktree, 'config', '--file', '.gitmodules', 'submodule.outside.path', '../outside')
+    git(worktree, 'commit', '-q', '-am', 'outside path')
+    vi.mocked(execFile).mockClear()
+    expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ dirty: false, force_required: true })
+    const listings = vi.mocked(execFile).mock.calls.map((call) => call[1] as string[]).filter((argv) => argv.includes('ls-files'))
+    expect(listings.map((argv) => argv.slice(argv.indexOf('ls-files')))).toContainEqual(['ls-files', '--stage', '-z'])
   })
 
   it('preserves unavailable-Git status defaults and removal error wording', async () => {
