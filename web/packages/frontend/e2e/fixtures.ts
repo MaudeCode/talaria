@@ -64,6 +64,8 @@ export const test = base.extend<{ errors: string[]; shellMocks: undefined }>({
       }
     }
     await use(undefined)
+    // A boot or profile switch can still be reading the bootstrap when the test ends; its route must not fail the test then.
+    if (mocked) await Promise.all([page.unrouteAll({ behavior: 'ignoreErrors' }), context.unrouteAll({ behavior: 'ignoreErrors' })])
   }, { auto: true }],
   errors: [async ({ page }, use) => {
     const errors: string[] = []
