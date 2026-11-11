@@ -312,7 +312,7 @@ it('uninstalls an extension at once and flips its sidecar consent at once', asyn
   expect(within(alpha).getByRole('switch', { name: /Allow the proxied sidecar/ })).toBeChecked()
   expect(api.extensionAction).toHaveBeenCalledWith('sidecar-proxy-consent', { id: 'alpha', consent: true })
   await userEvent.click(within(alpha).getByRole('button', { name: 'Extension actions' }))
-  await userEvent.click(screen.getByRole('menuitem', { name: 'Uninstall' }))
+  await userEvent.click(await screen.findByRole('menuitem', { name: 'Uninstall' }))
   await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Uninstall' }))
   expect(screen.queryByRole('switch', { name: /^alpha/ })).toBeNull()
   expect(screen.getByRole('switch', { name: /^beta/ })).toBeInTheDocument()
