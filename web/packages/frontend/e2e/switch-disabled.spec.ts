@@ -27,3 +27,13 @@ test('a disabled switch dims with a not-allowed cursor while an enabled one stay
   await expect(enabled).toBeEnabled()
   expect(await look(enabled)).toEqual({ opacity: '1', cursor: 'pointer' })
 })
+
+/** TAL-2160: at phone width the composer always sends with Ctrl/Cmd+Enter, so Send with shows that rule, disabled. */
+test('Send with shows the rule phones always use at phone width and is editable on a desktop', async ({ page }, info) => {
+  await page.goto('/settings/chat')
+  await settle(page)
+  const group = page.getByRole('radiogroup', { name: 'Send with' })
+  const phone = info.project.name === 'mobile'
+  if (phone) await expect(group.getByRole('radio', { checked: true })).toHaveText(/^(Ctrl|⌘) Enter$/)
+  for (const radio of await group.getByRole('radio').all()) await (phone ? expect(radio).toBeDisabled() : expect(radio).toBeEnabled())
+})
