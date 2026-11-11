@@ -15,7 +15,7 @@ import { readPersisted, writePersisted } from '../lib/persisted'
 import { cn } from '../ui/cn'
 import { Brandmark } from './Brandmark'
 import { PANEL_HEAD_BTN } from './PanelHead'
-import { SIDEBAR_ICON_PROPS, SidebarRowContent } from './SidebarRowContent'
+import { SIDEBAR_ICON_PROPS, SidebarFold, SidebarRowContent } from './SidebarRowContent'
 import { DASHBOARD_ICON, SIDEBAR_MORE, SIDEBAR_PRIMARY, SIDEBAR_ROW, orderedNav, panelForPath, type SidebarSlot } from './nav'
 import { closeMobileSidebar, readHiddenTabs, readTabOrder, requestSessionSearch, setSidebarWidth, settingsBackHref, toggleMobileSidebar, toggleSidebarCollapsed, useIsDesktop, useIsSettings, useIsSidebarRail, useIsTiled, useShellState } from './useShellState'
 
@@ -88,7 +88,7 @@ function SidebarNav({ panel }: { panel: ReactNode }) {
           )}
           {isDesktop && moreRows.length > 0 && <span className="sidebar-rail-only sidebar-rail-separator" aria-hidden="true" />}
           {(isDesktop || moreOpen) && <div className="sidebar-more contents" data-open={moreOpen ? '1' : undefined} inert={!rail && !moreOpen}>{moreRows}</div>}
-          <div className="sidebar-quotas grid flex-none" inert={rail}><div className="min-h-0 overflow-hidden"><SidebarQuotas /></div></div>
+          <SidebarFold rail={rail}><SidebarQuotas /></SidebarFold>
         </div>
         <div className="sidebar-panel flex min-h-0 flex-col" inert={rail}>{panel}</div>
       </div>
@@ -131,23 +131,27 @@ function NoPasswordWarning() {
   )
 }
 
-/** Settings' column: Back and the section list, in place of the destinations, the chat list and the footer. */
+/**
+ * Settings' column: Back and the section list, in place of the destinations, the chat list and the footer. The list's
+ * sections are sidebar rows, so on the rail they morph into icons over captions like every other page's rows (TAL-2183).
+ */
 function SettingsNav({ panel }: { panel: ReactNode }) {
   useLocale()
   const navigate = useNavigate()
   const back = () => { closeMobileSidebar(); void navigate({ href: settingsBackHref() }) }
   return (
     <nav className="sidebar-primary flex min-h-0 flex-1 flex-col min-[641px]:p-(--island-gap)" aria-label="Primary navigation">
-      <button type="button" className={SIDEBAR_ROW} aria-label={m.back()} onClick={back}><SidebarRowContent icon={ChevronLeft} label={m.back()} /></button>
-      <div className="sidebar-panel flex min-h-0 flex-col">{panel}</div>
+      <div className="sidebar-rows flex flex-none flex-col"><button type="button" className={SIDEBAR_ROW} aria-label={m.back()} onClick={back}><SidebarRowContent icon={ChevronLeft} label={m.back()} /></button></div>
+      {panel}
     </nav>
   )
 }
 
 /**
  * The one left column on every page. From 901px it tiles, expanded (resizable) or as the 64px icon rail by the stored
- * choice; at 641-900px the rail stays tiled and the hamburger opens the expanded panel over the page; at 640px and below
- * it is a full-width drawer. Settings always shows it expanded, tiled from 641px. `panel` is the route's content below the destinations (session list, section menu).
+ * choice; at 641-900px the rail stays tiled and the hamburger opens the expanded panel over the page, except on Settings,
+ * which tiles it expanded; at 640px and below it is a full-width drawer. `panel` is the route's content below the
+ * destinations (session list, section menu).
  */
 export function Sidebar({ panel }: { panel: ReactNode }) {
   const { collapsed, mobileOpen, sidebarWidth } = useShellState()
@@ -219,7 +223,7 @@ export function Sidebar({ panel }: { panel: ReactNode }) {
           <div className="resize-handle absolute top-0 bottom-0 w-[5px] cursor-col-resize z-10 transition-[background] duration-150 hover:bg-accent" id="sidebarResize" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" onPointerDown={startResize} />
         )}
         {/* Edge tab on the sidebar's right edge (the mirror of the right panel's). */}
-        {isTiled && !settings && (
+        {isTiled && (
           <button type="button" className="workspace-panel-edge-toggle has-tooltip" id="btnSidebarEdgeToggle" data-tooltip={collapsed ? m.sidebar_show() : m.sidebar_hide()} aria-label={collapsed ? m.sidebar_show() : m.sidebar_hide()} aria-expanded={!collapsed} onClick={() => toggleSidebarCollapsed()}>
             <span className="edge-tab-join edge-tab-join-top" aria-hidden="true" />
             <span className="edge-tab-join edge-tab-join-bottom" aria-hidden="true" />

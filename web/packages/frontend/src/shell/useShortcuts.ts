@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { toggleSidebar, useIsSettings } from './useShellState'
+import { TILED, toggleSidebar, useIsSettings } from './useShellState'
 import { useNewChat } from '../features/sessions/useNewChat'
 
 export function inTextField(target: EventTarget | null): boolean {
@@ -20,7 +20,8 @@ export function useShortcuts() {
       if (!mod || e.altKey) return
       if (!e.shiftKey && (e.key === 'b' || e.key === 'B') && !inTextField(e.target) && window.matchMedia('(min-width: 641px)').matches) {
         e.preventDefault()
-        if (!settings) toggleSidebar()
+        // At 641-900px Settings' section list tiles expanded and nothing opens over it, so only the rail from 901px toggles there.
+        if (!settings || window.matchMedia(TILED).matches) toggleSidebar()
       } else if (e.key === '/' && !inTextField(e.target)) {
         e.preventDefault()
         document.getElementById('msg')?.focus()

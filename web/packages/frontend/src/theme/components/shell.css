@@ -69,7 +69,7 @@
 .sidebar .panel-view{background:transparent}
 .sidebar-rows{flex:0 1 auto;overflow:hidden auto;scrollbar-width:none}
 .sidebar-panel{flex:1 1 160px;min-height:160px}
-/* Expanded destinations and chats share one scroll owner above the footer; Settings keeps its own layout. */
+/* Expanded destinations and chats share one scroll owner above the footer; Settings' section list scrolls the same way below its head. */
 .sidebar-scroll{overflow:hidden auto;overscroll-behavior-y:contain;overflow-anchor:none}
 .sidebar-scroll > .sidebar-rows{flex:none;overflow:visible}
 .sidebar-scroll > .sidebar-panel{flex:1 0 auto;min-height:100%}
@@ -90,16 +90,17 @@
 @media (min-width:641px){
   .sidebar-primary{--morph:var(--sidebar-dur) linear;transition:padding var(--morph)}
   .sidebar-rows{gap:0;transition:margin var(--morph),padding var(--morph)}
-  :is(.sidebar-rows,.sidebar-more) > .sidebar-row,.sidebar-brand{margin-block-end:2px}
-  :is(.sidebar-rows,.sidebar-more,.sidebar-footer,.sidebar-alert) > .sidebar-row{height:32px;min-height:0;transition:color var(--dur) var(--ease),background var(--dur) var(--ease),height var(--morph),width var(--morph),padding var(--morph),margin var(--morph),inset-inline-end var(--morph),bottom var(--morph),opacity var(--morph),var(--hide-transition,opacity var(--morph))}
+  :is(.sidebar-rows,.sidebar-more,.sidebar-group) > .sidebar-row,.sidebar-brand{margin-block-end:2px}
+  :is(.sidebar-rows,.sidebar-more,.sidebar-group,.sidebar-footer,.sidebar-alert) > .sidebar-row{height:32px;min-height:0;transition:color var(--dur) var(--ease),background var(--dur) var(--ease),height var(--morph),width var(--morph),padding var(--morph),margin var(--morph),inset-inline-end var(--morph),bottom var(--morph),opacity var(--morph),var(--hide-transition,opacity var(--morph))}
   .sidebar-rail-separator{flex:none;width:38px;height:1px;margin:4px 8px;background:var(--border);transition:height var(--morph),margin var(--morph),opacity var(--morph),var(--hide-transition,opacity var(--morph))}
   .sidebar-brand{transition:background var(--dur) var(--ease),padding var(--morph),margin var(--morph)}
   .sidebar-brandmark{transition:width var(--morph),height var(--morph)}
   .sidebar .sidebar-row > svg{transition:translate var(--morph)}
   :is(.sidebar-rows,.sidebar-footer,.sidebar-alert,.sidebar-brand) .sidebar-row-label{transition:opacity calc(var(--sidebar-dur) / 2) linear calc(var(--sidebar-dur) / 2)}
-  :is(.sidebar-rows,.sidebar-footer,.sidebar-alert) .sidebar-row-caption{display:block;position:absolute;inset-inline-start:-5px;bottom:7px;width:64px;overflow:hidden;font-size:10px;font-weight:500;line-height:1;letter-spacing:-.01em;text-align:center;white-space:nowrap;text-overflow:ellipsis;opacity:0;pointer-events:none;transition:opacity calc(var(--sidebar-dur) / 2) linear}
+  /* The caption spans its row, not the 64px rail: the rows' scrollers clip at the row's edges, so a wider box lost both ends of a long caption, its ellipsis included (TAL-2183). */
+  :is(.sidebar-rows,.sidebar-footer,.sidebar-alert) .sidebar-row-caption{display:block;position:absolute;inset-inline:0;bottom:7px;overflow:hidden;font-size:10px;font-weight:500;line-height:1;letter-spacing:-.01em;text-align:center;white-space:nowrap;text-overflow:ellipsis;opacity:0;pointer-events:none;transition:opacity calc(var(--sidebar-dur) / 2) linear}
   .sidebar-row-caption::before{content:attr(data-caption)}
-  .sidebar-quotas{grid-template-rows:1fr;transition:grid-template-rows var(--morph),opacity var(--morph),var(--hide-transition,opacity var(--morph))}
+  .sidebar-fold{grid-template-rows:1fr;transition:grid-template-rows var(--morph),opacity var(--morph),var(--hide-transition,opacity var(--morph))}
   .sidebar-panel{overflow-x:clip;transition:opacity calc(var(--sidebar-dur) / 2) linear calc(var(--sidebar-dur) / 2),var(--hide-transition,opacity var(--morph))}
   /* The list holds its stored width until the column has opened, so its rows never squeeze; settled it follows the column, which can flex-shrink. */
   .sidebar-panel > *{width:100%;transition:width 0s linear var(--sidebar-dur)}
@@ -113,8 +114,8 @@
   .sidebar-footer > .sidebar-icon-row:nth-last-child(2){--slot:1}
 
   /* Hidden in this state: no height, inert (Sidebar.tsx), and hidden only once the height has closed. Only hiding transitions visibility: showing is immediate even under the reduced-motion duration reset, so Search can focus the filter in the same render. */
-  .layout:not(.sidebar-collapsed) .sidebar-rows > .sidebar-rail-only,
-  .layout.sidebar-collapsed .sidebar-rows > .sidebar-expanded-only,
+  .layout:not(.sidebar-collapsed) :is(.sidebar-rows,.sidebar-group) > .sidebar-rail-only,
+  .layout.sidebar-collapsed :is(.sidebar-rows,.sidebar-group) > .sidebar-expanded-only,
   .layout:not(.sidebar-collapsed) .sidebar-more:not([data-open]) > .sidebar-row{--hide-transition:visibility 0s linear var(--sidebar-dur);height:0;margin-block:0;overflow:hidden;opacity:0;visibility:hidden}
 
   /* The rail. */
@@ -123,7 +124,7 @@
   /* The rows pin and scroll themselves while the panel stays in flow, hidden, so the shared scroller keeps its position for the way back. */
   .layout.sidebar-collapsed .sidebar-scroll{overflow:hidden}
   .layout.sidebar-collapsed .sidebar-scroll > .sidebar-rows{position:sticky;top:0;z-index:1;max-height:100%;margin-inline:-5px;padding-inline:5px;overflow:hidden auto;background:linear-gradient(var(--rail-bg),var(--rail-bg)) var(--canvas)}
-  .layout.sidebar-collapsed :is(.sidebar-rows,.sidebar-more,.sidebar-footer,.sidebar-alert) > .sidebar-row:not(.sidebar-expanded-only){height:48px;padding-inline:18px 0}
+  .layout.sidebar-collapsed :is(.sidebar-rows,.sidebar-more,.sidebar-group,.sidebar-footer,.sidebar-alert) > .sidebar-row:not(.sidebar-expanded-only){height:48px;padding-inline:18px 0}
   .layout.sidebar-collapsed .sidebar-rows > .sidebar-rail-menu{height:36px}
   .layout.sidebar-collapsed .sidebar .sidebar-row:not(.sidebar-rail-menu) > svg{translate:0 -7px}
   /* The label leaves in the first half and the caption arrives in the second, and the reverse on the way back, so the two never read on top of each other. */
@@ -131,7 +132,7 @@
   .layout.sidebar-collapsed :is(.sidebar-rows,.sidebar-footer,.sidebar-alert) .sidebar-row-caption{opacity:1;transition:opacity calc(var(--sidebar-dur) / 2) linear calc(var(--sidebar-dur) / 2)}
   .layout.sidebar-collapsed .sidebar-brand{padding-inline:12px 0;margin-block-end:6px}
   .layout.sidebar-collapsed .sidebar-brandmark{width:30px;height:30px}
-  .layout.sidebar-collapsed .sidebar-quotas{--hide-transition:visibility 0s linear var(--sidebar-dur);grid-template-rows:0fr;opacity:0;visibility:hidden}
+  .layout.sidebar-collapsed .sidebar-fold{--hide-transition:visibility 0s linear var(--sidebar-dur);grid-template-rows:0fr;opacity:0;visibility:hidden}
   .layout.sidebar-collapsed .sidebar-panel{--hide-transition:visibility 0s linear var(--sidebar-dur);opacity:0;visibility:hidden;transition:opacity calc(var(--sidebar-dur) / 2) linear,var(--hide-transition)}
   .layout.sidebar-collapsed .sidebar-panel > *{width:calc(var(--sidebar-content-w,300px) - 2 * var(--island-gap));transition:none}
   .layout.sidebar-collapsed .sidebar-footer{height:calc((var(--icons) + 1) * 48px)}
@@ -143,6 +144,16 @@
   .sidebar .resize-handle{animation:sidebar-handle-wait 0s var(--sidebar-dur) backwards}
   @keyframes sidebar-handle-wait{from{visibility:hidden}}
 }
+/* TAL-2183: Settings' sections are sidebar rows, so the rail draws them like every other page's rows; expanded, in the
+   tiled column and the phone drawer, they keep the section menu's look. */
+.layout:not(.sidebar-collapsed) #settingsMenu{padding:8px}
+.layout:not(.sidebar-collapsed) #settingsMenu .sidebar-row{gap:8px;height:calc(1.6em + 14px);min-height:0;border-radius:var(--r-sm);color:var(--text);font-size:13px;font-weight:500}
+.layout:not(.sidebar-collapsed) #settingsMenu .sidebar-row > svg{width:16px;height:16px;opacity:.9}
+.layout:not(.sidebar-collapsed) #settingsMenu .sidebar-row-label{line-height:inherit}
+.layout:not(.sidebar-collapsed) #settingsMenu .sidebar-row.active{background:var(--menu-active-bg);color:var(--menu-active-fg);box-shadow:var(--menu-active-shadow);font-weight:var(--menu-active-weight)}
+.layout:not(.sidebar-collapsed) #settingsMenu .sidebar-row.active > svg{color:var(--menu-active-fg)}
+/* Back carries the rows' 2px margin, so the head moves up by it and stays where it was. */
+@media (min-width:641px){.layout:not(.sidebar-collapsed) .settings-menu-head{margin-top:-2px}}
 html[data-sidebar-collapsed="1"] .sidebar{transition:none}
 /* 641-900px: the opened panel covers the page from the rail's slot; the negative margin keeps #main where the rail left it. */
 @media (min-width:641px) and (max-width:900px){.sidebar.mobile-open{width:300px;margin-inline-end:-236px;z-index:200;background:var(--sidebar-bg)}}
@@ -194,13 +205,12 @@ html.hub-active .rightpanel .workspace-panel-edge-toggle{display:none !important
 /* First paint. #app is empty until the module entry mounts (about 50ms built, longer under the dev server),
    so the inset frame (the sidebar column + main card) is drawn from pseudo-elements meanwhile; prepaint.js has
    already set the theme, skin and sidebar state on <html>. A reload then keeps its frame instead of flashing
-   a bare canvas. The column is 300px or the 64px rail, which is also what 641-900px tiles everywhere but Settings. */
+   a bare canvas. The column is 300px or the 64px rail by the stored choice, on Settings too (TAL-2183), and the rail at 641-900px. */
 #app:empty{flex-direction:row;background:var(--canvas)}
 #app:empty::before{content:"";width:300px;flex-shrink:0;background:var(--rail-bg)}
 #app:empty::after{content:"";flex:1;min-width:0;background:var(--main-surface);border:var(--island-ring-width) solid var(--island-ring)}
 html[data-sidebar-collapsed="1"] #app:empty::before{width:64px}
 @media (max-width:900px){#app:empty::before{width:64px}}
-html[data-settings-page="1"] #app:empty::before{width:300px}
 @media (max-width:768px){#app:empty::after{border:0;border-radius:0;box-shadow:none}}
 @media (max-width:640px){#app:empty::before{display:none}}
 #app:empty{flex-direction:row;background:var(--canvas)}
