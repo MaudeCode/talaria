@@ -76,6 +76,7 @@ Every exception requires a non-empty reason.
 ## Validation and handoff
 
 - For XCTest and simulator validation, use `$talaria-ios-testing`.
+- A UI change attaches the [screen gallery](docs/visual-references.md#screen-gallery) screenshots of each page it touches to the PR.
 - For an explicitly requested physical iPhone install, run
   `scripts/run-ios-device --no-launch` from `app/`.
 - Report files changed, validation commands and results, and any unresolved risk.

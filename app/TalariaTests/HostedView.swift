@@ -24,6 +24,23 @@ enum HostedSize {
     static let duoInnerLandscape = CGSize(width: 951, height: 669)
 }
 
+/// Shared page matrix, including the four layouts used by What's New.
+struct HostedVariant {
+    let name: String
+    let size: CGSize
+    let style: UIUserInterfaceStyle
+    let textSize: UIContentSizeCategory
+    var safeAreaInsets: UIEdgeInsets? = nil
+
+    static let gallery: [Self] = [
+        .init(name: "phone-light", size: HostedSize.phone, style: .light, textSize: .large),
+        .init(name: "phone-dark", size: HostedSize.phone, style: .dark, textSize: .large),
+        .init(name: "phone-ax5", size: HostedSize.phone, style: .light, textSize: .accessibilityExtraExtraExtraLarge),
+        .init(name: "duo-outer", size: HostedSize.duoOuter, style: .dark, textSize: .large),
+        .init(name: "duo-inner", size: HostedSize.duoInner, style: .light, textSize: .large),
+    ]
+}
+
 /// The test host's scene, which hosted windows share. The host shows whichever display the device is on: an iPhone
 /// Duo simulator under `xcodebuild test` boots closed, onto its compact cover. A hosted window lays out the display it
 /// is sized for instead, whatever the device's posture (TAL-1547).
@@ -193,6 +210,38 @@ extension HostedAccessibility {
 }
 
 extension XCTestCase {
+    /// Renders a fresh page per variant and releases it before mounting the next one.
+    @MainActor
+    func renderHostedPage<Content: View>(
+        _ name: String,
+        variants: [HostedVariant] = HostedVariant.gallery,
+        @ViewBuilder content: () throws -> Content,
+        inspect: (UIWindow, HostedVariant) async throws -> Void
+    ) async throws {
+        for variant in variants {
+            let window = try hostWindow(try content(), size: variant.size) {
+                $0.userInterfaceStyle = variant.style
+                $0.preferredContentSizeCategory = variant.textSize
+            }
+            if let insets = variant.safeAreaInsets, let root = window.rootViewController {
+                // The host simulator's own insets differ from the display being modelled.
+                let host = root.view.safeAreaInsets
+                root.additionalSafeAreaInsets = UIEdgeInsets(top: insets.top - host.top, left: insets.left - host.left,
+                                                             bottom: insets.bottom - host.bottom, right: insets.right - host.right)
+                window.layoutIfNeeded()
+                settle()
+                XCTAssertEqual(root.view.safeAreaInsets, insets, "\(name)-\(variant.name): the modelled safe area")
+            }
+            defer {
+                attachFailureScreenshot(window, name: "\(name)-\(variant.name) failure")
+                window.isHidden = true
+                window.rootViewController = nil
+            }
+            try await inspect(window, variant)
+            attachHostedScreenshot(window, name: "\(name)-\(variant.name)")
+        }
+    }
+
     /// Samples after UIKit's transaction observers, so assertions see each committed layout rather than settling only.
     @MainActor
     func sampleCommittedLayouts(_ sample: @escaping @MainActor () -> Void,
@@ -275,7 +324,9 @@ extension XCTestCase {
         settle()
         addTeardownBlock { [weak self] in
             MainActor.assumeIsolated {
-                self?.attachFailureScreenshot(window, name: "\(self?.name ?? "hosted") window")
+                if window.rootViewController != nil {
+                    self?.attachFailureScreenshot(window, name: "\(self?.name ?? "hosted") window")
+                }
                 window.isHidden = true
                 window.rootViewController = nil
                 UIView.setAnimationsEnabled(animated)
@@ -523,5 +574,15 @@ final class HostedWindowFailureImageTests: XCTestCase {
 
     func testAFailingTestAttachesItsWindowsImage() throws {
         try hostAWindow(reportingAFailure: true, expectedImages: 1)
+    }
+
+    func testPageMatrixAppliesTraitsAndOnlyKeepsRequestedScreenshots() async throws {
+        try await renderHostedPage("matrix") { Text("Page") } inspect: { window, variant in
+            XCTAssertEqual(window.bounds.size, variant.size)
+            XCTAssertEqual(window.traitCollection.userInterfaceStyle, variant.style)
+            XCTAssertEqual(window.traitCollection.preferredContentSizeCategory, variant.textSize)
+            XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Page"))
+        }
+        XCTAssertEqual(attached, keepsHostedScreenshots ? HostedVariant.gallery.map { "matrix-\($0.name)" } : [])
     }
 }

@@ -81,32 +81,21 @@ final class WhatsNewHostedTests: XCTestCase {
         XCTAssertEqual(WhatsNewSheet.symbol(for: "future-icon"), "sparkles")
     }
 
-    func testLargestTextScrollsAndKeepsContinueOnScreenAcrossLayouts() throws {
-        let layouts: [(String, CGSize, UIUserInterfaceStyle, UIContentSizeCategory)] = [
-            ("phone-dark", HostedSize.phone, .dark, .large),
-            ("phone-ax5", HostedSize.phone, .light, .accessibilityExtraExtraExtraLarge),
-            ("duo-outer", HostedSize.duoOuter, .dark, .large),
-            ("duo-inner", HostedSize.duoInner, .light, .large),
-        ]
-        // One page, then three pages of a nine-row announcement (TAL-2173), whose controls all stay on screen too.
+    func testLargestTextScrollsAndKeepsContinueOnScreenAcrossLayouts() async throws {
+        // One page, then three pages of a nine-row announcement (TAL-2173).
         for (rows, controls) in [(4, ["Continue"]), (9, ["Continue", Self.skip, "Previous page", "Next page", "Page 1 of 3"])] {
-            for (name, size, style, category) in layouts {
-                let name = "\(name)-\(rows)-rows"
-                let window = try hostWindow(WhatsNewSheet(announcement: announcement(rows: rows), defaults: defaults), size: size) {
-                    $0.userInterfaceStyle = style
-                    $0.preferredContentSizeCategory = category
-                }
+            try await renderHostedPage("whats-new-\(rows)-rows", variants: HostedVariant.gallery.filter { $0.name != "phone-light" }) {
+                WhatsNewSheet(announcement: announcement(rows: rows), defaults: defaults)
+            } inspect: { window, variant in
                 for label in controls {
-                    let control = try XCTUnwrap(HostedAccessibility.element(in: window, label: label), "\(name): \(label)")
+                    let control = try XCTUnwrap(HostedAccessibility.element(in: window, label: label), "\(variant.name): \(label)")
                     let frame = control.accessibilityFrame
-                    XCTAssertTrue(window.bounds.contains(frame), "\(name): \(label) at \(frame) leaves \(window.bounds)")
+                    XCTAssertTrue(window.bounds.contains(frame), "\(variant.name): \(label) at \(frame) leaves \(window.bounds)")
                 }
-                if category.isAccessibilityCategory {
-                    // A page's own vertical scroll, not the pager's horizontal one.
+                if variant.textSize.isAccessibilityCategory {
                     let scroll = window.firstView(ofType: UIScrollView.self) { $0.contentSize.height > $0.bounds.height }
-                    XCTAssertNotNil(scroll, "\(name): the rows scroll")
+                    XCTAssertNotNil(scroll, "\(variant.name): the rows scroll")
                 }
-                attachHostedScreenshot(window, name: "whats-new-\(name)")
             }
         }
     }
@@ -123,39 +112,29 @@ final class WhatsNewHostedTests: XCTestCase {
         }
     }
 
-    func testMoreThanFourRowsPageFourAtATimeWithDotsAndArrows() throws {
+    func testMoreThanFourRowsPageFourAtATimeWithDotsAndArrows() async throws {
         // The sheet's safe area on the Duo outer screen, measured on the phone: its status column at the right edge
         // narrows every row (TAL-2173 phone check). nil keeps the host's own.
         let outerScreen = UIEdgeInsets(top: 8, left: 0, bottom: 35, right: 77)
-        let layouts: [(String, CGSize, UIUserInterfaceStyle, UIEdgeInsets?)] = [
-            ("phone-light", HostedSize.phone, .light, nil), ("phone-dark", HostedSize.phone, .dark, nil),
-            ("duo-outer-light", HostedSize.duoOuter, .light, outerScreen),
-            ("duo-outer-dark", HostedSize.duoOuter, .dark, outerScreen),
+        let layouts = Array(HostedVariant.gallery.prefix(2)) + [
+            .init(name: "duo-outer-light", size: HostedSize.duoOuter, style: .light, textSize: .large, safeAreaInsets: outerScreen),
+            .init(name: "duo-outer-dark", size: HostedSize.duoOuter, style: .dark, textSize: .large, safeAreaInsets: outerScreen),
         ]
         let nine = announcement(rows: 9)
         let titles = nine.rows.map(\.title)
-        for (name, size, style, insets) in layouts {
-            func host(_ announcement: WhatsNewAnnouncement) throws -> UIWindow {
-                let window = try hostWindow(WhatsNewSheet(announcement: announcement, defaults: defaults), size: size) {
-                    $0.userInterfaceStyle = style
-                }
-                if let insets, let root = window.rootViewController {
-                    // The host simulator's own insets differ from the Duo's; top them up, or take them back, to the Duo's.
-                    let host = root.view.safeAreaInsets
-                    root.additionalSafeAreaInsets = UIEdgeInsets(top: insets.top - host.top, left: insets.left - host.left,
-                                                                 bottom: insets.bottom - host.bottom, right: insets.right - host.right)
-                    window.layoutIfNeeded()
-                    settle()
-                    XCTAssertEqual(root.view.safeAreaInsets, insets, "\(name): the modelled safe area")
-                }
-                return window
-            }
-            // Paging leaves the heading where a one-page sheet has it.
-            let onePage = try host(announcement(rows: 4))
-            let onePageHeading = try XCTUnwrap(HostedAccessibility.element(in: onePage, label: WhatsNewSheet.title), name)
+        // Paging leaves the heading where a one-page sheet has it.
+        var onePageHeadings: [String: CGRect] = [:]
+        try await renderHostedPage("whats-new-pages-reference", variants: layouts) {
+            WhatsNewSheet(announcement: announcement(rows: 4), defaults: defaults)
+        } inspect: { window, variant in
+            onePageHeadings[variant.name] = try XCTUnwrap(HostedAccessibility.element(in: window, label: WhatsNewSheet.title), variant.name)
                 .accessibilityFrame
-            onePage.isHidden = true
-            let window = try host(nine)
+        }
+        try await renderHostedPage("whats-new-pages-last", variants: layouts) {
+            WhatsNewSheet(announcement: nine, defaults: defaults)
+        } inspect: { window, variant in
+            let name = variant.name
+            let onePageHeading = try XCTUnwrap(onePageHeadings[name])
             XCTAssertEqual(visibleRowTitles(in: window, of: nine), Array(titles[0..<4]), "\(name): it opens on the first page")
             XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Page 1 of 3"), name)
             let previous = try XCTUnwrap(HostedAccessibility.element(in: window, label: "Previous page"), name)
@@ -195,8 +174,6 @@ final class WhatsNewHostedTests: XCTestCase {
                            continueFrame, "\(name): Continue stays under the thumb on the last page")
             XCTAssertFalse(try XCTUnwrap(HostedAccessibility.element(in: window, label: "Previous page"), name)
                 .accessibilityTraits.contains(.notEnabled), name)
-            attachHostedScreenshot(window, name: "whats-new-pages-last-\(name)")
-            window.isHidden = true
         }
     }
 
