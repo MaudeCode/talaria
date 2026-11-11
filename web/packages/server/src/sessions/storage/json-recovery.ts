@@ -149,16 +149,14 @@ export async function diagnoseJson(dir: string, stampingSince: number): Promise<
   let names: string[] = []
   try { names = (await readdir(dir)).sort() } catch { /* empty */ }
   const live = new Set(names.filter((n) => n.endsWith('.json') && !n.startsWith('_')).map((n) => n.slice(0, -5)))
-  const liveDocs = new Map<string, Dict | null>()
-  const liveDoc = async (sid: string): Promise<Dict | null> => {
-    if (!liveDocs.has(sid)) liveDocs.set(sid, await readDocAsync(join(dir, `${sid}.json`)))
-    return liveDocs.get(sid)!
-  }
+  // Only each live transcript's length outlives its check, so peak memory stays one session's documents.
+  const liveCounts = new Map<string, number>()
   const issues: StorageIssue[] = []
   for (const name of names.filter((n) => n.endsWith('.json.bak') && !n.startsWith('_'))) {
     const sid = name.slice(0, -9)
     const path = join(dir, `${sid}.json`)
-    const liveDocument = await liveDoc(sid)
+    const liveDocument = await readDocAsync(path)
+    liveCounts.set(sid, messageCount(liveDocument))
     let bakSavedAt: number | null = null
     try { bakSavedAt = (await stat(`${path}.bak`)).mtimeMs / 1000 } catch { /* gone since the listing */ }
     const bak = bakSavedAt === null ? null : await readDocAsync(`${path}.bak`)
@@ -179,8 +177,8 @@ export async function diagnoseJson(dir: string, stampingSince: number): Promise<
       const entries = JSON.parse(index ?? '') as Dict[]
       indexed = new Set(entries.map((e) => e.session_id).filter((id): id is string => typeof id === 'string'))
     } catch { /* reported as unreadable */ }
-    if (indexed) for (const sid of live) if (!indexed.has(sid)) await liveDoc(sid)
-    issues.push(...indexIssues(indexed, live, (sid) => messageCount(liveDocs.get(sid) ?? null)))
+    if (indexed) for (const sid of live) if (!indexed.has(sid) && !liveCounts.has(sid)) liveCounts.set(sid, messageCount(await readDocAsync(join(dir, `${sid}.json`))))
+    issues.push(...indexIssues(indexed, live, (sid) => liveCounts.get(sid) ?? -1))
   }
   return issues
 }
