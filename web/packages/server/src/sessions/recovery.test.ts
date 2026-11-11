@@ -8,8 +8,20 @@ import { once } from 'node:events'
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { Worker } from 'node:worker_threads'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
+import { SESSION_READS } from './state-db.js'
+
+/** TAL-1745: every `state.db` handle this thread opens; the worker's own module graph is not mocked. */
+const sqliteOpens = vi.hoisted(() => [] as string[])
+vi.mock('node:sqlite', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:sqlite')>()
+  class DatabaseSync extends actual.DatabaseSync {
+    constructor(...args: ConstructorParameters<typeof actual.DatabaseSync>) { super(...args); sqliteOpens.push(String(args[0])) }
+  }
+  return { ...actual, DatabaseSync }
+})
 
 useJsonStorage()
 
@@ -380,6 +392,45 @@ describe('state.db sidecar reconciliation', () => {
     writeFileSync(dbPath(), 'not a database')
     const report = await audit()
     expect(report).toMatchObject({ status: 'needs_manual_review', items: [{ session_id: '', kind: 'state_db_unreadable', category: 'unsafe_to_repair' }] })
+  })
+})
+
+describe('state.db reads stay off the event loop (TAL-1745)', () => {
+  /** Main-thread opens of the fixture `state.db`, and recovery scans posted to the state.db worker, while `run` runs. */
+  async function stateDbReads<T>(run: () => Promise<T>): Promise<{ mainThread: number; worker: number; result: T }> {
+    const post = vi.spyOn(Worker.prototype, 'postMessage')
+    sqliteOpens.length = 0
+    try {
+      const result = await run()
+      const worker = post.mock.calls.filter(([request]) => (request as { read?: string }).read === 'stateDbRecoveryCounts').length
+      return { mainThread: sqliteOpens.filter((path) => path === dbPath()).length, worker, result }
+    } finally { post.mockRestore() }
+  }
+
+  it('audits state.db on the worker, never constructing a handle on the main thread', async () => {
+    stateDb({ id: 'state_only_001', messages: 3 })
+    const { mainThread, worker } = await stateDbReads(audit)
+    expect({ mainThread, worker }).toEqual({ mainThread: 0, worker: 1 })
+  })
+
+  it('repair-safe reads state.db once and diagnoses the sidecars only before and after repairing', async () => {
+    stateDb({ id: 'state_only_001', messages: 3 })
+    orphan('state_only_001', 1)
+    const diagnose = vi.spyOn(s.deps.sessionStore.deps.storage.sessions, 'diagnose')
+    try {
+      const { mainThread, worker, result: [status, body] } = await stateDbReads(repair)
+      expect({ mainThread, worker, diagnoses: diagnose.mock.calls.length }).toEqual({ mainThread: 0, worker: 1, diagnoses: 2 })
+      expect([status, body.repaired]).toEqual([200, 1])
+    } finally { diagnose.mockRestore() }
+  })
+
+  it('counts each WebUI transcript as loading it whole did', () => {
+    stateDb({ id: 'state_only_001', messages: 3 }, { id: 'empty_row', messages: 0 }, { id: 'subagent_001', source: 'subagent' })
+    const db = new DatabaseSync(dbPath(), { readOnly: true })
+    const transcript = db.prepare('SELECT role, content, timestamp FROM messages WHERE session_id = ? ORDER BY timestamp, id')
+    const previous = (db.prepare("SELECT id FROM sessions WHERE source = 'webui' ORDER BY COALESCE(started_at, 0) DESC").all() as { id: string }[]).map(({ id }) => ({ id, count: transcript.all(id).length }))
+    db.close()
+    expect(SESSION_READS.stateDbRecoveryCounts(dbPath()).rows.map(({ id, count }) => ({ id, count }))).toEqual(previous)
   })
 })
 
