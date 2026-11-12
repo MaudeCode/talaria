@@ -1,7 +1,7 @@
 public import Foundation
 
 public struct SettingsResponse: Decodable, Equatable, Sendable {
-    let botName: String?
+    public internal(set) var botName: String?
     public let webuiVersion: String?
     let agentVersion: String?
     let theme: String?

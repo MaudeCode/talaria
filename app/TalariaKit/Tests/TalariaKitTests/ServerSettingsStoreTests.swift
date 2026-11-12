@@ -4,7 +4,7 @@ import XCTest
 
 @MainActor
 final class ServerSettingsStoreTests: XCTestCase {
-    private let initial = #"{"agent_approvals":true,"update_channel":"stable","max_tokens":8192}"#
+    private let initial = #"{"agent_approvals":true,"update_channel":"stable","max_tokens":8192,"bot_name":"Hermes"}"#
 
     private func store(_ handler: @escaping (DeferredMockURLProtocol) -> Void) -> ServerSettingsStore {
         let host = "settings-\(UUID().uuidString).test"
@@ -17,9 +17,10 @@ final class ServerSettingsStoreTests: XCTestCase {
     }
 
     private enum Choice: CaseIterable {
-        case approval, channel, maximum, noLimit
+        case approval, channel, maximum, noLimit, botName
         var key: String {
             switch self {
+            case .botName: "bot_name"
             case .approval: "agent_approvals"
             case .channel: "update_channel"
             case .maximum, .noLimit: "max_tokens"
@@ -27,6 +28,7 @@ final class ServerSettingsStoreTests: XCTestCase {
         }
         var chosen: JSONValue {
             switch self {
+            case .botName: .string("Assistant")
             case .approval: .bool(false)
             case .channel: .string("nightly")
             case .maximum: .number(4096)
@@ -36,6 +38,7 @@ final class ServerSettingsStoreTests: XCTestCase {
         @MainActor
         func value(_ store: ServerSettingsStore) -> JSONValue {
             switch self {
+            case .botName: .string(store.settings?.botName ?? "")
             case .approval: .bool(store.settings?.agentApprovals ?? false)
             case .channel: .string(store.settings?.updateChannel ?? "")
             case .maximum, .noLimit: store.settings?.maxTokens.map { .number(Double($0)) } ?? .null
@@ -44,6 +47,7 @@ final class ServerSettingsStoreTests: XCTestCase {
         @MainActor
         func write(_ store: ServerSettingsStore) -> Task<Void, Never> {
             switch self {
+            case .botName: store.setBotName("Assistant")
             case .approval: store.setAgentApprovals(false)
             case .channel: store.setUpdateChannel("nightly")
             case .maximum: store.setMaxTokensText("4096")!

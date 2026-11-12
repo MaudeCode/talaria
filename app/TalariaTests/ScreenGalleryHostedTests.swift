@@ -42,6 +42,110 @@ final class ScreenGalleryHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "settings-models-thinking-hidden")
     }
 
+    func testProfilesOpenDetailAndEditFromTheList() async throws {
+        try await renderHostedPage("profiles-edit") {
+            NavigationStack {
+                DefaultProfilePickerView(server: server, currentDefaultProfileName: nil, onSave: { _ in })
+            }
+        } inspect: { window, variant in
+            _ = try await requireElement(in: window) { $0.accessibilityLabel?.contains("Fixture Profile") == true }
+            attachHostedScreenshot(window, name: "profiles-list-\(variant.name)")
+            let row = try await requireElement(in: window, "Profiles must offer a detail destination") {
+                HostedAccessibility.identifier(of: $0) == "settings-profile-row-fixture-profile"
+            }
+            HostedAccessibility.activate(row)
+            _ = try await requireElement(in: window) {
+                HostedAccessibility.identifier(of: $0) == "settings-profile-detail-name"
+            }
+            _ = try await requireElement(in: window) {
+                HostedAccessibility.identifier(of: $0) == "settings-profile-detail-assistant-name"
+            }
+            let actions = try await hostedMenuActions("Actions", readyAction: "Use This Profile", in: window)
+            XCTAssertFalse(actions.contains { $0.title == "Delete" }, "The default profile cannot be deleted")
+            attachHostedScreenshot(window, name: "profiles-detail-\(variant.name)")
+            let edit = try XCTUnwrap(HostedAccessibility.toolbarAction("Edit", in: window))
+            HostedAccessibility.activate(edit)
+            _ = try await requireElement(in: window, label: "Display Name")
+        }
+    }
+
+    func testProfileEditSheetSavesAndNonDefaultHasNoAssistantName() async throws {
+        let model = ProfilesSettingsModel(client: fixture.client)
+        await model.load()
+        let window = try hostWindow(NavigationStack {
+            ProfileDetailView(server: server, name: "fixture-work", model: model, use: { _, _ in }, missing: { XCTFail("Unexpected missing profile") })
+        })
+        _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-profile-detail-name" }
+        XCTAssertNil(HostedAccessibility.elements(in: window).first { HostedAccessibility.identifier(of: $0) == "settings-profile-detail-assistant-name" })
+        HostedAccessibility.activate(try XCTUnwrap(HostedAccessibility.toolbarAction("Edit", in: window)))
+        _ = try await requireElement(in: window, label: "Display Name")
+        let name = try XCTUnwrap(window.firstView(ofType: UITextField.self) { $0.text == "Research Bot" })
+        XCTAssertFalse(name.isEnabled, "Bot Mode's title disables the display-name field")
+        attachHostedScreenshot(window, name: "profiles-edit-overridden")
+        let description = try XCTUnwrap(window.firstView(ofType: UITextField.self) { $0.text == "Finds primary sources." })
+        description.text = String(repeating: "e\u{301}", count: 141)
+        description.sendActions(for: .editingChanged)
+        let bounded = await awaitCondition { description.text?.unicodeScalars.count == ProfileNameRules.descriptionLimit }
+        XCTAssertTrue(bounded, "The editor clamps the server's code-point limit before saving")
+        description.text = "Updated research identity"
+        description.sendActions(for: .editingChanged)
+        HostedAccessibility.activate(try XCTUnwrap(HostedAccessibility.toolbarAction("Save", in: window)))
+        let saved = await awaitCondition { model.profiles.first { $0.name == "fixture-work" }?.description == "Updated research identity" }
+        XCTAssertTrue(saved)
+        await model.load()
+        XCTAssertEqual(model.profiles.first { $0.name == "fixture-work" }?.description, "Updated research identity")
+        attachHostedScreenshot(window, name: "profiles-after-edit")
+    }
+
+    func testProfileDeletionConfirmsBeforeRemovingAndReturnsToList() async throws {
+        var settingsPresented = true
+        let window = try hostWindow(Text("Fixture Settings Host").sheet(isPresented: Binding(
+            get: { settingsPresented }, set: { settingsPresented = $0 }
+        )) {
+            NavigationStack {
+                DefaultProfilePickerView(server: self.server, currentDefaultProfileName: nil, onSave: { _ in })
+            }
+        })
+        HostedAccessibility.activate(try await requireElement(in: window) {
+            HostedAccessibility.identifier(of: $0) == "settings-profile-row-fixture-work"
+        })
+        _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-profile-detail-name" }
+        let actions = try await hostedMenuActions("Actions", readyAction: "Use This Profile", in: window)
+        HostedAccessibility.activate(try XCTUnwrap(actions.first { $0.title == "Delete" }))
+        let presented = await presentedAlert(in: window)
+        let alert = try XCTUnwrap(presented)
+        XCTAssertTrue(alert.title?.contains("Research Bot") == true)
+        let before = try await fixture.client.profiles()
+        XCTAssertTrue(before.profiles?.contains { $0.name == "fixture-work" } == true, "Opening confirmation must not delete")
+        attachHostedScreenshot(window, name: "profiles-delete-confirmation")
+        XCTAssertTrue(HostedAccessibility.tap("Delete", in: alert))
+        _ = try await requireElement(in: window, label: "Profiles")
+        XCTAssertTrue(settingsPresented, "Deleting must return to the list without dismissing Settings")
+        let gone = await awaitNoElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-profile-row-fixture-work" }
+        XCTAssertTrue(gone)
+        let after = try await fixture.client.profiles()
+        XCTAssertFalse(after.profiles?.contains { $0.name == "fixture-work" } == true)
+        attachHostedScreenshot(window, name: "profiles-after-delete")
+    }
+
+    func testProfileDetailDismissesWhenARefreshFindsItMissing() async throws {
+        let model = ProfilesSettingsModel(client: fixture.client)
+        await model.load()
+        var missing = false
+        let window = try hostWindow(NavigationStack {
+            NavigationLink("Open profile") {
+                ProfileDetailView(server: server, name: "fixture-work", model: model, use: { _, _ in }, missing: { missing = true })
+            }
+        })
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Open profile"))
+        _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-profile-detail-name" }
+        _ = try await fixture.client.deleteProfile(name: "fixture-work")
+        await model.load()
+        let reported = await awaitCondition { missing }
+        XCTAssertTrue(reported)
+        _ = try await requireElement(in: window, label: "Open profile")
+    }
+
     private func categories(in group: SettingsCategory.Group) async throws {
         for category in SettingsCategory.rootCategories where category.group == group {
             try await page("settings-\(category.id)", title: category.title) {

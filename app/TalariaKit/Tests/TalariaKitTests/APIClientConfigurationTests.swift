@@ -586,13 +586,28 @@ final class APIClientConfigurationTests: APIClientTestCase {
         let response = try decoder.decode(ProfilesResponse.self, from: Data(#"""
         {"profiles":[
           {"name":"research","display_name":"Research Bot","name_differs":true,"description":"Finds primary sources.",
-           "canonical_session":{"session_id":"bot-root","tip_session_id":"bot-tip"},"future_field":true},
+           "canonical_session":{"session_id":"bot-root","tip_session_id":"bot-tip"},"future_field":true,
+           "gateway_mode":"served","total_skills":7,"enabled_skills":3,"pending_writes":2,
+           "has_env":true,"display_name_overridden":true},
           {"name":"default"},
-          {"name":"personal","display_name":"","name_differs":false,"canonical_session":null}
+          {"name":"personal","display_name":"","name_differs":false,"canonical_session":null,"gateway_mode":"future-mode"}
         ]}
         """#.utf8))
         XCTAssertEqual(response.profiles?.map(\.displayName), ["Research Bot", "Default", "personal"])
         let bot = try XCTUnwrap(response.profiles?.first)
+        XCTAssertEqual(bot.gatewayMode, .served)
+        XCTAssertEqual(bot.totalSkills, 7)
+        XCTAssertEqual(bot.enabledSkills, 3)
+        XCTAssertEqual(bot.pendingWrites, 2)
+        XCTAssertEqual(bot.hasEnv, true)
+        XCTAssertEqual(bot.displayNameOverridden, true)
+        XCTAssertNil(response.profiles?[1].gatewayMode)
+        XCTAssertNil(response.profiles?[1].totalSkills)
+        XCTAssertNil(response.profiles?[1].enabledSkills)
+        XCTAssertNil(response.profiles?[1].pendingWrites)
+        XCTAssertNil(response.profiles?[1].displayNameOverridden)
+        XCTAssertEqual(response.profiles?.last?.gatewayMode, .unknown("future-mode"))
+        XCTAssertEqual(response.profiles?.last?.gatewayMode?.title, "future-mode")
         XCTAssertEqual(bot.botDisplayName, "Research Bot")
         XCTAssertEqual(response.profiles?.map(\.nameDiffers), [true, nil, false])
         XCTAssertEqual(bot.description, "Finds primary sources.")
