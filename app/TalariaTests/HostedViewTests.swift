@@ -520,20 +520,27 @@ final class SettingsPlacementHostedTests: XCTestCase {
         let window = try hostWindow(NavigationStack {
             DefaultProfilePickerView(server: server, currentDefaultProfileName: nil) { _ in saves.value += 1 }
         }.environment(\.scenePhase, .active))
-        let beta = try await requireElement(in: window, label: "beta")
+        let beta = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-profile-row-beta" }
         XCTAssertTrue(HostedAccessibility.activate(beta))
+        _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-profile-detail-name" }
+        let actions = try await hostedMenuActions("Actions", readyAction: "Use This Profile", in: window)
+        let useAction = try XCTUnwrap(actions.first { $0.title == "Use This Profile" })
+        XCTAssertTrue(HostedAccessibility.activate(useAction))
         let saved = await awaitCondition { saves.value == 1 }
         XCTAssertTrue(saved, "The profile switch must complete before an external change")
+        let navigation = try XCTUnwrap(window.navigationStacks.first { $0.viewControllers.count > 1 })
+        navigation.popToRootViewController(animated: false)
+        _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-profile-row-beta" }
         // A second client switches back while this page remains mounted.
         active.value = "alpha"
         let before = reads.value
         NotificationCenter.default.post(name: .talariaReturnedToForeground, object: nil)
         let refreshed = await awaitCondition {
-            reads.value > before && HostedAccessibility.element(in: window, label: "alpha")?.accessibilityValue == "Selected"
+            reads.value > before && HostedAccessibility.element(in: window, identifier: "settings-profile-row-alpha")?.accessibilityLabel?.contains("Active") == true
         }
         XCTAssertTrue(refreshed, "Foreground refresh must adopt the server's current profile")
-        XCTAssertNotEqual(HostedAccessibility.element(in: window, label: "beta")?.accessibilityValue, "Selected",
-                          "The completed optimistic selection must not survive a server refresh")
+        XCTAssertFalse(HostedAccessibility.element(in: window, identifier: "settings-profile-row-beta")?.accessibilityLabel?.contains("Active") == true,
+                       "The completed optimistic selection must not survive a server refresh")
         attachHostedScreenshot(window, name: "profiles-refreshed-server-selection")
     }
 
@@ -556,7 +563,7 @@ final class SettingsPlacementHostedTests: XCTestCase {
             } else {
                 canonical = NSNull()
             }
-            var bot: [String: Any] = ["name": "alpha", "display_name": "Research Bot", "description": "Finds primary sources.",
+            var bot: [String: Any] = ["name": "alpha", "display_name": "Research Bot", "description": switching ? "Switch snapshot." : "Finds primary sources.",
                                       "canonical_session": canonical]
             // Only the list endpoint carries the server's row presentation fields.
             if !switching { bot["name_differs"] = true }
@@ -586,20 +593,29 @@ final class SettingsPlacementHostedTests: XCTestCase {
                 DefaultProfilePickerView(server: server, currentDefaultProfileName: nil) { _ in saves.value += 1 }
             }.environment(\.openURL, OpenURLAction { opened.value.append($0); return .handled })
         }
-        let window = try hostWindow(screen())
-        _ = try await requireElement(in: window, label: "gamma")
-        attachHostedScreenshot(window, name: "profiles-bot-identity")
-        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "beta"),
-                        "A server name_differs=false row must not repeat its display name as a slug")
-        let action = try await requireElement(in: window, "Missing Open Bot Chat for a canonical profile") {
-            HostedAccessibility.identifier(of: $0) == "profile-open-bot-chat-alpha"
+        func openDetail(_ name: String, in window: UIWindow) async throws {
+            let row = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-profile-row-\(name)" }
+            XCTAssertTrue(HostedAccessibility.activate(row))
+            _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-profile-detail-name" }
         }
+        let window = try hostWindow(screen())
+        let beta = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-profile-row-beta" }
+        XCTAssertEqual(beta.accessibilityLabel?.components(separatedBy: "beta").count, 2,
+                       "A server name_differs=false row must not repeat its title as a slug")
+        attachHostedScreenshot(window, name: "profiles-bot-identity")
+        for name in ["beta", "gamma"] {
+            try await openDetail(name, in: window)
+            let actions = try await hostedMenuActions("Actions", readyAction: "Use This Profile", in: window)
+            XCTAssertFalse(actions.contains { $0.title == "Open Bot Chat" })
+            let navigation = try XCTUnwrap(window.navigationStacks.first { $0.viewControllers.count > 1 })
+            navigation.popToRootViewController(animated: false)
+        }
+        try await openDetail("alpha", in: window)
+        let actions = try await hostedMenuActions("Actions", readyAction: "Use This Profile", in: window)
+        let action = try XCTUnwrap(actions.first { $0.title == "Open Bot Chat" }, "Missing Open Bot Chat for a canonical profile")
         let labels = HostedAccessibility.labels(in: window).joined(separator: " | ")
         for text in ["Research Bot", "alpha", "Finds primary sources."] {
-            XCTAssertTrue(labels.contains(text), "The row must expose its server identity: \(labels)")
-        }
-        for name in ["beta", "gamma"] {
-            XCTAssertNil(HostedAccessibility.element(in: window, identifier: "profile-open-bot-chat-\(name)"))
+            XCTAssertTrue(labels.contains(text), "The detail must expose its server identity: \(labels)")
         }
         XCTAssertTrue(HostedAccessibility.activate(action))
         let didOpen = await awaitCondition { !opened.value.isEmpty }
@@ -609,21 +625,21 @@ final class SettingsPlacementHostedTests: XCTestCase {
         let url = try XCTUnwrap(opened.value.first)
         XCTAssertEqual(TalariaDeepLink.sessionID(from: url), "bot-current-tip")
         XCTAssertEqual(TalariaDeepLink.publisherID(from: url), server.absoluteString)
-        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Research Bot, alpha, Finds primary sources."),
-                        "A switch response without name_differs must reconcile through the list's server projection")
+        _ = try await requireElement(in: window, "The switch snapshot must reconcile through the list's server projection") {
+            $0.accessibilityLabel == "Finds primary sources."
+        }
         attachHostedScreenshot(window, name: "profiles-bot-selected")
 
         // The canonical chat can disappear between listing and switching. Never reuse the list's old tip.
         returnedTip.value = nil
-        let retry = try await requireElement(in: window) {
-            HostedAccessibility.identifier(of: $0) == "profile-open-bot-chat-alpha"
-                && !$0.accessibilityTraits.contains(.notEnabled)
-        }
+        let retryActions = try await hostedMenuActions("Actions", readyAction: "Use This Profile", in: window)
+        let retry = try XCTUnwrap(retryActions.first { $0.title == "Open Bot Chat" })
         XCTAssertTrue(HostedAccessibility.activate(retry))
         _ = try await requireElement(in: window, label: "Bot Chat is no longer available for this profile.")
         XCTAssertEqual(opened.value.count, 1)
         XCTAssertEqual(saves.value, 2, "The successful profile switch still updates Settings")
-        XCTAssertNil(HostedAccessibility.element(in: window, identifier: "profile-open-bot-chat-alpha"))
+        let remainingActions = try await hostedMenuActions("Actions", readyAction: "Use This Profile", in: window)
+        XCTAssertFalse(remainingActions.contains { $0.title == "Open Bot Chat" })
         attachHostedScreenshot(window, name: "profiles-bot-no-longer-available")
         window.isHidden = true
         window.rootViewController = nil
@@ -638,9 +654,9 @@ final class SettingsPlacementHostedTests: XCTestCase {
         ]
         for (name, size, type, style) in layouts {
             let layout = try hostWindow(screen().dynamicTypeSize(type), size: size) { $0.userInterfaceStyle = style }
-            _ = try await requireElement(in: layout) {
-                HostedAccessibility.identifier(of: $0) == "profile-open-bot-chat-alpha"
-            }
+            try await openDetail("alpha", in: layout)
+            let actions = try await hostedMenuActions("Actions", readyAction: "Use This Profile", in: layout)
+            XCTAssertTrue(actions.contains { $0.title == "Open Bot Chat" })
             attachHostedScreenshot(layout, name: "profiles-bot-\(name)")
             layout.isHidden = true
             layout.rootViewController = nil

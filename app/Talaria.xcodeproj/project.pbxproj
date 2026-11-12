@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		211900000000000000000001 /* ProfileDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 211900000000000000000002 /* ProfileDetailView.swift */; };
 		C21121000000000000000006 /* SettingsDivider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C21120000000000000000006 /* SettingsDivider.swift */; };
 		C21121000000000000000005 /* SettingsStatusRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C21120000000000000000005 /* SettingsStatusRow.swift */; };
 		C21121000000000000000004 /* SettingsColorRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C21120000000000000000004 /* SettingsColorRow.swift */; };
@@ -496,6 +497,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		211900000000000000000002 /* ProfileDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileDetailView.swift; sourceTree = "<group>"; };
 		C21120000000000000000006 /* SettingsDivider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsDivider.swift; sourceTree = "<group>"; };
 		C21120000000000000000005 /* SettingsStatusRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStatusRow.swift; sourceTree = "<group>"; };
 		C21120000000000000000004 /* SettingsColorRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsColorRow.swift; sourceTree = "<group>"; };
@@ -1419,6 +1421,7 @@
 				C107I000000000000000014 /* AppIconPreviewImage.swift */,
 				1A2B3C4D5E6F70000000115 /* DefaultModelPickerView.swift */,
 				103200000000000000000001 /* DefaultProfilePickerView.swift */,
+				211900000000000000000002 /* ProfileDetailView.swift */,
 				C107B000000000000000011 /* SettingsPickerSearchField.swift */,
 				C107B000000000000000013 /* ModelPickerButton.swift */,
 				C107B000000000000000014 /* CreateProfileSheet.swift */,
@@ -1896,6 +1899,7 @@
 				C107I000000000000000004 /* AppIconPreviewImage.swift in Sources */,
 				1A2B3C4D5E6F70000000114 /* DefaultModelPickerView.swift in Sources */,
 				103200000000000000000002 /* DefaultProfilePickerView.swift in Sources */,
+				211900000000000000000001 /* ProfileDetailView.swift in Sources */,
 				C107B000000000000000001 /* SettingsPickerSearchField.swift in Sources */,
 				C107B000000000000000003 /* ModelPickerButton.swift in Sources */,
 				C107B000000000000000004 /* CreateProfileSheet.swift in Sources */,

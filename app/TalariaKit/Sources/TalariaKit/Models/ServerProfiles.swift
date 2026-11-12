@@ -78,7 +78,7 @@ public struct ProfilesResponse: Decodable, Equatable, Sendable {
     }
 }
 
-public struct ProfileCreateResponse: Decodable, Equatable, Sendable {
+public struct ProfileMutationResponse: Decodable, Equatable, Sendable {
     let ok: Bool?
     public let profile: ProfileSummary?
     public let error: String?
@@ -87,6 +87,14 @@ public struct ProfileCreateResponse: Decodable, Equatable, Sendable {
 /// Mirrors the upstream profile-name rule (`^[a-z0-9][a-z0-9_-]{0,63}$`) so the
 /// create form can validate before hitting the server.
 public enum ProfileNameRules {
+    public static let displayNameLimit = 80
+    public static let descriptionLimit = 280
+
+    /// Profile metadata limits count code points, matching the server and sidecar.
+    public static func boundedIdentityText(_ value: String, limit: Int) -> String {
+        String(String.UnicodeScalarView(value.unicodeScalars.prefix(limit)))
+    }
+
     public static func isValid(_ name: String) -> Bool {
         guard let first = name.first, name.count <= 64 else { return false }
         guard isLowercaseAlphanumeric(first) else { return false }
@@ -122,11 +130,16 @@ public struct ProfileSummary: Decodable, Equatable, Hashable, Identifiable, Send
     let gatewayRunning: Bool?
     public let model: String?
     public let provider: String?
-    let hasEnv: Bool?
+    public let hasEnv: Bool?
     public let skillCount: Int?
-    public let botDisplayName: String?
+    public internal(set) var botDisplayName: String?
     public let nameDiffers: Bool?
-    public let description: String?
+    public internal(set) var description: String?
+    public let gatewayMode: ProfileGatewayMode?
+    public let totalSkills: Int?
+    public let enabledSkills: Int?
+    public let pendingWrites: Int?
+    public let displayNameOverridden: Bool?
     public let canonicalSession: CanonicalSession?
 
     /// The server's canonical root and current tip, unlike a titled SessionBranchLink.
@@ -138,7 +151,7 @@ public struct ProfileSummary: Decodable, Equatable, Hashable, Identifiable, Send
     private enum CodingKeys: String, CodingKey {
         case name, path, isDefault, isActive, gatewayRunning, model, provider, hasEnv, skillCount
         case botDisplayName = "displayName"
-        case description, canonicalSession, nameDiffers
+        case description, canonicalSession, nameDiffers, gatewayMode, totalSkills, enabledSkills, pendingWrites, displayNameOverridden
     }
 
     init(name: String?, path: String?, isDefault: Bool?, isActive: Bool?, gatewayRunning: Bool?,
@@ -155,6 +168,11 @@ public struct ProfileSummary: Decodable, Equatable, Hashable, Identifiable, Send
         self.hasEnv = hasEnv
         self.skillCount = skillCount
         self.botDisplayName = botDisplayName
+        self.gatewayMode = nil
+        self.totalSkills = nil
+        self.enabledSkills = nil
+        self.pendingWrites = nil
+        self.displayNameOverridden = nil
         self.nameDiffers = nameDiffers
         self.description = description
         self.canonicalSession = canonicalSession
@@ -164,6 +182,11 @@ public struct ProfileSummary: Decodable, Equatable, Hashable, Identifiable, Send
         if let botDisplayName, !botDisplayName.isEmpty { return botDisplayName }
         guard let name, !name.isEmpty else { return String(localized: "Profile") }
         return name == "default" ? String(localized: "Default") : name
+    }
+
+    public var formattedSkills: String? {
+        guard let enabledSkills, let totalSkills else { return nil }
+        return String(localized: "\(enabledSkills) of \(totalSkills) skills")
     }
 
     public var normalizedName: String? {
@@ -206,5 +229,34 @@ extension ProfilesResponse {
         guard let profileName else { return nil }
         let trimmed = profileName.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+/// No existing App gateway-mode model; unknown server vocabulary remains readable.
+public enum ProfileGatewayMode: Decodable, Equatable, Hashable, Sendable {
+    case own, served, parked, standalone, stopped
+    case unknown(String)
+
+    public init(from decoder: Decoder) throws {
+        let word = try decoder.singleValueContainer().decode(String.self)
+        self = switch word {
+        case "own": .own
+        case "served": .served
+        case "parked": .parked
+        case "standalone": .standalone
+        case "stopped": .stopped
+        default: .unknown(word)
+        }
+    }
+
+    public var title: String {
+        switch self {
+        case .own: String(localized: "Gateway running")
+        case .served: String(localized: "Gateway served by host")
+        case .parked: String(localized: "Gateway parked")
+        case .standalone: String(localized: "Standalone gateway stopped")
+        case .stopped: String(localized: "Gateway stopped")
+        case let .unknown(word): word
+        }
     }
 }

@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Browse profile details, edit profile identity, and delete unused profiles in Settings.",
+      "highlight": false,
+      "components": ["app"],
+      "announce": false
+    }
+  ]
+}

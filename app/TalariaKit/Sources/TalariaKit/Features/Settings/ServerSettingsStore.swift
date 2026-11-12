@@ -56,6 +56,11 @@ public final class ServerSettingsStore {
     }
 
     @discardableResult
+    public func setBotName(_ value: String) -> Task<Void, Never> {
+        save("bot_name", \.botName, String(value.prefix(64)))
+    }
+
+    @discardableResult
     public func setAgentApprovals(_ value: Bool) -> Task<Void, Never> {
         save("agent_approvals", \.agentApprovals, value)
     }

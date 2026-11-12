@@ -112,6 +112,8 @@ public enum Endpoint: Sendable {
     case profiles
     case switchProfile
     case createProfile
+    case updateProfile
+    case deleteProfile
     case providers
     case providerQuotas(sourceID: String? = nil, refresh: Bool = false)
     case settings
@@ -398,6 +400,10 @@ public enum Endpoint: Sendable {
             return "/api/profile/switch"
         case .createProfile:
             return "/api/profile/create"
+        case .updateProfile:
+            return "/api/profile/update"
+        case .deleteProfile:
+            return "/api/profile/delete"
         case .providers:
             return "/api/providers"
         case .providerQuotas:

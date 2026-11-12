@@ -464,6 +464,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
     nonisolated(unsafe) private static var approvalBypassOverride: Bool?
     /// The session's toolsets as the fixture saved them (TAL-631); nil is the profile's defaults.
     private static let sessionToolsets = OSAllocatedUnfairLock<[String]?>(initialState: nil)
+    private static let profileState = OSAllocatedUnfairLock(initialState: (rows: [[String: JSONValue]](), active: "fixture-profile"))
     private static let serverSettings = OSAllocatedUnfairLock(initialState: [String: JSONValue]())
     private static let reasoningDefaults = OSAllocatedUnfairLock(initialState: (effort: "medium", thinking: true))
     nonisolated(unsafe) private static var transcriptReads = 0
@@ -507,6 +508,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
         sessionToolsets.withLock { $0 = nil }
         reasoningDefaults.withLock { $0 = ("medium", true) }
         serverSettings.withLock { $0 = [:] }
+        profileState.withLock { $0 = ([], "fixture-profile") }
         sessionListFailures.withLock { $0 = [] }
         answeredPaths.withLock { $0 = [] }
         targetedDirectoryReads.withLock { $0 = [] }
@@ -839,18 +841,41 @@ final class UITestFixtureURLProtocol: URLProtocol {
             ])
         case "/api/projects":
             return json(["projects": []])
-        case "/api/profiles":
-            return json([
-                "profiles": [[
-                    "name": "fixture-profile",
-                    "display_name": "Fixture Profile",
-                    "is_active": true,
-                    "default_model": "fixture-model",
-                    "provider": "fixture-provider"
-                ]],
-                "active": "fixture-profile",
-                "single_profile_mode": false
-            ])
+        case "/api/profiles", "/api/profile/update", "/api/profile/delete", "/api/profile/switch":
+            return profileState.withLock { state in
+                if state.rows.isEmpty {
+                    state.rows = [
+                        ["name": .string("fixture-profile"), "display_name": .string("Fixture Profile"),
+                         "is_default": .bool(true), "description": .string("A fixture assistant for profile management."),
+                         "path": .string("/fixture/profiles/default"), "gateway_mode": .string("served"),
+                         "enabled_skills": .number(3), "total_skills": .number(7), "has_env": .bool(true),
+                         "pending_writes": .number(2), "display_name_overridden": .bool(false),
+                         "model": .string("fixture-model"), "provider": .string("fixture-provider")],
+                        ["name": .string("fixture-work"), "display_name": .string("Research Bot"),
+                         "is_default": .bool(false), "description": .string("Finds primary sources."),
+                         "path": .string("/fixture/profiles/work"), "gateway_mode": .string("parked"),
+                         "enabled_skills": .number(2), "total_skills": .number(5), "has_env": .bool(false),
+                         "display_name_overridden": .bool(true), "model": .string("fixture-model"),
+                         "provider": .string("fixture-provider")]
+                    ]
+                }
+                let body = requestJSON(request)
+                let name = body["name"] as? String ?? ""
+                if url.path == "/api/profile/update", let index = state.rows.firstIndex(where: { $0["name"] == .string(name) }) {
+                    for key in ["display_name", "description"] {
+                        if let value = body[key] as? String { state.rows[index][key] = .string(value) }
+                    }
+                    return try! JSONEncoder().encode(["ok": JSONValue.bool(true), "profile": .object(state.rows[index])])
+                }
+                if url.path == "/api/profile/delete" {
+                    state.rows.removeAll { $0["name"] == .string(name) }
+                    return json(["ok": true, "name": name])
+                }
+                if url.path == "/api/profile/switch" { state.active = name }
+                for index in state.rows.indices { state.rows[index]["is_active"] = .bool(state.rows[index]["name"] == .string(state.active)) }
+                return try! JSONEncoder().encode(["profiles": JSONValue.array(state.rows.map(JSONValue.object)),
+                                                 "active": .string(state.active), "single_profile_mode": .bool(false)])
+            }
         case "/api/providers":
             return json([
                 "active_provider": "fixture-provider",
@@ -1000,6 +1025,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
             return serverSettings.withLock { settings in
                 if settings.isEmpty {
                     settings = [
+                        "bot_name": .string("Fixture Assistant"),
                         "agent_approvals": .bool(true), "max_tokens": .number(8192), "compression_prepare_ahead": .bool(true),
                         "auto_title_refresh_every": .string("10"), "check_for_updates": .bool(true), "auto_apply_updates": .bool(false),
                         "summarize_updates_automatically": .bool(true), "update_channel": .string("stable"),

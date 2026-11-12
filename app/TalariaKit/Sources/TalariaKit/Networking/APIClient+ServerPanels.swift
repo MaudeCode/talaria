@@ -154,7 +154,7 @@ extension APIClient {
         modelProvider: String? = nil,
         baseUrl: String? = nil,
         apiKey: String? = nil
-    ) async throws -> ProfileCreateResponse {
+    ) async throws -> ProfileMutationResponse {
         try await send(
             endpoint: .createProfile,
             method: "POST",
@@ -167,6 +167,15 @@ extension APIClient {
                 apiKey: apiKey
             )
         )
+    }
+
+    public func updateProfile(name: String, displayName: String?, description: String) async throws -> ProfileMutationResponse {
+        try await send(endpoint: .updateProfile, method: "POST",
+                       body: ProfileUpdateRequest(name: name, displayName: displayName, description: description))
+    }
+
+    public func deleteProfile(name: String) async throws -> ProfileMutationResponse {
+        try await send(endpoint: .deleteProfile, method: "POST", body: ProfileSwitchRequest(name: name))
     }
 
     public func providers() async throws -> ProvidersResponse {
@@ -309,4 +318,10 @@ private struct UpdateTargetRequest: Encodable {
 
 private struct UpdatesCheckForceRequest: Encodable {
     let force: Bool
+}
+
+private struct ProfileUpdateRequest: Encodable {
+    let name: String
+    let displayName: String?
+    let description: String
 }

@@ -244,6 +244,38 @@ extension XCTestCase {
         }
     }
 
+    /// SwiftUI toolbar menus defer their actions until UIKit presents them.
+    @MainActor
+    func hostedMenuActions(_ title: String, readyAction: String, in window: UIWindow) async throws -> [UIAction] {
+        var button: UIControl?
+        let found = await awaitCondition {
+            button = (HostedAccessibility.element(in: window, label: title) as? UIControl)
+                ?? window.firstView(ofType: UIControl.self) { $0.accessibilityLabel == title }
+            return button != nil
+        }
+        XCTAssertTrue(found, "Missing \(title) menu control")
+        let control = try XCTUnwrap(button)
+        let interaction = try XCTUnwrap(control.contextMenuInteraction)
+        XCTAssertTrue(HostedAccessibility.activate(control))
+        var actions: [UIAction] = []
+        let resolved = await awaitCondition {
+            interaction.updateVisibleMenu { menu in
+                actions = HostedAccessibility.menuActions(in: menu)
+                return menu
+            }
+            return actions.contains { $0.title == readyAction }
+        }
+        XCTAssertTrue(resolved, "The visible menu must resolve its real actions")
+        attachHostedScreenshot(window, name: "\(title.lowercased())-menu")
+        interaction.dismissMenu()
+        let closed = await awaitCondition {
+            HostedAccessibility.element(in: window, label: readyAction) == nil
+                && window.firstView(ofType: UIView.self, where: { $0.accessibilityLabel == readyAction && !$0.isHidden }) == nil
+        }
+        XCTAssertTrue(closed, "The menu must dismiss before invoking an action that may present a dialog")
+        return actions
+    }
+
     /// Samples after UIKit's transaction observers, so assertions see each committed layout rather than settling only.
     @MainActor
     func sampleCommittedLayouts(_ sample: @escaping @MainActor () -> Void,
@@ -438,8 +470,12 @@ enum HostedAccessibility {
             handled = true
         } else if let control = element as? UIControl {
             guard control.isEnabled else { return false }
-            control.sendActions(for: control.allControlEvents.contains(.primaryActionTriggered)
-                ? .primaryActionTriggered : .touchUpInside)
+            if control.showsMenuAsPrimaryAction {
+                control.performPrimaryAction()
+            } else {
+                control.sendActions(for: control.allControlEvents.contains(.primaryActionTriggered)
+                    ? .primaryActionTriggered : .touchUpInside)
+            }
             handled = true
         } else {
             handled = element.accessibilityActivate()

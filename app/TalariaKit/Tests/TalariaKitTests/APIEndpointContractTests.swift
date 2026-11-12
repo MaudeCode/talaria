@@ -318,6 +318,8 @@ final class ContractReadinessTests: APIClientTestCase {
             .init(name: "profiles", endpoint: .profiles, path: "/api/profiles"),
             .init(name: "switch profile", endpoint: .switchProfile, path: "/api/profile/switch"),
             .init(name: "create profile", endpoint: .createProfile, path: "/api/profile/create"),
+            .init(name: "update profile", endpoint: .updateProfile, path: "/api/profile/update"),
+            .init(name: "delete profile", endpoint: .deleteProfile, path: "/api/profile/delete"),
             .init(name: "providers", endpoint: .providers, path: "/api/providers"),
             .init(
                 name: "provider quotas targeted refresh",
