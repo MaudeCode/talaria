@@ -362,7 +362,9 @@ public final class ChatViewModel {
         }
         sessionGoal = session?.goal
         sessionDecisionReview = session?.decisionReview
-        if let session, session.statesEnabledToolsets { sessionToolsets = SessionToolsets(names: session.enabledToolsets) }
+        if let session, session.statesEnabledToolsets, toolsetsWriteTask == nil {
+            sessionToolsets = SessionToolsets(names: session.enabledToolsets)
+        }
         // A detail relabels the workspace it reports, so a registry rename shows on the next load (TAL-303).
         if let workspace = session?.workspace, workspace == serverWorkspacePath {
             serverWorkspaceName = session?.workspaceName
@@ -703,6 +705,8 @@ public final class ChatViewModel {
     }
     /// The session's toolset override (TAL-631); nil until a session detail reports it.
     public private(set) var sessionToolsets: SessionToolsets?
+    @ObservationIgnored private var toolsetsWriteTask: Task<(SessionToolsets?, Bool), Never>?
+    private var toolsetsWriteGeneration = 0
     /// One queued message sends at a time, by the drain or by Send now.
     private var isSendingQueuedMessage = false
     private var activeBtwStreamID: String?
@@ -5969,32 +5973,51 @@ public final class ChatViewModel {
         await pendingActionCoordinator.disableApprovalBypassForCurrentSession()
     }
 
-    public func loadToolsetsCatalog() async throws -> ToolsetsCatalog? {
-        return try await client.fetchToolsetsCatalog(sessionID: sessionID, toolsets: sessionToolsets?.names)
+    public func loadToolsetsCatalog(query: String = "") async throws -> ToolsetsCatalog? {
+        try await client.fetchToolsetsCatalog(sessionID: sessionID, toolsets: sessionToolsets?.names, query: query)
     }
 
-    /// Sets the session's toolsets, nil for the profile's defaults; the control then shows what the
-    /// server saved. The strip's controls stay disabled until it answers, so saves never overlap. A
-    /// failure keeps the old value and reports in the composer (TAL-631).
+    /// Queue writes in tap order, retaining the newest optimistic choice over older replies.
     @discardableResult
     public func saveSessionToolsets(_ names: [String]?) async -> Bool {
         guard !isUpdatingComposerConfiguration else { return false }
-        guard let sessionID else {
-            sessionToolsets = SessionToolsets(names: names)
-            return true
-        }
-        isUpdatingComposerConfiguration = true
+        let original = sessionToolsets
+        sessionToolsets = SessionToolsets(names: names)
+        guard let sessionID else { return true }
+        toolsetsWriteGeneration += 1
+        let generation = toolsetsWriteGeneration
+        let previous = toolsetsWriteTask
         composerConfigurationErrorMessage = nil
-        defer { isUpdatingComposerConfiguration = false }
-        do {
-            let response = try await client.setSessionToolsets(sessionID: sessionID, toolsets: names)
-            sessionToolsets = SessionToolsets(names: response.enabledToolsets)
-            return true
-        } catch {
-            lastError = error
-            composerConfigurationErrorMessage = error.localizedDescription
-            return false
+        let task = Task { @MainActor in
+            var result = original
+            if let previous { result = await previous.value.0 }
+            var saved = false
+            do {
+                let response = try await client.setSessionToolsets(sessionID: sessionID, toolsets: names)
+                result = SessionToolsets(names: response.enabledToolsets)
+                saved = true
+            } catch {
+                if !APIError.isDefinitiveWriteFailure(error) {
+                    // Never replay an uncertain write. Keep the choice if the read also fails.
+                    result = SessionToolsets(names: names)
+                    if let session = try? await client.session(id: sessionID, includeMessages: false).session,
+                       session.statesEnabledToolsets {
+                        result = SessionToolsets(names: session.enabledToolsets)
+                    }
+                }
+                if generation == toolsetsWriteGeneration {
+                    lastError = error
+                    composerConfigurationErrorMessage = error.localizedDescription
+                }
+            }
+            if generation == toolsetsWriteGeneration, self.sessionID == sessionID {
+                sessionToolsets = result
+                toolsetsWriteTask = nil
+            }
+            return (result, saved)
         }
+        toolsetsWriteTask = task
+        return await task.value.1
     }
 
     func applyApprovalUpdate(_ update: ApprovalPendingResponse, sessionID: String) {

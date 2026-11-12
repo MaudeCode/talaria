@@ -974,10 +974,11 @@ final class UITestFixtureURLProtocol: URLProtocol {
             let selected = override ?? ["file"]
             return json([
                 "toolsets": [
-                    ["name": "file", "description": "Read and write files", "available": true, "selected": selected.contains("file"), "unavailable_reason": NSNull()],
-                    ["name": "todo", "description": "Task lists", "available": false, "selected": selected.contains("todo"), "unavailable_reason": "disabled"]
+                    ["name": "file", "description": "Read and write files", "available": true, "selected": selected.contains("file"), "unavailable_reason": NSNull(), "group": "available"],
+                    ["name": "web", "description": "Search and read the web", "available": true, "selected": selected.contains("web"), "unavailable_reason": NSNull(), "group": "available", "stripped_tools": ["web_search"], "stripped_by": ["search"]],
+                    ["name": "todo", "description": "Task lists", "available": false, "selected": selected.contains("todo"), "unavailable_reason": "disabled", "group": "not_available"]
                 ],
-                "selected_toolsets": selected, "using_defaults": override == nil
+                "selected_toolsets": selected, "using_defaults": override == nil, "default_toolsets": ["file"]
             ])
         case "/api/session/toolsets":
             // Like the server: trimmed, blanks dropped, nothing left is the profile's defaults.

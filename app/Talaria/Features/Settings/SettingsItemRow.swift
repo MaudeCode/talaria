@@ -10,6 +10,7 @@ struct SettingsItemRow<Leading: View, Badges: View, Accessory: View>: View {
     var containsActions = false
     var isSelected = false
     var isLoading = false
+    var selectedSystemImage = "checkmark"
     var accessorySystemImage: String? = nil
     @ViewBuilder var leading: Leading
     @ViewBuilder var badges: Badges
@@ -18,6 +19,7 @@ struct SettingsItemRow<Leading: View, Badges: View, Accessory: View>: View {
 
     init(title: String, subtitle: String? = nil, detail: String? = nil, accessibilityIdentifier: String? = nil,
          containsActions: Bool = false, isSelected: Bool = false, isLoading: Bool = false,
+         selectedSystemImage: String = "checkmark",
          accessorySystemImage: String? = nil,
          @ViewBuilder leading: () -> Leading = { EmptyView() },
          @ViewBuilder badges: () -> Badges = { EmptyView() },
@@ -29,6 +31,7 @@ struct SettingsItemRow<Leading: View, Badges: View, Accessory: View>: View {
         self.containsActions = containsActions
         self.isSelected = isSelected
         self.isLoading = isLoading
+        self.selectedSystemImage = selectedSystemImage
         self.accessorySystemImage = accessorySystemImage
         self.leading = leading()
         self.badges = badges()
@@ -64,7 +67,7 @@ struct SettingsItemRow<Leading: View, Badges: View, Accessory: View>: View {
             if isLoading {
                 ProgressView().controlSize(.small)
             } else if isSelected {
-                Image(systemName: "checkmark").foregroundStyle(Color.accentColor).accessibilityHidden(true)
+                Image(systemName: selectedSystemImage).foregroundStyle(Color.accentColor).accessibilityHidden(true)
             } else if let accessorySystemImage {
                 Image(systemName: accessorySystemImage).foregroundStyle(.tertiary).accessibilityHidden(true)
             }

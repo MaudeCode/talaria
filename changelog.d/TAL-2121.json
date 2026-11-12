@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Choose chat toolsets with immediate updates, descriptions, search, and a separate unavailable section.",
+      "highlight": false,
+      "components": ["app"],
+      "announce": false
+    }
+  ]
+}

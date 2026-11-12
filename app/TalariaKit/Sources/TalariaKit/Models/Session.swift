@@ -888,8 +888,14 @@ public struct SessionToolsets: Equatable, Sendable {
         self.names = names
     }
 
-    /// The strip control's title: the toolsets, or the profile's defaults when there are none.
+    /// Localized compact wording; VoiceOver retains every selected name.
     public var title: String {
+        guard let names, !names.isEmpty else { return String(localized: "Profile defaults") }
+        if names.count == 1 { return names[0] }
+        return String(localized: "\(names.count) toolsets")
+    }
+
+    public var accessibilityValue: String {
         guard let names, !names.isEmpty else { return String(localized: "Profile defaults") }
         return names.joined(separator: ", ")
     }

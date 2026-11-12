@@ -211,8 +211,8 @@ final class ComposerToolsetsHostedTests: APIClientTestCase {
         }
         var restored = false
         let window = try hostWindow(ComposerToolsetsSheet(
-            loadCatalog: { try await client.fetchToolsetsCatalog(sessionID: "session-abc", toolsets: nil) },
-            onSave: { names in XCTAssertNil(names); restored = true }
+            loadCatalog: { _ in try await client.fetchToolsetsCatalog(sessionID: "session-abc", toolsets: nil) },
+            onSave: { names in XCTAssertNil(names); restored = true; return SessionToolsets(names: names) }
         ))
         let editor = await awaitElement(in: window) { HostedAccessibility.identifier(of: $0) == "legacy-toolsets" }
         XCTAssertNotNil(editor, "An older server must retain editable session toolsets")
@@ -225,26 +225,102 @@ final class ComposerToolsetsHostedTests: APIClientTestCase {
     func testLegacyPickerPreservesSavedNames() async throws {
         var saved: [String]?
         let window = try hostWindow(ComposerToolsetsSheet(
-            toolsets: SessionToolsets(names: ["file"]), loadCatalog: { nil },
-            onSave: { saved = $0 }
+            toolsets: SessionToolsets(names: ["file"]), loadCatalog: { _ in nil },
+            onSave: { saved = $0; return SessionToolsets(names: $0) }
         ))
         let editor = await awaitElement(in: window) { HostedAccessibility.identifier(of: $0) == "legacy-toolsets" }
         XCTAssertEqual(try XCTUnwrap(editor).accessibilityValue, "file")
-        HostedAccessibility.activate(try await requireElement(in: window, label: "Save"))
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Done"))
         await drainMainActor()
         XCTAssertEqual(saved, ["file"])
     }
 
     func testToolsetPicker() async throws {
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        let catalog = try decoder.decode(ToolsetsCatalog.self, from: Data(#"{"toolsets":[{"name":"file","available":true,"selected":true},{"name":"todo","available":false,"selected":false,"unavailable_reason":"disabled"}],"selected_toolsets":["file"],"using_defaults":true}"#.utf8))
-        let window = try hostWindow(ComposerToolsetsSheet(loadCatalog: { catalog }, onSave: { _ in }))
-        _ = await awaitElement(in: window) { $0.accessibilityLabel?.contains("todo") == true }
-        _ = try await requireElement(in: window, label: "Session toolsets")
-        attachHostedScreenshot(window, name: "toolsets-after")
-        let disabled = await awaitElement(in: window) { $0.accessibilityLabel?.contains("todo") == true }
-        XCTAssertNotNil(disabled, "The catalog must show the operator-disabled toolset")
-        XCTAssertTrue(try XCTUnwrap(disabled).accessibilityTraits.contains(.notEnabled))
+        let fixture = try FixtureApp(for: self)
+        try await renderHostedPage("toolsets") {
+            ComposerToolsetsSheet(loadCatalog: { query in
+                try await fixture.client.fetchToolsetsCatalog(sessionID: "ui-fixture-session", toolsets: nil, query: query)
+            }, onSave: { SessionToolsets(names: $0) })
+        } prepare: { window in
+            _ = try await self.requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "toolset-web" }
+        } inspect: { window, variant in
+            _ = try await self.requireElement(in: window, label: "Toolsets")
+            XCTAssertFalse(HostedAccessibility.labels(in: window).contains("Save"))
+            XCTAssertFalse(HostedAccessibility.labels(in: window).contains("Cancel"))
+            let file = try await self.requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "toolset-file" }
+            XCTAssertTrue(file.accessibilityTraits.contains(.notEnabled), "The last selected toolset cannot be removed")
+            let labels = HostedAccessibility.labels(in: window).joined(separator: " ")
+            XCTAssertTrue(labels.contains("Read and write files"))
+            XCTAssertTrue(labels.contains("Unavailable tools: web_search"))
+            if !HostedAccessibility.elements(in: window).contains(where: { HostedAccessibility.identifier(of: $0) == "toolset-todo" }) {
+                self.attachHostedScreenshot(window, name: "toolsets-\(variant.name)-top")
+                let list = try XCTUnwrap(window.firstView(ofType: UICollectionView.self))
+                list.setContentOffset(CGPoint(x: 0, y: max(0, list.contentSize.height - list.bounds.height)), animated: false)
+                self.settle()
+            }
+            let disabled = try await self.requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "toolset-todo" }
+            XCTAssertTrue(disabled.accessibilityTraits.contains(.notEnabled))
+            XCTAssertTrue(HostedAccessibility.labels(in: window).contains("Not available"))
+        }
+    }
+
+    func testLongCatalogSearchRendersTheServersFilteredRows() async throws {
+        let searched = expectation(description: "search reached the catalog endpoint")
+        let client = makeClient { request in
+            let query = try apiTestJSONBody(from: request)["q"] as? String ?? ""
+            let rows: [[String: Any]]
+            if query.isEmpty {
+                rows = (0..<13).map { ["name": "tool-\($0)", "description": "Description \($0)", "available": true, "selected": false, "group": "available"] }
+            } else {
+                XCTAssertEqual(query, "TASKS")
+                if query == "TASKS" { searched.fulfill() }
+                rows = [["name": "todo", "description": "Task lists", "available": false, "selected": false, "group": "not_available", "unavailable_reason": "disabled"]]
+            }
+            let body = try JSONSerialization.data(withJSONObject: ["toolsets": rows, "selected_toolsets": ["tool-0"], "using_defaults": true, "default_toolsets": ["tool-0"]])
+            return apiTestJSONResponse(String(decoding: body, as: UTF8.self), for: request)
+        }
+        let window = try hostWindow(ComposerToolsetsSheet(loadCatalog: { query in
+            try await client.fetchToolsetsCatalog(sessionID: nil, toolsets: nil, query: query)
+        }, onSave: { SessionToolsets(names: $0) }))
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Search"))
+        let hasSearch = await awaitCondition { window.firstView(ofType: UITextField.self) != nil }
+        XCTAssertTrue(hasSearch)
+        let field = try XCTUnwrap(window.firstView(ofType: UITextField.self))
+        field.becomeFirstResponder()
+        field.insertText("TASKS")
+        await fulfillment(of: [searched], timeout: 5)
+        _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "toolset-todo" }
+        XCTAssertFalse(HostedAccessibility.elements(in: window).contains { HostedAccessibility.identifier(of: $0) == "toolset-tool-0" })
+        attachHostedScreenshot(window, name: "toolsets-search")
+    }
+
+    func testComposerOpensToolsetsAndAppliesToggleWithoutClosingSheet() async throws {
+        let fixture = try FixtureApp(for: self)
+        let summary = SessionSummary(sessionId: "ui-fixture-session", title: "Toolset selection")
+        let model = ChatViewModel(session: summary, server: UITestFixtureEnvironment.serverURL, client: fixture.client)
+        defer { model.cleanupPollingTasks() }
+        await model.loadMessages()
+        let window = try hostWindow(NavigationStack {
+            ChatView(session: summary, server: UITestFixtureEnvironment.serverURL, onAPIError: { XCTFail("\($0)") },
+                     loadsInitialMessages: false, viewModel: model)
+        }.modelContainer(fixture.cache))
+        let chip = try await requireElement(in: window, label: "Session toolsets")
+        XCTAssertEqual(chip.accessibilityValue, "Profile defaults")
+        HostedAccessibility.activate(chip)
+        let web = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "toolset-web" }
+        attachHostedScreenshot(window, name: "toolsets-before-toggle")
+        if let control = web as? UISwitch {
+            control.setOn(true, animated: false)
+            control.sendActions(for: .valueChanged)
+        } else {
+            XCTAssertTrue(HostedAccessibility.activate(web))
+        }
+        let saved = await awaitCondition { model.sessionToolsets?.title == "2 toolsets" }
+        XCTAssertTrue(saved)
+        _ = try await requireElement(in: window, label: "Toolsets")
+        attachHostedScreenshot(window, name: "toolsets-after-toggle")
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Done"))
+        let updatedChip = try await requireElement(in: window, label: "Session toolsets")
+        XCTAssertEqual(updatedChip.accessibilityValue, "file, web")
     }
 }
