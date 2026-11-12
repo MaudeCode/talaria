@@ -5,17 +5,30 @@ public struct SettingsResponse: Decodable, Equatable, Sendable {
     public let webuiVersion: String?
     let agentVersion: String?
     let theme: String?
-    let checkForUpdates: Bool?
-    let maxTokens: Int?
+    public internal(set) var checkForUpdates: Bool?
+    public internal(set) var maxTokens: Int?
     let maxTokensEffective: Int?
     let authEnabled: Bool?
     let passwordAuthEnabled: Bool?
     let passkeysEnabled: Bool?
     let passwordlessEnabled: Bool?
     /// The request profile's quota thresholds; nil from a server that predates TAL-411.
-    public let providerQuotaThresholds: ProviderQuotaThresholds?
+    public internal(set) var providerQuotaThresholds: ProviderQuotaThresholds?
+
+    public internal(set) var agentApprovals: Bool?
+    public internal(set) var compressionPrepareAhead: Bool?
+    public internal(set) var autoTitleRefreshEvery: String?
+    public internal(set) var autoApplyUpdates: Bool?
+    public internal(set) var summarizeUpdatesAutomatically: Bool?
+    public internal(set) var updateChannel: String?
+    public internal(set) var agentUpdateChannel: String?
+    public internal(set) var ignoreAgentUpdates: Bool?
+    public let updateChannels: [String]?
+    public let hasMaxTokens: Bool
 
     private enum CodingKeys: String, CodingKey {
+        case agentApprovals, compressionPrepareAhead, autoTitleRefreshEvery, autoApplyUpdates
+        case summarizeUpdatesAutomatically, updateChannel, agentUpdateChannel, ignoreAgentUpdates, updateChannels
         case botName
         case webuiVersion
         case agentVersion
@@ -32,6 +45,16 @@ public struct SettingsResponse: Decodable, Equatable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        agentApprovals = try? container.decodeIfPresent(Bool.self, forKey: .agentApprovals)
+        compressionPrepareAhead = try? container.decodeIfPresent(Bool.self, forKey: .compressionPrepareAhead)
+        autoTitleRefreshEvery = container.decodeLossyStringIfPresent(forKey: .autoTitleRefreshEvery)
+        autoApplyUpdates = container.decodeLossyBoolIfPresent(forKey: .autoApplyUpdates)
+        summarizeUpdatesAutomatically = container.decodeLossyBoolIfPresent(forKey: .summarizeUpdatesAutomatically)
+        updateChannel = container.decodeLossyStringIfPresent(forKey: .updateChannel)
+        agentUpdateChannel = container.decodeLossyStringIfPresent(forKey: .agentUpdateChannel)
+        ignoreAgentUpdates = container.decodeLossyBoolIfPresent(forKey: .ignoreAgentUpdates)
+        updateChannels = try? container.decodeIfPresent([String].self, forKey: .updateChannels)
+        hasMaxTokens = container.contains(.maxTokens)
         botName = container.decodeLossyStringIfPresent(forKey: .botName)
         webuiVersion = container.decodeLossyStringIfPresent(forKey: .webuiVersion)
         agentVersion = container.decodeLossyStringIfPresent(forKey: .agentVersion)

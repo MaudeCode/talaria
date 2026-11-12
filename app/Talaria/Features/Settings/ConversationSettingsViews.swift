@@ -24,6 +24,7 @@ struct ChatsSettingsView: View {
     @AppStorage(ComposerVisibilitySettings.contextUsageKey) private var showsComposerContextUsage = true
     var body: some View {
         SettingsCategoryPage(category: .chats) {
+            ServerSettingsSections(page: .limits)
             SettingsSection(
                 title: String(localized: "Composer"),
                 help: [

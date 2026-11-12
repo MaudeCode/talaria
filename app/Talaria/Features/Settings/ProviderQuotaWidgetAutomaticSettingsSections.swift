@@ -2,6 +2,8 @@ import SwiftUI
 import TalariaKit
 
 struct ProviderQuotaWidgetAutomaticSettingsSections: View {
+    @Environment(ServerSettingsStore.self) private var settingsStore: ServerSettingsStore?
+    @State private var standaloneStore: ServerSettingsStore?
     @AppStorage(ProviderQuotaWidgetColorBasis.storageKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
     private var colorBasisRawValue = ProviderQuotaWidgetColorBasis.defaultValue.rawValue
     @Binding var healthyColor: String
@@ -15,10 +17,13 @@ struct ProviderQuotaWidgetAutomaticSettingsSections: View {
     @Binding var customStaleColorHex: String
     @Binding var customUnavailableColorHex: String
     /// The server's thresholds for the active profile (TAL-411), or the last read while offline.
-    @State private var thresholds: ProviderQuotaThresholds?
+    @State private var cachedThresholds: ProviderQuotaThresholds?
     @State private var thresholdsAreCached = false
     @State private var thresholdsLoaded = false
-    @State private var thresholdSave: Task<Void, Never>?
+    private var store: ServerSettingsStore? { settingsStore ?? standaloneStore }
+    private var thresholds: ProviderQuotaThresholds? {
+        thresholdsAreCached ? cachedThresholds : store?.settings?.providerQuotaThresholds
+    }
 
     var body: some View {
         Group {
@@ -69,6 +74,7 @@ struct ProviderQuotaWidgetAutomaticSettingsSections: View {
                         }
                         .disabled(thresholdsAreCached)
                         thresholdStatus
+                        if let error = store?.errorMessage { SettingsErrorFootnote(SettingsErrorText(error)) }
                     }
                 } else {
                     SettingsSection(
@@ -93,6 +99,7 @@ struct ProviderQuotaWidgetAutomaticSettingsSections: View {
                         }
                         .disabled(thresholdsAreCached)
                         thresholdStatus
+                        if let error = store?.errorMessage { SettingsErrorFootnote(SettingsErrorText(error)) }
                     }
                 }
             } else if thresholdsLoaded {
@@ -161,47 +168,37 @@ struct ProviderQuotaWidgetAutomaticSettingsSections: View {
 
     private func loadThresholds() async {
         let defaults = ProviderQuotaWidgetSnapshotStore.appGroupDefaults
-        do {
-            guard let client else { throw URLError(.notConnectedToInternet) }
-            // nil from a server that predates TAL-411: nothing to edit.
-            let fresh = try await client.settings().providerQuotaThresholds
-            fresh?.cache(defaults: defaults)
-            thresholds = fresh
+        if store == nil, let client { standaloneStore = ServerSettingsStore(client: client) }
+        guard let store else {
+            cachedThresholds = ProviderQuotaThresholds.cached(defaults: defaults)
+            thresholdsAreCached = cachedThresholds != nil
+            thresholdsLoaded = true
+            return
+        }
+        await store.loadIfNeeded()
+        if let settings = store.settings {
+            settings.providerQuotaThresholds?.cache(defaults: defaults)
             thresholdsAreCached = false
-        } catch {
-            thresholds = ProviderQuotaThresholds.cached(defaults: defaults)
-            thresholdsAreCached = thresholds != nil
+        } else {
+            cachedThresholds = ProviderQuotaThresholds.cached(defaults: defaults)
+            thresholdsAreCached = cachedThresholds != nil
         }
         thresholdsLoaded = true
     }
 
-    /// Steps apply at once and save after a short pause; the server's clamped answer replaces them, then quotas refresh.
     private func threshold(_ keyPath: WritableKeyPath<ProviderQuotaThresholds, Int>) -> Binding<Int> {
         Binding(
             get: { thresholds?[keyPath: keyPath] ?? 0 },
             set: { value in
-                guard var next = thresholds, !thresholdsAreCached else { return }
+                guard var next = thresholds, !thresholdsAreCached, let store else { return }
                 next[keyPath: keyPath] = value
-                thresholds = next
-                thresholdSave?.cancel()
-                thresholdSave = Task { await save(next) }
+                let write = store.setQuotaThresholds(next)
+                Task {
+                    await write.value
+                    store.confirmedSettings?.providerQuotaThresholds?.cache(defaults: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+                    _ = await ProviderQuotaWidgetRefreshClient.refreshFromSharedCredentials()
+                }
             }
         )
-    }
-
-    private func save(_ next: ProviderQuotaThresholds) async {
-        do {
-            try await Task.sleep(for: .milliseconds(600))
-            guard let client else { return }
-            let saved = try await client.saveProviderQuotaThresholds(next).providerQuotaThresholds ?? next
-            guard !Task.isCancelled else { return }
-            saved.cache(defaults: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
-            thresholds = saved
-            _ = await ProviderQuotaWidgetRefreshClient.refreshFromSharedCredentials()
-        } catch is CancellationError {
-            // A newer step replaced this save.
-        } catch {
-            await loadThresholds()
-        }
     }
 }

@@ -180,20 +180,27 @@ final class ScreenGalleryHostedTests: XCTestCase {
             try await prepare(window)
             let loadedText: String?
             switch name {
+            case "settings":
+                let answered = await awaitCondition { reads("/api/settings") > settingsReads }
+                XCTAssertTrue(answered, "The directory must load its server-provided categories")
+                settingsReads = reads("/api/settings")
+                loadedText = nil
+            case "settings-tools": loadedText = "Agents can approve other chats' commands"
+            case "settings-chat": loadedText = "Max Tokens"
             case "settings-models": loadedText = "fixture-model"
             case "settings-profiles": loadedText = "Fixture Profile"
             case "settings-workspaces": loadedText = "Fixture Workspace"
             case "settings-auxiliary-models": loadedText = "legacy/vision-model"
             case "settings-notifications": loadedText = "iOS permission not requested."
             case "settings-system":
-                // This fixture omits version metadata, so Unknown alone also matches the initial state.
+                // Wait for both the shared preferences and this variant's update status.
                 let answered = await awaitCondition {
                     reads("/api/settings") > settingsReads && reads("/api/updates/check") > updateReads
                 }
                 XCTAssertTrue(answered, "\(name): this variant's settings and update requests did not finish")
                 settingsReads = reads("/api/settings")
                 updateReads = reads("/api/updates/check")
-                loadedText = "Unknown"
+                loadedText = "Check for Updates"
             default: loadedText = nil
             }
             if let loadedText {

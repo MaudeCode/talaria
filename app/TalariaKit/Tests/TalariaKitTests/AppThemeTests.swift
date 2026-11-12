@@ -91,7 +91,7 @@ final class AppThemeTests: XCTestCase {
 final class SettingsNavigationTests: XCTestCase {
     func testRootContainsOnlyCategoryDestinations() {
         var expected = [
-            "appearance", "chat", "navigation", "notifications", "speech", "models", "providers",
+            "appearance", "chat", "navigation", "notifications", "speech", "models", "providers", "tools",
             "profiles", "workspaces", "system", "servers", "liveActivitiesAndWidgets",
             "siriAndShortcuts", "dataAndStorage", "about"
         ]

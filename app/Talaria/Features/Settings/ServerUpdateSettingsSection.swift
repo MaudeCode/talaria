@@ -2,6 +2,7 @@ import SwiftUI
 import TalariaKit
 
 struct ServerUpdateSettingsSection: View {
+    @Environment(ServerSettingsStore.self) private var settingsStore: ServerSettingsStore?
     @Bindable var authManager: AuthManager
     let server: URL
 
@@ -234,9 +235,14 @@ private extension ServerUpdateSettingsSection {
         let client = APIClient(baseURL: server)
 
         do {
-            let settings = try await client.settings()
-            serverVersion = settings.webuiVersion
-            if serverVersion == nil {
+            if let settingsStore {
+                await settingsStore.loadIfNeeded()
+                serverVersion = settingsStore.settings?.webuiVersion
+                serverSettingsError = settingsStore.settings == nil ? String(localized: "Unavailable") : nil
+            } else {
+                serverVersion = try await client.settings().webuiVersion
+            }
+            if serverVersion == nil, serverSettingsError == nil {
                 serverSettingsError = String(localized: "Unknown")
             }
         } catch {
@@ -314,6 +320,7 @@ private extension ServerUpdateSettingsSection {
 
     @MainActor
     private func finishServerUpdate(_ completion: ServerUpdateCompletion) async {
+        await settingsStore?.load()
         await loadServerSettings()
         switch completion {
         case .succeeded, .untracked:

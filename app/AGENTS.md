@@ -63,7 +63,7 @@ Every exception requires a non-empty reason.
   | Group | Categories |
   | --- | --- |
   | Interface | Appearance, Chats, Navigation, Notifications & Haptics, Speech |
-  | Profile (active profile name) | Models, Providers |
+  | Profile (active profile name) | Models, Providers, Tools |
   | Server (active server name) | Profiles, Workspaces, System |
   | This iPhone | Servers, Live Activities & Widgets, Siri & Shortcuts, Data & Storage, About, Developer (DEBUG) |
 
