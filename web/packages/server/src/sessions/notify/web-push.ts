@@ -84,6 +84,8 @@ export class WebPushChannel implements NotificationChannel {
   /** profile → session → effective phase, decision review and agent notice last seen. */
   private readonly lastPhase = new Map<string, Map<string, { phase: string; decision: string | null; notices: string[] }>>()
   private readonly inFlight = new Set<Promise<void>>()
+  /** TAL-2191: endpoint and session → the last queued notice delivery, so a later pass's notices wait behind it. */
+  private readonly noticeQueues = new Map<string, Promise<void>>()
   private dirty = false
   /** The hub change the next pass answers, while no other change followed it. */
   private change: number | undefined
@@ -225,7 +227,8 @@ export class WebPushChannel implements NotificationChannel {
           if (sub.profile !== profile || !personMaySee(access.get(sub), row.ownerPersonId)) continue
           const kind = alertForTransition(seen?.phase ?? null, { phase, alertEligible: row.alertEligible, decisionReviewId: row.decisionReviewId }, sub.preferences, seen?.decision)
           if (kind) this.track(this.deliver(sub, row, kind))
-          for (const notice of agentNotifyAlerts(seen?.notices, row.agentNotices)) this.track(this.deliver(sub, row, notice))
+          const notices = agentNotifyAlerts(seen?.notices, row.agentNotices)
+          if (notices.length) this.queueNotices(sub, row, notices)
         }
       }
       this.lastPhase.set(profile, next)
@@ -233,10 +236,26 @@ export class WebPushChannel implements NotificationChannel {
   }
 
   private track(delivery: Promise<void>): void {
-    const settled = delivery.catch((error: unknown) => { this.deps.log(`[web-push] delivery failed (${(error as Error).message})`) })
+    const settled = delivery.catch((error: unknown) => { this.logFailure(error) })
     this.inFlight.add(settled)
     void settled.finally(() => this.inFlight.delete(settled))
   }
+
+  /**
+   * TAL-2191: a subscription's notices for one session go out one after another, oldest first, across passes and
+   * whatever each pre-send read costs. A failed one is logged and never drops the rest.
+   */
+  private queueNotices(sub: Subscription, row: ActivityState, notices: AgentNotice[]): void {
+    const key = `${sub.endpoint}\n${row.sessionId}`
+    const tail = (this.noticeQueues.get(key) ?? Promise.resolve()).then(async () => {
+      for (const notice of notices) await this.deliver(sub, row, notice).catch((error: unknown) => { this.logFailure(error) })
+    })
+    this.noticeQueues.set(key, tail)
+    void tail.finally(() => { if (this.noticeQueues.get(key) === tail) this.noticeQueues.delete(key) })
+    this.track(tail)
+  }
+
+  private logFailure(error: unknown): void { this.deps.log(`[web-push] delivery failed (${(error as Error).message})`) }
 
   private subject(sub: Subscription): string {
     const configured = (this.deps.env.TALARIA_WEB_PUSH_SUBJECT ?? '').trim()
