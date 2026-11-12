@@ -17,8 +17,8 @@ The reference implementation is Insights (TAL-1750, TAL-1782):
 | Item row with figures | `ProviderQuotaAccountRow.swift`, `ProviderQuotaDetailView.swift` (`ProviderQuotaWindowsView`) | `web/packages/frontend/src/features/insights/ProviderQuotaRows.tsx` |
 | Stat grid, charts, share rows | `InsightsStatGrid.swift`, `InsightsDailyChart.swift`, `InsightsActivityCharts.swift`, `ModelBreakdownRow.swift` | `InsightsPage.tsx` (`<dl>` stats, models table), `BarChart.tsx` |
 | Detail screen | `ProviderQuotaDetailView.swift` | the Insights tab routes (`routes/_app.insights.tsx`) |
-| Settings page | Pending the App sync (TAL-1695) | `web/packages/frontend/src/features/settings/ChatSection.tsx` |
-| Menu | Pending the App sync (TAL-1695) | `web/packages/frontend/src/features/composer/chips.tsx` (`ReasoningChip`) |
+| Settings page | `app/Talaria/Features/Settings/ConversationSettingsViews.swift` | `web/packages/frontend/src/features/settings/ChatSection.tsx` |
+| Menu | `app/Talaria/Features/Chat/ComposerReasoningMenu.swift` | `web/packages/frontend/src/features/composer/chips.tsx` (`ReasoningChip`) |
 
 A new page starts by copying the structure of the matching row above, not by
 inventing a layout. A rule below that names a component means that component,
@@ -118,7 +118,7 @@ The trailing detail is live data (a peak, a count), never an explanation.
 | --- | --- | --- |
 | Headline figure | `.font(.title2.weight(.semibold).monospacedDigit())`, mode word `.caption` secondary beside it, `.lastTextBaseline` aligned | `text-lg font-semibold tabular-nums text-strong`, mode word `text-xs text-muted`, `items-baseline` |
 | Stat grid | `InsightsStatGrid`: `.adaptive(minimum: 140)` columns, title `.caption` secondary, value `.title3.weight(.semibold)` | `<dl className="grid grid-cols-2 sm:grid-cols-4">`, `StatLabel` (`ui/List.tsx`) `dt text-xs uppercase tracking-wider text-muted`, `dd text-lg font-semibold text-strong` with the exact value in `title` |
-| Page figures | Pending the App sync (TAL-1695) | `SettingsStats` (`features/settings/SettingsGroup.tsx`), the stat grid for a Settings page: two columns, four once its column is 521px wide; each value a `Figure` with an optional mode word, `tone="warning"` or `"error"` when the server marks it. Every value is a server field the page only formats |
+| Page figures | `SettingsInfoRow` / `SettingsValueRow` for read-only Settings values | `SettingsStats` (`features/settings/SettingsGroup.tsx`), the stat grid for a Settings page: two columns, four once its column is 521px wide; each value a `Figure` with an optional mode word, `tone="warning"` or `"error"` when the server marks it. Every value is a server field the page only formats |
 | Row figure | `.title3.weight(.semibold).monospacedDigit()` at the row's trailing edge | `Figure` (`ui/List.tsx`) at the end of a row: one headline figure and its mode word ("21% left"), the classes of the headline figure above |
 | Metric cell | `ProviderQuotaMetricCell(title:value:)` (`Models/ProviderQuotaForecastView.swift`): title `.caption2` secondary, value `.caption.weight(.semibold).monospacedDigit()`, padding 8/6, `.secondary.opacity(0.1)` fill, radius 9, one accessibility element "title, value" | `MetricCell` (`ui/List.tsx`): `rounded-md bg-hover px-2 py-1.5`, label `text-[11px] text-muted`, value `text-xs font-semibold tabular-nums text-text` |
 | Meter | `ProgressRailView(percent:markerPercent:tint:height:)` (`Models/ProgressRailView.swift`): height 3 default, 8 for a window, 4 for a share; track `.secondary.opacity(0.18)`; marker 1.5pt primary | `QuotaMeter` (`features/insights/QuotaMeter.tsx`): `<div role="meter" aria-valuemin aria-valuemax aria-valuenow aria-label>` `relative h-2 overflow-hidden rounded-full bg-border`, fill `h-full rounded-full` + level class, marker `absolute inset-y-0 w-px bg-text` |
@@ -181,7 +181,7 @@ ask for an action. No other state wears a frame; `EmptyState compact` has none.
   quotas", "Reorder Accounts"); toggles are the thing they control.
 - No explanatory sub-text under a heading, switch or row. Web puts an
   explanation in a `HelpTip` (`ui/Field.tsx`); the App puts it in the docs or
-  nowhere.
+  a Settings section's "?" help (§12).
 - Status copy fits one line at 390pt width. Shorten before wrapping.
 - Figures keep their unit or mode word in the locale's form: "25% used",
   "0.62×", "25%/hr", "2d 12h". Formatters are shared: `i18n/units.ts` on Web,
@@ -219,36 +219,54 @@ Decide an item's home before building it:
 | A page over about 20 rows moves its rarely changed rows to a named sub-page (`settings/<section>/<page>`) behind a `SettingLink` row that counts them; the sub-page has the back link and title of a provider's own page | A long page buries the settings people change behind the ones they never touch |
 | A set of show/hide switches for one visible component (the composer's controls, the sidebar's items) is edited on a drawing of that component, each part a `PreviewToggle` (`features/settings/PreviewToggle.tsx`) with `aria-pressed`, which owns the hidden style | The user sees what each switch hides instead of picturing a control from its name |
 
+The App adds a fourth group, **This iPhone**, for App-only settings: servers,
+Live Activities and widgets, Siri and Shortcuts, data and storage, and about.
+`about` describes the installed app and is the one shared section id in this
+group. A setting stored on the device sits in a group whose section help says
+so.
+
 ## 12. Settings and forms
 
-A Settings page is the section heading (`SettingsSection`) and a column of
+On Web, a Settings page is the section heading (`SettingsSection`) and a column of
 `SettingsGroup`s (`SETTINGS_PAGE`); every row is inside a group. Pages import their rows from
 `web/packages/frontend/src/features/settings/SettingsRows.tsx` (or, for a page
 that reads no server setting, `SettingsGroup.tsx`) and write no layout classes.
 The content column is 640px wide at most, so a label stays near its control;
 Logs keeps the wider column its lines need.
 
+On the App, a page is `SettingsCategoryPage` on `SidebarList`, with no
+`SettingsCard` or `Form`. Shared rows live in
+`app/Talaria/Features/Settings/Settings*Row.swift`.
+
 | Need | App | Web |
 | --- | --- | --- |
-| A titled group of rows | Pending the App sync (TAL-1695) | `SettingsGroup` (title is a noun; optional live `detail`, optional `action`) |
-| On or off, server setting | Pending the App sync (TAL-1695) | `SettingToggle` |
-| One of two to four values with short labels | Pending the App sync (TAL-1695) | `SettingSegmented` (`ui/Segmented.tsx`: a `radiogroup`, one Tab stop, arrow keys move the selection, the selected option filled; it moves under its label when the column is too narrow for both); a browser-stored choice is a `Segmented` in a `SettingRow`. An option may be drawn (`display`, "Aa" at a font size) with its words as its name |
-| One of a few named values | Pending the App sync (TAL-1695) | `SettingSelect` |
-| An integer in a range | Pending the App sync (TAL-1695) | `SettingNumber` |
-| Free text or a list of lines | Pending the App sync (TAL-1695) | `SettingText` (the only row with a Save button, shown while the draft differs); a rarely edited list is closed behind its count (`summary`, TAL-2143) and opens in place |
-| A control stored in this browser | Pending the App sync (TAL-1695) | `SettingRow` wrapping the control |
-| A row whose control is a button | Pending the App sync (TAL-1695) | `SettingAction` (danger styling on the button, never on the row) |
-| A row that opens a page or dialog | Pending the App sync (TAL-1695) | `SettingLink` (external pages open in a new tab; a sub-page row names its row count in `detail`) |
-| Installed versions | Pending the App sync (TAL-1695) | `SettingsStats` figures |
-| Read-only values (keyboard shortcuts) | Pending the App sync (TAL-1695) | `SettingValue` rows with an `icon` in one `SettingValues` list; keys as `Keys` (`ui/Keys.tsx`) keycaps, the modifier ⌘ on Apple platforms and Ctrl elsewhere |
-| A continuous value | Pending the App sync (TAL-1695) | `Slider` in a `SettingRow`, with its value shown in tabular digits |
-| A visual choice (theme) | Pending the App sync (TAL-1695) | Preview tiles, the selected one with the accent border and a bare `Mark`; these tiles are the only bordered shapes on a Settings page |
-| One of many named looks (skins) | Pending the App sync (TAL-1695) | Rows in a column grid (three columns from 601px, two below): colour dots, name, a bare `Mark` on the selected one |
-| A list of things with their own actions (providers, plugins, profiles) | Pending the App sync (TAL-1695) | `RowList` and `Row` (`ui/List.tsx`) with a `ContextMenu`, per §3 |
-| More than twelve list items | Pending the App sync (TAL-1695) | One filter input above the list; the filter is device-local state |
-| A provider or profile in a row or header | Pending the App sync (TAL-1695) | `Monogram` (`ui/Monogram.tsx`): its first letter on a 30px square (24px `sm`) on `bg-hover` |
-| The one choice a page is about (the main model) | Pending the App sync (TAL-1695) | `SettingHeadline`: the provider's `Monogram`, the name in `text-xl font-semibold text-strong`, a muted second line, and its change action (a `default` `IconButton`) at the right |
-| Many items that share one setting (task models) | Pending the App sync (TAL-1695) | A two-column `<table>` (Insights' model table): one line per item, the name led by a `Dot` (`changed` accent when set apart from its default, else `idle`), the value right-aligned and truncating first; the item's button in the first cell carries `aria-expanded` and its editor opens in the table row under it |
+| A titled group of rows | `SidebarSectionHeader`; with an explanation, `SettingsSectionHeader` and its "?" help (`settingsSectionHelp`) | `SettingsGroup` (title is a noun; optional live `detail`, optional `action`) |
+| On or off, server setting | `SettingsToggleRow` | `SettingToggle` |
+| One of two to four values with short labels | `SettingsPickerRow` | `SettingSegmented` (`ui/Segmented.tsx`: a `radiogroup`, one Tab stop, arrow keys move the selection, the selected option filled; it moves under its label when the column is too narrow for both); a browser-stored choice is a `Segmented` in a `SettingRow`. An option may be drawn (`display`, "Aa" at a font size) with its words as its name |
+| One of a few named values | `SettingsPickerRow` | `SettingSelect` |
+| An integer in a range | `SettingsStepperRow` | `SettingNumber` |
+| Free text or a list of lines | `SettingsTextFieldRow` | `SettingText` (the only row with a Save button, shown while the draft differs); a rarely edited list is closed behind its count (`summary`, TAL-2143) and opens in place |
+| A control stored in this browser | For device storage, the matching shared row: `SettingsToggleRow`, `SettingsPickerRow`, `SettingsStepperRow`, `SettingsTextFieldRow`, `SettingsSliderRow` or `SettingsColorRow` | `SettingRow` wrapping the control |
+| A row whose control is a button | `SettingsButton` (destructive role on the button, never a tinted row) | `SettingAction` (danger styling on the button, never on the row) |
+| A row that opens a page or dialog | `SettingsItemRow` | `SettingLink` (external pages open in a new tab; a sub-page row names its row count in `detail`) |
+| Installed versions | `SettingsInfoRow` / `SettingsValueRow` | `SettingsStats` figures |
+| Read-only values (keyboard shortcuts) | `SettingsInfoRow` / `SettingsValueRow` | `SettingValue` rows with an `icon` in one `SettingValues` list; keys as `Keys` (`ui/Keys.tsx`) keycaps, the modifier ⌘ on Apple platforms and Ctrl elsewhere |
+| A continuous value | `SettingsSliderRow` | `Slider` in a `SettingRow`, with its value shown in tabular digits |
+| A visual choice (theme) | `SettingsPickerRow`; a colour uses `SettingsColorRow` | Preview tiles, the selected one with the accent border and a bare `Mark`; these tiles are the only bordered shapes on a Settings page |
+| One of many named looks (skins) | `SettingsItemRow` for each choice, with its selected mark | Rows in a column grid (three columns from 601px, two below): colour dots, name, a bare `Mark` on the selected one |
+| A list of things with their own actions (providers, plugins, profiles) | `SettingsItemRow` | `RowList` and `Row` (`ui/List.tsx`) with a `ContextMenu`, per §3 |
+| More than twelve list items | `.searchable` on the page | One filter input above the list; the filter is device-local state |
+| A provider or profile in a row or header | `SettingsItemRow` with its leading content | `Monogram` (`ui/Monogram.tsx`): its first letter on a 30px square (24px `sm`) on `bg-hover` |
+| The one choice a page is about (the main model) | `SettingsItemRow` for the selected model | `SettingHeadline`: the provider's `Monogram`, the name in `text-xl font-semibold text-strong`, a muted second line, and its change action (a `default` `IconButton`) at the right |
+| Many items that share one setting (task models) | `SettingsItemRow` for each item and its choice | A two-column `<table>` (Insights' model table): one line per item, the name led by a `Dot` (`changed` accent when set apart from its default, else `idle`), the value right-aligned and truncating first; the item's button in the first cell carries `aria-expanded` and its editor opens in the table row under it |
+
+On the App, a status uses `SettingsStatusRow`. Explanations go in the section's
+"?" help through `SettingsSectionHeader` and `settingsSectionHelp`, never under
+a row. `SettingsFootnote` is for status, errors and live data only. Modal editors
+(`*Sheet`, `*EditorView`, `AddServerView`) may use a form layout; pages may not.
+Every server write is optimistic with rollback.
+
+Web rows follow these rules:
 
 - A label names the thing controlled (§9).
 - An explanation goes in `hint`, which renders a `HelpTip`, never as text
@@ -325,17 +343,17 @@ Menus are interaction surfaces (§14); every Web menu is built with `Menu` from
 
 | Rule | App | Web |
 | --- | --- | --- |
-| Row style | Pending the App sync (TAL-1695) | `MENU_ROW`; choices use `MenuChoiceItem` and `MenuChoiceCheckbox` |
-| First row | Pending the App sync (TAL-1695) | A `MenuGroupLabel` naming what the menu sets |
-| Choose one | Pending the App sync (TAL-1695) | `MenuChoiceItem` in a `MenuRadioGroup`; selecting applies at once and closes |
-| Choose several | Pending the App sync (TAL-1695) | `MenuChoiceCheckbox`; toggling applies at once and the menu stays open |
-| Selected mark | Pending the App sync (TAL-1695) | A trailing check from the shared row; colour alone never carries the state |
-| Unavailable option | Pending the App sync (TAL-1695) | Disabled, with the server's reason in muted text at the right |
-| Grouping | Pending the App sync (TAL-1695) | `MenuGroup` with a `MenuGroupLabel`, by a server field |
-| Long lists | Pending the App sync (TAL-1695) | A pinned search header above twelve items |
-| Destructive item | Pending the App sync (TAL-1695) | Last, after a `MenuSeparator`, in `text-error` |
-| Never in a menu | Pending the App sync (TAL-1695) | A form, a Save button, a native checkbox or radio, explanatory sub-text |
-| Composer menus | Pending the App sync (TAL-1695) | `ComposerMenu` (`features/composer/chips.tsx`): open upward at one width; at 640px and below span the composer's width |
+| Row style | System `Menu` / `UIMenu` for a short choose-one list | `MENU_ROW`; choices use `MenuChoiceItem` and `MenuChoiceCheckbox` |
+| First row | An inline title naming what the menu sets | A `MenuGroupLabel` naming what the menu sets |
+| Choose one | Applies on tap and closes the menu or dismisses the sheet | `MenuChoiceItem` in a `MenuRadioGroup`; selecting applies at once and closes |
+| Choose several | Toggle rows that apply at once, with no Save; the sheet stays open | `MenuChoiceCheckbox`; toggling applies at once and the menu stays open |
+| Selected mark | System checkmark (`state: .on`); in a sheet, `checkmark.circle.fill` in the accent colour | A trailing check from the shared row; colour alone never carries the state |
+| Unavailable option | Listed and disabled, with the server's reason in secondary text | Disabled, with the server's reason in muted text at the right |
+| Grouping | System sections by a server field | `MenuGroup` with a `MenuGroupLabel`, by a server field |
+| Long lists | A titled sheet for long or searchable lists, with `.searchable` for search | A pinned search header above twelve items |
+| Destructive item | Last, separated from choices, with the destructive role | Last, after a `MenuSeparator`, in `text-error` |
+| Never in a menu | A form, a Save button or an explanatory footer | A form, a Save button, a native checkbox or radio, explanatory sub-text |
+| Composer menus | `ComposerReasoningMenu.swift` for short choices; a titled sheet for long or searchable choices | `ComposerMenu` (`features/composer/chips.tsx`): open upward at one width; at 640px and below span the composer's width |
 
 ## 14. Exceptions
 
@@ -352,7 +370,8 @@ Menus are interaction surfaces (§14); every Web menu is built with `Menu` from
 
 The rules win; these spots still differ and are owned.
 `web/packages/frontend/scripts/ui-rules-baseline.json` is the machine-readable
-list of the Web violations that remain.
+list of the Web violations that remain. `app/ci/ui-rules-baseline.json` is the
+machine-readable list for the App.
 
 | Deviation | Owner |
 | --- | --- |
@@ -360,7 +379,9 @@ list of the Web violations that remain.
 | The App daily chart formats dates with bare `.dateTime`, not the environment locale and zone | TAL-1765 |
 | Stale and unavailable meters are orange on the App (palette default) and muted on Web | Decide with TAL-1533 (server-owned presentation state) |
 | Web Settings pages not yet on the kit (§12) | TAL-2077 (Providers), TAL-2079 (Notifications, Speech), TAL-2082 (Plugins) |
-| The App Settings root is not grouped by scope (§11, §12) | TAL-1695 |
+| The App Toolsets sheet holds a draft behind Save instead of applying toggle rows at once (§13) | TAL-2121 |
+| The App agent mode menu does not show the selected mode or hide a single choice (§13) | TAL-2122 |
+| Explanatory footers remain outside App Settings (§9, §13) | TAL-2123 |
 
 ## 16. Checklist for a UI change
 
@@ -385,3 +406,9 @@ list of the Web violations that remain.
     iPhone Duo viewports (outer portrait 382×580, outer landscape 594×368,
     inner portrait 669×867, inner landscape 951×585, inner split 385×571),
     and in the light theme at desktop and 390px.
+11. For an App change, run `node scripts/check-ui-rules.mjs --config app/ci/ui-rules.json`
+    from the repository root.
+12. For an App change, inspect and attach the [screen gallery](../app/docs/visual-references.md#screen-gallery)
+    screenshots of each touched page: phone light and dark, accessibility5,
+    Duo outer and inner. From `app/`, run
+    `TALARIA_TEST_SCREENSHOTS=1 scripts/test-ios TalariaTests/ScreenGalleryHostedTests`.
