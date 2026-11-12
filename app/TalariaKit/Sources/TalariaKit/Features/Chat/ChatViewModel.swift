@@ -7073,7 +7073,7 @@ public final class ChatViewModel {
             return String(localized: "\(inputText) in / \(outputText) out")
         }
 
-        return String(localized: "\(inputText) in / \(outputText) out (~\(cost.formattedCost()))")
+        return String(localized: "\(inputText) in / \(outputText) out (~\(cost.formattedCost(precision: 4)))")
     }
 
     private func providerFromModel(_ model: String) -> String? {

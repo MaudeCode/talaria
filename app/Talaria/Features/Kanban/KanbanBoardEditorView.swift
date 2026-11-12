@@ -57,8 +57,6 @@ struct KanbanBoardEditorView: View {
                 TextField("Color", text: $color)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-            } footer: {
-                Text("Creating a Board does not make it active.")
             }
 
             if let mutation = model.boardMutationState,

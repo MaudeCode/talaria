@@ -101,7 +101,7 @@ final class ContextWindowIndicatorTests: XCTestCase {
     func testCostLabelFormatsDollars() {
         let snapshot = makeSnapshot(used: 1_000, window: 128_000, estimatedCost: 0.1234)
 
-        XCTAssertEqual(ContextWindowFormatter.costLabel(from: snapshot), "$0.1234")
+        XCTAssertEqual(ContextWindowFormatter.costLabel(from: snapshot, locale: Locale(identifier: "en_US")), "$0.1234")
     }
 
     func testCostLabelReturnsUnavailableWhenMissing() {

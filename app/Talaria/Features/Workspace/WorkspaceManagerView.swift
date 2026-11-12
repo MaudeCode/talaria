@@ -79,10 +79,6 @@ struct WorkspaceManagerView: View {
                         guard let index = offsets.first, viewModel.rows.indices.contains(index) else { return }
                         viewModel.requestRemoval(of: viewModel.rows[index])
                     }
-                } footer: {
-                    SettingsFootnote(String(localized: "Removing a workspace only unregisters its path from the server's list. No files are deleted."))
-                        .sidebarRowPadding()
-                        .sidebarRow(isSelected: false)
                 }
             } else if !viewModel.isLoading {
                 ContentUnavailableView {

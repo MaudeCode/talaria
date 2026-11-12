@@ -16,3 +16,18 @@ public func insightsFormattedPercent(_ value: Double, locale: Locale = .current)
 public func insightsCompactNumber(_ value: Int, locale: Locale = .current) -> String {
     value.formatted(.number.notation(.compactName).precision(.significantDigits(1...3)).locale(locale))
 }
+
+// Insights rounds cents; context and accessibility callers request a fixed precision.
+extension Double {
+    public func formattedCost(precision: Int? = nil, locale: Locale = .current) -> String {
+        let digits: NumberFormatStyleConfiguration.Precision
+        if let precision {
+            digits = .fractionLength(precision)
+        } else if self != 0, abs(self) < 0.01 {
+            digits = .significantDigits(1...4)
+        } else {
+            digits = .fractionLength(2)
+        }
+        return formatted(.currency(code: "USD").precision(digits).locale(locale))
+    }
+}

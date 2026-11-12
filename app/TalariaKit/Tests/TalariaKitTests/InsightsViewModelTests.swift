@@ -167,7 +167,7 @@ final class InsightsViewModelTests: XCTestCase {
         XCTAssertTrue(viewModel.hasLoadedAnalytics)
         XCTAssertNil(viewModel.errorMessage)
         XCTAssertEqual(viewModel.fallbackReason, "Server insights unavailable")
-        XCTAssertTrue(viewModel.sourceDescription.contains("Server insights unavailable"))
+        XCTAssertTrue(viewModel.sourceDescription?.contains("Server insights unavailable") == true)
 
         let retry = Task { await viewModel.load() }
         await client.waitForPendingRequest()
@@ -176,7 +176,7 @@ final class InsightsViewModelTests: XCTestCase {
         )))
         await retry.value
         XCTAssertEqual(viewModel.totalTokens, 125)
-        XCTAssertFalse(viewModel.sourceDescription.contains("Server insights unavailable"))
+        XCTAssertNil(viewModel.sourceDescription)
     }
 
     // MARK: - Refresh retries (TAL-191)
@@ -192,12 +192,12 @@ final class InsightsViewModelTests: XCTestCase {
 
         XCTAssertTrue(viewModel.isLoading)
         XCTAssertEqual(viewModel.totalTokens, 350)
-        XCTAssertTrue(viewModel.sourceDescription.contains("Showing cached server analytics"))
+        XCTAssertTrue(viewModel.sourceDescription?.contains("Showing cached server analytics") == true)
 
         client.completePendingRequest(with: .success(try insights(tokens: 125)))
         await load.value
         XCTAssertEqual(viewModel.totalTokens, 125)
-        XCTAssertFalse(viewModel.sourceDescription.contains("cached"))
+        XCTAssertNil(viewModel.sourceDescription)
     }
 
     @MainActor
@@ -241,7 +241,7 @@ final class InsightsViewModelTests: XCTestCase {
         XCTAssertEqual(cache.load(timeframe: .last30Days)?.totalTokens, 350)
         XCTAssertNil(viewModel.errorMessage)
         XCTAssertNotNil(viewModel.lastError)
-        XCTAssertTrue(viewModel.sourceDescription.contains("Showing cached server analytics. Refresh failed"))
+        XCTAssertTrue(viewModel.sourceDescription?.contains("Showing cached server analytics. Refresh failed") == true)
         XCTAssertFalse(viewModel.isLoading)
     }
 
@@ -520,6 +520,19 @@ private final class RecordingSleeper {
 }
 
 extension InsightsViewModelTests {
+    func testCostDisplayPreservesTinyAmountsAndRoundsCents() {
+        for (identifier, expected) in [
+            ("en_US", ["$0.46", "$0.37", "$0.0004", "$0.00"]),
+            ("de_DE", ["0,46\u{00a0}$", "0,37\u{00a0}$", "0,0004\u{00a0}$", "0,00\u{00a0}$"]),
+        ] {
+            for (amount, text) in zip([0.455, 0.3705, 0.0004, 0], expected) {
+                XCTAssertEqual(amount.formattedCost(locale: Locale(identifier: identifier)), text)
+            }
+        }
+        XCTAssertEqual(0.455.formattedCost(precision: 4, locale: Locale(identifier: "en_US")), "$0.4550")
+        XCTAssertEqual(0.00000012345.formattedCost(locale: Locale(identifier: "en_US")), "$0.0000001234")
+    }
+
     func testCompactNumbersReadLikeStatTiles() {
         let locale = Locale(identifier: "en_US")
         XCTAssertEqual(insightsCompactNumber(0, locale: locale), "0")

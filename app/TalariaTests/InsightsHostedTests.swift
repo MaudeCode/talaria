@@ -198,6 +198,7 @@ final class InsightsHostedTests: XCTestCase {
         var seen: [String] = []
         let checks: [(String, (NSObject) -> Bool)] = [
             ("sessions stat", Self.labelled(prefix: "Sessions, ")),
+            ("cost stat", { $0.accessibilityLabel?.hasPrefix("Estimated cost, ") == true }),
             ("total tokens stat", Self.labelled(prefix: "Total tokens, ")),
             ("cache hit stat", Self.labelled(prefix: "Cache hit rate, ")),
             ("daily chart", Self.identified("insights-daily-chart")),
@@ -209,6 +210,10 @@ final class InsightsHostedTests: XCTestCase {
         for (name, match) in checks {
             _ = try await requireElementScrolling(in: window, "No \(name)", where: match)
             seen += HostedAccessibility.labels(in: window)
+            if name == "cost stat" {
+                let cost = try XCTUnwrap(HostedAccessibility.elements(in: window).first { $0.accessibilityLabel?.hasPrefix("Estimated cost, ") == true })
+                XCTAssertEqual(cost.accessibilityValue, "$5.7244")
+            }
             if name == "daily chart" { attachHostedScreenshot(window, name: "insights-usage-analytics") }
         }
         let labels = seen.joined(separator: "\n")
