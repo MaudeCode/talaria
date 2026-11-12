@@ -680,6 +680,79 @@ final class SettingsPlacementHostedTests: XCTestCase {
         return (labels, identifiers)
     }
 
+    func testServerSettingsOnlyExposeFieldsTheServerSent() async throws {
+        _ = try FixtureApp(for: self)
+        for (payload, showsTools, showsMaximum) in [
+            ("{}", false, false),
+            (#"{"agent_approvals":null,"compression_prepare_ahead":null,"max_tokens":null}"#, false, true),
+            (#"{"agent_approvals":false}"#, true, false)
+        ] {
+            let host = "settings-visibility-\(UUID().uuidString).test"
+            DeferredMockURLProtocol.setOnRequest({ $0.complete(withJSON: payload) }, forHost: host)
+            addTeardownBlock { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+            let config = URLSessionConfiguration.ephemeral
+            config.protocolClasses = [DeferredMockURLProtocol.self]
+            let server = try XCTUnwrap(URL(string: "https://\(host)"))
+            let model = ServerSettingsStore(client: APIClient(baseURL: server, session: URLSession(configuration: config)))
+            await model.loadIfNeeded()
+            let root = try hostWindow(NavigationStack {
+                SettingsView(server: server, selection: .constant(nil)).environment(model)
+            })
+            XCTAssertEqual(allSettingsRows(in: root).identifiers.contains("settings-category-tools"), showsTools)
+            root.isHidden = true
+            root.rootViewController = nil
+            let chat = try hostWindow(NavigationStack {
+                ChatsSettingsView().environment(model)
+            })
+            let rows = allSettingsRows(in: chat).identifiers
+            XCTAssertEqual(rows.contains("settings-chat-max-tokens"), showsMaximum)
+            XCTAssertFalse(rows.contains("settings-chat-compression-ahead"))
+            XCTAssertFalse(rows.contains("settings-chat-title-refresh"))
+            chat.isHidden = true
+            chat.rootViewController = nil
+        }
+    }
+
+    func testServerSettingsControlsAppearFromFixtureState() async throws {
+        let fixture = try FixtureApp(for: self)
+        let pages = [
+            ("chat", ["settings-chat-max-tokens", "settings-chat-compression-ahead", "settings-chat-title-refresh"]),
+            ("system", ["settings-system-check-updates", "settings-system-auto-apply", "settings-system-summarize",
+                        "settings-system-web-channel", "settings-system-agent-channel", "settings-system-ignore-agent"]),
+            ("tools", ["settings-tools-agent-approvals"])
+        ]
+        for (id, identifiers) in pages {
+            let category = try XCTUnwrap(SettingsCategory(rawValue: id), "The server settings category must exist")
+            let window = try hostWindow(NavigationStack {
+                SettingsPaneView(authManager: fixture.environment.authManager,
+                                 server: UITestFixtureEnvironment.serverURL, pane: .category(category))
+            })
+            await settleSettingsFixture(in: window)
+            let rows = allSettingsRows(in: window)
+            for identifier in identifiers {
+                XCTAssertTrue(rows.identifiers.contains(identifier), "Missing server setting: \(identifier)")
+            }
+            attachHostedScreenshot(window, name: "server-settings-\(id)")
+            if id == "tools" {
+                let toggle = try XCTUnwrap(window.firstView(ofType: UISwitch.self))
+                XCTAssertTrue(toggle.isOn)
+                let reads = UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/settings" }.count }
+                toggle.setOn(false, animated: false)
+                toggle.sendActions(for: .valueChanged)
+                XCTAssertFalse(toggle.isOn)
+                let saved = await awaitCondition {
+                    UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/settings" }.count > reads }
+                }
+                XCTAssertTrue(saved)
+                let response = try await fixture.client.settings()
+                XCTAssertEqual(response.agentApprovals, false, "The visible Tools control must reach the shared settings writer")
+                attachHostedScreenshot(window, name: "server-settings-tools-approvals-disabled")
+            }
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+    }
+
     func testCategoryPagesKeepTheirRowsAndIdentifiersAtOneHome() async throws {
         let fixture = try FixtureApp(for: self)
         let pages: [(SettingsCategory, [String], [String])] = [

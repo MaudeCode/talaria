@@ -7,6 +7,7 @@ public enum SettingsCategory: String, Identifiable, Sendable {
     case navigation
     case speech
     case models
+    case tools
     case profiles
     case workspaces
     case system
@@ -23,7 +24,7 @@ public enum SettingsCategory: String, Identifiable, Sendable {
     public static var rootCategories: [Self] {
         var categories: [Self] = [
             .appearance, .chats, .navigation, .notificationsAndHaptics, .speech,
-            .models, .providers, .profiles, .workspaces, .system,
+            .models, .providers, .tools, .profiles, .workspaces, .system,
             .servers, .liveActivitiesAndWidgets, .siriAndShortcuts, .dataAndStorage, .about
         ]
         #if DEBUG
@@ -50,7 +51,7 @@ public enum SettingsCategory: String, Identifiable, Sendable {
     public var group: Group {
         switch self {
         case .appearance, .chats, .navigation, .notificationsAndHaptics, .speech: .interface
-        case .models, .providers: .profile
+        case .models, .providers, .tools: .profile
         case .profiles, .workspaces, .system: .server
         case .servers, .liveActivitiesAndWidgets, .siriAndShortcuts, .dataAndStorage, .about, .developer: .device
         }
@@ -60,6 +61,7 @@ public enum SettingsCategory: String, Identifiable, Sendable {
         switch self {
         case .navigation: String(localized: "Navigation")
         case .speech: String(localized: "Speech")
+        case .tools: String(localized: "Tools")
         case .models: String(localized: "Models")
         case .profiles: String(localized: "Profiles")
         case .workspaces: String(localized: "Workspaces")
@@ -81,6 +83,7 @@ public enum SettingsCategory: String, Identifiable, Sendable {
         switch self {
         case .navigation: "sidebar.left"
         case .speech: "mic"
+        case .tools: "wrench.and.screwdriver"
         case .models: "cpu"
         case .profiles: "person.crop.circle"
         case .workspaces: "folder"

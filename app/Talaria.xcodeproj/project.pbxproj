@@ -14,6 +14,7 @@
 		C21121000000000000000002 /* SettingsSliderRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C21120000000000000000002 /* SettingsSliderRow.swift */; };
 		C21121000000000000000001 /* SettingsItemRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C21120000000000000000001 /* SettingsItemRow.swift */; };
 		A16950000000000000000011 /* NavigationSettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A16950000000000000000012 /* NavigationSettingsViews.swift */; };
+		A21180000000000000000001 /* ServerSettingsSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21180000000000000000002 /* ServerSettingsSections.swift */; };
 		A16950000000000000000001 /* ModelsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A16950000000000000000002 /* ModelsSettingsView.swift */; };
 		C10620000000000000000001 /* ChatTranscriptRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10620000000000000000002 /* ChatTranscriptRow.swift */; };
 		D1477000000000000000B001 /* RetainedChats.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1477000000000000000B002 /* RetainedChats.swift */; };
@@ -502,6 +503,7 @@
 		C21120000000000000000002 /* SettingsSliderRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsSliderRow.swift; sourceTree = "<group>"; };
 		C21120000000000000000001 /* SettingsItemRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsItemRow.swift; sourceTree = "<group>"; };
 		A16950000000000000000012 /* NavigationSettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationSettingsViews.swift; sourceTree = "<group>"; };
+		A21180000000000000000002 /* ServerSettingsSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerSettingsSections.swift; sourceTree = "<group>"; };
 		A16950000000000000000002 /* ModelsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelsSettingsView.swift; sourceTree = "<group>"; };
 		C10620000000000000000002 /* ChatTranscriptRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscriptRow.swift; sourceTree = "<group>"; };
 		D1477000000000000000B002 /* RetainedChats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RetainedChats.swift; sourceTree = "<group>"; };
@@ -1371,6 +1373,7 @@
 				C108A0000000000000000105 /* ServersProvidersSettingsViews.swift */,
 				A16950000000000000000012 /* NavigationSettingsViews.swift */,
 				A16950000000000000000002 /* ModelsSettingsView.swift */,
+				A21180000000000000000002 /* ServerSettingsSections.swift */,
 				C108A0000000000000000106 /* ServerUpdateSettingsSection.swift */,
 				759A00000000000000000002 /* UpdateSummarySheet.swift */,
 				182A00000000000000000002 /* WhatsNewSheet.swift */,
@@ -1848,6 +1851,7 @@
 				C108A0000000000000000005 /* ServersProvidersSettingsViews.swift in Sources */,
 				A16950000000000000000011 /* NavigationSettingsViews.swift in Sources */,
 				A16950000000000000000001 /* ModelsSettingsView.swift in Sources */,
+				A21180000000000000000001 /* ServerSettingsSections.swift in Sources */,
 				C108A0000000000000000006 /* ServerUpdateSettingsSection.swift in Sources */,
 				759A00000000000000000001 /* UpdateSummarySheet.swift in Sources */,
 				182A00000000000000000001 /* WhatsNewSheet.swift in Sources */,

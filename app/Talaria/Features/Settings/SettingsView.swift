@@ -9,6 +9,10 @@ struct SettingsView: View {
     @Binding var selection: SettingsPane?
 
     var body: some View {
+        ServerSettingsScope(server: server) { store in directory(store) }.id(server)
+    }
+
+    private func directory(_ settingsStore: ServerSettingsStore) -> some View {
         SettingsPage(title: String(localized: "Settings")) {
             SectionSelectionRow(item: .userProfile, selection: $selection) {
                 UserProfileSettingsRow(server: server)
@@ -30,7 +34,9 @@ struct SettingsView: View {
                             .lineLimit(1)
                     }
                 }
-                ForEach(SettingsCategory.rootCategories.filter { $0.group == group }) { category in
+                ForEach(SettingsCategory.rootCategories.filter {
+                    $0.group == group && ($0 != .tools || settingsStore.settings?.agentApprovals != nil)
+                }) { category in
                     SectionSelectionRow(item: .category(category), selection: $selection) {
                         Label {
                             Text(category.title)
@@ -42,6 +48,7 @@ struct SettingsView: View {
                     .accessibilityIdentifier("settings-category-\(category.id)")
                 }
             }
+            if let error = settingsStore.errorMessage { SettingsErrorFootnote(SettingsErrorText(error)) }
         }
         .navigationTitle("Settings")
         .adaptiveSecondaryNavigationTitle(title: String(localized: "Settings"))
@@ -64,6 +71,11 @@ struct SettingsPaneView: View {
     var onProfileChanged: () async -> Void = {}
 
     var body: some View {
+        ServerSettingsScope(server: server) { _ in page }.id(server)
+    }
+
+    @ViewBuilder
+    private var page: some View {
         switch pane {
         case .userProfile:
             UserProfileSettingsView(authManager: authManager)
@@ -95,8 +107,11 @@ struct SettingsPaneView: View {
             }
         case .workspaces:
             WorkspaceManagerView(server: server, isPage: true, onRegistryChanged: {})
+        case .tools:
+            SettingsCategoryPage(category: .tools) { ServerSettingsSections(page: .tools) }
         case .system:
             SettingsCategoryPage(category: .system) {
+                ServerSettingsSections(page: .updates)
                 SettingsSection(title: String(localized: "System")) {
                     ServerUpdateSettingsSection(authManager: authManager, server: server)
                 }

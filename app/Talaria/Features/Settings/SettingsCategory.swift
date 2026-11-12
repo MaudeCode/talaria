@@ -2,6 +2,7 @@ import SwiftUI
 import TalariaKit
 
 struct SettingsCategoryPage<Content: View>: View {
+    @Environment(ServerSettingsStore.self) private var settingsStore: ServerSettingsStore?
     let category: SettingsCategory
     @ViewBuilder let content: Content
 
@@ -13,6 +14,7 @@ struct SettingsCategoryPage<Content: View>: View {
     var body: some View {
         SettingsPage(title: category.title) {
             content
+            if let error = settingsStore?.errorMessage { SettingsErrorFootnote(SettingsErrorText(error)) }
         }
     }
 }

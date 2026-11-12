@@ -464,6 +464,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
     nonisolated(unsafe) private static var approvalBypassOverride: Bool?
     /// The session's toolsets as the fixture saved them (TAL-631); nil is the profile's defaults.
     private static let sessionToolsets = OSAllocatedUnfairLock<[String]?>(initialState: nil)
+    private static let serverSettings = OSAllocatedUnfairLock(initialState: [String: JSONValue]())
     private static let reasoningDefaults = OSAllocatedUnfairLock(initialState: (effort: "medium", thinking: true))
     nonisolated(unsafe) private static var transcriptReads = 0
     nonisolated(unsafe) private static var archivedSessionIDs: Set<String> = []
@@ -505,6 +506,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
         approvalBypassOverride = nil
         sessionToolsets.withLock { $0 = nil }
         reasoningDefaults.withLock { $0 = ("medium", true) }
+        serverSettings.withLock { $0 = [:] }
         sessionListFailures.withLock { $0 = [] }
         answeredPaths.withLock { $0 = [] }
         targetedDirectoryReads.withLock { $0 = [] }
@@ -994,6 +996,23 @@ final class UITestFixtureURLProtocol: URLProtocol {
             let saved = names.isEmpty ? nil : names
             sessionToolsets.withLock { $0 = saved }
             return json(["ok": true, "enabled_toolsets": saved.map { $0 as Any } ?? NSNull()])
+        case "/api/settings":
+            return serverSettings.withLock { settings in
+                if settings.isEmpty {
+                    settings = [
+                        "agent_approvals": .bool(true), "max_tokens": .number(8192), "compression_prepare_ahead": .bool(true),
+                        "auto_title_refresh_every": .string("10"), "check_for_updates": .bool(true), "auto_apply_updates": .bool(false),
+                        "summarize_updates_automatically": .bool(true), "update_channel": .string("stable"),
+                        "update_channels": .array([.string("stable"), .string("nightly"), .string("experimental")]),
+                        "agent_update_channel": .string("stable"), "ignore_agent_updates": .bool(false)
+                    ]
+                }
+                if request.httpMethod == "POST",
+                   let patch = try? JSONDecoder().decode([String: JSONValue].self, from: json(requestJSON(request))) {
+                    settings.merge(patch) { _, saved in saved }
+                }
+                return try! JSONEncoder().encode(settings)
+            }
         case "/api/session/yolo":
             let requested = request.httpMethod == "POST" ? requestJSON(request)["enabled"] as? Bool : nil
             let enabled = recoveryState.withLock {

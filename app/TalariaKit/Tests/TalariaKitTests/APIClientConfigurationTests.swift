@@ -877,6 +877,7 @@ final class APIClientConfigurationTests: APIClientTestCase {
         XCTAssertFalse(ProfileNameRules.isValid(String(repeating: "a", count: 65)))
     }
 
+    @MainActor
     func testQuotaThresholdsLoadSaveAndCacheThroughServerSettings() async throws {
         let thresholdsJSON = """
         { "warning_remaining_percent": 30, "critical_remaining_percent": 10, "pace_tolerance_percent": 3,
@@ -898,7 +899,10 @@ final class APIClientConfigurationTests: APIClientTestCase {
         let settings = try await client.settings()
         let loaded = try XCTUnwrap(settings.providerQuotaThresholds)
         XCTAssertEqual(loaded.warningRemainingPercent, 30)
-        let saved = try await client.saveProviderQuotaThresholds(loaded).providerQuotaThresholds
+        let store = ServerSettingsStore(client: client)
+        await store.loadIfNeeded()
+        await store.setQuotaThresholds(loaded).value
+        let saved = store.settings?.providerQuotaThresholds
         XCTAssertEqual(saved, loaded)
 
         // The last read is cached for read-only offline display.

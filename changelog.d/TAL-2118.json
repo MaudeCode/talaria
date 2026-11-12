@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Change agent approvals, chat limits, and server update preferences from Settings.",
+      "highlight": false,
+      "components": ["app"],
+      "announce": false
+    }
+  ]
+}

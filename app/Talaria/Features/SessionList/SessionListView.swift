@@ -2454,19 +2454,22 @@ struct SessionListView: View {
     }
 
     private var settingsNavigationStack: some View {
-        NavigationStack(path: $settingsPath) {
-            settingsModalPage(SettingsView(server: server, profileName: viewModel.activeProfileDisplayName,
-                serverName: authManager.servers.first { $0.id == authManager.activeServerID }?.displayName,
-                selection: Binding {
-                settingsPath.first
-            } set: { pane in
-                settingsPath = pane.map { [$0] } ?? []
-            }))
-            .navigationDestination(for: SettingsPane.self) { pane in
-                settingsModalPage(SettingsPaneView(authManager: authManager, server: server, pane: pane,
-                    onProfileChanged: { await viewModel.loadActiveProfile() }))
+        ServerSettingsScope(server: server) { _ in
+            NavigationStack(path: $settingsPath) {
+                settingsModalPage(SettingsView(server: server, profileName: viewModel.activeProfileDisplayName,
+                    serverName: authManager.servers.first { $0.id == authManager.activeServerID }?.displayName,
+                    selection: Binding {
+                    settingsPath.first
+                } set: { pane in
+                    settingsPath = pane.map { [$0] } ?? []
+                }))
+                .navigationDestination(for: SettingsPane.self) { pane in
+                    settingsModalPage(SettingsPaneView(authManager: authManager, server: server, pane: pane,
+                        onProfileChanged: { await viewModel.loadActiveProfile() }))
+                }
             }
         }
+        .id("\(server.absoluteString)|\(viewModel.activeProfileName ?? "")")
     }
 
     /// NavigationStack does not install a toolbar on its hosted pages; the root and pushed pages share this wrapper.
