@@ -9,6 +9,8 @@ final class RetainedChat {
     let viewModel: ChatViewModel
     /// A pending root adopts its server summary here without replacing its mounted composer.
     var session: SessionSummary?
+    /// Freeze a new chat's mode with its creation identity, including retries and layout handoffs.
+    var creationExecutionMode: ExecutionMode?
     var didStartConversation = false
     let rows = ChatTranscriptRowCache()
     var gitAvailability: GitWorkspaceAvailabilityViewModel?

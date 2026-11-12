@@ -1335,16 +1335,18 @@ struct SessionListView: View {
     }
 
     private var regularNewChatButton: some View {
-        HapticButton(feedbackStyle: .medium) {
+        ChatUIKitMenuButton(primaryAction: {
+            HapticButtonHaptics.tap(style: .medium, isEnabled: isHapticsEnabled)
             openNewChat()
-        } label: {
+        }, showsMenu: !viewModel.newChatExecutionModes.isEmpty) {
             Label("New Chat", systemImage: "square.and.pencil")
+        } menu: {
+            NewChatModeMenu.make(modes: viewModel.newChatExecutionModes, selected: viewModel.selectedNewChatExecutionMode) { mode in
+                openNewChat(in: mode)
+            }
         }
         .disabled(isNewChatDisabled)
         .accessibilityLabel("New Chat")
-        .newChatModeMenu(viewModel.newChatExecutionModes, isDisabled: isNewChatDisabled) { mode in
-            openNewChat(in: mode)
-        }
     }
 
     private var isNewChatDisabled: Bool {
@@ -1391,7 +1393,6 @@ struct SessionListView: View {
                 profileName: route.profileName,
                 providerID: route.providerID,
                 projectID: route.projectID,
-                executionMode: route.executionMode,
                 server: server,
                 viewModel: viewModel,
                 onAPIError: sessionActionContext?.onAPIError ?? { authManager.handleAPIError($0, server: server) },
@@ -2484,6 +2485,7 @@ struct SessionListView: View {
     }
 
     private func openNewChat(_ route: PendingNewChatRoute) {
+        if let mode = route.executionMode { viewModel.selectNewChatExecutionMode(mode) }
         closeAppSidebar { navigationState.select(route) }
     }
 

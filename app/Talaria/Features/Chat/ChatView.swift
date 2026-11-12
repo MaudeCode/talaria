@@ -130,6 +130,7 @@ struct ChatView: View {
     @State private var session: SessionSummary
     /// Creates a new chat's session; nil for a chat that already has one.
     let startSession: (() async -> ChatSessionStartResult)?
+    private let newChatModeOwner: SessionListViewModel?
     let server: URL
     let onAPIError: (Error) -> Void
     let loadsInitialMessages: Bool
@@ -304,9 +305,11 @@ struct ChatView: View {
         retained: RetainedChat? = nil,
         makePrimary: (() -> Void)? = nil,
         closeSecondary: (() -> Void)? = nil,
-        paneUsesFoldRegions: Bool = false
+        paneUsesFoldRegions: Bool = false,
+        newChatModeOwner: SessionListViewModel? = nil
     ) {
         _session = State(initialValue: session)
+        self.newChatModeOwner = newChatModeOwner
         self.startSession = startSession
         self.server = server
         self.onAPIError = onAPIError
@@ -579,6 +582,9 @@ struct ChatView: View {
                 guard let opID = viewModel.connectionOperation?.opId else { return }
                 viewModel.dismissConnectionOperation(opID: opID)
             },
+            executionModes: viewModel.hasSession || sessionStart == .starting || viewModel.selectedProfileName != newChatModeOwner?.activeProfileName ? [] : (newChatModeOwner?.newChatComposerExecutionModes ?? []),
+            selectedExecutionMode: retained?.creationExecutionMode ?? newChatModeOwner?.selectedNewChatExecutionMode ?? .normal,
+            onSelectExecutionMode: { newChatModeOwner?.selectNewChatExecutionMode($0) },
             sessionStart: isOpeningFiles && !viewModel.isSubmittingMessage ? nil : sessionStart,
             hasSession: viewModel.hasSession,
             sessionToolsets: viewModel.sessionToolsets,
@@ -3285,6 +3291,11 @@ struct ChatView: View {
 
         if let lastError = viewModel.lastError {
             onAPIError(lastError)
+        }
+
+        if outcome != nil, !viewModel.hasSession, let newChatModeOwner {
+            await newChatModeOwner.loadActiveProfile()
+            await newChatModeOwner.loadExecutionModes()
         }
 
         if outcome != nil {

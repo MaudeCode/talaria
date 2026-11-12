@@ -17,7 +17,6 @@ struct PendingNewChatView: View {
     let profileName: String?
     let providerID: String?
     let projectID: String?
-    let executionMode: ExecutionMode?
     let draftStore: ChatDraftStore
     let splitFilesInspector: SplitFilesInspector?
     @State private var retained: RetainedChat
@@ -41,7 +40,6 @@ struct PendingNewChatView: View {
         profileName: String? = nil,
         providerID: String? = nil,
         projectID: String? = nil,
-        executionMode: ExecutionMode? = nil,
         server: URL,
         viewModel: SessionListViewModel,
         onAPIError: @escaping (Error) -> Void,
@@ -61,7 +59,6 @@ struct PendingNewChatView: View {
         self.profileName = profileName
         self.providerID = providerID
         self.projectID = projectID
-        self.executionMode = executionMode
         self.draftStore = draftStore ?? .shared
         self.splitFilesInspector = splitFilesInspector
         let provisional = retained?.session ?? SessionSummary(title: String(localized: "New Chat"),
@@ -91,7 +88,8 @@ struct PendingNewChatView: View {
             startSession: createSession,
             onConversationStarted: markConversationStarted,
             splitFilesInspector: splitFilesInspector,
-            retained: retained
+            retained: retained,
+            newChatModeOwner: viewModel
         )
         .onChange(of: scenePhase) {
             if scenePhase != .active {
@@ -110,12 +108,14 @@ struct PendingNewChatView: View {
         if let createdSession { return .started(createdSession, detail: createdDetail) }
         if let unconfirmedCreationMessage { return .failed(unconfirmedCreationMessage, canRetry: false) }
         viewModel.clearActionError()
+        let mode = retained.creationExecutionMode ?? viewModel.selectedNewChatExecutionMode
+        retained.creationExecutionMode = mode
         let result = await viewModel.createSessionResult(
             modelContext: modelContext,
             profile: profileName,
             provider: providerID,
             projectID: projectID,
-            executionMode: executionMode,
+            executionMode: mode,
             requestID: creationID,
             settings: retained.viewModel.newSessionSettings,
             enabledToolsets: retained.viewModel.sessionToolsets?.names

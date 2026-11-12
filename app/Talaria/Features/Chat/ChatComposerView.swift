@@ -138,8 +138,10 @@ struct MessageComposerView: View {
     var connectionErrorMessage: String? = nil
     var onConnectionMove: (ConnectorOperationMove, [String: String]?) -> Void = { _, _ in }
     var onDismissConnection: () -> Void = {}
-    /// Set while a new chat's session is being created, or failed to be (TAL-636): nothing that needs the
-    /// session can be used yet.
+    var executionModes: [ExecutionModeOption] = []
+    var selectedExecutionMode: ExecutionMode = .normal
+    var onSelectExecutionMode: (ExecutionMode) -> Void = { _ in }
+    /// While creation is starting or failed, session-dependent controls stay disabled (TAL-636).
     var sessionStart: ComposerSessionStart? = nil
     var hasSession = true
     /// The session's toolset override (TAL-631); nil, before a session reports it, hides the control.
@@ -954,7 +956,8 @@ struct MessageComposerView: View {
                 onSelectProfile: onSelectProfile,
                 onSelectGitBranch: onSelectGitBranch,
                 onCreateGitBranch: onCreateGitBranch,
-                onRefreshGitBranches: onRefreshGitBranches
+                onRefreshGitBranches: onRefreshGitBranches,
+                onSelectExecutionMode: onSelectExecutionMode
             ) {
                 modelMenu
                 if showsReasoningControl {
@@ -1066,6 +1069,8 @@ struct MessageComposerView: View {
                 : nil,
             toolsetsTitle: sessionToolsets?.title,
             toolsetsAccessibilityValue: sessionToolsets?.accessibilityValue,
+            executionModes: executionModes,
+            selectedExecutionMode: selectedExecutionMode,
             isDisabled: isConfigurationControlDisabled,
             workspaceIsDisabled: isModelAndWorkspaceControlDisabled
         )

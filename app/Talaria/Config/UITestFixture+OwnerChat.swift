@@ -138,7 +138,7 @@ extension UITestFixtureURLProtocol {
         let diagnostic: (String) -> [String: Any] = { mode in
             ["mode": mode, "available": !stopped, "reason": stopped ? "gateway_stopped" : NSNull(), "can_attach": false]
         }
-        return json(["modes": [["mode": "normal", "available": true, "reason": NSNull(), "can_attach": true], diagnostic("ignore_config"), diagnostic("safe")]])
+        return json(["selectable": !stopped, "modes": [["mode": "normal", "available": true, "reason": NSNull(), "can_attach": true], diagnostic("ignore_config"), diagnostic("safe")]])
     }
 
     static func diagnosticSession(_ created: [String: Any], mode: String) -> [String: Any] {
