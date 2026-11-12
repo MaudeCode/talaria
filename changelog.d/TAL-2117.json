@@ -1,0 +1,9 @@
+{
+  "entries": [{
+    "category": "Added",
+    "summary": "Choose the profile's default reasoning effort and show or hide thinking in Models settings.",
+    "highlight": false,
+    "components": ["app"],
+    "announce": false
+  }]
+}

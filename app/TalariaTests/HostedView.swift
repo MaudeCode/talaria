@@ -593,7 +593,13 @@ final class HostedWindowFailureImageTests: XCTestCase {
         let server = try XCTUnwrap(URL(string: "https://\(host)"))
         let requests = DeferredRequests()
         let previousHook = UITestURLSessionHook.configure
-        DeferredMockURLProtocol.setOnRequest({ request in _ = requests.append(request) }, forHost: host)
+        DeferredMockURLProtocol.setOnRequest({ request in
+            if request.request.url?.path == "/api/reasoning" {
+                request.complete(withJSON: "{}")
+            } else {
+                _ = requests.append(request)
+            }
+        }, forHost: host)
         UITestURLSessionHook.configure = { $0.protocolClasses = [DeferredMockURLProtocol.self] }
         defer {
             UITestURLSessionHook.configure = previousHook
