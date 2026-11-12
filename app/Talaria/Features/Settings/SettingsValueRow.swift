@@ -24,6 +24,7 @@ struct SettingsValueRow<Trailing: View, Supplementary: View>: View {
             supplementary
         }
         .font(AppFont.subheadline())
+        .indexedSettingsRow(title: title)
     }
 
     private var valueRow: some View {

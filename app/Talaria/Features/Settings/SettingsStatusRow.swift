@@ -16,9 +16,10 @@ struct SettingsStatusRow: View {
                 if isLoading { ProgressView().accessibilityHidden(true) }
             }
         }
+        .environment(\.settingsIndexPage, nil)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
         .accessibilityValue(status)
-        .accessibilityIdentifier(accessibilityIdentifier ?? "")
+        .indexedSettingsRow(title: title, identifier: accessibilityIdentifier)
     }
 }

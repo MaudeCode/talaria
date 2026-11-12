@@ -27,6 +27,7 @@ struct SettingsSliderRow: View {
             SettingsValueRow(title: title, systemImage: systemImage) {
                 Text(format(value)).monospacedDigit().foregroundStyle(.secondary)
             }
+            .environment(\.settingsIndexPage, nil)
             .accessibilityHidden(true)
             Group {
                 if let step { Slider(value: $value, in: range, step: step) }
@@ -34,7 +35,7 @@ struct SettingsSliderRow: View {
             }
                 .accessibilityLabel(title)
                 .accessibilityValue(format(value))
-                .accessibilityIdentifier(accessibilityIdentifier ?? "")
+                .indexedSettingsRow(title: title, identifier: accessibilityIdentifier)
         }
     }
 }

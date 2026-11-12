@@ -152,58 +152,60 @@ struct ProviderQuotaWidgetAppearanceView: View {
         store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
     ) private var percentageModeRawValue = ProviderQuotaPercentageMode.defaultValue.rawValue
 
+    @Environment(\.settingsScrollAnchor) private var scrollAnchor
+
     var body: some View {
         VStack(spacing: 0) {
             pinnedPreviewPanel
             SettingsDivider()
 
-            SettingsPage(title: String(localized: "Customization")) {
+            SettingsPage(title: String(localized: "Customization"), indexPage: .providerQuotaWidget) {
                 SettingsSection(title: String(localized: "Gauge")) {
-                    SettingsPickerRow(title: String(localized: "Color"), systemImage: "paintpalette", selection: $arcColorRawValue) {
+                    SettingsPickerRow(title: SettingsIndex.widgetColor.title, systemImage: "paintpalette", selection: $arcColorRawValue) {
                         ForEach(ProviderQuotaWidgetArcColor.allCases) { color in
                             Text(color.title).tag(color.rawValue)
                         }
                     }
 
-                    if arcColor == .custom {
-                        SettingsColorRow(title: String(localized: "Custom Color"), selection: HeaderLogoColor.binding($customArcColorHex))
+                    if arcColor == .custom || scrollAnchor == .setting(.widgetCustomColor) {
+                        SettingsColorRow(title: SettingsIndex.widgetCustomColor.title, selection: HeaderLogoColor.binding($customArcColorHex))
                     }
 
-                    SettingsPickerRow(title: String(localized: "Weight"), systemImage: "lineweight", selection: $arcWeightRawValue) {
+                    SettingsPickerRow(title: SettingsIndex.widgetWeight.title, systemImage: "lineweight", selection: $arcWeightRawValue) {
                         ForEach(ProviderQuotaWidgetArcWeight.allCases) { weight in
                             Text(weight.title).tag(weight.rawValue)
                         }
                     }
 
-                    if arcColor == .automatic {
-                        SettingsPickerRow(title: String(localized: "Automatic Color"), systemImage: "paintpalette", selection: $colorBasisRawValue) {
+                    if arcColor == .automatic || scrollAnchor == .setting(.widgetAutomaticColor) || scrollAnchor == .setting(.widgetShowPaceMarker) {
+                        SettingsPickerRow(title: SettingsIndex.widgetAutomaticColor.title, systemImage: "paintpalette", selection: $colorBasisRawValue) {
                             ForEach(ProviderQuotaWidgetColorBasis.allCases) { basis in
                                 Text(basis.title).tag(basis.rawValue)
                             }
                         }
 
-                        SettingsToggleRow(title: String(localized: "Show Pace Marker"), systemImage: "gauge", isOn: $showsPaceMarker)
+                        SettingsToggleRow(title: SettingsIndex.widgetShowPaceMarker.title, systemImage: "gauge", isOn: $showsPaceMarker)
                     }
                 }
 
                 SettingsSection(title: String(localized: "Labels")) {
-                    SettingsToggleRow(title: String(localized: "Provider Icon"), systemImage: "app", isOn: $showsProviderIcon)
+                    SettingsToggleRow(title: SettingsIndex.widgetProviderIcon.title, systemImage: "app", isOn: $showsProviderIcon)
 
-                    if showsProviderIcon {
-                        SettingsPickerRow(title: String(localized: "Icon Style"), systemImage: "app", selection: $providerIconStyleRawValue) {
+                    if showsProviderIcon || scrollAnchor == .setting(.widgetIconStyle) {
+                        SettingsPickerRow(title: SettingsIndex.widgetIconStyle.title, systemImage: "app", selection: $providerIconStyleRawValue) {
                             ForEach(ProviderIconStyle.allCases) { style in
                                 Text(style.title).tag(style.rawValue)
                             }
                         }
                     }
 
-                    SettingsPickerRow(title: String(localized: "Status"), systemImage: "info.circle", selection: $statusTextRawValue) {
+                    SettingsPickerRow(title: SettingsIndex.widgetStatus.title, systemImage: "info.circle", selection: $statusTextRawValue) {
                         ForEach(ProviderQuotaWidgetStatusText.allCases.filter { $0 != .appDefault }) { value in
                             Text(value.title).tag(value.rawValue)
                         }
                     }
 
-                    SettingsPickerRow(title: String(localized: "Reset"), systemImage: "clock", selection: $resetDisplayRawValue) {
+                    SettingsPickerRow(title: SettingsIndex.widgetReset.title, systemImage: "clock", selection: $resetDisplayRawValue) {
                         ForEach(ProviderQuotaWidgetResetDisplay.allCases.filter { $0 != .appDefault }) { value in
                             Text(value.title).tag(value.rawValue)
                         }
@@ -211,10 +213,10 @@ struct ProviderQuotaWidgetAppearanceView: View {
                 }
 
                 SettingsSection(title: String(localized: "Lock Screen")) {
-                    SettingsToggleRow(title: String(localized: "Provider Icon"), systemImage: "app", isOn: $lockScreenShowsProviderIcon)
-                    SettingsToggleRow(title: String(localized: "Reset Time"), systemImage: "clock", isOn: $lockScreenShowsReset)
-                    SettingsToggleRow(title: String(localized: "Quota Window"), systemImage: "gauge", isOn: $lockScreenShowsWindow)
-                    SettingsPickerRow(title: String(localized: "Pace Footer"), systemImage: "gauge", selection: $lockScreenPaceDetailRawValue) {
+                    SettingsToggleRow(title: SettingsIndex.widgetLockScreenProviderIcon.title, systemImage: "app", isOn: $lockScreenShowsProviderIcon)
+                    SettingsToggleRow(title: SettingsIndex.widgetResetTime.title, systemImage: "clock", isOn: $lockScreenShowsReset)
+                    SettingsToggleRow(title: SettingsIndex.widgetQuotaWindow.title, systemImage: "gauge", isOn: $lockScreenShowsWindow)
+                    SettingsPickerRow(title: SettingsIndex.widgetPaceFooter.title, systemImage: "gauge", selection: $lockScreenPaceDetailRawValue) {
                         ForEach(ProviderQuotaLockScreenPaceDetail.allCases) { detail in
                             Text(detail.title).tag(detail.rawValue)
                         }
@@ -222,42 +224,42 @@ struct ProviderQuotaWidgetAppearanceView: View {
                 }
 
                 SettingsSection(title: String(localized: "Surface")) {
-                    SettingsPickerRow(title: String(localized: "Track Color"), systemImage: "paintpalette", selection: $trackColorRawValue) {
+                    SettingsPickerRow(title: SettingsIndex.widgetTrackColor.title, systemImage: "paintpalette", selection: $trackColorRawValue) {
                         ForEach(ProviderQuotaWidgetArcColor.allCases) { color in
                             Text(color.title).tag(color.rawValue)
                         }
                     }
 
-                    if trackColor == .custom {
-                        SettingsColorRow(title: String(localized: "Custom Track Color"), selection: HeaderLogoColor.binding($customTrackColorHex))
+                    if trackColor == .custom || scrollAnchor == .setting(.widgetCustomTrackColor) {
+                        SettingsColorRow(title: SettingsIndex.widgetCustomTrackColor.title, selection: HeaderLogoColor.binding($customTrackColorHex))
                     }
 
-                    SettingsStepperRow(title: String(localized: "Track Opacity"), value: $trackOpacityPercent,
+                    SettingsStepperRow(title: SettingsIndex.widgetTrackOpacity.title, value: $trackOpacityPercent,
                                        in: 0...100, step: 5, format: { String(localized: "\($0)%") })
 
-                    SettingsPickerRow(title: String(localized: "Background"), systemImage: "rectangle", selection: $backgroundRawValue) {
+                    SettingsPickerRow(title: SettingsIndex.widgetBackground.title, systemImage: "rectangle", selection: $backgroundRawValue) {
                         ForEach(ProviderQuotaWidgetBackground.allCases.filter { $0 != .appDefault }) { value in
                             Text(value.title).tag(value.rawValue)
                         }
                     }
 
-                    if background == .custom {
-                        SettingsColorRow(title: String(localized: "Custom Background Color"), selection: HeaderLogoColor.binding($customBackgroundColorHex))
+                    if background == .custom || [.setting(.widgetCustomBackgroundColor), .setting(.widgetBackgroundOpacity)].contains(scrollAnchor) {
+                        SettingsColorRow(title: SettingsIndex.widgetCustomBackgroundColor.title, selection: HeaderLogoColor.binding($customBackgroundColorHex))
 
-                        SettingsSliderRow(title: String(localized: "Background Opacity"), value: backgroundOpacityBinding,
+                        SettingsSliderRow(title: SettingsIndex.widgetBackgroundOpacity.title, value: backgroundOpacityBinding,
                                           in: 0...100, step: 1, format: { String(localized: "\(Int($0))%") })
                     }
                 }
 
                 SettingsSection(title: String(localized: "Behavior")) {
-                    SettingsPickerRow(title: String(localized: "Tap"), systemImage: "hand.tap", selection: $tapActionRawValue) {
+                    SettingsPickerRow(title: SettingsIndex.widgetTap.title, systemImage: "hand.tap", selection: $tapActionRawValue) {
                         ForEach(ProviderQuotaWidgetTapAction.allCases.filter { $0 != .appDefault }) { value in
                             Text(value.title).tag(value.rawValue)
                         }
                     }
                 }
 
-                if arcColor == .automatic {
+                if arcColor == .automatic || scrollAnchor?.entry?.section == String(localized: "Automatic Colors") {
                     ProviderQuotaWidgetAutomaticSettingsSections(
                         healthyColor: $healthyColorRawValue,
                         warningColor: $warningColorRawValue,
@@ -270,6 +272,7 @@ struct ProviderQuotaWidgetAppearanceView: View {
                         customStaleColorHex: $customStaleColorHex,
                         customUnavailableColorHex: $customUnavailableColorHex
                     )
+                    .disabled(arcColor != .automatic)
                 }
             }
         }
@@ -282,7 +285,8 @@ struct ProviderQuotaWidgetAppearanceView: View {
                 } label: {
                     Image(systemName: "square.stack.3d.up")
                 }
-                .accessibilityLabel("Widget Profiles")
+                .accessibilityLabel(SettingsIndex.widgetProfiles.title)
+                .accessibilityIdentifier(SettingsIndex.widgetProfiles.id)
             }
         }
         .onChange(of: reloadFingerprint) { reloadWidgets() }

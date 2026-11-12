@@ -35,6 +35,7 @@ struct SettingsTextFieldRow: View {
                 }
             }
         }
+        .indexedSettingsRow(title: title)
     }
 
     private var titleLabel: some View {

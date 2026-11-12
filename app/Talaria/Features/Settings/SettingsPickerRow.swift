@@ -41,7 +41,7 @@ struct SettingsPickerRow<SelectionValue: Hashable, Options: View>: View {
                 }
             }
         }
-        .accessibilityIdentifier(accessibilityIdentifier ?? "")
+        .indexedSettingsRow(title: title, identifier: accessibilityIdentifier)
         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
     }
 

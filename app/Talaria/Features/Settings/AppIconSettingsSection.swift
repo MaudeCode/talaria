@@ -3,6 +3,7 @@ import UIKit
 import TalariaKit
 
 struct AppIconSettingsSection: View {
+    @Environment(\.settingsScrollAnchor) private var scrollAnchor
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selectedAppIcon = AppIconChoice.system
@@ -11,7 +12,7 @@ struct AppIconSettingsSection: View {
     @State private var isAppIconPickerExpanded = false
 
     var body: some View {
-        if UIApplication.shared.supportsAlternateIcons {
+        if UIApplication.shared.supportsAlternateIcons || scrollAnchor == .setting(.appearanceAppIcon) {
             Group {
                 Button {
                     withAnimation(reduceMotion ? nil : .default) { isAppIconPickerExpanded.toggle() }
@@ -19,6 +20,7 @@ struct AppIconSettingsSection: View {
                     AppIconDisclosureLabel(selectedAppIcon: selectedAppIcon, isExpanded: isAppIconPickerExpanded)
                 }
                 .buttonStyle(.plain)
+                .disabled(!UIApplication.shared.supportsAlternateIcons)
                 .accessibilityValue(isAppIconPickerExpanded ? String(localized: "Expanded") : String(localized: "Collapsed"))
                 if isAppIconPickerExpanded {
                     appIconChoices

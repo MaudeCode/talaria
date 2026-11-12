@@ -32,29 +32,30 @@ struct NavigationSettingsView: View {
 
     var body: some View {
         SettingsCategoryPage(category: .navigation) {
+            ProviderQuotaDisplaySettingsSection()
             SettingsSection(title: String(localized: "Sidebar sections")) {
                 SettingsToggleRow(
-                    title: String(localized: "Tasks"), systemImage: "checklist", isOn: $showsTasks
+                    title: SettingsIndex.navigationTasks.title, systemImage: "checklist", isOn: $showsTasks
                 )
                 .accessibilityIdentifier("settings-navigation-section-tasks")
                 SettingsToggleRow(
-                    title: String(localized: "Kanban"), systemImage: "rectangle.split.3x1", isOn: $showsKanban
+                    title: SettingsIndex.navigationKanban.title, systemImage: "rectangle.split.3x1", isOn: $showsKanban
                 )
                 .accessibilityIdentifier("settings-navigation-section-kanban")
                 SettingsToggleRow(
-                    title: String(localized: "Skills"), systemImage: "sparkles", isOn: $showsSkills
+                    title: SettingsIndex.navigationSkills.title, systemImage: "sparkles", isOn: $showsSkills
                 )
                 .accessibilityIdentifier("settings-navigation-section-skills")
                 SettingsToggleRow(
-                    title: String(localized: "Memory"), systemImage: "brain", isOn: $showsMemory
+                    title: SettingsIndex.navigationMemory.title, systemImage: "brain", isOn: $showsMemory
                 )
                 .accessibilityIdentifier("settings-navigation-section-memory")
                 SettingsToggleRow(
-                    title: String(localized: "Insights"), systemImage: "chart.bar", isOn: $showsInsights
+                    title: SettingsIndex.navigationInsights.title, systemImage: "chart.bar", isOn: $showsInsights
                 )
                 .accessibilityIdentifier("settings-navigation-section-insights")
                 SettingsToggleRow(
-                    title: String(localized: "Feedback Button"), systemImage: FeedbackSheet.systemImage,
+                    title: SettingsIndex.navigationFeedbackButton.title, systemImage: FeedbackSheet.systemImage,
                     isOn: $showsSidebarFeedbackButton
                 )
                 .accessibilityIdentifier("settings-sidebar-feedback-toggle")
@@ -62,32 +63,32 @@ struct NavigationSettingsView: View {
 
             SettingsSection(title: String(localized: "Included Chats")) {
                 SettingsToggleRow(
-                    title: String(localized: "Cron Sessions"),
+                    title: SettingsIndex.navigationCronSessions.title,
                     systemImage: "clock.arrow.2.circlepath",
                     isOn: $showsCronSessions
                 )
 
                 SettingsToggleRow(
-                    title: String(localized: "Webhook Sessions"),
+                    title: SettingsIndex.navigationWebhookSessions.title,
                     systemImage: "bolt.horizontal.circle",
                     isOn: $showsWebhookSessions
                 )
 
                 SettingsToggleRow(
-                    title: String(localized: "CLI Sessions"),
+                    title: SettingsIndex.navigationCLISessions.title,
                     systemImage: "terminal",
                     isOn: $showsCliSessions
                 )
 
                 SettingsToggleRow(
-                    title: String(localized: "Claude Code Sessions"),
+                    title: SettingsIndex.navigationClaudeCodeSessions.title,
                     systemImage: "chevron.left.forwardslash.chevron.right",
                     isOn: $showsClaudeCodeSessions
                 )
                 .disabled(!showsCliSessions)
 
                 SettingsToggleRow(
-                    title: String(localized: "Subagent Sessions"),
+                    title: SettingsIndex.navigationSubagentSessions.title,
                     systemImage: "arrow.triangle.branch",
                     isOn: $showsSubagentSessions
                 )
@@ -98,7 +99,7 @@ struct NavigationSettingsView: View {
                     ProviderQuotaSidebarDisplayView()
                 } label: {
                     SettingsAccessoryRow(
-                        title: String(localized: "Sidebar Quotas"), systemImage: "sidebar.left")
+                        title: SettingsIndex.navigationSidebarQuotas.title, systemImage: "sidebar.left")
                 }
                 .buttonStyle(.plain)
             }
@@ -117,7 +118,7 @@ struct SpeechSettingsView: View {
                 help: String(localized: "On-device only keeps composer dictation audio off your Hermes server.")
             ) {
                 SettingsPickerRow(
-                    title: String(localized: "Dictation Provider"),
+                    title: SettingsIndex.speechDictationProvider.title,
                     systemImage: "mic",
                     selection: $sttProviderPreferenceRawValue
                 ) {

@@ -11,7 +11,7 @@ struct AccentColorSettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SettingsValueRow(title: String(localized: "Accent Color"), systemImage: "paintpalette") {
+            SettingsValueRow(title: SettingsIndex.appearanceAccentColor.title, systemImage: "paintpalette") {
                 Text(selectedColorName).foregroundStyle(.secondary)
             } supplementary: {
                 HStack(spacing: 10) {
@@ -26,7 +26,7 @@ struct AccentColorSettings: View {
                 }
             }
 
-            SettingsColorRow(title: String(localized: "Custom"), selection: customColor, supportsOpacity: false)
+            SettingsColorRow(title: SettingsIndex.appearanceCustom.title, selection: customColor, supportsOpacity: false)
                 .font(.subheadline)
         }
     }

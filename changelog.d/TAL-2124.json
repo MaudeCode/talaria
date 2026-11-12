@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Find settings by searching their names and sections.",
+      "highlight": true,
+      "components": [
+        "app"
+      ],
+      "announcement": {
+        "title": "Settings, reorganised",
+        "description": "Settings are grouped by what they affect, with search, profiles, logs and more of your server's options.",
+        "icon": "settings"
+      }
+    }
+  ]
+}

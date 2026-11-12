@@ -42,7 +42,7 @@ struct LogsSettingsView: View {
                 RefreshToolbarButton(isLoading: model.isLoading) { Task { await model.load() } }
             }
             ToolbarItem(placement: .primaryAction) {
-                ShareLink(item: model.text) { Label("Share", systemImage: "square.and.arrow.up") }
+                ShareLink(item: model.text) { Label(SettingsIndex.logsShare.title, systemImage: "square.and.arrow.up") }
                     .disabled(model.text.isEmpty)
                     .accessibilityIdentifier("settings-logs-share")
             }
@@ -54,12 +54,12 @@ struct LogsSettingsView: View {
 
     private var controls: some View {
         SettingsSection {
-            SettingsPickerRow(title: String(localized: "File"), systemImage: "doc.text", selection: $model.file,
+            SettingsPickerRow(title: SettingsIndex.logsFile.title, systemImage: "doc.text", selection: $model.file,
                               accessibilityIdentifier: "settings-logs-file") {
                 if model.files.isEmpty { Text(fileTitle(model.file)).tag(model.file) }
                 ForEach(model.files) { file in Text(fileTitle(file.id)).tag(file.id) }
             }
-            SettingsPickerRow(title: String(localized: "Lines"), systemImage: "text.alignleft", selection: $model.tail,
+            SettingsPickerRow(title: SettingsIndex.logsLines.title, systemImage: "text.alignleft", selection: $model.tail,
                               accessibilityIdentifier: "settings-logs-lines") {
                 ForEach([200, 500, 1000, 2000], id: \.self) { Text($0, format: .number).tag($0) }
             }
@@ -102,9 +102,9 @@ struct LogsSettingsView: View {
                 SelectableTextView(text: model.text, isLogTail: true)
                     .frame(height: height)
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(String(localized: "Log text"))
+                    .accessibilityLabel(SettingsIndex.logsLogText.title)
                     .accessibilityValue(model.text)
-                    .accessibilityIdentifier("settings-logs-text")
+                    .indexedSettingsRow(title: SettingsIndex.logsLogText.title)
                 .listRowSeparator(.hidden)
                 if response.truncated == true {
                     SettingsFootnote(String(localized: "Showing the last \(model.tail) lines"))

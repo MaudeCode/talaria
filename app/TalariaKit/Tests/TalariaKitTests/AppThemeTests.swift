@@ -116,10 +116,34 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(SettingsCategory.about.group, .device)
     }
 
+    func testEveryIndexedSettingBelongsToItsStorageGroup() {
+        XCTAssertEqual(Set(SettingsIndex.allCases.map(\.id)).count, SettingsIndex.allCases.count)
+        for entry in SettingsIndex.allCases {
+            let allowed: Set<SettingsCategory.Group>
+            switch entry.scope {
+            case .profile: allowed = [.profile]
+            case .server: allowed = [.server]
+            case .device, .synced: allowed = [.interface, .device]
+            }
+            XCTAssertTrue(allowed.contains(entry.category.group), "\(entry.id): \(entry.scope) belongs outside \(entry.category.group)")
+        }
+    }
+
+    func testSettingsSearchUsesLocalizedTitlesAndSectionsIgnoringCaseAndDiacritics() {
+        XCTAssertTrue(SettingsIndex.search("THÍNKING", locale: Locale(identifier: "en_US")).contains(.chatExpandThinkingByDefault))
+        XCTAssertTrue(SettingsIndex.search("composér", locale: Locale(identifier: "en_US")).contains(.chatSendWith))
+        XCTAssertTrue(SettingsIndex.search("not-a-real-setting-87321").isEmpty)
+        XCTAssertTrue(SettingsIndex.search("  ").isEmpty)
+    }
+
     func testExternalSettingsDestinationsOpenTheirOwningCategory() {
         XCTAssertEqual(SettingsScrollAnchor.servers.category, .servers)
         XCTAssertEqual(SettingsScrollAnchor.providerQuotas.category, .providers)
         XCTAssertEqual(SettingsScrollAnchor.system.category.rawValue, "system")
+        let row = SettingsScrollAnchor.setting(.chatExpandThinkingByDefault)
+        XCTAssertEqual(row.category, .chats)
+        XCTAssertEqual(row.identifier, "settings-chat-expand-thinking-by-default")
+        XCTAssertEqual(row.pane, .indexed(row))
     }
 }
 

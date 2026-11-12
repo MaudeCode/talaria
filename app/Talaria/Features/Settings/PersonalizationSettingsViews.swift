@@ -16,7 +16,7 @@ struct AppearanceSettingsView: View {
         SettingsCategoryPage(category: .appearance) {
             SettingsSection(title: String(localized: "Appearance")) {
                 SettingsPickerRow(
-                    title: String(localized: "Theme"),
+                    title: SettingsIndex.appearanceTheme.title,
                     systemImage: "circle.lefthalf.filled",
                     selection: $appThemeRawValue
                 ) {
@@ -31,7 +31,7 @@ struct AppearanceSettingsView: View {
                 )
 
                 SettingsToggleRow(
-                    title: String(localized: "Tint New Chat & Send"),
+                    title: SettingsIndex.appearanceTintNewChatSend.title,
                     systemImage: "paintbrush.pointed",
                     isOn: $tintsPrimaryActions
                 )
@@ -64,7 +64,7 @@ struct NotificationsHapticsSettingsView: View {
         SettingsCategoryPage(category: .notificationsAndHaptics) {
             SettingsSection(title: String(localized: "Alerts & Haptics")) {
                 SettingsToggleRow(
-                    title: String(localized: "Haptic Feedback"),
+                    title: SettingsIndex.notificationsHapticFeedback.title,
                     systemImage: "iphone.radiowaves.left.and.right",
                     isOn: $isHapticsEnabled
                 )
@@ -99,21 +99,21 @@ private struct ProviderQuotaAlertLevelToggles: View {
 
     var body: some View {
         SettingsToggleRow(
-            title: String(localized: "Warning Alerts"),
+            title: SettingsIndex.notificationsWarningAlerts.title,
             systemImage: "exclamationmark.triangle",
             isOn: $warning
         )
         .disabled(!isEnabled)
 
         SettingsToggleRow(
-            title: String(localized: "Critical Alerts"),
+            title: SettingsIndex.notificationsCriticalAlerts.title,
             systemImage: "exclamationmark.octagon",
             isOn: $critical
         )
         .disabled(!isEnabled)
 
         SettingsToggleRow(
-            title: String(localized: "Time Sensitive"),
+            title: SettingsIndex.notificationsTimeSensitive.title,
             systemImage: "clock.badge.exclamationmark",
             isOn: $timeSensitive
         )
@@ -130,9 +130,9 @@ struct NotificationPermissionToggle: View {
 
         var title: String {
             switch self {
-            case .responseCompletion: String(localized: "Response Complete Alerts")
-            case .providerQuota: String(localized: "Provider Quota Alerts")
-            case .approval: String(localized: "Approval and Question Alerts")
+            case .responseCompletion: SettingsIndex.notificationsResponseCompleteAlerts.title
+            case .providerQuota: SettingsIndex.notificationsProviderQuotaAlerts.title
+            case .approval: SettingsIndex.notificationsApprovalAndQuestionAlerts.title
             }
         }
 

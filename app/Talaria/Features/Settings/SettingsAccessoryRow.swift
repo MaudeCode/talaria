@@ -50,6 +50,7 @@ struct SettingsAccessoryRow: View {
         .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+        .indexedSettingsRow(title: title)
     }
 
     private var leadingLabel: some View {

@@ -2,6 +2,7 @@ import SwiftUI
 import TalariaKit
 
 struct ModelsSettingsView: View {
+    @Environment(\.settingsScrollAnchor) private var scrollAnchor
     let server: URL
     @State private var model: ModelsSettingsViewModel
     @State private var showDefaultModelPicker = false
@@ -13,12 +14,13 @@ struct ModelsSettingsView: View {
 
     var body: some View {
         SettingsCategoryPage(category: .models) {
+            ServerSettingsSections(page: .limits)
             SettingsSection(title: String(localized: "Models")) {
                 HapticButton {
                     showDefaultModelPicker = true
                 } label: {
                     SettingsAccessoryRow(
-                        title: String(localized: "Default Model"),
+                        title: SettingsIndex.modelsDefaultModel.title,
                         value: defaultModelLabel,
                         systemImage: "cpu"
                     )
@@ -28,7 +30,7 @@ struct ModelsSettingsView: View {
 
                 if model.showsReasoningEffort {
                     SettingsPickerRow(
-                        title: String(localized: "Default Reasoning"), systemImage: "brain",
+                        title: SettingsIndex.modelsDefaultReasoning.title, systemImage: "brain",
                         selection: Binding(get: { model.reasoningEffort }, set: { model.setReasoningEffort($0) }),
                         accessibilityIdentifier: "settings-models-default-reasoning"
                     ) {
@@ -41,17 +43,23 @@ struct ModelsSettingsView: View {
 
                 if model.showsThinkingToggle {
                     SettingsToggleRow(
-                        title: String(localized: "Show Thinking"), systemImage: "text.bubble",
+                        title: SettingsIndex.modelsShowThinking.title, systemImage: "text.bubble",
                         isOn: Binding(get: { model.showThinking }, set: { model.setShowThinking($0) }),
                         accessibilityIdentifier: "settings-models-show-thinking"
                     )
+                }
+
+                if let entry = scrollAnchor?.entry,
+                   (entry == .modelsDefaultReasoning && !model.showsReasoningEffort)
+                    || (entry == .modelsShowThinking && !model.showsThinkingToggle) {
+                    SettingsInfoRow(title: entry.title, value: String(localized: "Not Available on This Server"))
                 }
 
                 NavigationLink {
                     AuxiliaryModelsSettingsView(server: server)
                 } label: {
                     SettingsAccessoryRow(
-                        title: String(localized: "Auxiliary Models"),
+                        title: SettingsIndex.modelsAuxiliaryModels.title,
                         systemImage: "square.stack.3d.up"
                     )
                 }

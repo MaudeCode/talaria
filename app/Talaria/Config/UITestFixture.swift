@@ -1037,11 +1037,22 @@ final class UITestFixtureURLProtocol: URLProtocol {
                 "truncated": !lines.isEmpty, "hint": "Bootstrap has not written a log yet.",
                 "files": ["agent", "webui", "gateway", "bootstrap"].map { ["id": $0, "exists": $0 != "bootstrap"] as [String: Any] }
             ])
+        case "/api/updates/check":
+            return json([
+                "webui": ["state": "release_ready", "can_apply": true, "behind": 1,
+                          "current_version": "0.0.1-fixture", "target_version": "0.0.2-fixture", "summary_available": true],
+                "agent": ["state": "up_to_date", "current_version": "0.0.1-fixture", "summary_available": false]
+            ])
         case "/api/settings":
             return serverSettings.withLock { settings in
                 if settings.isEmpty {
                     settings = [
-                        "bot_name": .string("Fixture Assistant"),
+                        "bot_name": .string("Fixture Assistant"), "webui_version": .string("0.0.1-fixture"),
+                        "provider_quota_thresholds": .object([
+                            "warning_remaining_percent": .number(20), "critical_remaining_percent": .number(5),
+                            "pace_tolerance_percent": .number(5), "pace_warning_burn_rate_percent": .number(120),
+                            "pace_critical_burn_rate_percent": .number(150), "pace_minimum_elapsed_hours": .number(4)
+                        ]),
                         "agent_approvals": .bool(true), "max_tokens": .number(8192), "compression_prepare_ahead": .bool(true),
                         "auto_title_refresh_every": .string("10"), "check_for_updates": .bool(true), "auto_apply_updates": .bool(false),
                         "summarize_updates_automatically": .bool(true), "update_channel": .string("stable"),

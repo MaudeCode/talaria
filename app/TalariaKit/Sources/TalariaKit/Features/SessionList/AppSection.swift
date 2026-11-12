@@ -148,10 +148,24 @@ public enum SectionItem: Hashable, Sendable {
 
 /// A row of the Settings root list.
 public enum SettingsPane: Hashable, Sendable {
+    case indexed(SettingsScrollAnchor)
     case userProfile
     case appleAccount
     case providerQuotaWidget
+    case sidebarQuotas
+    case widgetProfiles
     case category(SettingsCategory)
+
+    public var category: SettingsCategory {
+        switch self {
+        case .category(let category): category
+        case .indexed(let anchor): anchor.category
+        case .sidebarQuotas: .navigation
+        case .providerQuotaWidget, .widgetProfiles: .liveActivitiesAndWidgets
+        case .userProfile: .appearance
+        case .appleAccount: .servers
+        }
+    }
 }
 
 /// A Memory document: the three editable sections and the read-only project context.

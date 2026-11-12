@@ -370,6 +370,17 @@ final class SettingsPlacementHostedTests: XCTestCase {
         ProviderQuotaThresholds(warningRemainingPercent: 20, criticalRemainingPercent: 5, paceTolerancePercent: 5,
                                 paceWarningBurnRatePercent: 120, paceCriticalBurnRatePercent: 150,
                                 paceMinimumElapsedHours: 2).cache(defaults: defaults)
+        let liveStore = ServerSettingsStore(client: fixture.client)
+        await liveStore.loadIfNeeded()
+        let offlineHost = "settings-chrome-offline-\(UUID().uuidString).test"
+        DeferredMockURLProtocol.setOnRequest({ $0.complete(withJSON: "{}", statusCode: 503) }, forHost: offlineHost)
+        addTeardownBlock { DeferredMockURLProtocol.setOnRequest(nil, forHost: offlineHost) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DeferredMockURLProtocol.self]
+        let offlineStore = ServerSettingsStore(client: APIClient(
+            baseURL: try XCTUnwrap(URL(string: "https://\(offlineHost)")), session: URLSession(configuration: configuration)
+        ))
+        await offlineStore.loadIfNeeded()
         let pages: [(String, AnyView)] = [("root", AnyView(SettingsView(server: server, selection: .constant(nil))))]
             + SettingsCategory.rootCategories.map { category in
                 (category.rawValue, AnyView(SettingsPaneView(authManager: fixture.environment.authManager,
@@ -380,6 +391,7 @@ final class SettingsPlacementHostedTests: XCTestCase {
                 ("widget-appearance", AnyView(ProviderQuotaWidgetAppearanceView())),
                 ("widget-overall", AnyView(ProviderQuotaWidgetAppearanceView())),
                 ("widget-profiles", AnyView(ProviderQuotaWidgetProfilesView())),
+                ("providers-offline", AnyView(ProvidersSettingsView(server: server).environment(offlineStore))),
                 ("sidebar-quotas", AnyView(ProviderQuotaSidebarDisplayView())),
                 ("providers-list", AnyView(ProvidersView(server: server))),
                 ("user-profile", AnyView(UserProfileSettingsView(authManager: fixture.environment.authManager))),
@@ -402,18 +414,27 @@ final class SettingsPlacementHostedTests: XCTestCase {
             reference.rootViewController = nil
             for (name, page) in pages {
                 defaults.set(name == "widget-overall" ? "overall" : "pace", forKey: ProviderQuotaWidgetColorBasis.storageKey)
-                let window = try hostWindow(NavigationStack { page.modelContainer(fixture.cache) },
+                if name == "providers-offline" {
+                    XCTAssertNotNil(ProviderQuotaThresholds.cached(defaults: defaults), "The offline page owns a readable cached threshold fixture")
+                }
+                let window = try hostWindow(NavigationStack { page.modelContainer(fixture.cache).environment(liveStore) },
                                             size: CGSize(width: 390, height: 844)) { $0.userInterfaceStyle = style }
                 await settleSettingsFixture(in: window)
+                if name == "providers-offline" {
+                    _ = try await requireElementScrolling(in: window, "Cached breakpoint status must stay visible") {
+                        $0.accessibilityLabel?.contains("Offline: showing the breakpoints last read from the server.") == true
+                    }
+                }
                 let labels = allSettingsRows(in: window).labels
                 let rows = labels.joined(separator: "\n")
                 let helpSections = [
                     "chat": ["Composer", "Conversation"], "notifications": ["Provider Quotas"], "speech": ["Speech"],
-                    "servers": ["Server Access"], "providers": ["Quota Display"],
+                    "servers": ["Server Access"], "navigation": ["Quota Display"],
+                    "providers": ["Pace Breakpoints", "Overall Breakpoints"],
+                    "providers-offline": ["Pace Breakpoints", "Overall Breakpoints"],
                     "liveActivitiesAndWidgets": ["Live Activities"], "siriAndShortcuts": ["Siri & Shortcuts"],
                     "dataAndStorage": ["Offline Data"], "developer": ["Developer"],
                     "relay": ["Talaria Relay"], "widget-profiles": ["Widget Profiles"],
-                    "widget-appearance": ["Pace Breakpoints"], "widget-overall": ["Overall Breakpoints"],
                     "providers-list": ["Providers"], "auxiliary-models": ["Tasks"],
                     "user-profile": ["User Profile"], "server-detail": ["Identity", "Account"],
                     "connection-headers": ["Connection Headers"], "default-model": ["Custom"]
@@ -421,7 +442,7 @@ final class SettingsPlacementHostedTests: XCTestCase {
                 for section in helpSections[name] ?? [] {
                     XCTAssertTrue(labels.contains("About \(section)"), "\(name) must expose help for \(section)")
                 }
-                if name.hasPrefix("widget-") && name != "widget-profiles" {
+                if name == "providers-offline" {
                     XCTAssertTrue(rows.contains("Offline: showing the breakpoints last read from the server."),
                                   "Cached breakpoint status must stay visible")
                 }
@@ -696,6 +717,41 @@ final class SettingsPlacementHostedTests: XCTestCase {
         return (labels, identifiers)
     }
 
+    func testSettingsSearchOpensTheMatchingRow() async throws {
+        let fixture = try FixtureApp(for: self)
+        let window = try hostWindow(fixture.sessionList(), size: CGSize(width: 390, height: 844))
+        try await openSidebar(in: window)
+        HostedAccessibility.activate(try await requireElement(in: window) {
+            $0.accessibilityLabel == "Settings" && $0.accessibilityHint == "Long press to switch servers."
+        })
+        _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-user-profile" }
+        let field = try XCTUnwrap(window.firstView(ofType: UISearchTextField.self),
+                                 "The Settings root must search every setting")
+        field.text = "not-a-real-setting-87321"
+        field.sendActions(for: .editingChanged)
+        _ = try await requireElement(in: window) { $0.accessibilityLabel?.contains("No Results") == true }
+        attachHostedScreenshot(window, name: "settings-search-empty")
+        field.text = ""
+        field.sendActions(for: .editingChanged)
+        _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-user-profile" }
+        field.text = "git actions"
+        field.sendActions(for: .editingChanged)
+        _ = try await requireElement(in: window, label: "Git Actions")
+        let result = try await requireElement(in: window) {
+            HostedAccessibility.identifier(of: $0) == "settings-search-settings-chat-git-actions"
+        }
+        XCTAssertEqual(result.accessibilityLabel, "Git Actions")
+        XCTAssertEqual(result.accessibilityValue, "Chats")
+        XCTAssertTrue(result.accessibilityTraits.contains(.button))
+        XCTAssertTrue(HostedAccessibility.activate(result), "VoiceOver must activate a search result")
+        let target = try await requireElement(in: window) {
+            HostedAccessibility.identifier(of: $0) == "settings-chat-git-actions"
+        }
+        XCTAssertTrue(window.bounds.contains(window.convert(target.accessibilityFrame, from: window.screen.coordinateSpace)),
+                      "A chosen search result must be visible without another scroll")
+        attachHostedScreenshot(window, name: "settings-search-opened-row")
+    }
+
     func testServerSettingsOnlyExposeFieldsTheServerSent() async throws {
         _ = try FixtureApp(for: self)
         for (payload, showsTools, showsMaximum) in [
@@ -718,7 +774,7 @@ final class SettingsPlacementHostedTests: XCTestCase {
             root.isHidden = true
             root.rootViewController = nil
             let chat = try hostWindow(NavigationStack {
-                ChatsSettingsView().environment(model)
+                ModelsSettingsView(server: server).environment(model)
             })
             let rows = allSettingsRows(in: chat).identifiers
             XCTAssertEqual(rows.contains("settings-chat-max-tokens"), showsMaximum)
@@ -732,8 +788,8 @@ final class SettingsPlacementHostedTests: XCTestCase {
     func testServerSettingsControlsAppearFromFixtureState() async throws {
         let fixture = try FixtureApp(for: self)
         let pages = [
-            ("chat", ["settings-chat-max-tokens", "settings-chat-compression-ahead", "settings-chat-title-refresh"]),
-            ("system", ["settings-system-check-updates", "settings-system-auto-apply", "settings-system-summarize",
+            ("models", ["settings-chat-max-tokens", "settings-chat-compression-ahead"]),
+            ("system", ["settings-chat-title-refresh", "settings-system-check-updates", "settings-system-auto-apply", "settings-system-summarize",
                         "settings-system-web-channel", "settings-system-agent-channel", "settings-system-ignore-agent"]),
             ("tools", ["settings-tools-agent-approvals"])
         ]
@@ -771,103 +827,53 @@ final class SettingsPlacementHostedTests: XCTestCase {
 
     func testCategoryPagesKeepTheirRowsAndIdentifiersAtOneHome() async throws {
         let fixture = try FixtureApp(for: self)
-        let pages: [(SettingsCategory, [String], [String])] = [
-            (.appearance, ["Theme", "Tint New Chat & Send"], []),
-            (.chats, ["Send While Responding", "Send With", "Workspace", "Profile", "Git Branch", "Context Usage",
-                      "Thinking & Tools", "Expand Thinking by Default", "Expand Tools by Default", "Streamed Text Animation",
-                      "Response Timestamps", "Response Speed", "Wrap Code Block Lines", "Scroll Button Side",
-                      "Right-to-Left Chat Layout", "Files Button", "Open the Agent's File Automatically", "Git Actions"], []),
-            (.navigation, ["Tasks", "Kanban", "Skills", "Memory", "Insights", "Feedback Button", "Cron Sessions",
-                           "Webhook Sessions", "CLI Sessions", "Claude Code Sessions", "Subagent Sessions", "Sidebar Quotas"],
-             ["settings-sidebar-feedback-toggle"] + ["tasks", "kanban", "skills", "memory", "insights"].map { "settings-navigation-section-\($0)" }),
-            (.notificationsAndHaptics, ["Haptic Feedback", "Response Complete Alerts", "Approval and Question Alerts",
-                                       "Approval & Input Alerts", "Provider Quota Alerts", "Warning Alerts", "Critical Alerts", "Time Sensitive"], []),
-            (.speech, ["Dictation Provider"], []),
-            (.models, ["Default Model", "Auxiliary Models"], []),
-            (.providers, ["Provider Icons", "Quota Percentage", "Quota Refresh"], []),
-            (.profiles, ["Search profiles", "New Profile"], []),
-            (.workspaces, ["Add Workspace"], []),
-            (.system, ["Status", "Version", "Check for updates"], []),
-            (.servers, ["Add Server", "Connection Headers", "Sign Out of This Server"], []),
-            (.liveActivitiesAndWidgets, ["Display", "Live Activity Excerpts"], []),
-            (.dataAndStorage, ["Clear Offline Cache"], ["settings-app-lock"]),
-            (.about, ["Send Feedback"], ["settings-send-feedback"])
-        ]
-        // Version also describes the installed App on About.
-        let exclusiveRows = pages.flatMap { $0.1 }.filter { $0 != "Version" }
-        let rowIdentifiers = Set(pages.flatMap { $0.2 })
-        var homes: [String: [SettingsCategory]] = [:]
-        var identifierHomes: [String: [SettingsCategory]] = [:]
-        for size in [CGSize(width: 390, height: 844), CGSize(width: 669, height: 867)] {
-            for style in [UIUserInterfaceStyle.light, .dark] {
-                for (category, labels, identifiers) in pages {
-                    let window = try hostWindow(NavigationStack {
-                        SettingsPaneView(authManager: fixture.environment.authManager,
-                                         server: UITestFixtureEnvironment.serverURL, pane: .category(category))
-                            .modelContainer(fixture.cache)
-                    }, size: size) { $0.userInterfaceStyle = style }
-                    await settleSettingsFixture(in: window)
-                    var rows = allSettingsRows(in: window)
-                    for label in labels {
-                        if HostedAccessibility.toolbarAction(label, in: window) != nil { rows.labels.insert(label) }
-                        XCTAssertTrue(rows.labels.contains { $0 == label || $0.hasPrefix(label + ",") }, label)
-                    }
-                    for identifier in identifiers {
-                        XCTAssertTrue(rows.identifiers.contains(identifier), identifier)
-                    }
-                    if style == .light && size.width == 390 {
-                        for identifier in rowIdentifiers where rows.identifiers.contains(identifier) {
-                            identifierHomes[identifier, default: []].append(category)
-                        }
-                        for row in exclusiveRows where rows.labels.contains(where: {
-                            $0 == row || $0.hasPrefix(row + ",")
-                        }) { homes[row, default: []].append(category) }
-                    }
-                    XCTAssertFalse(rows.labels.contains("Archived Chats"))
-                    if [.liveActivitiesAndWidgets, .dataAndStorage].contains(category) {
-                        XCTAssertFalse(rows.labels.contains("Privacy"))
-                    }
-                    let theme = "\(style == .light ? "light" : "dark")-\(Int(size.width))"
-                    attachHostedScreenshot(window, name: "settings-\(category.rawValue)-\(theme)")
-                    if let scroll = window.firstView(ofType: UIScrollView.self, where: { $0.contentSize.height > $0.bounds.height }) {
-                        scroll.setContentOffset(CGPoint(x: 0, y: max(0, scroll.contentSize.height - scroll.bounds.height)), animated: false)
-                    }
-                    settle()
-                    attachHostedScreenshot(window, name: "settings-\(category.rawValue)-\(theme)-bottom")
-                    window.isHidden = true
-                    window.rootViewController = nil
+        let store = ServerSettingsStore(client: fixture.client)
+        await store.loadIfNeeded()
+        let saved = try XCTUnwrap(ProviderQuotaWidgetProfileStore.saveCurrent(name: "Fixture Search Profile"))
+        defer { ProviderQuotaWidgetProfileStore.delete(id: saved.id) }
+
+        func identifiers(on page: SettingsPane, target: SettingsIndex? = nil) async throws -> Set<String> {
+            let entries = SettingsIndex.allCases.filter { $0.page == page }
+            let first = try XCTUnwrap(entries.first)
+            let pane: SettingsPane
+            if let target { pane = .indexed(.setting(target)) }
+            else if case .category(let category) = page { pane = .category(category) }
+            else { pane = .indexed(.setting(first)) }
+            let loadingPath = page.category == .logs ? "/api/logs" : "/api/updates/check"
+            let readsBefore = UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == loadingPath }.count }
+            let window = try hostWindow(NavigationStack {
+                SettingsPaneView(authManager: fixture.environment.authManager,
+                                 server: UITestFixtureEnvironment.serverURL, pane: pane)
+                    .environment(store)
+                    .modelContainer(fixture.cache)
+                    .environment(\.scenePhase, .active)
+            }, size: CGSize(width: 390, height: 844))
+            defer { window.isHidden = true; window.rootViewController = nil }
+            await settleSettingsFixture(in: window)
+            if page.category == .logs || page.category == .system {
+                let loaded = await awaitCondition {
+                    UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == loadingPath }.count > readsBefore }
                 }
-                let window = try hostWindow(NavigationStack {
-                    SettingsView(server: UITestFixtureEnvironment.serverURL, profileName: "Fixture profile",
-                                 serverName: "Fixture server", selection: .constant(nil))
-                }, size: size) { $0.userInterfaceStyle = style }
-                _ = try await requireElement(in: window, label: "Fixture profile")
-                _ = try await requireElement(in: window, label: "Fixture server")
-                attachHostedScreenshot(window, name: "settings-root-\(style == .light ? "light" : "dark")-\(Int(size.width))")
-                if let scroll = window.firstView(ofType: UIScrollView.self, where: { $0.contentSize.height > $0.bounds.height }) {
-                    scroll.setContentOffset(CGPoint(x: 0, y: max(0, scroll.contentSize.height - scroll.bounds.height)), animated: false)
-                }
-                settle()
-                attachHostedScreenshot(window, name: "settings-root-\(style == .light ? "light" : "dark")-\(Int(size.width))-bottom")
-                window.isHidden = true
-                window.rootViewController = nil
-                let editor = try hostWindow(AddServerView(authManager: fixture.environment.authManager), size: size) {
-                    $0.userInterfaceStyle = style
-                }
-                let editorRows = allSettingsRows(in: editor)
-                XCTAssertTrue(editorRows.labels.contains("URL"), "The server editor keeps its URL field")
-                attachHostedScreenshot(editor, name: "settings-add-server-\(style == .light ? "light" : "dark")-\(Int(size.width))")
-                editor.isHidden = true
-                editor.rootViewController = nil
+                XCTAssertTrue(loaded, "\(page) must load its fixture before checking its rows")
+                await Task.yield()
             }
-        }
-        for (category, _, identifiers) in pages {
+            let identifiers = allSettingsRows(in: window).identifiers.filter { $0.hasPrefix("settings-") }
             for identifier in identifiers {
-                XCTAssertEqual(identifierHomes[identifier], [category], "\(identifier) must have exactly one owning page")
+                XCTAssertTrue(entries.contains { $0.owns(identifier: identifier) }, "\(page) has an unindexed row: \(identifier)")
             }
+            return Set(identifiers)
         }
-        for row in exclusiveRows {
-            XCTAssertEqual(homes[row]?.count, 1, "\(row) must have exactly one owning category")
+
+        let pages = SettingsIndex.allCases.reduce(into: [SettingsPane]()) { pages, entry in
+            if !pages.contains(entry.page) { pages.append(entry.page) }
+        }
+        for page in pages {
+            let found = try await identifiers(on: page)
+            for entry in SettingsIndex.allCases where entry.page == page && !found.contains(where: entry.owns(identifier:)) {
+                // Conditional controls must be reachable without changing their stored parent preference or signing in.
+                let targeted = try await identifiers(on: page, target: entry)
+                XCTAssertTrue(targeted.contains(where: entry.owns(identifier:)), "\(page) is missing indexed row \(entry.id)")
+            }
         }
     }
 }

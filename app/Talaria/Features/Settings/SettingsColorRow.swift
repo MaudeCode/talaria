@@ -15,6 +15,6 @@ struct SettingsColorRow: View {
         .frame(minHeight: 44)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(title)
-        .accessibilityIdentifier(accessibilityIdentifier ?? "")
+        .indexedSettingsRow(title: title, identifier: accessibilityIdentifier)
     }
 }

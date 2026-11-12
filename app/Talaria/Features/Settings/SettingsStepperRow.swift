@@ -27,6 +27,7 @@ struct SettingsStepperRow: View {
             SettingsValueRow(title: title, systemImage: systemImage) {
                 Text(format(value)).monospacedDigit().foregroundStyle(.secondary)
             }
+            .environment(\.settingsIndexPage, nil)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityAdjustableAction { direction in
@@ -38,6 +39,6 @@ struct SettingsStepperRow: View {
         }
         .accessibilityLabel(title)
         .accessibilityValue(format(value))
-        .accessibilityIdentifier(accessibilityIdentifier ?? "")
+        .indexedSettingsRow(title: title, identifier: accessibilityIdentifier)
     }
 }

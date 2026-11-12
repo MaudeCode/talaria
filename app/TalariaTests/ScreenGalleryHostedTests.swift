@@ -215,6 +215,25 @@ final class ScreenGalleryHostedTests: XCTestCase {
         }
     }
 
+    func testSettingsSearchResultsAndEmptyState() async throws {
+        for query in ["thinking", "not-a-real-setting-87321"] {
+            try await page(query == "thinking" ? "settings-search-results" : "settings-search-empty", title: "Settings", prepare: { window in
+                let field = try XCTUnwrap(window.firstView(ofType: UISearchTextField.self))
+                field.text = query
+                field.sendActions(for: .editingChanged)
+                if query == "thinking" {
+                    _ = try await requireElement(in: window) {
+                        HostedAccessibility.identifier(of: $0) == "settings-search-settings-chat-expand-thinking-by-default"
+                    }
+                } else {
+                    _ = try await requireElement(in: window) { $0.accessibilityLabel?.contains("No Results") == true }
+                }
+            }) {
+                SettingsView(server: server, selection: .constant(nil))
+            }
+        }
+    }
+
     func testAdditionalSettings() async throws {
         try await page("settings-auxiliary-models", title: "Auxiliary Models") {
             AuxiliaryModelsSettingsView(server: server)
@@ -224,6 +243,11 @@ final class ScreenGalleryHostedTests: XCTestCase {
         }
         try await page("settings-sidebar-quotas", title: "Sidebar Quotas") {
             ProviderQuotaSidebarDisplayView()
+        }
+        let profile = try XCTUnwrap(ProviderQuotaWidgetProfileStore.saveCurrent(name: "Fixture Widget Profile"))
+        defer { ProviderQuotaWidgetProfileStore.delete(id: profile.id) }
+        try await page("settings-widget-profiles", title: "Widget Profiles") {
+            ProviderQuotaWidgetProfilesView()
         }
     }
 
@@ -343,8 +367,9 @@ final class ScreenGalleryHostedTests: XCTestCase {
                     _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == id }
                 }
                 loadedText = "Log text"
+            case "settings-providers": loadedText = SettingsIndex.providersOverPaceAt.title
             case "settings-tools": loadedText = "Agents can approve other chats' commands"
-            case "settings-chat": loadedText = "Max Tokens"
+            case "settings-chat": loadedText = "Send While Responding"
             case "settings-models": loadedText = "fixture-model"
             case "settings-profiles": loadedText = "Fixture Profile"
             case "settings-workspaces": loadedText = "Fixture Workspace"
@@ -366,14 +391,21 @@ final class ScreenGalleryHostedTests: XCTestCase {
                     $0.accessibilityLabel?.contains(loadedText) == true
                 }
             }
-            if name == "settings-models" {
-                for identifier in ["settings-models-default-reasoning", "settings-models-show-thinking"] {
-                    _ = try await requireElement(in: window, "Models is missing \(identifier)") {
-                        HostedAccessibility.identifier(of: $0) == identifier
-                    }
-                }
-            }
         } inspect: { window, variant in
+            if name == "settings-models" {
+                let scroll = try XCTUnwrap(window.firstView(ofType: UICollectionView.self))
+                let initialOffset = scroll.contentOffset
+                for identifier in ["settings-models-default-reasoning", "settings-models-show-thinking"] {
+                    _ = try await requireElementScrolling(in: window, "Models is missing \(identifier)") {
+                        let frame = window.convert($0.accessibilityFrame, from: window.screen.coordinateSpace)
+                        return HostedAccessibility.identifier(of: $0) == identifier
+                            && frame.width > 0 && frame.height > 0 && window.bounds.contains(frame)
+                    }
+                    attachHostedScreenshot(window, name: "\(identifier)-\(variant.name)")
+                }
+                scroll.setContentOffset(initialOffset, animated: false)
+                settle(window: window)
+            }
             if name == "settings-logs", variant.name == "phone-ax5" {
                 attachHostedScreenshot(window, name: "settings-logs-phone-ax5-controls")
                 let scroll = try XCTUnwrap(window.firstView(ofType: UICollectionView.self))

@@ -94,29 +94,6 @@ final class InsightsHostedTests: XCTestCase {
         { $0.accessibilityLabel?.hasPrefix(prefix) == true }
     }
 
-    /// Finds `match` on a lazily built screen: checks what is on screen, then pages the main list down until the
-    /// element appears or the list ends. Cells above and below the viewport do not exist, so a single scan misses them.
-    private func requireElementScrolling(
-        in window: UIWindow, _ message: String, file: StaticString = #filePath, line: UInt = #line,
-        where match: @escaping (NSObject) -> Bool
-    ) async throws -> NSObject {
-        let scroll = try XCTUnwrap(window.rootViewController?.view.firstView(ofType: UIScrollView.self) {
-            $0.accessibilityIdentifier != "app-sidebar" && $0.bounds.height > 300
-        }, "No scrolling list", file: file, line: line)
-        for _ in 0..<12 {
-            if await awaitCondition(timeout: 1, { HostedAccessibility.elements(in: window).contains(where: match) }),
-               let found = HostedAccessibility.elements(in: window).first(where: match) {
-                return found
-            }
-            let bottom = max(0, scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.bounds.height)
-            if scroll.contentOffset.y >= bottom - 1 { break }
-            scroll.setContentOffset(CGPoint(x: 0, y: min(bottom, scroll.contentOffset.y + scroll.bounds.height * 0.8)), animated: false)
-            settle(0.2)
-        }
-        let labels = HostedAccessibility.labels(in: window).joined(separator: "\n")
-        return try XCTUnwrap(HostedAccessibility.elements(in: window).first(where: match), "\(message); on screen:\n\(labels)", file: file, line: line)
-    }
-
     // MARK: Detail
 
     func testDetailShowsEveryWindowWithPaceForecastScheduleAccountAndActions() async throws {
