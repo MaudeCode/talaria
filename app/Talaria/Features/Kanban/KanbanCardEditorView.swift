@@ -8,6 +8,7 @@ struct KanbanCardEditorView: View {
     let onSaved: @MainActor () async -> Void
 
     @FocusState private var focusedField: Field?
+    @State private var sectionHelp: SettingsSectionHelp?
     @State private var showsReadyWarning = false
     @State private var showsReloadConfirmation = false
     @State private var hasConfirmedReadyUnassigned = false
@@ -21,17 +22,14 @@ struct KanbanCardEditorView: View {
             Form {
                 primaryFields
                 assignmentFields
-                if state.isEditing {
-                    createOnlyFields.disabled(true)
-                } else {
-                    createOnlyFields
-                }
+                createOnlyFields
                 submissionSection
             }
             .disabled(state.submission.isInFlight)
             .navigationTitle(state.isEditing ? String(localized: "Edit Card") : String(localized: "New Card"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { editorToolbar }
+            .settingsSectionHelp($sectionHelp)
             .interactiveDismissDisabled(state.submission.isInFlight)
             .onChange(of: state.submission) { _, submission in
                 handle(submission)
@@ -89,11 +87,6 @@ struct KanbanCardEditorView: View {
             }
         } header: {
             Text("Card")
-        } footer: {
-            if state.isEditing, let originalStatus = state.originalStatus,
-               !KanbanCardEditorState.createStatuses.contains(originalStatus) {
-                Text("Current Status: \(KanbanStatusPresentation(originalStatus).title). Choose a permitted Status only if you want to move the Card.")
-            }
         }
     }
 
@@ -126,56 +119,64 @@ struct KanbanCardEditorView: View {
 
     private var createOnlyFields: some View {
         Section {
-            Picker("Workspace", selection: $state.workspaceKind) {
-                Text("Scratch").tag("scratch")
-                Text("Worktree").tag("worktree")
-                Text("Directory").tag("dir")
-            }
+            Group {
+                Picker("Workspace", selection: $state.workspaceKind) {
+                    Text("Scratch").tag("scratch")
+                    Text("Worktree").tag("worktree")
+                    Text("Directory").tag("dir")
+                }
 
-            if state.workspaceKind != "scratch" || state.isEditing {
-                TextField("Workspace path", text: $state.workspacePath)
-                    .focused($focusedField, equals: .workspacePath)
+                if state.workspaceKind != "scratch" || state.isEditing {
+                    TextField("Workspace path", text: $state.workspacePath)
+                        .focused($focusedField, equals: .workspacePath)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+
+                TextField("Skills", text: $state.skillsText)
+                    .focused($focusedField, equals: .skills)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-            }
+                    .accessibilityHint(Text("Separate skill names with commas."))
 
-            TextField("Skills", text: $state.skillsText)
-                .focused($focusedField, equals: .skills)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .accessibilityHint(Text("Separate skill names with commas."))
+                LabeledContent("Maximum Runtime") {
+                    TextField("Maximum Runtime", text: $state.maximumRuntimeText)
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing)
+                        .focused($focusedField, equals: .maximumRuntime)
+                        .accessibilityLabel(Text("Maximum Runtime"))
+                        .accessibilityHint(Text("Optional number of seconds."))
+                }
 
-            LabeledContent("Maximum Runtime") {
-                TextField("Maximum Runtime", text: $state.maximumRuntimeText)
-                    .keyboardType(.numberPad)
-                    .multilineTextAlignment(.trailing)
-                    .focused($focusedField, equals: .maximumRuntime)
-                    .accessibilityLabel(Text("Maximum Runtime"))
-                    .accessibilityHint(Text("Optional number of seconds."))
-            }
+                TextField("Prerequisite", text: $state.prerequisiteID)
+                    .focused($focusedField, equals: .prerequisite)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
 
-            TextField("Prerequisite", text: $state.prerequisiteID)
-                .focused($focusedField, equals: .prerequisite)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-
-            if !state.prerequisiteOptions.isEmpty {
-                Menu("Choose Prerequisite") {
-                    Button("None") { state.prerequisiteID = "" }
-                    ForEach(state.prerequisiteOptions, id: \.cardID) { card in
-                        if let cardID = card.cardID {
-                            Button(card.title.map { "\(cardID) — \($0)" } ?? cardID) {
-                                state.prerequisiteID = cardID
+                if !state.prerequisiteOptions.isEmpty {
+                    Menu("Choose Prerequisite") {
+                        Button("None") { state.prerequisiteID = "" }
+                        ForEach(state.prerequisiteOptions, id: \.cardID) { card in
+                            if let cardID = card.cardID {
+                                Button(card.title.map { "\(cardID) — \($0)" } ?? cardID) {
+                                    state.prerequisiteID = cardID
+                                }
                             }
                         }
                     }
                 }
             }
+            .disabled(state.isEditing)
         } header: {
-            Text("Execution")
-        } footer: {
             if state.isEditing {
-                Text("Workspace, Skills, Maximum Runtime, and Prerequisite are set when the Card is created and cannot be edited here.")
+                SettingsSectionHeader(title: String(localized: "Execution")) {
+                    sectionHelp = SettingsSectionHelp(
+                        title: String(localized: "Execution"),
+                        message: String(localized: "Workspace, Skills, Maximum Runtime, and Prerequisite are set when the Card is created and cannot be edited here.")
+                    )
+                }
+            } else {
+                Text("Execution")
             }
         }
     }

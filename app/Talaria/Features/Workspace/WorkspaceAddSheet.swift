@@ -22,8 +22,6 @@ struct WorkspaceAddSheet: View {
                     TextField("Name (optional)", text: $name)
 
                     Toggle("Create the folder if it doesn't exist", isOn: $createIfMissing)
-                } footer: {
-                    Text("Suggestions are limited to trusted workspace roots from the server.")
                 }
 
                 if let errorMessage = viewModel.errorMessage {

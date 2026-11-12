@@ -26,8 +26,6 @@ struct ComposerWorkspacePickerSheet: View {
                     TextField("Workspace path", text: $prefix)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                } footer: {
-                    Text("Suggestions are limited to trusted workspace roots from the server.")
                 }
 
                 if let effectiveSelectedWorkspacePath, !effectiveSelectedWorkspacePath.isEmpty {

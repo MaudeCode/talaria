@@ -104,11 +104,11 @@ public enum ContextWindowFormatter {
         return formatTokens(threshold)
     }
 
-    public static func costLabel(from snapshot: ContextWindowSnapshot) -> String {
+    public static func costLabel(from snapshot: ContextWindowSnapshot, locale: Locale = .current) -> String {
         guard let cost = snapshot.estimatedCost else {
             return String(localized: "Unavailable")
         }
-        return cost.formattedCost()
+        return cost.formattedCost(precision: 4, locale: locale)
     }
 
     static func formatTokens(_ count: Int) -> String {
@@ -119,14 +119,5 @@ public enum ContextWindowFormatter {
         } else {
             return "\(count)"
         }
-    }
-}
-
-extension Double {
-    public func formattedCost(collapsingZeroCents: Bool = false) -> String {
-        if collapsingZeroCents && self == 0 {
-            return "$0.00"
-        }
-        return String(format: "$%.4f", self)
     }
 }

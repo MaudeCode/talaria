@@ -24,6 +24,7 @@ struct InsightsView: View {
     /// The section item the app pushes above this root; a tile sets it to its account.
     @Binding var selection: SectionItem?
 
+    @Environment(\.locale) private var locale
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.divisionRegionGeometry) private var divisionGeometry
     @State private var viewModel: InsightsViewModel
@@ -413,11 +414,13 @@ struct InsightsView: View {
             }
         }
 
-        Section {
-            Text(viewModel.sourceDescription)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .plainSectionRow(separator: .hidden)
+        if let notice = viewModel.sourceDescription {
+            Section {
+                Text(notice)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .plainSectionRow(separator: .hidden)
+            }
         }
     }
 
@@ -428,7 +431,7 @@ struct InsightsView: View {
             InsightsStat(id: "input", title: String(localized: "Input tokens"), value: insightsCompactNumber(viewModel.totalInputTokens), exactValue: formatTokens(viewModel.totalInputTokens)),
             InsightsStat(id: "output", title: String(localized: "Output tokens"), value: insightsCompactNumber(viewModel.totalOutputTokens), exactValue: formatTokens(viewModel.totalOutputTokens)),
             InsightsStat(id: "total", title: String(localized: "Total tokens"), value: insightsCompactNumber(viewModel.totalTokens), exactValue: formatTokens(viewModel.totalTokens)),
-            InsightsStat(id: "cost", title: String(localized: "Estimated cost"), value: viewModel.estimatedCost.formattedCost(collapsingZeroCents: true)),
+            InsightsStat(id: "cost", title: String(localized: "Estimated cost"), value: viewModel.estimatedCost.formattedCost(locale: locale), exactValue: viewModel.estimatedCost.formattedCost(precision: 4, locale: locale)),
         ]
         if let cacheHitPercent = viewModel.totalCacheHitPercent {
             stats.append(InsightsStat(id: "cache-hit", title: String(localized: "Cache hit rate"), value: insightsFormattedPercent(cacheHitPercent)))

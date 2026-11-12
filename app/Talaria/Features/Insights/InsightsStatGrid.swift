@@ -29,7 +29,8 @@ struct InsightsStatGrid: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(stat.title), \(stat.exactValue ?? stat.value)")
+                .accessibilityLabel("\(stat.title), \(stat.value)")
+                .accessibilityValue(stat.exactValue ?? "")
             }
         }
         .padding(.vertical, 4)

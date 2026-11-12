@@ -182,14 +182,14 @@ public final class InsightsViewModel {
         serverInsights != nil
     }
 
-    public var sourceDescription: String {
+    public var sourceDescription: String? {
         if let fallbackReason, serverInsights != nil {
             return String(localized: "Showing cached server analytics. Refresh failed: \(fallbackReason)")
         }
         if isLoading, serverInsights != nil {
             return String(localized: "Showing cached server analytics while refreshing.")
         }
-        return String(localized: "Source: server insights from the last \(periodDays) days.")
+        return nil
     }
 
     public var periodTitle: String {

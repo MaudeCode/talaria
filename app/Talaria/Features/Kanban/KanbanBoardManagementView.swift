@@ -20,8 +20,6 @@ struct KanbanBoardManagementView: View {
                 ForEach(model.boards, id: \.slug) { board in
                     boardRow(board)
                 }
-            } footer: {
-                Text("Browsing a Board stays local to Talaria. Making a Board active changes shared server state.")
             }
         }
         .navigationTitle("Manage")

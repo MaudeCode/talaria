@@ -2,6 +2,7 @@ import SwiftUI
 import TalariaKit
 
 struct ContextWindowPopover: View {
+    @Environment(\.locale) private var locale
     let snapshot: ContextWindowSnapshot
     private let popoverCornerRadius: CGFloat = 18
 
@@ -27,7 +28,7 @@ struct ContextWindowPopover: View {
             )
             ContextWindowInfoRow(
                 label: String(localized: "Cost"),
-                value: ContextWindowFormatter.costLabel(from: snapshot)
+                value: ContextWindowFormatter.costLabel(from: snapshot, locale: locale)
             )
         }
         .padding()

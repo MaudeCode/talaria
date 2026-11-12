@@ -2,6 +2,7 @@ import SwiftUI
 import TalariaKit
 
 struct ModelBreakdownRow: View {
+    @Environment(\.locale) private var locale
     let model: InsightsModelBreakdown
 
     var body: some View {
@@ -12,7 +13,7 @@ struct ModelBreakdownRow: View {
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 if let cost = model.cost, cost > 0 {
-                    Text(cost.formattedCost())
+                    Text(cost.formattedCost(locale: locale))
                         .font(.subheadline.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
@@ -30,6 +31,7 @@ struct ModelBreakdownRow: View {
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
+        .accessibilityValue(model.cost.map { $0.formattedCost(precision: 4, locale: locale) } ?? "")
     }
 
     private var detailLine: String {

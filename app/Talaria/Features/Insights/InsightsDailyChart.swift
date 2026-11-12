@@ -26,10 +26,10 @@ enum InsightsDailyMetric: String, CaseIterable, Identifiable {
         }
     }
 
-    func label(_ value: Double) -> String {
+    func label(_ value: Double, precision: Int? = nil, locale: Locale) -> String {
         switch self {
         case .tokens: insightsCompactNumber(Int(value))
-        case .cost: value.formattedCost(collapsingZeroCents: true)
+        case .cost: value.formattedCost(precision: precision, locale: locale)
         case .sessions: Int(value).formatted()
         }
     }
@@ -37,6 +37,7 @@ enum InsightsDailyMetric: String, CaseIterable, Identifiable {
 
 /// The whole server `daily_tokens` series as bars, one metric at a time; dragging reads one day.
 struct InsightsDailyChart: View {
+    @Environment(\.locale) private var locale
     let days: [InsightsDailyToken]
     @Binding var metric: InsightsDailyMetric
     @State private var selectedDay: Date?
@@ -66,6 +67,7 @@ struct InsightsDailyChart: View {
                 ForEach(days.filter { $0.day != nil }, id: \.date) { day in
                     LabeledContent(day.day?.formatted(.dateTime.month(.abbreviated).day()) ?? day.date ?? "") {
                         Text(valueLine(day))
+                            .accessibilityValue(valueLine(day, precision: 4))
                             .font(.caption.monospacedDigit())
                             .multilineTextAlignment(.trailing)
                     }
@@ -78,11 +80,11 @@ struct InsightsDailyChart: View {
         .padding(.vertical, 4)
     }
 
-    private func valueLine(_ day: InsightsDailyToken) -> String {
+    private func valueLine(_ day: InsightsDailyToken, precision: Int? = nil) -> String {
         [
             String(localized: "\(formatTokens(day.totalTokens)) tokens"),
             String(localized: "\(day.sessions ?? 0) sessions"),
-            (day.cost ?? 0).formattedCost(collapsingZeroCents: true),
+            (day.cost ?? 0).formattedCost(precision: precision, locale: locale),
         ].joined(separator: " · ")
     }
 
@@ -109,7 +111,8 @@ struct InsightsDailyChart: View {
                             Text(selected.day.formatted(.dateTime.month(.abbreviated).day()))
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
-                            Text(metric.label(selected.value))
+                            Text(metric.label(selected.value, locale: locale))
+                                .accessibilityValue(metric.label(selected.value, precision: 4, locale: locale))
                                 .font(.caption.weight(.semibold).monospacedDigit())
                         }
                         .padding(.horizontal, 8)
@@ -131,7 +134,7 @@ struct InsightsDailyChart: View {
                 AxisGridLine(stroke: InsightsChartAxis.gridStroke)
                 AxisValueLabel {
                     if let number = value.as(Double.self) {
-                        Text(metric.label(number))
+                        Text(metric.label(number, locale: locale))
                     }
                 }
             }
@@ -142,6 +145,6 @@ struct InsightsDailyChart: View {
 
     private func accessibilitySummary(_ points: [(day: Date, value: Double)]) -> String {
         guard let peak = points.max(by: { $0.value < $1.value }) else { return String(localized: "No data") }
-        return String(localized: "\(points.count) days, peak \(metric.label(peak.value)) on \(peak.day.formatted(.dateTime.month(.abbreviated).day()))")
+        return String(localized: "\(points.count) days, peak \(metric.label(peak.value, precision: 4, locale: locale)) on \(peak.day.formatted(.dateTime.month(.abbreviated).day()))")
     }
 }
