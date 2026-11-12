@@ -35,6 +35,7 @@ struct ComposerSecondaryControlsView<Leading: View>: View {
     let onSelectGitBranch: (GitCheckoutTarget) -> Void
     let onCreateGitBranch: (GitCheckoutTarget) -> Void
     let onRefreshGitBranches: () -> Void
+    var onSelectExecutionMode: (ExecutionMode) -> Void = { _ in }
     @ViewBuilder let leading: Leading
 
     var body: some View {
@@ -44,7 +45,7 @@ struct ComposerSecondaryControlsView<Leading: View>: View {
                 // each row's hit shapes, which reach past its labels, never overlap the other row's.
                 VStack(alignment: .leading, spacing: ComposerMetaControlLabel.hitPadding * 2) {
                     HStack(spacing: 12) { leading }
-                    HStack(spacing: 12) { selectorRow }
+                    HStack(spacing: 12) { selectorRow(state.selectors) }
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, ComposerControlStrip.verticalPadding)
@@ -52,11 +53,11 @@ struct ComposerSecondaryControlsView<Leading: View>: View {
             } else {
                 ComposerStripScrollRow(accessibilityIdentifier: "composer-control-strip") {
                     HStack(spacing: 12) {
-                        leading
-                        if !state.selectors.isEmpty {
+                        leadingControls
+                        if !secondarySelectors.isEmpty {
                             groupDivider
                         }
-                        selectorRow
+                        selectorRow(secondarySelectors)
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, ComposerControlStrip.verticalPadding)
@@ -73,58 +74,82 @@ struct ComposerSecondaryControlsView<Leading: View>: View {
             .accessibilityHidden(true)
     }
 
-    private var selectorRow: some View {
-        ForEach(state.selectors, id: \.self) { selector in
-            switch selector {
-            case .workspace:
-                ComposerWorkspaceSelectorButton(
-                    title: state.workspaceTitle ?? "",
-                    isDisabled: state.workspaceIsDisabled,
-                    color: .secondary,
-                    controlFont: AppFont.footnote(),
-                    chevronFont: AppFont.caption2(),
-                    onTap: onChooseWorkspace
-                )
-            case .gitBranch:
-                if let gitBranch = state.gitBranch {
-                    GitBranchPickerButton(
-                        currentBranch: gitBranch.currentName,
-                        branches: gitBranch.branches,
-                        isLoading: gitBranch.isLoading,
-                        isSwitching: gitBranch.isSwitching,
-                        isDisabled: state.isDisabled,
-                        onSelect: onSelectGitBranch,
-                        onCreate: onCreateGitBranch,
-                        onRefresh: onRefreshGitBranches
-                    )
-                }
-            case .toolsets:
-                Button(action: onChooseToolsets) {
-                    ComposerMetaControlLabel(
-                        title: state.toolsetsTitle ?? "",
-                        systemImage: "wrench",
-                        maxWidth: ComposerControlStrip.titleMaxWidth,
-                        color: .secondary,
-                        controlFont: AppFont.footnote(),
-                        chevronFont: AppFont.caption2()
-                    )
-                }
-                .buttonStyle(.plain)
-                .disabled(state.isDisabled)
-                .accessibilityLabel("Session toolsets")
-                .accessibilityValue(state.toolsetsAccessibilityValue ?? "")
-            case .profile:
-                ComposerProfileSelectorMenu(
-                    profileOptions: state.profileOptions,
-                    selectedProfileName: state.selectedProfileName,
-                    selectedProfileTitle: state.selectedProfileTitle ?? "",
+    private var secondarySelectors: [ComposerSecondaryControlsState.Selector] {
+        state.selectors.filter { $0 != .executionMode }
+    }
+
+    @ViewBuilder
+    private var leadingControls: some View {
+        if state.selectors.contains(.executionMode) { selectorControl(.executionMode) }
+        leading
+    }
+
+    private func selectorRow(_ selectors: [ComposerSecondaryControlsState.Selector]) -> some View {
+        ForEach(selectors, id: \.self) { selectorControl($0) }
+    }
+
+    @ViewBuilder
+    private func selectorControl(_ selector: ComposerSecondaryControlsState.Selector) -> some View {
+        switch selector {
+        case .workspace:
+            ComposerWorkspaceSelectorButton(
+                title: state.workspaceTitle ?? "",
+                isDisabled: state.workspaceIsDisabled,
+                color: .secondary,
+                controlFont: AppFont.footnote(),
+                chevronFont: AppFont.caption2(),
+                onTap: onChooseWorkspace
+            )
+        case .gitBranch:
+            if let gitBranch = state.gitBranch {
+                GitBranchPickerButton(
+                    currentBranch: gitBranch.currentName,
+                    branches: gitBranch.branches,
+                    isLoading: gitBranch.isLoading,
+                    isSwitching: gitBranch.isSwitching,
                     isDisabled: state.isDisabled,
-                    color: .secondary,
-                    controlFont: AppFont.footnote(),
-                    chevronFont: AppFont.caption2(),
-                    onSelectProfile: onSelectProfile
+                    onSelect: onSelectGitBranch,
+                    onCreate: onCreateGitBranch,
+                    onRefresh: onRefreshGitBranches
                 )
             }
+        case .toolsets:
+            Button(action: onChooseToolsets) {
+                ComposerMetaControlLabel(
+                    title: state.toolsetsTitle ?? "",
+                    systemImage: "wrench",
+                    maxWidth: ComposerControlStrip.titleMaxWidth,
+                    color: .secondary,
+                    controlFont: AppFont.footnote(),
+                    chevronFont: AppFont.caption2()
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(state.isDisabled)
+            .accessibilityLabel("Session toolsets")
+            .accessibilityValue(state.toolsetsAccessibilityValue ?? "")
+        case .executionMode:
+            ChatUIKitMenuButton(horizontalPadding: 0, verticalPadding: 14) {
+                ComposerMetaControlLabel(title: state.selectedExecutionMode.title, systemImage: "slider.horizontal.3",
+                                         maxWidth: ComposerControlStrip.titleMaxWidth, color: .secondary,
+                                         controlFont: AppFont.footnote(), chevronFont: AppFont.caption2())
+            } menu: {
+                NewChatModeMenu.make(modes: state.executionModes, selected: state.selectedExecutionMode, onSelect: onSelectExecutionMode)
+            }
+            .disabled(state.isDisabled)
+            .accessibilityLabel("Agent Mode")
+            .accessibilityValue(state.selectedExecutionMode.title)
+        case .profile:
+            ComposerProfileSelectorMenu(
+                profileOptions: state.profileOptions,
+                selectedProfileName: state.selectedProfileName,
+                selectedProfileTitle: state.selectedProfileTitle ?? "",
+                isDisabled: state.isDisabled,
+                color: .secondary,
+                controlFont: AppFont.footnote(),
+                chevronFont: AppFont.caption2(),
+                onSelectProfile: onSelectProfile
+            )
         }
     }
 }

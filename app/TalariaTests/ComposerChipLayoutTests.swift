@@ -23,6 +23,70 @@ final class ComposerChipLayoutTests: XCTestCase {
         )
     }
 
+    func testNewChatComposerShowsAgentModeAtPhoneAndDuoWidths() async throws {
+        let fixture = try FixtureApp([UITestFixtureURLProtocol.executionModesArgument], for: self)
+        let model = SessionListViewModel(server: UITestFixtureEnvironment.serverURL, client: fixture.client)
+        await model.loadActiveProfile()
+        await model.loadExecutionModes()
+        // The compact keyboard state hides this strip by design; the gallery exercises its visible state.
+        let variants = HostedVariant.gallery + [HostedVariant(name: "duo-outer-narrow", size: CGSize(width: 382, height: 580), style: .light, textSize: .large)]
+        for mode in [ExecutionMode.normal, .safe] {
+            model.selectNewChatExecutionMode(mode)
+            try await renderHostedPage("agent-mode-\(mode.rawValue)-composer", variants: variants) {
+                NavigationStack {
+                    PendingNewChatView(isExplicit: false, server: UITestFixtureEnvironment.serverURL, viewModel: model, onAPIError: { XCTFail("\($0)") }, draftStore: fixture.environment.draftStore)
+                }.environment(\.scenePhase, .active).modelContainer(fixture.cache)
+            } prepare: { window in
+                let loaded = await self.awaitCondition {
+                    guard let value = HostedAccessibility.element(in: window, label: "Select model")?.accessibilityValue else { return false }
+                    return value != "Model"
+                }
+                XCTAssertTrue(loaded, "Inspect the strip after its actual model title loads")
+            } inspect: { window, _ in
+                let control = try await self.requireElement(in: window, label: "Agent Mode")
+                XCTAssertEqual(control.accessibilityValue, mode.title)
+                XCTAssertTrue(window.bounds.contains(window.convert(control.accessibilityFrame, from: nil)))
+            }
+        }
+    }
+
+    func testModeMenusShareCheckedSelectionAndCreatedChatShowsFrozenMode() async throws {
+        let fixture = try FixtureApp([UITestFixtureURLProtocol.executionModesArgument], for: self)
+        let model = SessionListViewModel(server: UITestFixtureEnvironment.serverURL, client: fixture.client)
+        await model.loadActiveProfile()
+        await model.loadExecutionModes()
+        let window = try hostWindow(NavigationStack {
+            PendingNewChatView(server: UITestFixtureEnvironment.serverURL, viewModel: model, onAPIError: { XCTFail("\($0)") }, draftStore: fixture.environment.draftStore)
+        }.environment(\.scenePhase, .active).modelContainer(fixture.cache))
+        _ = try await requireElement(in: window, label: "Agent Mode")
+        func menu() -> [UIAction] {
+            HostedAccessibility.menuActions(in: NewChatModeMenu.make(modes: model.newChatExecutionModes,
+                selected: model.selectedNewChatExecutionMode, onSelect: model.selectNewChatExecutionMode))
+        }
+        XCTAssertEqual(menu().filter { $0.state == .on }.map(\.title), ["Normal"])
+        HostedAccessibility.activate(try XCTUnwrap(menu().first { $0.title == "Safe Mode" }))
+        let selected = await awaitCondition { model.selectedNewChatExecutionMode == .safe }
+        XCTAssertTrue(selected)
+        let selectedControl = try await requireElement(in: window, label: "Agent Mode")
+        XCTAssertEqual(selectedControl.accessibilityValue, "Safe Mode")
+        XCTAssertEqual(menu().filter { $0.state == .on }.map(\.title), ["Safe Mode"])
+        attachHostedScreenshot(window, name: "agent-mode-selected-safe")
+        try await sendFromComposer("Safe mode fixture prompt", in: window)
+        let created = await awaitCondition {
+            HostedAccessibility.element(in: window, label: "Agent Mode") == nil
+                && HostedAccessibility.labels(in: window).contains { $0.contains("Safe Mode") }
+        }
+        XCTAssertTrue(created, "Creation hides the editable mode and shows the server's frozen mode in the header")
+        attachHostedScreenshot(window, name: "agent-mode-created-safe")
+        let disabledMenu = NewChatModeMenu.make(
+            modes: [.init(mode: .normal, available: true), .init(mode: .safe, available: false, reason: "gateway_stopped")],
+            selected: .normal, onSelect: model.selectNewChatExecutionMode)
+        let section = try XCTUnwrap(disabledMenu.children.first as? UIMenu)
+        let disabled = section.children.compactMap { $0 as? UIAction }
+        XCTAssertEqual(disabled.last?.subtitle, "Start the gateway first")
+        XCTAssertTrue(try XCTUnwrap(disabled.last).attributes.contains(.disabled))
+    }
+
     private func assertShowsFullTitleOrIconOnly(
         _ chip: some View,
         file: StaticString = #filePath,

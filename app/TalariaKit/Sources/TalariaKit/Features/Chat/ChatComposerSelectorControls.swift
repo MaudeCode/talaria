@@ -3,7 +3,9 @@ import SwiftUI
 /// The selectors in the composer's control strip, after model and reasoning (TAL-629).
 public struct ComposerSecondaryControlsState: Equatable, Sendable {
 
-    public init(workspaceTitle: String?, profileOptions: [ProfileSummary], selectedProfileName: String?, selectedProfileTitle: String?, gitBranch: ComposerSecondaryControlsState.GitBranch?, toolsetsTitle: String? = nil, toolsetsAccessibilityValue: String? = nil, isDisabled: Bool, workspaceIsDisabled: Bool? = nil) {
+    public init(workspaceTitle: String?, profileOptions: [ProfileSummary], selectedProfileName: String?, selectedProfileTitle: String?, gitBranch: ComposerSecondaryControlsState.GitBranch?, toolsetsTitle: String? = nil, toolsetsAccessibilityValue: String? = nil, executionModes: [ExecutionModeOption] = [], selectedExecutionMode: ExecutionMode = .normal, isDisabled: Bool, workspaceIsDisabled: Bool? = nil) {
+        self.executionModes = executionModes
+        self.selectedExecutionMode = selectedExecutionMode
         self.workspaceTitle = workspaceTitle
         self.toolsetsTitle = toolsetsTitle
         self.toolsetsAccessibilityValue = toolsetsAccessibilityValue ?? toolsetsTitle
@@ -34,8 +36,11 @@ public struct ComposerSecondaryControlsState: Equatable, Sendable {
         case gitBranch
         case toolsets
         case profile
+        case executionMode
     }
 
+    public let executionModes: [ExecutionModeOption]
+    public let selectedExecutionMode: ExecutionMode
     public let workspaceTitle: String?
     public let profileOptions: [ProfileSummary]
     public let selectedProfileName: String?
@@ -47,9 +52,10 @@ public struct ComposerSecondaryControlsState: Equatable, Sendable {
     public let isDisabled: Bool
     public let workspaceIsDisabled: Bool
 
-    /// The selectors the strip shows, by how often each changes: workspace, git branch, toolsets, then profile.
+    /// The new-chat mode leads while editable; then workspace, git branch, toolsets and profile.
     public var selectors: [Selector] {
         [
+            executionModes.isEmpty ? nil : .executionMode,
             workspaceTitle == nil ? nil : .workspace,
             gitBranch == nil ? nil : .gitBranch,
             toolsetsTitle == nil ? nil : .toolsets,
@@ -86,7 +92,7 @@ public struct ReasoningEffortOption: Identifiable, CaseIterable, Sendable {
         ReasoningEffortOption(id: "low", title: String(localized: "Low")),
         ReasoningEffortOption(id: "medium", title: String(localized: "Medium")),
         ReasoningEffortOption(id: "high", title: String(localized: "High")),
-        ReasoningEffortOption(id: "xhigh", title: String(localized: "XHigh"))
+        ReasoningEffortOption(id: "xhigh", title: String(localized: "Extra High"))
     ]
 
     public static func title(for effort: String) -> String {

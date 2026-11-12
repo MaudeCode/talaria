@@ -31,21 +31,56 @@ extension SessionListMutationTests {
         return SessionListViewModel(server: url, client: client, responseCache: makeResponseCache(server: url))
     }
 
-    func testNewChatOffersTheServersDiagnosticModesWithTheirAvailability() async throws {
+    func testNewChatOffersTheServersModesWithTheirAvailability() async throws {
         let server = ExecutionModeServer()
         server.modes = (200, try executionModesFixture("available"))
         let viewModel = try executionModesViewModel(server)
         await viewModel.loadActiveProfile()
 
         await viewModel.loadExecutionModes()
-        XCTAssertEqual(viewModel.newChatExecutionModes.map(\.mode), [.ignoreConfig, .safe], "Normal is New Chat's tap, not a menu row")
+        XCTAssertEqual(viewModel.newChatExecutionModes.map(\.mode), [.normal, .ignoreConfig, .safe], "Both menus include the normal choice")
         XCTAssertTrue(viewModel.newChatExecutionModes.allSatisfy(\.available))
         XCTAssertNil(viewModel.newChatExecutionModes.first?.reasonTitle)
 
         server.modes = (200, try executionModesFixture("unavailable"))
         await viewModel.loadExecutionModes()
-        XCTAssertEqual(viewModel.newChatExecutionModes.map(\.available), [false, false], "An unavailable mode stays listed, disabled")
-        XCTAssertEqual(viewModel.newChatExecutionModes.map(\.reasonTitle), ["Start the gateway first", "Start the gateway first"])
+        XCTAssertEqual(viewModel.newChatExecutionModes, [], "The server hides the only available choice")
+    }
+
+    func testNewChatModeVisibilityFollowsServerSelectableIncludingLegacyResponse() async throws {
+        let server = ExecutionModeServer()
+        let viewModel = try executionModesViewModel(server)
+        for (field, expected) in [("false", []), ("true", [ExecutionMode.normal, .safe]), (nil, [.normal, .safe])] as [(String?, [ExecutionMode])] {
+            let selectable = field.map { ",\"selectable\":\($0)" } ?? ""
+            server.modes = (200, "{\"modes\":[{\"mode\":\"normal\",\"available\":true},{\"mode\":\"safe\",\"available\":false,\"reason\":\"gateway_stopped\"}]\(selectable)}")
+            await viewModel.loadExecutionModes()
+            XCTAssertEqual(viewModel.newChatExecutionModes.map(\.mode), expected, "selectable=\(field ?? "absent") must control the New Chat menu")
+            XCTAssertEqual(viewModel.newChatComposerExecutionModes.map(\.mode), field == "true" ? expected : [], "Only an explicit true adds the composer control")
+        }
+    }
+
+    func testExecutionModesDecodeOptionalSelectableAndUnavailableReasons() throws {
+        for field in ["true", "false", "null", "\"invalid\"", nil] as [String?] {
+            let selectable = field.map { ",\"selectable\":\($0)" } ?? ""
+            let response = try APIClient.responseDecoder().decode(ExecutionModesResponse.self, from: Data("{\"modes\":[{\"mode\":\"safe\",\"available\":false,\"reason\":\"gateway_stopped\"},{\"mode\":\"future\",\"available\":true}]\(selectable)}".utf8))
+            XCTAssertEqual(response.selectable, field == "true" ? true : field == "false" ? false : nil)
+            XCTAssertEqual(response.modes.map(\.mode), [.safe])
+            XCTAssertEqual(response.modes.first?.available, false)
+            XCTAssertEqual(response.modes.first?.reasonTitle, "Start the gateway first")
+        }
+    }
+
+    func testNewChatSelectionAppliesImmediatelyAndRejectsUnavailableChoices() async throws {
+        let server = ExecutionModeServer()
+        let viewModel = try executionModesViewModel(server)
+        server.modes = (200, #"{"modes":[{"mode":"normal","available":true},{"mode":"safe","available":true},{"mode":"ignore_config","available":false}],"selectable":true}"#)
+        await viewModel.loadExecutionModes()
+        viewModel.selectNewChatExecutionMode(.safe)
+        XCTAssertEqual(viewModel.selectedNewChatExecutionMode, .safe)
+        viewModel.selectNewChatExecutionMode(.ignoreConfig)
+        XCTAssertEqual(viewModel.selectedNewChatExecutionMode, .safe)
+        viewModel.selectNewChatExecutionMode(.normal)
+        XCTAssertEqual(viewModel.selectedNewChatExecutionMode, .normal)
     }
 
     func testAnOlderServerOffersNoDiagnosticModes() async throws {
@@ -64,7 +99,7 @@ extension SessionListMutationTests {
         let viewModel = try executionModesViewModel(server)
         await viewModel.loadActiveProfile()
         await viewModel.loadExecutionModes()
-        XCTAssertEqual(viewModel.newChatExecutionModes.count, 2)
+        XCTAssertEqual(viewModel.newChatExecutionModes.count, 3)
 
         server.activeProfile = "work"
         await viewModel.loadActiveProfile()
@@ -73,7 +108,7 @@ extension SessionListMutationTests {
         XCTAssertEqual(viewModel.newChatExecutionModes, [], "The default profile's modes do not reach a work-profile chat")
         server.modes = (200, try executionModesFixture("unavailable"))
         await viewModel.loadExecutionModes()
-        XCTAssertEqual(viewModel.newChatExecutionModes.map(\.available), [false, false], "The work profile's own answer replaces them")
+        XCTAssertEqual(viewModel.newChatExecutionModes, [], "The work profile's own answer hides the choice")
     }
 
     func testADiagnosticChatIsCreatedInTheProfileItsModeWasOfferedFor() async throws {

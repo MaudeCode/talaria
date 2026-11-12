@@ -22,7 +22,7 @@ public enum ExecutionMode: String, Codable, Sendable, CaseIterable {
         }
     }
 
-    /// Any mode but normal: the ones a chat names in its header and New Chat offers in its menu.
+    /// Modes besides normal are named in a created chat's header.
     public var isDiagnostic: Bool { self != .normal }
 }
 
@@ -71,17 +71,20 @@ public struct ExecutionModeOption: Decodable, Equatable, Sendable, Identifiable 
 public struct ExecutionModesResponse: Decodable, Equatable, Sendable {
     /// Rows with a mode this App does not know are dropped.
     public let modes: [ExecutionModeOption]
+    public let selectable: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case modes
+        case modes, selectable
     }
 
-    public init(modes: [ExecutionModeOption]) {
+    public init(modes: [ExecutionModeOption], selectable: Bool? = nil) {
+        self.selectable = selectable
         self.modes = modes
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        selectable = container.decodeLossyBoolIfPresent(forKey: .selectable)
         modes = container.decodeLossyArrayIfPresent(ExecutionModeOption.self, forKey: .modes) ?? []
     }
 }

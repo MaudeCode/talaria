@@ -345,9 +345,9 @@ final class ReasoningEffortGatingTests: XCTestCase {
     }
 
     func testOptionsFilterToServerVocabularyPreservingServerOrder() {
-        let options = ReasoningEffortOption.options(forSupportedEfforts: ["high", "low"])
-        XCTAssertEqual(options.map(\.id), ["high", "low"])
-        XCTAssertEqual(options.map(\.title), ["High", "Low"])
+        let options = ReasoningEffortOption.options(forSupportedEfforts: ["high", "xhigh", "low"])
+        XCTAssertEqual(options.map(\.id), ["high", "xhigh", "low"])
+        XCTAssertEqual(options.map(\.title), ["High", "Extra High", "Low"])
     }
 
     func testOptionsNormalizeAndKeepUnknownServerEfforts() {

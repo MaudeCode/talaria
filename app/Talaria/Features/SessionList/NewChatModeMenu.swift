@@ -1,38 +1,18 @@
 import SwiftUI
+import UIKit
 import TalariaKit
 
-/// TAL-1045: a New Chat control's long press starts a chat in a diagnostic mode. Each mode is the server's; one it
-/// cannot start now stays listed, disabled, with its reason. A server that offers none (an older one) shows no menu.
-private struct NewChatModeMenu: ViewModifier {
-    let modes: [ExecutionModeOption]
-    let isDisabled: Bool
-    let onSelect: (ExecutionMode) -> Void
-
-    func body(content: Content) -> some View {
-        if modes.isEmpty || isDisabled {
-            content
-        } else {
-            content.contextMenu {
-                Section("Agent Mode") {
-                    ForEach(modes) { option in
-                        Button {
-                            onSelect(option.mode)
-                        } label: {
-                            Text(option.mode.title)
-                            if let reason = option.reasonTitle {
-                                Text(reason)
-                            }
-                        }
-                        .disabled(!option.available)
-                    }
-                }
+/// The same checked choices serve New Chat's long press and the unsent composer's menu.
+@MainActor
+enum NewChatModeMenu {
+    static func make(modes: [ExecutionModeOption], selected: ExecutionMode, onSelect: @escaping (ExecutionMode) -> Void) -> UIMenu {
+        let actions = modes.map { option in
+            UIAction(title: option.mode.title, subtitle: option.reasonTitle,
+                     attributes: option.available ? [] : [.disabled],
+                     state: selected == option.mode ? .on : .off) { _ in
+                Task { @MainActor in onSelect(option.mode) }
             }
         }
-    }
-}
-
-extension View {
-    func newChatModeMenu(_ modes: [ExecutionModeOption], isDisabled: Bool, onSelect: @escaping (ExecutionMode) -> Void) -> some View {
-        modifier(NewChatModeMenu(modes: modes, isDisabled: isDisabled, onSelect: onSelect))
+        return UIMenu(children: [UIMenu(title: String(localized: "Agent Mode"), options: [.displayInline], children: actions)])
     }
 }

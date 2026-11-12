@@ -1573,14 +1573,26 @@ public final class SessionListViewModel {
         return String(localized: "\(executionMode.title) isn't available: \(reason)")
     }
 
-    /// TAL-1045: the diagnostic modes the server reported for `executionModesProfile`.
+    /// TAL-1045: the modes the server reported for `executionModesProfile`.
     private var executionModeOptions: [ExecutionModeOption] = []
     private var executionModesProfile: String?
+    private var executionModesSelectable: Bool?
+    public private(set) var selectedNewChatExecutionMode: ExecutionMode = .normal
 
-    /// The modes besides normal a new chat in the active profile can start in. Modes read for another profile are
+    /// The server offers a choice unless it explicitly hides it. Modes read for another profile are
     /// never offered, so a profile switch cannot carry a choice into a request it does not hold for.
     public var newChatExecutionModes: [ExecutionModeOption] {
-        executionModesProfile == activeProfileName ? executionModeOptions.filter(\.mode.isDiagnostic) : []
+        executionModesProfile == activeProfileName && executionModesSelectable != false ? executionModeOptions : []
+    }
+
+    /// Older servers retain the long-press menu but do not gain a new composer control.
+    public var newChatComposerExecutionModes: [ExecutionModeOption] {
+        executionModesSelectable == true ? newChatExecutionModes : []
+    }
+
+    public func selectNewChatExecutionMode(_ mode: ExecutionMode) {
+        guard newChatExecutionModes.contains(where: { $0.mode == mode && $0.available }) else { return }
+        selectedNewChatExecutionMode = mode
     }
 
     /// New Chat's route for `mode`. It names the profile the mode was offered for, so if the active profile changes before
@@ -1592,9 +1604,11 @@ public final class SessionListViewModel {
     /// Reads the active profile's modes. An older server (404) or a failed read offers none.
     public func loadExecutionModes() async {
         let profile = activeProfileName
-        let modes = (try? await client.executionModes().modes) ?? []
+        let response = try? await client.executionModes()
         guard !Task.isCancelled, profile == activeProfileName else { return }
-        executionModeOptions = modes
+        if executionModesProfile != profile || response?.selectable == false { selectedNewChatExecutionMode = .normal }
+        executionModeOptions = response?.modes ?? []
+        executionModesSelectable = response?.selectable
         executionModesProfile = profile
     }
 

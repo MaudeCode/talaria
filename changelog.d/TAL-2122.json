@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Choose an agent mode from the new chat composer, see the selected mode in both menus, and read Extra High reasoning labels.",
+      "highlight": false,
+      "components": ["app"],
+      "announce": false
+    }
+  ]
+}
