@@ -407,6 +407,8 @@ export class TurnRunner {
   private readonly shutdownStops = new Set<string>()
   /** Stopped streams whose terminal frame was sent (by the worker or the Stop), so the other sends none. */
   private readonly stopTerminals = new Set<string>()
+  /** TAL-2189: a Stop's in-flight terminal rows; the worker's teardown waits for them before it closes the journal. */
+  private readonly stopTerminalWrites = new Map<string, Promise<void>>()
   /** A running worker's one-shot `onFailing`, shared with a Stop that publishes `cancel` from outside the worker. */
   private readonly failureSettlers = new Map<string, () => Promise<void>>()
 
@@ -1869,6 +1871,7 @@ export class TurnRunner {
     this.liveUsage.delete(streamId)
     this.compressionSpans.delete(streamId)
     this.liveTodos.delete(streamId)
+    await this.stopTerminalWrites.get(streamId)
     const writer = this.writers.get(streamId)
     if (writer) { try { (await writer.close()) } catch { /* ignore */ } this.writers.delete(streamId) }
     this.abortControllers.delete(streamId)
@@ -1879,6 +1882,7 @@ export class TurnRunner {
     this.lastCompletedTool.delete(streamId)
     this.settledStreams.delete(streamId)
     this.stopTerminals.delete(streamId)
+    this.stopTerminalWrites.delete(streamId)
     this.failureSettlers.delete(streamId)
     this.shutdownStops.delete(streamId)
     this.registry.retire(streamId, this.deps.now())
@@ -2178,12 +2182,18 @@ export class TurnRunner {
         if (writer) { try { eventId = (await writer.appendSseEvent(event, data)).event_id } catch { eventId = null } }
         channel.put([event, data, eventId])
       }
-      for (const [event, data] of steerEvents) (await emit(event, data))
-      this.runStatuses.delete(streamId)
-      await emit('run_status', { session_id: sessionId, status: null })
-      await emit(...(await this.stopFrame(sessionId, streamId)))
-      this.registry.streams.delete(streamId)
-      this.registry.liveIds.delete(streamId)
+      // A worker that sees the Stop before the Agent starts unwinds now; its teardown must not close the journal under
+      // these rows, or the cancel this request answers never replays.
+      const writes = (async () => {
+        for (const [event, data] of steerEvents) (await emit(event, data))
+        this.runStatuses.delete(streamId)
+        await emit('run_status', { session_id: sessionId, status: null })
+        await emit(...(await this.stopFrame(sessionId, streamId)))
+        this.registry.streams.delete(streamId)
+        this.registry.liveIds.delete(streamId)
+      })()
+      this.stopTerminalWrites.set(streamId, writes.catch(() => undefined))
+      await writes
     }
     this.abortControllers.get(streamId)?.abort()
     const withdrawn = steerEvents.filter(([event]) => event === 'steer_withdrawn').map(([, data]) => data as SteerWithdrawn)

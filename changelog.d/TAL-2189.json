@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A chat stopped right after sending now always shows as stopped when another tab or a reload catches up.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
