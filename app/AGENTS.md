@@ -64,7 +64,7 @@ Every exception requires a non-empty reason.
   | --- | --- |
   | Interface | Appearance, Chats, Navigation, Notifications & Haptics, Speech |
   | Profile (active profile name) | Models, Providers, Tools |
-  | Server (active server name) | Profiles, Workspaces, System |
+  | Server (active server name) | Profiles, Workspaces, System, Logs |
   | This iPhone | Servers, Live Activities & Widgets, Siri & Shortcuts, Data & Storage, About, Developer (DEBUG) |
 
   Shared ids, grouping and relative order follow `contracts/fixtures/settings-sections.json`.

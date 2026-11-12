@@ -109,6 +109,8 @@ struct SettingsPaneView: View {
             WorkspaceManagerView(server: server, isPage: true, onRegistryChanged: {})
         case .tools:
             SettingsCategoryPage(category: .tools) { ServerSettingsSections(page: .tools) }
+        case .logs:
+            LogsSettingsView(server: server)
         case .system:
             SettingsCategoryPage(category: .system) {
                 ServerSettingsSections(page: .updates)

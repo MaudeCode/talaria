@@ -1,6 +1,10 @@
 import Foundation
 
 extension APIClient {
+    public func logs(file: String, tail: Int) async throws -> LogsResponse {
+        try await send(endpoint: .logs(file: file, tail: tail), method: "GET")
+    }
+
     public func models() async throws -> ModelsResponse {
         try await send(endpoint: .models, method: "GET")
     }

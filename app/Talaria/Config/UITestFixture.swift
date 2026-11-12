@@ -646,9 +646,13 @@ final class UITestFixtureURLProtocol: URLProtocol {
         }
         let refusesRemoval = Self.sessionRemovalPaths.contains(url.path)
             && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.refuseSessionRemovalArgument)
+        let refusesLogs = url.path == "/api/logs"
+            && ProcessInfo.processInfo.arguments.contains("--ui-test-refuse-first-logs")
+            && Self.answeredPaths.withLock { $0.filter { $0 == "/api/logs" }.count == 1 }
         let statusCode: Int
         if case .status(let code) = listFailure { statusCode = code }
         else if Self.isFullWidthPanelLoad(url), Self.panelScenario == UITestFixtureEnvironment.panelUnavailableArgument { statusCode = 503 }
+        else if refusesLogs { statusCode = 403 }
         else if refusesRemoval { statusCode = 409 }
         else if Self.failsInitialUpload(url) { statusCode = 500 }
         else if Self.failsSessionCreation(url) {
@@ -666,7 +670,9 @@ final class UITestFixtureURLProtocol: URLProtocol {
             client?.urlProtocol(self, didLoad: Data(": fixture heartbeat\n\n".utf8))
             return
         }
-        if refusesRemoval {
+        if refusesLogs {
+            client?.urlProtocol(self, didLoad: Self.json(["error": "Fixture log access refused"]))
+        } else if refusesRemoval {
             client?.urlProtocol(self, didLoad: Self.json(["error": "Synthetic session removal refusal"]))
         } else {
             client?.urlProtocol(self, didLoad: Self.responseData(for: request))
@@ -1021,6 +1027,16 @@ final class UITestFixtureURLProtocol: URLProtocol {
             let saved = names.isEmpty ? nil : names
             sessionToolsets.withLock { $0 = saved }
             return json(["ok": true, "enabled_toolsets": saved.map { $0 as Any } ?? NSNull()])
+        case "/api/logs":
+            let query = Dictionary(uniqueKeysWithValues: (URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+            let file = query["file"] ?? "agent"
+            let tail = Int(query["tail"] ?? "500") ?? 500
+            let lines = file == "bootstrap" || ProcessInfo.processInfo.arguments.contains("--ui-test-empty-logs") ? [] : (1...tail).map { "2026-11-12 10:00:00 INFO Fixture log line \($0)" }
+            return json([
+                "file": file, "tail": tail, "lines": lines, "total_bytes": 65536, "mtime": 1794477600,
+                "truncated": !lines.isEmpty, "hint": "Bootstrap has not written a log yet.",
+                "files": ["agent", "webui", "gateway", "bootstrap"].map { ["id": $0, "exists": $0 != "bootstrap"] as [String: Any] }
+            ])
         case "/api/settings":
             return serverSettings.withLock { settings in
                 if settings.isEmpty {

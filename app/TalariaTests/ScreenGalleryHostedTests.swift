@@ -21,6 +21,55 @@ final class ScreenGalleryHostedTests: XCTestCase {
     func testInterfaceSettings() async throws { try await categories(in: .interface) }
     func testProfileSettings() async throws { try await categories(in: .profile) }
     func testServerSettings() async throws { try await categories(in: .server) }
+
+    func testLogsShowsServerTailAndControls() async throws {
+        _ = try XCTUnwrap(SettingsCategory(rawValue: "logs"), "Settings must offer the server log tail")
+        let window = try hostWindow(fixture.sessionList())
+        try await openSidebar(in: window)
+        HostedAccessibility.activate(try await requireElement(in: window) {
+            $0.accessibilityLabel == "Settings" && $0.accessibilityHint == "Long press to switch servers."
+        })
+        _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-user-profile" }
+        for _ in 0..<4 {
+            if HostedAccessibility.element(in: window, identifier: "settings-category-logs") != nil { break }
+            if let scroll = window.rootViewController?.presentedViewController?.view.firstView(ofType: UIScrollView.self) {
+                let bottom = max(0, scroll.contentSize.height - scroll.bounds.height)
+                scroll.setContentOffset(CGPoint(x: 0, y: min(bottom, scroll.contentOffset.y + 400)), animated: false)
+                settle(window: window)
+            }
+        }
+        HostedAccessibility.activate(try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-category-logs" })
+        for id in ["settings-logs-file", "settings-logs-lines", "settings-logs-text"] {
+            _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == id }
+        }
+        func reads() -> Int {
+            UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/logs" }.count }
+        }
+        var before = reads()
+        HostedAccessibility.activate(try XCTUnwrap(HostedAccessibility.toolbarAction("Refresh", in: window)))
+        let toolbarRefreshed = await awaitCondition { reads() > before }
+        XCTAssertTrue(toolbarRefreshed, "The toolbar must reload the selected tail")
+        before = reads()
+        let pull = try XCTUnwrap(window.rootViewController?.presentedViewController?.view.firstView(ofType: UIRefreshControl.self),
+                                "Logs must support pull to refresh")
+        pull.sendActions(for: .valueChanged)
+        let pullRefreshed = await awaitCondition { reads() > before }
+        XCTAssertTrue(pullRefreshed, "Pull to refresh must reach the same log reader")
+        attachHostedScreenshot(window, name: "settings-logs-opened-from-settings")
+    }
+
+    func testLogsEmptyHintAndRefusalRetry() async throws {
+        fixture = try FixtureApp(["--ui-test-empty-logs", "--ui-test-refuse-first-logs"], for: self)
+        let window = try hostWindow(NavigationStack {
+            LogsSettingsView(server: server).environment(\.scenePhase, .active)
+        })
+        _ = try await requireElement(in: window) { $0.accessibilityLabel?.contains("Fixture log access refused") == true }
+        attachHostedScreenshot(window, name: "settings-logs-refused")
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Try Again"))
+        _ = try await requireElement(in: window, label: "Bootstrap has not written a log yet.")
+        attachHostedScreenshot(window, name: "settings-logs-empty")
+    }
+
     func testDeviceSettings() async throws { try await categories(in: .device) }
 
     func testModelsThinkingChoicePersistsFromTheVisibleControl() async throws {
@@ -289,6 +338,11 @@ final class ScreenGalleryHostedTests: XCTestCase {
                 XCTAssertTrue(answered, "The directory must load its server-provided categories")
                 settingsReads = reads("/api/settings")
                 loadedText = nil
+            case "settings-logs":
+                for id in ["settings-logs-file", "settings-logs-lines", "settings-logs-text"] {
+                    _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == id }
+                }
+                loadedText = "Log text"
             case "settings-tools": loadedText = "Agents can approve other chats' commands"
             case "settings-chat": loadedText = "Max Tokens"
             case "settings-models": loadedText = "fixture-model"
@@ -320,6 +374,23 @@ final class ScreenGalleryHostedTests: XCTestCase {
                 }
             }
         } inspect: { window, variant in
+            if name == "settings-logs", variant.name == "phone-ax5" {
+                attachHostedScreenshot(window, name: "settings-logs-phone-ax5-controls")
+                let scroll = try XCTUnwrap(window.firstView(ofType: UICollectionView.self))
+                scroll.setContentOffset(CGPoint(x: 0, y: max(0, scroll.contentSize.height - scroll.bounds.height)), animated: false)
+                settle(window: window)
+                let tail = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-logs-text" }
+                let frame = window.convert(tail.accessibilityFrame, from: window.screen.coordinateSpace)
+                XCTAssertTrue(window.bounds.intersects(frame), "The log tail must remain reachable at the largest text size")
+                let text = try XCTUnwrap(window.firstView(ofType: UITextView.self) { $0.text.contains("Fixture log line 500") },
+                                         "The full log must be readable and selectable at the largest text size")
+                XCTAssertTrue(text.isSelectable)
+                XCTAssertFalse(text.isEditable)
+                let end = text.caretRect(for: text.endOfDocument)
+                XCTAssertTrue(end.maxY > text.bounds.minY && end.minY < text.bounds.maxY,
+                              "The newest line must be laid out inside the visible text viewport")
+                XCTAssertTrue(text.contentSize.width.isFinite)
+            }
             let banned: [String]
             switch name {
             case "insights-usage": banned = ["Source: server insights"]

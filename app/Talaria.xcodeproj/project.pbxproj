@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A21200000000000000000001 /* LogsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21200000000000000000002 /* LogsSettingsView.swift */; };
 		211900000000000000000001 /* ProfileDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 211900000000000000000002 /* ProfileDetailView.swift */; };
 		C21121000000000000000006 /* SettingsDivider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C21120000000000000000006 /* SettingsDivider.swift */; };
 		C21121000000000000000005 /* SettingsStatusRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C21120000000000000000005 /* SettingsStatusRow.swift */; };
@@ -497,6 +498,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		A21200000000000000000002 /* LogsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogsSettingsView.swift; sourceTree = "<group>"; };
 		211900000000000000000002 /* ProfileDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileDetailView.swift; sourceTree = "<group>"; };
 		C21120000000000000000006 /* SettingsDivider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsDivider.swift; sourceTree = "<group>"; };
 		C21120000000000000000005 /* SettingsStatusRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStatusRow.swift; sourceTree = "<group>"; };
@@ -1374,6 +1376,7 @@
 				157500000000000000000002 /* FeedbackSheet.swift */,
 				C108A0000000000000000105 /* ServersProvidersSettingsViews.swift */,
 				A16950000000000000000012 /* NavigationSettingsViews.swift */,
+				A21200000000000000000002 /* LogsSettingsView.swift */,
 				A16950000000000000000002 /* ModelsSettingsView.swift */,
 				A21180000000000000000002 /* ServerSettingsSections.swift */,
 				C108A0000000000000000106 /* ServerUpdateSettingsSection.swift */,
@@ -1853,6 +1856,7 @@
 				157500000000000000000001 /* FeedbackSheet.swift in Sources */,
 				C108A0000000000000000005 /* ServersProvidersSettingsViews.swift in Sources */,
 				A16950000000000000000011 /* NavigationSettingsViews.swift in Sources */,
+				A21200000000000000000001 /* LogsSettingsView.swift in Sources */,
 				A16950000000000000000001 /* ModelsSettingsView.swift in Sources */,
 				A21180000000000000000001 /* ServerSettingsSections.swift in Sources */,
 				C108A0000000000000000006 /* ServerUpdateSettingsSection.swift in Sources */,

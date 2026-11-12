@@ -237,6 +237,7 @@ class Probe:
             ("profiles list", "/api/profiles", ("profiles", "active"), "profiles"),
             ("personalities list", "/api/personalities", ("personalities",), "personalities"),
             ("commands list", "/api/commands", ("commands",), "commands"),
+            ("logs response", "/api/logs?file=agent&tail=200", ("file", "lines"), "logs"),
             ("memory response", "/api/memory", ("memory", "memory_path"), "memory"),
         )
         for boundary, path, keys, fixture in read_only_checks:

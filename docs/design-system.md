@@ -359,6 +359,7 @@ Menus are interaction surfaces (§14); every Web menu is built with `Menu` from
 
 | Surface | Rule | Owner |
 | --- | --- | --- |
+| App server log tail | The tail owns a horizontally and vertically scrolling, selectable text area pinned to its end; Settings controls remain in the page list | `app/Talaria/Features/Settings/LogsSettingsView.swift` |
 | Chat transcript (bubbles, tool and thinking rows, worklog) | Keeps its conversation hierarchy | `web/DESIGN.md`, `web/docs/UIUX-GUIDE.md`; the App mirrors Web's transcript |
 | Composer | The one floating card | `web/docs/UIUX-GUIDE.md`, "Composer and controls" |
 | Kanban | Cards stay because it is a board; their chrome (type, chips, spacing, colours) follows this document | TAL-1769 |

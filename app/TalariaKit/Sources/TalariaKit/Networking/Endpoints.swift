@@ -126,6 +126,7 @@ public enum Endpoint: Sendable {
     case updateNotificationRead(id: String)
     case updateNotificationDismiss(id: String)
     case updateNotificationAction(id: String, actionID: String)
+    case logs(file: String, tail: Int)
     case insights(days: Int)
     case crons
     case cronCreate
@@ -408,6 +409,8 @@ public enum Endpoint: Sendable {
             return "/api/providers"
         case .providerQuotas:
             return "/api/provider/quotas"
+        case .logs:
+            return "/api/logs"
         case .settings:
             return "/api/settings"
         case .talariaRelayPair:
@@ -564,6 +567,8 @@ public enum Endpoint: Sendable {
 
     var queryItems: [URLQueryItem] {
         switch self {
+        case let .logs(file, tail):
+            return [URLQueryItem(name: "file", value: file), URLQueryItem(name: "tail", value: String(tail))]
         case let .sessionStream(sessionID):
             return [URLQueryItem(name: "session_id", value: sessionID)]
         case let .sessions(includeArchived, archivedLimit, visibility):
