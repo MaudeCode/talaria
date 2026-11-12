@@ -78,6 +78,18 @@ describe('the notify agent tool (TAL-1970)', () => {
     expect((await relayed()).agentNotices).toBeUndefined()
   })
 
+  it('sends notices in the order they were accepted when the first one is slow to resolve and is retried (TAL-2191)', async () => {
+    const first = await notify({ level: 'attention' })
+    const second = await notify({ level: 'info', title: 'Second' })
+    const resolve = s.deps.dnsLookup
+    let lookups = 0
+    s.deps.dnsLookup = async (host) => { if (lookups++ === 0) await new Promise((done) => setTimeout(done, 50)); return resolve(host) }
+    push.statuses.push(503)
+    await settle()
+    const [early, late] = [`notify:${String(first.notice_id)}`, `notify:${String(second.notice_id)}`]
+    expect(push.pushes.map((sent) => opened(sent).tag)).toEqual([early, early, late])
+  })
+
   it('mutes info while a Talaria tab is attached to the profile, and delivers attention anyway', async () => {
     expect((await post('/api/talaria/presence', { tab_id: 'tab_00000003', active: true, seq: 1 })).status).toBe(200)
     expect(await notify({ level: 'info' })).toMatchObject({ status: 'sent', level: 'info', channels: { relay: 'muted', 'web-push': 'muted' } })

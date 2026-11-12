@@ -225,7 +225,9 @@ export class WebPushChannel implements NotificationChannel {
           if (sub.profile !== profile || !personMaySee(access.get(sub), row.ownerPersonId)) continue
           const kind = alertForTransition(seen?.phase ?? null, { phase, alertEligible: row.alertEligible, decisionReviewId: row.decisionReviewId }, sub.preferences, seen?.decision)
           if (kind) this.track(this.deliver(sub, row, kind))
-          for (const notice of agentNotifyAlerts(seen?.notices, row.agentNotices)) this.track(this.deliver(sub, row, notice))
+          // TAL-2191: one subscription's notices go out one after another, oldest first, whatever each pre-send read costs.
+          const notices = agentNotifyAlerts(seen?.notices, row.agentNotices)
+          if (notices.length) this.track(this.deliverInOrder(sub, row, notices))
         }
       }
       this.lastPhase.set(profile, next)
@@ -233,10 +235,17 @@ export class WebPushChannel implements NotificationChannel {
   }
 
   private track(delivery: Promise<void>): void {
-    const settled = delivery.catch((error: unknown) => { this.deps.log(`[web-push] delivery failed (${(error as Error).message})`) })
+    const settled = delivery.catch((error: unknown) => { this.logFailure(error) })
     this.inFlight.add(settled)
     void settled.finally(() => this.inFlight.delete(settled))
   }
+
+  /** Sends each notice after the previous one settles; a failed one is logged and never drops the rest. */
+  private async deliverInOrder(sub: Subscription, row: ActivityState, notices: AgentNotice[]): Promise<void> {
+    for (const notice of notices) await this.deliver(sub, row, notice).catch((error: unknown) => { this.logFailure(error) })
+  }
+
+  private logFailure(error: unknown): void { this.deps.log(`[web-push] delivery failed (${(error as Error).message})`) }
 
   private subject(sub: Subscription): string {
     const configured = (this.deps.env.TALARIA_WEB_PUSH_SUBJECT ?? '').trim()

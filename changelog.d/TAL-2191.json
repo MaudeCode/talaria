@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Browser notifications from the agent arrive in the order the agent sent them.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
