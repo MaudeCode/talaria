@@ -12,6 +12,7 @@ public struct ReasoningStatusResponse: Decodable, Equatable, Sendable {
     /// `supports_reasoning_effort` — `false` means the resolved model has no
     /// effort control at all (hide the picker). `nil` on older servers.
     public let supportsReasoningEffort: Bool?
+    public let supportsThinkingToggle: Bool?
     /// Only true when chat effort writes enforce session scope before profile writes.
     public let supportsSessionScope: Bool?
     let error: String?

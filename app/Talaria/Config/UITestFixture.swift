@@ -464,6 +464,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
     nonisolated(unsafe) private static var approvalBypassOverride: Bool?
     /// The session's toolsets as the fixture saved them (TAL-631); nil is the profile's defaults.
     private static let sessionToolsets = OSAllocatedUnfairLock<[String]?>(initialState: nil)
+    private static let reasoningDefaults = OSAllocatedUnfairLock(initialState: (effort: "medium", thinking: true))
     nonisolated(unsafe) private static var transcriptReads = 0
     nonisolated(unsafe) private static var archivedSessionIDs: Set<String> = []
     nonisolated(unsafe) private static var deletedSessionIDs: Set<String> = []
@@ -503,6 +504,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
         generation.withLock { $0 += 1 }
         approvalBypassOverride = nil
         sessionToolsets.withLock { $0 = nil }
+        reasoningDefaults.withLock { $0 = ("medium", true) }
         sessionListFailures.withLock { $0 = [] }
         answeredPaths.withLock { $0 = [] }
         targetedDirectoryReads.withLock { $0 = [] }
@@ -870,6 +872,21 @@ final class UITestFixtureURLProtocol: URLProtocol {
             return providerQuotasResponse()
         case "/api/insights":
             return insightsResponse(url)
+        case "/api/reasoning":
+            return reasoningDefaults.withLock { state in
+                if request.httpMethod == "POST" {
+                    let body = requestJSON(request)
+                    if let effort = body["effort"] as? String { state.effort = effort }
+                    if let display = body["display"] as? String { state.thinking = display == "show" }
+                }
+                return json([
+                    "show_reasoning": state.thinking,
+                    "reasoning_effort": state.effort,
+                    "supported_efforts": ["low", "medium", "high"],
+                    "supports_reasoning_effort": true,
+                    "supports_thinking_toggle": true
+                ])
+            }
         case "/api/models":
             return json([
                 "groups": [],

@@ -49,6 +49,12 @@
     },
     {
       "rule": "settings-footnote",
+      "file": "app/Talaria/Features/Settings/ModelsSettingsView.swift",
+      "count": 1,
+      "reason": "Load and write errors only, as allowed by design-system section 12."
+    },
+    {
+      "rule": "settings-footnote",
       "file": "app/Talaria/Features/Settings/PersonalizationSettingsViews.swift",
       "count": 1,
       "reason": "status text"

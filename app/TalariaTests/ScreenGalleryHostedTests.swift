@@ -23,6 +23,25 @@ final class ScreenGalleryHostedTests: XCTestCase {
     func testServerSettings() async throws { try await categories(in: .server) }
     func testDeviceSettings() async throws { try await categories(in: .device) }
 
+    func testModelsThinkingChoicePersistsFromTheVisibleControl() async throws {
+        let window = try hostWindow(NavigationStack { ModelsSettingsView(server: server) })
+        _ = try await requireElement(in: window) {
+            HostedAccessibility.identifier(of: $0) == "settings-models-show-thinking"
+        }
+        let toggle = try XCTUnwrap(window.firstView(ofType: UISwitch.self))
+        XCTAssertTrue(toggle.isOn)
+        toggle.setOn(false, animated: false)
+        toggle.sendActions(for: .valueChanged)
+        let saved = await awaitCondition {
+            UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/reasoning" }.count >= 2 }
+        }
+        XCTAssertTrue(saved)
+        let status = try await fixture.client.reasoning()
+        XCTAssertEqual(status.showReasoning, false)
+        XCTAssertFalse(toggle.isOn)
+        attachHostedScreenshot(window, name: "settings-models-thinking-hidden")
+    }
+
     private func categories(in group: SettingsCategory.Group) async throws {
         for category in SettingsCategory.rootCategories where category.group == group {
             try await page("settings-\(category.id)", title: category.title) {
@@ -148,6 +167,13 @@ final class ScreenGalleryHostedTests: XCTestCase {
             if let loadedText {
                 _ = try await requireElement(in: window, "\(name): loaded content is missing") {
                     $0.accessibilityLabel?.contains(loadedText) == true
+                }
+            }
+            if name == "settings-models" {
+                for identifier in ["settings-models-default-reasoning", "settings-models-show-thinking"] {
+                    _ = try await requireElement(in: window, "Models is missing \(identifier)") {
+                        HostedAccessibility.identifier(of: $0) == identifier
+                    }
                 }
             }
         } inspect: { window, variant in
