@@ -2428,6 +2428,48 @@ describe('chat turns through the sidecar', () => {
     expect(starts).toBe(1)
   })
 
+  it('keeps the Stop\'s cancel row in the journal when the worker unwinds before the Agent starts (TAL-2189)', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))
+    sidecar.respond('chat.interrupt', () => ({ ok: true, pending_steer: 'never applied' }))
+    let starts = 0
+    sidecar.respond('chat.start', () => { starts += 1; return completed([]) })
+    let parked!: () => void
+    let releaseYolo!: () => void
+    const atYolo = new Promise<void>((resolve) => { parked = resolve })
+    const yolo = new Promise<void>((resolve) => { releaseYolo = resolve })
+    sidecar.respond('approval.set_yolo', async () => { parked(); await yolo; return { yolo_enabled: false, released: 0 } })
+    // The Stop is between its withdrawn row and its terminal row when the parked worker sees the Stop and unwinds.
+    const turns = s.deps.turns as unknown as { stopFrame: (...args: unknown[]) => Promise<unknown>; teardown: (...args: unknown[]) => Promise<void> }
+    let enteredTeardown!: () => void
+    const tornDown = new Promise<void>((resolve) => { enteredTeardown = resolve })
+    const originalTeardown = turns.teardown
+    const teardownSpy = vi.spyOn(turns, 'teardown').mockImplementation(function (this: unknown, ...args) { enteredTeardown(); return originalTeardown.apply(this, args) })
+    const originalStopFrame = turns.stopFrame
+    let stopFrames = 0
+    const stopFrameSpy = vi.spyOn(turns, 'stopFrame').mockImplementation(async function (this: unknown, ...args) {
+      if (++stopFrames === 1) { releaseYolo(); await tornDown }
+      return originalStopFrame.apply(this, args)
+    })
+    try {
+      const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'long task' }))).stream_id)
+      await atYolo
+      expect((await json(await post(s, '/api/chat/steer', { session_id: sid, text: 'never applied', steer_id: 'steer-z' }))).accepted).toBe(true)
+      expect((await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).cancelled).toBe(true)
+      const replay = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, () => false, { timeoutMs: 300 })
+      const names = replay.map((f) => f.event)
+      expect(names.filter((name) => name === 'steer_withdrawn')).toHaveLength(1)
+      expect(names.filter((name) => name === 'cancel')).toHaveLength(1)
+      expect(names.indexOf('steer_withdrawn')).toBeLessThan(names.indexOf('cancel'))
+      expect(starts).toBe(0)
+    } finally {
+      releaseYolo()
+      stopFrameSpy.mockRestore()
+      teardownSpy.mockRestore()
+      sidecar.respond('approval.set_yolo', undefined)
+    }
+  })
+
   describe('server-owned pending steers (TAL-424)', () => {
     const detailSteers = async (sid: string): Promise<Json[]> => (((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).pending_steers as Json[] | undefined) ?? []
     const running = async (sid: string, finish: Json[] = []) => {
