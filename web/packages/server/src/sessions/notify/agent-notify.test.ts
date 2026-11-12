@@ -90,6 +90,31 @@ describe('the notify agent tool (TAL-1970)', () => {
     expect(push.pushes.map((sent) => opened(sent).tag)).toEqual([early, early, late])
   })
 
+  it('queues a notice accepted while an earlier one is still being sent behind it (TAL-2191)', async () => {
+    const resolve = s.deps.dnsLookup
+    let lookups = 0
+    let release!: () => void
+    const held = new Promise<void>((done) => { release = done })
+    let secondLookup!: () => void
+    const looked = new Promise<void>((done) => { secondLookup = done })
+    s.deps.dnsLookup = async (host) => {
+      lookups++
+      if (lookups === 1) await held
+      if (lookups === 2) secondLookup()
+      return resolve(host)
+    }
+    const first = await notify({ level: 'attention' })
+    s.deps.notifications.changed()
+    await expect.poll(() => lookups).toBe(1)
+    const second = await notify({ level: 'info', title: 'Second' })
+    s.deps.notifications.changed()
+    // Unqueued, the second notice resolves its endpoint while the first is held; queued, it waits for the first.
+    await Promise.race([looked, new Promise((done) => setTimeout(done, 200))])
+    release()
+    await s.deps.webPush.idle()
+    expect(push.pushes.map((sent) => opened(sent).tag)).toEqual([`notify:${String(first.notice_id)}`, `notify:${String(second.notice_id)}`])
+  })
+
   it('mutes info while a Talaria tab is attached to the profile, and delivers attention anyway', async () => {
     expect((await post('/api/talaria/presence', { tab_id: 'tab_00000003', active: true, seq: 1 })).status).toBe(200)
     expect(await notify({ level: 'info' })).toMatchObject({ status: 'sent', level: 'info', channels: { relay: 'muted', 'web-push': 'muted' } })
