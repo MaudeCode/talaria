@@ -51,8 +51,11 @@ Every exception requires a non-empty reason.
   and types cohesive, avoid single-use abstractions, and create a Kaneo follow-up
   when necessary cleanup is too broad for the selected task.
 - Put new catalog keys at their sorted position; from the repository root run `app/ci/check-string-catalogs --fix` after edits or resolving a catalog conflict.
-- Keep the Settings root as a category directory. Put new controls in their
-  owning category. A new root category needs a distinct user-facing concern;
+- Group the Settings root into Interface, Profile, Server and This iPhone.
+  Put a new control in an existing section of the group its storage belongs to
+  (`../docs/design-system.md` §11). Reuse the shared rows in
+  `Talaria/Features/Settings/Settings*Row.swift` for their control type (§12).
+  A new root category needs a distinct user-facing concern;
   a direct root action needs explicit justification as unusually important.
   User Profile and Sign in with Apple are the approved root exceptions.
   Settings categories are owned by scope, in this order:
