@@ -3037,14 +3037,17 @@ struct ChatView: View {
         guard !didHydrateDraft else { return }
         let textBeforeHydration = draftMessage
         let persistedDraft = await draftStore.draft(for: draftKey)
-        guard !Task.isCancelled, draftMessage == textBeforeHydration else { return }
+        guard !Task.isCancelled else { return }
 
-        if textBeforeHydration.isEmpty {
-            if let persistedDraft, !persistedDraft.text.isEmpty {
-                draftMessage = persistedDraft.text
+        // An edit blocks stale text restoration, but attachment hydration must still finish.
+        if draftMessage == textBeforeHydration {
+            if textBeforeHydration.isEmpty {
+                if let persistedDraft, !persistedDraft.text.isEmpty {
+                    draftMessage = persistedDraft.text
+                }
+            } else {
+                writeComposerDraft(textBeforeHydration)
             }
-        } else {
-            writeComposerDraft(textBeforeHydration)
         }
         didHydrateDraft = true
         lastSyncedDraftAttachments = persistedDraft?.attachments ?? []

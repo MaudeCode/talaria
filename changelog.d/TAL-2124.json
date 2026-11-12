@@ -21,6 +21,15 @@
         "app"
       ],
       "announce": false
+    },
+    {
+      "category": "Fixed",
+      "summary": "Typing while drafts load no longer prevents files from being saved with a new chat.",
+      "highlight": false,
+      "components": [
+        "app"
+      ],
+      "announce": false
     }
   ]
 }
