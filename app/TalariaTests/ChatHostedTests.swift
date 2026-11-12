@@ -539,10 +539,9 @@ final class ChatHostedTests: XCTestCase {
         }
         let evaluations = ChatBodyEvaluationRecorder()
         let window = try hostWindow(NavigationStack {
-            ChatView(session: summary, server: UITestFixtureEnvironment.serverURL, onAPIError: { _ in },
-                     initialDraft: "Keep this draft", loadsInitialMessages: false, viewModel: viewModel)
-        }.environment(\.chatBodyEvaluation, evaluations)
-            .modelContainer(fixture.cache), size: size)
+            fixture.chat(summary, viewModel: viewModel, asNavigationDestination: false,
+                         initialDraft: "Keep this draft", loadsInitialMessages: false)
+        }.environment(\.chatBodyEvaluation, evaluations), size: size)
         let configured = await awaitCondition { viewModel.isSessionApprovalBypassEnabled }
         XCTAssertTrue(configured, "The hosted chat's startup must finish before measuring reveal work")
         let started = await viewModel.sendMessage("Stream a reply")
@@ -1460,6 +1459,9 @@ final class ChatHostedTests: XCTestCase {
         for follows in [false, true] {
             let fixture = try FixtureApp(for: self)
             let stream = ScriptedSSEStreamingClient()
+            let session = SessionSummary(sessionId: "session-abc", title: "Excerpt lifecycle")
+            let fixtureDraft = "Reader fixture draft"
+            fixture.environment.draftStore.setDraft(fixtureDraft, for: .session(server: UITestFixtureEnvironment.serverURL, session: session))
             let paragraphA = "Paragraph A with a link https://example.test/answer.\n\n"
             let answerA = String(repeating: paragraphA, count: 100)
             let excerptA = String(repeating: paragraphA, count: 56).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1472,7 +1474,7 @@ final class ChatHostedTests: XCTestCase {
                          ["role": "user", "content": "Question B", "message_id": "qb", "_turn_id": "stream-123"],
                          ["role": "assistant", "content": answerB, "message_id": "b", "_turn_id": "stream-123"]]
             var settled = false
-            let viewModel = try makeScriptedChatViewModel(streamClient: stream) { request in
+            let viewModel = try makeScriptedChatViewModel(streamClient: stream, server: UITestFixtureEnvironment.serverURL) { request in
                 let body: [String: Any]
                 switch request.url?.path {
                 case "/api/chat/start": body = ["session_id": "session-abc", "stream_id": "stream-123"]
@@ -1485,9 +1487,11 @@ final class ChatHostedTests: XCTestCase {
             defer { MockURLProtocol.requestHandler = nil; stream.stop() }
             await viewModel.loadMessages()
             let window = try hostWindow(NavigationStack {
-                ChatView(session: SessionSummary(sessionId: "session-abc", title: "Excerpt lifecycle"), server: UITestFixtureEnvironment.serverURL,
-                         onAPIError: { _ in }, loadsInitialMessages: false, viewModel: viewModel)
-            }.environment(\.scenePhase, .active).modelContainer(fixture.cache))
+                fixture.chat(session, viewModel: viewModel, asNavigationDestination: false, loadsInitialMessages: false)
+            })
+            let editor = await composerTextView(in: window)
+            let restoredFixtureDraft = await awaitCondition { editor?.text == fixtureDraft }
+            XCTAssertTrue(restoredFixtureDraft, "The reader scenario must hydrate its fixture-owned draft, observed: \(editor?.text ?? "missing editor")")
             let scroll = try transcriptScrollView(in: window)
             let started = await viewModel.sendMessage("Question B")
             XCTAssertTrue(started)
@@ -1503,7 +1507,12 @@ final class ChatHostedTests: XCTestCase {
                 controller.userDidBeginDragging()
                 coordinator.onFollowEvent(.userScrollBegin)
                 let prompt = try XCTUnwrap(viewModel.displayedTranscriptMessages.first { $0.message.content == "Question B" })
-                try await navigateTranscript(to: ChatTranscriptView.containerID(for: prompt.renderID), anchor: .top, using: controller)
+                try await navigateTranscript(to: ChatTranscriptView.containerID(for: prompt.renderID), anchor: .top, using: controller) {
+                    XCTAssertTrue(controller.isNavigating, "The native sample must land during the requested reader navigation")
+                    // A native metrics sample can arrive after the request, before its destination is laid out.
+                    scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: scroll.contentOffset.y - 1), animated: false)
+                    coordinator.reportMetrics(delivery: .immediate)
+                }
                 _ = try await requireElement(in: window, label: "Scroll to latest message")
                 before = try await requireElement(in: window, label: "Question B").accessibilityFrame.minY
                 XCTAssertGreaterThan(before, 0)
@@ -2059,10 +2068,12 @@ final class ChatHostedTests: XCTestCase {
     }
 
     /// Mounting a buffered target is not arrival; wait before interacting with it.
-    private func navigateTranscript(to id: String, anchor: UnitPoint, using controller: ChatScrollPositionController) async throws {
+    private func navigateTranscript(to id: String, anchor: UnitPoint, using controller: ChatScrollPositionController,
+                                    afterRequest: () -> Void = {}) async throws {
         controller.cancelPreservation()
         let navigate = try XCTUnwrap(controller.onHoldAnchor, "The transcript must register its navigation owner")
         navigate(id, anchor)
+        afterRequest()
         let arrived = await awaitCondition {
             !controller.isNavigating && !controller.isPreservingPosition && !controller.isRealizingRows
         }

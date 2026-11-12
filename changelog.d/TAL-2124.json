@@ -12,6 +12,15 @@
         "description": "Settings are grouped by what they affect, with search, profiles, logs and more of your server's options.",
         "icon": "settings"
       }
+    },
+    {
+      "category": "Fixed",
+      "summary": "Chats keep your reading position when you jump to an earlier message during a reply.",
+      "highlight": false,
+      "components": [
+        "app"
+      ],
+      "announce": false
     }
   ]
 }

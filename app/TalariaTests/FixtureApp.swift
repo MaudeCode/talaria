@@ -95,11 +95,14 @@ final class FixtureApp {
 
     /// Pushes the chat as the session list does; pure canvas fixtures can omit the navigation container.
     func chat(_ session: SessionSummary, viewModel: ChatViewModel? = nil,
-              asNavigationDestination: Bool = true) -> some View {
+              asNavigationDestination: Bool = true, initialDraft: String = "",
+              loadsInitialMessages: Bool = true) -> some View {
         let chat = ChatView(
             session: session,
             server: UITestFixtureEnvironment.serverURL,
             onAPIError: { _ in },
+            initialDraft: initialDraft,
+            loadsInitialMessages: loadsInitialMessages,
             draftStore: self.environment.draftStore,
             viewModel: viewModel
         )

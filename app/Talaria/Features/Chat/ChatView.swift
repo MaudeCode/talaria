@@ -3983,12 +3983,14 @@ struct ChatView: View {
         )
         let wasNearBottom = isScrolledNearBottom
         isScrolledNearBottom = isNearBottom
-        handleFollowEvent(.contentScrolled(
-            isAtBottom: ChatScrollPolicy.isAtBottom(distanceFromBottom: metrics.distanceFromBottom),
-            isUserScrolling: metrics.isUserInteracting,
-            movedAwayFromBottom: metrics.movedAwayFromBottom,
-            wasNearBottom: wasNearBottom
-        ))
+        if metrics.permitsFollowChanges {
+            handleFollowEvent(.contentScrolled(
+                isAtBottom: ChatScrollPolicy.isAtBottom(distanceFromBottom: metrics.distanceFromBottom),
+                isUserScrolling: metrics.isUserInteracting,
+                movedAwayFromBottom: metrics.movedAwayFromBottom,
+                wasNearBottom: wasNearBottom
+            ))
+        }
 
         if isNearBottom {
             if isReadingOlderTranscript {
