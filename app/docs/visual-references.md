@@ -14,6 +14,41 @@ SwiftUI and Core Graphics do the work.
 Visual references only assert on pixels. Behaviour stays in the functional
 tests — `LiveActivityTests`, `SessionListMutationTests` and their peers.
 
+## Screen gallery
+
+`ScreenGalleryHostedTests` renders every `SettingsCategory.rootCategories` page,
+the Settings directory, User Profile, Apple Account, Auxiliary Models, quota
+widget Customization and Sidebar Quotas. It also renders Tasks, Kanban, Skills,
+Memory, Decisions, and both Insights tabs using the in-process UI-test fixture.
+It needs no server or account.
+
+Each page runs at phone 390×844 in light and dark, phone light at Dynamic Type
+accessibility5, Duo outer 466×678 dark, and Duo inner 669×951 light. Each render
+checks that its title or first section is visible, accessible text has positive
+width, and no visible accessibility element is wider than the window.
+Horizontally scrolling tabs may straddle an edge of their clipped viewport.
+It does not compare pixels or record new references.
+Async Settings pages wait for their loaded fixture rows before inspection and
+capture; the System page also waits for that render's settings and update reads.
+
+From `app/`, capture the gallery with:
+
+```sh
+TALARIA_TEST_SCREENSHOTS=1 scripts/test-ios TalariaTests/ScreenGalleryHostedTests
+```
+
+Screenshots are XCTest attachments in the printed result bundle under
+`.codex-tmp/xctest/results/*.xcresult`. Names are `<page>-<variant>`, for example
+`settings-appearance-phone-ax5` and `insights-usage-duo-inner`. Variants are
+`phone-light`, `phone-dark`, `phone-ax5`, `duo-outer`, and `duo-inner`.
+Open the result bundle in Xcode, or export its attachments with
+`xcrun xcresulttool export attachments --path <bundle> --output-path <directory>`.
+Without `TALARIA_TEST_SCREENSHOTS=1`, successful renders attach no screenshots.
+The existing hosted shard's catch-all includes this class automatically.
+
+For a UI change, inspect and attach the screenshots of each touched page to the
+PR. Keep validation images out of Git.
+
 ## When a reference test fails
 
 The failure names the reference and the percentage of pixels that moved, and
