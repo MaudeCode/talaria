@@ -71,6 +71,35 @@ class HostedTestShardTests(unittest.TestCase):
         ])
         self.assertEqual(shard.classes(log), ["ChatHostedTests", "DuoFoldHostedTests"])
 
+    def test_interrupted_suite_headers_preserve_class_coverage_and_real_repeats(self):
+        script = str(HERE / "hosted-test-shard")
+        # The successful shard's stdout header was split by this stderr diagnostic.
+        suite = "\n".join([
+            "Test Suite 'ChatVertic2026-11-12 17:03:05 Talaria[1:2] [UIKBFeedbackGenerator] "
+            "Error creating CHHapticPattern: Error Domain=NSCocoaErrorDomain Code=260",
+            "alScrollAxisGuardTests' started at 2026-11-12 17:03:05.064.",
+            "Test Case '-[TalariaTests.ChatVerticalScrollAxisGuardTests testGuard]' started.",
+            "Test Case '-[TalariaTests.ChatVerticalScrollAxisGuardTests testGuard]' passed (0.032 seconds).",
+            "Test Suite 'ChatVerticalScrollAxisGuardTests' passed at 2026-11-12 17:03:05.481.",
+        ]) + "\n"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for index, names in self.ran().items():
+                (root / f"shard-{index}.txt").write_text("\n".join(names) + "\n")
+            for repetitions in (1, 2):
+                with self.subTest(repetitions=repetitions):
+                    log = root / "xcodebuild-test.log"
+                    log.write_text(suite * repetitions)
+                    classes = subprocess.check_output([script, "classes", str(log)], text=True)
+                    (root / "shard-4.txt").write_text(classes)
+                    result = subprocess.run([script, "check", str(root)], capture_output=True, text=True)
+                    if repetitions == 1:
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        self.assertEqual(classes, "ChatVerticalScrollAxisGuardTests\n")
+                    else:
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertIn("ChatVerticalScrollAxisGuardTests ran in shard 4 and shard 4", result.stderr)
+
     def test_check_requires_every_class_to_run_exactly_once(self):
         seen = shard.check(self.ran())
         self.assertEqual(seen["SessionListHostedTests"], 1)
