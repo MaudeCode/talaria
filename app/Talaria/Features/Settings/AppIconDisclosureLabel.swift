@@ -7,7 +7,7 @@ struct AppIconDisclosureLabel: View {
     var isExpanded = false
 
     var body: some View {
-        SettingsItemRow(title: String(localized: "App Icon"), subtitle: selectedAppIcon.title,
+        SettingsItemRow(title: SettingsIndex.appearanceAppIcon.title, subtitle: selectedAppIcon.title,
                         accessorySystemImage: isExpanded ? "chevron.down" : "chevron.forward") {
             AppIconChoicePreview(icon: selectedAppIcon)
         }

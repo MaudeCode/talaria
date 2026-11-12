@@ -105,9 +105,10 @@ struct WorkspaceManagerView: View {
                 Button {
                     showsAddSheet = true
                 } label: {
-                    Label("Add Workspace", systemImage: "plus")
+                    Label(SettingsIndex.workspacesAddWorkspace.title, systemImage: "plus")
                 }
                 .disabled(viewModel.isMutating)
+                .accessibilityIdentifier(SettingsIndex.workspacesAddWorkspace.id)
             }
         }
         .overlay {

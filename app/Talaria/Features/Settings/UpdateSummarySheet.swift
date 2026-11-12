@@ -90,7 +90,7 @@ struct UpdateSummaryButton: View {
 
     var body: some View {
         if info?.offersSummary == true {
-            SettingsButton(String(localized: "Summarize with AI"), action: action)
+            SettingsButton(SettingsIndex.systemUpdateSummary.title, action: action)
                 .padding(.top, 4)
         }
     }

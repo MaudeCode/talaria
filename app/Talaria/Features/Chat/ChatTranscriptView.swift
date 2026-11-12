@@ -474,13 +474,6 @@ struct ChatTranscriptView: View {
                         contentRevision: historyLayoutRevision,
                         nativeScrollRevision: nativeScrollRevision,
                         onFollowEvent: { event in
-                            if case .contentScrolled(_, let isUserScrolling, _, _) = event, !isUserScrolling,
-                               (restoredReadingRowID != nil && !didRestoreReadingRow
-                                || scrollPositionController.isNavigating || scrollPositionController.isPreservingPosition
-                                || scrollPositionController.isUserInteracting) {
-                                // Initial bottom anchoring and width compensation are not a reader returning to the live edge.
-                                return
-                            }
                             if case .userScrollBegin = event {
                                 initialScrollAnchor = nil
                                 scrollDestination = nil
@@ -497,7 +490,13 @@ struct ChatTranscriptView: View {
                     ) { metrics in
                         isHistoryNearTop = scrollPositionController.shouldPrefetchHistory()
                         updateRowViewport(height: viewportFrame.height)
-                        onUpdateScrollMetrics(metrics)
+                        var reported = metrics
+                        // Initial anchoring, reader navigation and width compensation are not a return to the live edge.
+                        reported.permitsFollowChanges = metrics.isUserInteracting
+                            || !(restoredReadingRowID != nil && !didRestoreReadingRow
+                                 || scrollPositionController.isNavigating || scrollPositionController.isPreservingPosition
+                                 || scrollPositionController.isUserInteracting)
+                        onUpdateScrollMetrics(reported)
                     }
 
                     ChatVerticalScrollAxisGuard()

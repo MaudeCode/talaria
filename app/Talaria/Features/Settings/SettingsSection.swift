@@ -4,6 +4,7 @@ import SwiftUI
 struct SettingsSection<Content: View, Header: View>: View {
     let content: Content
     let header: Header
+    var indexSectionTitle: String?
     var help: SettingsSectionHelp?
     @State private var presentedHelp: SettingsSectionHelp?
 
@@ -20,6 +21,7 @@ struct SettingsSection<Content: View, Header: View>: View {
                 header
             }
             content
+                .environment(\.settingsIndexSection, indexSectionTitle)
                 .sidebarRowPadding()
                 .sidebarRow(isSelected: false)
                 .navigationLinkIndicatorVisibility(.hidden)
@@ -31,6 +33,7 @@ struct SettingsSection<Content: View, Header: View>: View {
 extension SettingsSection where Header == SidebarSectionHeader<EmptyView> {
     init(title: String, help: String? = nil, @ViewBuilder content: () -> Content) {
         self.init(content: content, header: { SidebarSectionHeader(title) })
+        indexSectionTitle = title
         self.help = help.map { SettingsSectionHelp(title: title, message: $0) }
     }
 }

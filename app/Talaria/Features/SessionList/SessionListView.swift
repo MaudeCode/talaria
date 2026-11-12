@@ -2407,7 +2407,7 @@ struct SessionListView: View {
     private func openSection(_ utility: SessionListUtilityDestination) {
         switch utility {
         case .settings(let anchor):
-            presentSettings(path: anchor.map { [.category($0.category)] } ?? [])
+            presentSettings(path: anchor.map { [$0.pane] } ?? [])
         case .providerQuotaWidgetSettings:
             presentSettings(path: [.category(.liveActivitiesAndWidgets), .providerQuotaWidget])
         default:

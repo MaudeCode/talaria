@@ -9,7 +9,7 @@ struct ProviderQuotaWidgetProfilesView: View {
     @State private var newProfileName = ""
 
     var body: some View {
-        SettingsPage(title: String(localized: "Widget Profiles")) {
+        SettingsPage(title: String(localized: "Widget Profiles"), indexPage: .widgetProfiles) {
             SettingsSection(
                 title: String(localized: "Widget Profiles"),
                 help: String(localized: """
@@ -18,7 +18,7 @@ struct ProviderQuotaWidgetProfilesView: View {
                 """)
             ) {
                 HStack {
-                    Label("App Default", systemImage: "slider.horizontal.3")
+                    Label(SettingsIndex.widgetProfilesAppDefault.title, systemImage: "slider.horizontal.3")
                     Spacer()
                     if selectedDefaultProfileID == nil {
                         defaultCheckmark
@@ -34,6 +34,8 @@ struct ProviderQuotaWidgetProfilesView: View {
                     }
                 }
 
+                .indexedSettingsRow(title: SettingsIndex.widgetProfilesAppDefault.title)
+
                 ForEach(profiles) { profile in
                     HStack {
                         Text(profile.name).lineLimit(1)
@@ -41,14 +43,17 @@ struct ProviderQuotaWidgetProfilesView: View {
                         if selectedDefaultProfileID == profile.id { defaultCheckmark }
                         profileMenu(profile)
                     }
+                    .indexedSettingsRow(title: SettingsIndex.widgetProfilesSaved.title,
+                                        identifier: "\(SettingsIndex.widgetProfilesSaved.id)\(profile.id)")
                 }
 
                 Button {
                     newProfileName = ""
                     isNamingProfile = true
                 } label: {
-                    Label("Save Current Settings", systemImage: "plus")
+                    Label(SettingsIndex.widgetProfilesSaveCurrent.title, systemImage: "plus")
                 }
+                .indexedSettingsRow(title: SettingsIndex.widgetProfilesSaveCurrent.title)
             }
         }
         .navigationTitle("Widget Profiles")

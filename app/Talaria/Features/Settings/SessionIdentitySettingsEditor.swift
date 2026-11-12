@@ -12,7 +12,7 @@ struct SessionIdentitySettingsEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SettingsItemRow(title: String(localized: "Sessions Avatar")) {
+            SettingsItemRow(title: SettingsIndex.userProfileSessionsAvatar.title) {
                 Text(previewInitials)
                     .font(AppFont.caption(weight: .semibold))
                     .foregroundStyle(previewForeground)
@@ -22,9 +22,9 @@ struct SessionIdentitySettingsEditor: View {
                     .accessibilityHidden(true)
             }
 
-            SettingsTextFieldRow(title: String(localized: "Display Name"), text: $displayName, placeholder: NSFullUserName())
+            SettingsTextFieldRow(title: SettingsIndex.userProfileDisplayName.title, text: $displayName, placeholder: NSFullUserName())
 
-            SettingsTextFieldRow(title: String(localized: "Initials"), text: $initials, placeholder: previewInitials)
+            SettingsTextFieldRow(title: SettingsIndex.userProfileInitials.title, text: $initials, placeholder: previewInitials)
         }
     }
 }

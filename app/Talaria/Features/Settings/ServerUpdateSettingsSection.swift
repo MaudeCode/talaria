@@ -2,6 +2,7 @@ import SwiftUI
 import TalariaKit
 
 struct ServerUpdateSettingsSection: View {
+    @Environment(\.settingsScrollAnchor) private var scrollAnchor
     @Environment(ServerSettingsStore.self) private var settingsStore: ServerSettingsStore?
     @Bindable var authManager: AuthManager
     let server: URL
@@ -22,11 +23,11 @@ struct ServerUpdateSettingsSection: View {
 
     var body: some View {
         Group {
-            SettingsValueRow(title: String(localized: "Status"), systemImage: "server.rack") {
+            SettingsValueRow(title: SettingsIndex.systemStatus.title, systemImage: "server.rack") {
                 serverStatusPill
             }
 
-            SettingsValueRow(title: String(localized: "Version"), systemImage: "number") {
+            SettingsValueRow(title: SettingsIndex.systemVersion.title, systemImage: "number") {
                 serverVersionContent
             }
 
@@ -37,6 +38,10 @@ struct ServerUpdateSettingsSection: View {
             }
             serverUpdateAction
             agentUpdateRows
+            if scrollAnchor == .setting(.systemUpdateSummary),
+               updateTargets?.webui?.offersSummary != true, updateTargets?.agent?.offersSummary != true {
+                SettingsInfoRow(title: SettingsIndex.systemUpdateSummary.title, value: String(localized: "Not Available on This Server"))
+            }
         }
         .task { await loadServerSettings() }
         .sheet(item: $summaryRequest) { request in
@@ -108,7 +113,7 @@ private extension ServerUpdateSettingsSection {
         if isCheckingForUpdates {
             updateProgressRow(String(localized: "Checking for updates…"))
         } else {
-            SettingsButton(String(localized: "Check for updates")) {
+            SettingsButton(SettingsIndex.systemCheckNow.title) {
                 Task { await checkForUpdatesManually() }
             }
             .disabled(isUpdateApplyInFlight)
@@ -160,7 +165,7 @@ private extension ServerUpdateSettingsSection {
     private var agentUpdateRows: some View {
         if let agent = updateTargets?.agent {
             let status = UpdateNote(agent: agent)
-            SettingsValueRow(title: String(localized: "Hermes Agent")) {
+            SettingsValueRow(title: SettingsIndex.systemHermesAgent.title) {
                 Text(
                     versionRange(agent.currentVersion, agent.targetVersion)
                         ?? agent.currentVersion ?? String(localized: "Unknown")
@@ -168,10 +173,13 @@ private extension ServerUpdateSettingsSection {
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
             }
-            updateNoteRow(systemImage: status.systemImage, tint: status.tint, text: status.text)
+            updateNoteRow(systemImage: status.systemImage, tint: status.tint, text: status.text,
+                          identifier: "settings-system-status-agent")
             UpdateSummaryButton(info: agent) {
                 summaryRequest = UpdateSummaryRequest(target: .agent)
             }
+        } else if scrollAnchor == .setting(.systemHermesAgent) {
+            SettingsInfoRow(title: SettingsIndex.systemHermesAgent.title, value: String(localized: "Not Available on This Server"))
         }
     }
 
@@ -180,8 +188,10 @@ private extension ServerUpdateSettingsSection {
         behind > 0 ? String(localized: "Update available · \(behind) behind") : String(localized: "Update available")
     }
 
-    private func updateNoteRow(systemImage: String, tint: Color, text: String) -> some View {
-        SettingsStatusRow(title: String(localized: "Status"), systemImage: systemImage, status: text, tone: tint)
+    private func updateNoteRow(systemImage: String, tint: Color, text: String,
+                               identifier: String = "settings-system-status-web") -> some View {
+        SettingsStatusRow(title: SettingsIndex.systemStatus.title, systemImage: systemImage, status: text, tone: tint,
+                          accessibilityIdentifier: identifier)
     }
 
     @ViewBuilder
@@ -189,7 +199,9 @@ private extension ServerUpdateSettingsSection {
         switch updateApplyPhase {
         case .idle:
             if serverVersion != nil, case .updateAvailable = serverUpdateState {
-                updateActionButton(title: String(localized: "Update"))
+                updateActionButton(title: SettingsIndex.systemUpdate.title)
+            } else if scrollAnchor == .setting(.systemUpdate) {
+                SettingsInfoRow(title: SettingsIndex.systemUpdate.title, value: String(localized: "Not Available on This Server"))
             }
         case .applying:
             updateProgressRow(String(localized: "Starting update…"))
@@ -217,13 +229,13 @@ private extension ServerUpdateSettingsSection {
     }
 
     private func updateProgressRow(_ text: String) -> some View {
-        SettingsStatusRow(title: String(localized: "Status"), systemImage: "arrow.triangle.2.circlepath",
-                          status: text, isLoading: true)
+        SettingsStatusRow(title: SettingsIndex.systemStatus.title, systemImage: "arrow.triangle.2.circlepath",
+                          status: text, isLoading: true, accessibilityIdentifier: "settings-system-status-update")
     }
 
     private func updateMessageRow(systemImage: String, tint: Color) -> some View {
-        SettingsStatusRow(title: String(localized: "Status"), systemImage: systemImage,
-                          status: updateApplyMessage ?? String(localized: "The update could not be applied."), tone: tint)
+        SettingsStatusRow(title: SettingsIndex.systemStatus.title, systemImage: systemImage,
+                          status: updateApplyMessage ?? String(localized: "The update could not be applied."), tone: tint, accessibilityIdentifier: "settings-system-status-update")
     }
 
     @MainActor

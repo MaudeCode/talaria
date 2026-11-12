@@ -26,7 +26,7 @@ struct DefaultProfilePickerView: View {
     }
 
     var body: some View {
-        SettingsPage(title: String(localized: "Profiles")) {
+        SettingsPage(title: String(localized: "Profiles"), indexPage: .category(.profiles)) {
             SettingsPickerSearchField(text: $searchText, prompt: "Search profiles", clearLabel: "Clear profile search")
             if let error = model.errorMessage { SettingsErrorFootnote(SettingsErrorText(error)) }
             if model.isLoading && model.profiles.isEmpty {
@@ -58,7 +58,7 @@ struct DefaultProfilePickerView: View {
             }
             if !model.isSingleProfileMode {
                 Button { showsCreateProfile = true } label: {
-                    SettingsItemRow(title: String(localized: "New Profile")) {
+                    SettingsItemRow(title: SettingsIndex.profilesNewProfile.title) {
                         Image(systemName: "plus.circle").accessibilityHidden(true)
                     }
                     .sidebarRowPadding()

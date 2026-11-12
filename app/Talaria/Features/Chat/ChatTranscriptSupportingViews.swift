@@ -9,6 +9,8 @@ struct ChatScrollMetrics: Equatable {
     /// the last delivered report; see `ChatScrollPolicy.isScrollingAwayFromBottom`.
     let movedAwayFromBottom: Bool
     let distanceFromTop: CGFloat
+    /// Controlled reader motion still reports geometry without changing follow intent.
+    var permitsFollowChanges = true
 
     @MainActor
     static func geometry(of scrollView: UIScrollView) -> ChatScrollPolicy.ScrollGeometry? {

@@ -13,12 +13,7 @@ struct UserProfileSettingsRow: View {
             title: displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? String(localized: "User Profile") : displayName,
             subtitle: server.host ?? server.absoluteString
         ) {
-            Text(previewInitials)
-                .font(.headline)
-                .foregroundStyle(previewForeground)
-                .frame(width: 48, height: 48)
-                .background(previewColor, in: Circle())
-                .accessibilityHidden(true)
+            ServerAvatarBadge(initials: previewInitials, colorHex: headerLogoColorHex, size: 48, font: .headline)
         }
     }
 
@@ -30,13 +25,7 @@ struct UserProfileSettingsRow: View {
         )
     }
 
-    private var previewColor: Color {
-        HeaderLogoColor.color(for: headerLogoColorHex)
-    }
 
-    private var previewForeground: Color {
-        HeaderLogoColor.prefersDarkForeground(for: headerLogoColorHex) ? .black : .white
-    }
 }
 
 struct UserProfileSettingsView: View {
@@ -47,7 +36,7 @@ struct UserProfileSettingsView: View {
     @AppStorage(HeaderLogoColor.storageKey) private var headerLogoColorHex = HeaderLogoColor.defaultHex
 
     var body: some View {
-        SettingsPage(title: String(localized: "User Profile")) {
+        SettingsPage(title: String(localized: "User Profile"), indexPage: .userProfile) {
             SettingsSection(title: String(localized: "User Profile"), help: SettingsSectionHelp.identityMessage) {
                 SessionIdentitySettingsEditor(
                     displayName: $displayName,
@@ -103,7 +92,7 @@ struct ServersSettingsView: View {
             serversSection
 
             SettingsSection(title: String(localized: "Server Access"), help: signOutFootnote) {
-                SettingsButton(String(localized: "Sign Out of This Server"), role: .destructive) {
+                SettingsButton(SettingsIndex.serversSignOutOfThisServer.title, role: .destructive) {
                     isConfirmingSignOut = true
                 }
             }
@@ -125,7 +114,7 @@ struct ServersSettingsView: View {
     }
 
     private var serversSection: some View {
-        SettingsSection(title: String(localized: "Servers")) {
+        SettingsSection(title: SettingsIndex.serversList.title) {
             ForEach(authManager.servers) { account in
 
                 NavigationLink {
@@ -142,7 +131,7 @@ struct ServersSettingsView: View {
             HapticButton {
                 isPresentingAddServer = true
             } label: {
-                SettingsAccessoryRow(title: String(localized: "Add Server"), systemImage: "plus.circle")
+                SettingsAccessoryRow(title: SettingsIndex.serversAddServer.title, systemImage: "plus.circle")
             }
             .buttonStyle(.plain)
             .accessibilityHint("Adds another Hermes server.")
@@ -150,7 +139,7 @@ struct ServersSettingsView: View {
             NavigationLink {
                 CustomHeadersSettingsView(authManager: authManager)
             } label: {
-                SettingsAccessoryRow(title: String(localized: "Connection Headers"), systemImage: "list.bullet.rectangle")
+                SettingsAccessoryRow(title: SettingsIndex.serversConnectionHeaders.title, systemImage: "list.bullet.rectangle")
             }
             .buttonStyle(.plain)
             .accessibilityHint("Opens the custom request headers editor.")
@@ -173,6 +162,30 @@ struct ServersSettingsView: View {
 }
 
 struct ProvidersSettingsView: View {
+    let server: URL
+
+    var body: some View {
+        SettingsCategoryPage(category: .providers) {
+            SettingsSection(title: SettingsIndex.providersManageProviders.title) {
+                NavigationLink {
+                    ProvidersView(server: server)
+                } label: {
+                    SettingsAccessoryRow(
+                        title: SettingsIndex.providersManageProviders.title,
+                        systemImage: "key.horizontal"
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens provider rename and Insights visibility settings.")
+            }
+
+            ProviderQuotaThresholdSettingsSections()
+        }
+    }
+}
+
+/// The former Providers quota-display section, kept together under Navigation with the other device preferences.
+struct ProviderQuotaDisplaySettingsSection: View {
     @AppStorage(ProviderQuotaRefreshInterval.storageKey)
     private var refreshInterval = ProviderQuotaRefreshInterval.defaultValue.rawValue
     @AppStorage(
@@ -184,58 +197,41 @@ struct ProvidersSettingsView: View {
         store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
     ) private var providerIconStyle = ProviderIconStyle.defaultValue.rawValue
 
-    let server: URL
-
     var body: some View {
-        SettingsCategoryPage(category: .providers) {
-            SettingsSection(title: String(localized: "Providers")) {
-                NavigationLink {
-                    ProvidersView(server: server)
-                } label: {
-                    SettingsAccessoryRow(
-                        title: String(localized: "Providers"),
-                        systemImage: "key.horizontal"
-                    )
+        SettingsSection(
+            title: String(localized: "Quota Display"),
+            help: String(localized: """
+            Controls refresh while Talaria is active. Background and widget refreshes request the same interval, \
+            but iOS controls when they run.
+            """)
+        ) {
+            SettingsPickerRow(
+                title: SettingsIndex.navigationProviderIcons.title,
+                systemImage: "paintpalette",
+                selection: $providerIconStyle
+            ) {
+                ForEach(ProviderIconStyle.allCases) { style in
+                    Text(style.title).tag(style.rawValue)
                 }
-                .buttonStyle(.plain)
-                .accessibilityHint("Opens provider rename and Insights visibility settings.")
             }
 
-            SettingsSection(
-                title: String(localized: "Quota Display"),
-                help: String(localized: """
-                Controls refresh while Talaria is active. Background and widget refreshes request the same interval, \
-                but iOS controls when they run.
-                """)
+            SettingsPickerRow(
+                title: SettingsIndex.navigationQuotaPercentage.title,
+                systemImage: "percent",
+                selection: $percentageMode
             ) {
-                SettingsPickerRow(
-                    title: String(localized: "Provider Icons"),
-                    systemImage: "paintpalette",
-                    selection: $providerIconStyle
-                ) {
-                    ForEach(ProviderIconStyle.allCases) { style in
-                        Text(style.title).tag(style.rawValue)
-                    }
+                ForEach(ProviderQuotaPercentageMode.allCases) { mode in
+                    Text(mode.title).tag(mode.rawValue)
                 }
+            }
 
-                SettingsPickerRow(
-                    title: String(localized: "Quota Percentage"),
-                    systemImage: "percent",
-                    selection: $percentageMode
-                ) {
-                    ForEach(ProviderQuotaPercentageMode.allCases) { mode in
-                        Text(mode.title).tag(mode.rawValue)
-                    }
-                }
-
-                SettingsPickerRow(
-                    title: String(localized: "Quota Refresh"),
-                    systemImage: "arrow.clockwise",
-                    selection: $refreshInterval
-                ) {
-                    ForEach(ProviderQuotaRefreshInterval.allCases) { interval in
-                        Text(interval.title).tag(interval.rawValue)
-                    }
+            SettingsPickerRow(
+                title: SettingsIndex.navigationQuotaRefresh.title,
+                systemImage: "arrow.clockwise",
+                selection: $refreshInterval
+            ) {
+                ForEach(ProviderQuotaRefreshInterval.allCases) { interval in
+                    Text(interval.title).tag(interval.rawValue)
                 }
             }
         }

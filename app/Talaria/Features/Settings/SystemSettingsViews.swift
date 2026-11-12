@@ -11,7 +11,7 @@ struct LiveActivitiesWidgetsSettingsView: View {
             SettingsSection(title: String(localized: "Widgets")) {
                 NavigationLink(value: SettingsPane.providerQuotaWidget) {
                     SettingsAccessoryRow(
-                        title: String(localized: "Provider Quotas"),
+                        title: SettingsIndex.liveActivitiesAndWidgetsProviderQuotas.title,
                         systemImage: "gauge.open.with.lines.needle.33percent"
                     )
                 }
@@ -36,13 +36,13 @@ struct SiriShortcutsSettingsView: View {
                 if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
                     Link(destination: settingsURL) {
                         SettingsAccessoryRow(
-                            title: String(localized: "Open Talaria Settings"),
+                            title: SettingsIndex.siriAndShortcutsOpenTalariaSettings.title,
                             systemImage: "gearshape",
                             accessorySystemImage: "arrow.up.forward"
                         )
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Open Talaria Settings")
+                    .accessibilityLabel(SettingsIndex.siriAndShortcutsOpenTalariaSettings.title)
                 }
             }
         }
@@ -70,7 +70,7 @@ struct DataStorageSettingsView: View {
                     SettingsFootnote(cacheStatusMessage)
                 }
 
-                SettingsButton(String(localized: "Clear Offline Cache"), role: .destructive, isLoading: isClearingCache) {
+                SettingsButton(SettingsIndex.dataAndStorageClearOfflineCache.title, role: .destructive, isLoading: isClearingCache) {
                     isConfirmingClearCache = true
                 }
                 .disabled(isClearingCache)
@@ -108,15 +108,16 @@ private struct AppLockSettingsSection: View {
 
     var body: some View {
         let method = lock.method
-        SettingsSection(title: String(localized: "App Lock")) {
+        SettingsSection(title: SettingsIndex.dataAndStorageAppLock.title) {
             SettingsToggleRow(
-                title: method.settingsTitle,
+                title: SettingsIndex.dataAndStorageAppLock.title,
                 systemImage: method.systemImage,
                 isOn: Binding(get: { lock.switchPosition }, set: { enabled in
                     Task { needsPasscode = await lock.setEnabled(enabled) == .unavailable && enabled }
                 })
             )
             .accessibilityIdentifier("settings-app-lock")
+            .accessibilityHint(method.settingsTitle)
 
             if needsPasscode {
                 SettingsErrorFootnote(SettingsErrorText(String(localized: "Set a device passcode to use this.")))
@@ -126,6 +127,7 @@ private struct AppLockSettingsSection: View {
 }
 
 struct AboutSettingsView: View {
+    @Environment(\.settingsScrollAnchor) private var scrollAnchor
     @State private var feedback: FeedbackComposer
     @State private var replayedWhatsNew: WhatsNewAnnouncement?
     /// This build's What's New, replayable here whether or not launch already offered it (TAL-182).
@@ -142,15 +144,16 @@ struct AboutSettingsView: View {
     var body: some View {
         SettingsCategoryPage(category: .about) {
             SettingsSection(title: String(localized: "App")) {
-                SettingsInfoRow(title: String(localized: "Version"), value: appVersion)
-                SettingsInfoRow(title: String(localized: "Build"), value: appBuild)
+                SettingsInfoRow(title: SettingsIndex.aboutVersion.title, value: appVersion)
+                SettingsInfoRow(title: SettingsIndex.aboutBuild.title, value: appBuild)
 
-                if let whatsNew {
+                if whatsNew != nil || scrollAnchor == .setting(.aboutWhatsNew) {
                     Button { replayedWhatsNew = whatsNew } label: {
-                        SettingsAccessoryRow(title: String(localized: "What's New"), systemImage: "sparkles")
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("settings-whats-new")
+                            SettingsAccessoryRow(title: SettingsIndex.aboutWhatsNew.title, systemImage: "sparkles")
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("settings-whats-new")
+                        .disabled(whatsNew == nil)
                 }
 
                 Button { feedback.isPresented = true } label: {
@@ -162,28 +165,28 @@ struct AboutSettingsView: View {
 
                 Link(destination: AppConfig.privacyPolicyURL) {
                     SettingsAccessoryRow(
-                        title: String(localized: "Privacy Policy"),
+                        title: SettingsIndex.aboutPrivacyPolicy.title,
                         systemImage: "hand.raised",
                         accessorySystemImage: "arrow.up.forward"
                     )
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Privacy Policy")
+                .accessibilityLabel(SettingsIndex.aboutPrivacyPolicy.title)
 
                 Link(destination: AppConfig.supportURL) {
                     SettingsAccessoryRow(
-                        title: String(localized: "Support"),
+                        title: SettingsIndex.aboutSupport.title,
                         systemImage: "questionmark.circle",
                         accessorySystemImage: "arrow.up.forward"
                     )
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Support")
+                .accessibilityLabel(SettingsIndex.aboutSupport.title)
 
                 NavigationLink {
                     AcknowledgementsView()
                 } label: {
-                    SettingsAccessoryRow(title: String(localized: "Acknowledgements"), systemImage: "doc.text")
+                    SettingsAccessoryRow(title: SettingsIndex.aboutAcknowledgements.title, systemImage: "doc.text")
                 }
                 .buttonStyle(.plain)
                 .accessibilityHint("Opens the copyright and license notices for the open-source software in Talaria.")
@@ -208,7 +211,7 @@ struct AcknowledgementsView: View {
     private static let acknowledgements = directory.flatMap { try? Acknowledgement.load(from: $0) } ?? []
 
     var body: some View {
-        SettingsPage(title: String(localized: "Acknowledgements")) {
+        SettingsPage(title: SettingsIndex.aboutAcknowledgements.title) {
             SettingsSection(title: String(localized: "Open Source")) {
                 ForEach(Self.acknowledgements) { acknowledgement in
 
@@ -260,7 +263,7 @@ struct DeveloperSettingsView: View {
                 NavigationLink {
                     StreamingLabView()
                 } label: {
-                    SettingsAccessoryRow(title: String(localized: "Streaming Lab"), systemImage: "waveform.path.ecg")
+                    SettingsAccessoryRow(title: SettingsIndex.developerStreamingLab.title, systemImage: "waveform.path.ecg")
                 }
                 .buttonStyle(.plain)
 

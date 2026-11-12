@@ -10,7 +10,7 @@ struct SettingsToggleRow: View {
         Toggle(isOn: $isOn) {
             SettingsRowLabel(title: title, systemImage: systemImage)
         }
-        .accessibilityIdentifier(accessibilityIdentifier ?? "")
+        .indexedSettingsRow(title: title, identifier: accessibilityIdentifier)
         .toggleStyle(.switch)
         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
     }

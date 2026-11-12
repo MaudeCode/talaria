@@ -1,0 +1,35 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Find settings by searching their names and sections.",
+      "highlight": true,
+      "components": [
+        "app"
+      ],
+      "announcement": {
+        "title": "Settings, reorganised",
+        "description": "Settings are grouped by what they affect, with search, profiles, logs and more of your server's options.",
+        "icon": "settings"
+      }
+    },
+    {
+      "category": "Fixed",
+      "summary": "Chats keep your reading position when you jump to an earlier message during a reply.",
+      "highlight": false,
+      "components": [
+        "app"
+      ],
+      "announce": false
+    },
+    {
+      "category": "Fixed",
+      "summary": "Typing while drafts load no longer prevents files from being saved with a new chat.",
+      "highlight": false,
+      "components": [
+        "app"
+      ],
+      "announce": false
+    }
+  ]
+}

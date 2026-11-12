@@ -24,7 +24,6 @@ struct ChatsSettingsView: View {
     @AppStorage(ComposerVisibilitySettings.contextUsageKey) private var showsComposerContextUsage = true
     var body: some View {
         SettingsCategoryPage(category: .chats) {
-            ServerSettingsSections(page: .limits)
             SettingsSection(
                 title: String(localized: "Composer"),
                 help: [
@@ -39,7 +38,7 @@ struct ChatsSettingsView: View {
                 ].joined(separator: "\n\n")
             ) {
                 SettingsPickerRow(
-                    title: String(localized: "Send While Responding"),
+                    title: SettingsIndex.chatSendWhileResponding.title,
                     systemImage: "arrow.up.message",
                     selection: $streamingSendBehaviorRawValue
                 ) {
@@ -49,7 +48,7 @@ struct ChatsSettingsView: View {
                 }
 
                 SettingsPickerRow(
-                    title: String(localized: "Send With"),
+                    title: SettingsIndex.chatSendWith.title,
                     systemImage: "keyboard",
                     selection: $sendKeyRawValue
                 ) {
@@ -59,25 +58,25 @@ struct ChatsSettingsView: View {
                 }
 
                 SettingsToggleRow(
-                    title: String(localized: "Workspace"),
+                    title: SettingsIndex.chatWorkspace.title,
                     systemImage: "folder",
                     isOn: $showsComposerWorkspace
                 )
 
                 SettingsToggleRow(
-                    title: String(localized: "Profile"),
+                    title: SettingsIndex.chatProfile.title,
                     systemImage: "person.crop.circle",
                     isOn: $showsComposerProfile
                 )
 
                 SettingsToggleRow(
-                    title: String(localized: "Git Branch"),
+                    title: SettingsIndex.chatGitBranch.title,
                     systemImage: "arrow.triangle.branch",
                     isOn: $showsComposerGitBranch
                 )
 
                 SettingsToggleRow(
-                    title: String(localized: "Context Usage"),
+                    title: SettingsIndex.chatContextUsage.title,
                     systemImage: "gauge.with.dots.needle.67percent",
                     isOn: $showsComposerContextUsage
                 )
@@ -96,49 +95,49 @@ struct ChatsSettingsView: View {
                 ].joined(separator: "\n\n")
             ) {
                 SettingsToggleRow(
-                    title: String(localized: "Thinking & Tools"),
+                    title: SettingsIndex.chatThinkingTools.title,
                     systemImage: "brain.head.profile",
                     isOn: $showsThinkingAndToolCards
                 )
 
                 SettingsToggleRow(
-                    title: String(localized: "Expand Thinking by Default"),
+                    title: SettingsIndex.chatExpandThinkingByDefault.title,
                     systemImage: "rectangle.expand.vertical",
                     isOn: $thinkingCardsStartExpanded
                 )
 
                 SettingsToggleRow(
-                    title: String(localized: "Expand Tools by Default"),
+                    title: SettingsIndex.chatExpandToolsByDefault.title,
                     systemImage: "wrench.and.screwdriver",
                     isOn: $toolCardsStartExpanded
                 )
 
                 SettingsToggleRow(
-                    title: String(localized: "Streamed Text Animation"),
+                    title: SettingsIndex.chatStreamedTextAnimation.title,
                     systemImage: "sparkles",
                     isOn: $isStreamedTextAnimationEnabled
                 )
 
                 SettingsToggleRow(
-                    title: String(localized: "Response Timestamps"),
+                    title: SettingsIndex.chatResponseTimestamps.title,
                     systemImage: "clock",
                     isOn: $showsAssistantTurnTimestamps
                 )
 
                 SettingsToggleRow(
-                    title: String(localized: "Response Speed"),
+                    title: SettingsIndex.chatResponseSpeed.title,
                     systemImage: "gauge.with.dots.needle.67percent",
                     isOn: $showsResponseSpeed
                 )
 
                 SettingsToggleRow(
-                    title: String(localized: "Wrap Code Block Lines"),
+                    title: SettingsIndex.chatWrapCodeBlockLines.title,
                     systemImage: "arrow.turn.down.left",
                     isOn: $wrapsCodeBlockLines
                 )
 
                 SettingsPickerRow(
-                    title: String(localized: "Scroll Button Side"),
+                    title: SettingsIndex.chatScrollButtonSide.title,
                     systemImage: "arrow.down.circle",
                     selection: $scrollToBottomButtonSideRawValue
                 ) {
@@ -148,25 +147,25 @@ struct ChatsSettingsView: View {
                 }
 
                 SettingsToggleRow(
-                    title: String(localized: "Right-to-Left Chat Layout"),
+                    title: SettingsIndex.chatRightToLeftChatLayout.title,
                     systemImage: "text.alignright",
                     isOn: $rtlChatLayoutEnabled
                 )
 
                 SettingsToggleRow(
-                    title: String(localized: "Files Button"),
+                    title: SettingsIndex.chatFilesButton.title,
                     systemImage: "folder",
                     isOn: $showsChatFilesButton
                 )
 
                 SettingsToggleRow(
-                    title: String(localized: "Open the Agent's File Automatically"),
+                    title: SettingsIndex.chatOpensAgentFileAutomatically.title,
                     systemImage: "sidebar.trailing",
                     isOn: $opensCompanionPage
                 )
 
                 SettingsToggleRow(
-                    title: String(localized: "Git Actions"),
+                    title: SettingsIndex.chatGitActions.title,
                     systemImage: "arrow.triangle.branch",
                     isOn: $showsChatGitControls
                 )

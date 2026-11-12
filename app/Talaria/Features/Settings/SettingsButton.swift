@@ -49,6 +49,7 @@ struct SettingsButton: View {
             .contentShape(shape)
         }
         .buttonStyle(.plain)
+        .indexedSettingsRow(title: title)
     }
 
     private var strokeOpacity: Double {

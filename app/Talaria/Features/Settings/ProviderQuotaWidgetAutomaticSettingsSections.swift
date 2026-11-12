@@ -2,10 +2,7 @@ import SwiftUI
 import TalariaKit
 
 struct ProviderQuotaWidgetAutomaticSettingsSections: View {
-    @Environment(ServerSettingsStore.self) private var settingsStore: ServerSettingsStore?
-    @State private var standaloneStore: ServerSettingsStore?
-    @AppStorage(ProviderQuotaWidgetColorBasis.storageKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
-    private var colorBasisRawValue = ProviderQuotaWidgetColorBasis.defaultValue.rawValue
+    @Environment(\.settingsScrollAnchor) private var scrollAnchor
     @Binding var healthyColor: String
     @Binding var warningColor: String
     @Binding var criticalColor: String
@@ -16,104 +13,17 @@ struct ProviderQuotaWidgetAutomaticSettingsSections: View {
     @Binding var customCriticalColorHex: String
     @Binding var customStaleColorHex: String
     @Binding var customUnavailableColorHex: String
-    /// The server's thresholds for the active profile (TAL-411), or the last read while offline.
-    @State private var cachedThresholds: ProviderQuotaThresholds?
-    @State private var thresholdsAreCached = false
-    @State private var thresholdsLoaded = false
-    private var store: ServerSettingsStore? { settingsStore ?? standaloneStore }
-    private var thresholds: ProviderQuotaThresholds? {
-        thresholdsAreCached ? cachedThresholds : store?.settings?.providerQuotaThresholds
-    }
-
     var body: some View {
         Group {
             SettingsSection(title: String(localized: "Automatic Colors")) {
-                colorPicker("Healthy", selection: $healthyColor, customHex: $customHealthyColorHex)
-                colorPicker("Warning", selection: $warningColor, customHex: $customWarningColorHex)
-                colorPicker("Critical", selection: $criticalColor, customHex: $customCriticalColorHex)
-                colorPicker("Stale", selection: $staleColor, customHex: $customStaleColorHex)
-                colorPicker("Unavailable", selection: $unavailableColor, customHex: $customUnavailableColorHex)
-            }
-
-            if thresholds != nil {
-                if colorBasis == .pace {
-                    SettingsSection(
-                        title: String(localized: "Pace Breakpoints"),
-                        help: String(localized: """
-                        Pace compares quota remaining with the share of the weekly reset window remaining. Burn-rate alerts \
-                        apply only when current usage projects exhaustion before reset.
-                        """)
-                    ) {
-                        Group {
-                            SettingsStepperRow(
-                                title: String(localized: "Over pace at"),
-                                value: threshold(\.paceTolerancePercent),
-                                in: 0...25,
-                                format: { String(localized: "\($0)%") }
-                            )
-                            SettingsStepperRow(
-                                title: String(localized: "Warning burn rate"),
-                                value: threshold(\.paceWarningBurnRatePercent),
-                                in: 100...300,
-                                step: 5,
-                                format: { String(localized: "\($0)%") }
-                            )
-                            SettingsStepperRow(
-                                title: String(localized: "Critical burn rate"),
-                                value: threshold(\.paceCriticalBurnRatePercent),
-                                in: 100...400,
-                                step: 5,
-                                format: { String(localized: "\($0)%") }
-                            )
-                            SettingsStepperRow(
-                                title: String(localized: "Projection after"),
-                                value: threshold(\.paceMinimumElapsedHours),
-                                in: 0...72,
-                                format: { String(localized: "\($0) hr") }
-                            )
-                        }
-                        .disabled(thresholdsAreCached)
-                        thresholdStatus
-                        if let error = store?.errorMessage { SettingsErrorFootnote(SettingsErrorText(error)) }
-                    }
-                } else {
-                    SettingsSection(
-                        title: String(localized: "Overall Breakpoints"),
-                        help: String(localized: """
-                        Overall Percentage ignores reset time and colors the widget from the quota remaining.
-                        """)
-                    ) {
-                        Group {
-                            SettingsStepperRow(
-                                title: String(localized: "Warning at"),
-                                value: threshold(\.warningRemainingPercent),
-                                in: 1...99,
-                                format: { String(localized: "\($0)% remaining") }
-                            )
-                            SettingsStepperRow(
-                                title: String(localized: "Critical at"),
-                                value: threshold(\.criticalRemainingPercent),
-                                in: 0...99,
-                                format: { String(localized: "\($0)% remaining") }
-                            )
-                        }
-                        .disabled(thresholdsAreCached)
-                        thresholdStatus
-                        if let error = store?.errorMessage { SettingsErrorFootnote(SettingsErrorText(error)) }
-                    }
-                }
-            } else if thresholdsLoaded {
-                SettingsSection(title: String(localized: "Breakpoints")) {
-                    Text("Connect to a server that provides quota thresholds to change when quotas turn warning or critical.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
+                colorPicker(.widgetHealthy, custom: .widgetCustomHealthyColor, selection: $healthyColor, customHex: $customHealthyColorHex)
+                colorPicker(.widgetWarning, custom: .widgetCustomWarningColor, selection: $warningColor, customHex: $customWarningColorHex)
+                colorPicker(.widgetCritical, custom: .widgetCustomCriticalColor, selection: $criticalColor, customHex: $customCriticalColorHex)
+                colorPicker(.widgetStale, custom: .widgetCustomStaleColor, selection: $staleColor, customHex: $customStaleColorHex)
+                colorPicker(.widgetUnavailable, custom: .widgetCustomUnavailableColor, selection: $unavailableColor, customHex: $customUnavailableColorHex)
             }
         }
-        .task { await loadThresholds() }
-        .onChange(of: reloadFingerprint) {
-            reloadWidgets()
-        }
+        .onChange(of: reloadFingerprint) { reloadWidgets() }
     }
 
     private var reloadFingerprint: String {
@@ -133,26 +43,117 @@ struct ProviderQuotaWidgetAutomaticSettingsSections: View {
 
     @ViewBuilder
     private func colorPicker(
-        _ title: String,
+        _ entry: SettingsIndex,
+        custom: SettingsIndex,
         selection: Binding<String>,
         customHex: Binding<String>
     ) -> some View {
-        SettingsPickerRow(title: title, systemImage: "paintpalette", selection: selection) {
+        SettingsPickerRow(title: entry.title, systemImage: "paintpalette", selection: selection) {
             ForEach(ProviderQuotaWidgetArcColor.allCases.filter { $0 != .automatic }) { color in
                 Text(color.title).tag(color.rawValue)
             }
         }
-        if selection.wrappedValue == ProviderQuotaWidgetArcColor.custom.rawValue {
-            SettingsColorRow(title: String(localized: "Custom \(title) Color"), selection: HeaderLogoColor.binding(customHex))
+        if selection.wrappedValue == ProviderQuotaWidgetArcColor.custom.rawValue || scrollAnchor == .setting(custom) {
+            SettingsColorRow(title: custom.title, selection: HeaderLogoColor.binding(customHex))
         }
-    }
-
-    private var colorBasis: ProviderQuotaWidgetColorBasis {
-        ProviderQuotaWidgetColorBasis(rawValue: colorBasisRawValue) ?? .defaultValue
     }
 
     private func reloadWidgets() {
         ProviderQuotaWidgetSnapshotStore.reloadTimelines()
+    }
+}
+
+/// Profile thresholds formerly embedded in widget customization; the shared server writer remains their owner.
+struct ProviderQuotaThresholdSettingsSections: View {
+    @Environment(ServerSettingsStore.self) private var settingsStore: ServerSettingsStore?
+    @State private var standaloneStore: ServerSettingsStore?
+    /// The server's thresholds for the active profile (TAL-411), or the last read while offline.
+    @State private var cachedThresholds: ProviderQuotaThresholds?
+    @State private var thresholdsAreCached = false
+    @State private var thresholdsLoaded = false
+    private var store: ServerSettingsStore? { settingsStore ?? standaloneStore }
+    private var thresholds: ProviderQuotaThresholds? {
+        thresholdsAreCached ? cachedThresholds : store?.settings?.providerQuotaThresholds
+    }
+
+    var body: some View {
+        Group {
+            if thresholds != nil {
+                SettingsSection(
+                    title: String(localized: "Pace Breakpoints"),
+                    help: String(localized: """
+                    Pace compares quota remaining with the share of the weekly reset window remaining. Burn-rate alerts \
+                    apply only when current usage projects exhaustion before reset.
+                    """)
+                ) {
+                    Group {
+                        SettingsStepperRow(
+                            title: SettingsIndex.providersOverPaceAt.title,
+                            value: threshold(\.paceTolerancePercent),
+                            in: 0...25,
+                            format: { String(localized: "\($0)%") }
+                        )
+                        SettingsStepperRow(
+                            title: SettingsIndex.providersWarningBurnRate.title,
+                            value: threshold(\.paceWarningBurnRatePercent),
+                            in: 100...300,
+                            step: 5,
+                            format: { String(localized: "\($0)%") }
+                        )
+                        SettingsStepperRow(
+                            title: SettingsIndex.providersCriticalBurnRate.title,
+                            value: threshold(\.paceCriticalBurnRatePercent),
+                            in: 100...400,
+                            step: 5,
+                            format: { String(localized: "\($0)%") }
+                        )
+                        SettingsStepperRow(
+                            title: SettingsIndex.providersProjectionAfter.title,
+                            value: threshold(\.paceMinimumElapsedHours),
+                            in: 0...72,
+                            format: { String(localized: "\($0) hr") }
+                        )
+                    }
+                    .disabled(thresholdsAreCached)
+                    thresholdStatus
+                    if let error = store?.errorMessage { SettingsErrorFootnote(SettingsErrorText(error)) }
+                }
+                SettingsSection(
+                    title: String(localized: "Overall Breakpoints"),
+                    help: String(localized: """
+                    Overall Percentage ignores reset time and colors the widget from the quota remaining.
+                    """)
+                ) {
+                    Group {
+                        SettingsStepperRow(
+                            title: SettingsIndex.providersWarningAt.title,
+                            value: threshold(\.warningRemainingPercent),
+                            in: 1...99,
+                            format: { String(localized: "\($0)% remaining") }
+                        )
+                        SettingsStepperRow(
+                            title: SettingsIndex.providersCriticalAt.title,
+                            value: threshold(\.criticalRemainingPercent),
+                            in: 0...99,
+                            format: { String(localized: "\($0)% remaining") }
+                        )
+                    }
+                    .disabled(thresholdsAreCached)
+                    thresholdStatus
+                    if let error = store?.errorMessage { SettingsErrorFootnote(SettingsErrorText(error)) }
+                }
+            } else if thresholdsLoaded {
+                SettingsSection(title: String(localized: "Breakpoints")) {
+                    Text("Connect to a server that provides quota thresholds to change when quotas turn warning or critical.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                ProgressView(String(localized: "Loading"))
+                    .listRowSeparator(.hidden)
+            }
+        }
+        .task { await loadThresholds() }
     }
 
     @ViewBuilder

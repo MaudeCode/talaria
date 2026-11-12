@@ -1145,7 +1145,7 @@ final class SessionListHostedTests: XCTestCase {
     }
 
     func testFirstSendKeepsImportedFilesDurableUntilTheServerAccepts() async throws {
-        try await assertFirstSendDuringCreation(withImportedFile: true)
+        try await assertFirstSendDuringCreation(withImportedFile: true, editsDuringHydration: true)
     }
 
     func testFirstSendWaitsForEveryImportedFileBeforePosting() async throws {
@@ -1156,13 +1156,17 @@ final class SessionListHostedTests: XCTestCase {
         try await assertFirstSendDuringCreation(withImportedFile: false, pendingSlash: true)
     }
 
-    private func assertFirstSendDuringCreation(withImportedFile: Bool, partialImportFailure: Bool = false, pendingSlash: Bool = false) async throws {
+    private func assertFirstSendDuringCreation(withImportedFile: Bool, partialImportFailure: Bool = false,
+                                              pendingSlash: Bool = false, editsDuringHydration: Bool = false) async throws {
         let submittedDraft = pendingSlash ? "/queue hello" : "First pending prompt"
         let message = pendingSlash ? "hello" : submittedDraft
         var scenario = withImportedFile || pendingSlash ? ["--ui-test-hold-chat-start"] : []
         if partialImportFailure { scenario.append("--ui-test-fail-first-upload") }
         let fixture = try FixtureApp(scenario, for: self)
         let session = try await fixture.session()
+        let heldPersistence = editsDuringHydration ? BlockingChatDraftPersistence(initialDrafts: [:]) : nil
+        let draftStore = heldPersistence.map { ChatDraftStore(persistence: $0) } ?? fixture.environment.draftStore
+        if let heldPersistence { addTeardownBlock { await heldPersistence.releaseLoad() } }
         let filenames = partialImportFailure ? ["first-fails.txt", "later-succeeds.txt"] : (withImportedFile ? ["intent.txt"] : [])
         var creation: CheckedContinuation<ChatSessionStartResult, Never>?
         var creationCount = 0
@@ -1175,7 +1179,7 @@ final class SessionListHostedTests: XCTestCase {
                     SharedAttachmentImport(filename: $0, typeIdentifier: "public.plain-text", data: Data("Synthetic file".utf8))
                 },
                 loadsInitialMessages: false,
-                draftStore: fixture.environment.draftStore,
+                draftStore: draftStore,
                 startSession: {
                     creationCount += 1
                     return await withCheckedContinuation { creation = $0 }
@@ -1185,7 +1189,9 @@ final class SessionListHostedTests: XCTestCase {
         defer { creation?.resume(returning: .failed("Test ended")) }
         XCTAssertNil(creation, "Appearance must not create a session")
         XCTAssertEqual(creationCount, 0)
+        if let heldPersistence { await heldPersistence.waitUntilLoadStarts() }
         try await typeIntoComposer(submittedDraft, in: window)
+        if let heldPersistence { await heldPersistence.releaseLoad() }
         if withImportedFile {
             let staged = await awaitCondition {
                 filenames.allSatisfy {
@@ -1193,7 +1199,7 @@ final class SessionListHostedTests: XCTestCase {
                 } && HostedAccessibility.element(in: window, label: "Send")?.accessibilityTraits.contains(.notEnabled) == false
             }
             XCTAssertTrue(staged, "Initial imports must finish local staging before the first send")
-            let draft = await fixture.environment.draftStore.draft(for: .newChat(server: UITestFixtureEnvironment.serverURL))
+            let draft = await draftStore.draft(for: .newChat(server: UITestFixtureEnvironment.serverURL))
             XCTAssertEqual(draft?.attachments.count, filenames.count, "Every initial import must be durable before sending")
             XCTAssertTrue(draft?.attachments.allSatisfy { $0.file != nil } == true)
             XCTAssertEqual(creationCount, 0, "Local staging must not create a session")
@@ -1213,7 +1219,7 @@ final class SessionListHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "first-send-pending-phone")
         XCTAssertEqual(HostedAccessibility.elements(in: window).filter { $0.accessibilityLabel == message }.count, 1)
         if pendingSlash {
-            let heldDraft = await fixture.environment.draftStore.draft(for: .newChat(server: UITestFixtureEnvironment.serverURL))
+            let heldDraft = await draftStore.draft(for: .newChat(server: UITestFixtureEnvironment.serverURL))
             XCTAssertEqual(heldDraft?.text, submittedDraft, "A pending slash send must keep its raw draft until acceptance")
             guard heldDraft?.text == submittedDraft else { return }
             try await typeIntoComposer("Newer draft", in: window)
@@ -1252,7 +1258,7 @@ final class SessionListHostedTests: XCTestCase {
         if withImportedFile || pendingSlash {
             let posted = await awaitCondition { UITestFixtureHold.shared.pendingCount > 0 }
             XCTAssertTrue(posted)
-            let held = await fixture.environment.draftStore.draft(for: .session(server: UITestFixtureEnvironment.serverURL, session: session))
+            let held = await draftStore.draft(for: .session(server: UITestFixtureEnvironment.serverURL, session: session))
             XCTAssertEqual(held?.text, pendingSlash ? "Newer draft\n\n\(submittedDraft)" : submittedDraft)
             XCTAssertEqual(held?.attachments.count, filenames.count, "The submitted files must remain durable until startChat answers")
             if withImportedFile { XCTAssertNotNil(held?.attachments.first?.file) }
@@ -1277,7 +1283,7 @@ final class SessionListHostedTests: XCTestCase {
                 HostedAccessibility.element(in: window, label: "Send")?.accessibilityTraits.contains(.notEnabled) == false
             }
             XCTAssertTrue(accepted)
-            let draft = await fixture.environment.draftStore.draft(for: .session(server: UITestFixtureEnvironment.serverURL, session: session))
+            let draft = await draftStore.draft(for: .session(server: UITestFixtureEnvironment.serverURL, session: session))
             XCTAssertEqual(draft?.text, "Newer draft", "Acceptance must consume only the original slash draft")
             XCTAssertEqual(composerDraftText(in: window), "Newer draft")
         }

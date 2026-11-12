@@ -5,10 +5,13 @@ struct ServerAvatarBadge: View {
     let initials: String
     let colorHex: String
     var size: CGFloat = 32
+    var font: Font = AppFont.caption(weight: .semibold)
 
     var body: some View {
         Text(initials)
-            .font(AppFont.caption(weight: .semibold))
+            .font(font)
+            .lineLimit(1)
+            .minimumScaleFactor(0.3)
             .foregroundStyle(HeaderLogoColor.prefersDarkForeground(for: colorHex) ? Color.black : Color.white)
             .frame(width: size, height: size)
             .background(HeaderLogoColor.color(for: colorHex), in: Circle())

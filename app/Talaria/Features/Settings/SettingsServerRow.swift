@@ -22,7 +22,7 @@ struct SettingsServerRow: View {
     }
 
     var body: some View {
-        SettingsItemRow(title: name, subtitle: account.urlString, accessorySystemImage: "chevron.forward") {
+        SettingsItemRow(title: name, subtitle: account.urlString, accessibilityIdentifier: "settings-servers-account-\(account.id)", accessorySystemImage: "chevron.forward") {
             ServerAvatarBadge(initials: previewInitials, colorHex: account.headerLogoColorHex)
         } badges: {
             if isActive { SettingsStatusPill(label: String(localized: "Active")) }

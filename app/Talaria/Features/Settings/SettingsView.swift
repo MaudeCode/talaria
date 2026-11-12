@@ -7,6 +7,7 @@ struct SettingsView: View {
     var profileName: String?
     var serverName: String?
     @Binding var selection: SettingsPane?
+    @State private var searchText = ""
 
     var body: some View {
         ServerSettingsScope(server: server) { store in directory(store) }.id(server)
@@ -14,42 +15,61 @@ struct SettingsView: View {
 
     private func directory(_ settingsStore: ServerSettingsStore) -> some View {
         SettingsPage(title: String(localized: "Settings")) {
-            SectionSelectionRow(item: .userProfile, selection: $selection) {
-                UserProfileSettingsRow(server: server)
-            }
-            .accessibilityIdentifier("settings-user-profile")
-
-            SectionSelectionRow(item: .appleAccount, selection: $selection) {
-                AppleAccountSettingsRow()
-            }
-            .accessibilityHint("Opens Apple account, iCloud sync, and Talaria Relay settings.")
-            .accessibilityIdentifier("settings-apple-account")
-
-            ForEach(SettingsCategory.Group.allCases) { group in
-                SidebarSectionHeader(title: group.title) {
-                    if let detail = groupDetail(group) {
-                        Text(detail)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
+            if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                SectionSelectionRow(item: .userProfile, selection: $selection) {
+                    UserProfileSettingsRow(server: server)
                 }
-                ForEach(SettingsCategory.rootCategories.filter {
-                    $0.group == group && ($0 != .tools || settingsStore.settings?.agentApprovals != nil)
-                }) { category in
-                    SectionSelectionRow(item: .category(category), selection: $selection) {
-                        Label {
-                            Text(category.title)
-                        } icon: {
-                            Image(systemName: category.systemImage)
-                                .foregroundStyle(.tint)
+                .accessibilityIdentifier("settings-user-profile")
+
+                SectionSelectionRow(item: .appleAccount, selection: $selection) {
+                    AppleAccountSettingsRow()
+                }
+                .accessibilityHint("Opens Apple account, iCloud sync, and Talaria Relay settings.")
+                .accessibilityIdentifier("settings-apple-account")
+
+                ForEach(SettingsCategory.Group.allCases) { group in
+                    SidebarSectionHeader(title: group.title) {
+                        if let detail = groupDetail(group) {
+                            Text(detail)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
                         }
                     }
-                    .accessibilityIdentifier("settings-category-\(category.id)")
+                    ForEach(SettingsCategory.rootCategories.filter {
+                        $0.group == group && ($0 != .tools || settingsStore.settings?.agentApprovals != nil)
+                    }) { category in
+                        SectionSelectionRow(item: .category(category), selection: $selection) {
+                            Label {
+                                Text(category.title)
+                            } icon: {
+                                Image(systemName: category.systemImage)
+                                    .foregroundStyle(.tint)
+                            }
+                        }
+                        .accessibilityIdentifier("settings-category-\(category.id)")
+                    }
+                }
+            } else {
+                let results = SettingsIndex.search(searchText)
+                if results.isEmpty {
+                    ContentUnavailableView.search(text: searchText)
+                        .listRowSeparator(.hidden)
+                }
+                ForEach(results) { entry in
+                    SectionSelectionRow(item: .indexed(.setting(entry)), selection: $selection) {
+                        SettingsItemRow(title: entry.title, subtitle: "\(entry.categoryTitle) · \(entry.section)",
+                                        accessibilityIdentifier: "settings-search-\(entry.id)")
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(entry.title)
+                    .accessibilityValue(entry.categoryTitle)
+                    .accessibilityIdentifier("settings-search-\(entry.id)")
                 }
             }
             if let error = settingsStore.errorMessage { SettingsErrorFootnote(SettingsErrorText(error)) }
         }
+        .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search settings")
         .navigationTitle("Settings")
         .adaptiveSecondaryNavigationTitle(title: String(localized: "Settings"))
     }
@@ -77,12 +97,24 @@ struct SettingsPaneView: View {
     @ViewBuilder
     private var page: some View {
         switch pane {
+        case .indexed(let anchor):
+            if let entry = anchor.entry {
+                SettingsPaneView(authManager: authManager, server: server, pane: entry.page,
+                                 onProfileChanged: onProfileChanged)
+                    .environment(\.settingsScrollAnchor, anchor)
+            } else {
+                categoryPage(anchor.category)
+            }
         case .userProfile:
             UserProfileSettingsView(authManager: authManager)
         case .appleAccount:
             AppleAccountSettingsView(authManager: authManager, server: server)
         case .providerQuotaWidget:
             ProviderQuotaWidgetAppearanceView()
+        case .sidebarQuotas:
+            ProviderQuotaSidebarDisplayView()
+        case .widgetProfiles:
+            ProviderQuotaWidgetProfilesView()
         case .category(let category):
             categoryPage(category)
         }
@@ -115,6 +147,7 @@ struct SettingsPaneView: View {
             SettingsCategoryPage(category: .system) {
                 ServerSettingsSections(page: .updates)
                 SettingsSection(title: String(localized: "System")) {
+                    ServerSettingsSections(page: .titles)
                     ServerUpdateSettingsSection(authManager: authManager, server: server)
                 }
             }

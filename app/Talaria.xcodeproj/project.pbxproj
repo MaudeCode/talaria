@@ -447,6 +447,7 @@
 		D399000000000000000000B1 /* TalariaKit in Frameworks */ = {isa = PBXBuildFile; productRef = D399000000000000000000A1 /* TalariaKit */; };
 		D399000000000000000000B2 /* TalariaKit in Frameworks */ = {isa = PBXBuildFile; productRef = D399000000000000000000A2 /* TalariaKit */; };
 		D399000000000000000000B3 /* TalariaKit in Frameworks */ = {isa = PBXBuildFile; productRef = D399000000000000000000A3 /* TalariaKit */; };
+		C21241000000000000000001 /* ChatDraftPersistenceTestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = C21242000000000000000001 /* ChatDraftPersistenceTestSupport.swift */; };
 		D399000000000000000000C2 /* APITestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D399000000000000000000C1 /* APITestSupport.swift */; };
 		1DCA640D41674C1510CBA1C2 /* ChatViewModelSendTests+Support.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC003779138F2D96721F2A82 /* ChatViewModelSendTests+Support.swift */; };
 		3854E37D17F49343D1D698AC /* TestImages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 543BD4B23D127FA731D1BED2 /* TestImages.swift */; };
@@ -909,6 +910,7 @@
 		D74A00000000000000000004 /* LiveActivityVisualReferenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityVisualReferenceTests.swift; sourceTree = "<group>"; };
 		D74A00000000000000000005 /* AppScreenVisualReferenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppScreenVisualReferenceTests.swift; sourceTree = "<group>"; };
 		9EC8D639E3A5818B98398993 /* LiveActivityReconciler+App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LiveActivityReconciler+App.swift"; sourceTree = "<group>"; };
+		C21242000000000000000001 /* ChatDraftPersistenceTestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ChatDraftPersistenceTestSupport.swift; path = ../TalariaKit/Tests/TalariaKitTests/ChatDraftPersistenceTestSupport.swift; sourceTree = "<group>"; };
 		D399000000000000000000C1 /* APITestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = APITestSupport.swift; path = ../TalariaKit/Tests/TalariaKitTests/Support/APITestSupport.swift; sourceTree = "<group>"; };
 		BC003779138F2D96721F2A82 /* ChatViewModelSendTests+Support.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "ChatViewModelSendTests+Support.swift"; path = "../TalariaKit/Tests/TalariaKitTests/Support/ChatViewModelSendTests+Support.swift"; sourceTree = "<group>"; };
 		543BD4B23D127FA731D1BED2 /* TestImages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TestImages.swift; path = "../TalariaKit/Tests/TalariaKitTests/Support/TestImages.swift"; sourceTree = "<group>"; };
@@ -1027,6 +1029,7 @@
 				1F275FE32E5EF30F106B16A7 /* ScriptedSSEStreamFixture.swift */,
 				543BD4B23D127FA731D1BED2 /* TestImages.swift */,
 				BC003779138F2D96721F2A82 /* ChatViewModelSendTests+Support.swift */,
+				C21242000000000000000001 /* ChatDraftPersistenceTestSupport.swift */,
 				D399000000000000000000C1 /* APITestSupport.swift */,
 					C4840000000000000000001B /* ComposerChipLayoutTests.swift */,
 					C93500000000000000000002 /* ComposerModelPickerHostedTests.swift */,
@@ -2144,6 +2147,7 @@
 				5AD2DA41EECDD63EC017BB0C /* ScriptedSSEStreamFixture.swift in Sources */,
 				3854E37D17F49343D1D698AC /* TestImages.swift in Sources */,
 				1DCA640D41674C1510CBA1C2 /* ChatViewModelSendTests+Support.swift in Sources */,
+				C21241000000000000000001 /* ChatDraftPersistenceTestSupport.swift in Sources */,
 				D399000000000000000000C2 /* APITestSupport.swift in Sources */,
 					C4840000000000000000001A /* ComposerChipLayoutTests.swift in Sources */,
 					C93500000000000000000001 /* ComposerModelPickerHostedTests.swift in Sources */,

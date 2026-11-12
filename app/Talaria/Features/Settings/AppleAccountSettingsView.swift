@@ -30,6 +30,7 @@ struct AppleAccountSettingsView: View {
     let server: URL?
     private var coordinator = ConfigurationSyncCoordinator.shared
 
+    @Environment(\.settingsScrollAnchor) private var scrollAnchor
     @Environment(\.colorScheme) private var colorScheme
     @State private var appleNonce = TalariaRelayClient.makeAppleNonce()
     @State private var relayCredentials: TalariaRelayCredentials?
@@ -48,7 +49,7 @@ struct AppleAccountSettingsView: View {
     }
 
     var body: some View {
-        SettingsPage(title: String(localized: "Apple Account")) {
+        SettingsPage(title: String(localized: "Apple Account"), indexPage: .appleAccount) {
             accountSection
             syncSection
             if coordinator.isSignedInWithApple {
@@ -57,6 +58,12 @@ struct AppleAccountSettingsView: View {
                     passwordsSection
                 }
                 dangerSection
+            }
+            if !coordinator.isSignedInWithApple, let entry = scrollAnchor?.entry {
+                if entry == .appleAccountRelay { relaySection }
+                if entry == .appleAccountDisconnect || entry == .appleAccountDeleteSyncedData {
+                    dangerSection.disabled(true)
+                }
             }
             if let errorMessage {
                 SettingsErrorFootnote(errorMessage)
@@ -125,6 +132,7 @@ struct AppleAccountSettingsView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                 .disabled(isConnectingRelay)
+                .accessibilityLabel(SettingsIndex.appleAccountContinueWithApple.title)
                 .accessibilityIdentifier("settings-sign-in-with-apple")
             }
         } header: {
@@ -153,25 +161,25 @@ struct AppleAccountSettingsView: View {
 
     private var syncSection: some View {
         SettingsSection {
-            SettingsToggleRow(title: String(localized: "Sync Servers & Settings"), systemImage: "icloud", isOn: isEnabledBinding)
+            SettingsToggleRow(title: SettingsIndex.appleAccountSyncServersSettings.title, systemImage: "icloud", isOn: isEnabledBinding)
                 .disabled(!coordinator.isSignedInWithApple)
                 .accessibilityIdentifier("settings-icloud-sync-toggle")
 
-            SettingsStatusRow(title: String(localized: "iCloud Sync"), systemImage: coordinator.status.systemImage,
+            SettingsStatusRow(title: SettingsIndex.appleAccountICloudSync.title, systemImage: coordinator.status.systemImage,
                               status: coordinator.status.summary, tone: coordinator.status.tint,
                               isLoading: coordinator.status.isSyncing)
             .copyableError(coordinator.status.copyableError)
             .accessibilityIdentifier("settings-icloud-sync-status")
 
-            SettingsButton(String(localized: "Sync Now")) {
+            SettingsButton(SettingsIndex.appleAccountSyncNow.title) {
                 errorMessage = nil
                 Task { await coordinator.sync() }
             }
             .disabled(!coordinator.isEnabled || coordinator.status.isSyncing)
         } header: {
-            SettingsSectionHeader(title: String(localized: "iCloud Sync")) {
+            SettingsSectionHeader(title: SettingsIndex.appleAccountICloudSync.title) {
                 help = SettingsSectionHelp(
-                    title: String(localized: "iCloud Sync"),
+                    title: SettingsIndex.appleAccountICloudSync.title,
                     message: String(localized: "Server URLs, passwords, and custom headers are stored only as encrypted fields in your private iCloud database. CloudKit encrypts them on this device with keys from your iCloud Keychain. Session cookies and cached chats stay on this iPhone. The active server is chosen per device.")
                 )
             }
@@ -203,7 +211,7 @@ struct AppleAccountSettingsView: View {
     }
 
     private var relaySummary: some View {
-        SettingsStatusRow(title: String(localized: "Talaria Relay"), systemImage: "antenna.radiowaves.left.and.right",
+        SettingsStatusRow(title: SettingsIndex.appleAccountRelay.title, systemImage: "antenna.radiowaves.left.and.right",
                           status: relaySummaryText, isLoading: isConnectingRelay)
     }
 
@@ -256,13 +264,13 @@ struct AppleAccountSettingsView: View {
 
     private var dangerSection: some View {
         SettingsSection {
-            SettingsButton(String(localized: "Disconnect"), role: .destructive) {
+            SettingsButton(SettingsIndex.appleAccountDisconnect.title, role: .destructive) {
                 isConfirmingDisconnect = true
             }
             .disabled(isConnectingRelay || isDeleting)
             .accessibilityIdentifier("settings-disconnect-relay")
 
-            SettingsButton(String(localized: "Delete Synced Data…"), role: .destructive) {
+            SettingsButton(SettingsIndex.appleAccountDeleteSyncedData.title, role: .destructive) {
                 isConfirmingDelete = true
             }
             .disabled(isDeleting)

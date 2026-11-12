@@ -14,7 +14,7 @@ struct RelayLiveActivitySettingsSection: View {
             help: String(localized: "Shows short response text on the Lock Screen and Dynamic Island.")
         ) {
             SettingsPickerRow(
-                title: String(localized: "Display"),
+                title: SettingsIndex.liveActivitiesAndWidgetsDisplay.title,
                 systemImage: "bolt.horizontal.circle",
                 selection: $modeRawValue
             ) {
@@ -24,7 +24,7 @@ struct RelayLiveActivitySettingsSection: View {
             }
 
             SettingsToggleRow(
-                title: String(localized: "Live Activity Excerpts"),
+                title: SettingsIndex.liveActivitiesAndWidgetsLiveActivityExcerpts.title,
                 systemImage: "lock",
                 isOn: $showsLiveActivityResponseExcerpts
             )
@@ -48,7 +48,7 @@ struct RelayNotificationSettingsRow: View {
     var body: some View {
         Group {
             SettingsToggleRow(
-                title: String(localized: "Approval & Input Alerts"),
+                title: SettingsIndex.notificationsApprovalInputAlerts.title,
                 systemImage: "bell.badge",
                 isOn: notificationBinding
             )

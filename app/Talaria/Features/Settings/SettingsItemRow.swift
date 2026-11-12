@@ -58,7 +58,7 @@ struct SettingsItemRow<Leading: View, Badges: View, Accessory: View>: View {
         .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
         .contentShape(Rectangle())
         .accessibilityElement(children: containsActions ? .contain : .combine)
-        .accessibilityIdentifier(accessibilityIdentifier ?? "")
+        .indexedSettingsRow(title: title, identifier: accessibilityIdentifier)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
