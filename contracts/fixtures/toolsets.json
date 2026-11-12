@@ -8,7 +8,8 @@
       "unavailable_reason": null,
       "stripped_tools": [],
       "stripped_by": [],
-      "group": "available"
+      "group": "available",
+      "can_deselect": false
     },
     {
       "name": "todo",
@@ -18,7 +19,8 @@
       "unavailable_reason": "disabled",
       "stripped_tools": [],
       "stripped_by": [],
-      "group": "not_available"
+      "group": "not_available",
+      "can_deselect": false
     },
     {
       "name": "web",
@@ -28,7 +30,8 @@
       "unavailable_reason": null,
       "stripped_tools": ["web_search"],
       "stripped_by": ["search"],
-      "group": "available"
+      "group": "available",
+      "can_deselect": true
     }
   ],
   "selected_toolsets": [

@@ -1,0 +1,18 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Choose chat toolsets with immediate updates, descriptions, search, and a separate unavailable section.",
+      "highlight": false,
+      "components": ["app"],
+      "announce": false
+    },
+    {
+      "category": "Changed",
+      "summary": "Connected apps can read toolset selection limits from the server.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

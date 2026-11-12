@@ -362,7 +362,9 @@ public final class ChatViewModel {
         }
         sessionGoal = session?.goal
         sessionDecisionReview = session?.decisionReview
-        if let session, session.statesEnabledToolsets { sessionToolsets = SessionToolsets(names: session.enabledToolsets) }
+        if let session, session.statesEnabledToolsets, toolsetsWriteTask == nil {
+            sessionToolsets = SessionToolsets(names: session.enabledToolsets)
+        }
         // A detail relabels the workspace it reports, so a registry rename shows on the next load (TAL-303).
         if let workspace = session?.workspace, workspace == serverWorkspacePath {
             serverWorkspaceName = session?.workspaceName
@@ -703,6 +705,9 @@ public final class ChatViewModel {
     }
     /// The session's toolset override (TAL-631); nil until a session detail reports it.
     public private(set) var sessionToolsets: SessionToolsets?
+    @ObservationIgnored private var toolsetsWriteTask: Task<(selection: SessionToolsets?, saved: Bool, uncertainty: Error?), Never>?
+    @ObservationIgnored private var unconfirmedToolsetsWriteError: Error?
+    private var toolsetsWriteGeneration = 0
     /// One queued message sends at a time, by the drain or by Send now.
     private var isSendingQueuedMessage = false
     private var activeBtwStreamID: String?
@@ -3305,6 +3310,42 @@ public final class ChatViewModel {
         }
     }
 
+    /// Every chat start, including owner input and retries, observes the queued session configuration first.
+    private func startChatAfterToolsets(
+        sessionID: String,
+        _ start: () async throws -> ChatStartResponse
+    ) async throws -> ChatStartResponse {
+        let ownership = sendOwnershipGeneration
+        while true {
+            while let write = toolsetsWriteTask {
+                let outcome = await write.value
+                try Task.checkCancellation()
+                guard ownership == sendOwnershipGeneration, self.sessionID == sessionID else {
+                    throw CancellationError()
+                }
+                guard outcome.saved else {
+                    throw lastError ?? APIError.network(underlying: URLError(.unknown))
+                }
+            }
+            guard let uncertainty = unconfirmedToolsetsWriteError else { return try await start() }
+            let revision = toolsetsWriteGeneration
+            let intended = sessionToolsets
+            let detail = try await client.session(id: sessionID, includeMessages: false).session
+            try Task.checkCancellation()
+            guard ownership == sendOwnershipGeneration, self.sessionID == sessionID else {
+                throw CancellationError()
+            }
+            guard revision == toolsetsWriteGeneration else { continue }
+            guard let detail, detail.statesEnabledToolsets else { throw uncertainty }
+            let confirmed = SessionToolsets(names: detail.enabledToolsets)
+            sessionToolsets = confirmed
+            unconfirmedToolsetsWriteError = nil
+            composerConfigurationErrorMessage = nil
+            // A changed selection is shown before the user can retry the dependent send.
+            guard confirmed == intended else { throw uncertainty }
+        }
+    }
+
     /// Shared pending-row + `startChat` + rollback core for text, voice notes, and accepted history resends.
     /// Prepared files return to the composer on failure unless the queue or voice-note flow owns them.
     private func performChatSend(
@@ -3414,18 +3455,20 @@ public final class ChatViewModel {
         do {
             let explicitModelPick = explicitModelPickForChatStart()
             let sentAt = Date()
-            let response = try await client.startChat(
-                sessionID: sessionID,
-                message: messageForAPI,
-                workspace: currentWorkspace,
-                model: currentModel,
-                modelProvider: requestModelProvider,
-                profile: requestProfileName,
-                explicitModelPick: explicitModelPick,
-                attachments: sendPayloads.isEmpty ? nil : sendPayloads,
-                voiceTurn: voiceTurn,
-                submissionID: ownerAttachment == nil ? nil : UUID().uuidString
-            )
+            let response = try await startChatAfterToolsets(sessionID: sessionID) {
+                try await client.startChat(
+                    sessionID: sessionID,
+                    message: messageForAPI,
+                    workspace: currentWorkspace,
+                    model: currentModel,
+                    modelProvider: requestModelProvider,
+                    profile: requestProfileName,
+                    explicitModelPick: explicitModelPick,
+                    attachments: sendPayloads.isEmpty ? nil : sendPayloads,
+                    voiceTurn: voiceTurn,
+                    submissionID: ownerAttachment == nil ? nil : UUID().uuidString
+                )
+            }
             // An owner admitted the input (TAL-1043): its state and inputs replace the shown ones.
             if response.ownerAttachment != nil, ownership == sendOwnershipGeneration {
                 applyReadOnlyState(from: response.session)
@@ -3519,14 +3562,16 @@ public final class ChatViewModel {
             return .unsupported(friendlyMessage: Self.ownerAttachmentsUnavailableMessage)
         }
         do {
-            let response = try await client.startChat(
-                sessionID: sessionID,
-                message: message,
-                workspace: nil,
-                model: nil,
-                profile: requestProfileName,
-                submissionID: UUID().uuidString
-            )
+            let response = try await startChatAfterToolsets(sessionID: sessionID) {
+                try await client.startChat(
+                    sessionID: sessionID,
+                    message: message,
+                    workspace: nil,
+                    model: nil,
+                    profile: requestProfileName,
+                    submissionID: UUID().uuidString
+                )
+            }
             applyReadOnlyState(from: response.session)
             // The run can end while the input is on its way; the owner then admits it on a new stream.
             if let streamID = Self.nonEmpty(response.streamId), streamID != activeStreamID {
@@ -4876,18 +4921,20 @@ public final class ChatViewModel {
 
             let explicitModelPick = explicitModelPickForChatStart()
             let sentAt = Date()
-            let chatResponse = try await client.startChat(
-                sessionID: sessionID,
-                message: lastUserText,
-                workspace: currentWorkspace,
-                model: currentModel,
-                modelProvider: requestModelProvider,
-                profile: requestProfileName,
-                explicitModelPick: explicitModelPick,
-                // Without a token the resent text is the stored row, which already names its files.
-                attachments: retryResponse.retryToken == nil ? nil : retryResponse.lastUserAttachments,
-                retryToken: retryResponse.retryToken
-            )
+            let chatResponse = try await startChatAfterToolsets(sessionID: sessionID) {
+                try await client.startChat(
+                    sessionID: sessionID,
+                    message: lastUserText,
+                    workspace: currentWorkspace,
+                    model: currentModel,
+                    modelProvider: requestModelProvider,
+                    profile: requestProfileName,
+                    explicitModelPick: explicitModelPick,
+                    // Without a token the resent text is the stored row, which already names its files.
+                    attachments: retryResponse.retryToken == nil ? nil : retryResponse.lastUserAttachments,
+                    retryToken: retryResponse.retryToken
+                )
+            }
 
             guard let streamID = chatResponse.streamId else {
                 return .unsupported(friendlyMessage: chatResponse.error ?? String(localized: "The server did not return a stream ID after retrying."))
@@ -5969,32 +6016,60 @@ public final class ChatViewModel {
         await pendingActionCoordinator.disableApprovalBypassForCurrentSession()
     }
 
-    public func loadToolsetsCatalog() async throws -> ToolsetsCatalog? {
-        return try await client.fetchToolsetsCatalog(sessionID: sessionID, toolsets: sessionToolsets?.names)
+    public func loadToolsetsCatalog(query: String = "") async throws -> ToolsetsCatalog? {
+        try await client.fetchToolsetsCatalog(sessionID: sessionID, toolsets: sessionToolsets?.names, query: query)
     }
 
-    /// Sets the session's toolsets, nil for the profile's defaults; the control then shows what the
-    /// server saved. The strip's controls stay disabled until it answers, so saves never overlap. A
-    /// failure keeps the old value and reports in the composer (TAL-631).
+    /// Queue writes in tap order, retaining the newest optimistic choice over older replies.
     @discardableResult
     public func saveSessionToolsets(_ names: [String]?) async -> Bool {
         guard !isUpdatingComposerConfiguration else { return false }
-        guard let sessionID else {
-            sessionToolsets = SessionToolsets(names: names)
-            return true
-        }
-        isUpdatingComposerConfiguration = true
+        let original = sessionToolsets
+        sessionToolsets = SessionToolsets(names: names)
+        guard let sessionID else { return true }
+        toolsetsWriteGeneration += 1
+        let generation = toolsetsWriteGeneration
+        let previous = toolsetsWriteTask
         composerConfigurationErrorMessage = nil
-        defer { isUpdatingComposerConfiguration = false }
-        do {
-            let response = try await client.setSessionToolsets(sessionID: sessionID, toolsets: names)
-            sessionToolsets = SessionToolsets(names: response.enabledToolsets)
-            return true
-        } catch {
-            lastError = error
-            composerConfigurationErrorMessage = error.localizedDescription
-            return false
+        let task = Task { @MainActor in
+            var result = original
+            var uncertainty = unconfirmedToolsetsWriteError
+            if let previous {
+                let outcome = await previous.value
+                result = outcome.selection
+                uncertainty = outcome.uncertainty
+            }
+            var saved = false
+            do {
+                let response = try await client.setSessionToolsets(sessionID: sessionID, toolsets: names)
+                result = SessionToolsets(names: response.enabledToolsets)
+                uncertainty = nil
+                saved = true
+            } catch {
+                if !APIError.isDefinitiveWriteFailure(error) {
+                    // Never replay an uncertain write. Keep the choice if the read also fails.
+                    result = SessionToolsets(names: names)
+                    uncertainty = error
+                    if let session = try? await client.session(id: sessionID, includeMessages: false).session,
+                       session.statesEnabledToolsets {
+                        result = SessionToolsets(names: session.enabledToolsets)
+                        uncertainty = nil
+                    }
+                }
+                if generation == toolsetsWriteGeneration {
+                    lastError = error
+                    composerConfigurationErrorMessage = error.localizedDescription
+                }
+            }
+            if generation == toolsetsWriteGeneration, self.sessionID == sessionID {
+                sessionToolsets = result
+                unconfirmedToolsetsWriteError = uncertainty
+                toolsetsWriteTask = nil
+            }
+            return (selection: result, saved: saved, uncertainty: uncertainty)
         }
+        toolsetsWriteTask = task
+        return await task.value.saved
     }
 
     func applyApprovalUpdate(_ update: ApprovalPendingResponse, sessionID: String) {

@@ -582,9 +582,10 @@ struct ChatView: View {
             sessionStart: isOpeningFiles && !viewModel.isSubmittingMessage ? nil : sessionStart,
             hasSession: viewModel.hasSession,
             sessionToolsets: viewModel.sessionToolsets,
-            onLoadToolsets: { try await viewModel.loadToolsetsCatalog() },
+            onLoadToolsets: { try await viewModel.loadToolsetsCatalog(query: $0) },
             onSaveToolsets: { names in
                 await viewModel.saveSessionToolsets(names)
+                return viewModel.sessionToolsets ?? SessionToolsets(names: nil)
             }
         )
     }

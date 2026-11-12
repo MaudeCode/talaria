@@ -100054,6 +100054,9 @@
                               "not_available"
                             ],
                             "type": "string"
+                          },
+                          "can_deselect": {
+                            "type": "boolean"
                           }
                         },
                         "required": [

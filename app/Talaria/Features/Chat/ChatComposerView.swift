@@ -144,8 +144,8 @@ struct MessageComposerView: View {
     var hasSession = true
     /// The session's toolset override (TAL-631); nil, before a session reports it, hides the control.
     var sessionToolsets: SessionToolsets? = nil
-    var onLoadToolsets: () async throws -> ToolsetsCatalog? = { throw URLError(.unsupportedURL) }
-    var onSaveToolsets: ([String]?) async -> Void = { _ in }
+    var onLoadToolsets: (String) async throws -> ToolsetsCatalog? = { _ in throw URLError(.unsupportedURL) }
+    var onSaveToolsets: ([String]?) async -> SessionToolsets = { SessionToolsets(names: $0) }
 
     private var isAnsweringClarification: Bool { clarificationPrompt != nil }
 
@@ -493,8 +493,7 @@ struct MessageComposerView: View {
             .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showsToolsetsSheet, onDismiss: restoreFocusAfterPresentationIfNeeded) {
-            ComposerToolsetsSheet(toolsets: sessionToolsets ?? SessionToolsets(names: nil), loadCatalog: onLoadToolsets) { names in
-                showsToolsetsSheet = false
+            ComposerToolsetsSheet(toolsets: sessionToolsets ?? SessionToolsets(names: nil), errorMessage: configurationErrorMessage, loadCatalog: onLoadToolsets) { names in
                 await onSaveToolsets(names)
             }
             .presentationDetents([.medium, .large])
@@ -1066,6 +1065,7 @@ struct MessageComposerView: View {
                 )
                 : nil,
             toolsetsTitle: sessionToolsets?.title,
+            toolsetsAccessibilityValue: sessionToolsets?.accessibilityValue,
             isDisabled: isConfigurationControlDisabled,
             workspaceIsDisabled: isModelAndWorkspaceControlDisabled
         )

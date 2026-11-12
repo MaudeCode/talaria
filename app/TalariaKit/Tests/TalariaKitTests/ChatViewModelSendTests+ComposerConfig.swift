@@ -7,6 +7,48 @@ import UniformTypeIdentifiers
 
 @MainActor
 extension ChatViewModelSendTests {
+    func testChatStartWaitsForToolsetsWhileTheMessageAppearsImmediately() async throws {
+        for status in [200, 403, 500] {
+            let host = "toolsets-send-\(status).test"
+            let heldWrites = DeferredRequests()
+            let starts = DeferredRequests()
+            DeferredMockURLProtocol.setOnRequest({ request in
+                switch request.request.url?.path {
+                case "/api/session":
+                    request.complete(withJSON: #"{"session":{"session_id":"session-abc","messages":[],"enabled_toolsets":["web"]}}"#)
+                case "/api/session/toolsets":
+                    _ = heldWrites.append(request)
+                case "/api/chat/start":
+                    _ = starts.append(request)
+                    request.complete(withJSON: #"{"session_id":"session-abc","stream_id":"stream-toolsets"}"#)
+                default:
+                    request.complete(withJSON: "{}")
+                }
+            }, forHost: host)
+            defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+            let model = try makeViewModel(streamClient: SpySSEStreamingClient(),
+                server: try XCTUnwrap(URL(string: "https://\(host)")), protocolClasses: [DeferredMockURLProtocol.self],
+                handler: { _ in throw URLError(.badURL) })
+            defer { model.cleanupPollingTasks() }
+            await model.loadMessages()
+            let save = Task { await model.saveSessionToolsets(["file"]) }
+            try await waitUntil { heldWrites.count == 1 }
+            let send = Task { await model.sendMessage("Use the chosen tools") }
+            try await waitUntil { model.messages.contains { $0.content == "Use the chosen tools" } }
+            // The transport remains free to start requests; only the toolset response is held.
+            try await Task.sleep(for: .milliseconds(200))
+            XCTAssertEqual(starts.count, 0, "Chat must not start against the previous persisted toolsets")
+            heldWrites.request(at: 0).complete(withJSON: status == 200
+                ? #"{"ok":true,"enabled_toolsets":["file"]}"# : #"{"error":"toolset save failed"}"#, statusCode: status)
+            let saved = await save.value
+            let sent = await send.value
+            XCTAssertEqual(saved, status == 200)
+            XCTAssertEqual(sent, status == 200, "A rejected configuration aborts the dependent send")
+            XCTAssertEqual(starts.count, status == 200 ? 1 : 0)
+        }
+    }
+
+
     func testComposerConfigurationUsesSessionProfileDefaultBeforeSending() async throws {
         let openRouterModel = "deepseek/deepseek-chat-v3-0324:free"
         let streamClient = SpySSEStreamingClient()

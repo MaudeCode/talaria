@@ -5574,6 +5574,9 @@
                 "available",
                 "not_available"
               ]
+            },
+            "can_deselect": {
+              "type": "boolean"
             }
           },
           "required": [

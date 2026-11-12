@@ -112,7 +112,7 @@ struct ComposerSecondaryControlsView<Leading: View>: View {
                 .buttonStyle(.plain)
                 .disabled(state.isDisabled)
                 .accessibilityLabel("Session toolsets")
-                .accessibilityValue(state.toolsetsTitle ?? "")
+                .accessibilityValue(state.toolsetsAccessibilityValue ?? "")
             case .profile:
                 ComposerProfileSelectorMenu(
                     profileOptions: state.profileOptions,

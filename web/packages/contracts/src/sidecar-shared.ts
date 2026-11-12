@@ -16,6 +16,8 @@ export const ToolsetsCatalogSchema = z.object({
     stripped_tools: z.array(z.string()).optional(), stripped_by: z.array(z.string()).optional(),
     /** TAL-2144: the menu section the row shows in; the server lists every `available` row before the `not_available` ones. */
     group: z.enum(['available', 'not_available']),
+    /** HTTP catalog eligibility for this selection; sidecar replies and older servers omit it. */
+    can_deselect: z.boolean().optional(),
   })),
   selected_toolsets: z.array(z.string()), using_defaults: z.boolean(),
   /** TAL-2144: the profile's default selection whatever `toolsets` the catalog was read with, so a reset shows it at once. */

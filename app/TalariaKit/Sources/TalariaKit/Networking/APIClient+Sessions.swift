@@ -269,9 +269,9 @@ extension APIClient {
     }
 
     /// Nil means an older Web server lacks the catalog endpoint. Other failures remain errors.
-    public func fetchToolsetsCatalog(sessionID: String?, toolsets: [String]?) async throws -> ToolsetsCatalog? {
+    public func fetchToolsetsCatalog(sessionID: String?, toolsets: [String]?, query: String? = nil) async throws -> ToolsetsCatalog? {
         do {
-            let catalog: ToolsetsCatalog = try await send(endpoint: .toolsetsCatalog, method: "POST", body: SessionToolsetsRequest(sessionId: sessionID, toolsets: toolsets))
+            let catalog: ToolsetsCatalog = try await send(endpoint: .toolsetsCatalog, method: "POST", body: SessionToolsetsRequest(sessionId: sessionID, toolsets: toolsets, q: query))
             return catalog
         } catch APIError.http(let statusCode, let body) where statusCode == 404 && !APIError.isVanishedSession(statusCode: statusCode, body: body) {
             return nil
@@ -295,10 +295,12 @@ public struct SessionToolsetsResponse: Decodable, Equatable, Sendable {
 private struct SessionToolsetsRequest: Encodable {
     let sessionId: String?
     let toolsets: [String]?
+    var q: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case sessionId
         case toolsets
+        case q
     }
 
     func encode(to encoder: Encoder) throws {
@@ -306,6 +308,7 @@ private struct SessionToolsetsRequest: Encodable {
         try container.encodeIfPresent(sessionId, forKey: .sessionId)
         // An explicit null, not an absent key: null is the request for the profile's defaults.
         try container.encode(toolsets, forKey: .toolsets)
+        try container.encodeIfPresent(q, forKey: .q)
     }
 }
 
@@ -385,6 +388,7 @@ public struct ToolsetsCatalog: Decodable, Sendable {
     public let toolsets: [ToolsetChoice]
     public let selectedToolsets: [String]
     public let usingDefaults: Bool?
+    public let defaultToolsets: [String]?
 }
 
 public struct ToolsetChoice: Decodable, Identifiable, Sendable {
@@ -394,4 +398,8 @@ public struct ToolsetChoice: Decodable, Identifiable, Sendable {
     public let available: Bool?
     public let selected: Bool?
     public let unavailableReason: String?
+    public let canDeselect: Bool?
+    public let group: String?
+    public let strippedTools: [String]?
+    public let strippedBy: [String]?
 }

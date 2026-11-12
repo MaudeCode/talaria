@@ -20,7 +20,7 @@ it('serves the profile toolset policy and draft selection without dropping unava
   try {
     const response = await s.get('/api/toolsets', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ toolsets: ['todo'] }) })
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ ...catalog, toolsets: [catalog.toolsets[1], catalog.toolsets[0]] })
+    expect(await response.json()).toEqual({ ...catalog, toolsets: [{ ...catalog.toolsets[1], can_deselect: true }, { ...catalog.toolsets[0], can_deselect: false }] })
   } finally { await s.close() }
 })
 
@@ -35,15 +35,25 @@ it('searches and orders the rows for the menu, and reports the profile defaults 
     const response = await s.get('/api/toolsets', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
     expect(response.status).toBe(200)
     const catalog = ToolsetsCatalogSchema.parse(await response.json())
-    return { names: catalog.toolsets.map((item) => item.name), defaults: catalog.default_toolsets }
+    return { names: catalog.toolsets.map((item) => item.name), defaults: catalog.default_toolsets, canDeselect: Object.fromEntries(catalog.toolsets.map((item) => [item.name, item.can_deselect])) }
   }
   try {
-    expect(await read({ toolsets: ['web'] })).toEqual({ names: ['file', 'web', 'browser', 'todo'], defaults: ['file'] })
+    expect(await read({ toolsets: ['web'] })).toEqual({ names: ['file', 'web', 'browser', 'todo'], defaults: ['file'], canDeselect: { file: true, web: false, browser: false, todo: false } })
     expect((await read({ toolsets: null, q: '' })).names).toEqual(['file', 'web', 'browser', 'todo'])
     expect((await read({ toolsets: null, q: '  BROWSER ' })).names).toEqual(['browser'])
     // `file` matches by its description, `browser` by its name; the available ones still come first.
     expect((await read({ toolsets: ['web'], q: 'W' })).names).toEqual(['file', 'web', 'browser'])
     expect((await read({ toolsets: null, q: 'nothing like it' })).names).toEqual([])
+    // Search must not turn a multi-selection into the last selected row.
+    for (const [toolsets, q, expected] of [
+      [['file'], 'file', { file: false }],
+      [['file', 'web'], 'file', { file: true }],
+      [null, 'file', { file: false }],
+      [['file'], 'web', { web: true }],
+      [['file', 'web'], 'browser', { browser: false }],
+    ] as const) {
+      expect((await read({ toolsets, q })).canDeselect).toEqual(expected)
+    }
   } finally { await s.close() }
 })
 

@@ -3,9 +3,10 @@ import SwiftUI
 /// The selectors in the composer's control strip, after model and reasoning (TAL-629).
 public struct ComposerSecondaryControlsState: Equatable, Sendable {
 
-    public init(workspaceTitle: String?, profileOptions: [ProfileSummary], selectedProfileName: String?, selectedProfileTitle: String?, gitBranch: ComposerSecondaryControlsState.GitBranch?, toolsetsTitle: String? = nil, isDisabled: Bool, workspaceIsDisabled: Bool? = nil) {
+    public init(workspaceTitle: String?, profileOptions: [ProfileSummary], selectedProfileName: String?, selectedProfileTitle: String?, gitBranch: ComposerSecondaryControlsState.GitBranch?, toolsetsTitle: String? = nil, toolsetsAccessibilityValue: String? = nil, isDisabled: Bool, workspaceIsDisabled: Bool? = nil) {
         self.workspaceTitle = workspaceTitle
         self.toolsetsTitle = toolsetsTitle
+        self.toolsetsAccessibilityValue = toolsetsAccessibilityValue ?? toolsetsTitle
         self.profileOptions = profileOptions
         self.selectedProfileName = selectedProfileName
         self.selectedProfileTitle = selectedProfileTitle
@@ -42,6 +43,7 @@ public struct ComposerSecondaryControlsState: Equatable, Sendable {
     public let gitBranch: GitBranch?
     /// The session's toolsets (TAL-631); nil hides the control.
     public let toolsetsTitle: String?
+    public let toolsetsAccessibilityValue: String?
     public let isDisabled: Bool
     public let workspaceIsDisabled: Bool
 
