@@ -50,6 +50,7 @@ final class APIClientSessionListTests: APIClientTestCase {
         try decode(ProfilesResponse.self, fixture: "profiles")
         try decode(PersonalitiesResponse.self, fixture: "personalities")
         try decode(CommandsResponse.self, fixture: "commands")
+        try decode(LogsResponse.self, fixture: "logs")
         try decode(MemoryResponse.self, fixture: "memory")
         try decode(SessionMutationResponse.self, fixture: "session_new")
         try decode(SessionResponse.self, fixture: "session_detail")

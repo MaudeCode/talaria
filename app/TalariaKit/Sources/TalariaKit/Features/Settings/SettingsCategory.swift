@@ -11,6 +11,7 @@ public enum SettingsCategory: String, Identifiable, Sendable {
     case profiles
     case workspaces
     case system
+    case logs
     case liveActivitiesAndWidgets
     case siriAndShortcuts
     case servers
@@ -24,7 +25,7 @@ public enum SettingsCategory: String, Identifiable, Sendable {
     public static var rootCategories: [Self] {
         var categories: [Self] = [
             .appearance, .chats, .navigation, .notificationsAndHaptics, .speech,
-            .models, .providers, .tools, .profiles, .workspaces, .system,
+            .models, .providers, .tools, .profiles, .workspaces, .system, .logs,
             .servers, .liveActivitiesAndWidgets, .siriAndShortcuts, .dataAndStorage, .about
         ]
         #if DEBUG
@@ -52,7 +53,7 @@ public enum SettingsCategory: String, Identifiable, Sendable {
         switch self {
         case .appearance, .chats, .navigation, .notificationsAndHaptics, .speech: .interface
         case .models, .providers, .tools: .profile
-        case .profiles, .workspaces, .system: .server
+        case .profiles, .workspaces, .system, .logs: .server
         case .servers, .liveActivitiesAndWidgets, .siriAndShortcuts, .dataAndStorage, .about, .developer: .device
         }
     }
@@ -65,6 +66,7 @@ public enum SettingsCategory: String, Identifiable, Sendable {
         case .models: String(localized: "Models")
         case .profiles: String(localized: "Profiles")
         case .workspaces: String(localized: "Workspaces")
+        case .logs: String(localized: "Logs")
         case .system: String(localized: "System")
         case .appearance: String(localized: "Appearance")
         case .notificationsAndHaptics: String(localized: "Notifications & Haptics")
@@ -87,6 +89,7 @@ public enum SettingsCategory: String, Identifiable, Sendable {
         case .models: "cpu"
         case .profiles: "person.crop.circle"
         case .workspaces: "folder"
+        case .logs: "doc.text"
         case .system: "gearshape"
         case .appearance: "paintbrush"
         case .notificationsAndHaptics: "bell.badge"

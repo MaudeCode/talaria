@@ -31,7 +31,7 @@ SHARDS = (
 )
 COUNT = len(SHARDS) + 1
 LISTED = [name for shard in SHARDS for name in shard]
-SUITE = re.compile(r"Test Suite '([^']+)' started at ")
+SUITE = re.compile(r"Test Suite '([^'\r\n]+)' (started|passed|failed) at ")
 AGGREGATES = {"All tests", "Selected tests"}
 
 
@@ -45,9 +45,19 @@ def selection(shard):
 
 def classes(log):
     names = []
+    open_suites = set()
     for match in SUITE.finditer(log):
-        if match[1] not in AGGREGATES and not match[1].endswith(".xctest"):
-            names.append(match[1])
+        name, event = match.groups()
+        if name in AGGREGATES or name.endswith(".xctest") or not name.isidentifier():
+            continue
+        if event == "started":
+            names.append(name)
+            open_suites.add(name)
+        elif name in open_suites:
+            open_suites.remove(name)
+        else:
+            # App stderr can split a start header inside its class name; a complete end marker recovers it.
+            names.append(name)
     return names
 
 

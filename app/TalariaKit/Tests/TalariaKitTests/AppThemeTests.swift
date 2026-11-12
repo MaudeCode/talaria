@@ -92,7 +92,7 @@ final class SettingsNavigationTests: XCTestCase {
     func testRootContainsOnlyCategoryDestinations() {
         var expected = [
             "appearance", "chat", "navigation", "notifications", "speech", "models", "providers", "tools",
-            "profiles", "workspaces", "system", "servers", "liveActivitiesAndWidgets",
+            "profiles", "workspaces", "system", "logs", "servers", "liveActivitiesAndWidgets",
             "siriAndShortcuts", "dataAndStorage", "about"
         ]
         #if DEBUG

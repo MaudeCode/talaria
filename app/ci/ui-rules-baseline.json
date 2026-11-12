@@ -70,6 +70,12 @@
       "file": "app/Talaria/Features/Settings/SystemSettingsViews.swift",
       "count": 1,
       "reason": "status text"
+    },
+    {
+      "rule": "settings-footnote",
+      "file": "app/Talaria/Features/Settings/LogsSettingsView.swift",
+      "count": 2,
+      "reason": "Server empty and truncation statuses required by TAL-2120; no explanatory copy."
     }
   ]
 }

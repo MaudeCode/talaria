@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Read and share server logs from Settings.",
+      "highlight": false,
+      "components": ["app"],
+      "announce": false
+    }
+  ]
+}
