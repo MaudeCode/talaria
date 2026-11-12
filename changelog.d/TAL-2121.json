@@ -6,6 +6,13 @@
       "highlight": false,
       "components": ["app"],
       "announce": false
+    },
+    {
+      "category": "Changed",
+      "summary": "Connected apps can read toolset selection limits from the server.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
     }
   ]
 }

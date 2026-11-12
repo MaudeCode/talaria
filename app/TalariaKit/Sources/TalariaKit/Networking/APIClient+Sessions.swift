@@ -398,6 +398,7 @@ public struct ToolsetChoice: Decodable, Identifiable, Sendable {
     public let available: Bool?
     public let selected: Bool?
     public let unavailableReason: String?
+    public let canDeselect: Bool?
     public let group: String?
     public let strippedTools: [String]?
     public let strippedBy: [String]?

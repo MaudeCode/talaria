@@ -9,6 +9,7 @@ struct ComposerToolsetsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var catalog: ToolsetsCatalog?
     @State private var selection: SessionToolsets?
+    @State private var isAwaitingSelectionCatalog = false
     @State private var search = ""
     @State private var searchEnabled = false
     @State private var generation = 0
@@ -68,7 +69,7 @@ struct ComposerToolsetsSheet: View {
                             )) {
                                 SettingsItemRow(title: item.name, subtitle: item.description, detail: strippedTools(item))
                             }
-                            .disabled(item.available != true || (selectedNames(in: catalog) == [item.name]))
+                            .disabled(isToolsetDisabled(item, in: catalog))
                             .accessibilityIdentifier("toolset-\(item.name)")
                         }
                     }
@@ -118,6 +119,15 @@ struct ComposerToolsetsSheet: View {
         return selection.names ?? catalog.defaultToolsets ?? catalog.selectedToolsets
     }
 
+    private func isToolsetDisabled(_ item: ToolsetChoice, in catalog: ToolsetsCatalog) -> Bool {
+        guard item.available == true else { return true }
+        if isAwaitingSelectionCatalog {
+            // Preview only the user's own write until its server eligibility projection arrives.
+            return selectedNames(in: catalog) == [item.name]
+        }
+        return selectedNames(in: catalog).contains(item.name) && item.canDeselect != true
+    }
+
     private func strippedTools(_ item: ToolsetChoice) -> String? {
         guard let tools = item.strippedTools, !tools.isEmpty else { return nil }
         return String(localized: "Unavailable tools: \(tools.joined(separator: ", "))")
@@ -131,6 +141,7 @@ struct ComposerToolsetsSheet: View {
             let loaded = try await loadCatalog(query)
             guard !Task.isCancelled, query == search, revision == generation else { return }
             catalog = loaded
+            isAwaitingSelectionCatalog = false
             legacyEditor = loaded == nil
             if query.isEmpty { searchEnabled = (loaded?.toolsets.count ?? 0) > 12 }
         } catch {
@@ -142,12 +153,14 @@ struct ComposerToolsetsSheet: View {
         generation += 1
         let revision = generation
         selection = SessionToolsets(names: names)
+        isAwaitingSelectionCatalog = true
         if legacyEditor { legacyInput = names?.joined(separator: ", ") ?? "" }
         let submittedInput = legacyInput
         Task {
             let confirmed = await onSave(names)
             guard revision == generation else { return }
             selection = confirmed
+            isAwaitingSelectionCatalog = true
             if legacyEditor, legacyInput == submittedInput {
                 legacyInput = confirmed.names?.joined(separator: ", ") ?? ""
             }

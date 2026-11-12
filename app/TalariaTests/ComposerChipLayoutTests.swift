@@ -261,6 +261,16 @@ final class ComposerToolsetsHostedTests: APIClientTestCase {
     }
 
     func testToolsetPicker() async throws {
+        // A settled choice renders the server's decision, including a lock within a multi-selection.
+        do {
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            let catalog = try decoder.decode(ToolsetsCatalog.self, from: Data(#"{"toolsets":[{"name":"file","available":true,"selected":true,"group":"available","can_deselect":false},{"name":"web","available":true,"selected":true,"group":"available","can_deselect":true}],"selected_toolsets":["file","web"],"using_defaults":false,"default_toolsets":["file"]}"#.utf8))
+            let window = try hostWindow(ComposerToolsetsSheet(loadCatalog: { _ in catalog }, onSave: { SessionToolsets(names: $0) }))
+            defer { window.isHidden = true; window.rootViewController = nil }
+            let file = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "toolset-file" }
+            XCTAssertTrue(file.accessibilityTraits.contains(.notEnabled), "Settled eligibility comes from can_deselect, not the selection count")
+        }
         let fixture = try FixtureApp(for: self)
         try await renderHostedPage("toolsets") {
             ComposerToolsetsSheet(loadCatalog: { query in

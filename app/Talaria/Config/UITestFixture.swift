@@ -972,12 +972,18 @@ final class UITestFixtureURLProtocol: URLProtocol {
         case "/api/toolsets":
             let override = requestJSON(request)["toolsets"] as? [String]
             let selected = override ?? ["file"]
+            let rows: [[String: Any]] = [
+                ["name": "file", "description": "Read and write files", "available": true, "selected": selected.contains("file"), "unavailable_reason": NSNull(), "group": "available"],
+                ["name": "web", "description": "Search and read the web", "available": true, "selected": selected.contains("web"), "unavailable_reason": NSNull(), "group": "available", "stripped_tools": ["web_search"], "stripped_by": ["search"]],
+                ["name": "todo", "description": "Task lists", "available": false, "selected": selected.contains("todo"), "unavailable_reason": "disabled", "group": "not_available"]
+            ]
             return json([
-                "toolsets": [
-                    ["name": "file", "description": "Read and write files", "available": true, "selected": selected.contains("file"), "unavailable_reason": NSNull(), "group": "available"],
-                    ["name": "web", "description": "Search and read the web", "available": true, "selected": selected.contains("web"), "unavailable_reason": NSNull(), "group": "available", "stripped_tools": ["web_search"], "stripped_by": ["search"]],
-                    ["name": "todo", "description": "Task lists", "available": false, "selected": selected.contains("todo"), "unavailable_reason": "disabled", "group": "not_available"]
-                ],
+                "toolsets": rows.map { row in
+                    var projected = row
+                    projected["can_deselect"] = (row["available"] as? Bool == true)
+                        && (!selected.contains(row["name"] as? String ?? "") || selected.count > 1)
+                    return projected
+                },
                 "selected_toolsets": selected, "using_defaults": override == nil, "default_toolsets": ["file"]
             ])
         case "/api/session/toolsets":

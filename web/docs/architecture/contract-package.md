@@ -107,3 +107,19 @@ These display fallbacks do not change sidecar recovery admission. Configured
 model identity stays separate from live catalog authority, and unconfirmed live
 model lists never replace the native picker catalog or authorize session repair.
 `contracts/fixtures/catalog-recovery.json` pins the shared App/Web display fields.
+
+## Toolset selection eligibility
+
+`POST /api/toolsets` computes each row's `can_deselect` from availability and
+membership in the complete `selected_toolsets` set before search. An available
+selected row can be deselected only when another toolset remains selected;
+unselected available rows remain selectable. Unavailable rows remain disabled.
+The profile-default action is separate, and an empty mutation selection retains
+its existing meaning of resetting to profile defaults.
+
+The HTTP handler owns this projection; sidecar RPC replies need not supply it.
+The shared shape keeps it optional for those replies and older servers. The App
+treats an absent value as unconfirmed for a selected row, keeps the profile-default
+action available, and tolerates unknown fields. Settled controls render the server
+field. A user's own optimistic selection may preview the toggle state until the
+catalog for that selection arrives, then converges on the server projection.

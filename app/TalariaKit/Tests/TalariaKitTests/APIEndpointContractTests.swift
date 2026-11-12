@@ -518,11 +518,14 @@ final class SharedContractTests: XCTestCase {
         XCTAssertEqual(catalog.toolsets[1].available, false)
         XCTAssertEqual(catalog.toolsets[1].unavailableReason, "disabled")
         XCTAssertEqual(catalog.toolsets[1].group, "not_available")
+        XCTAssertEqual(catalog.toolsets[0].canDeselect, false)
+        XCTAssertEqual(catalog.toolsets[2].canDeselect, true)
         XCTAssertEqual(catalog.defaultToolsets, ["file"])
         XCTAssertEqual(catalog.toolsets[2].strippedTools, ["web_search"])
         XCTAssertEqual(catalog.toolsets[2].strippedBy, ["search"])
         let future = try decoder.decode(ToolsetsCatalog.self, from: Data(#"{"toolsets":[{"name":"unknown","future":true}],"selected_toolsets":[],"future":{}}"#.utf8))
         XCTAssertNil(future.toolsets[0].available, "An unknown/missing availability cannot enable a choice")
+        XCTAssertNil(future.toolsets[0].canDeselect, "An older catalog carries no deselection authority")
     }
 
     func testAppAdvertisesCanonicalContractVersions() throws {

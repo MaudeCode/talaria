@@ -491,8 +491,10 @@ export const toolsRouter = os.router({
   // TAL-2144: the menu's search and its Not available section, decided here so the client renders the rows as sent.
   toolsetsCatalog: os.toolsetsCatalog.handler(({ input, context: { ctx } }) => run(async () => {
     const catalog = await runningSidecar(ctx).call('toolsets.catalog', { profile_home: home(ctx), enabled_toolsets: input.toolsets })
+    const selected = new Set(catalog.selected_toolsets)
+    const toolsets = catalog.toolsets.map((row) => ({ ...row, can_deselect: row.available && (!selected.has(row.name) || selected.size > 1) }))
     const needle = input.q?.trim().toLowerCase() ?? ''
-    const shown = needle ? catalog.toolsets.filter((row) => row.name.toLowerCase().includes(needle) || row.description.toLowerCase().includes(needle)) : catalog.toolsets
+    const shown = needle ? toolsets.filter((row) => row.name.toLowerCase().includes(needle) || row.description.toLowerCase().includes(needle)) : toolsets
     return { ...catalog, toolsets: [...shown.filter((row) => row.group === 'available'), ...shown.filter((row) => row.group !== 'available')] }
   })),
   skills: {
