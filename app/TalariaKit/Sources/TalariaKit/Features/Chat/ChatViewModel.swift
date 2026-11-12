@@ -705,7 +705,8 @@ public final class ChatViewModel {
     }
     /// The session's toolset override (TAL-631); nil until a session detail reports it.
     public private(set) var sessionToolsets: SessionToolsets?
-    @ObservationIgnored private var toolsetsWriteTask: Task<(SessionToolsets?, Bool), Never>?
+    @ObservationIgnored private var toolsetsWriteTask: Task<(selection: SessionToolsets?, saved: Bool, uncertainty: Error?), Never>?
+    @ObservationIgnored private var unconfirmedToolsetsWriteError: Error?
     private var toolsetsWriteGeneration = 0
     /// One queued message sends at a time, by the drain or by Send now.
     private var isSendingQueuedMessage = false
@@ -3315,14 +3316,34 @@ public final class ChatViewModel {
         _ start: () async throws -> ChatStartResponse
     ) async throws -> ChatStartResponse {
         let ownership = sendOwnershipGeneration
-        while let write = toolsetsWriteTask {
-            _ = await write.value
+        while true {
+            while let write = toolsetsWriteTask {
+                let outcome = await write.value
+                try Task.checkCancellation()
+                guard ownership == sendOwnershipGeneration, self.sessionID == sessionID else {
+                    throw CancellationError()
+                }
+                guard outcome.saved else {
+                    throw lastError ?? APIError.network(underlying: URLError(.unknown))
+                }
+            }
+            guard let uncertainty = unconfirmedToolsetsWriteError else { return try await start() }
+            let revision = toolsetsWriteGeneration
+            let intended = sessionToolsets
+            let detail = try await client.session(id: sessionID, includeMessages: false).session
             try Task.checkCancellation()
             guard ownership == sendOwnershipGeneration, self.sessionID == sessionID else {
                 throw CancellationError()
             }
+            guard revision == toolsetsWriteGeneration else { continue }
+            guard let detail, detail.statesEnabledToolsets else { throw uncertainty }
+            let confirmed = SessionToolsets(names: detail.enabledToolsets)
+            sessionToolsets = confirmed
+            unconfirmedToolsetsWriteError = nil
+            composerConfigurationErrorMessage = nil
+            // A changed selection is shown before the user can retry the dependent send.
+            guard confirmed == intended else { throw uncertainty }
         }
-        return try await start()
     }
 
     /// Shared pending-row + `startChat` + rollback core for text, voice notes, and accepted history resends.
@@ -6012,19 +6033,27 @@ public final class ChatViewModel {
         composerConfigurationErrorMessage = nil
         let task = Task { @MainActor in
             var result = original
-            if let previous { result = await previous.value.0 }
+            var uncertainty = unconfirmedToolsetsWriteError
+            if let previous {
+                let outcome = await previous.value
+                result = outcome.selection
+                uncertainty = outcome.uncertainty
+            }
             var saved = false
             do {
                 let response = try await client.setSessionToolsets(sessionID: sessionID, toolsets: names)
                 result = SessionToolsets(names: response.enabledToolsets)
+                uncertainty = nil
                 saved = true
             } catch {
                 if !APIError.isDefinitiveWriteFailure(error) {
                     // Never replay an uncertain write. Keep the choice if the read also fails.
                     result = SessionToolsets(names: names)
+                    uncertainty = error
                     if let session = try? await client.session(id: sessionID, includeMessages: false).session,
                        session.statesEnabledToolsets {
                         result = SessionToolsets(names: session.enabledToolsets)
+                        uncertainty = nil
                     }
                 }
                 if generation == toolsetsWriteGeneration {
@@ -6034,12 +6063,13 @@ public final class ChatViewModel {
             }
             if generation == toolsetsWriteGeneration, self.sessionID == sessionID {
                 sessionToolsets = result
+                unconfirmedToolsetsWriteError = uncertainty
                 toolsetsWriteTask = nil
             }
-            return (result, saved)
+            return (selection: result, saved: saved, uncertainty: uncertainty)
         }
         toolsetsWriteTask = task
-        return await task.value.1
+        return await task.value.saved
     }
 
     func applyApprovalUpdate(_ update: ApprovalPendingResponse, sessionID: String) {

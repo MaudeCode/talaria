@@ -144,23 +144,34 @@ final class ChatViewModelSessionToolsetsTests: APIClientTestCase {
 
     @MainActor
     func testUncertainToolsetWriteReadsTheSessionWithoutReplaying() async throws {
-        for readFails in [false, true] {
+        for (readFails, recoveredSelection) in [(false, "terminal"), (true, "browser"), (true, "web")] {
             var writes = 0
             var reads = 0
+            var starts = 0
+            var offline = readFails
             let model = try makeScriptedChatViewModel(streamClient: ScriptedSSEStreamingClient()) { request in
                 switch request.url?.path {
                 case "/api/session":
                     reads += 1
-                    if readFails && writes > 0 { throw URLError(.notConnectedToInternet) }
+                    if offline && writes > 0 { throw URLError(.notConnectedToInternet) }
+                    let confirmed = recoveredSelection
                     return apiTestJSONResponse(writes > 0
-                        ? #"{"session":{"session_id":"session-abc","messages":[],"enabled_toolsets":["terminal"]}}"#
+                        ? "{\"session\":{\"session_id\":\"session-abc\",\"messages\":[],\"enabled_toolsets\":[\"\(confirmed)\"]}}"
                         : #"{"session":{"session_id":"session-abc","messages":[],"enabled_toolsets":["web"]}}"#, for: request)
                 case "/api/session/toolsets":
                     writes += 1
                     return apiTestJSONResponse(#"{"error":"response lost"}"#, statusCode: 500, for: request)
+                case "/api/chat/start":
+                    starts += 1
+                    return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"reconciled-toolsets"}"#, for: request)
                 default:
                     throw URLError(.badURL)
                 }
+            }
+            defer {
+                model.cleanupPollingTasks()
+                model.suspendStreamForNavigation()
+                ChatViewModel.resetActiveStreamSnapshotsForTesting()
             }
             await model.loadMessages()
             let saved = await model.saveSessionToolsets(["browser"])
@@ -169,6 +180,23 @@ final class ChatViewModelSessionToolsetsTests: APIClientTestCase {
             XCTAssertEqual(reads, 2, "A 5xx has an unknown outcome and requires a read")
             XCTAssertEqual(model.sessionToolsets?.names, readFails ? ["browser"] : ["terminal"], "A successful read decides the result; a failed read retains the optimistic choice")
             XCTAssertNotNil(model.composerConfigurationErrorMessage)
+            if readFails {
+                let sentWithoutConfirmation = await model.sendMessage("Use only the chosen tools")
+                XCTAssertFalse(sentWithoutConfirmation, "An unconfirmed toolset write must not start a turn")
+                XCTAssertEqual(starts, 0, "The server may still have the broader toolset selection")
+                offline = false
+                let sentAfterReadback = await model.sendMessage("Use the confirmed tools")
+                XCTAssertEqual(sentAfterReadback, recoveredSelection == "browser")
+                XCTAssertEqual(starts, recoveredSelection == "browser" ? 1 : 0)
+                if recoveredSelection != "browser" {
+                    XCTAssertEqual(model.sessionToolsets?.names, [recoveredSelection], "Show the actual selection before allowing a retry")
+                    let sentAfterRollback = await model.sendMessage("Use the displayed selection")
+                    XCTAssertTrue(sentAfterRollback)
+                    XCTAssertEqual(starts, 1)
+                }
+                XCTAssertEqual(writes, 1, "Recovery must read, never replay the uncertain write")
+                XCTAssertGreaterThanOrEqual(reads, 4, "Each send must reconcile the unresolved selection first")
+            }
         }
     }
 
