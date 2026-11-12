@@ -3309,6 +3309,22 @@ public final class ChatViewModel {
         }
     }
 
+    /// Every chat start, including owner input and retries, observes the queued session configuration first.
+    private func startChatAfterToolsets(
+        sessionID: String,
+        _ start: () async throws -> ChatStartResponse
+    ) async throws -> ChatStartResponse {
+        let ownership = sendOwnershipGeneration
+        while let write = toolsetsWriteTask {
+            _ = await write.value
+            try Task.checkCancellation()
+            guard ownership == sendOwnershipGeneration, self.sessionID == sessionID else {
+                throw CancellationError()
+            }
+        }
+        return try await start()
+    }
+
     /// Shared pending-row + `startChat` + rollback core for text, voice notes, and accepted history resends.
     /// Prepared files return to the composer on failure unless the queue or voice-note flow owns them.
     private func performChatSend(
@@ -3418,18 +3434,20 @@ public final class ChatViewModel {
         do {
             let explicitModelPick = explicitModelPickForChatStart()
             let sentAt = Date()
-            let response = try await client.startChat(
-                sessionID: sessionID,
-                message: messageForAPI,
-                workspace: currentWorkspace,
-                model: currentModel,
-                modelProvider: requestModelProvider,
-                profile: requestProfileName,
-                explicitModelPick: explicitModelPick,
-                attachments: sendPayloads.isEmpty ? nil : sendPayloads,
-                voiceTurn: voiceTurn,
-                submissionID: ownerAttachment == nil ? nil : UUID().uuidString
-            )
+            let response = try await startChatAfterToolsets(sessionID: sessionID) {
+                try await client.startChat(
+                    sessionID: sessionID,
+                    message: messageForAPI,
+                    workspace: currentWorkspace,
+                    model: currentModel,
+                    modelProvider: requestModelProvider,
+                    profile: requestProfileName,
+                    explicitModelPick: explicitModelPick,
+                    attachments: sendPayloads.isEmpty ? nil : sendPayloads,
+                    voiceTurn: voiceTurn,
+                    submissionID: ownerAttachment == nil ? nil : UUID().uuidString
+                )
+            }
             // An owner admitted the input (TAL-1043): its state and inputs replace the shown ones.
             if response.ownerAttachment != nil, ownership == sendOwnershipGeneration {
                 applyReadOnlyState(from: response.session)
@@ -3523,14 +3541,16 @@ public final class ChatViewModel {
             return .unsupported(friendlyMessage: Self.ownerAttachmentsUnavailableMessage)
         }
         do {
-            let response = try await client.startChat(
-                sessionID: sessionID,
-                message: message,
-                workspace: nil,
-                model: nil,
-                profile: requestProfileName,
-                submissionID: UUID().uuidString
-            )
+            let response = try await startChatAfterToolsets(sessionID: sessionID) {
+                try await client.startChat(
+                    sessionID: sessionID,
+                    message: message,
+                    workspace: nil,
+                    model: nil,
+                    profile: requestProfileName,
+                    submissionID: UUID().uuidString
+                )
+            }
             applyReadOnlyState(from: response.session)
             // The run can end while the input is on its way; the owner then admits it on a new stream.
             if let streamID = Self.nonEmpty(response.streamId), streamID != activeStreamID {
@@ -4880,18 +4900,20 @@ public final class ChatViewModel {
 
             let explicitModelPick = explicitModelPickForChatStart()
             let sentAt = Date()
-            let chatResponse = try await client.startChat(
-                sessionID: sessionID,
-                message: lastUserText,
-                workspace: currentWorkspace,
-                model: currentModel,
-                modelProvider: requestModelProvider,
-                profile: requestProfileName,
-                explicitModelPick: explicitModelPick,
-                // Without a token the resent text is the stored row, which already names its files.
-                attachments: retryResponse.retryToken == nil ? nil : retryResponse.lastUserAttachments,
-                retryToken: retryResponse.retryToken
-            )
+            let chatResponse = try await startChatAfterToolsets(sessionID: sessionID) {
+                try await client.startChat(
+                    sessionID: sessionID,
+                    message: lastUserText,
+                    workspace: currentWorkspace,
+                    model: currentModel,
+                    modelProvider: requestModelProvider,
+                    profile: requestProfileName,
+                    explicitModelPick: explicitModelPick,
+                    // Without a token the resent text is the stored row, which already names its files.
+                    attachments: retryResponse.retryToken == nil ? nil : retryResponse.lastUserAttachments,
+                    retryToken: retryResponse.retryToken
+                )
+            }
 
             guard let streamID = chatResponse.streamId else {
                 return .unsupported(friendlyMessage: chatResponse.error ?? String(localized: "The server did not return a stream ID after retrying."))

@@ -235,6 +235,31 @@ final class ComposerToolsetsHostedTests: APIClientTestCase {
         XCTAssertEqual(saved, ["file"])
     }
 
+    func testLegacyReturnDoesNotReplaceANewerDraft() async throws {
+        let submitted = expectation(description: "legacy selection submitted")
+        var reply: CheckedContinuation<SessionToolsets, Never>?
+        let window = try hostWindow(ComposerToolsetsSheet(toolsets: SessionToolsets(names: ["file"]), loadCatalog: { _ in nil }, onSave: { names in
+            XCTAssertEqual(names, ["file"])
+            submitted.fulfill()
+            return await withCheckedContinuation { reply = $0 }
+        }))
+        _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "legacy-toolsets" }
+        let field = try XCTUnwrap(window.firstView(ofType: UITextField.self))
+        field.becomeFirstResponder()
+        field.sendActions(for: .editingDidEndOnExit)
+        await fulfillment(of: [submitted], timeout: 5)
+        field.becomeFirstResponder()
+        field.selectAll(nil)
+        field.insertText("web")
+        settle()
+        attachHostedScreenshot(window, name: "legacy-newer-draft-before-reply")
+        reply?.resume(returning: SessionToolsets(names: ["file"]))
+        await drainMainActor()
+        settle()
+        XCTAssertEqual(field.text, "web", "An earlier save must not replace a newer unsent draft")
+        attachHostedScreenshot(window, name: "legacy-newer-draft-after-reply")
+    }
+
     func testToolsetPicker() async throws {
         let fixture = try FixtureApp(for: self)
         try await renderHostedPage("toolsets") {

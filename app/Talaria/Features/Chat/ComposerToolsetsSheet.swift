@@ -143,11 +143,14 @@ struct ComposerToolsetsSheet: View {
         let revision = generation
         selection = SessionToolsets(names: names)
         if legacyEditor { legacyInput = names?.joined(separator: ", ") ?? "" }
+        let submittedInput = legacyInput
         Task {
             let confirmed = await onSave(names)
             guard revision == generation else { return }
             selection = confirmed
-            if legacyEditor { legacyInput = confirmed.names?.joined(separator: ", ") ?? "" }
+            if legacyEditor, legacyInput == submittedInput {
+                legacyInput = confirmed.names?.joined(separator: ", ") ?? ""
+            }
             await load()
         }
     }
