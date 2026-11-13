@@ -2,12 +2,11 @@ import SwiftUI
 import TalariaKit
 
 /// Settings > Servers > Auxiliary Models (TAL-388): the server's side-task
-/// slots in server order. Tapping a task opens a searchable model sheet.
+/// slots in server order. Tapping a task pushes the shared model picker.
 struct AuxiliaryModelsSettingsView: View {
     let server: URL
 
     @State private var viewModel: AuxiliaryModelsViewModel
-    @State private var editingTask: AuxiliaryModelTask?
     @State private var isConfirmingReset = false
 
     init(server: URL) {
@@ -24,9 +23,6 @@ struct AuxiliaryModelsSettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { await viewModel.load() }
         .refreshesLive(showsStatus: !viewModel.tasks.isEmpty) { await viewModel.load() }
-        .sheet(item: $editingTask) { task in
-            AuxiliaryModelPickerSheet(viewModel: viewModel, taskID: task.task)
-        }
         .alert("Reset auxiliary models?", isPresented: $isConfirmingReset) {
             Button("Cancel", role: .cancel) {}
             Button("Reset All", role: .destructive) {
@@ -74,7 +70,7 @@ struct AuxiliaryModelsSettingsView: View {
                     taskRow(task)
                 }
 
-                if let saveError = viewModel.saveErrorMessage, editingTask == nil {
+                if let saveError = viewModel.saveErrorMessage {
                     Text(saveError)
                         .font(.caption)
                         .foregroundStyle(.red)
@@ -93,9 +89,39 @@ struct AuxiliaryModelsSettingsView: View {
     }
 
     private func taskRow(_ task: AuxiliaryModelTask) -> some View {
-        Button {
-            viewModel.clearSaveError()
-            editingTask = task
+        NavigationLink {
+            SettingsModelPickerPage(
+                title: task.label, groups: viewModel.catalogGroups, isLoading: viewModel.isLoadingCatalog,
+                loadError: viewModel.catalogErrorMessage,
+                isSelected: { $0.id == viewModel.task(id: task.task)?.selectedOptionID },
+                isSavingModel: { _ in false }, isSaving: viewModel.savingTaskID != nil,
+                saveError: viewModel.saveErrorMessage,
+                customHelp: String(localized: "Use @provider:model to pin a provider."),
+                onSelect: { await viewModel.save(task: task.task, model: $0, provider: $1) },
+                onSaveCustom: { await viewModel.save(task: task.task, model: $0, provider: nil) }
+            ) { select in
+                if let current = viewModel.task(id: task.task) {
+                    SettingsSection(title: String(localized: "Current"), help: String(localized: "Use the main model")) {
+                        Group {
+                            currentOption(title: String(localized: "Auto"), isSelected: current.isAuto == true) {
+                                await select("", "auto")
+                            }
+                            if current.inCatalog == false {
+                                SettingsDivider()
+                                currentOption(title: current.valueLabel ?? current.model,
+                                              subtitle: [current.providerLabel, String(localized: "Not in catalog")].compactMap { $0 }.joined(separator: " · "),
+                                              isSelected: true) {
+                                    await select(current.model, current.provider)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .task {
+                viewModel.clearSaveError()
+                await viewModel.loadCatalog()
+            }
         } label: {
             SettingsItemRow(title: task.label, accessorySystemImage: "chevron.forward") {
                 Image(systemName: "cpu").accessibilityHidden(true)
@@ -106,6 +132,21 @@ struct AuxiliaryModelsSettingsView: View {
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
         .accessibilityHint("Opens the model picker for this task.")
+    }
+
+    private func currentOption(title: String, subtitle: String? = nil, isSelected: Bool,
+                               action: @escaping () async -> Void) -> some View {
+        Button {
+            Task { await action() }
+        } label: {
+            SettingsItemRow(title: title, subtitle: subtitle, isSelected: isSelected) {
+                Image(systemName: "cpu").accessibilityHidden(true)
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(viewModel.savingTaskID != nil)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
@@ -133,125 +174,5 @@ private struct AuxiliaryModelValueText: View {
             }
         }
         .font(.caption)
-    }
-}
-
-private struct AuxiliaryModelPickerSheet: View {
-    let viewModel: AuxiliaryModelsViewModel
-    let taskID: String
-
-    @State private var searchText = ""
-    @State private var customModel = ""
-    @Environment(\.dismiss) private var dismiss
-
-    private var task: AuxiliaryModelTask? { viewModel.task(id: taskID) }
-
-    var body: some View {
-        NavigationStack {
-            SettingsPage(title: task?.label ?? String(localized: "Auxiliary Model")) {
-                SettingsPickerSearchField(text: $searchText, prompt: "Search models", clearLabel: "Clear model search")
-
-                if let saveError = viewModel.saveErrorMessage {
-                    Text(saveError)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                if let task {
-                    SettingsSection(title: String(localized: "Current"), help: String(localized: "Use the main model")) {
-                        Group {
-                            optionRow(title: String(localized: "Auto"), subtitle: nil, isSelected: task.isAuto == true) {
-                                await save(model: "", provider: "auto")
-                            }
-                            if task.inCatalog == false {
-                                SettingsDivider()
-                                optionRow(title: task.valueLabel ?? task.model, subtitle: [task.providerLabel, String(localized: "Not in catalog")].compactMap { $0 }.joined(separator: " · "), isSelected: true) {
-                                    await save(model: task.model, provider: task.provider)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                SettingsSection(
-                    title: String(localized: "Custom"),
-                    help: String(localized: "Use @provider:model to pin a provider.")
-                ) {
-                    SettingsTextFieldRow(title: String(localized: "Custom model ID"), text: $customModel,
-                                         placeholder: String(localized: "Custom model ID"), autocapitalization: .never)
-                    ModelPickerButton(String(localized: "Save Custom Model"), isLoading: viewModel.savingTaskID != nil && !customModel.isEmpty) {
-                        Task { await save(model: customModel.trimmingCharacters(in: .whitespacesAndNewlines), provider: nil) }
-                    }
-                    .disabled(customModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.savingTaskID != nil)
-                }
-
-                catalogContent
-            }
-            .background(Color(.systemBackground))
-            .navigationTitle(task?.label ?? String(localized: "Auxiliary Model"))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-            }
-            .task { await viewModel.loadCatalog() }
-        }
-        .adaptiveFormPresentation()
-    }
-
-    @ViewBuilder
-    private var catalogContent: some View {
-        let groups = viewModel.pickerGroups(matching: searchText)
-        if viewModel.isLoadingCatalog && viewModel.catalogGroups.isEmpty {
-            SettingsSection(title: String(localized: "Models")) {
-                ProgressView()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        } else if let error = viewModel.catalogErrorMessage, viewModel.catalogGroups.isEmpty {
-            SettingsSection(title: String(localized: "Models")) {
-                Label("Could Not Load Models", systemImage: "exclamationmark.triangle")
-                    .font(.subheadline.weight(.semibold))
-                SettingsFootnote(error)
-            }
-        } else if groups.isEmpty {
-            SettingsSection(title: String(localized: "Models")) {
-                Label("No Matching Models", systemImage: "magnifyingglass")
-                    .font(.subheadline.weight(.semibold))
-            }
-        } else {
-            ForEach(groups) { group in
-                SettingsSection(title: group.name) {
-                    Group {
-                        ForEach(group.models) { model in
-                            optionRow(title: model.displayName, subtitle: model.id == model.displayName ? nil : model.id, isSelected: model.id == task?.selectedOptionID) {
-                                await save(model: model.id, provider: group.providerID)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func optionRow(title: String, subtitle: String?, isSelected: Bool, action: @escaping () async -> Void) -> some View {
-        Button {
-            Task { await action() }
-        } label: {
-            SettingsItemRow(title: title, subtitle: subtitle, isSelected: isSelected) {
-                Image(systemName: "cpu").accessibilityHidden(true)
-            }
-        }
-        .buttonStyle(.plain)
-        .disabled(viewModel.savingTaskID != nil)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-
-    private func save(model: String, provider: String?) async {
-        if await viewModel.save(task: taskID, model: model, provider: provider) {
-            dismiss()
-        }
     }
 }

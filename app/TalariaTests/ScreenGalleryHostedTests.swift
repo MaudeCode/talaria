@@ -235,7 +235,21 @@ final class ScreenGalleryHostedTests: XCTestCase {
     }
 
     func testAdditionalSettings() async throws {
+        try await page("settings-default-model", title: "Default Model", prepare: { window in
+            let row = try await self.requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Default Model") == true }
+            XCTAssertTrue(HostedAccessibility.activate(row))
+            _ = try await self.requireElement(in: window, label: "Save Custom Model")
+        }) {
+            ModelsSettingsView(server: server)
+        }
         try await page("settings-auxiliary-models", title: "Auxiliary Models") {
+            AuxiliaryModelsSettingsView(server: server)
+        }
+        try await page("settings-auxiliary-model-picker", title: "Vision", prepare: { window in
+            let row = try await self.requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Vision") == true }
+            XCTAssertTrue(HostedAccessibility.activate(row))
+            _ = try await self.requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("legacy/vision-model") == true }
+        }) {
             AuxiliaryModelsSettingsView(server: server)
         }
         try await page("settings-quota-widget", title: "Customization") {

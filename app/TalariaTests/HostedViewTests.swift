@@ -398,7 +398,7 @@ final class SettingsPlacementHostedTests: XCTestCase {
                 ("server-detail", AnyView(ServerDetailView(authManager: fixture.environment.authManager,
                                                           account: fixture.environment.authManager.servers[0]))),
                 ("connection-headers", AnyView(CustomHeadersSettingsView(authManager: fixture.environment.authManager))),
-                ("default-model", AnyView(DefaultModelPickerView(server: server, currentDefaultModel: nil, onSave: { _ in }))),
+                ("default-model", AnyView(DefaultModelPicker(server: server, currentDefaultModel: nil, onSave: { _ in }))),
                 ("auxiliary-models", AnyView(AuxiliaryModelsSettingsView(server: server)))
             ]
         for style in [UIUserInterfaceStyle.light, .dark] {
@@ -805,6 +805,45 @@ final class SettingsPlacementHostedTests: XCTestCase {
                 XCTAssertTrue(rows.identifiers.contains(identifier), "Missing server setting: \(identifier)")
             }
             attachHostedScreenshot(window, name: "server-settings-\(id)")
+            if id == "models" {
+                let row = try await requireElement(in: window) {
+                    $0.accessibilityLabel?.hasPrefix("Default Model") == true
+                }
+                XCTAssertTrue(HostedAccessibility.activate(row))
+                _ = try await requireElement(in: window, label: "Save Custom Model")
+                attachHostedScreenshot(window, name: "settings-default-model-navigation")
+                XCTAssertNil(window.rootViewController?.presentedViewController,
+                             "Default Model must push inside Settings, never present a sheet")
+                let navigation = try XCTUnwrap(window.navigationStacks.first { $0.viewControllers.count > 1 },
+                                              "The model picker must share Settings' back stack")
+                XCTAssertEqual(navigation.topViewController?.navigationItem.title, "Default Model")
+                XCTAssertNil(HostedAccessibility.toolbarItem("Cancel", in: window))
+                navigation.popViewController(animated: false)
+                _ = try await requireElement(in: window) {
+                    $0.accessibilityLabel?.hasPrefix("Default Model") == true
+                }
+                let auxiliary = try await requireElement(in: window) {
+                    $0.accessibilityLabel?.hasPrefix("Auxiliary Models") == true
+                }
+                XCTAssertTrue(HostedAccessibility.activate(auxiliary))
+                let vision = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Vision") == true }
+                XCTAssertTrue(HostedAccessibility.activate(vision))
+                _ = try await requireElement(in: window, label: "Auto")
+                let offCatalog = try await requireElement(in: window) {
+                    $0.accessibilityLabel?.hasPrefix("legacy/vision-model") == true
+                }
+                XCTAssertTrue(offCatalog.accessibilityTraits.contains(.selected),
+                              "The Auxiliary leading section must announce the saved off-catalog model as selected")
+                XCTAssertEqual(HostedAccessibility.elements(in: window).filter { $0.accessibilityTraits.contains(.selected) }.count, 1)
+                XCTAssertNil(window.rootViewController?.presentedViewController,
+                             "Auxiliary task model pickers must also push inside Settings")
+                XCTAssertEqual(navigation.viewControllers.count, 3)
+                XCTAssertEqual(navigation.topViewController?.navigationItem.title, "Vision")
+                XCTAssertNil(HostedAccessibility.toolbarItem("Cancel", in: window))
+                attachHostedScreenshot(window, name: "settings-auxiliary-model-navigation")
+                navigation.popViewController(animated: false)
+                _ = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Vision") == true }
+            }
             if id == "tools" {
                 let toggle = try XCTUnwrap(window.firstView(ofType: UISwitch.self))
                 XCTAssertTrue(toggle.isOn)

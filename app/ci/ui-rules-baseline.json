@@ -38,7 +38,7 @@
     {
       "rule": "settings-footnote",
       "file": "app/Talaria/Features/Settings/AuxiliaryModelsSettingsView.swift",
-      "count": 3,
+      "count": 2,
       "reason": "status text"
     },
     {

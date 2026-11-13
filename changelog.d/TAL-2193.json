@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Choose default and auxiliary models on Settings pages with a back button.",
+      "highlight": false,
+      "components": ["app"],
+      "announce": false
+    }
+  ]
+}

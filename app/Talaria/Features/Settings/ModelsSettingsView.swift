@@ -5,7 +5,6 @@ struct ModelsSettingsView: View {
     @Environment(\.settingsScrollAnchor) private var scrollAnchor
     let server: URL
     @State private var model: ModelsSettingsViewModel
-    @State private var showDefaultModelPicker = false
 
     init(server: URL) {
         self.server = server
@@ -16,8 +15,11 @@ struct ModelsSettingsView: View {
         SettingsCategoryPage(category: .models) {
             ServerSettingsSections(page: .limits)
             SettingsSection(title: String(localized: "Models")) {
-                HapticButton {
-                    showDefaultModelPicker = true
+                NavigationLink {
+                    DefaultModelPicker(
+                        server: server, currentDefaultModel: model.defaultModel,
+                        onSave: { value in Task { await model.defaultModelChanged(value) } }
+                    )
                 } label: {
                     SettingsAccessoryRow(
                         title: SettingsIndex.modelsDefaultModel.title,
@@ -70,18 +72,118 @@ struct ModelsSettingsView: View {
         }
         .task { await model.load() }
         .refreshesLive(showsStatus: false) { await model.load() }
-        .sheet(isPresented: $showDefaultModelPicker) {
-            DefaultModelPickerView(
-                server: server,
-                currentDefaultModel: model.defaultModel,
-                onSave: { value in Task { await model.defaultModelChanged(value) } }
-            )
-        }
     }
 
     private var defaultModelLabel: String {
         if model.isLoading, model.defaultModel == nil { return String(localized: "Loading") }
         guard let defaultModel = model.defaultModel, !defaultModel.isEmpty else { return String(localized: "Not set") }
         return defaultModel
+    }
+}
+
+/// The default picker's existing catalog and save state feeds the shared Settings page.
+struct DefaultModelPicker: View {
+    let server: URL
+    let currentDefaultModel: String?
+    let onSave: (String) -> Void
+
+    @State private var isLoading = false
+    @State private var groups: [ModelCatalogGroup] = []
+    @State private var defaultModel: String?
+    @State private var defaultOptionID: String?
+    @State private var selectedModel: String?
+    @State private var selectedProvider: String?
+    @State private var errorMessage: String?
+    @State private var isSaving = false
+    @State private var saveError: String?
+
+    var body: some View {
+        SettingsModelPickerPage(
+            title: String(localized: "Default Model"), groups: groups, isLoading: isLoading,
+            loadError: errorMessage, isSelected: isCurrentDefault, isSavingModel: isSavingRow,
+            isSaving: isSaving, saveError: saveError,
+            customHelp: String(localized: "Type a model ID exactly as the server expects it."),
+            onSelect: { await save($0, providerID: $1) },
+            onSaveCustom: { await save($0) }
+        ) { _ in }
+        .task { await loadModels() }
+        .refreshesLive(showsStatus: !groups.isEmpty) { await loadModels() }
+    }
+
+    /// Whether this row shows the spinner for an in-flight save.
+    ///
+    /// Both the id and the provider recorded at tap time must agree: after
+    /// the live overlay replaces the active provider's prefixed cached row
+    /// with a bare id, two providers can offer the same spelling, and ticking
+    /// by id alone would spin both rows.
+    private func isSavingRow(_ model: ModelCatalogOption) -> Bool {
+        isSaving && selectedModel == model.id && model.providerID == selectedProvider
+    }
+
+    /// Whether this row is the current default: the entry the server says
+    /// the stored default selects, or, while a save is in flight, the tapped row.
+    private func isCurrentDefault(_ model: ModelCatalogOption) -> Bool {
+        DefaultModelPickerSelection.isChecked(
+            model,
+            selectedModel: selectedModel,
+            selectedProvider: selectedProvider,
+            defaultOptionID: defaultOptionID,
+            defaultModel: defaultModel
+        )
+    }
+
+    private func loadModels() async {
+        guard !isLoading else { return }
+        isLoading = true
+        errorMessage = nil
+
+        do {
+            let response = try await APIClient(baseURL: server).models()
+            defaultModel = response.defaultModel ?? currentDefaultModel
+            defaultOptionID = response.defaultOptionID
+            groups = response.catalogGroups
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+
+        isLoading = false
+
+        await overlayLiveModels()
+    }
+
+    /// Overlays the active provider's live (uncached) list onto the cached
+    /// catalog so newly available models appear. Failures are silent by
+    /// design — the cached list stays as-is (issue #236).
+    private func overlayLiveModels() async {
+        guard let live = try? await APIClient(baseURL: server).modelsLive() else { return }
+        groups = groups.mergingLiveModels(from: live)
+    }
+
+    private func save(_ model: String, providerID: String? = nil) async -> Bool {
+        let trimmed = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        isSaving = true
+        defer { isSaving = false }
+        saveError = nil
+        selectedModel = trimmed
+        selectedProvider = providerID
+
+        do {
+            let response = try await APIClient(baseURL: server).saveDefaultModel(model: trimmed, provider: providerID)
+            if response.ok == true {
+                onSave(trimmed)
+                return true
+            } else {
+                saveError = String(localized: "The server did not confirm the change.")
+                selectedModel = nil
+                selectedProvider = nil
+            }
+        } catch {
+            saveError = error.localizedDescription
+            selectedModel = nil
+            selectedProvider = nil
+        }
+
+        return false
     }
 }
