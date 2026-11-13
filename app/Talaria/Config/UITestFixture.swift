@@ -467,6 +467,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
     private static let profileState = OSAllocatedUnfairLock(initialState: (rows: [[String: JSONValue]](), active: "fixture-profile"))
     private static let serverSettings = OSAllocatedUnfairLock(initialState: [String: JSONValue]())
     private static let modelPreferences = OSAllocatedUnfairLock(initialState: (favorites: ["fixture-provider": Set(["fixture-model"])], hidden: [String: Set<String>]()))
+    private static let auxiliarySelections = OSAllocatedUnfairLock(initialState: [String: (model: String, provider: String?)]())
     private static let reasoningDefaults = OSAllocatedUnfairLock(initialState: (effort: "medium", thinking: true))
     nonisolated(unsafe) private static var transcriptReads = 0
     nonisolated(unsafe) private static var archivedSessionIDs: Set<String> = []
@@ -508,6 +509,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
         approvalBypassOverride = nil
         sessionToolsets.withLock { $0 = nil }
         reasoningDefaults.withLock { $0 = ("medium", true) }
+        auxiliarySelections.withLock { $0 = [:] }
         modelPreferences.withLock { $0 = (["fixture-provider": Set(["fixture-model"])], [:]) }
         serverSettings.withLock { $0 = [:] }
         profileState.withLock { $0 = ([], "fixture-profile") }
@@ -958,6 +960,15 @@ final class UITestFixtureURLProtocol: URLProtocol {
         case "/api/model/auxiliary":
             return json(auxiliaryModelsResponse())
         case "/api/model/set":
+            let body = requestJSON(request)
+            if body["scope"] as? String == "auxiliary", let task = body["task"] as? String {
+                let model = body["model"] as? String
+                let provider = body["provider"] as? String
+                auxiliarySelections.withLock { values in
+                    if task == "__reset__" { values = ["__reset__": ("", "auto")] }
+                    else if let model { values[task] = (model, provider) }
+                }
+            }
             return json(["ok": true, "auxiliary": auxiliaryModelsResponse()])
         case "/api/file" where servesCompanionFiles:
             return companionFileResponse(url)
@@ -1870,11 +1881,19 @@ final class UITestFixtureURLProtocol: URLProtocol {
                 "task": task, "label": label, "description": description, "provider": "auto", "model": "",
                 "is_auto": true, "value_label": "Fixture Model", "provider_label": "Fixture Provider",
                 "selected_option_id": NSNull(), "in_catalog": true,
+                "reasoning": ["saved": NSNull(), "effective": "medium", "inherited": true,
+                              "default_source": "provider", "options": ["low", "medium", "high"], "unavailable": NSNull()],
             ]
             if task == "title_generation" {
                 row.merge(["provider": "fixture-provider", "model": "fixture-model", "is_auto": false, "selected_option_id": "fixture-model"]) { $1 }
             } else if task == "vision" {
                 row.merge(["provider": "openrouter", "model": "legacy/vision-model", "is_auto": false, "value_label": "legacy/vision-model", "provider_label": "OpenRouter", "in_catalog": false]) { $1 }
+            }
+            if let saved = auxiliarySelections.withLock({ $0[task] ?? $0["__reset__"] }) {
+                row.merge(["provider": saved.provider ?? "auto", "model": saved.model, "is_auto": saved.model.isEmpty,
+                           "value_label": saved.model.isEmpty ? "Fixture Model" : saved.model,
+                           "provider_label": saved.provider ?? "Fixture Provider", "in_catalog": true,
+                           "selected_option_id": saved.model.isEmpty ? NSNull() : saved.model as Any]) { $1 }
             }
             return row
         }

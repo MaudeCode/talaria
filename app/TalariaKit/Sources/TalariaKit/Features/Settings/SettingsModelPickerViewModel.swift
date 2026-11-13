@@ -32,6 +32,10 @@ public final class SettingsModelPickerViewModel {
     private var importAttempts: Set<String> = []
     private var nextIntentOrder = 0
     private var generation = 0
+    private var cachedQuery: [String]?
+    private var loadedAt: Date?
+    private var cachedLoad: (id: UUID, query: [String], task: Task<Bool, Never>)?
+    private var profileSwitchCount: Int
     private var loadedProfile: String?
     @ObservationIgnored private let client: APIClient
     @ObservationIgnored private let favorites: ModelFavoritesStore
@@ -42,6 +46,7 @@ public final class SettingsModelPickerViewModel {
         self.client = client
         self.favorites = favorites
         self.live = live
+        profileSwitchCount = ActiveServerProfile.switchCount(for: client.baseURL)
     }
 
     public var providers: [ModelPickerProvider] { response?.providers ?? [] }
@@ -87,16 +92,42 @@ public final class SettingsModelPickerViewModel {
         _ = await load()
     }
 
+    /// A retained picker shares fresh data and an in-flight read across task editors.
+    public func loadIfNeeded() async {
+        let query = [searchText, providerID, String(favoritesOnly), String(showHidden)]
+        let switches = ActiveServerProfile.switchCount(for: client.baseURL)
+        if profileSwitchCount != switches {
+            generation += 1
+            response = nil
+            confirmedGroups = []
+            confirmedFavoriteOptions = []
+            loadedProfile = nil
+            cachedQuery = nil
+            cachedLoad = nil
+            profileSwitchCount = switches
+        }
+        if cachedQuery == query, loadedAt.map({ Date().timeIntervalSince($0) < 60 }) == true { return }
+        if let cachedLoad, cachedLoad.query == query { _ = await cachedLoad.task.value; return }
+        let id = UUID()
+        let task = Task { @MainActor in await load() }
+        cachedLoad = (id, query, task)
+        _ = await task.value
+        guard cachedLoad?.id == id else { return }
+        cachedLoad = nil
+    }
+
     @discardableResult
     public func load() async -> Bool {
         generation += 1
         let current = generation
+        let switches = ActiveServerProfile.switchCount(for: client.baseURL)
+        let query = [searchText, providerID, String(favoritesOnly), String(showHidden)]
         isLoading = true
         errorMessage = nil
         defer { if generation == current { isLoading = false } }
         do {
             var result = try await fetch()
-            guard current == generation, !Task.isCancelled else { return false }
+            guard current == generation, switches == ActiveServerProfile.switchCount(for: client.baseURL), !Task.isCancelled else { return false }
             let profile = try acceptProfile(result)
             if result.favorites == nil && !importAttempts.contains(profile) {
                 importAttempts.insert(profile)
@@ -111,7 +142,7 @@ public final class SettingsModelPickerViewModel {
                 // Guarded import is never blindly replayed; a read establishes its outcome.
                 result = try await fetch()
             }
-            guard current == generation, !Task.isCancelled else { return false }
+            guard current == generation, switches == ActiveServerProfile.switchCount(for: client.baseURL), !Task.isCancelled else { return false }
             try apply(result)
             favoriteOverrides = favoriteOverrides.filter { !unresolved.contains($0.value.id) }
             hiddenOverrides = hiddenOverrides.filter { !unresolved.contains($0.value.id) }
@@ -119,12 +150,16 @@ public final class SettingsModelPickerViewModel {
             isLoading = false
             if live {
                 // Show the confirmed catalog first, as the former default picker did; live lookup never hides it.
-                if let updated = try? await fetch(live: true), current == generation, !Task.isCancelled {
+                if let updated = try? await fetch(live: true), current == generation, switches == ActiveServerProfile.switchCount(for: client.baseURL), !Task.isCancelled {
                     do {
                         try apply(updated)
                     } catch { errorMessage = error.localizedDescription }
                 }
             }
+            guard current == generation, switches == ActiveServerProfile.switchCount(for: client.baseURL) else { return false }
+            profileSwitchCount = switches
+            cachedQuery = query
+            loadedAt = Date()
             return true
         } catch {
             if current == generation && !APIError.isCancellation(error) { errorMessage = error.localizedDescription }

@@ -184,6 +184,59 @@ final class ModelsSettingsViewModelTests: XCTestCase {
         return String(decoding: try JSONSerialization.data(withJSONObject: value), as: UTF8.self)
     }
 
+    func testMountedPickerReusesAPreloadAndKeepsRowsDuringRefresh() async throws {
+        let wire = try pickerJSON()
+        let hold = LockedTestValue(false)
+        let reads = LockedTestValue(0)
+        let requests = DeferredRequests()
+        let refreshing = expectation(description: "picker refresh")
+        let picker = picker { request in
+            reads.value += 1
+            if hold.value { _ = requests.append(request); refreshing.fulfill() }
+            else { request.complete(withJSON: wire) }
+        }
+        await picker.load()
+        XCTAssertFalse(picker.groups.isEmpty)
+        await picker.loadIfNeeded()
+        XCTAssertEqual(reads.value, 2, "Mounting a preloaded picker must reuse its cached and live reads")
+        hold.value = true
+        let refresh = Task { await picker.load() }
+        await fulfillment(of: [refreshing])
+        XCTAssertFalse(picker.groups.isEmpty, "Mounting a picker must retain its already-loaded catalog while refreshing")
+        hold.value = false
+        requests.request(at: 0).complete(withJSON: wire)
+        await refresh.value
+    }
+
+    func testSettingsPickerSharesConcurrentAndFreshCatalogReadsAcrossTaskEditors() async throws {
+        let wire = try pickerJSON()
+        let reads = LockedTestValue(0)
+        let held = DeferredRequests()
+        let started = expectation(description: "cached catalog")
+        started.assertForOverFulfill = false
+        let picker = picker { request in
+            reads.value += 1
+            let count = held.append(request)
+            started.fulfill()
+            if count > 1 { request.complete(withJSON: wire) }
+        }
+        let first = Task { await picker.loadIfNeeded() }
+        await fulfillment(of: [started])
+        let second = Task { await picker.loadIfNeeded() }
+        await drainMainActor()
+        held.request(at: 0).complete(withJSON: wire)
+        await first.value
+        await second.value
+        // This fixture enables the existing independent live overlay, hence one cached + one live read.
+        XCTAssertEqual(reads.value, 2)
+        await picker.loadIfNeeded()
+        XCTAssertEqual(reads.value, 2, "Reopening another task's picker must reuse fresh catalog discovery")
+        XCTAssertFalse(picker.groups.isEmpty)
+        picker.searchText = "another"
+        await picker.loadIfNeeded()
+        XCTAssertEqual(reads.value, 4, "Server-owned filtering still fetches a different query")
+    }
+
     func testSettingsPickerImportsLegacyStarsOnlyForAnUninitializedServerProfileAndUsesServerFields() async throws {
         let wire = LockedTestValue(try pickerJSON(neverSaved: true))
         let initialized = try pickerJSON()

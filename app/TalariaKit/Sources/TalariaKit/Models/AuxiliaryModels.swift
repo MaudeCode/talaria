@@ -5,11 +5,12 @@ import Foundation
 /// display value; the app renders these fields.
 public struct AuxiliaryModelsResponse: Decodable, Equatable, Sendable {
     public let tasks: [AuxiliaryModelTask]
+    private let hasTasks: Bool
 
     /// False for a server that predates the typed slot fields: the app shows
     /// an unavailable state instead of deriving them.
     public var isSupported: Bool {
-        !tasks.isEmpty && tasks.allSatisfy { $0.isAuto != nil && $0.inCatalog != nil }
+        hasTasks && tasks.allSatisfy { $0.isAuto != nil && $0.inCatalog != nil }
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -18,10 +19,12 @@ public struct AuxiliaryModelsResponse: Decodable, Equatable, Sendable {
 
     public init(tasks: [AuxiliaryModelTask]) {
         self.tasks = tasks
+        hasTasks = true
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        hasTasks = container.contains(.tasks)
         tasks = container.decodeLossyArrayIfPresent(AuxiliaryModelTask.self, forKey: .tasks) ?? []
     }
 }
@@ -45,6 +48,7 @@ public struct AuxiliaryModelTask: Decodable, Equatable, Identifiable, Sendable {
     public let selectedOptionID: String?
     /// False only for a pinned model the current catalog does not list.
     public let inCatalog: Bool?
+    public let reasoning: AuxiliaryReasoning?
 
     private enum CodingKeys: String, CodingKey {
         case task
@@ -57,6 +61,7 @@ public struct AuxiliaryModelTask: Decodable, Equatable, Identifiable, Sendable {
         case providerLabel
         case selectedOptionID = "selectedOptionId"
         case inCatalog
+        case reasoning
     }
 
     public init(
@@ -69,7 +74,8 @@ public struct AuxiliaryModelTask: Decodable, Equatable, Identifiable, Sendable {
         valueLabel: String?,
         providerLabel: String?,
         selectedOptionID: String?,
-        inCatalog: Bool?
+        inCatalog: Bool?,
+        reasoning: AuxiliaryReasoning? = nil
     ) {
         self.task = task
         self.label = label
@@ -81,6 +87,7 @@ public struct AuxiliaryModelTask: Decodable, Equatable, Identifiable, Sendable {
         self.providerLabel = providerLabel
         self.selectedOptionID = selectedOptionID
         self.inCatalog = inCatalog
+        self.reasoning = reasoning
     }
 
     public init(from decoder: Decoder) throws {
@@ -98,6 +105,7 @@ public struct AuxiliaryModelTask: Decodable, Equatable, Identifiable, Sendable {
         providerLabel = container.decodeLossyStringIfPresent(forKey: .providerLabel)
         selectedOptionID = container.decodeLossyStringIfPresent(forKey: .selectedOptionID)
         inCatalog = container.decodeLossyBoolIfPresent(forKey: .inCatalog)
+        reasoning = try? container.decodeIfPresent(AuxiliaryReasoning.self, forKey: .reasoning)
     }
 }
 
@@ -105,4 +113,15 @@ public struct AuxiliaryModelTask: Decodable, Equatable, Identifiable, Sendable {
 public struct AuxiliaryModelSetResponse: Decodable, Equatable, Sendable {
     public let ok: Bool?
     public let auxiliary: AuxiliaryModelsResponse?
+}
+
+/// The server's per-slot capability and saved/effective effort projection.
+/// Optional fields preserve unknown capability on older or newer servers.
+public struct AuxiliaryReasoning: Decodable, Equatable, Sendable {
+    public let saved: String?
+    public let effective: String?
+    public let inherited: Bool?
+    public let defaultSource: String?
+    public let options: [String]?
+    public let unavailable: String?
 }

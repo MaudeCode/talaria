@@ -273,9 +273,16 @@ final class ScreenGalleryHostedTests: XCTestCase {
         try await page("settings-auxiliary-models", title: "Auxiliary Models") {
             AuxiliaryModelsSettingsView(server: server)
         }
-        try await page("settings-auxiliary-model-picker", title: "Vision", prepare: { window in
+        try await page("settings-auxiliary-task-editor", title: "Vision", prepare: { window in
             let row = try await self.requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Vision") == true }
             XCTAssertTrue(HostedAccessibility.activate(row))
+            _ = try await self.requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "auxiliary-edit-reasoning" }
+        }) { AuxiliaryModelsSettingsView(server: server) }
+        try await page("settings-auxiliary-model-picker", title: "Model", prepare: { window in
+            let row = try await self.requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Vision") == true }
+            XCTAssertTrue(HostedAccessibility.activate(row))
+            let model = try await self.requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "auxiliary-edit-model" }
+            XCTAssertTrue(HostedAccessibility.activate(model))
             _ = try await self.requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("legacy/vision-model") == true }
         }) {
             AuxiliaryModelsSettingsView(server: server)

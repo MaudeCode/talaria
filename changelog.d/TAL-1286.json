@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Edit each auxiliary task's model and reasoning together, with cached model lists and recoverable drafts.",
+      "highlight": false,
+      "components": [
+        "app"
+      ],
+      "announce": false
+    }
+  ]
+}

@@ -80,11 +80,11 @@ extension APIClient {
     /// `model` is a catalog entry id or a typed id and `provider` the entry's
     /// group `provider_id`; the server splits `@provider:` ids itself. Auto is
     /// provider `auto` with an empty model. Answers the refreshed slots.
-    public func setAuxiliaryModel(task: String, model: String, provider: String?) async throws -> AuxiliaryModelSetResponse {
+    public func setAuxiliaryModel(task: String, model: String? = nil, provider: String? = nil, reasoningEffort: String? = nil, writesReasoning: Bool = false) async throws -> AuxiliaryModelSetResponse {
         try await send(
             endpoint: .setModel,
             method: "POST",
-            body: AuxiliaryModelSetRequest(scope: "auxiliary", task: task, model: model, provider: provider)
+            body: AuxiliaryModelSetRequest(scope: "auxiliary", task: task, model: model, provider: provider, reasoningEffort: reasoningEffort, writesReasoning: writesReasoning)
         )
     }
 
@@ -279,8 +279,22 @@ extension APIClient {
 private struct AuxiliaryModelSetRequest: Encodable {
     let scope: String
     let task: String
-    let model: String
+    let model: String?
     let provider: String?
+    let reasoningEffort: String?
+    let writesReasoning: Bool
+
+    private enum CodingKeys: String, CodingKey { case scope, task, model, provider, reasoningEffort }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(scope, forKey: .scope)
+        try container.encode(task, forKey: .task)
+        try container.encodeIfPresent(model, forKey: .model)
+        try container.encodeIfPresent(provider, forKey: .provider)
+        // Null clears a saved effort; omission asks the server to reconcile a changed route.
+        if writesReasoning { try container.encode(reasoningEffort, forKey: .reasoningEffort) }
+    }
 }
 
 private struct DefaultModelRequest: Encodable {

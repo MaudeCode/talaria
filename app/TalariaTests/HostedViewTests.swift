@@ -869,6 +869,9 @@ final class SettingsPlacementHostedTests: XCTestCase {
                 XCTAssertTrue(HostedAccessibility.activate(auxiliary))
                 let vision = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Vision") == true }
                 XCTAssertTrue(HostedAccessibility.activate(vision))
+                let modelRow = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "auxiliary-edit-model" }
+                XCTAssertNotNil(HostedAccessibility.toolbarItem("Save", in: window))
+                XCTAssertTrue(HostedAccessibility.activate(modelRow))
                 _ = try await requireElement(in: window, label: "Auto")
                 let offCatalog = try await requireElement(in: window) {
                     $0.accessibilityLabel?.hasPrefix("legacy/vision-model") == true
@@ -878,12 +881,24 @@ final class SettingsPlacementHostedTests: XCTestCase {
                 XCTAssertEqual(HostedAccessibility.elements(in: window).filter { $0.accessibilityTraits.contains(.selected) }.count, 1)
                 XCTAssertNil(window.rootViewController?.presentedViewController,
                              "Auxiliary task model pickers must also push inside Settings")
-                XCTAssertEqual(navigation.viewControllers.count, 3)
-                XCTAssertEqual(navigation.topViewController?.navigationItem.title, "Vision")
+                XCTAssertEqual(navigation.viewControllers.count, 4)
+                XCTAssertEqual(navigation.topViewController?.navigationItem.title, "Model")
                 XCTAssertNil(HostedAccessibility.toolbarItem("Cancel", in: window))
                 attachHostedScreenshot(window, name: "settings-auxiliary-model-navigation")
-                navigation.popViewController(animated: false)
-                _ = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Vision") == true }
+                let selected = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-model-option-fixture-model" }
+                XCTAssertTrue(HostedAccessibility.activate(selected))
+                _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "auxiliary-edit-model" }
+                XCTAssertNotNil(HostedAccessibility.toolbarItem("Cancel", in: window))
+                _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "auxiliary-edit-reasoning" }
+                settle(0.3)
+                attachHostedScreenshot(window, name: "settings-auxiliary-task-draft")
+                let save = try XCTUnwrap(HostedAccessibility.toolbarAction("Save", in: window))
+                XCTAssertTrue(HostedAccessibility.activate(save))
+                let returned = await awaitCondition { navigation.viewControllers.count == 2 }
+                XCTAssertTrue(returned, "Save returns from the task editor to the task list")
+                _ = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Vision") == true && $0.accessibilityLabel?.contains("fixture-model") == true }
+                settle(0.3)
+                attachHostedScreenshot(window, name: "settings-auxiliary-model-saved")
             }
             if id == "tools" {
                 let toggle = try XCTUnwrap(window.firstView(ofType: UISwitch.self))
