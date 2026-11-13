@@ -17,6 +17,7 @@ final class SidebarPresentationTests: XCTestCase {
                         XCTAssertEqual(decision.drawerEnabled, !tiles)
                         XCTAssertEqual(decision.toggleTarget, tiles ? .column : .drawer)
                         XCTAssertEqual(decision.hostsSidebarActionsInDetail, tiles && verticalBar)
+                        XCTAssertEqual(decision.sidebarShowsNewChat, !verticalBar)
                         XCTAssertFalse(decision.showsColumn && decision.drawerEnabled)
                     }
                 }

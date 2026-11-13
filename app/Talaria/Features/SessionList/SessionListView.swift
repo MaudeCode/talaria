@@ -685,8 +685,7 @@ struct SessionListView: View {
                         .disabled(viewModel.isPerformingBulkAction)
                 }
                 .overflowPriority(.done, includesHorizontal: true)
-            } else if !detailHasVerticalBar {
-                // With the Duo's vertical bar, New Chat lives only in the chat's bar.
+            } else if sidebarPresentation.sidebarShowsNewChat {
                 ToolbarItem(placement: .topBarTrailing) {
                     regularNewChatButton
                         .buttonStyle(.borderedProminent)
