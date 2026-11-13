@@ -1470,7 +1470,8 @@ export class ProviderCatalog {
         if (group) {
           const previousModels = new Map(group.models.map((entry) => [entry.bare_id ?? entry.id, entry]))
           group.models = live.data.models.map((entry) => {
-            const model: ModelEntry = { ...previousModels.get(entry.bare_id ?? entry.id), id: entry.id, label: entry.label ?? entry.id }
+            const previous = previousModels.get(entry.bare_id ?? entry.id)
+            const model: ModelEntry = { ...previous, id: previous?.id ?? entry.id, label: entry.label ?? entry.id }
             if (entry.provider_id !== undefined) model.provider_id = entry.provider_id
             if (entry.bare_id !== undefined) model.bare_id = entry.bare_id
             if (entry.supported_speed_tiers !== undefined) model.supported_speed_tiers = entry.supported_speed_tiers
@@ -1479,6 +1480,9 @@ export class ProviderCatalog {
             if (entry.limit !== undefined) model.limit = entry.limit
             return model
           })
+          // New live rows follow the complete catalog's prefix/collision rules; matched rows retain their option IDs.
+          group.models = applyProviderPrefix(group.models, group.provider_id, catalog.active_provider)
+          deduplicateModelIds(catalog.groups)
           catalog.default_option_id = catalogOptionId(catalog, catalog.default_bare_id ?? catalog.default_model, catalog.default_provider_id ?? catalog.active_provider)
           await this.stampModelPreferences(catalog, profile)
         }
