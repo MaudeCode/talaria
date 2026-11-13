@@ -249,6 +249,19 @@ final class ScreenGalleryHostedTests: XCTestCase {
         }
     }
 
+    func testComposerEffortChoices() async throws {
+        try await page("composer-effort", title: "Effort", wrapsNavigation: false, prepare: { window in
+            let row = try await self.requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "composer-model-effort" }
+            XCTAssertTrue(HostedAccessibility.activate(row))
+            _ = try await self.requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "composer-effort-high" }
+        }) {
+            ComposerModelPickerSheet(client: fixture.client, selectedModelID: "fixture-model",
+                selectedModelProviderID: "fixture-provider", selectedModelOptionID: "fixture-model",
+                onSelect: { _ in }, keepsSelectionOpen: true, showsReasoningControl: true,
+                selectedReasoningEffort: "medium", supportedReasoningEfforts: ["low", "medium", "high"])
+        }
+    }
+
     func testAdditionalSettings() async throws {
         try await page("settings-default-model", title: "Default Model", prepare: { window in
             let row = try await self.requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Default Model") == true }
