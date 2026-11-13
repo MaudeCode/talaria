@@ -432,7 +432,20 @@ public final class ChatViewModel {
     public private(set) var profileOptions: [ProfileSummary] = []
     public private(set) var isSingleProfileMode = false
     public private(set) var selectedProfileName: String?
-    public private(set) var selectedReasoningEffort: String?
+    private var confirmedReasoningEffort: String?
+    private var pendingReasoningSelection: (effort: String, sessionID: String, ownership: Int, needsReadback: Bool)?
+    private var requestedReasoningEffort: String? {
+        guard let pendingReasoningSelection, pendingReasoningSelection.sessionID == sessionID,
+              pendingReasoningSelection.ownership == sendOwnershipGeneration else { return nil }
+        return pendingReasoningSelection.effort
+    }
+    public private(set) var selectedReasoningEffort: String? {
+        get { requestedReasoningEffort ?? confirmedReasoningEffort }
+        set {
+            confirmedReasoningEffort = newValue
+            if pendingReasoningSelection != nil { pendingReasoningSelection = nil }
+        }
+    }
     /// Model-aware effort vocabulary (`supported_efforts` from `GET /api/reasoning`).
     /// `nil` on older servers → the composer falls back to the static list (issue #18).
     public private(set) var supportedReasoningEfforts: [String]?
@@ -878,7 +891,8 @@ public final class ChatViewModel {
         didShowCachedComposerChoices = true
         let initialProfileName = selectedProfileName
         applyComposerConfigurationState(
-            ChatComposerConfigLoader.cachedState(from: composerConfigurationState, cache: responseCache)
+            ChatComposerConfigLoader.cachedState(from: composerConfigurationState, cache: responseCache),
+            confirmsReasoning: false
         )
         if selectedProfileName != initialProfileName {
             isProfileSelectionFromCache = true
@@ -1156,16 +1170,21 @@ public final class ChatViewModel {
             needsComposerConfigurationReload = false
 
             let initialState = composerConfigurationState
+            let ownership = sendOwnershipGeneration
+            let targetSessionID = sessionID
+            let reasoningReadFloor = reasoningGatingFetchToken
             let result = await ChatComposerConfigLoader(client: client, cache: responseCache, sessionID: sessionID)
                 .loadConfiguration(from: initialState)
 
-            guard !isUpdatingComposerConfiguration else { return }
-            guard composerConfigurationState == initialState else {
+            guard !isUpdatingComposerConfiguration, !Task.isCancelled,
+                  ownership == sendOwnershipGeneration, targetSessionID == sessionID else { return }
+            guard composerConfigurationState == initialState, reasoningReadFloor == reasoningGatingFetchToken else {
                 needsComposerConfigurationReload = true
                 continue
             }
 
-            applyComposerConfigurationState(result.state)
+            applyComposerConfigurationState(result.state,
+                confirmsReasoning: result.reasoningLoaded && result.state.selectedReasoningEffort != nil)
             if !hasSession, let effort = pendingNewChatSettings.reasoningEffort { selectedReasoningEffort = effort }
             if result.configurationError == nil {
                 isProfileSelectionFromCache = false
@@ -1184,6 +1203,7 @@ public final class ChatViewModel {
     /// silent by design — the picker keeps whatever it already shows.
     public func refreshModelCatalogForPickerOpen() async {
         if modelSelectionNeedsReconciliation { _ = await reconcileRequestedModel() }
+        if pendingReasoningSelection?.needsReadback == true { _ = await reconcileRequestedReasoningEffort() }
         if let response = try? await client.models() {
             let groups = response.catalogGroups
             if !groups.isEmpty {
@@ -1216,14 +1236,14 @@ public final class ChatViewModel {
         )
     }
 
-    private func applyComposerConfigurationState(_ state: ChatComposerConfigState) {
+    private func applyComposerConfigurationState(_ state: ChatComposerConfigState, confirmsReasoning: Bool) {
         currentWorkspace = state.currentWorkspace
         currentModel = state.currentModel
         currentModelProvider = state.currentModelProvider
         currentModelOptionID = state.currentModelOptionID
         currentProfile = state.currentProfile
         selectedProfileName = state.selectedProfileName
-        selectedReasoningEffort = state.selectedReasoningEffort
+        if pendingReasoningSelection == nil || confirmsReasoning { selectedReasoningEffort = state.selectedReasoningEffort }
         supportedReasoningEfforts = state.supportedReasoningEfforts
         supportsReasoningEffort = state.supportsReasoningEffort
         modelCatalogGroups = state.modelCatalogGroups
@@ -1412,7 +1432,11 @@ public final class ChatViewModel {
         supportedReasoningEfforts = response.normalizedSupportedEfforts
         supportsReasoningEffort = response.supportsReasoningEffort
 
-        if let selected = Self.nonEmpty(selectedReasoningEffort)?.lowercased(),
+        if let pending = pendingReasoningSelection, pending.needsReadback, requestedReasoningEffort != nil,
+           let serverEffort = response.effectiveEffort {
+            selectedReasoningEffort = serverEffort
+            if serverEffort == pending.effort { composerConfigurationErrorMessage = nil }
+        } else if let selected = Self.nonEmpty(selectedReasoningEffort)?.lowercased(),
            let supported = supportedReasoningEfforts,
            !supported.contains(selected),
            let serverEffort = Self.nonEmpty(response.effectiveEffort) {
@@ -1701,10 +1725,6 @@ public final class ChatViewModel {
         let selectedEffort = effort.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !selectedEffort.isEmpty else { return false }
 
-        guard selectedEffort != selectedReasoningEffort else {
-            return false
-        }
-
         guard !isViewingCachedData else {
             composerConfigurationErrorMessage = String(localized: "Reconnect to the server to change reasoning.")
             return false
@@ -1715,6 +1735,12 @@ public final class ChatViewModel {
             return false
         }
 
+        guard !isUpdatingComposerConfiguration else { return false }
+        if pendingReasoningSelection != nil {
+            guard await reconcileRequestedReasoningEffort() != nil else { return false }
+        }
+        guard selectedEffort != selectedReasoningEffort else { return false }
+
         if !hasSession {
             selectedReasoningEffort = selectedEffort
             pendingNewChatSettings.reasoningEffort = selectedEffort
@@ -1722,34 +1748,58 @@ public final class ChatViewModel {
             return true
         }
 
-        guard !isUpdatingComposerConfiguration else { return false }
-        let previousEffort = selectedReasoningEffort
+        guard let targetSessionID = sessionID else { return false }
         let ownership = sendOwnershipGeneration
-        let targetSessionID = sessionID
-        selectedReasoningEffort = selectedEffort
+        pendingReasoningSelection = (selectedEffort, targetSessionID, ownership, false)
+        reasoningGatingFetchToken += 1
         isUpdatingComposerConfiguration = true
         composerConfigurationErrorMessage = nil
         lastError = nil
-        defer { isUpdatingComposerConfiguration = false }
+        defer {
+            isUpdatingComposerConfiguration = false
+            if pendingReasoningSelection?.ownership == ownership, pendingReasoningSelection?.sessionID == targetSessionID,
+               pendingReasoningSelection?.needsReadback == false {
+                pendingReasoningSelection?.needsReadback = true
+            }
+        }
 
         do {
-            let response = try await client.saveReasoningEffort(selectedEffort, sessionID: sessionID)
+            let response = try await client.saveReasoningEffort(selectedEffort, sessionID: targetSessionID)
             guard ownership == sendOwnershipGeneration, sessionID == targetSessionID, !Task.isCancelled else { return false }
             selectedReasoningEffort = response.effectiveEffort ?? selectedEffort
             return true
         } catch {
             guard ownership == sendOwnershipGeneration, sessionID == targetSessionID, !Task.isCancelled else { return false }
             if APIError.isDefinitiveWriteFailure(error) {
-                selectedReasoningEffort = previousEffort
-            } else if let status = try? await client.reasoning(model: currentModel, provider: currentModelProvider, sessionID: targetSessionID) {
-                guard ownership == sendOwnershipGeneration, sessionID == targetSessionID, !Task.isCancelled else { return false }
-                selectedReasoningEffort = status.effectiveEffort
-                if selectedReasoningEffort == selectedEffort { return true }
+                pendingReasoningSelection = nil
+            } else {
+                pendingReasoningSelection?.needsReadback = true
+                if let applied = await reconcileRequestedReasoningEffort(), applied { return true }
             }
             lastError = error
             composerConfigurationErrorMessage = error.localizedDescription
             return false
         }
+    }
+
+    /// Mirrors model selection recovery: keep the intent until a scoped, current read establishes its outcome.
+    private func reconcileRequestedReasoningEffort() async -> Bool? {
+        guard let pending = pendingReasoningSelection else { return nil }
+        guard requestedReasoningEffort != nil else { pendingReasoningSelection = nil; return false }
+        guard pending.needsReadback else { return nil }
+        reasoningGatingFetchToken += 1
+        let token = reasoningGatingFetchToken
+        guard let status = try? await client.reasoning(model: currentModel, provider: currentModelProvider, sessionID: pending.sessionID),
+              let serverEffort = status.effectiveEffort,
+              token == reasoningGatingFetchToken, pending.ownership == sendOwnershipGeneration,
+              pending.sessionID == sessionID, pendingReasoningSelection?.effort == pending.effort,
+              !Task.isCancelled else { return nil }
+        selectedReasoningEffort = serverEffort
+        supportedReasoningEfforts = status.normalizedSupportedEfforts
+        supportsReasoningEffort = status.supportsReasoningEffort
+        let applied = serverEffort == pending.effort
+        if applied { composerConfigurationErrorMessage = nil }
+        return applied
     }
 
     /// Restores one new-chat settings snapshot only while the configuration

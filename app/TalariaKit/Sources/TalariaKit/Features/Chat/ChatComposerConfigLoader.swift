@@ -59,6 +59,7 @@ struct ChatComposerConfigState: Equatable, Sendable {
 struct ChatComposerConfigLoadResult: Sendable {
     let state: ChatComposerConfigState
     let configurationError: Error?
+    let reasoningLoaded: Bool
 }
 
 struct ChatComposerConfigLoader {
@@ -110,6 +111,7 @@ struct ChatComposerConfigLoader {
     func loadConfiguration(from initialState: ChatComposerConfigState) async -> ChatComposerConfigLoadResult {
         var state = initialState
         var configurationError: Error?
+        var reasoningLoaded = false
 
         do {
             let profilesResponse = try await client.profiles(caching: cache?.entry(ResponseCache.Kind.profiles))
@@ -152,6 +154,7 @@ struct ChatComposerConfigLoader {
             }
             do {
                 try await applyModelsAndReasoning(try await modelsResponse, selectedProfile: selectedProfile, to: &state)
+                reasoningLoaded = true
                 let workspaceResponse = try await workspacesResponse
                 state.workspaceRoots = workspaceResponse.workspaces ?? []
                 if state.currentWorkspace == nil {
@@ -171,7 +174,8 @@ struct ChatComposerConfigLoader {
 
         return ChatComposerConfigLoadResult(
             state: state,
-            configurationError: configurationError
+            configurationError: configurationError,
+            reasoningLoaded: reasoningLoaded
         )
     }
 

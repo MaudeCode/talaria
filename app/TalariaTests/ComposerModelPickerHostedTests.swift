@@ -1,7 +1,7 @@
 import SwiftUI
 import XCTest
 @testable import Talaria
-import TalariaKit
+@testable import TalariaKit
 
 /// TAL-935: the composer model picker shows the server's rate limits and quota levels (TAL-807) on the provider
 /// headings and the cooling-down model rows.
@@ -210,6 +210,56 @@ final class ComposerModelPickerHostedTests: APIClientTestCase {
             XCTAssertEqual(checked.count, 1)
             XCTAssertTrue(checked[0].accessibilityLabel?.contains(plain.displayName) == true)
         }
+    }
+
+    func testEffortRecoveryUpdatesTheVisibleChoiceAfterReadback() async throws {
+        continueAfterFailure = false
+        let fixture = try FixtureApp(for: self)
+        let catalog = String(decoding: try sharedContractFixture("settings-model-picker"), as: UTF8.self)
+        let server = URL(string: "https://effort-recovery-\(UUID().uuidString.lowercased()).example.test")!
+        defer { ActiveServerProfile.record(nil, for: server); ServerCookieStore.shared.clear(for: server) }
+        let attemptedWrite = LockedTestValue(false)
+        let recovered = LockedTestValue(false)
+        let client = makeClient(baseURL: server) { request in
+            switch request.url?.path {
+            case "/api/reasoning" where request.httpMethod == "POST":
+                attemptedWrite.value = true
+                throw URLError(.networkConnectionLost)
+            case "/api/reasoning":
+                if attemptedWrite.value && !recovered.value { throw URLError(.networkConnectionLost) }
+                return apiTestJSONResponse(#"{"reasoning_effort":"low","supports_session_scope":true,"supports_reasoning_effort":true,"supported_efforts":["low","high"]}"#, for: request)
+            case "/api/models", "/api/models/picker": return apiTestJSONResponse(catalog, for: request)
+            case "/api/models/live": return apiTestJSONResponse(#"{"models":[]}"#, for: request)
+            case "/api/profiles": return apiTestJSONResponse(#"{"profiles":[{"name":"work","model":"shared","provider":"alpha"}],"active":"work"}"#, for: request)
+            case "/api/workspaces": return apiTestJSONResponse(#"{"workspaces":[]}"#, for: request)
+            case "/api/commands": return apiTestJSONResponse(#"{"commands":[]}"#, for: request)
+            default: return apiTestJSONResponse("{}", for: request)
+            }
+        }
+        let summary = SessionSummary(sessionId: "session-abc", title: "Effort recovery", model: "shared", modelProvider: "alpha", modelOptionID: "shared", profile: "work")
+        let model = ChatViewModel(session: summary, server: client.baseURL, client: client)
+        defer { model.cleanupPollingTasks() }
+        await model.loadComposerConfiguration()
+        let window = try hostWindow(NavigationStack {
+            ChatView(session: summary, server: client.baseURL, onAPIError: { _ in }, loadsInitialMessages: false, viewModel: model)
+        }.environment(\.scenePhase, .active).modelContainer(fixture.cache))
+        let button = try await requireElement(in: window, label: "Select model")
+        XCTAssertTrue(HostedAccessibility.activate(button))
+        let effort = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "composer-model-effort" }
+        XCTAssertTrue(HostedAccessibility.activate(effort))
+        let high = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "composer-effort-high" }
+        XCTAssertTrue(HostedAccessibility.activate(high))
+        let failedRead = await awaitCondition { !model.isUpdatingComposerConfiguration && model.composerConfigurationErrorMessage != nil }
+        XCTAssertTrue(failedRead)
+        XCTAssertTrue(HostedAccessibility.element(in: window, identifier: "composer-effort-high")?.accessibilityTraits.contains(.selected) == true)
+        attachHostedScreenshot(window, name: "effort-unknown-readback-failed")
+        recovered.value = true
+        await model.refreshModelCatalogForPickerOpen()
+        let rendered = await awaitCondition {
+            HostedAccessibility.element(in: window, identifier: "composer-effort-low")?.accessibilityTraits.contains(.selected) == true
+        }
+        XCTAssertTrue(rendered, "The visible choice must converge on the server field when read-back recovers")
+        attachHostedScreenshot(window, name: "effort-readback-recovered")
     }
 
     func testEffortChoicePageShowsConfigurationRefusal() async throws {
