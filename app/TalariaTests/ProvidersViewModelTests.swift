@@ -744,6 +744,40 @@ final class ProvidersViewModelTests: APIClientTestCase {
         XCTAssertEqual(TalariaAppDelegate.foregroundPresentation(for: UNMutableNotificationContent()), [.banner, .sound])
     }
 
+    /// TAL-2224: UIKit snapshots the app when a tap's completion runs and asserts it is on main.
+    @MainActor
+    func testTappedNotificationCompletesOnTheMainThread() async throws {
+        let request = UNNotificationRequest(identifier: "tap", content: UNMutableNotificationContent(), trigger: nil)
+        let notification = try XCTUnwrap(UNNotification(coder: NotificationArchive(["request": request, "date": Date()])))
+        let response = try XCTUnwrap(UNNotificationResponse(coder: NotificationArchive([
+            "notification": notification, "actionIdentifier": UNNotificationDefaultActionIdentifier,
+        ])))
+        let completed = expectation(description: "tap completion")
+        let delegate: UNUserNotificationCenterDelegate = TalariaAppDelegate()
+        delegate.userNotificationCenter?(.current(), didReceive: response) {
+            XCTAssertTrue(Thread.isMainThread, "UIKit requires the tap completion on main")
+            completed.fulfill()
+        }
+        await fulfillment(of: [completed], timeout: 5)
+    }
+
+    @MainActor
+    func testTapCompletesAfterOpeningItsSession() async throws {
+        let url = try XCTUnwrap(SessionNotificationRefresh.sessionURL(userInfo: [SessionNotificationRefresh.sessionIDKey: "session-1"]))
+        var events: [String] = []
+        let record = { (event: String) in events.append(Thread.isMainThread ? event : "\(event) off main") }
+
+        await TalariaAppDelegate.completeTap(opening: url, with: { opened in
+            await Task.yield()
+            record("open \(opened.absoluteString)")
+        }) { record("complete") }
+        XCTAssertEqual(events, ["open \(url.absoluteString)", "complete"])
+
+        events = []
+        await TalariaAppDelegate.completeTap(opening: nil, with: { _ in record("open") }) { record("complete") }
+        XCTAssertEqual(events, ["complete"], "a tap without a session completes without opening anything")
+    }
+
     @MainActor
     func testCancelledQuotaLoadCannotRestoreClearedWidgetSnapshot() async throws {
         let requestArrived = expectation(description: "quota request arrived")
@@ -1251,4 +1285,17 @@ final class ProvidersViewModelTests: APIClientTestCase {
         XCTAssertNil(model.quotaErrorMessage)
         XCTAssertTrue(model.quotaSources.isEmpty)
     }
+}
+
+/// Decodes UserNotifications objects that have no public initializer from fixed key values.
+private final class NotificationArchive: NSCoder {
+    private let values: [String: Any]
+    init(_ values: [String: Any]) { self.values = values }
+    override var allowsKeyedCoding: Bool { true }
+    override func containsValue(forKey key: String) -> Bool { values[key] != nil }
+    override func decodeObject(forKey key: String) -> Any? { values[key] }
+    override func decodeBool(forKey key: String) -> Bool { false }
+    override func decodeInteger(forKey key: String) -> Int { 0 }
+    override func decodeInt64(forKey key: String) -> Int64 { 0 }
+    override func decodeDouble(forKey key: String) -> Double { 0 }
 }
