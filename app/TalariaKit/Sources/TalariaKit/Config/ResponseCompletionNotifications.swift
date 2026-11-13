@@ -222,6 +222,41 @@ public enum SessionNotificationRefresh {
         return !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// TAL-872: a chat on screen in an active scene, keyed by its server origin and session.
+    public struct VisibleChat: Hashable, Sendable {
+        let origin: String
+        let sessionID: String
+
+        public init?(server: URL, sessionID: String?) {
+            guard let origin = TalariaRelayClient.originURL(server)?.absoluteString,
+                  let sessionID = sessionID?.trimmingCharacters(in: .whitespacesAndNewlines), !sessionID.isEmpty
+            else { return nil }
+            self.origin = origin
+            self.sessionID = sessionID
+        }
+
+        /// A local notification names no publisher: it comes from the active server, the only one a chat shows.
+        public func isNamed(by userInfo: [AnyHashable: Any]) -> Bool {
+            guard (userInfo[sessionIDKey] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) == sessionID
+            else { return false }
+            guard let publisherID = userInfo[publisherIDKey] as? String else { return true }
+            return TalariaRelayClient.originIdentifier(publisherID) == origin
+        }
+    }
+
+    /// Counted, so a view the navigation rebuilds for the same chat can appear before the old one disappears.
+    @MainActor private static var visibleChatCounts: [VisibleChat: Int] = [:]
+
+    @MainActor public static var visibleChats: Set<VisibleChat> { Set(visibleChatCounts.keys) }
+
+    /// Moves one chat view's visibility from `old` to `new`; either may be nil.
+    @MainActor public static func updateVisibleChat(from old: VisibleChat?, to new: VisibleChat?) {
+        if let new { visibleChatCounts[new, default: 0] += 1 }
+        if let old, let count = visibleChatCounts[old] {
+            visibleChatCounts[old] = count > 1 ? count - 1 : nil
+        }
+    }
+
     /// Where a tapped relay push or local fallback leads: its session, or the decision review its deep link names, on its
     /// publisher when it names one.
     public static func sessionURL(userInfo: [AnyHashable: Any]) -> URL? {

@@ -33,20 +33,24 @@ final class TalariaAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
         // The banner is the phone learning that a session finished, which is
         // sooner than the next polling tick would find out. Let the list adopt it
         // now so the row does not lag the notification the user just read.
-        if SessionNotificationRefresh.namesASession(
-            userInfo: notification.request.content.userInfo
-        ) {
-            await MainActor.run {
+        let namesASession = SessionNotificationRefresh.namesASession(userInfo: notification.request.content.userInfo)
+        let visibleChats = await MainActor.run {
+            if namesASession {
                 NotificationCenter.default.post(name: .talariaSessionNotificationArrived, object: nil)
             }
+            return SessionNotificationRefresh.visibleChats
         }
 
-        return Self.foregroundPresentation(for: notification.request.content)
+        return Self.foregroundPresentation(for: notification.request.content, visibleChats: visibleChats)
     }
 
+    /// The chat on screen shows its own news and plays its own haptics, so its notifications stay silent (TAL-872).
     /// Quota alerts also go to Notification Center's list so they outlive the banner; other families keep theirs.
-    nonisolated static func foregroundPresentation(for content: UNNotificationContent) -> UNNotificationPresentationOptions {
-        content.categoryIdentifier == ProviderQuotaAlertSettings.categoryIdentifier
+    nonisolated static func foregroundPresentation(
+        for content: UNNotificationContent, visibleChats: Set<SessionNotificationRefresh.VisibleChat>
+    ) -> UNNotificationPresentationOptions {
+        if visibleChats.contains(where: { $0.isNamed(by: content.userInfo) }) { return [] }
+        return content.categoryIdentifier == ProviderQuotaAlertSettings.categoryIdentifier
             ? [.banner, .sound, .list]
             : [.banner, .sound]
     }

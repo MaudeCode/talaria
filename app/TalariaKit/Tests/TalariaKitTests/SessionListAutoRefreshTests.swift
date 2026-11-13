@@ -430,6 +430,36 @@ final class SessionListAutoRefreshTests: XCTestCase {
         XCTAssertFalse(SessionNotificationRefresh.namesASession(userInfo: ["publisherId": "pub"]))
     }
 
+    /// TAL-872: every notification family names the chat on screen by its session, and by its server when it names one.
+    func testNotificationsNameTheVisibleChat() throws {
+        let server = try XCTUnwrap(URL(string: "https://Hermes.example.test:443/app"))
+        let chat = try XCTUnwrap(SessionNotificationRefresh.VisibleChat(server: server, sessionID: "s1"))
+        for kind in [PendingActionNotificationRequest.Kind.approval, .question] {
+            let request = PendingActionNotificationRequest(kind: kind, sessionID: "s1", publisherID: "https://hermes.example.test")
+            XCTAssertTrue(chat.isNamed(by: request.userInfo))
+        }
+        for outcome in [ResponseCompletionOutcome.completed, .failed] {
+            let request = ResponseCompletionNotificationRequest(sessionID: "s1", chatTitle: nil, outcome: outcome)
+            XCTAssertTrue(chat.isNamed(by: request.userInfo), "a local completion names no publisher")
+        }
+        XCTAssertTrue(chat.isNamed(by: ["sessionId": "s1", "publisherId": "https://hermes.example.test/"]))
+        XCTAssertFalse(chat.isNamed(by: ["sessionId": "s2", "publisherId": "https://hermes.example.test"]))
+        XCTAssertFalse(chat.isNamed(by: ["sessionId": "s1", "publisherId": "https://other.example.test"]))
+        XCTAssertFalse(chat.isNamed(by: [:]))
+        XCTAssertNil(SessionNotificationRefresh.VisibleChat(server: server, sessionID: "  "))
+    }
+
+    /// TAL-872: a view the navigation rebuilds for the same chat appears before the old one leaves.
+    func testARebuiltChatViewKeepsItsChatVisible() throws {
+        let chat = try XCTUnwrap(SessionNotificationRefresh.VisibleChat(server: URL(string: "https://hermes.example.test")!, sessionID: "s1"))
+        SessionNotificationRefresh.updateVisibleChat(from: nil, to: chat)
+        SessionNotificationRefresh.updateVisibleChat(from: nil, to: chat)
+        SessionNotificationRefresh.updateVisibleChat(from: chat, to: nil)
+        XCTAssertEqual(SessionNotificationRefresh.visibleChats, [chat])
+        SessionNotificationRefresh.updateVisibleChat(from: chat, to: nil)
+        XCTAssertEqual(SessionNotificationRefresh.visibleChats, [])
+    }
+
     // MARK: - Server order (TAL-306)
 
     /// TAL-306: the list shows the server's canonical order as-is: the shared contract list Web

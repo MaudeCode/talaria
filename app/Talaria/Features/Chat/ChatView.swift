@@ -820,6 +820,7 @@ struct ChatView: View {
                 Task { await loadMessages(appliesInitialFocus: false) }
             }
             .modifier(ChatLiveSync(viewModel: viewModel, server: server, sessionID: session.sessionId, onAPIError: onAPIError))
+            .modifier(VisibleChatTracking(chat: .init(server: server, sessionID: session.sessionId)))
             .onChange(of: showsLiveActivityResponseExcerpts) {
                 viewModel.setShowsLiveActivityResponseExcerpts(showsLiveActivityResponseExcerpts)
             }
@@ -4144,6 +4145,31 @@ private struct ChatDraftSyncModifier: ViewModifier {
             .onChange(of: composerSettings) { _, newSettings in
                 onSettingsChange(newSettings)
             }
+    }
+}
+
+/// TAL-872: marks this chat as on screen while it is shown in an active scene, so its notifications stay silent.
+private struct VisibleChatTracking: ViewModifier {
+    let chat: SessionNotificationRefresh.VisibleChat?
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var isShown = false
+    @State private var registered: SessionNotificationRefresh.VisibleChat?
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear { register(shown: true) }
+            // Unregisters here directly: a view being removed gets no later onChange.
+            .onDisappear { register(shown: false) }
+            .onChange(of: scenePhase) { register(shown: isShown) }
+            .onChange(of: chat) { register(shown: isShown) }
+    }
+
+    private func register(shown: Bool) {
+        isShown = shown
+        let next = shown && scenePhase == .active ? chat : nil
+        guard next != registered else { return }
+        SessionNotificationRefresh.updateVisibleChat(from: registered, to: next)
+        registered = next
     }
 }
 
