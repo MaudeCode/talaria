@@ -1335,19 +1335,25 @@ struct SessionListView: View {
     }
 
     private var regularNewChatButton: some View {
-        ChatUIKitMenuButton(primaryAction: {
-            HapticButtonHaptics.tap(style: .medium, isEnabled: isHapticsEnabled)
-            openNewChat()
-        }, showsMenu: !viewModel.newChatExecutionModes.isEmpty) {
-            Label("New Chat", systemImage: "square.and.pencil")
-        } menu: {
-            NewChatModeMenu.make(modes: viewModel.newChatExecutionModes, selected: viewModel.selectedNewChatExecutionMode) { mode in
-                openNewChat(in: mode)
+        Group {
+            // A server that offers no modes (an older one) shows no long-press menu.
+            if viewModel.newChatExecutionModes.isEmpty {
+                HapticButton(feedbackStyle: .medium) { openNewChat() } label: { newChatLabel }
+            } else {
+                Menu {
+                    NewChatModeMenu.items(modes: viewModel.newChatExecutionModes,
+                                          selected: viewModel.selectedNewChatExecutionMode) { openNewChat(in: $0) }
+                } label: { newChatLabel } primaryAction: {
+                    HapticButtonHaptics.tap(style: .medium, isEnabled: isHapticsEnabled)
+                    openNewChat()
+                }
             }
         }
         .disabled(isNewChatDisabled)
         .accessibilityLabel("New Chat")
     }
+
+    private var newChatLabel: some View { Label("New Chat", systemImage: "square.and.pencil") }
 
     private var isNewChatDisabled: Bool {
         viewModel.isViewingCachedData
