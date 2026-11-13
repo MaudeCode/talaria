@@ -161,13 +161,13 @@ final class ModelsSettingsViewModelTests: XCTestCase {
             }
         }
     }
-    private func picker(favorites: [ModelFavoriteKey] = [], _ handler: @escaping (DeferredMockURLProtocol) -> Void) -> SettingsModelPickerViewModel {
+    private func picker(favorites: [ModelFavoriteKey] = [], live: Bool = true, _ handler: @escaping (DeferredMockURLProtocol) -> Void) -> SettingsModelPickerViewModel {
         let name = "SettingsModelPickerTests.\(UUID())"
         let defaults = UserDefaults(suiteName: name)!
         addTeardownBlock { UserDefaults().removePersistentDomain(forName: name) }
         let store = ModelFavoritesStore(defaults: defaults, storageKey: "stars")
         store.save(favorites)
-        return SettingsModelPickerViewModel(client: client(handler), favorites: store, live: true)
+        return SettingsModelPickerViewModel(client: client(handler), favorites: store, live: live)
     }
 
     private func pickerJSON(star: Bool = true, hidden: Bool = false, empty: Bool = false, neverSaved: Bool = false) throws -> String {
@@ -182,6 +182,35 @@ final class ModelsSettingsViewModelTests: XCTestCase {
         value["groups"] = empty ? [] : groups
         value["visible_favorite_models"] = star && !hidden && !empty ? rows : []
         return String(decoding: try JSONSerialization.data(withJSONObject: value), as: UTF8.self)
+    }
+
+    func testReturningToACachedQueryRejectsTheOtherQuerysLateBaseAndLiveResults() async throws {
+        let visible = try pickerJSON()
+        let empty = try pickerJSON(empty: true)
+        for holdLive in [false, true] {
+            let requests = DeferredRequests()
+            let held = expectation(description: "other query response")
+            let picker = picker(live: holdLive) { request in
+                let query = URLComponents(url: request.request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+                let other = query.first { $0.name == "q" }?.value == "other"
+                let live = query.first { $0.name == "live" }?.value == "true"
+                if other && (!holdLive || live) { _ = requests.append(request); held.fulfill() }
+                else { request.complete(withJSON: other ? empty : visible) }
+            }
+            await picker.loadIfNeeded()
+            XCTAssertFalse(picker.groups.isEmpty)
+            picker.searchText = "other"
+            let other = Task { await picker.loadIfNeeded() }
+            await fulfillment(of: [held])
+            if holdLive { XCTAssertTrue(picker.groups.isEmpty, "The other query's base result arrived before its live overlay") }
+            picker.searchText = ""
+            await picker.loadIfNeeded()
+            XCTAssertFalse(picker.groups.isEmpty, "Returning to a query must restore its own results")
+            requests.request(at: 0).complete(withJSON: empty)
+            await other.value
+            XCTAssertFalse(picker.groups.isEmpty, "The abandoned query must not replace the visible catalog")
+            XCTAssertEqual(picker.searchText, "")
+        }
     }
 
     func testMountedPickerReusesAPreloadAndKeepsRowsDuringRefresh() async throws {

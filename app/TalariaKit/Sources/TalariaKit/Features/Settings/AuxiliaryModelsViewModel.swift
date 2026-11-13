@@ -37,6 +37,7 @@ public final class AuxiliaryModelsViewModel {
     private var loadGeneration = 0
     private var capabilityGeneration = 0
     private var loadedAt: Date?
+    private var confirmedTasks: [AuxiliaryModelTask] = []
     private var loadTask: Task<Void, Never>?
 
     public init(server: URL, client: APIClient? = nil) {
@@ -86,12 +87,17 @@ public final class AuxiliaryModelsViewModel {
 
     public func beginEditing(task id: String) {
         checkScope()
-        guard let task = task(id: id) else { return }
+        guard let shown = task(id: id) else { return }
+        let confirmed = confirmedTasks.first { $0.task == id } ?? shown
+        let editedRoute = shown.model != confirmed.model || shown.provider != confirmed.provider
         capabilityGeneration += 1
         saveErrorMessage = nil
-        draft = Draft(original: task, modelLabel: task.valueLabel ?? task.model,
-                      effort: task.reasoning?.saved,
-                      options: task.reasoning?.options)
+        // Recover our unconfirmed choice without presenting it as a server-confirmed value.
+        draft = Draft(original: confirmed, model: editedRoute ? shown.model : nil,
+                      provider: editedRoute ? shown.provider : nil, modelLabel: shown.valueLabel ?? shown.model,
+                      effort: shown.reasoning?.saved,
+                      writesReasoning: shown.reasoning?.saved != confirmed.reasoning?.saved,
+                      options: editedRoute ? nil : confirmed.reasoning?.options)
     }
 
     public func cancelEditing() {
@@ -200,10 +206,9 @@ public final class AuxiliaryModelsViewModel {
         } catch {
             guard accepts(scope) else { return false }
             invalidateLoads()
-            tasks = confirmed
             if draft?.id == editID && !APIError.isCancellation(error) { saveErrorMessage = error.localizedDescription }
-            // Unknown writes are read back, never replayed.
-            if !APIError.isDefinitiveWriteFailure(error) { await load(reconcilingWrite: true) }
+            if APIError.isDefinitiveWriteFailure(error) { tasks = confirmed }
+            else { loadedAt = nil; await load(reconcilingWrite: true) }
             return false
         }
     }
@@ -230,6 +235,7 @@ public final class AuxiliaryModelsViewModel {
         loadTask = nil
         loadedAt = nil
         tasks = []
+        confirmedTasks = []
         draft = nil
         savingTaskID = nil
         isLoading = false
@@ -248,6 +254,7 @@ public final class AuxiliaryModelsViewModel {
     private func apply(_ response: AuxiliaryModelsResponse) {
         isUnavailable = !response.isSupported
         tasks = response.isSupported ? response.tasks : []
+        confirmedTasks = tasks
         if var draft, let confirmed = task(id: draft.original.task) {
             draft.original = confirmed
             if draft.model == nil {

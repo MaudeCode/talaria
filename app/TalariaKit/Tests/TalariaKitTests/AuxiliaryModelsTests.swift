@@ -214,6 +214,44 @@ final class AuxiliaryModelsTests: APIClientTestCase {
     }
 
     @MainActor
+    func testUnknownSaveRetainsTheChoiceUntilAnAuthoritativeReadCanReconcileIt() async throws {
+        let server = URL(string: "https://aux-unknown-read-failed.test")!
+        let reads = LockedTestValue(0)
+        let posts = LockedTestValue(0)
+        let pending = DeferredRequests()
+        let reconciling = expectation(description: "authoritative reconciliation")
+        let saved = Self.offCatalogVision.replacingOccurrences(of: "legacy/gone-model", with: "new-vision")
+        DeferredMockURLProtocol.setOnRequest({ request in
+            if request.request.httpMethod == "POST" {
+                posts.value += 1
+                request.fail(with: URLError(.networkConnectionLost))
+            } else {
+                reads.value += 1
+                if reads.value == 1 { request.complete(withJSON: Self.auxiliaryJSON(["vision": Self.offCatalogVision])) }
+                else if reads.value == 2 { _ = pending.append(request); reconciling.fulfill() }
+                else { request.complete(withJSON: Self.auxiliaryJSON(["vision": saved])) }
+            }
+        }, forHost: server.host!)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: server.host!) }
+        let model = deferredModel(server: server)
+        await model.load()
+        let saving = Task { await model.save(task: "vision", model: "new-vision", provider: "openrouter") }
+        await fulfillment(of: [reconciling])
+        XCTAssertEqual(model.task(id: "vision")?.model, "new-vision", "An unknown write must retain the user's choice while reconciliation is pending")
+        pending.request(at: 0).fail(with: URLError(.cannotConnectToHost))
+        _ = await saving.value
+        XCTAssertEqual(model.task(id: "vision")?.model, "new-vision", "A failed read is not evidence that the write was refused")
+        model.beginEditing(task: "vision")
+        XCTAssertEqual(model.draft?.original.model, "legacy/gone-model", "An optimistic value must not become the editor's confirmed baseline")
+        XCTAssertEqual(model.draft?.model, "new-vision")
+        await model.loadIfNeeded()
+        XCTAssertEqual(reads.value, 3, "An unknown outcome invalidates read freshness")
+        XCTAssertEqual(model.task(id: "vision")?.model, "new-vision")
+        XCTAssertEqual(model.draft?.original.model, "new-vision")
+        XCTAssertEqual(posts.value, 1, "Reconciliation never replays a write")
+    }
+
+    @MainActor
     func testAtomicDraftSavesTheExactProviderAndEffortAndAdoptsServerValues() async throws {
         let pinned = Self.offCatalogVision.replacingOccurrences(of: "legacy/gone-model", with: "same-id")
             .replacingOccurrences(of: "openrouter", with: "beta")
