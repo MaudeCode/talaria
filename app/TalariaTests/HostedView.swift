@@ -261,7 +261,8 @@ extension XCTestCase {
             }
             let bottom = max(0, scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.bounds.height)
             if scroll.contentOffset.y >= bottom - 1 { break }
-            scroll.setContentOffset(CGPoint(x: 0, y: min(bottom, scroll.contentOffset.y + scroll.bounds.height * 0.8)), animated: false)
+            let visibleHeight = max(1, scroll.bounds.height - scroll.adjustedContentInset.top - scroll.adjustedContentInset.bottom)
+            scroll.setContentOffset(CGPoint(x: 0, y: min(bottom, scroll.contentOffset.y + visibleHeight * 0.8)), animated: false)
             settle(0.2)
         }
         let labels = HostedAccessibility.labels(in: window).joined(separator: "\n")

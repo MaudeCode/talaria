@@ -359,7 +359,8 @@ Settings model pickers share `SettingsModelPickerPage`. Its provider headers use
 with `SidebarSectionHeader` and `SidebarDisclosureChevron`; sections start open and remember explicit collapses.
 Search and provider filters temporarily reveal matching sections without changing those saved choices. The search
 field's trailing slot holds the filter menu. `SettingsPickerRow` and `SettingsToggleRow` use their native menu mode
-there. Model rows keep selection separate from star and Hide/Unhide actions; favorites and visibility are profile
+there. Model rows use direct star and Hide/Unhide icon buttons, separate from selection, with no row overflow menu.
+The long-press menu can expose both actions. Favorites and visibility are profile
 fields from the server, with optimistic preference writes and rollback.
 
 ## 14. Exceptions

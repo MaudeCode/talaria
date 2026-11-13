@@ -428,16 +428,23 @@ final class ScreenGalleryHostedTests: XCTestCase {
                 }
             }
         } inspect: { window, variant in
-            if name == "settings-models" {
+            let controlIDs: [String]
+            switch name {
+            case "settings-models": controlIDs = ["settings-models-default-reasoning", "settings-models-show-thinking"]
+            case "settings-default-model", "settings-auxiliary-model-picker": controlIDs = ["settings-model-visibility-fixture-model"]
+            default: controlIDs = []
+            }
+            if !controlIDs.isEmpty {
                 let scroll = try XCTUnwrap(window.firstView(ofType: UICollectionView.self))
                 let initialOffset = scroll.contentOffset
-                for identifier in ["settings-models-default-reasoning", "settings-models-show-thinking"] {
+                for identifier in controlIDs {
                     _ = try await requireElementScrolling(in: window, "Models is missing \(identifier)") {
                         let frame = window.convert($0.accessibilityFrame, from: window.screen.coordinateSpace)
+                        let visible = window.convert(scroll.bounds.inset(by: scroll.adjustedContentInset), from: scroll)
                         return HostedAccessibility.identifier(of: $0) == identifier
-                            && frame.width > 0 && frame.height > 0 && window.bounds.contains(frame)
+                            && frame.width > 0 && frame.height > 0 && visible.contains(frame)
                     }
-                    attachHostedScreenshot(window, name: "\(identifier)-\(variant.name)")
+                    attachHostedScreenshot(window, name: "\(name)-\(identifier)-\(variant.name)")
                 }
                 scroll.setContentOffset(initialOffset, animated: false)
                 settle(window: window)

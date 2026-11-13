@@ -151,7 +151,7 @@ struct SettingsModelPickerPage<Leading: View>: View {
                 let expanded = expansion.isExpanded(groupID: group.id)
                 SettingsSection {
                     if expanded {
-                        ForEach(group.models) { model in modelRow(model, providerLabel: group.name) }
+                        ForEach(group.models) { model in modelRow(model) }
                     }
                 } header: {
                     SidebarSectionHeader(title: group.name, toggle: {
@@ -169,7 +169,7 @@ struct SettingsModelPickerPage<Leading: View>: View {
         }
     }
 
-    private func modelRow(_ model: ModelCatalogOption, providerLabel: String) -> some View {
+    private func modelRow(_ model: ModelCatalogOption) -> some View {
         HStack(spacing: 0) {
             Button {
                 Task { await select(model.id, providerID: model.providerID) }
@@ -196,10 +196,14 @@ struct SettingsModelPickerPage<Leading: View>: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("settings-model-star-\(model.id)")
                 .accessibilityLabel(model.isFavorite ? String(localized: "Remove \(model.displayName) from favorites") : String(localized: "Add \(model.displayName) to favorites"))
-                Menu { preferenceActions(model) } label: {
-                    Image(systemName: "ellipsis").frame(minWidth: 44, minHeight: 44)
+                Button { Task { await catalog.toggleHidden(model) } } label: {
+                    Image(systemName: model.isHidden ? "eye" : "eye.slash")
+                        .frame(minWidth: 44, minHeight: 44)
                 }
-                .accessibilityLabel(String(localized: "Actions for \(model.displayName), \(providerLabel)"))
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("settings-model-visibility-\(model.id)")
+                .accessibilityLabel(model.isHidden ? String(localized: "Unhide Model") : String(localized: "Hide Model"))
+                .accessibilityValue(model.displayName)
             }
         }
     }

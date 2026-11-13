@@ -831,16 +831,22 @@ final class SettingsPlacementHostedTests: XCTestCase {
                 }
                 XCTAssertTrue(HostedAccessibility.element(in: window, identifier: "settings-model-option-fixture-model")?.accessibilityTraits.contains(.selected) == true,
                               "Starring must not change the selected default")
-                let hideActions = try await hostedMenuActions("Actions for Fixture Model, Fixture Provider", readyAction: "Hide Model", in: window)
-                XCTAssertTrue(HostedAccessibility.activate(try XCTUnwrap(hideActions.first { $0.title == "Hide Model" })))
+                let hide = HostedAccessibility.element(in: window, identifier: "settings-model-visibility-fixture-model")
+                XCTAssertNotNil(hide, "Hide must be directly available beside the star, without an overflow menu")
+                XCTAssertEqual(hide?.accessibilityLabel, "Hide Model")
+                XCTAssertEqual(hide?.accessibilityValue, "Fixture Model")
+                XCTAssertNil(HostedAccessibility.element(in: window, label: "Actions for Fixture Model, Fixture Provider"))
+                XCTAssertTrue(HostedAccessibility.activate(try XCTUnwrap(hide)))
                 let hidden = await awaitCondition { HostedAccessibility.element(in: window, identifier: "settings-model-option-fixture-model") == nil }
                 XCTAssertTrue(hidden, "Hide must remove the model from the visible catalog")
                 let filters = try await hostedMenuActions("Filter Models", readyAction: "Show Hidden", in: window)
                 XCTAssertTrue(HostedAccessibility.activate(try XCTUnwrap(filters.first { $0.title == "Show Hidden" })))
                 let restored = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-model-option-fixture-model" }
                 XCTAssertTrue(restored.accessibilityLabel?.contains("Hidden") == true)
-                let restoreActions = try await hostedMenuActions("Actions for Fixture Model, Fixture Provider", readyAction: "Unhide Model", in: window)
-                XCTAssertTrue(HostedAccessibility.activate(try XCTUnwrap(restoreActions.first { $0.title == "Unhide Model" })))
+                let unhide = try await requireElement(in: window) {
+                    HostedAccessibility.identifier(of: $0) == "settings-model-visibility-fixture-model" && $0.accessibilityLabel == "Unhide Model"
+                }
+                XCTAssertTrue(HostedAccessibility.activate(unhide))
                 _ = try await requireElement(in: window) {
                     HostedAccessibility.identifier(of: $0) == "settings-model-option-fixture-model" && $0.accessibilityLabel?.contains("Hidden") == false
                 }

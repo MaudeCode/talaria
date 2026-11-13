@@ -11,7 +11,7 @@
     },
     {
       "category": "Added",
-      "summary": "Filter model lists, collapse providers, and favorite or hide models in Settings.",
+      "summary": "Filter model lists, collapse providers, and favorite or hide models directly from Settings rows.",
       "highlight": false,
       "components": [
         "app"
