@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "On iPhone Duo, New Chat appears only in the chat's side bar, not again in the open sidebar.",
+      "highlight": false,
+      "components": ["app"],
+      "announce": false
+    }
+  ]
+}

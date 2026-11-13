@@ -685,7 +685,7 @@ struct SessionListView: View {
                         .disabled(viewModel.isPerformingBulkAction)
                 }
                 .overflowPriority(.done, includesHorizontal: true)
-            } else if !detailHostsSidebarActions {
+            } else if sidebarPresentation.sidebarShowsNewChat {
                 ToolbarItem(placement: .topBarTrailing) {
                     regularNewChatButton
                         .buttonStyle(.borderedProminent)

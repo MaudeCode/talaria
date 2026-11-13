@@ -95,6 +95,8 @@ public struct SidebarPresentation: Equatable, Sendable {
     public let drawerEnabled: Bool
     public let overlaysContent: Bool
     public let hostsSidebarActionsInDetail: Bool
+    /// The Duo's vertical bar carries the chat's New Chat, so the sidebar offers its own only without one.
+    public let sidebarShowsNewChat: Bool
     public let toggleTarget: ToggleTarget
     /// Whether the Files inspector can sit beside the chat at all: regular width, no fold through the split, and
     /// room for the chat. A Files tap opens the inspector only when this holds; otherwise it pushes the browser.
@@ -122,6 +124,7 @@ public struct SidebarPresentation: Equatable, Sendable {
         drawerEnabled = secondaryUsesDrawer || (!tiled && !columnIsVisible)
         overlaysContent = isRegularWidth
         hostsSidebarActionsInDetail = tiled && hasVerticalBar
+        sidebarShowsNewChat = !hasVerticalBar
         toggleTarget = secondaryUsesDrawer ? .drawer : (tiled ? .column : .drawer)
     }
 
