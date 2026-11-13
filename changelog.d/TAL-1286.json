@@ -8,6 +8,15 @@
         "app"
       ],
       "announce": false
+    },
+    {
+      "category": "Added",
+      "summary": "Supports reasoning previews for auxiliary model changes in the iPhone app.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
     }
   ]
 }

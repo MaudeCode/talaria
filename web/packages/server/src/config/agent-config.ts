@@ -868,7 +868,7 @@ function auxTaskPayload(slot: AuxSlot, entry: unknown, reasoning: AuxReasoning |
     description: slot.description,
     inherit_from: slot.inherit_from,
     reasoning_effort: slot.reasoning_effort,
-    reasoning: reasoning ?? { saved: savedEffort(e), effective: slot.reasoning_effort, inherited: savedEffort(e) === null, default_source: defaultSource(slot.key), options: [], unavailable: 'agent' },
+    reasoning: reasoning ?? auxiliaryReasoningState(slot, e, { options: [], unavailable: 'agent' }),
     effective: slot.effective,
   }
 }
@@ -885,6 +885,7 @@ const auxEntry = (config: Config, task: string): Dict => dict(task === DELEGATIO
 /** The effort saved in a slot's block (YAML `false` is `none`); null when none is saved and the slot inherits its default. */
 const savedEffort = (entry: Dict): string | null => (entry.reasoning_effort === false ? 'none' : str(entry.reasoning_effort).trim().toLowerCase() || null)
 const isAutoRoute = (route: Dict): boolean => (str(route.provider).trim() || 'auto') === 'auto' && !str(route.model).trim()
+const auxiliarySlotForRoute = (slot: AuxSlot, entry: Dict): AuxSlot => isAutoRoute(entry) ? slot : { ...slot, effective: null }
 
 /**
  * The route a slot's effort applies to: its pin, else the route the Agent resolved for it (TAL-800), else the pin of the
@@ -914,6 +915,11 @@ async function effortOptions(config: Config, slot: AuxSlot, resolve: AuxEfforts)
   return levels.length ? { options: [...levels, 'none'], unavailable: null } : { options: [], unavailable: 'model' }
 }
 
+function auxiliaryReasoningState(slot: AuxSlot, entry: Dict, capability: Pick<AuxReasoning, 'options' | 'unavailable'>): AuxReasoning {
+  const saved = savedEffort(entry)
+  return { saved, effective: slot.reasoning_effort, inherited: saved === null, default_source: defaultSource(slot.key), ...capability }
+}
+
 /** Every slot's reasoning control, reading each distinct route's capability once. */
 export async function auxiliaryReasoning(config: Config, slots: AuxSlot[], resolve: AuxEfforts): Promise<Map<string, AuxReasoning>> {
   const reads = new Map<string, Promise<string[] | null>>()
@@ -924,8 +930,7 @@ export async function auxiliaryReasoning(config: Config, slots: AuxSlot[], resol
     return read
   }
   return new Map(await Promise.all(slots.map(async (slot): Promise<[string, AuxReasoning]> => {
-    const saved = savedEffort(auxEntry(config, slot.key))
-    return [slot.key, { saved, effective: slot.reasoning_effort, inherited: saved === null, default_source: defaultSource(slot.key), ...(await effortOptions(config, slot, once)) }]
+    return [slot.key, auxiliaryReasoningState(slot, auxEntry(config, slot.key), await effortOptions(config, slot, once))]
   })))
 }
 
@@ -1019,12 +1024,63 @@ function delegationRoute(entry: unknown, provider: string, model: string, advanc
   return route
 }
 
+function autoAuxiliarySlot(entry: unknown): Dict {
+  const slot: Dict = { ...dict(entry), provider: 'auto', model: '' }
+  Reflect.deleteProperty(slot, 'base_url')
+  return slot
+}
+
+/** The shared route builder for persisted writes and read-only capability previews. */
+function auxiliaryRoute(config: Config, saved: unknown, provider: string, model: string, advanced: unknown): Dict {
+  const entry = provider === 'auto' && !model ? autoAuxiliarySlot(saved) : { ...dict(saved) }
+  if (isCustomProvider(entry.provider) && !isCustomProvider(provider)) Reflect.deleteProperty(entry, 'base_url')
+  entry.provider = provider
+  entry.model = model
+  if (isCustomProvider(provider)) {
+    let base: string | null = null
+    if (provider.startsWith('custom:')) {
+      const match = customProviderOwner(config, provider).entry
+      base = match ? str(match.base_url).trim() || null : null
+      if (!base) Reflect.deleteProperty(entry, 'base_url')
+    }
+    if (base) entry.base_url = base.replace(/\/+$/, '')
+  }
+  if (advanced !== null && advanced !== undefined) {
+    try {
+      applyAdvancedModelOptions(entry, advanced)
+    } catch (error) {
+      throw new Error((error as Error).message.replace('advanced model options', 'advanced auxiliary options'))
+    }
+  }
+  return entry
+}
+
 /**
  * One slot's route and reasoning effort, written together (TAL-1285). Without `provider` and `model`, a write that names
  * a `reasoning_effort` changes only the effort and keeps the route; otherwise an omitted provider/model means Auto.
  * Reset All returns every slot to Auto and clears every saved effort, as the Agent's picker does.
  */
 export interface AuxWrite { provider?: string | undefined; model?: string | undefined; reasoning_effort?: string | null | undefined; advanced?: unknown }
+
+/** Resolves only a proposed task's reasoning control; no config update or catalog discovery is performed. */
+export async function previewAuxiliaryReasoning(store: AgentConfig, home: string, task: string, write: Pick<AuxWrite, 'provider' | 'model'>, resolve: AuxEfforts): Promise<AuxReasoning> {
+  const [loaded, { slots }] = await Promise.all([store.read(home), store.auxiliarySlots(home)])
+  const listed = slots.find((slot) => slot.key === task)
+  if (!listed || task === '__reset__') throw new Error(`Unknown auxiliary task slot: '${task}'`)
+  const config = structuredClone(loaded)
+  const current = auxEntry(config, task)
+  if (task === DELEGATION_TASK && !(await store.delegation(home, config)).fixed_model_active) {
+    return auxiliaryReasoningState(listed, current, { options: [], unavailable: 'slot' })
+  }
+  const changesRoute = write.model !== undefined || write.provider !== undefined
+  const slot = changesRoute ? auxiliarySlotForRoute(listed, current) : listed
+  if (changesRoute) {
+    const [provider, model] = auxiliarySelection(write.provider ?? '', write.model ?? '')
+    if (task === DELEGATION_TASK) config.delegation = delegationRoute(config.delegation, provider, model, undefined)
+    else config.auxiliary = { ...dict(config.auxiliary), [task]: auxiliaryRoute(config, current, provider, model, undefined) }
+  }
+  return auxiliaryReasoningState(slot, current, await effortOptions(config, slot, resolve))
+}
 
 export async function setAuxiliaryModel(store: AgentConfig, home: string, task: string, write: AuxWrite, resolve: AuxEfforts): Promise<{ ok: true; task: string; provider: string; model: string }> {
   const listing = await store.auxiliarySlots(home)
@@ -1037,11 +1093,9 @@ export async function setAuxiliaryModel(store: AgentConfig, home: string, task: 
   const advanced = write.advanced
   await store.update(home, async (config) => {
     const aux = dict(config.auxiliary)
-    // Auto clears the override, including a custom endpoint's base_url (which would otherwise keep routing there).
-    const autoSlot = (entry: unknown): Dict => { const slot: Dict = { ...dict(entry), provider: 'auto', model: '' }; Reflect.deleteProperty(slot, 'base_url'); return slot }
     const listed = listing.slots.find((s) => s.key === task)
     // The listing resolved the slot's route before this write; a slot leaving its pin re-resolves its inheritance from the written config.
-    const slot = listed && (isAutoRoute(auxEntry(config, task)) ? listed : { ...listed, effective: null })
+    const slot = listed && auxiliarySlotForRoute(listed, auxEntry(config, task))
     if (keepRoute && slot) {
       if (task === DELEGATION_TASK && !(await store.delegation(home, config)).fixed_model_active) throw new ConfigUnavailable('The selected delegation mode does not use the fixed model')
       const route = auxEntry(config, task)
@@ -1056,7 +1110,7 @@ export async function setAuxiliaryModel(store: AgentConfig, home: string, task: 
       // re-enabling the plugin does not bring back a pin the user reset. Unknown ownership (no listing) leaves it alone.
       const orphans = auxiliaryOrphans(aux, slots, listing.reserved)
       const reset = (entry: Dict): Dict => { Reflect.deleteProperty(entry, 'reasoning_effort'); return entry }
-      for (const key of [...slots, ...orphans]) if (key !== DELEGATION_TASK) aux[key] = reset(autoSlot(aux[key]))
+      for (const key of [...slots, ...orphans]) if (key !== DELEGATION_TASK) aux[key] = reset(autoAuxiliarySlot(aux[key]))
       config.auxiliary = aux
       if (slots.includes(DELEGATION_TASK)) config.delegation = reset(delegationRoute(config.delegation, 'auto', '', null))
       return
@@ -1068,27 +1122,7 @@ export async function setAuxiliaryModel(store: AgentConfig, home: string, task: 
       if (slot) await applyAuxEffort(config, slot, requested, resolve)
       return
     }
-    const entry = provider === 'auto' && !model ? autoSlot(aux[task]) : dict(aux[task])
-    if (isCustomProvider(entry.provider) && !isCustomProvider(provider)) Reflect.deleteProperty(entry, 'base_url')
-    entry.provider = provider
-    entry.model = model
-    if (isCustomProvider(provider)) {
-      let base: string | null = null
-      if (provider.startsWith('custom:')) {
-        const match = customProviderOwner(config, provider).entry
-        base = match ? str(match.base_url).trim() || null : null
-        if (!base) Reflect.deleteProperty(entry, 'base_url')
-      }
-      if (base) entry.base_url = base.replace(/\/+$/, '')
-    }
-    if (advanced !== null && advanced !== undefined) {
-      try {
-        applyAdvancedModelOptions(entry, advanced)
-      } catch (error) {
-        throw new Error((error as Error).message.replace('advanced model options', 'advanced auxiliary options'))
-      }
-    }
-    aux[task] = entry
+    aux[task] = auxiliaryRoute(config, aux[task], provider, model, advanced)
     config.auxiliary = aux
     if (slot) await applyAuxEffort(config, slot, requested, resolve)
   })

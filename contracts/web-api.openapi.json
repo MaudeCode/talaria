@@ -98797,6 +98797,17 @@
         ],
         "parameters": [
           {
+            "name": "auxiliary_task",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Read-only task capability preview for model/provider; incompatible with session_id. Omit model/provider to inspect the current route; an empty model with provider auto previews inheritance."
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
             "name": "session_id",
             "in": "query",
             "schema": {
@@ -98842,6 +98853,78 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "auxiliary_reasoning": {
+                      "type": "object",
+                      "properties": {
+                        "saved": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "The effort saved on the slot (`none` disables reasoning); null when none is saved and the slot inherits its default."
+                        },
+                        "effective": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "The effort the slot runs with; `''` is the default named by `default_source`; null when the Agent does not report it."
+                        },
+                        "inherited": {
+                          "type": "boolean",
+                          "description": "No effort is saved, so the slot runs with its default."
+                        },
+                        "default_source": {
+                          "enum": [
+                            "provider",
+                            "parent"
+                          ],
+                          "type": "string",
+                          "description": "What the default is: the provider's (auxiliary tasks) or the parent agent's (delegation)."
+                        },
+                        "options": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "Efforts the slot may save, in order (`none` last). Empty when `unavailable` is set."
+                        },
+                        "unavailable": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "slot",
+                                "model",
+                                "agent"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Why no effort can be saved: the slot ignores one, its route's model has no reasoning control, or the Agent did not say. Null when `options` apply."
+                        }
+                      },
+                      "required": [
+                        "saved",
+                        "effective",
+                        "inherited",
+                        "default_source",
+                        "options",
+                        "unavailable"
+                      ],
+                      "additionalProperties": {},
+                      "description": "Read-only auxiliary_task preview: current saved/effective fields and the proposed route's task-specific options."
+                    },
                     "show_reasoning": {
                       "type": "boolean"
                     },
@@ -98940,6 +99023,78 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "auxiliary_reasoning": {
+                      "type": "object",
+                      "properties": {
+                        "saved": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "The effort saved on the slot (`none` disables reasoning); null when none is saved and the slot inherits its default."
+                        },
+                        "effective": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "The effort the slot runs with; `''` is the default named by `default_source`; null when the Agent does not report it."
+                        },
+                        "inherited": {
+                          "type": "boolean",
+                          "description": "No effort is saved, so the slot runs with its default."
+                        },
+                        "default_source": {
+                          "enum": [
+                            "provider",
+                            "parent"
+                          ],
+                          "type": "string",
+                          "description": "What the default is: the provider's (auxiliary tasks) or the parent agent's (delegation)."
+                        },
+                        "options": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "Efforts the slot may save, in order (`none` last). Empty when `unavailable` is set."
+                        },
+                        "unavailable": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "slot",
+                                "model",
+                                "agent"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Why no effort can be saved: the slot ignores one, its route's model has no reasoning control, or the Agent did not say. Null when `options` apply."
+                        }
+                      },
+                      "required": [
+                        "saved",
+                        "effective",
+                        "inherited",
+                        "default_source",
+                        "options",
+                        "unavailable"
+                      ],
+                      "additionalProperties": {},
+                      "description": "Read-only auxiliary_task preview: current saved/effective fields and the proposed route's task-specific options."
+                    },
                     "show_reasoning": {
                       "type": "boolean"
                     },

@@ -379,6 +379,23 @@ final class APIClientConfigurationTests: APIClientTestCase {
         }
     }
 
+    func testAuxiliaryReasoningPreviewUsesTheSharedReadOnlyContract() async throws {
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("reasoning-scope")) as? [String: Any])
+        let preview = try XCTUnwrap(fixture["auxiliary_preview"] as? [String: Any])
+        let read = try XCTUnwrap(preview["read"] as? [String: String])
+        let status = String(decoding: try JSONSerialization.data(withJSONObject: XCTUnwrap(preview["status"])), as: UTF8.self)
+        let client = makeClient { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            XCTAssertEqual(Dictionary(uniqueKeysWithValues: query.map { ($0.name, $0.value ?? "") }), read)
+            return apiTestJSONResponse(status, for: request)
+        }
+        let response = try await client.reasoning(model: read["model"], provider: read["provider"], auxiliaryTask: read["auxiliary_task"])
+        XCTAssertEqual(response.auxiliaryReasoning?.options, ["low", "high", "none"])
+        XCTAssertEqual(response.auxiliaryReasoning?.saved, "medium")
+        XCTAssertNil(response.supportsReasoningEffort, "The preview is not a global/chat reasoning status")
+    }
+
     func testChatReasoningUsesSharedScopeCapabilityForEffortAndReset() async throws {
         let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("reasoning-scope")) as? [String: Any])
         let status = String(decoding: try JSONSerialization.data(withJSONObject: XCTUnwrap(fixture["status"])), as: UTF8.self)

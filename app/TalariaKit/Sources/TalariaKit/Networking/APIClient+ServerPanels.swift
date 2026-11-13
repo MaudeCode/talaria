@@ -92,8 +92,9 @@ extension APIClient {
     /// Passing the session's current model + provider makes `supported_efforts`
     /// model-accurate (mirrors the upstream WebUI composer chip, issue #18);
     /// with no params the server resolves the config default model instead.
-    public func reasoning(model: String? = nil, provider: String? = nil, sessionID: String? = nil) async throws -> ReasoningStatusResponse {
-        try await send(endpoint: .reasoning(model: model, provider: provider, sessionID: sessionID), method: "GET")
+    /// `auxiliaryTask` previews that slot's proposed route without a write; do not combine it with `sessionID`.
+    public func reasoning(model: String? = nil, provider: String? = nil, sessionID: String? = nil, auxiliaryTask: String? = nil) async throws -> ReasoningStatusResponse {
+        try await send(endpoint: .reasoning(model: model, provider: provider, sessionID: sessionID, auxiliaryTask: auxiliaryTask), method: "GET")
     }
 
     /// Chat changes carry their session; nil is reserved for explicit profile settings.

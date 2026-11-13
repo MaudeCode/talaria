@@ -130,18 +130,15 @@ public final class AuxiliaryModelsViewModel {
         self.draft?.writesReasoning = false
         self.draft?.effort = draft.original.reasoning?.saved
         self.draft?.capabilityError = nil
-        // Auto can inherit a different task, so only its slot projection knows the right vocabulary.
         self.draft?.options = nil
-        guard !model.isEmpty, let reasoning = draft.original.reasoning,
-              reasoning.unavailable == nil || reasoning.unavailable == "model" else { return }
         self.draft?.isLoadingCapability = true
         defer {
             if generation == capabilityGeneration { self.draft?.isLoadingCapability = false }
         }
         do {
-            let response = try await client.reasoning(model: model, provider: provider)
+            let response = try await client.reasoning(model: model, provider: provider, auxiliaryTask: draft.original.task)
             guard accepts(scope), generation == capabilityGeneration, self.draft?.id == draft.id else { return }
-            self.draft?.options = response.supportsReasoningEffort == true ? response.supportedEfforts : nil
+            self.draft?.options = response.auxiliaryReasoning?.options
         } catch {
             guard accepts(scope), generation == capabilityGeneration, self.draft?.id == draft.id else { return }
             if !APIError.isCancellation(error) { self.draft?.capabilityError = error.localizedDescription }

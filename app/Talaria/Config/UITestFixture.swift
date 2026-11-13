@@ -467,7 +467,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
     private static let profileState = OSAllocatedUnfairLock(initialState: (rows: [[String: JSONValue]](), active: "fixture-profile"))
     private static let serverSettings = OSAllocatedUnfairLock(initialState: [String: JSONValue]())
     private static let modelPreferences = OSAllocatedUnfairLock(initialState: (favorites: ["fixture-provider": Set(["fixture-model"])], hidden: [String: Set<String>]()))
-    private static let auxiliarySelections = OSAllocatedUnfairLock(initialState: [String: (model: String, provider: String?)]())
+    private static let auxiliarySelections = OSAllocatedUnfairLock(initialState: [String: (model: String?, provider: String?, effort: String?, writesReasoning: Bool)]())
     private static let reasoningDefaults = OSAllocatedUnfairLock(initialState: (effort: "medium", thinking: true))
     nonisolated(unsafe) private static var transcriptReads = 0
     nonisolated(unsafe) private static var archivedSessionIDs: Set<String> = []
@@ -912,6 +912,11 @@ final class UITestFixtureURLProtocol: URLProtocol {
         case "/api/insights":
             return insightsResponse(url)
         case "/api/reasoning":
+            if let task = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "auxiliary_task" })?.value,
+               let rows = auxiliaryModelsResponse()["tasks"] as? [[String: Any]],
+               let reasoning = rows.first(where: { $0["task"] as? String == task })?["reasoning"] {
+                return json(["auxiliary_reasoning": reasoning])
+            }
             return reasoningDefaults.withLock { state in
                 if request.httpMethod == "POST" {
                     let body = requestJSON(request)
@@ -964,9 +969,16 @@ final class UITestFixtureURLProtocol: URLProtocol {
             if body["scope"] as? String == "auxiliary", let task = body["task"] as? String {
                 let model = body["model"] as? String
                 let provider = body["provider"] as? String
+                let writesReasoning = body.keys.contains("reasoning_effort")
+                let effort = body["reasoning_effort"] as? String
                 auxiliarySelections.withLock { values in
-                    if task == "__reset__" { values = ["__reset__": ("", "auto")] }
-                    else if let model { values[task] = (model, provider) }
+                    if task == "__reset__" { values = ["__reset__": ("", "auto", nil, true)] }
+                    else {
+                        var saved = values[task] ?? values["__reset__"] ?? (nil, nil, nil, false)
+                        if let model { saved.model = model; saved.provider = provider }
+                        if writesReasoning { saved.effort = effort; saved.writesReasoning = true }
+                        values[task] = saved
+                    }
                 }
             }
             return json(["ok": true, "auxiliary": auxiliaryModelsResponse()])
@@ -1882,7 +1894,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
                 "is_auto": true, "value_label": "Fixture Model", "provider_label": "Fixture Provider",
                 "selected_option_id": NSNull(), "in_catalog": true,
                 "reasoning": ["saved": NSNull(), "effective": "medium", "inherited": true,
-                              "default_source": "provider", "options": ["low", "medium", "high"], "unavailable": NSNull()],
+                              "default_source": "provider", "options": ["low", "medium", "high", "none"], "unavailable": NSNull()],
             ]
             if task == "title_generation" {
                 row.merge(["provider": "fixture-provider", "model": "fixture-model", "is_auto": false, "selected_option_id": "fixture-model"]) { $1 }
@@ -1890,10 +1902,19 @@ final class UITestFixtureURLProtocol: URLProtocol {
                 row.merge(["provider": "openrouter", "model": "legacy/vision-model", "is_auto": false, "value_label": "legacy/vision-model", "provider_label": "OpenRouter", "in_catalog": false]) { $1 }
             }
             if let saved = auxiliarySelections.withLock({ $0[task] ?? $0["__reset__"] }) {
-                row.merge(["provider": saved.provider ?? "auto", "model": saved.model, "is_auto": saved.model.isEmpty,
-                           "value_label": saved.model.isEmpty ? "Fixture Model" : saved.model,
-                           "provider_label": saved.provider ?? "Fixture Provider", "in_catalog": true,
-                           "selected_option_id": saved.model.isEmpty ? NSNull() : saved.model as Any]) { $1 }
+                if let model = saved.model {
+                    row.merge(["provider": saved.provider ?? "auto", "model": model, "is_auto": model.isEmpty,
+                               "value_label": model.isEmpty ? "Fixture Model" : model,
+                               "provider_label": saved.provider ?? "Fixture Provider", "in_catalog": true,
+                               "selected_option_id": model.isEmpty ? NSNull() : model as Any]) { $1 }
+                }
+                if saved.writesReasoning, var reasoning = row["reasoning"] as? [String: Any] {
+                    if let effort = saved.effort { reasoning["saved"] = effort }
+                    else { reasoning["saved"] = NSNull() }
+                    reasoning["effective"] = saved.effort ?? "medium"
+                    reasoning["inherited"] = saved.effort == nil
+                    row["reasoning"] = reasoning
+                }
             }
             return row
         }

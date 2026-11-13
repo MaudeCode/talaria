@@ -251,6 +251,57 @@ final class AuxiliaryModelsTests: APIClientTestCase {
         XCTAssertEqual(posts.value, 1, "Reconciliation never replays a write")
     }
 
+    private static func reasoningJSON(levels: [String], taskOptions: [String]) -> String {
+        let body: [String: Any] = ["supports_reasoning_effort": true, "supported_efforts": levels,
+            "auxiliary_reasoning": ["saved": NSNull(), "effective": "low", "inherited": true,
+                "default_source": "provider", "options": taskOptions, "unavailable": NSNull()]]
+        return String(decoding: try! JSONSerialization.data(withJSONObject: body), as: UTF8.self)
+    }
+
+    @MainActor
+    func testModelChoiceUsesTaskScopedReasoningIncludingNone() async throws {
+        let client = makeClient { request in
+            if request.url?.path == "/api/reasoning" {
+                return apiTestJSONResponse(Self.reasoningJSON(levels: ["low", "high"], taskOptions: ["low", "high", "none"]), for: request)
+            }
+            return apiTestJSONResponse(Self.auxiliaryJSON(["vision": Self.offCatalogVision]), for: request)
+        }
+        let model = AuxiliaryModelsViewModel(server: client.baseURL, client: client)
+        await model.load()
+        model.beginEditing(task: "vision")
+        await model.selectModel("small", provider: "openrouter")
+        XCTAssertEqual(model.draft?.options, ["low", "high", "none"], "Task-specific reasoning-off must survive a model change")
+        model.selectEffort("none")
+        XCTAssertEqual(model.draft?.effort, "none")
+        XCTAssertEqual(model.draft?.writesReasoning, true)
+    }
+
+    @MainActor
+    func testAutoPreviewKeepsEmptyModelAndOlderServersStayUnknown() async throws {
+        let previews = LockedTestValue(0)
+        let client = makeClient { request in
+            if request.url?.path == "/api/reasoning" {
+                previews.value += 1
+                let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
+                XCTAssertEqual(query?.first { $0.name == "auxiliary_task" }?.value, "vision")
+                if previews.value == 1 {
+                    XCTAssertEqual(query?.first { $0.name == "model" }?.value, "")
+                    XCTAssertEqual(query?.first { $0.name == "provider" }?.value, "auto")
+                    return apiTestJSONResponse(#"{"auxiliary_reasoning":{"saved":null,"effective":null,"inherited":true,"default_source":"provider","options":[],"unavailable":"agent"}}"#, for: request)
+                }
+                return apiTestJSONResponse(#"{"supports_reasoning_effort":true,"supported_efforts":["high"]}"#, for: request)
+            }
+            return apiTestJSONResponse(Self.auxiliaryJSON(["vision": Self.offCatalogVision]), for: request)
+        }
+        let model = AuxiliaryModelsViewModel(server: client.baseURL, client: client)
+        await model.load()
+        model.beginEditing(task: "vision")
+        await model.selectModel("", provider: "auto")
+        XCTAssertEqual(model.draft?.options, [])
+        await model.selectModel("another", provider: "beta")
+        XCTAssertNil(model.draft?.options, "A model-level legacy vocabulary is not a task capability")
+    }
+
     @MainActor
     func testAtomicDraftSavesTheExactProviderAndEffortAndAdoptsServerValues() async throws {
         let pinned = Self.offCatalogVision.replacingOccurrences(of: "legacy/gone-model", with: "same-id")
@@ -263,7 +314,7 @@ final class AuxiliaryModelsTests: APIClientTestCase {
             if request.url?.path == "/api/reasoning" {
                 let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
                 XCTAssertEqual(query?.first { $0.name == "provider" }?.value, "beta")
-                return apiTestJSONResponse(#"{"supports_reasoning_effort":true,"supported_efforts":["high"]}"#, for: request)
+                return apiTestJSONResponse(Self.reasoningJSON(levels: ["high"], taskOptions: ["high", "none"]), for: request)
             }
             if request.httpMethod == "POST" {
                 writes.value += 1
@@ -311,13 +362,13 @@ final class AuxiliaryModelsTests: APIClientTestCase {
         await fulfillment(of: [firstRead])
         let second = Task { await model.selectModel("same-id", provider: "beta") }
         await fulfillment(of: [secondRead])
-        pending.request(at: 1).complete(withJSON: #"{"supports_reasoning_effort":true,"supported_efforts":["high"]}"#)
+        pending.request(at: 1).complete(withJSON: Self.reasoningJSON(levels: ["high"], taskOptions: ["high", "none"]))
         await second.value
         XCTAssertEqual(model.draft?.provider, "beta")
-        XCTAssertEqual(model.draft?.options, ["high"])
-        pending.request(at: 0).complete(withJSON: #"{"supports_reasoning_effort":true,"supported_efforts":["low"]}"#)
+        XCTAssertEqual(model.draft?.options, ["high", "none"])
+        pending.request(at: 0).complete(withJSON: Self.reasoningJSON(levels: ["low"], taskOptions: ["low", "none"]))
         await first.value
-        XCTAssertEqual(model.draft?.options, ["high"], "A late answer for an identically named model on another provider is stale")
+        XCTAssertEqual(model.draft?.options, ["high", "none"], "A late answer for an identically named model on another provider is stale")
         XCTAssertEqual(model.task(id: "vision")?.model, "legacy/gone-model", "Choosing in the picker only changes the draft")
         model.cancelEditing()
         XCTAssertNil(model.draft)

@@ -17,7 +17,7 @@ import { HttpFailure } from '../sessions/service.js'
 import { SidecarError } from '../sidecar/client.js'
 import type { ModelFavorite, SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { SessionNotFound } from '../sessions/store.js'
-import { agentApprovals, auxiliaryModels, auxiliaryReasoning, compressionPrepareAhead, dict, parseProviderQualifiedModel, DISCUSSION_LIMITS_KEY, discussionLimits, type DiscussionLimits, isDict, modelSection, canonicaliseProviderId, ConfigUnavailable, MAX_TOKENS_UNAVAILABLE, maxTokensStatus, PREPARE_AHEAD_KEY, findPersonality, reasoningStatus, setAgentApprovals, setAuxiliaryModel, setDefaultModel, setMaxTokens, unlistedAuxiliaryOverrides, validReasoningEffort, type AuxEfforts, type Dict } from '../config/agent-config.js'
+import { agentApprovals, auxiliaryModels, auxiliaryReasoning, previewAuxiliaryReasoning, compressionPrepareAhead, dict, parseProviderQualifiedModel, DISCUSSION_LIMITS_KEY, discussionLimits, type DiscussionLimits, isDict, modelSection, canonicaliseProviderId, ConfigUnavailable, MAX_TOKENS_UNAVAILABLE, maxTokensStatus, PREPARE_AHEAD_KEY, findPersonality, reasoningStatus, setAgentApprovals, setAuxiliaryModel, setDefaultModel, setMaxTokens, unlistedAuxiliaryOverrides, validReasoningEffort, type AuxEfforts, type Dict } from '../config/agent-config.js'
 import { ProfileError, validateProfileName } from '../profiles/profiles.js'
 import { OnboardingError } from '../onboarding.js'
 import { EnvWriteError } from '../providers/env-file.js'
@@ -590,6 +590,12 @@ export const settingsRouter = os.router({
   },
   reasoning: {
     get: os.reasoning.get.handler(({ input, context: { ctx } }) => run(async () => {
+      if (input.auxiliary_task !== undefined) {
+        if (input.session_id !== undefined) throw new HttpError(400, 'Use either auxiliary_task or session_id')
+        try {
+          return { auxiliary_reasoning: await previewAuxiliaryReasoning(ctx.deps.agentConfig, home(ctx), input.auxiliary_task, input, auxEfforts(ctx)) }
+        } catch (error) { return failure(error, 400) }
+      }
       const config = await ctx.deps.agentConfig.read(home(ctx))
       // TAL-1647: a chat answers with its own effort for the model its turns run on; a chat Web keeps no record of reads the profile's.
       const chat = input.session_id === undefined ? null : await ctx.deps.sessions.visibleSessionRecord(input.session_id)

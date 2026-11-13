@@ -785,3 +785,14 @@ a second unknown outcome is `relay_unreachable`, and the client's retry with the
 same request ID resumes. The result lists every attachment as `sent` or `refused`
 with `tier`, `quota` or `disabled` from Relay, `invalid` for a rejected upload,
 or `expired` when the upload window closed.
+
+Auxiliary task editors preview a proposed route with
+`GET /api/reasoning?auxiliary_task=<task>&model=<id>&provider=<id>`. The response's
+optional `auxiliary_reasoning` uses the same task-specific option resolver and
+route builder as auxiliary saves, including `none`, slot restrictions, and Auto
+inheritance. An explicitly empty model with provider `auto` previews Auto;
+omitting both route fields reads the current slot. `session_id` cannot accompany
+`auxiliary_task`. Previewing changes no configuration, catalog preferences, or
+global/chat reasoning. Its saved/effective fields describe the current slot;
+options describe the proposed route. Clients without the additive field keep
+capability unknown and never substitute model-level efforts or a local ladder.
