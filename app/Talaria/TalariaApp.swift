@@ -53,15 +53,25 @@ final class TalariaAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
 
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
-        didReceive response: UNNotificationResponse
-    ) async {
-        guard let url = SessionNotificationRefresh.sessionURL(userInfo: response.notification.request.content.userInfo)
-        else { return }
-        await Self.open(url)
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let url = SessionNotificationRefresh.sessionURL(userInfo: response.notification.request.content.userInfo)
+        // UIKit snapshots the app when this handler runs and asserts it is on main (TAL-2224).
+        nonisolated(unsafe) let completionHandler = completionHandler
+        Task { @MainActor in
+            await Self.completeTap(opening: url, completion: completionHandler)
+        }
     }
 
-    @MainActor private static func open(_ url: URL) async {
-        await UIApplication.shared.open(url)
+    /// Opens the tapped notification's session, then completes the tap on the main actor.
+    @MainActor static func completeTap(
+        opening url: URL?,
+        with open: @MainActor (URL) async -> Void = { _ = await UIApplication.shared.open($0) },
+        completion: () -> Void
+    ) async {
+        if let url { await open(url) }
+        completion()
     }
 }
 

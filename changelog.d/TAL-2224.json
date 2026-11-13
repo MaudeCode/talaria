@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Tapping a Talaria notification opens its chat instead of closing the app.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}
