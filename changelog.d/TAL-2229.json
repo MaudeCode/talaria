@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "On iPhone Duo, New Chat is back in the chat's side bar instead of an extra menu button that did nothing.",
+      "highlight": false,
+      "components": ["app"],
+      "announce": false
+    }
+  ]
+}

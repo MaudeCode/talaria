@@ -1335,15 +1335,15 @@ struct SessionListView: View {
     }
 
     private var regularNewChatButton: some View {
-        ChatUIKitMenuButton(primaryAction: {
-            HapticButtonHaptics.tap(style: .medium, isEnabled: isHapticsEnabled)
-            openNewChat()
-        }, showsMenu: !viewModel.newChatExecutionModes.isEmpty) {
-            Label("New Chat", systemImage: "square.and.pencil")
-        } menu: {
-            NewChatModeMenu.make(modes: viewModel.newChatExecutionModes, selected: viewModel.selectedNewChatExecutionMode) { mode in
+        Menu {
+            NewChatModeMenu.items(modes: viewModel.newChatExecutionModes, selected: viewModel.selectedNewChatExecutionMode) { mode in
                 openNewChat(in: mode)
             }
+        } label: {
+            Label("New Chat", systemImage: "square.and.pencil")
+        } primaryAction: {
+            HapticButtonHaptics.tap(style: .medium, isEnabled: isHapticsEnabled)
+            openNewChat()
         }
         .disabled(isNewChatDisabled)
         .accessibilityLabel("New Chat")

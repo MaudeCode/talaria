@@ -15,4 +15,17 @@ enum NewChatModeMenu {
         }
         return UIMenu(children: [UIMenu(title: String(localized: "Agent Mode"), options: [.displayInline], children: actions)])
     }
+
+    /// The SwiftUI copy for system bars: the Duo's vertical bar shows a custom UIKit view only as a dead "•••".
+    static func items(modes: [ExecutionModeOption], selected: ExecutionMode, onSelect: @escaping (ExecutionMode) -> Void) -> some View {
+        Section("Agent Mode") {
+            ForEach(modes) { option in
+                Toggle(isOn: Binding(get: { selected == option.mode }, set: { _ in onSelect(option.mode) })) {
+                    Text(option.mode.title)
+                    if let reason = option.reasonTitle { Text(reason) }
+                }
+                .disabled(!option.available)
+            }
+        }
+    }
 }
