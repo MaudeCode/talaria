@@ -18,6 +18,7 @@ class APIClientTestCase: XCTestCase {
     }
 
     func makeClient(
+        baseURL: URL = URL(string: "https://example.test")!,
         cookiePersistence: (@Sendable () throws -> Void)? = nil,
         forgetProfileOwner: (@Sendable () throws -> Void)? = nil,
         handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
@@ -29,7 +30,7 @@ class APIClientTestCase: XCTestCase {
         let session = URLSession(configuration: configuration)
 
         return APIClient(
-            baseURL: URL(string: "https://example.test")!,
+            baseURL: baseURL,
             session: session,
             cookiePersistence: cookiePersistence,
             forgetProfileOwner: forgetProfileOwner

@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Choose a model and its effort from one composer button, with shared favorites and provider filters.",
+      "highlight": true,
+      "components": [
+        "app"
+      ],
+      "announcement": {
+        "icon": "model",
+        "title": "New model picker",
+        "description": "One button opens a model sheet with every model and the favorites you starred on Web."
+      }
+    }
+  ]
+}

@@ -75,6 +75,7 @@ struct SidebarSectionHeader<Trailing: View>: View {
     let title: String?
     var topPadding: CGFloat = 16
     var isCompact = false
+    var providerID: String? = nil
     /// Makes the heading a button, for a collapsible section.
     var toggle: (() -> Void)?
     @ViewBuilder let trailing: Trailing
@@ -97,6 +98,7 @@ struct SidebarSectionHeader<Trailing: View>: View {
 
     private var label: some View {
         HStack(spacing: 10) {
+            if let providerID { ProviderIconView(providerID: providerID, label: title ?? providerID) }
             if let title {
                 Text(title)
                     .font(isCompact ? .footnote.weight(.semibold) : .title3.bold())

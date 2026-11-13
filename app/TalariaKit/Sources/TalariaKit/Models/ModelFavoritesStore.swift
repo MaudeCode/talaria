@@ -134,14 +134,15 @@ public struct ModelRecentsStore: @unchecked Sendable {
     public static func visibleRecentOptions(
         in groups: [ModelCatalogGroup],
         recentKeys: [ModelFavoriteKey],
-        favoriteKeys: [ModelFavoriteKey]
+        favoriteKeys: [ModelFavoriteKey],
+        includesMissingModels: Bool = true
     ) -> [ModelCatalogOption] {
         let favoriteKeySet = Set(favoriteKeys)
         let optionsByKey = groups.catalogOptionsByFavoriteKey()
 
         return limitedDeduplicated(recentKeys, limit: recentKeys.count)
             .filter { !favoriteKeySet.contains($0) }
-            .map { key in optionsByKey[key] ?? key.fallbackOption }
+            .compactMap { key in optionsByKey[key] ?? (includesMissingModels ? key.fallbackOption : nil) }
     }
 
     private static func limitedDeduplicated(_ keys: [ModelFavoriteKey], limit: Int) -> [ModelFavoriteKey] {

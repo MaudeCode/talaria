@@ -170,6 +170,8 @@ public enum APIError: LocalizedError, Sendable {
     }
 
     public static func isDefinitiveWriteFailure(_ error: Error) -> Bool {
+        let local = error as NSError
+        if local.domain == APIClient.reasoningScopeUnsupportedErrorDomain, local.code == 1 { return true }
         guard let apiError = error as? APIError else { return false }
         switch apiError {
         case .unauthorized, .invalidServerURL:

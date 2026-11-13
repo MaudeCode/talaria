@@ -14,7 +14,7 @@ public actor APIClient {
         }
     }
 
-    let baseURL: URL
+    public nonisolated let baseURL: URL
     let session: URLSession
     let publicMediaSession: URLSession
     /// The redirect guard wired into both default sessions. Strips the user's

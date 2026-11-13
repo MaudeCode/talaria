@@ -1490,15 +1490,18 @@ export class ProviderCatalog {
     }
     const providers = catalog.groups.map((group) => ({ id: group.provider_id, label: group.provider }))
     const needle = (query.q ?? '').trim().toLocaleLowerCase()
+    const matches = (entry: ModelEntry, providerLabel: string): boolean =>
+      (!query.provider || entry.provider_id === query.provider)
+      && (query.show_hidden === 'true' || !entry.hidden)
+      && (query.favorites !== 'true' || Boolean(entry.favorite))
+      && (!needle || [entry.label, entry.id, providerLabel].some((text) => text.toLocaleLowerCase().includes(needle)))
     const groups = catalog.groups.flatMap((group) => {
       if (query.provider && group.provider_id !== query.provider) return []
-      const models = group.models.filter((entry) =>
-        (query.show_hidden === 'true' || !entry.hidden)
-        && (query.favorites !== 'true' || entry.favorite)
-        && (!needle || [entry.label, entry.id, group.provider].some((text) => text.toLocaleLowerCase().includes(needle))))
+      const models = group.models.filter((entry) => matches(entry, group.provider))
       return models.length ? [{ ...group, models, model_count: models.length }] : []
     })
-    return SettingsModelPickerSchema.parse({ ...catalog, groups, providers, profile, preferences_supported: true, hidden_models: catalog.hidden_models ?? [], total_count: groups.reduce((count, group) => count + group.models.length, 0) })
+    const visible_favorite_models = (catalog.favorite_models ?? []).filter((entry) => matches(entry, providers.find((provider) => provider.id === entry.provider_id)?.label ?? entry.provider_id ?? ''))
+    return SettingsModelPickerSchema.parse({ ...catalog, groups, providers, visible_favorite_models, profile, preferences_supported: true, hidden_models: catalog.hidden_models ?? [], total_count: groups.reduce((count, group) => count + group.models.length, 0) })
   }
 
   /** TAL-807: account-usage reads the picker started, by `accountUsageCache` key. */

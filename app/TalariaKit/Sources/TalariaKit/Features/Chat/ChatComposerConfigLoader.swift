@@ -59,15 +59,18 @@ struct ChatComposerConfigState: Equatable, Sendable {
 struct ChatComposerConfigLoadResult: Sendable {
     let state: ChatComposerConfigState
     let configurationError: Error?
+    let reasoningLoaded: Bool
 }
 
 struct ChatComposerConfigLoader {
     private let client: APIClient
     private let cache: ResponseCache?
+    private let sessionID: String?
 
-    init(client: APIClient, cache: ResponseCache? = nil) {
+    init(client: APIClient, cache: ResponseCache? = nil, sessionID: String? = nil) {
         self.client = client
         self.cache = cache
+        self.sessionID = sessionID
     }
 
     /// The catalogs the last load saw, so a chat's profile, model, workspace and command choices
@@ -108,6 +111,7 @@ struct ChatComposerConfigLoader {
     func loadConfiguration(from initialState: ChatComposerConfigState) async -> ChatComposerConfigLoadResult {
         var state = initialState
         var configurationError: Error?
+        var reasoningLoaded = false
 
         do {
             let profilesResponse = try await client.profiles(caching: cache?.entry(ResponseCache.Kind.profiles))
@@ -150,6 +154,7 @@ struct ChatComposerConfigLoader {
             }
             do {
                 try await applyModelsAndReasoning(try await modelsResponse, selectedProfile: selectedProfile, to: &state)
+                reasoningLoaded = true
                 let workspaceResponse = try await workspacesResponse
                 state.workspaceRoots = workspaceResponse.workspaces ?? []
                 if state.currentWorkspace == nil {
@@ -169,7 +174,8 @@ struct ChatComposerConfigLoader {
 
         return ChatComposerConfigLoadResult(
             state: state,
-            configurationError: configurationError
+            configurationError: configurationError,
+            reasoningLoaded: reasoningLoaded
         )
     }
 
@@ -199,7 +205,7 @@ struct ChatComposerConfigLoader {
         // the server's already-coerced value for that model.
         let reasoningResponse = try await client.reasoning(
             model: Self.nonEmpty(state.currentModel),
-            provider: Self.nonEmpty(state.currentModelProvider)
+            provider: Self.nonEmpty(state.currentModelProvider), sessionID: sessionID
         )
         state.selectedReasoningEffort = reasoningResponse.effectiveEffort
         state.supportedReasoningEfforts = reasoningResponse.normalizedSupportedEfforts

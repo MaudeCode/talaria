@@ -11,15 +11,22 @@ struct SettingsModelPickerPage<Leading: View>: View {
     let customHelp: String
     let onSelect: (String, String?) async -> Bool
     let onSaveCustom: (String) async -> Bool
+    let dismissesOnSelection: Bool
+    let onSelectOption: ((ModelCatalogOption) async -> Bool)?
+    let recentModelKeys: [ModelFavoriteKey]
+    let onSaveCustomOption: ((String, String?) async -> Bool)?
+    let requiresCustomProviderID: Bool
     @ViewBuilder var leadingSections: (_ select: @escaping (String, String?) async -> Void) -> Leading
 
     @Environment(\.dismiss) private var dismiss
     @State private var catalog: SettingsModelPickerViewModel
-    @State private var expansion = ComposerModelPickerSectionExpansionState(initiallyExpanded: true)
+    @State private var expansion = ComposerModelPickerSectionExpansionState()
     @AppStorage("settings.modelPicker.collapsedProviders") private var collapsedProviders = Data()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     private let onCatalog: (ModelsResponse) -> Void
     @State private var customModel = ""
+    @State private var customProviderID: String
     @State private var isSavingCustom = false
 
     init(title: String, server: URL, liveModels: Bool = false,
@@ -27,6 +34,11 @@ struct SettingsModelPickerPage<Leading: View>: View {
          isSaving: Bool, saveError: String?, customHelp: String,
          onSelect: @escaping (String, String?) async -> Bool, onSaveCustom: @escaping (String) async -> Bool,
          onCatalog: @escaping (ModelsResponse) -> Void = { _ in },
+         catalog: SettingsModelPickerViewModel? = nil, dismissesOnSelection: Bool = true,
+         onSelectOption: ((ModelCatalogOption) async -> Bool)? = nil,
+         recentModelKeys: [ModelFavoriteKey] = [],
+         onSaveCustomOption: ((String, String?) async -> Bool)? = nil,
+         customProviderID: String = "", requiresCustomProviderID: Bool = false,
          @ViewBuilder leadingSections: @escaping (@escaping (String, String?) async -> Void) -> Leading) {
         self.title = title
         self.isSelected = isSelected
@@ -38,7 +50,13 @@ struct SettingsModelPickerPage<Leading: View>: View {
         self.onSaveCustom = onSaveCustom
         self.onCatalog = onCatalog
         self.leadingSections = leadingSections
-        _catalog = State(initialValue: SettingsModelPickerViewModel(client: APIClient(baseURL: server), favorites: .shared, live: liveModels))
+        self.dismissesOnSelection = dismissesOnSelection
+        self.onSelectOption = onSelectOption
+        self.recentModelKeys = recentModelKeys
+        self.onSaveCustomOption = onSaveCustomOption
+        self.requiresCustomProviderID = requiresCustomProviderID
+        _customProviderID = State(initialValue: customProviderID)
+        _catalog = State(initialValue: catalog ?? SettingsModelPickerViewModel(client: APIClient(baseURL: server), favorites: .shared, live: liveModels))
     }
 
     var body: some View {
@@ -72,21 +90,22 @@ struct SettingsModelPickerPage<Leading: View>: View {
                 await select(model, providerID: providerID)
             }
 
-            SettingsSection(title: String(localized: "Custom"), help: customHelp) {
-                SettingsTextFieldRow(title: String(localized: "Custom model ID"), text: $customModel,
-                                     placeholder: String(localized: "Custom model ID"), autocapitalization: .never)
-                ModelPickerButton(String(localized: "Save Custom Model"), isLoading: isSavingCustom) {
-                    Task {
-                        isSavingCustom = true
-                        let saved = await onSaveCustom(customModel.trimmingCharacters(in: .whitespacesAndNewlines))
-                        isSavingCustom = false
-                        if saved { dismiss() }
+            if !catalog.visibleFavoriteOptions.isEmpty {
+                SettingsSection(title: String(localized: "Favorites")) {
+                    ForEach(catalog.visibleFavoriteOptions) { model in modelRow(model, mixedProviders: true) }
+                }
+            }
+            if catalog.searchText.isEmpty && catalog.providerID.isEmpty && !catalog.favoritesOnly {
+                let recent = ModelRecentsStore.visibleRecentOptions(in: catalog.groups, recentKeys: recentModelKeys,
+                    favoriteKeys: catalog.favoriteOptions.map(\.favoriteKey), includesMissingModels: false)
+                if !recent.isEmpty {
+                    SettingsSection(title: String(localized: "Recent")) {
+                        ForEach(recent) { model in modelRow(model, mixedProviders: true) }
                     }
                 }
-                .disabled(customModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
             }
-
             modelListContent
+            customSection
         }
         .background(Color(.systemBackground))
         .navigationTitle(title)
@@ -95,8 +114,9 @@ struct SettingsModelPickerPage<Leading: View>: View {
         .refreshesLive(showsStatus: !catalog.groups.isEmpty) { await load() }
         .onAppear {
             let saved = (try? JSONDecoder().decode(Set<String>.self, from: collapsedProviders)) ?? []
-            expansion = ComposerModelPickerSectionExpansionState(initiallyExpanded: true, collapsedGroupIDs: saved)
+            expansion = ComposerModelPickerSectionExpansionState(collapsedGroupIDs: saved)
             expansion.updateSearchText(disclosureQuery)
+            if customProviderID.isEmpty { customProviderID = catalog.response?.activeProvider ?? "" }
         }
         .onReceive(NotificationCenter.default.publisher(for: SettingsModelPickerViewModel.preferencesDidChange)) { change in
             Task { await catalog.refreshPreferences(after: change) }
@@ -151,34 +171,50 @@ struct SettingsModelPickerPage<Leading: View>: View {
                 let expanded = expansion.isExpanded(groupID: group.id)
                 SettingsSection {
                     if expanded {
-                        ForEach(group.models) { model in modelRow(model) }
+                        ForEach(group.models) { model in modelRow(model, mixedProviders: false) }
                     }
                 } header: {
-                    SidebarSectionHeader(title: group.name, toggle: {
+                    SidebarSectionHeader(title: group.name, providerID: group.providerID, toggle: {
                         withAnimation(SessionListMotion.disclosureAnimation(reduceMotion: reduceMotion)) {
                             expansion.setExpanded(!expanded, groupID: group.id)
                         }
                         if let saved = try? JSONEncoder().encode(expansion.collapsedGroupIDs) { collapsedProviders = saved }
                     }) {
                         if let count = group.modelCount { Text(count.formatted()).foregroundStyle(.secondary) }
+                        groupLimitBadge(group)
                         SidebarDisclosureChevron(isExpanded: expanded)
                     }
-                    .accessibilityValue(expanded ? Text("Expanded") : Text("Collapsed"))
+                    .accessibilityValue(Text([group.modelCount.map { String(localized: "Models") + ": " + $0.formatted() }, expanded ? String(localized: "Expanded") : String(localized: "Collapsed")].compactMap { $0 }.joined(separator: ", ")))
                 }
             }
         }
     }
 
-    private func modelRow(_ model: ModelCatalogOption) -> some View {
-        HStack(spacing: 0) {
+    private func modelRow(_ model: ModelCatalogOption, mixedProviders: Bool) -> some View {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout(spacing: 0))
+        return layout {
             Button {
-                Task { await select(model.id, providerID: model.providerID) }
+                Task {
+                    if let onSelectOption {
+                        if await onSelectOption(model), dismissesOnSelection { dismiss() }
+                    } else { await select(model.id, providerID: model.providerID) }
+                }
             } label: {
                 SettingsItemRow(title: model.displayName,
                                 subtitle: model.id != model.displayName ? model.id : nil,
                                 detail: model.isHidden ? String(localized: "Hidden") : nil,
                                 isSelected: isSelected(model), isLoading: isSavingModel(model)) {
-                    Image(systemName: "cpu").accessibilityHidden(true)
+                    if mixedProviders, let providerID = model.providerID {
+                        ProviderIconView(providerID: providerID, label: providerID)
+                    }
+                } badges: {
+                    if let resetsAt = model.limitResetsAt {
+                        Text("Limited until \(modelLimitResetTime(resetsAt))").font(.caption).foregroundStyle(.orange)
+                    }
+                } accessory: {
+                    if !isSelected(model) { Color.clear.frame(width: 12, height: 1).accessibilityHidden(true) }
                 }
             }
             .buttonStyle(.plain)
@@ -189,22 +225,64 @@ struct SettingsModelPickerPage<Leading: View>: View {
             .contextMenu { preferenceActions(model) }
 
             if model.preferencesEditable {
-                Button { Task { await catalog.toggleFavorite(model) } } label: {
-                    Image(systemName: model.isFavorite ? "star.fill" : "star")
-                        .frame(minWidth: 44, minHeight: 44)
+                HStack(spacing: 0) {
+                    Button { Task { await catalog.toggleFavorite(model) } } label: {
+                        Image(systemName: model.isFavorite ? "star.fill" : "star")
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("settings-model-star-\(model.id)")
+                    .accessibilityLabel(model.isFavorite ? String(localized: "Remove \(model.displayName) from favorites") : String(localized: "Add \(model.displayName) to favorites"))
+                    Button { Task { await catalog.toggleHidden(model) } } label: {
+                        Image(systemName: model.isHidden ? "eye" : "eye.slash")
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("settings-model-visibility-\(model.id)")
+                    .accessibilityLabel(model.isHidden ? String(localized: "Unhide Model") : String(localized: "Hide Model"))
+                    .accessibilityValue(model.displayName)
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("settings-model-star-\(model.id)")
-                .accessibilityLabel(model.isFavorite ? String(localized: "Remove \(model.displayName) from favorites") : String(localized: "Add \(model.displayName) to favorites"))
-                Button { Task { await catalog.toggleHidden(model) } } label: {
-                    Image(systemName: model.isHidden ? "eye" : "eye.slash")
-                        .frame(minWidth: 44, minHeight: 44)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("settings-model-visibility-\(model.id)")
-                .accessibilityLabel(model.isHidden ? String(localized: "Unhide Model") : String(localized: "Hide Model"))
-                .accessibilityValue(model.displayName)
             }
+        }
+    }
+
+    private var customSection: some View {
+        SettingsSection(title: String(localized: "Custom"), help: customHelp) {
+            SettingsTextFieldRow(title: String(localized: "Custom model ID"), text: $customModel,
+                                 placeholder: String(localized: "Custom model ID"), autocapitalization: .never)
+            if onSaveCustomOption != nil {
+                SettingsPickerRow(title: String(localized: "Provider"), systemImage: "server.rack", selection: $customProviderID) {
+                    Text("Server Default").tag("")
+                    ForEach(catalog.providers) { provider in Text(provider.label).tag(provider.id) }
+                }
+            }
+            ModelPickerButton(String(localized: "Save Custom Model"), isLoading: isSavingCustom) {
+                Task {
+                    isSavingCustom = true
+                    let id = customModel.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let saved = if let onSaveCustomOption {
+                        await onSaveCustomOption(id, customProviderID.isEmpty ? nil : customProviderID)
+                    } else { await onSaveCustom(id) }
+                    isSavingCustom = false
+                    if saved, dismissesOnSelection { dismiss() }
+                }
+            }
+            .disabled(customModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving
+                      || requiresCustomProviderID && customProviderID.isEmpty)
+        }
+    }
+
+    @ViewBuilder
+    private func groupLimitBadge(_ group: ModelCatalogGroup) -> some View {
+        if let label = group.availability?.displayLabel {
+            Text(label).font(.caption).foregroundStyle(.secondary)
+                .accessibilityHint(group.availability?.unavailableReason ?? "")
+        } else if let resetsAt = group.accountLimitResetsAt {
+            Text("Limited until \(modelLimitResetTime(resetsAt))").font(.caption).foregroundStyle(.red)
+        } else if group.quotaLevel == .critical {
+            Text("Quota nearly out").font(.caption).foregroundStyle(.red)
+        } else if group.quotaLevel == .warning {
+            Text("Low quota").font(.caption).foregroundStyle(.orange)
         }
     }
 
@@ -221,6 +299,13 @@ struct SettingsModelPickerPage<Leading: View>: View {
     }
 
     private func select(_ model: String, providerID: String?) async {
-        if await onSelect(model, providerID) { dismiss() }
+        if await onSelect(model, providerID), dismissesOnSelection { dismiss() }
     }
+}
+
+/// A rate-limit reset in the viewer's zone, including its weekday when it is not today.
+private func modelLimitResetTime(_ date: Date) -> String {
+    Calendar.current.isDateInToday(date)
+        ? date.formatted(date: .omitted, time: .shortened)
+        : date.formatted(.dateTime.weekday(.abbreviated).hour().minute())
 }

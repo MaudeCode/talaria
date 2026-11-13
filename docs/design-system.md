@@ -18,7 +18,7 @@ The reference implementation is Insights (TAL-1750, TAL-1782):
 | Stat grid, charts, share rows | `InsightsStatGrid.swift`, `InsightsDailyChart.swift`, `InsightsActivityCharts.swift`, `ModelBreakdownRow.swift` | `InsightsPage.tsx` (`<dl>` stats, models table), `BarChart.tsx` |
 | Detail screen | `ProviderQuotaDetailView.swift` | the Insights tab routes (`routes/_app.insights.tsx`) |
 | Settings page | `app/Talaria/Features/Settings/ConversationSettingsViews.swift` | `web/packages/frontend/src/features/settings/ChatSection.tsx` |
-| Menu | `app/Talaria/Features/Chat/ComposerReasoningMenu.swift` | `web/packages/frontend/src/features/composer/chips.tsx` (`ReasoningChip`) |
+| Menu | `app/Talaria/Features/Chat/ChatComposerSelectorSheets.swift` | `web/packages/frontend/src/features/composer/chips.tsx` (`ReasoningChip`) |
 
 A new page starts by copying the structure of the matching row above, not by
 inventing a layout. A rule below that names a component means that component,
@@ -353,7 +353,7 @@ Menus are interaction surfaces (§14); every Web menu is built with `Menu` from
 | Long lists | Settings value pickers with long or searchable lists push a page with the system back button (Default Profile, Default Model, Auxiliary Models); composer and in-flow pickers keep the titled sheet | A pinned search header above twelve items |
 | Destructive item | Last, separated from choices, with the destructive role | Last, after a `MenuSeparator`, in `text-error` |
 | Never in a menu | A form, a Save button or an explanatory footer | A form, a Save button, a native checkbox or radio, explanatory sub-text |
-| Composer menus | `ComposerReasoningMenu.swift` for short choices; a titled sheet for long or searchable choices | `ComposerMenu` (`features/composer/chips.tsx`): open upward at one width; at 640px and below span the composer's width |
+| Composer menus | `ChatComposerSelectorSheets.swift` for the model and effort sheet; a titled sheet for long or searchable choices | `ComposerMenu` (`features/composer/chips.tsx`): open upward at one width; at 640px and below span the composer's width |
 
 Settings model pickers share `SettingsModelPickerPage`. Its provider headers use `SettingsSection`'s header slot
 with `SidebarSectionHeader` and `SidebarDisclosureChevron`; sections start open and remember explicit collapses.

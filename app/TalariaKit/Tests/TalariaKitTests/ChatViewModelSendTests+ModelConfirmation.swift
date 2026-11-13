@@ -5,12 +5,19 @@ import XCTest
 extension ChatViewModelSendTests {
     func testModelSwitchRequiresAnAuthoritativeSuccessSession() async throws {
         for body in ["{}", #"{"session":{"session_id":"session-abc"}}"#, #"{"session":{"session_id":"foreign","model":"contributor"}}"#] {
+            var canReadBack = false
             let model = try makeViewModel(sessionSummary: makeSession(model: "old-model", modelProvider: "custom")) { request in
-                apiTestJSONResponse(body, for: request)
+                if canReadBack && request.url?.path == "/api/session" {
+                    return apiTestJSONResponse(#"{"session":{"session_id":"session-abc","model":"old-model","model_provider":"custom"}}"#, for: request)
+                }
+                return apiTestJSONResponse(body, for: request)
             }
             let applied = await model.selectComposerModel(ModelCatalogOption(id: "contributor", displayName: "Contributor", providerID: "custom"))
             XCTAssertFalse(applied)
-            XCTAssertEqual(model.selectedModelID, "old-model", "An incomplete or foreign success must not apply the requested model as a fallback")
+            XCTAssertNotNil(model.composerConfigurationErrorMessage, "An incomplete or foreign reply must not confirm the change")
+            canReadBack = true
+            await model.refreshModelCatalogForPickerOpen()
+            XCTAssertEqual(model.selectedModelID, "old-model", "Only an authoritative read may replace the optimistic display after an unknown outcome")
         }
     }
 

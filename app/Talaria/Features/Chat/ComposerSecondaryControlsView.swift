@@ -23,7 +23,7 @@ enum ComposerControlStrip {
     }
 }
 
-/// The strip under the composer card: the model and reasoning controls, then workspace, branch,
+/// The strip under the composer card: the model button, then workspace, branch,
 /// toolsets and profile. The strip is the only background; its controls are plain buttons, like T3 Code's footer.
 struct ComposerSecondaryControlsView<Leading: View>: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -41,11 +41,13 @@ struct ComposerSecondaryControlsView<Leading: View>: View {
     var body: some View {
         Group {
             if dynamicTypeSize.isAccessibilitySize {
-                // Large text wraps the two groups onto their own lines instead of scrolling, spaced so
+                // Large text puts the two groups on separate lines inside the scroll strip, spaced so
                 // each row's hit shapes, which reach past its labels, never overlap the other row's.
-                VStack(alignment: .leading, spacing: ComposerMetaControlLabel.hitPadding * 2) {
-                    HStack(spacing: 12) { leading }
-                    HStack(spacing: 12) { selectorRow(state.selectors) }
+                ComposerStripScrollRow(accessibilityIdentifier: "composer-control-strip") {
+                    VStack(alignment: .leading, spacing: ComposerMetaControlLabel.hitPadding * 2) {
+                        HStack(spacing: 12) { leading }
+                        HStack(spacing: 12) { selectorRow(state.selectors) }
+                    }
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, ComposerControlStrip.verticalPadding)

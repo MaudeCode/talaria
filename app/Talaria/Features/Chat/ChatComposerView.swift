@@ -74,7 +74,6 @@ struct MessageComposerView: View {
     let isSingleProfileMode: Bool
     let selectedProfileName: String?
     let selectedProfileTitle: String
-    let isLoadingModels: Bool
     let selectedReasoningEffort: String?
     /// Model-aware effort vocabulary; `nil` → full static list (issue #18).
     let supportedReasoningEfforts: [String]?
@@ -102,6 +101,8 @@ struct MessageComposerView: View {
     let onCancel: () -> Void
     let onSelectModel: (ModelCatalogOption) -> Void
     let onModelPickerOpen: () async -> Void
+    let requiresModelSwitchConfirmation: Bool
+    let onModelPickerPresentationChange: (Bool) -> Void
     let onLoadWorkspaceSuggestions: (String) async -> Void
     let onWorkspaceRegistryChanged: () async -> Void
     let onLoadPersonalitySuggestions: () async -> Void
@@ -163,8 +164,6 @@ struct MessageComposerView: View {
     @State private var showsToolsetsSheet = false
     @State private var optimisticWorkspacePath: String?
     @State private var modelPreferences: SettingsModelPickerViewModel?
-    private var favoriteOptions: [ModelCatalogOption] { modelPreferences?.favoriteOptions ?? [] }
-    private var favoriteModelKeys: [ModelFavoriteKey] { favoriteOptions.map(\.favoriteKey) }
     @State private var recentModelKeys = ModelRecentsStore.shared.recentKeys
     @State private var keyboardIsVisible = false
     @State private var shouldRestoreFocusAfterPresentation = false
@@ -414,13 +413,8 @@ struct MessageComposerView: View {
         .task(id: selectedProfileName) {
             guard let apiClient else { return }
             let preferences = SettingsModelPickerViewModel(client: apiClient, favorites: .shared, live: true)
-            // The existing composer keeps its complete catalog; Settings owns the visibility filter controls.
-            preferences.showHidden = true
             modelPreferences = preferences
             await preferences.load()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: SettingsModelPickerViewModel.preferencesDidChange)) { change in
-            Task { await modelPreferences?.refreshPreferences(after: change) }
         }
         .task(id: slashAutocompleteLoadKey) {
             await loadSlashAutocompleteSubArgsIfNeeded()
@@ -464,33 +458,32 @@ struct MessageComposerView: View {
                 finishVoiceNote(translationHeight: 0)
             }
         }
-        .sheet(isPresented: $showsAllModelsSheet, onDismiss: restoreFocusAfterPresentationIfNeeded) {
-            ComposerModelPickerSheet(
-                modelGroups: modelPreferences?.response == nil ? modelGroups : modelPreferences?.groups ?? [],
-                selectedModelID: selectedModelID,
-                selectedModelProviderID: selectedModelProviderID,
-                selectedModelOptionID: selectedModelOptionID,
-                favoriteModelKeys: favoriteModelKeys,
-                recentModelKeys: recentModelKeys,
-                favoriteOptions: favoriteOptions,
-                onSelect: { option in
-                    selectModel(option)
-                    showsAllModelsSheet = false
-                },
-                onToggleFavorite: { option in
-                    Task { await modelPreferences?.toggleFavorite(option) }
-                },
-                onDeleteSavedCustom: { option in
-                    Task { await modelPreferences?.removeFavorite(option) }
-                    recentModelKeys = ModelRecentsStore.shared.removeRecent(for: option)
-                },
-                showsFavorites: modelPreferences?.response != nil
-            )
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
-            .task {
-                await onModelPickerOpen()
-                await modelPreferences?.load()
+        .onChange(of: requiresModelSwitchConfirmation, initial: true) {
+            if requiresModelSwitchConfirmation { showsAllModelsSheet = false }
+        }
+        .sheet(isPresented: $showsAllModelsSheet, onDismiss: {
+            modelPreferences?.searchText = ""
+            modelPreferences?.providerID = ""
+            modelPreferences?.favoritesOnly = false
+            modelPreferences?.showHidden = false
+            restoreFocusAfterPresentationIfNeeded()
+            onModelPickerPresentationChange(false)
+        }) {
+            if let apiClient {
+                ComposerModelPickerSheet(
+                    client: apiClient, catalog: modelPreferences,
+                    selectedModelID: selectedModelID, selectedModelProviderID: selectedModelProviderID,
+                    selectedModelOptionID: selectedModelOptionID, recentModelKeys: recentModelKeys,
+                    onSelect: selectModel, keepsSelectionOpen: true,
+                    showsReasoningControl: showsReasoningControl,
+                    selectedReasoningEffort: selectedReasoningEffort, supportedReasoningEfforts: supportedReasoningEfforts,
+                    isEffortDisabled: isConfigurationControlDisabled,
+                    isSelectionDisabled: isUpdatingConfiguration, errorMessage: configurationErrorMessage,
+                    onSelectReasoningEffort: onSelectReasoningEffort
+                )
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .task { await onModelPickerOpen() }
             }
         }
         .sheet(isPresented: $showsWorkspaceSheet, onDismiss: restoreFocusAfterPresentationIfNeeded) {
@@ -975,10 +968,7 @@ struct MessageComposerView: View {
                 onRefreshGitBranches: onRefreshGitBranches,
                 onSelectExecutionMode: onSelectExecutionMode
             ) {
-                modelMenu
-                if showsReasoningControl {
-                    reasoningMenu
-                }
+                modelButton
             }
             // The chevron, or the one-row card, folds it away in place: taking it out of the layout re-hosts
             // the card's text view, which drops the keyboard.
@@ -1065,10 +1055,6 @@ struct MessageComposerView: View {
         dynamicTypeSize.isAccessibilitySize
     }
 
-    private var modelControlMaxWidth: CGFloat {
-        usesAccessibilityLayout ? 156 : 120
-    }
-
     private var secondaryControlsState: ComposerSecondaryControlsState {
         ComposerSecondaryControlsState(
             workspaceTitle: showsWorkspaceControl ? workspaceTitle : nil,
@@ -1092,40 +1078,28 @@ struct MessageComposerView: View {
         )
     }
 
-    private var modelMenu: some View {
-        ComposerModelMenu(
-            modelGroups: modelGroups,
-            selectedModelID: selectedModelID,
-            selectedModelProviderID: selectedModelProviderID,
-            selectedModelOptionID: selectedModelOptionID,
-            selectedModelTitle: selectedModelTitle,
-            isLoadingModels: isLoadingModels,
-            favoriteOptions: favoriteOptions,
-            recentModelKeys: recentModelKeys,
-            isDisabled: isModelAndWorkspaceControlDisabled,
-            maxWidth: modelControlMaxWidth,
-            color: metaControlColor,
-            controlFont: metaControlFont,
-            chevronFont: metaChevronFont,
-            onSelectModel: selectModel
-        ) {
+    private var modelButton: some View {
+        ChatUIKitMenuButton(horizontalPadding: 0, verticalPadding: 14, primaryAction: {
             prepareForComposerPresentation()
+            onModelPickerPresentationChange(true)
             showsAllModelsSheet = true
-        }
+        }, showsMenu: false) {
+            ComposerMetaControlLabel(
+                title: selectedModelTitle, systemImage: nil, maxWidth: nil,
+                color: metaControlColor, controlFont: metaControlFont, chevronFont: metaChevronFont,
+                providerID: selectedModelProviderID, summary: modelSummary
+            )
+        } menu: { UIMenu() }
+        .disabled(isModelAndWorkspaceControlDisabled)
+        .accessibilityLabel("Select model")
+        .accessibilityValue([selectedModelTitle, modelSummary].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityIdentifier("composer-model-button")
     }
 
-    private var reasoningMenu: some View {
-        ComposerReasoningMenu(
-            selectedReasoningEffort: selectedReasoningEffort,
-            supportedEfforts: supportedReasoningEfforts,
-            reasoningTitle: reasoningTitle,
-            isDisabled: isConfigurationControlDisabled,
-            width: ComposerControlStrip.titleMaxWidth,
-            color: metaControlColor,
-            controlFont: metaControlFont,
-            chevronFont: metaChevronFont,
-            onSelectReasoningEffort: onSelectReasoningEffort
-        )
+    private var modelSummary: String? {
+        guard !usesAccessibilityLayout else { return nil }
+        return ReasoningEffortOption.summary(selectedEffort: selectedReasoningEffort,
+            supportedEfforts: supportedReasoningEfforts, showsEffort: showsReasoningControl)
     }
 
     private func selectModel(_ option: ModelCatalogOption) {
@@ -1366,14 +1340,6 @@ struct MessageComposerView: View {
 
     private var textFieldVerticalPadding: CGFloat {
         isComposerExpanded ? 12 : 14
-    }
-
-    private var reasoningTitle: String {
-        guard let selectedReasoningEffort else {
-            return String(localized: "Reasoning")
-        }
-
-        return ReasoningEffortOption.title(for: selectedReasoningEffort)
     }
 
     private var trimmedDraftMessage: String {

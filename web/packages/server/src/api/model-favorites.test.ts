@@ -156,10 +156,15 @@ describe('model favorites', () => {
     const hidden = await post('/api/models/hidden', { provider_id: 'anthropic', model: 'shared-model', hidden: true })
     expect(hidden.status).toBe(200)
     expect(rows(await picker('?provider=anthropic')).some((m) => m.bare_id === 'shared-model')).toBe(false)
+    expect((await picker()).visible_favorite_models, 'The picker must supply the visible Favorites rows').toEqual(expect.any(Array))
+    expect((await picker('?provider=anthropic')).visible_favorite_models, 'Hidden favorites must stay out of the mixed Favorites section').not.toContainEqual(expect.objectContaining({ bare_id: 'shared-model' }))
+    expect((await picker('?provider=openrouter')).visible_favorite_models, 'Provider filtering must also filter mixed favorite rows').not.toContainEqual(expect.objectContaining({ provider_id: 'anthropic' }))
     for (const live of [false, true]) {
-      const shown = rows(await picker(`?provider=anthropic&favorites=true&show_hidden=true&q=shared&live=${String(live)}`))
+      const projection = await picker(`?provider=anthropic&favorites=true&show_hidden=true&q=shared&live=${String(live)}`)
+      const shown = rows(projection)
       expect(shown).toHaveLength(1)
       expect(shown[0]).toMatchObject({ provider_id: 'anthropic', bare_id: 'shared-model', favorite: true, hidden: true, preferences_editable: true })
+      expect(projection.visible_favorite_models).toEqual(shown)
     }
     expect((await post('/api/models/favorite', { provider_id: 'anthropic', model: 'shared-model', favorite: false, profile: 'work' })).status).toBe(409)
     expect(await (await s.get('/api/settings')).json()).not.toHaveProperty('model_hidden_by_profile')

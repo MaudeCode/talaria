@@ -2,105 +2,23 @@ import XCTest
 @testable import TalariaKit
 
 final class ComposerModelPickerSectionExpansionStateTests: XCTestCase {
-    func testSectionsStartCollapsedWhenSearchIsEmpty() {
-        let state = ComposerModelPickerSectionExpansionState()
-
-        XCTAssertFalse(state.isExpanded(groupID: "openai"))
-    }
-
-    func testManualExpansionPersistsWhileSearchIsEmpty() {
+    func testProvidersStartOpenAndRestoreOnlyExplicitCollapses() {
         var state = ComposerModelPickerSectionExpansionState()
-
-        state.setExpanded(true, groupID: "openai")
-
-        XCTAssertTrue(state.isExpanded(groupID: "openai"))
-
-        state.setExpanded(false, groupID: "openai")
-
-        XCTAssertFalse(state.isExpanded(groupID: "openai"))
-    }
-
-    func testSearchAutoExpandsAllSections() {
-        var state = ComposerModelPickerSectionExpansionState()
-
-        state.updateSearchText("gpt")
-
-        XCTAssertTrue(state.isExpanded(groupID: "openai"))
-        XCTAssertTrue(state.isExpanded(groupID: "anthropic"))
-    }
-
-    func testManualCollapseDuringSearchDoesNotChangeEmptySearchState() {
-        var state = ComposerModelPickerSectionExpansionState()
-        state.setExpanded(true, groupID: "openai")
-        state.updateSearchText("gpt")
-
-        state.setExpanded(false, groupID: "openai")
-
-        XCTAssertFalse(state.isExpanded(groupID: "openai"))
-
-        state.updateSearchText("")
-
-        XCTAssertTrue(state.isExpanded(groupID: "openai"))
-    }
-
-    func testChangingSearchQueryReexpandsCollapsedSearchSections() {
-        var state = ComposerModelPickerSectionExpansionState()
-        state.updateSearchText("gpt")
-        state.setExpanded(false, groupID: "openai")
-        state.setExpanded(false, groupID: "anthropic")
-
-        XCTAssertFalse(state.isExpanded(groupID: "openai"))
-        XCTAssertFalse(state.isExpanded(groupID: "anthropic"))
-
-        state.updateSearchText("gpt 5")
-
-        XCTAssertTrue(state.isExpanded(groupID: "openai"))
-        XCTAssertTrue(state.isExpanded(groupID: "anthropic"))
-    }
-
-    func testGroupExpansionStateIsIndependentAcrossSearchBoundary() {
-        var state = ComposerModelPickerSectionExpansionState()
-        state.setExpanded(true, groupID: "openai")
-
-        XCTAssertTrue(state.isExpanded(groupID: "openai"))
-        XCTAssertFalse(state.isExpanded(groupID: "anthropic"))
-
-        state.updateSearchText("claude")
-        state.setExpanded(false, groupID: "anthropic")
-
-        XCTAssertTrue(state.isExpanded(groupID: "openai"))
-        XCTAssertFalse(state.isExpanded(groupID: "anthropic"))
-
-        state.updateSearchText("")
-
-        XCTAssertTrue(state.isExpanded(groupID: "openai"))
-        XCTAssertFalse(state.isExpanded(groupID: "anthropic"))
-    }
-
-    func testWhitespaceOnlySearchUsesEmptySearchState() {
-        var state = ComposerModelPickerSectionExpansionState()
-        state.setExpanded(true, groupID: "openai")
-        state.updateSearchText("gpt")
-        state.setExpanded(false, groupID: "openai")
-
-        XCTAssertFalse(state.isExpanded(groupID: "openai"))
-
-        state.updateSearchText("   ")
-
-        XCTAssertTrue(state.isExpanded(groupID: "openai"))
-        XCTAssertFalse(state.isExpanded(groupID: "anthropic"))
-    }
-    func testSettingsProvidersStartOpenAndRestoreOnlyExplicitCollapsesAcrossSearch() {
-        var state = ComposerModelPickerSectionExpansionState(initiallyExpanded: true)
-        XCTAssertTrue(state.isExpanded(groupID: "alpha"))
+        XCTAssertTrue(state.isExpanded(groupID: "alpha"), "Every provider must start open")
         state.setExpanded(false, groupID: "alpha")
-        var reopened = ComposerModelPickerSectionExpansionState(initiallyExpanded: true, collapsedGroupIDs: state.collapsedGroupIDs)
-        XCTAssertFalse(reopened.isExpanded(groupID: "alpha"))
+        var reopened = ComposerModelPickerSectionExpansionState(collapsedGroupIDs: state.collapsedGroupIDs)
+        XCTAssertFalse(reopened.isExpanded(groupID: "alpha"), "Even the selected provider stays collapsed on reopen")
         XCTAssertTrue(reopened.isExpanded(groupID: "new-provider"))
-        reopened.updateSearchText("matching model")
-        XCTAssertTrue(reopened.isExpanded(groupID: "alpha"))
-        reopened.updateSearchText("")
+        for query in ["matching model", "\0alpha"] {
+            reopened.updateSearchText(query)
+            XCTAssertTrue(reopened.isExpanded(groupID: "alpha"))
+            reopened.setExpanded(false, groupID: "alpha")
+            XCTAssertTrue(reopened.isExpanded(groupID: "alpha"), "Search and single-provider filtering keep matches visible")
+            XCTAssertEqual(reopened.collapsedGroupIDs, ["alpha"])
+        }
+        reopened.updateSearchText("   ")
         XCTAssertFalse(reopened.isExpanded(groupID: "alpha"))
+        reopened.setExpanded(true, groupID: "alpha")
+        XCTAssertTrue(ComposerModelPickerSectionExpansionState(collapsedGroupIDs: reopened.collapsedGroupIDs).isExpanded(groupID: "alpha"))
     }
-
 }

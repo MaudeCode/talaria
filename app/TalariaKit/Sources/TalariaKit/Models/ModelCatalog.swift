@@ -111,6 +111,10 @@ extension ModelsResponse {
         ModelCatalogParser.parseModelOptions(from: favoriteModels.map(JSONValue.array), providerID: nil)
     }
 
+    public var visibleFavoriteOptions: [ModelCatalogOption] {
+        ModelCatalogParser.parseModelOptions(from: visibleFavoriteModels.map(JSONValue.array), providerID: nil)
+    }
+
     public var catalogGroups: [ModelCatalogGroup] {
         ModelCatalogParser.parseGroups(from: self)
     }

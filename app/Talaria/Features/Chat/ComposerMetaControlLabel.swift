@@ -1,16 +1,18 @@
 import SwiftUI
-import UIKit
+import TalariaKit
 
 struct ComposerMetaControlLabel: View {
-    @ScaledMetric(relativeTo: .footnote) private var brainIconSize: CGFloat = 13
+    @ScaledMetric(relativeTo: .footnote) private var providerIconSize: CGFloat = 13
 
     let title: String
     let systemImage: String?
     var minWidth: CGFloat?
-    let maxWidth: CGFloat
+    let maxWidth: CGFloat?
     let color: Color
     let controlFont: Font
     let chevronFont: Font
+    var providerID: String? = nil
+    var summary: String? = nil
 
     var body: some View {
         ComposerChipContent(
@@ -19,19 +21,19 @@ struct ComposerMetaControlLabel: View {
             spacing: 5,
             font: controlFont
         ) {
+            if let providerID, !providerID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                ProviderIconView(providerID: providerID, label: providerID, tint: color, size: providerIconSize)
+            }
             if let systemImage {
-                if systemImage == "lucide.brain" {
-                    LucideBrainIcon()
-                        .frame(width: brainIconSize, height: brainIconSize)
-                } else {
-                    Image(systemName: systemImage)
-                        .font(controlFont)
-                }
+                Image(systemName: systemImage)
+                    .font(controlFont)
             }
         } trailing: {
+            if let summary { Text(summary).font(controlFont).foregroundStyle(.secondary) }
             Image(systemName: "chevron.down")
                 .font(chevronFont)
         }
+        .fixedSize(horizontal: maxWidth == nil, vertical: false)
         .foregroundStyle(color)
         .frame(minWidth: minWidth, maxWidth: maxWidth, alignment: .leading)
         .transaction { transaction in

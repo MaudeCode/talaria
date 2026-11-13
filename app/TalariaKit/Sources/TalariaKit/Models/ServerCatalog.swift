@@ -32,6 +32,7 @@ public struct ModelsResponse: Decodable, Equatable, Sendable {
     public let availability: CatalogAvailability?
     public let favorites: [ModelPreference]?
     let favoriteModels: [JSONValue]?
+    let visibleFavoriteModels: [JSONValue]?
     public let profile: String?
     public let preferencesSupported: Bool?
     public let providers: [ModelPickerProvider]?
@@ -47,7 +48,7 @@ public struct ModelsResponse: Decodable, Equatable, Sendable {
     public let defaultOptionID: String?
 
     private enum CodingKeys: String, CodingKey {
-        case availability, favorites, favoriteModels, profile, preferencesSupported, providers, totalCount
+        case availability, favorites, favoriteModels, visibleFavoriteModels, profile, preferencesSupported, providers, totalCount
         case groups
         case models
         case defaultModel
@@ -61,6 +62,7 @@ public struct ModelsResponse: Decodable, Equatable, Sendable {
         availability = try? c.decodeIfPresent(CatalogAvailability.self, forKey: .availability)
         favorites = try? c.decodeIfPresent([ModelPreference].self, forKey: .favorites)
         favoriteModels = try? c.decodeIfPresent([JSONValue].self, forKey: .favoriteModels)
+        visibleFavoriteModels = try? c.decodeIfPresent([JSONValue].self, forKey: .visibleFavoriteModels)
         profile = try? c.decodeIfPresent(String.self, forKey: .profile)
         preferencesSupported = try? c.decodeIfPresent(Bool.self, forKey: .preferencesSupported)
         providers = try? c.decodeIfPresent([ModelPickerProvider].self, forKey: .providers)

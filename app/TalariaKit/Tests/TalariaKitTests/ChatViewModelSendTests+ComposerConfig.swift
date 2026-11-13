@@ -677,6 +677,8 @@ extension ChatViewModelSendTests {
                     headerFields: ["Content-Type": "application/json"]
                 )
                 return (try XCTUnwrap(response), Data(#"{"error":"model update failed"}"#.utf8))
+            case "/api/session": return apiTestJSONResponse(#"{"session":{"session_id":"session-abc","model":"gpt-5.4","model_provider":"openai"}}"#, for: request)
+            case "/api/reasoning": return apiTestJSONResponse(#"{"reasoning_effort":"medium"}"#, for: request)
             default:
                 XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
                 throw URLError(.badURL)
@@ -692,7 +694,7 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(viewModel.selectedModelID, "gpt-5.4")
         XCTAssertEqual(viewModel.selectedModelProviderID, "openai")
         XCTAssertNotNil(viewModel.composerConfigurationErrorMessage)
-        XCTAssertEqual(requestPaths, ["/api/session/update"])
+        XCTAssertEqual(requestPaths, ["/api/session/update", "/api/session", "/api/reasoning"])
     }
 
     @MainActor
@@ -864,6 +866,7 @@ extension ChatViewModelSendTests {
         XCTAssertNil(reasoningQueries[0]["model"] as Any?, "The write first checks server scope support")
         XCTAssertEqual(reasoningQueries[1]["model"], limitedModel)
         XCTAssertEqual(reasoningQueries[1]["provider"], "openai")
+        XCTAssertEqual(reasoningQueries[1]["session_id"], "session-abc")
         XCTAssertEqual(viewModel.supportedReasoningEfforts, ["low", "medium", "high"])
         XCTAssertEqual(viewModel.supportsReasoningEffort, true)
         XCTAssertTrue(viewModel.showsReasoningEffortControl)
@@ -1472,5 +1475,157 @@ extension ChatViewModelSendTests {
         _ = await first.value
         _ = await queued.value
         XCTAssertEqual(requests.count, 1, "A retired account must neither write nor reconcile through the new account")
+    }
+}
+
+@MainActor
+extension ChatViewModelSendTests {
+    func testComposerModelSelectionUpdatesBeforeReplyAndReconcilesUnknownOutcomeWithoutReplay() async throws {
+        for unknown in [false, true] {
+            let requests = DeferredRequests()
+            let server = URL(string: "https://model-selection-\(unknown).test")!
+            DeferredMockURLProtocol.setOnRequest({ request in _ = requests.append(request) }, forHost: server.host!)
+            defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: server.host!) }
+            let model = try makeViewModel(sessionSummary: makeSession(model: "old", modelProvider: "alpha", profile: "work"),
+                server: server, protocolClasses: [DeferredMockURLProtocol.self]) { _ in throw URLError(.badURL) }
+            let option = ModelCatalogOption(id: "next-entry", displayName: "Next Model", providerID: "beta", bareID: "next")
+            let write = Task { await model.selectComposerModel(option) }
+            try await waitUntil { requests.count == 1 }
+            XCTAssertEqual(model.selectedModelTitle, "Next Model", "The button must update before the model write replies")
+            XCTAssertEqual(model.selectedModelID, "next")
+            XCTAssertEqual(model.selectedModelProviderID, "beta")
+            XCTAssertEqual(model.selectedModelOptionID, "next-entry")
+            if unknown {
+                requests.request(at: 0).fail(with: URLError(.networkConnectionLost))
+                try await waitUntil { requests.count == 2 }
+                guard requests.count == 2 else { _ = await write.value; continue }
+                XCTAssertEqual(requests.request(at: 1).request.httpMethod, "GET")
+                XCTAssertEqual(requests.request(at: 1).request.url?.path, "/api/session")
+                requests.request(at: 1).complete(withJSON: #"{"session":{"session_id":"session-abc","model":"next","model_provider":"beta","model_option_id":"next-entry"}}"#)
+                try await waitUntil { requests.count == 3 }
+                guard requests.count == 3 else { write.cancel(); continue }
+                XCTAssertEqual(requests.request(at: 2).request.url?.path, "/api/reasoning")
+                requests.request(at: 2).complete(withJSON: #"{"reasoning_effort":"high"}"#)
+            } else {
+                requests.request(at: 0).complete(withJSON: #"{"error":"Model refused"}"#, statusCode: 400)
+            }
+            let applied = await write.value
+            XCTAssertEqual(applied, unknown)
+            XCTAssertEqual(model.selectedModelID, unknown ? "next" : "old")
+            XCTAssertEqual(model.selectedModelProviderID, unknown ? "beta" : "alpha")
+            XCTAssertEqual(requests.count, unknown ? 3 : 1, "An unknown model write must reconcile, never replay")
+        }
+    }
+}
+
+@MainActor
+extension ChatViewModelSendTests {
+    func testEffortSelectionIsOptimisticAndReconcilesOnlyUnknownWrites() async throws {
+        for unknown in [false, true] {
+            let requests = DeferredRequests()
+            let server = URL(string: "https://effort-selection-\(unknown).test")!
+            DeferredMockURLProtocol.setOnRequest({ request in _ = requests.append(request) }, forHost: server.host!)
+            defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: server.host!) }
+            let model = try makeViewModel(server: server, protocolClasses: [DeferredMockURLProtocol.self]) { _ in throw URLError(.badURL) }
+            let previous = model.selectedReasoningEffort
+            let write = Task { await model.selectReasoningEffort("high") }
+            try await waitUntil { requests.count == 1 }
+            XCTAssertEqual(model.selectedReasoningEffort, "high", "Effort must change before the server replies")
+            requests.request(at: 0).complete(withJSON: #"{"supports_session_scope":true}"#)
+            try await waitUntil { requests.count == 2 }
+            if unknown {
+                requests.request(at: 1).fail(with: URLError(.networkConnectionLost))
+                try await waitUntil { requests.count == 3 }
+                guard requests.count == 3 else { _ = await write.value; continue }
+                let read = requests.request(at: 2)
+                XCTAssertEqual(read.request.httpMethod, "GET")
+                let query = URLComponents(url: read.request.url!, resolvingAgainstBaseURL: false)?.queryItems
+                XCTAssertEqual(query?.first { $0.name == "session_id" }?.value, "session-abc")
+                read.complete(withJSON: #"{"reasoning_effort":"high"}"#)
+            } else { requests.request(at: 1).complete(withJSON: #"{"error":"Refused"}"#, statusCode: 400) }
+            let saved = await write.value
+            XCTAssertEqual(saved, unknown)
+            XCTAssertEqual(model.selectedReasoningEffort, unknown ? "high" : previous)
+            XCTAssertEqual(requests.count, unknown ? 3 : 2)
+        }
+    }
+
+    func testMissingEffortScopeCannotConfirmAChatWriteFromTheProfileDefault() async throws {
+        var reads = 0
+        let model = try makeViewModel { request in
+            XCTAssertEqual(request.httpMethod, "GET", "An old server must not receive a chat effort write")
+            reads += 1
+            return apiTestJSONResponse(#"{"reasoning_effort":"high","supports_session_scope":false}"#, for: request)
+        }
+        let previous = model.selectedReasoningEffort
+        let saved = await model.selectReasoningEffort("high")
+        XCTAssertFalse(saved, "A matching profile default is not a successful chat write")
+        XCTAssertEqual(model.selectedReasoningEffort, previous)
+        XCTAssertNotNil(model.composerConfigurationErrorMessage)
+        XCTAssertEqual(reads, 1, "A local capability refusal has no unknown write to reconcile")
+    }
+
+    func testUnresolvedEffortReadbackRetriesOnReopenAndSameSelection() async throws {
+        for recovery in ["reopen", "same", "retired", "failed-refresh", "partial-success"] {
+            let retrySameSelection = recovery == "same"
+            var reads = 0
+            var writes = 0
+            var recovered = false
+            let serverEffort = retrySameSelection ? "high" : "low"
+            let model = try makeViewModel { request in
+                switch request.url?.path {
+                case "/api/reasoning" where request.httpMethod == "POST":
+                    writes += 1
+                    throw URLError(.networkConnectionLost)
+                case "/api/reasoning":
+                    reads += 1
+                    if reads == 1 { return apiTestJSONResponse(#"{"supports_session_scope":true,"reasoning_effort":"low"}"#, for: request) }
+                    let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
+                    XCTAssertEqual(query?.first { $0.name == "session_id" }?.value, "session-abc")
+                    guard recovered else { throw URLError(.networkConnectionLost) }
+                    return apiTestJSONResponse(#"{"supports_session_scope":true,"reasoning_effort":"\#(serverEffort)"}"#, for: request)
+                case "/api/models": return apiTestJSONResponse(#"{"groups":[]}"#, for: request)
+                case "/api/models/live": return apiTestJSONResponse(#"{"models":[]}"#, for: request)
+                case "/api/profiles": return apiTestJSONResponse(#"{"profiles":[]}"#, for: request)
+                case "/api/workspaces":
+                    if recovery == "partial-success" { throw URLError(.networkConnectionLost) }
+                    return apiTestJSONResponse(#"{"workspaces":[]}"#, for: request)
+                case "/api/commands": return apiTestJSONResponse(#"{"commands":[]}"#, for: request)
+                default: XCTFail("Unexpected request: \(request.url?.path ?? "nil")"); throw URLError(.badURL)
+                }
+            }
+            let applied = await model.selectReasoningEffort("high")
+            XCTAssertFalse(applied)
+            XCTAssertEqual(model.selectedReasoningEffort, "high", "A failed read-back cannot decide the unknown outcome")
+            XCTAssertNotNil(model.composerConfigurationErrorMessage)
+            if recovery == "retired" || recovery == "failed-refresh" {
+                if recovery == "failed-refresh" {
+                    await model.loadComposerConfiguration()
+                    XCTAssertEqual(model.selectedReasoningEffort, "high", "A failed refresh must retain the unresolved display intent")
+                }
+                let before = reads
+                model.suspendStreamForNavigation()
+                XCTAssertNil(model.selectedReasoningEffort, "An unresolved choice must not replace the confirmed cache across ownership changes")
+                await model.refreshModelCatalogForPickerOpen()
+                XCTAssertEqual(reads, before, "A retired intent must not read through a new owner")
+                XCTAssertEqual(writes, 1)
+                continue
+            }
+            recovered = true
+            if recovery == "partial-success" {
+                await model.loadComposerConfiguration()
+                XCTAssertEqual(model.selectedReasoningEffort, "low", "A successful scoped reasoning read must converge even if an unrelated catalog fails")
+                XCTAssertEqual(writes, 1)
+                continue
+            }
+            if retrySameSelection {
+                let changed = await model.selectReasoningEffort("high")
+                XCTAssertFalse(changed, "An already-applied choice needs only a read-back")
+                XCTAssertNil(model.composerConfigurationErrorMessage)
+            } else { await model.refreshModelCatalogForPickerOpen() }
+            XCTAssertEqual(reads, 3, "Recovery must retry the unresolved scoped read even when the displayed effort already matches")
+            XCTAssertEqual(model.selectedReasoningEffort, serverEffort)
+            XCTAssertEqual(writes, 1, "Recovery must never replay the effort write")
+        }
     }
 }

@@ -42,7 +42,10 @@ final class ComposerChipLayoutTests: XCTestCase {
                     return value != "Model"
                 }
                 XCTAssertTrue(loaded, "Inspect the strip after its actual model title loads")
-            } inspect: { window, _ in
+            } inspect: { window, variant in
+                let modelButton = try await self.requireElement(in: window, label: "Select model")
+                XCTAssertEqual(modelButton.accessibilityValue?.contains("Medium"), !variant.textSize.isAccessibilityCategory)
+                XCTAssertNil(HostedAccessibility.element(in: window, label: "Select reasoning effort"))
                 let control = try await self.requireElement(in: window, label: "Agent Mode")
                 XCTAssertEqual(control.accessibilityValue, mode.title)
                 XCTAssertTrue(window.bounds.contains(window.convert(control.accessibilityFrame, from: nil)))

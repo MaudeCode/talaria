@@ -491,7 +491,7 @@ final class ChatHostedTests: XCTestCase {
                      loadsInitialMessages: false, viewModel: viewModel)
         }.modelContainer(fixture.cache), size: HostedSize.phone)
         _ = try await requireElement(in: window, label: "Native reasoning")
-        _ = try await requireElement(in: window, label: "Select reasoning effort")
+        _ = try await requireElement(in: window, label: "Select model")
         let configured = await awaitCondition { viewModel.selectedReasoningEffort == "medium" }
         XCTAssertTrue(configured)
         let initialEffort = viewModel.selectedReasoningEffort
@@ -1811,8 +1811,10 @@ final class ChatHostedTests: XCTestCase {
         let workspacePicker = try await requireElement(in: window, label: "Choose workspace path")
         XCTAssertFalse(modelPicker.accessibilityTraits.contains(.notEnabled), "An attached owner accepts model changes")
         XCTAssertFalse(workspacePicker.accessibilityTraits.contains(.notEnabled), "An attached owner accepts workspace changes")
-        let reasoning = try await requireElement(in: window, label: "Select reasoning effort")
+        XCTAssertTrue(HostedAccessibility.activate(modelPicker))
+        let reasoning = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "composer-model-effort" }
         XCTAssertTrue(reasoning.accessibilityTraits.contains(.notEnabled), "Reasoning remains with its owner")
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Done"))
         settle(0.3)
         attachHostedScreenshot(window, name: "owner-unknown-\(name)")
         HostedAccessibility.activate(workspacePicker)

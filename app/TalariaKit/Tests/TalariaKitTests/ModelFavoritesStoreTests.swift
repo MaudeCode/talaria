@@ -166,6 +166,9 @@ final class ModelFavoritesStoreTests: XCTestCase {
         )
 
         XCTAssertEqual(visibleOptions, [claude, missing, gemini])
+        XCTAssertEqual(ModelRecentsStore.visibleRecentOptions(in: groups, recentKeys: recentKeys,
+            favoriteKeys: [gpt.favoriteKey], includesMissingModels: false), [claude, gemini],
+            "The shared picker must not restore hidden or filtered-out rows from local recents")
     }
 
     func testCustomModelFavoriteAndRecentOptionsRemainVisibleWithoutCatalogEntry() {
