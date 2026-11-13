@@ -220,7 +220,7 @@ final class ComposerModelPickerHostedTests: APIClientTestCase {
         defer { ActiveServerProfile.record(nil, for: server); ServerCookieStore.shared.clear(for: server) }
         let attemptedWrite = LockedTestValue(false)
         let recovered = LockedTestValue(false)
-        let client = makeClient(baseURL: server) { request in
+        let client = pickerClient(server: server, catalog: catalog) { request in
             switch request.url?.path {
             case "/api/reasoning" where request.httpMethod == "POST":
                 attemptedWrite.value = true
@@ -228,12 +228,7 @@ final class ComposerModelPickerHostedTests: APIClientTestCase {
             case "/api/reasoning":
                 if attemptedWrite.value && !recovered.value { throw URLError(.networkConnectionLost) }
                 return apiTestJSONResponse(#"{"reasoning_effort":"low","supports_session_scope":true,"supports_reasoning_effort":true,"supported_efforts":["low","high"]}"#, for: request)
-            case "/api/models", "/api/models/picker": return apiTestJSONResponse(catalog, for: request)
-            case "/api/models/live": return apiTestJSONResponse(#"{"models":[]}"#, for: request)
-            case "/api/profiles": return apiTestJSONResponse(#"{"profiles":[{"name":"work","model":"shared","provider":"alpha"}],"active":"work"}"#, for: request)
-            case "/api/workspaces": return apiTestJSONResponse(#"{"workspaces":[]}"#, for: request)
-            case "/api/commands": return apiTestJSONResponse(#"{"commands":[]}"#, for: request)
-            default: return apiTestJSONResponse("{}", for: request)
+            default: return nil
             }
         }
         let summary = SessionSummary(sessionId: "session-abc", title: "Effort recovery", model: "shared", modelProvider: "alpha", modelOptionID: "shared", profile: "work")
@@ -260,6 +255,67 @@ final class ComposerModelPickerHostedTests: APIClientTestCase {
         }
         XCTAssertTrue(rendered, "The visible choice must converge on the server field when read-back recovers")
         attachHostedScreenshot(window, name: "effort-readback-recovered")
+    }
+
+    func testGuardedModelSelectionPresentsConfirmationAfterPickerDismisses() async throws {
+        continueAfterFailure = false
+        let fixture = try FixtureApp(for: self)
+        var catalog = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("settings-model-picker")) as? [String: Any])
+        var groups = try XCTUnwrap(catalog["groups"] as? [[String: Any]])
+        var rows = try XCTUnwrap(groups[0]["models"] as? [[String: Any]])
+        rows.append(["id": "guarded", "bare_id": "guarded", "provider_id": "alpha", "label": "Guarded model", "preferences_editable": true])
+        groups[0]["models"] = rows
+        groups[0]["model_count"] = rows.count
+        catalog["groups"] = groups
+        catalog["total_count"] = rows.count
+        let catalogJSON = String(decoding: try JSONSerialization.data(withJSONObject: catalog), as: UTF8.self)
+        let guardFixture = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("model-confirmation")) as? [String: Any])
+        var refusal = try XCTUnwrap(guardFixture["refusal"] as? [String: Any])
+        refusal["warnings"] = [["kind": "data_policy", "title": "Data policy", "message": "This model may use your conversation for training.", "model": "guarded", "provider": "alpha"]]
+        let refusalData = try JSONSerialization.data(withJSONObject: refusal)
+        let server = URL(string: "https://picker-confirmation-\(UUID().uuidString.lowercased()).example.test")!
+        defer { ActiveServerProfile.record(nil, for: server); ServerCookieStore.shared.clear(for: server) }
+        let updates = LockedTestValue(0)
+        let client = pickerClient(server: server, catalog: catalogJSON) { request in
+            guard request.url?.path == "/api/session/update" else { return nil }
+            updates.value += 1
+            if let token = try apiTestJSONBody(from: request)["confirm_token"] as? String {
+                XCTAssertEqual(token, "synthetic-opaque-token")
+                return apiTestJSONResponse(#"{"session":{"session_id":"session-abc","model":"guarded","model_provider":"alpha","model_option_id":"guarded","profile":"work"}}"#, for: request)
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 409, httpVersion: nil, headerFields: nil)!, refusalData)
+        }
+        let summary = SessionSummary(sessionId: "session-abc", title: "Guarded model selection", model: "shared", modelProvider: "alpha", modelOptionID: "shared", profile: "work")
+        let model = ChatViewModel(session: summary, server: server, client: client)
+        defer { model.cleanupPollingTasks() }
+        await model.loadComposerConfiguration()
+        let window = try hostWindow(NavigationStack {
+            ChatView(session: summary, server: server, onAPIError: { _ in }, loadsInitialMessages: false, viewModel: model)
+        }.environment(\.scenePhase, .active).modelContainer(fixture.cache))
+        let button = try await requireElement(in: window, label: "Select model")
+        XCTAssertTrue(HostedAccessibility.activate(button))
+        _ = try await requireElement(in: window, label: "Options")
+        let row = try await requireElement(in: window) {
+            HostedAccessibility.identifier(of: $0) == "settings-model-option-guarded"
+        }
+        XCTAssertTrue(HostedAccessibility.activate(row))
+        let warned = await awaitCondition { model.modelSwitchConfirmation != nil }
+        XCTAssertTrue(warned, "The selected model must reach the server's confirmation boundary")
+        var alert: UIAlertController?
+        let presented = await awaitCondition {
+            var top = window.rootViewController
+            while let controller = top?.presentedViewController { top = controller }
+            alert = top as? UIAlertController
+            return alert?.title == "Change Model?" && alert?.isBeingPresented == false
+        }
+        XCTAssertTrue(presented, "A guarded selection must dismiss the picker and present its actionable confirmation")
+        let confirmation = try XCTUnwrap(alert)
+        attachHostedScreenshot(window, name: "composer-guarded-model-confirmation")
+        XCTAssertTrue(HostedAccessibility.tap("Change Model", in: confirmation))
+        let applied = await awaitCondition { model.selectedModelID == "guarded" && model.modelSwitchConfirmation == nil }
+        XCTAssertTrue(applied)
+        XCTAssertEqual(updates.value, 2)
+        attachHostedScreenshot(window, name: "composer-guarded-model-confirmed")
     }
 
     func testEffortChoicePageShowsConfigurationRefusal() async throws {
@@ -291,6 +347,22 @@ final class ComposerModelPickerHostedTests: APIClientTestCase {
             XCTAssertTrue(HostedAccessibility.activate(clear))
             XCTAssertNil(draft.trimmedModel)
             XCTAssertNil(draft.trimmedProvider)
+        }
+    }
+
+    private func pickerClient(server: URL, catalog: String,
+                              response: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)?) -> APIClient {
+        makeClient(baseURL: server) { request in
+            if let result = try response(request) { return result }
+            switch request.url?.path {
+            case "/api/models", "/api/models/picker": return apiTestJSONResponse(catalog, for: request)
+            case "/api/models/live": return apiTestJSONResponse(#"{"models":[]}"#, for: request)
+            case "/api/reasoning": return apiTestJSONResponse(#"{"reasoning_effort":"low","supports_session_scope":true,"supports_reasoning_effort":true,"supported_efforts":["low","high"]}"#, for: request)
+            case "/api/profiles": return apiTestJSONResponse(#"{"profiles":[{"name":"work","model":"shared","provider":"alpha"}],"active":"work"}"#, for: request)
+            case "/api/workspaces": return apiTestJSONResponse(#"{"workspaces":[]}"#, for: request)
+            case "/api/commands": return apiTestJSONResponse(#"{"commands":[]}"#, for: request)
+            default: return apiTestJSONResponse("{}", for: request)
+            }
         }
     }
 

@@ -96,6 +96,7 @@ struct ChatView: View {
     private let composerAccessoryVerticalSpacing: CGFloat = 8
 
     @State private var modelSwitchAlert: ModelSwitchConfirmation?
+    @State private var isModelPickerOnScreen = false
     /// TAL-1969: a vault prompt this viewer cannot answer and closed; the server's queue still holds it.
     @State private var closedVaultPromptID: String?
     @State private var completionAcknowledger = ViewedCompletionAcknowledger()
@@ -472,6 +473,11 @@ struct ChatView: View {
             },
             onModelPickerOpen: {
                 await viewModel.refreshModelCatalogForPickerOpen()
+            },
+            requiresModelSwitchConfirmation: viewModel.modelSwitchConfirmation != nil,
+            onModelPickerPresentationChange: { isOnScreen in
+                isModelPickerOnScreen = isOnScreen
+                modelSwitchAlert = isOnScreen ? nil : viewModel.modelSwitchConfirmation
             },
             onLoadWorkspaceSuggestions: { prefix in
                 await viewModel.loadWorkspaceSuggestions(prefix: prefix)
@@ -1400,7 +1406,8 @@ struct ChatView: View {
                 )
             }
             .onChange(of: viewModel.modelSwitchConfirmation?.id, initial: true) {
-                modelSwitchAlert = viewModel.modelSwitchConfirmation
+                // UIKit can present the warning only after the model sheet finishes dismissing.
+                modelSwitchAlert = isModelPickerOnScreen ? nil : viewModel.modelSwitchConfirmation
             }
             .background {
                 // A warning's identity can change during dismissal. Keep its item presenter separate from Git's.

@@ -101,6 +101,8 @@ struct MessageComposerView: View {
     let onCancel: () -> Void
     let onSelectModel: (ModelCatalogOption) -> Void
     let onModelPickerOpen: () async -> Void
+    let requiresModelSwitchConfirmation: Bool
+    let onModelPickerPresentationChange: (Bool) -> Void
     let onLoadWorkspaceSuggestions: (String) async -> Void
     let onWorkspaceRegistryChanged: () async -> Void
     let onLoadPersonalitySuggestions: () async -> Void
@@ -456,12 +458,16 @@ struct MessageComposerView: View {
                 finishVoiceNote(translationHeight: 0)
             }
         }
+        .onChange(of: requiresModelSwitchConfirmation, initial: true) {
+            if requiresModelSwitchConfirmation { showsAllModelsSheet = false }
+        }
         .sheet(isPresented: $showsAllModelsSheet, onDismiss: {
             modelPreferences?.searchText = ""
             modelPreferences?.providerID = ""
             modelPreferences?.favoritesOnly = false
             modelPreferences?.showHidden = false
             restoreFocusAfterPresentationIfNeeded()
+            onModelPickerPresentationChange(false)
         }) {
             if let apiClient {
                 ComposerModelPickerSheet(
@@ -1075,6 +1081,7 @@ struct MessageComposerView: View {
     private var modelButton: some View {
         ChatUIKitMenuButton(horizontalPadding: 0, verticalPadding: 14, primaryAction: {
             prepareForComposerPresentation()
+            onModelPickerPresentationChange(true)
             showsAllModelsSheet = true
         }, showsMenu: false) {
             ComposerMetaControlLabel(
