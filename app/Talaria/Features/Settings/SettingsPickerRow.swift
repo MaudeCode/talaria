@@ -7,22 +7,26 @@ struct SettingsPickerRow<SelectionValue: Hashable, Options: View>: View {
     @ViewBuilder let options: Options
     var accessibilityIdentifier: String? = nil
     var usesSegmentedControl = false
+    var isMenuItem = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     init(title: String, systemImage: String, selection: Binding<SelectionValue>,
-         accessibilityIdentifier: String? = nil, usesSegmentedControl: Bool = false,
+         accessibilityIdentifier: String? = nil, usesSegmentedControl: Bool = false, isMenuItem: Bool = false,
          @ViewBuilder options: () -> Options) {
         self.title = title
         self.systemImage = systemImage
         _selection = selection
         self.accessibilityIdentifier = accessibilityIdentifier
         self.usesSegmentedControl = usesSegmentedControl
+        self.isMenuItem = isMenuItem
         self.options = options()
     }
 
     var body: some View {
         Group {
-            if usesSegmentedControl {
+            if isMenuItem {
+                Picker(title, selection: $selection) { options }
+            } else if usesSegmentedControl {
                 Picker(title, selection: $selection) { options }
                     .pickerStyle(.segmented)
             } else if dynamicTypeSize.isAccessibilitySize {

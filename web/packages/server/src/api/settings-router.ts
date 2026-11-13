@@ -15,15 +15,15 @@ import { forwardedClientIp, isLoopback, rawPeerIsTrustedProxy } from '../http/or
 import { isPrivateLan } from '../http/addresses.js'
 import { HttpFailure } from '../sessions/service.js'
 import { SidecarError } from '../sidecar/client.js'
-import type { SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
+import type { ModelFavorite, SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { SessionNotFound } from '../sessions/store.js'
-import { agentApprovals, auxiliaryModels, auxiliaryReasoning, compressionPrepareAhead, dict, DISCUSSION_LIMITS_KEY, discussionLimits, type DiscussionLimits, isDict, modelSection, canonicaliseProviderId, ConfigUnavailable, MAX_TOKENS_UNAVAILABLE, maxTokensStatus, PREPARE_AHEAD_KEY, findPersonality, reasoningStatus, setAgentApprovals, setAuxiliaryModel, setDefaultModel, setMaxTokens, unlistedAuxiliaryOverrides, validReasoningEffort, type AuxEfforts, type Dict } from '../config/agent-config.js'
+import { agentApprovals, auxiliaryModels, auxiliaryReasoning, compressionPrepareAhead, dict, parseProviderQualifiedModel, DISCUSSION_LIMITS_KEY, discussionLimits, type DiscussionLimits, isDict, modelSection, canonicaliseProviderId, ConfigUnavailable, MAX_TOKENS_UNAVAILABLE, maxTokensStatus, PREPARE_AHEAD_KEY, findPersonality, reasoningStatus, setAgentApprovals, setAuxiliaryModel, setDefaultModel, setMaxTokens, unlistedAuxiliaryOverrides, validReasoningEffort, type AuxEfforts, type Dict } from '../config/agent-config.js'
 import { ProfileError, validateProfileName } from '../profiles/profiles.js'
 import { OnboardingError } from '../onboarding.js'
 import { EnvWriteError } from '../providers/env-file.js'
 import { composerQuota, displayName, providerEnvVar, providerListing, stampAuxiliarySelections, type QuotaSourceRow } from '../providers/catalog.js'
 import { OAUTH_PROVIDERS, SUPPORTED_PROVIDER_SETUPS } from '../providers/tables.js'
-import { displayBotName, KANBAN_PINS_BY_PROFILE_KEY, PINNED_SESSIONS_LIMIT_RANGE, MODEL_FAVORITES_BY_PROFILE_KEY, QUOTA_THRESHOLDS_BY_PROFILE_KEY, SETTINGS_SPEECH_KEYS, pyBool, sidebarQuotaProjection, composerControlCount, navigationCounts } from '../settings.js'
+import { displayBotName, KANBAN_PINS_BY_PROFILE_KEY, PINNED_SESSIONS_LIMIT_RANGE, MODEL_FAVORITES_BY_PROFILE_KEY, HIDDEN_MODELS_BY_PROFILE_KEY, QUOTA_THRESHOLDS_BY_PROFILE_KEY, SETTINGS_SPEECH_KEYS, pyBool, sidebarQuotaProjection, composerControlCount, navigationCounts } from '../settings.js'
 import { str } from '../util.js'
 import { checkExternalLink, linkPreferences } from '../links.js'
 import { titleGenerationEnabled } from '../sessions/turn.js'
@@ -157,6 +157,7 @@ async function derivedFields(ctx: RequestContext, into: Dict): Promise<void> {
   into.kanban_pinned_boards = await deps.settings.kanbanPins(activeProfileName(ctx))
   Reflect.deleteProperty(into, QUOTA_THRESHOLDS_BY_PROFILE_KEY)
   Reflect.deleteProperty(into, MODEL_FAVORITES_BY_PROFILE_KEY)
+  Reflect.deleteProperty(into, HIDDEN_MODELS_BY_PROFILE_KEY)
   into.provider_quota_thresholds = (await deps.settings.quotaThresholds(activeProfileName(ctx)))
   into.compression_prepare_ahead = await compressionPrepareAhead(deps.agentConfig, home(ctx))
   // TAL-2160: title refresh rewrites only generated titles, so it runs only while the profile generates them.
@@ -492,6 +493,8 @@ export const settingsRouter = os.router({
     })),
   },
   models: {
+    picker: os.models.picker.handler(({ input, context: { ctx } }) => run(() => ctx.deps.catalog.settingsModelPicker(home(ctx), activeProfileName(ctx), input))),
+    hidden: os.models.hidden.handler(({ input, context: { ctx } }) => run(() => modelPreferenceWrite(async () => ({ ok: true as const, hidden_models: await ctx.deps.settings.setModelHidden(modelPreferenceProfile(ctx, input.profile), canonicalModelPreference(input), input.hidden) })))),
     list: os.models.list.handler(({ input, context: { ctx } }) => run(() => {
       const freshness = str(input.freshness).trim().toLowerCase()
       if (freshness && freshness !== 'session_visit') throw new HttpError(400, `unknown models freshness: ${freshness}`)
@@ -506,11 +509,8 @@ export const settingsRouter = os.router({
       if (provider) await ctx.deps.catalog.liveModelIds(home(ctx), provider, { force: true })
       return { ok: true as const, provider, models: await ctx.deps.catalog.pickerModels(home(ctx), activeProfileName(ctx)) }
     })),
-    favorite: os.models.favorite.handler(({ input, context: { ctx } }) => run(async () => {
-      try { return { ok: true as const, favorites: await ctx.deps.settings.setModelFavorite(activeProfileName(ctx), input, input.favorite) } }
-      catch (error) { if (error instanceof RangeError) throw new HttpError(400, error.message); throw error }
-    })),
-    importFavorites: os.models.importFavorites.handler(({ input, context: { ctx } }) => run(async () => ({ ok: true as const, ...(await ctx.deps.settings.importModelFavorites(activeProfileName(ctx), input.favorites)) }))),
+    favorite: os.models.favorite.handler(({ input, context: { ctx } }) => run(() => modelPreferenceWrite(async () => ({ ok: true as const, favorites: await ctx.deps.settings.setModelFavorite(modelPreferenceProfile(ctx, input.profile), canonicalModelPreference(input), input.favorite) })))),
+    importFavorites: os.models.importFavorites.handler(({ input, context: { ctx } }) => run(async () => ({ ok: true as const, ...(await ctx.deps.settings.importModelFavorites(modelPreferenceProfile(ctx, input.profile), input.favorites.map(canonicalModelPreference))) }))),
     delegation: os.models.delegation.handler(({ context: { ctx }, input }) => run(async () => {
       try {
         await ctx.deps.agentConfig.setDelegation(home(ctx), input)
@@ -736,4 +736,25 @@ async function setProviderKey(ctx: RequestContext, pid: string, apiKey: string |
   }
   ctx.deps.catalog.invalidate()
   return { ok: true, provider: pid, display_name: displayName(pid), action: apiKey ? 'updated' : 'removed' }
+}
+
+/** Preference capacity is a definitive client refusal; unrelated failures retain their normal status. */
+async function modelPreferenceWrite<T>(write: () => Promise<T>): Promise<T> {
+  try { return await write() }
+  catch (error) { if (error instanceof RangeError) throw new HttpError(400, error.message); throw error }
+}
+
+/** A queued picker write must never migrate into the profile another window just selected. */
+function modelPreferenceProfile(ctx: RequestContext, expected: string | undefined): string {
+  const profile = activeProfileName(ctx)
+  if (expected !== undefined && expected !== profile) throw new HttpError(409, 'The active profile changed. Reopen the model picker.')
+  return profile
+}
+
+/** Older App favorites store catalog ids; split their provider qualification once, on the server. */
+function canonicalModelPreference(value: ModelFavorite): ModelFavorite {
+  const parsed = parseProviderQualifiedModel(value.model)
+  if (!parsed) return { provider_id: value.provider_id, model: value.model }
+  if (parsed[1] !== value.provider_id) throw new HttpError(400, 'Model and provider do not match')
+  return { provider_id: value.provider_id, model: parsed[0] }
 }

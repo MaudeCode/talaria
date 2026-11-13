@@ -8,11 +8,11 @@ struct ComposerModelPickerSheet: View {
     let selectedModelOptionID: String?
     let favoriteModelKeys: [ModelFavoriteKey]
     let recentModelKeys: [ModelFavoriteKey]
+    var favoriteOptions: [ModelCatalogOption] = []
     let onSelect: (ModelCatalogOption) -> Void
     let onToggleFavorite: (ModelCatalogOption) -> Void
     let onDeleteSavedCustom: (ModelCatalogOption) -> Void
-    /// Off for surfaces that must not read or write `ModelFavoritesStore`
-    /// (the task editor): no stars on the rows or the custom entry.
+    /// Off for the task editor: no stars on the rows or the custom entry.
     var showsFavorites = true
     /// Off for the task editor, where a bare model id is valid: the server
     /// resolves it through the job's profile or the active provider, and
@@ -328,11 +328,12 @@ struct ComposerModelPickerSheet: View {
     }
 
     private func isFavorite(_ option: ModelCatalogOption) -> Bool {
-        favoriteModelKeys.contains(option.favoriteKey)
+        option.isFavorite
     }
 
     private var isCustomOptionFavorite: Bool {
-        customOption.map(isFavorite) ?? false
+        guard let option = customOption else { return false }
+        return favoriteOptions.contains { $0.providerID == option.providerID && ($0.bareID ?? $0.id) == option.id }
     }
 
     private func isSelected(_ option: ModelCatalogOption) -> Bool {
@@ -407,7 +408,7 @@ struct ComposerModelPickerSheet: View {
             result.append(option)
         }
 
-        for option in ModelFavoritesStore.visibleFavoriteOptions(in: modelGroups, favoriteKeys: favoriteModelKeys) {
+        for option in favoriteOptions {
             append(option)
         }
         for option in ModelRecentsStore.visibleRecentOptions(

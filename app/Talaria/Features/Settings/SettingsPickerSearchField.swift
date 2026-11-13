@@ -1,12 +1,24 @@
 import SwiftUI
 
-struct SettingsPickerSearchField: View {
+struct SettingsPickerSearchField<Trailing: View>: View {
     @Binding var text: String
     let prompt: LocalizedStringKey
     let clearLabel: LocalizedStringKey
     var autofocus = false
     var onClose: (() -> Void)? = nil
+    @ViewBuilder let trailing: Trailing
     @FocusState private var isFocused: Bool
+
+    init(text: Binding<String>, prompt: LocalizedStringKey, clearLabel: LocalizedStringKey,
+         autofocus: Bool = false, onClose: (() -> Void)? = nil,
+         @ViewBuilder trailing: () -> Trailing = { EmptyView() }) {
+        _text = text
+        self.prompt = prompt
+        self.clearLabel = clearLabel
+        self.autofocus = autofocus
+        self.onClose = onClose
+        self.trailing = trailing()
+    }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -36,6 +48,7 @@ struct SettingsPickerSearchField: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(clearLabel)
             }
+            trailing
         }
         .padding(.horizontal, 12)
         .frame(minHeight: 44)

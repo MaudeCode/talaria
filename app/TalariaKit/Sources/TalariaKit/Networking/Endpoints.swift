@@ -100,6 +100,10 @@ public enum Endpoint: Sendable {
     case gitCommitMessage
     case gitCommitMessageSelected
     case models
+    case settingsModelPicker(search: String, provider: String, favorites: Bool, showHidden: Bool, live: Bool)
+    case modelFavorite
+    case modelHidden
+    case importModelFavorites
     case modelsLive
     case commands
     case commandsExec
@@ -377,6 +381,14 @@ public enum Endpoint: Sendable {
             return "/api/git/commit-message-selected"
         case .models:
             return "/api/models"
+        case .settingsModelPicker:
+            return "/api/models/picker"
+        case .modelFavorite:
+            return "/api/models/favorite"
+        case .modelHidden:
+            return "/api/models/hidden"
+        case .importModelFavorites:
+            return "/api/models/favorites/import"
         case .modelsLive:
             return "/api/models/live"
         case .commands:
@@ -567,6 +579,10 @@ public enum Endpoint: Sendable {
 
     var queryItems: [URLQueryItem] {
         switch self {
+        case let .settingsModelPicker(search, provider, favorites, showHidden, live):
+            return [URLQueryItem(name: "q", value: search), URLQueryItem(name: "provider", value: provider),
+                    URLQueryItem(name: "favorites", value: String(favorites)), URLQueryItem(name: "show_hidden", value: String(showHidden)),
+                    URLQueryItem(name: "live", value: String(live))]
         case let .logs(file, tail):
             return [URLQueryItem(name: "file", value: file), URLQueryItem(name: "tail", value: String(tail))]
         case let .sessionStream(sessionID):

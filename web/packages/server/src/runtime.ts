@@ -634,7 +634,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   })
   // Services read `deps.fetch` lazily so tests can swap the outbound HTTP client after boot.
   const lazyFetch: typeof fetch = (input, init) => deps.fetch(input, init)
-  const catalog = new ProviderCatalog({ sidecar: () => sidecar, config: agentConfig, env, now, log, costBudget: () => coerceProviderCostBudgetValue(settings.peek().provider_cost_budget), quotaThresholds: async (profile) => (await settings.quotaThresholds(profile)), modelFavorites: (profile) => settings.modelFavorites(profile), isRootProfileHome: (h) => resolvePathLikePython(h) === resolvePathLikePython(config.hermesHome), documents: storage.documents })
+  const catalog = new ProviderCatalog({ sidecar: () => sidecar, config: agentConfig, env, now, log, costBudget: () => coerceProviderCostBudgetValue(settings.peek().provider_cost_budget), quotaThresholds: async (profile) => (await settings.quotaThresholds(profile)), modelFavorites: (profile) => settings.modelFavorites(profile), hiddenModels: (profile) => settings.hiddenModels(profile), isRootProfileHome: (h) => resolvePathLikePython(h) === resolvePathLikePython(config.hermesHome), documents: storage.documents })
   const agentStatus = () => {
     const describe = sidecar?.describe ?? null
     const found = Boolean(describe?.agent_dir)

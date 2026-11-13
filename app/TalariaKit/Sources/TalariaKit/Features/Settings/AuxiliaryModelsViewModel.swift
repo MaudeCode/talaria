@@ -14,9 +14,6 @@ public final class AuxiliaryModelsViewModel {
     public private(set) var errorMessage: String?
     public private(set) var saveErrorMessage: String?
     public private(set) var savingTaskID: String?
-    public private(set) var catalogGroups: [ModelCatalogGroup] = []
-    public private(set) var catalogErrorMessage: String?
-    public private(set) var isLoadingCatalog = false
 
     public static let resetTaskID = "__reset__"
 
@@ -51,35 +48,6 @@ public final class AuxiliaryModelsViewModel {
             }
         }
         isLoading = false
-    }
-
-    /// The `/api/models` catalog the server matched `selectedOptionID` against.
-    public func loadCatalog() async {
-        isLoadingCatalog = true
-        catalogErrorMessage = nil
-        do {
-            catalogGroups = try await client.models().catalogGroups
-        } catch {
-            if !APIError.isCancellation(error) {
-                catalogErrorMessage = error.localizedDescription
-            }
-        }
-        isLoadingCatalog = false
-    }
-
-    /// Catalog groups whose models match the search text.
-    public func pickerGroups(matching query: String) -> [ModelCatalogGroup] {
-        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return catalogGroups.compactMap { group in
-            let rows = group.models.filter { model in
-                needle.isEmpty
-                    || model.displayName.lowercased().contains(needle)
-                    || model.id.lowercased().contains(needle)
-                    || group.name.lowercased().contains(needle)
-            }
-            guard !rows.isEmpty else { return nil }
-            return ModelCatalogGroup(id: group.id, name: group.name, providerID: group.providerID, models: rows)
-        }
     }
 
     /// Writes one slot; on failure the previous server state stays and the error is kept for display.

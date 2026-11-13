@@ -535,6 +535,30 @@ describe('curated and fallback model lists (TAL-799)', () => {
     return { home, catalog, sidecar, lookups, tick: (s: number) => { clock += s } }
   }
 
+  it('preserves selected option identity and qualifies new collisions in the live Settings picker', async () => {
+    let live = ['vendor/shared']
+    const { home, catalog } = setup({
+      model: { provider: 'openrouter', default: 'vendor/shared' },
+      providers: {
+        openrouter: { api_key: 'sk-synthetic-router' },
+        'custom:mirror': { api: 'https://mirror.test/v1', api_key: 'sk-synthetic-mirror', models: ['vendor/shared', 'vendor/new'] },
+      },
+    }, (provider) => ({ model_ids: provider === 'openrouter' ? live : [] }))
+    try {
+      const before = await catalog.settingsModelPicker(home, 'default', {})
+      expect(before.default_option_id).toBe('@openrouter:vendor/shared')
+      live = ['vendor/shared', 'vendor/new']
+      await catalog.liveModelIds(home, 'openrouter', { force: true })
+      const after = await catalog.settingsModelPicker(home, 'default', { live: 'true' })
+      const active = after.groups.find((group) => group.provider_id === 'openrouter')!
+      expect(active.models.find((model) => model.bare_id === 'vendor/shared')?.id, 'A live refresh must retain the selected catalog option ID').toBe(before.default_option_id)
+      expect(after.default_option_id).toBe(before.default_option_id)
+      expect(active.models.find((model) => model.bare_id === 'vendor/new')?.id).toBe('@openrouter:vendor/new')
+      const ids = after.groups.flatMap((group) => group.models.map((model) => model.id))
+      expect(new Set(ids).size).toBe(ids.length)
+    } finally { rmSync(home, { recursive: true, force: true }) }
+  })
+
   it('lists the Agent\'s curated ids for a provider without credentials, and never repairs onto them', async () => {
     const { home, catalog } = setup(
       { model: { provider: 'anthropic', default: 'claude-fable-5.1' }, providers: { ollama: { base_url: 'http://ollama.test/v1', models: ['llama3.2'] } } },

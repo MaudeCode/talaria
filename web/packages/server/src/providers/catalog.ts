@@ -17,7 +17,8 @@ import { join } from 'node:path'
 import { atomicWriteText } from '../fs/atomic.js'
 import type { SidecarLike } from '../sidecar/client.js'
 import { providerIcon } from './icons.js'
-import type { CatalogAvailability, ModelAllowance, ModelFavorite, PlanUsage, ProviderIcon, KeySourceKind, SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
+import type { CatalogAvailability, ModelAllowance, ModelFavorite, SettingsModelPicker, SettingsModelPickerQuery, PlanUsage, ProviderIcon, KeySourceKind, SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
+import { ModelsLiveSchema, SettingsModelPickerSchema } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { QUOTA_THRESHOLD_DEFAULTS, type QuotaThresholds } from '../settings.js'
 import { loadEnvFile } from './env-file.js'
@@ -29,7 +30,7 @@ import {
   modelSection, parseProviderQualifiedModel, pluginAliasTargets, providerIdentity, resolveProviderAlias, type AgentConfig, type Config, type Dict, type SpeedTier,
 } from '../config/agent-config.js'
 
-export interface ModelEntry { id: string; label: string; favorite?: boolean; supports_fast_tier?: boolean; supported_speed_tiers?: SpeedTier[]; provider_id?: string; bare_id?: string; allowance?: ModelAllowance; limit?: { scope: 'model'; resets_at: string } }
+export interface ModelEntry { id: string; label: string; favorite?: boolean; hidden?: boolean; preferences_editable?: boolean; supports_fast_tier?: boolean; supported_speed_tiers?: SpeedTier[]; provider_id?: string; bare_id?: string; allowance?: ModelAllowance; limit?: { scope: 'model'; resets_at: string } }
 type PluginProvider = SidecarResult<'plugins.providers'>['providers'][number]
 export interface QuotaSourceRow extends Dict { source_id: string; provider_id: string; account_label: string }
 interface CatalogLookup<T> { value: T | null; authoritative: boolean }
@@ -105,7 +106,7 @@ export function repairSessionModel(catalog: ModelsCatalog, model: string, provid
   return defaultModel && defaultProvider && (defaultModel !== model || defaultProvider !== pid) ? [defaultModel, defaultProvider] : null
 }
 
-export interface ModelsCatalog { availability?: CatalogAvailability; active_provider: string | null; default_model: string; default_provider_id?: string | null; default_bare_id?: string; default_option_id?: string | null; groups: ModelGroup[]; aliases: Record<string, string>; configured_model_badges: Record<string, { role: string; label: string; provider: string }>; favorites?: ModelFavorite[] | null; favorite_option_ids?: string[] }
+export interface ModelsCatalog { availability?: CatalogAvailability; active_provider: string | null; default_model: string; default_provider_id?: string | null; default_bare_id?: string; default_option_id?: string | null; groups: ModelGroup[]; aliases: Record<string, string>; configured_model_badges: Record<string, { role: string; label: string; provider: string }>; favorites?: ModelFavorite[] | null; favorite_option_ids?: string[]; favorite_models?: ModelEntry[]; hidden_models?: ModelFavorite[] }
 
 /**
  * TAL-388: stamp each auxiliary slot with its display value and the catalog entry whose provider/model pair equals the
@@ -160,6 +161,7 @@ export interface CatalogDeps {
   quotaThresholds?: (profile: string) => Promise<QuotaThresholds>
   /** TAL-1857: a profile's starred models, `null` while it has never saved any. */
   modelFavorites?: (profile: string) => Promise<ModelFavorite[] | null>
+  hiddenModels?: (profile: string) => Promise<ModelFavorite[]>
 }
 
 /** Python `_BESPOKE_CATALOG_PROVIDERS`: cards whose catalog is resolved by their own rule, never the generic live probe. */
@@ -1429,21 +1431,74 @@ export class ProviderCatalog {
     // An account limit already says the login is out; the quota level would only repeat it.
     const levels = await Promise.all(catalog.groups.map((g) => (g.limit?.scope === 'account' ? Promise.resolve(null) : this.pickerQuotaLevel(profileHome, g.provider_id, thresholds))))
     catalog.groups.forEach((g, i) => { const level = levels[i]; if (level) g.quota_level = level })
+    await this.stampModelPreferences(catalog, profile)
+    for (const g of catalog.groups) g.icon = providerIcon(g.provider_id, g.provider)
+    return catalog
+  }
+
+  private async stampModelPreferences(catalog: ModelsCatalog, profile: string): Promise<void> {
     // TAL-1857: a favorite whose model left the catalog stays in `favorites` and marks no row.
     catalog.favorites = (await this.deps.modelFavorites?.(profile)) ?? null
+    catalog.hidden_models = (await this.deps.hiddenModels?.(profile)) ?? []
+    const hidden = new Set(catalog.hidden_models.map((entry) => `${entry.provider_id}\0${entry.model}`))
     const rank = new Map((catalog.favorites ?? []).map((f, i) => [`${f.provider_id}\0${f.model}`, i]))
     const starred: [number, string][] = []
     for (const g of catalog.groups) {
-      for (const e of entries(g)) {
+      for (const e of g.models) {
         const at = rank.get(`${str(e.provider_id).toLowerCase()}\0${e.bare_id ?? e.id}`)
+        e.preferences_editable = Boolean(e.provider_id && e.bare_id)
         e.favorite = at !== undefined
+        e.hidden = hidden.has(`${str(e.provider_id).toLowerCase()}\0${e.bare_id ?? e.id}`)
         if (at !== undefined) starred.push([at, e.id])
       }
     }
     // TAL-1858: the starred rows' ids in starred order; a stable sort keeps catalog order between rows of one favorite.
     catalog.favorite_option_ids = starred.sort((a, b) => a[0] - b[0]).map(([, id]) => id)
-    for (const g of catalog.groups) g.icon = providerIcon(g.provider_id, g.provider)
-    return catalog
+    const options = new Map(catalog.groups.flatMap((group) => group.models).map((entry) => [`${entry.provider_id}\0${entry.bare_id ?? entry.id}`, entry]))
+    catalog.favorite_models = (catalog.favorites ?? []).map((favorite) => options.get(`${favorite.provider_id}\0${favorite.model}`) ?? {
+      id: `@${favorite.provider_id}:${favorite.model}`, label: favorite.model, provider_id: favorite.provider_id,
+      bare_id: favorite.model, favorite: true, hidden: hidden.has(`${favorite.provider_id}\0${favorite.model}`), preferences_editable: true,
+    })
+  }
+
+  async settingsModelPicker(profileHome: string, profile: string, query: SettingsModelPickerQuery): Promise<SettingsModelPicker> {
+    const catalog = await this.pickerModels(profileHome, profile)
+    if (query.live === 'true') {
+      const live = ModelsLiveSchema.safeParse(await this.liveModels(profileHome, '').catch(() => null))
+      if (live.success && live.data.models.length && live.data.availability?.authoritative !== false && !['fallback', 'static'].includes(live.data.source ?? '')) {
+        const group = catalog.groups.find((entry) => entry.provider_id === live.data.provider)
+        if (group) {
+          const previousModels = new Map(group.models.map((entry) => [entry.bare_id ?? entry.id, entry]))
+          group.models = live.data.models.map((entry) => {
+            const previous = previousModels.get(entry.bare_id ?? entry.id)
+            const model: ModelEntry = { ...previous, id: previous?.id ?? entry.id, label: entry.label ?? entry.id }
+            if (entry.provider_id !== undefined) model.provider_id = entry.provider_id
+            if (entry.bare_id !== undefined) model.bare_id = entry.bare_id
+            if (entry.supported_speed_tiers !== undefined) model.supported_speed_tiers = entry.supported_speed_tiers
+            if (entry.supports_fast_tier !== undefined) model.supports_fast_tier = entry.supports_fast_tier
+            if (entry.allowance !== undefined) model.allowance = entry.allowance
+            if (entry.limit !== undefined) model.limit = entry.limit
+            return model
+          })
+          // New live rows follow the complete catalog's prefix/collision rules; matched rows retain their option IDs.
+          group.models = applyProviderPrefix(group.models, group.provider_id, catalog.active_provider)
+          deduplicateModelIds(catalog.groups)
+          catalog.default_option_id = catalogOptionId(catalog, catalog.default_bare_id ?? catalog.default_model, catalog.default_provider_id ?? catalog.active_provider)
+          await this.stampModelPreferences(catalog, profile)
+        }
+      }
+    }
+    const providers = catalog.groups.map((group) => ({ id: group.provider_id, label: group.provider }))
+    const needle = (query.q ?? '').trim().toLocaleLowerCase()
+    const groups = catalog.groups.flatMap((group) => {
+      if (query.provider && group.provider_id !== query.provider) return []
+      const models = group.models.filter((entry) =>
+        (query.show_hidden === 'true' || !entry.hidden)
+        && (query.favorites !== 'true' || entry.favorite)
+        && (!needle || [entry.label, entry.id, group.provider].some((text) => text.toLocaleLowerCase().includes(needle))))
+      return models.length ? [{ ...group, models, model_count: models.length }] : []
+    })
+    return SettingsModelPickerSchema.parse({ ...catalog, groups, providers, profile, preferences_supported: true, hidden_models: catalog.hidden_models ?? [], total_count: groups.reduce((count, group) => count + group.models.length, 0) })
   }
 
   /** TAL-807: account-usage reads the picker started, by `accountUsageCache` key. */

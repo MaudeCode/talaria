@@ -390,7 +390,7 @@
 		C107I000000000000000006 /* ProviderRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107I000000000000000016 /* ProviderRow.swift */; };
 		C107I000000000000000007 /* ProvidersStatusRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107I000000000000000017 /* ProvidersStatusRow.swift */; };
 		1A2B3C4D5E6F70000000110 /* ArchivedSessionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000111 /* ArchivedSessionsView.swift */; };
-		1A2B3C4D5E6F70000000114 /* DefaultModelPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000115 /* DefaultModelPickerView.swift */; };
+		1A2B3C4D5E6F70000000114 /* SettingsModelPickerPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000115 /* SettingsModelPickerPage.swift */; };
 		103200000000000000000002 /* DefaultProfilePickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 103200000000000000000001 /* DefaultProfilePickerView.swift */; };
 		C107B000000000000000001 /* SettingsPickerSearchField.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107B000000000000000011 /* SettingsPickerSearchField.swift */; };
 		C107B000000000000000003 /* ModelPickerButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107B000000000000000013 /* ModelPickerButton.swift */; };
@@ -855,7 +855,7 @@
 		C107I000000000000000016 /* ProviderRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderRow.swift; sourceTree = "<group>"; };
 		C107I000000000000000017 /* ProvidersStatusRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvidersStatusRow.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F70000000111 /* ArchivedSessionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchivedSessionsView.swift; sourceTree = "<group>"; };
-		1A2B3C4D5E6F70000000115 /* DefaultModelPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultModelPickerView.swift; sourceTree = "<group>"; };
+		1A2B3C4D5E6F70000000115 /* SettingsModelPickerPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsModelPickerPage.swift; sourceTree = "<group>"; };
 		103200000000000000000001 /* DefaultProfilePickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultProfilePickerView.swift; sourceTree = "<group>"; };
 		C107B000000000000000011 /* SettingsPickerSearchField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsPickerSearchField.swift; sourceTree = "<group>"; };
 		C107B000000000000000013 /* ModelPickerButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelPickerButton.swift; sourceTree = "<group>"; };
@@ -1425,7 +1425,7 @@
 				C107I000000000000000012 /* AppIconChoiceRow.swift */,
 				C107I000000000000000013 /* AppIconChoicePreview.swift */,
 				C107I000000000000000014 /* AppIconPreviewImage.swift */,
-				1A2B3C4D5E6F70000000115 /* DefaultModelPickerView.swift */,
+				1A2B3C4D5E6F70000000115 /* SettingsModelPickerPage.swift */,
 				103200000000000000000001 /* DefaultProfilePickerView.swift */,
 				211900000000000000000002 /* ProfileDetailView.swift */,
 				C107B000000000000000011 /* SettingsPickerSearchField.swift */,
@@ -1904,7 +1904,7 @@
 				C107I000000000000000002 /* AppIconChoiceRow.swift in Sources */,
 				C107I000000000000000003 /* AppIconChoicePreview.swift in Sources */,
 				C107I000000000000000004 /* AppIconPreviewImage.swift in Sources */,
-				1A2B3C4D5E6F70000000114 /* DefaultModelPickerView.swift in Sources */,
+				1A2B3C4D5E6F70000000114 /* SettingsModelPickerPage.swift in Sources */,
 				103200000000000000000002 /* DefaultProfilePickerView.swift in Sources */,
 				211900000000000000000001 /* ProfileDetailView.swift in Sources */,
 				C107B000000000000000001 /* SettingsPickerSearchField.swift in Sources */,

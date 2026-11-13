@@ -234,8 +234,41 @@ final class ScreenGalleryHostedTests: XCTestCase {
         }
     }
 
+    func testComposerModelPicker() async throws {
+        let preferences = SettingsModelPickerViewModel(client: fixture.client, favorites: .shared)
+        await preferences.load()
+        try await page("composer-model-picker", title: "Choose Model", wrapsNavigation: false, prepare: { window in
+            let provider = try await self.requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Fixture Provider") == true }
+            XCTAssertTrue(HostedAccessibility.activate(provider))
+            _ = try await self.requireElement(in: window, label: "Remove Fixture Model from favorites")
+        }) {
+            ComposerModelPickerSheet(
+                modelGroups: preferences.groups, selectedModelID: "fixture-model",
+                selectedModelProviderID: "fixture-provider", selectedModelOptionID: "fixture-model",
+                favoriteModelKeys: preferences.favoriteOptions.map(\.favoriteKey), recentModelKeys: [],
+                favoriteOptions: preferences.favoriteOptions, onSelect: { _ in },
+                onToggleFavorite: { option in Task { await preferences.toggleFavorite(option) } },
+                onDeleteSavedCustom: { option in Task { await preferences.removeFavorite(option) } }
+            )
+        }
+    }
+
     func testAdditionalSettings() async throws {
+        try await page("settings-default-model", title: "Default Model", prepare: { window in
+            let row = try await self.requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Default Model") == true }
+            XCTAssertTrue(HostedAccessibility.activate(row))
+            _ = try await self.requireElement(in: window, label: "Save Custom Model")
+        }) {
+            ModelsSettingsView(server: server)
+        }
         try await page("settings-auxiliary-models", title: "Auxiliary Models") {
+            AuxiliaryModelsSettingsView(server: server)
+        }
+        try await page("settings-auxiliary-model-picker", title: "Vision", prepare: { window in
+            let row = try await self.requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Vision") == true }
+            XCTAssertTrue(HostedAccessibility.activate(row))
+            _ = try await self.requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("legacy/vision-model") == true }
+        }) {
             AuxiliaryModelsSettingsView(server: server)
         }
         try await page("settings-quota-widget", title: "Customization") {
@@ -339,7 +372,7 @@ final class ScreenGalleryHostedTests: XCTestCase {
     }
 
     private func page<Content: View>(
-        _ name: String, title: String,
+        _ name: String, title: String, wrapsNavigation: Bool = true,
         prepare: (UIWindow) async throws -> Void = { _ in },
         @ViewBuilder content: () -> Content
     ) async throws {
@@ -349,7 +382,10 @@ final class ScreenGalleryHostedTests: XCTestCase {
         var settingsReads = reads("/api/settings")
         var updateReads = reads("/api/updates/check")
         try await renderHostedPage(name) {
-            NavigationStack { content() }
+            Group {
+                if wrapsNavigation { NavigationStack { content() } }
+                else { content() }
+            }
                 .defaultAppStorage(defaults)
                 .environment(\.scenePhase, .active)
                 .modelContainer(fixture.cache)
@@ -392,16 +428,23 @@ final class ScreenGalleryHostedTests: XCTestCase {
                 }
             }
         } inspect: { window, variant in
-            if name == "settings-models" {
+            let controlIDs: [String]
+            switch name {
+            case "settings-models": controlIDs = ["settings-models-default-reasoning", "settings-models-show-thinking"]
+            case "settings-default-model", "settings-auxiliary-model-picker": controlIDs = ["settings-model-visibility-fixture-model"]
+            default: controlIDs = []
+            }
+            if !controlIDs.isEmpty {
                 let scroll = try XCTUnwrap(window.firstView(ofType: UICollectionView.self))
                 let initialOffset = scroll.contentOffset
-                for identifier in ["settings-models-default-reasoning", "settings-models-show-thinking"] {
+                for identifier in controlIDs {
                     _ = try await requireElementScrolling(in: window, "Models is missing \(identifier)") {
                         let frame = window.convert($0.accessibilityFrame, from: window.screen.coordinateSpace)
+                        let visible = window.convert(scroll.bounds.inset(by: scroll.adjustedContentInset), from: scroll)
                         return HostedAccessibility.identifier(of: $0) == identifier
-                            && frame.width > 0 && frame.height > 0 && window.bounds.contains(frame)
+                            && frame.width > 0 && frame.height > 0 && visible.contains(frame)
                     }
-                    attachHostedScreenshot(window, name: "\(identifier)-\(variant.name)")
+                    attachHostedScreenshot(window, name: "\(name)-\(identifier)-\(variant.name)")
                 }
                 scroll.setContentOffset(initialOffset, animated: false)
                 settle(window: window)

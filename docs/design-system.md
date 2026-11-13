@@ -350,10 +350,18 @@ Menus are interaction surfaces (§14); every Web menu is built with `Menu` from
 | Selected mark | System checkmark (`state: .on`); in a sheet, `checkmark.circle.fill` in the accent colour | A trailing check from the shared row; colour alone never carries the state |
 | Unavailable option | Listed and disabled, with the server's reason in secondary text | Disabled, with the server's reason in muted text at the right |
 | Grouping | System sections by a server field | `MenuGroup` with a `MenuGroupLabel`, by a server field |
-| Long lists | A titled sheet for long or searchable lists, with `.searchable` for search | A pinned search header above twelve items |
+| Long lists | Settings value pickers with long or searchable lists push a page with the system back button (Default Profile, Default Model, Auxiliary Models); composer and in-flow pickers keep the titled sheet | A pinned search header above twelve items |
 | Destructive item | Last, separated from choices, with the destructive role | Last, after a `MenuSeparator`, in `text-error` |
 | Never in a menu | A form, a Save button or an explanatory footer | A form, a Save button, a native checkbox or radio, explanatory sub-text |
 | Composer menus | `ComposerReasoningMenu.swift` for short choices; a titled sheet for long or searchable choices | `ComposerMenu` (`features/composer/chips.tsx`): open upward at one width; at 640px and below span the composer's width |
+
+Settings model pickers share `SettingsModelPickerPage`. Its provider headers use `SettingsSection`'s header slot
+with `SidebarSectionHeader` and `SidebarDisclosureChevron`; sections start open and remember explicit collapses.
+Search and provider filters temporarily reveal matching sections without changing those saved choices. The search
+field's trailing slot holds the filter menu. `SettingsPickerRow` and `SettingsToggleRow` use their native menu mode
+there. Model rows use direct star and Hide/Unhide icon buttons, separate from selection, with no row overflow menu.
+The long-press menu can expose both actions. Favorites and visibility are profile
+fields from the server, with optimistic preference writes and rollback.
 
 ## 14. Exceptions
 

@@ -58,7 +58,7 @@ final class FixtureApp {
         ChatViewModel.forgetCompanionPages()
         environment = UITestFixtureEnvironment.make()
         // Each hosted journey owns its sidebar choices; a second window within it still exercises persistence.
-        for key in [SessionSidebarDisclosureSettings.regularPortraitVisibilityKey,
+        for key in ["settings.modelPicker.collapsedProviders", SessionSidebarDisclosureSettings.regularPortraitVisibilityKey,
                     SessionSidebarDisclosureSettings.regularLandscapeVisibilityKey,
                     SessionNavigationPersistence.key(for: UITestFixtureEnvironment.serverURL)] {
             UserDefaults.standard.removeObject(forKey: key)
