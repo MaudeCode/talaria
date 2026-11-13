@@ -175,6 +175,7 @@ final class ModelsSettingsViewModelTests: XCTestCase {
         if neverSaved { value["favorites"] = NSNull() }
         var groups = try XCTUnwrap(value["groups"] as? [[String: Any]])
         var rows = try XCTUnwrap(groups[0]["models"] as? [[String: Any]])
+        value["favorite_models"] = star ? [rows[0]] : []
         rows[0]["favorite"] = star
         rows[0]["hidden"] = hidden
         groups[0]["models"] = rows
@@ -216,6 +217,7 @@ final class ModelsSettingsViewModelTests: XCTestCase {
         XCTAssertFalse(option.isHidden)
         XCTAssertTrue(option.preferencesEditable)
         XCTAssertEqual(option.bareID, "shared")
+        XCTAssertEqual(picker.favoriteOptions, [option])
     }
 
     func testSettingsPickerPreferencesAppearImmediatelyAndRollBackDefinitiveRefusals() async throws {

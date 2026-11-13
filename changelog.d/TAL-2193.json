@@ -24,7 +24,7 @@
     },
     {
       "category": "Added",
-      "summary": "Model favorites and visibility choices stay with each server profile.",
+      "summary": "Model favorites stay in sync between Settings and the composer; favorites and visibility choices stay with each server profile.",
       "highlight": false,
       "components": [
         "web"

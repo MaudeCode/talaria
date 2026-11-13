@@ -106,7 +106,7 @@ export function repairSessionModel(catalog: ModelsCatalog, model: string, provid
   return defaultModel && defaultProvider && (defaultModel !== model || defaultProvider !== pid) ? [defaultModel, defaultProvider] : null
 }
 
-export interface ModelsCatalog { availability?: CatalogAvailability; active_provider: string | null; default_model: string; default_provider_id?: string | null; default_bare_id?: string; default_option_id?: string | null; groups: ModelGroup[]; aliases: Record<string, string>; configured_model_badges: Record<string, { role: string; label: string; provider: string }>; favorites?: ModelFavorite[] | null; favorite_option_ids?: string[]; hidden_models?: ModelFavorite[] }
+export interface ModelsCatalog { availability?: CatalogAvailability; active_provider: string | null; default_model: string; default_provider_id?: string | null; default_bare_id?: string; default_option_id?: string | null; groups: ModelGroup[]; aliases: Record<string, string>; configured_model_badges: Record<string, { role: string; label: string; provider: string }>; favorites?: ModelFavorite[] | null; favorite_option_ids?: string[]; favorite_models?: ModelEntry[]; hidden_models?: ModelFavorite[] }
 
 /**
  * TAL-388: stamp each auxiliary slot with its display value and the catalog entry whose provider/model pair equals the
@@ -1454,6 +1454,11 @@ export class ProviderCatalog {
     }
     // TAL-1858: the starred rows' ids in starred order; a stable sort keeps catalog order between rows of one favorite.
     catalog.favorite_option_ids = starred.sort((a, b) => a[0] - b[0]).map(([, id]) => id)
+    const options = new Map(catalog.groups.flatMap((group) => group.models).map((entry) => [`${entry.provider_id}\0${entry.bare_id ?? entry.id}`, entry]))
+    catalog.favorite_models = (catalog.favorites ?? []).map((favorite) => options.get(`${favorite.provider_id}\0${favorite.model}`) ?? {
+      id: `@${favorite.provider_id}:${favorite.model}`, label: favorite.model, provider_id: favorite.provider_id,
+      bare_id: favorite.model, favorite: true, hidden: hidden.has(`${favorite.provider_id}\0${favorite.model}`), preferences_editable: true,
+    })
   }
 
   async settingsModelPicker(profileHome: string, profile: string, query: SettingsModelPickerQuery): Promise<SettingsModelPicker> {

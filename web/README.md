@@ -352,7 +352,7 @@ never changes the saved default or auxiliary selection.
 `GET /api/models` catalog remains compatible with existing consumers. The picker writes through the existing
 `/api/models/favorite` and guarded `/api/models/favorites/import`, and `/api/models/hidden`. An expected `profile`
 on a preference write refuses a stale picker after a profile switch. The additive `model_hidden_by_profile` settings
-map shares the favorites store's queued, revision-checked writer and is never exposed by `/api/settings`.
+map shares the favorites store's queued, revision-checked writer and is never exposed by `/api/settings`. Both preference lists are capped at 200 models per profile. The server's `favorite_models` projection supplies starred order and saved custom rows to the native composer, which uses the same optimistic preference writer as Settings.
 
 
 Settings lists its sections in three groups, by what a change affects, in the order of `SETTINGS_SECTION_GROUPS`

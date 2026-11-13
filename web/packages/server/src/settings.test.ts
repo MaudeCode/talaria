@@ -20,6 +20,18 @@ function store(env: Record<string, string> = {}, documents: DocumentBackend = ne
 const write = (value: unknown) => { writeFileSync(join(dir, 'settings.json'), JSON.stringify(value)) }
 const onDisk = () => JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8')) as Record<string, unknown>
 
+it('bounds hidden models while allowing duplicate hides and restoration at the limit', async () => {
+  const hidden = Array.from({ length: 200 }, (_, index) => ({ provider_id: 'synthetic', model: `model-${String(index)}` }))
+  write({ model_hidden_by_profile: { work: hidden }, theme: 'dark' })
+  const settings = store()
+  await expect(settings.setModelHidden('work', { provider_id: 'synthetic', model: 'overflow' }, true)).rejects.toThrow(/at most 200/)
+  expect(await settings.setModelHidden('work', hidden[0]!, true)).toHaveLength(200)
+  expect(await settings.setModelHidden('work', hidden[0]!, false)).toHaveLength(199)
+  expect(await settings.setModelHidden('work', { provider_id: 'synthetic', model: 'overflow' }, true)).toHaveLength(200)
+  expect(await settings.hiddenModels('default')).toEqual([])
+  expect(onDisk().theme).toBe('dark')
+})
+
 describe('atomicWriteText', () => {
   it('loops over short writes so a rename never publishes a truncated file', () => {
     // A writer that accepts at most 5 bytes per call (disk pressure, interrupted syscalls) still yields the full text.

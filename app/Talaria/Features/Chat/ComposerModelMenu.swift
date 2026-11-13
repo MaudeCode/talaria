@@ -9,7 +9,8 @@ struct ComposerModelMenu: View {
     let selectedModelOptionID: String?
     let selectedModelTitle: String
     let isLoadingModels: Bool
-    let favoriteModelKeys: [ModelFavoriteKey]
+    let favoriteOptions: [ModelCatalogOption]
+    private var favoriteModelKeys: [ModelFavoriteKey] { favoriteOptions.map(\.favoriteKey) }
     let recentModelKeys: [ModelFavoriteKey]
     let isDisabled: Bool
     let maxWidth: CGFloat
@@ -122,13 +123,6 @@ struct ComposerModelMenu: View {
         append(selectedModelOption(in: allModels))
 
         return result
-    }
-
-    private var favoriteOptions: [ModelCatalogOption] {
-        ModelFavoritesStore.visibleFavoriteOptions(
-            in: modelGroups,
-            favoriteKeys: favoriteModelKeys
-        )
     }
 
     private var recentOptions: [ModelCatalogOption] {

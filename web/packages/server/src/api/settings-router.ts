@@ -494,7 +494,7 @@ export const settingsRouter = os.router({
   },
   models: {
     picker: os.models.picker.handler(({ input, context: { ctx } }) => run(() => ctx.deps.catalog.settingsModelPicker(home(ctx), activeProfileName(ctx), input))),
-    hidden: os.models.hidden.handler(({ input, context: { ctx } }) => run(async () => ({ ok: true as const, hidden_models: await ctx.deps.settings.setModelHidden(modelPreferenceProfile(ctx, input.profile), canonicalModelPreference(input), input.hidden) }))),
+    hidden: os.models.hidden.handler(({ input, context: { ctx } }) => run(() => modelPreferenceWrite(async () => ({ ok: true as const, hidden_models: await ctx.deps.settings.setModelHidden(modelPreferenceProfile(ctx, input.profile), canonicalModelPreference(input), input.hidden) })))),
     list: os.models.list.handler(({ input, context: { ctx } }) => run(() => {
       const freshness = str(input.freshness).trim().toLowerCase()
       if (freshness && freshness !== 'session_visit') throw new HttpError(400, `unknown models freshness: ${freshness}`)
@@ -509,10 +509,7 @@ export const settingsRouter = os.router({
       if (provider) await ctx.deps.catalog.liveModelIds(home(ctx), provider, { force: true })
       return { ok: true as const, provider, models: await ctx.deps.catalog.pickerModels(home(ctx), activeProfileName(ctx)) }
     })),
-    favorite: os.models.favorite.handler(({ input, context: { ctx } }) => run(async () => {
-      try { return { ok: true as const, favorites: await ctx.deps.settings.setModelFavorite(modelPreferenceProfile(ctx, input.profile), canonicalModelPreference(input), input.favorite) } }
-      catch (error) { if (error instanceof RangeError) throw new HttpError(400, error.message); throw error }
-    })),
+    favorite: os.models.favorite.handler(({ input, context: { ctx } }) => run(() => modelPreferenceWrite(async () => ({ ok: true as const, favorites: await ctx.deps.settings.setModelFavorite(modelPreferenceProfile(ctx, input.profile), canonicalModelPreference(input), input.favorite) })))),
     importFavorites: os.models.importFavorites.handler(({ input, context: { ctx } }) => run(async () => ({ ok: true as const, ...(await ctx.deps.settings.importModelFavorites(modelPreferenceProfile(ctx, input.profile), input.favorites.map(canonicalModelPreference))) }))),
     delegation: os.models.delegation.handler(({ context: { ctx }, input }) => run(async () => {
       try {
@@ -739,6 +736,12 @@ async function setProviderKey(ctx: RequestContext, pid: string, apiKey: string |
   }
   ctx.deps.catalog.invalidate()
   return { ok: true, provider: pid, display_name: displayName(pid), action: apiKey ? 'updated' : 'removed' }
+}
+
+/** Preference capacity is a definitive client refusal; unrelated failures retain their normal status. */
+async function modelPreferenceWrite<T>(write: () => Promise<T>): Promise<T> {
+  try { return await write() }
+  catch (error) { if (error instanceof RangeError) throw new HttpError(400, error.message); throw error }
 }
 
 /** A queued picker write must never migrate into the profile another window just selected. */

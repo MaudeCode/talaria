@@ -820,17 +820,19 @@ final class UITestFixtureURLProtocol: URLProtocol {
             // "new chat in <profile>" entry point pinned the session (TAL-77).
             let body = requestJSON(request)
             let requestedProfile = body["profile"] as? String
-            var created = session(
+            let created = session(
                 id: newSessionID,
-                title: requestedProfile.map { "New Fixture Chat (\($0))" } ?? "New Fixture Chat"
+                title: requestedProfile.map { "New Fixture Chat (\($0))" } ?? "New Fixture Chat",
+                overrides: body
             )
-            for key in ["model", "model_provider", "workspace", "enabled_toolsets"] {
-                if let value = body[key] { created[key] = value }
-            }
             if let mode = body["execution_mode"] as? String {
                 return json(["session": diagnosticSession(created, mode: mode)])
             }
             return json(["session": created])
+        case "/api/session/update":
+            let body = requestJSON(request)
+            return json(["ok": true, "session": session(id: body["session_id"] as? String ?? sessionID,
+                                                        title: "Fixture Session", overrides: body)])
         case "/api/upload":
             if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.failAttachmentUploadsArgument) {
                 return json(["error": "Fixture upload failed."])
@@ -944,7 +946,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
             return json(["ok": true, "favorites": picker["favorites"] ?? [], "hidden_models": picker["hidden_models"] ?? []])
         case "/api/models":
             return json([
-                "groups": [],
+                "groups": settingsModelPickerResponse(url)["groups"] ?? [],
                 "models": [["id": "fixture-model", "label": "Fixture Model"]],
                 "default_model": "fixture-model",
                 "active_provider": "fixture-provider"
@@ -1683,8 +1685,8 @@ final class UITestFixtureURLProtocol: URLProtocol {
         json(["path": ".", "entries": companionFiles.map { ["name": ($0 as NSString).lastPathComponent, "path": $0, "type": "file", "size": 32] }])
     }
 
-    static func session(id: String, title: String) -> [String: Any] {
-        [
+    static func session(id: String, title: String, overrides: [String: Any] = [:]) -> [String: Any] {
+        var value: [String: Any] = [
             "session_id": id,
             "title": title,
             "message_count": 48,
@@ -1706,6 +1708,10 @@ final class UITestFixtureURLProtocol: URLProtocol {
             "confirms_deep_truncate": true,
             "enabled_toolsets": sessionToolsets.withLock { $0 }.map { $0 as Any } ?? NSNull()
         ]
+        for key in ["model", "model_provider", "workspace", "enabled_toolsets"] {
+            if let override = overrides[key] { value[key] = override }
+        }
+        return value
     }
 
     /// One live source with a session window the sidebar shows (75% remaining) and a weekly window, both with the
@@ -1835,6 +1841,12 @@ final class UITestFixtureURLProtocol: URLProtocol {
                 "default_model": "fixture-model", "default_option_id": "fixture-model", "active_provider": "fixture-provider",
                 "groups": groups, "providers": providers.map { ["id": $0.0, "label": $0.1] },
                 "favorites": identities(state.favorites), "hidden_models": identities(state.hidden),
+                "favorite_models": identities(state.favorites).map { favorite -> [String: Any] in
+                    let provider = favorite["provider_id"]!, model = favorite["model"]!
+                    return ["id": provider == "fixture-provider" ? model : "@\(provider):\(model)",
+                            "label": model == "fixture-model" ? "Fixture Model" : "Fixture Alternative",
+                            "provider_id": provider, "bare_id": model, "favorite": true, "preferences_editable": true]
+                },
                 "total_count": groups.reduce(0) { $0 + ($1["model_count"] as? Int ?? 0) }]
     }
 

@@ -106,6 +106,11 @@ extension Collection where Element == ModelCatalogOption {
 }
 
 extension ModelsResponse {
+    /// Server-ordered favorite rows, including saved custom models outside the catalog.
+    public var favoriteOptions: [ModelCatalogOption] {
+        ModelCatalogParser.parseModelOptions(from: favoriteModels.map(JSONValue.array), providerID: nil)
+    }
+
     public var catalogGroups: [ModelCatalogGroup] {
         ModelCatalogParser.parseGroups(from: self)
     }

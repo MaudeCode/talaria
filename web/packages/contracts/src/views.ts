@@ -858,7 +858,7 @@ export type ModelFavorite = z.infer<typeof ModelFavoriteSchema>
 export const MODEL_FAVORITES_MAX = 200
 /** TAL-1857: a profile's favorites in starred order; `null` until it first saves one, which gates the one-time import. */
 export const ModelFavoritesSchema = z.array(ModelFavoriteSchema).max(MODEL_FAVORITES_MAX).nullable()
-export const HiddenModelsSchema = z.array(ModelFavoriteSchema)
+export const HiddenModelsSchema = z.array(ModelFavoriteSchema).max(MODEL_FAVORITES_MAX)
 /** TAL-807: a group's rate limit: every pool account benched until `resets_at`, else the entry ids (`models`) cooling down until their reset. */
 export const ModelGroupLimitSchema = z.discriminatedUnion('scope', [
   z.object({ scope: z.literal('account'), resets_at: z.string() }),
@@ -886,12 +886,13 @@ export const ModelGroupSchema = z.looseObject({
   model_count: z.number().int().nonnegative().optional(),
   icon: ProviderIconSchema.optional().describe('TAL-1858: the picker group\'s provider icon.'),
 })
-export const ModelsSchema = z.looseObject({ availability: CatalogAvailabilitySchema.optional(), active_provider: NullableString.optional(), default_model: z.string().optional(), default_provider_id: NullableString.optional(), default_bare_id: z.string().optional(), default_option_id: NullableString.optional(), groups: z.array(ModelGroupSchema), aliases: z.record(z.string(), Json).optional(), configured_model_badges: z.record(z.string(), Json).optional(), favorites: ModelFavoritesSchema.optional(), hidden_models: HiddenModelsSchema.optional(), favorite_option_ids: z.array(z.string()).optional().describe('TAL-1858: the ids of the entries `favorites` marks, in starred order; the picker lists Favorites in this order.') })
+export const ModelsSchema = z.looseObject({ availability: CatalogAvailabilitySchema.optional(), active_provider: NullableString.optional(), default_model: z.string().optional(), default_provider_id: NullableString.optional(), default_bare_id: z.string().optional(), default_option_id: NullableString.optional(), groups: z.array(ModelGroupSchema), aliases: z.record(z.string(), Json).optional(), configured_model_badges: z.record(z.string(), Json).optional(), favorites: ModelFavoritesSchema.optional(), hidden_models: HiddenModelsSchema.optional(), favorite_models: z.array(ModelEntrySchema).optional().describe('Profile favorites in starred order, including saved custom models outside the current catalog; ready for native composer rendering.'), favorite_option_ids: z.array(z.string()).optional().describe('TAL-1858: the ids of the entries `favorites` marks, in starred order; the picker lists Favorites in this order.') })
 /** TAL-2193: a server-filtered Settings catalog; the unfiltered provider menu remains available for recovery. */
 export const SettingsModelPickerSchema = ModelsSchema.extend({
   profile: z.string(), preferences_supported: z.literal(true),
   providers: z.array(z.object({ id: z.string(), label: z.string() })),
   hidden_models: HiddenModelsSchema,
+  favorite_models: z.array(ModelEntrySchema).max(MODEL_FAVORITES_MAX),
   total_count: z.number().int().nonnegative(),
 })
 export type SettingsModelPicker = z.infer<typeof SettingsModelPickerSchema>

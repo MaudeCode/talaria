@@ -162,7 +162,9 @@ struct MessageComposerView: View {
     @State private var showsWorkspaceSheet = false
     @State private var showsToolsetsSheet = false
     @State private var optimisticWorkspacePath: String?
-    @State private var favoriteModelKeys = ModelFavoritesStore.shared.favoriteKeys
+    @State private var modelPreferences: SettingsModelPickerViewModel?
+    private var favoriteOptions: [ModelCatalogOption] { modelPreferences?.favoriteOptions ?? [] }
+    private var favoriteModelKeys: [ModelFavoriteKey] { favoriteOptions.map(\.favoriteKey) }
     @State private var recentModelKeys = ModelRecentsStore.shared.recentKeys
     @State private var keyboardIsVisible = false
     @State private var shouldRestoreFocusAfterPresentation = false
@@ -409,6 +411,17 @@ struct MessageComposerView: View {
                     }
             }
         }
+        .task(id: selectedProfileName) {
+            guard let apiClient else { return }
+            let preferences = SettingsModelPickerViewModel(client: apiClient, favorites: .shared, live: true)
+            // The existing composer keeps its complete catalog; Settings owns the visibility filter controls.
+            preferences.showHidden = true
+            modelPreferences = preferences
+            await preferences.load()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: SettingsModelPickerViewModel.preferencesDidChange)) { change in
+            Task { await modelPreferences?.refreshPreferences(after: change) }
+        }
         .task(id: slashAutocompleteLoadKey) {
             await loadSlashAutocompleteSubArgsIfNeeded()
         }
@@ -453,28 +466,31 @@ struct MessageComposerView: View {
         }
         .sheet(isPresented: $showsAllModelsSheet, onDismiss: restoreFocusAfterPresentationIfNeeded) {
             ComposerModelPickerSheet(
-                modelGroups: modelGroups,
+                modelGroups: modelPreferences?.response == nil ? modelGroups : modelPreferences?.groups ?? [],
                 selectedModelID: selectedModelID,
                 selectedModelProviderID: selectedModelProviderID,
                 selectedModelOptionID: selectedModelOptionID,
                 favoriteModelKeys: favoriteModelKeys,
                 recentModelKeys: recentModelKeys,
+                favoriteOptions: favoriteOptions,
                 onSelect: { option in
                     selectModel(option)
                     showsAllModelsSheet = false
                 },
                 onToggleFavorite: { option in
-                    favoriteModelKeys = ModelFavoritesStore.shared.toggleFavorite(for: option)
+                    Task { await modelPreferences?.toggleFavorite(option) }
                 },
                 onDeleteSavedCustom: { option in
-                    favoriteModelKeys = ModelFavoritesStore.shared.removeFavorite(for: option)
+                    Task { await modelPreferences?.removeFavorite(option) }
                     recentModelKeys = ModelRecentsStore.shared.removeRecent(for: option)
-                }
+                },
+                showsFavorites: modelPreferences?.response != nil
             )
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
             .task {
                 await onModelPickerOpen()
+                await modelPreferences?.load()
             }
         }
         .sheet(isPresented: $showsWorkspaceSheet, onDismiss: restoreFocusAfterPresentationIfNeeded) {
@@ -1084,7 +1100,7 @@ struct MessageComposerView: View {
             selectedModelOptionID: selectedModelOptionID,
             selectedModelTitle: selectedModelTitle,
             isLoadingModels: isLoadingModels,
-            favoriteModelKeys: favoriteModelKeys,
+            favoriteOptions: favoriteOptions,
             recentModelKeys: recentModelKeys,
             isDisabled: isModelAndWorkspaceControlDisabled,
             maxWidth: modelControlMaxWidth,
@@ -1142,6 +1158,8 @@ struct MessageComposerView: View {
             return (String(localized: "Uploading attachment..."), false, false)
         } else if let errorMessage {
             return (errorMessage, true, false)
+        } else if let preferenceError = modelPreferences?.preferenceError {
+            return (preferenceError, true, false)
         } else if let configurationErrorMessage {
             return (configurationErrorMessage, true, false)
         } else if let warningMessage {

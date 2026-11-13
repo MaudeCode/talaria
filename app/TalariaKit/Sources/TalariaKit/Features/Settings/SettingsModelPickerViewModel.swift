@@ -1,11 +1,12 @@
 import Foundation
 import Observation
 
-/// Shared Settings catalog loader, extracting the duplicated default/auxiliary loading paths.
+/// Shared Settings/composer preference writer and Settings catalog loader.
 /// ModelsSettingsViewModel's serialized optimistic writer is the sibling for preference writes.
 @MainActor
 @Observable
 public final class SettingsModelPickerViewModel {
+    public static let preferencesDidChange = Notification.Name("ModelPickerPreferencesDidChange")
     public var searchText = ""
     public var providerID = ""
     public var favoritesOnly = false
@@ -19,12 +20,17 @@ public final class SettingsModelPickerViewModel {
         let id: UUID
         let value: Bool
         let profile: String
+        let option: ModelCatalogOption
+        let order: Int
     }
+    private let instanceID = UUID()
     private var confirmedGroups: [ModelCatalogGroup] = []
+    private var confirmedFavoriteOptions: [ModelCatalogOption] = []
     private var favoriteOverrides: [ModelPreference: Intent] = [:]
     private var hiddenOverrides: [ModelPreference: Intent] = [:]
     private var unresolved: Set<UUID> = []
     private var importAttempts: Set<String> = []
+    private var nextIntentOrder = 0
     private var generation = 0
     private var loadedProfile: String?
     @ObservationIgnored private let client: APIClient
@@ -51,6 +57,23 @@ public final class SettingsModelPickerViewModel {
             }
             return models.isEmpty ? nil : group.replacingModels(models)
         }
+    }
+
+    public var favoriteOptions: [ModelCatalogOption] {
+        var result = confirmedFavoriteOptions
+        for (identity, intent) in favoriteOverrides.sorted(by: { $0.value.order < $1.value.order }) where intent.profile == response?.profile {
+            if !intent.value { result.removeAll { favoriteIdentity($0) == identity } }
+            else if !result.contains(where: { favoriteIdentity($0) == identity }) { result.append(intent.option.replacingPreferences(favorite: true)) }
+        }
+        return result
+    }
+
+    /// Other mounted surfaces refresh after a preference write on this server/profile, never from device-local keys.
+    public func refreshPreferences(after change: Notification) async {
+        let server = client.baseURL
+        guard change.object as? URL == server, change.userInfo?["profile"] as? String == response?.profile,
+              change.userInfo?["source"] as? UUID != instanceID else { return }
+        _ = await load()
     }
 
     @discardableResult
@@ -100,10 +123,12 @@ public final class SettingsModelPickerViewModel {
 
     public func toggleFavorite(_ option: ModelCatalogOption) async { await write(option, isFavorite: true) }
     public func toggleHidden(_ option: ModelCatalogOption) async { await write(option, isFavorite: false) }
+    public func removeFavorite(_ option: ModelCatalogOption) async { await write(option, isFavorite: true, desiredValue: false) }
 
     private func apply(_ response: ModelsResponse) throws {
         _ = try acceptProfile(response)
         confirmedGroups = response.catalogGroups
+        confirmedFavoriteOptions = response.favoriteOptions
         self.response = response
     }
 
@@ -128,16 +153,27 @@ public final class SettingsModelPickerViewModel {
         try await client.settingsModelPicker(search: searchText, provider: providerID, favorites: favoritesOnly, showHidden: showHidden, live: live)
     }
 
-    private func write(_ option: ModelCatalogOption, isFavorite: Bool) async {
-        guard let identity = preferenceIdentity(option), let profile = response?.profile else { return }
+    private func favoriteIdentity(_ option: ModelCatalogOption) -> ModelPreference? {
+        guard let provider = option.providerID, !provider.isEmpty else { return nil }
+        // Typed custom IDs are user input; the existing server writer canonicalizes them.
+        return ModelPreference(providerID: provider, model: option.bareID ?? option.id)
+    }
+
+    private func write(_ option: ModelCatalogOption, isFavorite: Bool, desiredValue: Bool? = nil) async {
+        guard let identity = isFavorite ? favoriteIdentity(option) : preferenceIdentity(option), let profile = response?.profile else { return }
         let previousIntent = isFavorite ? favoriteOverrides[identity] : hiddenOverrides[identity]
-        let current = previousIntent.flatMap { $0.profile == profile ? $0.value : nil } ?? (isFavorite ? option.isFavorite : option.isHidden)
-        let intent = Intent(id: UUID(), value: !current, profile: profile)
+        let confirmedFavorite = response?.favoriteModels == nil ? option.isFavorite
+            : favoriteOptions.contains { favoriteIdentity($0) == identity }
+        let current = previousIntent.flatMap { $0.profile == profile ? $0.value : nil }
+            ?? (isFavorite ? confirmedFavorite : option.isHidden)
+        nextIntentOrder += 1
+        let intent = Intent(id: UUID(), value: desiredValue ?? !current, profile: profile, option: option, order: nextIntentOrder)
         if isFavorite { favoriteOverrides[identity] = intent } else { hiddenOverrides[identity] = intent }
         preferenceError = nil
         let previous = writeTask
         let task = Task { @MainActor in
             await previous?.value
+            var shouldNotify = false
             do {
                 let reply = if isFavorite {
                     try await client.setModelFavorite(identity, favorite: intent.value, profile: profile)
@@ -145,6 +181,7 @@ public final class SettingsModelPickerViewModel {
                     try await client.setModelHidden(identity, hidden: intent.value, profile: profile)
                 }
                 if reply.ok != true { throw APIError.http(statusCode: 400, body: String(localized: "The server did not confirm the change.")) }
+                shouldNotify = true
                 // An acknowledgement alone does not replace the filtered catalog.
                 unresolved.insert(intent.id)
                 _ = await load()
@@ -154,8 +191,12 @@ public final class SettingsModelPickerViewModel {
                     clear(identity, id: intent.id, favorite: isFavorite)
                 } else {
                     unresolved.insert(intent.id)
-                    _ = await load()
+                    shouldNotify = await load()
                 }
+            }
+            if shouldNotify {
+                let server = client.baseURL
+                NotificationCenter.default.post(name: Self.preferencesDidChange, object: server, userInfo: ["profile": profile, "source": instanceID])
             }
         }
         writeTask = task

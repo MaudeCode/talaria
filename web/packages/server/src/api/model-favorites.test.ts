@@ -1,7 +1,7 @@
 import { useJsonStorage } from '../test/storage.js'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { writeEnvFile } from '../test/env-file.js'
@@ -10,7 +10,7 @@ useJsonStorage()
 
 type Json = Record<string, unknown>
 interface Entry { id: string; provider_id: string; bare_id: string; favorite?: boolean }
-interface Catalog { favorites?: { provider_id: string; model: string }[] | null; favorite_option_ids?: string[]; groups: { provider_id: string; models: Entry[] }[] }
+interface Catalog { favorites?: { provider_id: string; model: string }[] | null; favorite_option_ids?: string[]; favorite_models?: Entry[]; groups: { provider_id: string; models: Entry[] }[] }
 
 const profileRow = (name: string, path: string) => ({ name, path, is_default: name === 'default', gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 })
 
@@ -88,6 +88,7 @@ describe('model favorites', () => {
     await star('openrouter', 'shared-model', true)
     await star('anthropic', 'claude-opus-4-7', true)
     expect((await catalog()).favorite_option_ids).toEqual([id('openrouter', 'shared-model'), id('anthropic', 'claude-opus-4-7')])
+    expect((await catalog()).favorite_models?.map((entry) => entry.id)).toEqual([id('openrouter', 'shared-model'), id('anthropic', 'claude-opus-4-7')])
     await star('openrouter', 'shared-model', false)
     await star('anthropic', 'claude-opus-4-7', false)
     expect((await catalog()).favorite_option_ids).toEqual([])
@@ -130,6 +131,7 @@ describe('model favorites', () => {
     let after = await catalog()
     expect(after.favorites).toEqual([{ provider_id: 'anthropic', model: 'claude-opus-4-7' }])
     expect(starred(after)).toEqual([])
+    expect(after.favorite_models).toEqual([expect.objectContaining({ id: '@anthropic:claude-opus-4-7', provider_id: 'anthropic', bare_id: 'claude-opus-4-7', favorite: true, preferences_editable: true })])
     ids.anthropic = ['claude-opus-4-7', 'claude-sonnet-4-6', 'shared-model']
     await post('/api/models/refresh', { provider: 'anthropic' })
     after = await catalog()
@@ -173,5 +175,10 @@ describe('model favorites', () => {
     expect((await post('/api/models/hidden', { provider_id: '', model: 'x', hidden: true })).status).toBe(400)
     await post('/api/models/hidden', { provider_id: 'anthropic', model: 'claude-opus-4-7', hidden: false })
     await star('anthropic', 'shared-model', false)
+    const overflow = vi.spyOn(s.deps.settings, 'setModelHidden').mockRejectedValueOnce(new RangeError('A profile keeps at most 200 hidden models'))
+    try {
+      const refused = await post('/api/models/hidden', { provider_id: 'anthropic', model: 'overflow', hidden: true })
+      expect(refused.status, 'A bounded preference refusal must be a client error, not an unknown server failure').toBe(400)
+    } finally { overflow.mockRestore() }
   })
 })

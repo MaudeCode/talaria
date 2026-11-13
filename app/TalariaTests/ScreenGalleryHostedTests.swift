@@ -234,6 +234,25 @@ final class ScreenGalleryHostedTests: XCTestCase {
         }
     }
 
+    func testComposerModelPicker() async throws {
+        let preferences = SettingsModelPickerViewModel(client: fixture.client, favorites: .shared)
+        await preferences.load()
+        try await page("composer-model-picker", title: "Choose Model", wrapsNavigation: false, prepare: { window in
+            let provider = try await self.requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Fixture Provider") == true }
+            XCTAssertTrue(HostedAccessibility.activate(provider))
+            _ = try await self.requireElement(in: window, label: "Remove Fixture Model from favorites")
+        }) {
+            ComposerModelPickerSheet(
+                modelGroups: preferences.groups, selectedModelID: "fixture-model",
+                selectedModelProviderID: "fixture-provider", selectedModelOptionID: "fixture-model",
+                favoriteModelKeys: preferences.favoriteOptions.map(\.favoriteKey), recentModelKeys: [],
+                favoriteOptions: preferences.favoriteOptions, onSelect: { _ in },
+                onToggleFavorite: { option in Task { await preferences.toggleFavorite(option) } },
+                onDeleteSavedCustom: { option in Task { await preferences.removeFavorite(option) } }
+            )
+        }
+    }
+
     func testAdditionalSettings() async throws {
         try await page("settings-default-model", title: "Default Model", prepare: { window in
             let row = try await self.requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Default Model") == true }
@@ -353,7 +372,7 @@ final class ScreenGalleryHostedTests: XCTestCase {
     }
 
     private func page<Content: View>(
-        _ name: String, title: String,
+        _ name: String, title: String, wrapsNavigation: Bool = true,
         prepare: (UIWindow) async throws -> Void = { _ in },
         @ViewBuilder content: () -> Content
     ) async throws {
@@ -363,7 +382,10 @@ final class ScreenGalleryHostedTests: XCTestCase {
         var settingsReads = reads("/api/settings")
         var updateReads = reads("/api/updates/check")
         try await renderHostedPage(name) {
-            NavigationStack { content() }
+            Group {
+                if wrapsNavigation { NavigationStack { content() } }
+                else { content() }
+            }
                 .defaultAppStorage(defaults)
                 .environment(\.scenePhase, .active)
                 .modelContainer(fixture.cache)

@@ -98,6 +98,9 @@ struct SettingsModelPickerPage<Leading: View>: View {
             expansion = ComposerModelPickerSectionExpansionState(initiallyExpanded: true, collapsedGroupIDs: saved)
             expansion.updateSearchText(disclosureQuery)
         }
+        .onReceive(NotificationCenter.default.publisher(for: SettingsModelPickerViewModel.preferencesDidChange)) { change in
+            Task { await catalog.refreshPreferences(after: change) }
+        }
         .onChange(of: disclosureQuery) { _, value in expansion.updateSearchText(value) }
         .onChange(of: catalog.response, initial: true) { _, response in
             if let response { onCatalog(response) }

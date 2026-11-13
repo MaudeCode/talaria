@@ -91999,6 +91999,7 @@
                     },
                     "hidden_models": {
                       "type": "array",
+                      "maxItems": 200,
                       "items": {
                         "type": "object",
                         "properties": {
@@ -92017,6 +92018,141 @@
                           "provider_id",
                           "model"
                         ]
+                      }
+                    },
+                    "favorite_models": {
+                      "type": "array",
+                      "maxItems": 200,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "allowance": {
+                            "type": "object",
+                            "properties": {
+                              "state": {
+                                "enum": [
+                                  "included",
+                                  "free",
+                                  "blocked",
+                                  "credits",
+                                  "unknown"
+                                ],
+                                "type": "string"
+                              },
+                              "usage_level": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "free",
+                                      "low",
+                                      "medium",
+                                      "top_tier"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "resets_at_ms": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 8640000000000000
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "state",
+                              "usage_level",
+                              "resets_at_ms"
+                            ]
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "provider": {
+                            "type": "string"
+                          },
+                          "provider_id": {
+                            "type": "string"
+                          },
+                          "bare_id": {
+                            "type": "string"
+                          },
+                          "supports_fast_tier": {
+                            "type": "boolean"
+                          },
+                          "supported_speed_tiers": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "enum": [
+                                    "standard",
+                                    "priority",
+                                    "ultrafast",
+                                    "fast"
+                                  ],
+                                  "type": "string"
+                                },
+                                "service_tier": {
+                                  "enum": [
+                                    "default",
+                                    "priority",
+                                    "ultrafast"
+                                  ],
+                                  "type": "string",
+                                  "description": "Value to save; Anthropic Fast is persisted as priority and sent as speed: fast."
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "service_tier"
+                              ]
+                            }
+                          },
+                          "limit": {
+                            "type": "object",
+                            "properties": {
+                              "scope": {
+                                "const": "model"
+                              },
+                              "resets_at": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "scope",
+                              "resets_at"
+                            ]
+                          },
+                          "preferences_editable": {
+                            "type": "boolean"
+                          },
+                          "hidden": {
+                            "type": "boolean",
+                            "description": "TAL-2193: this profile hides the model from its Settings picker."
+                          },
+                          "favorite": {
+                            "type": "boolean",
+                            "description": "TAL-1857: the profile starred this `provider_id` and `bare_id` pair."
+                          }
+                        },
+                        "required": [
+                          "id"
+                        ],
+                        "additionalProperties": {}
                       }
                     },
                     "favorite_option_ids": {
@@ -92059,6 +92195,7 @@
                   "required": [
                     "groups",
                     "hidden_models",
+                    "favorite_models",
                     "profile",
                     "preferences_supported",
                     "providers",
@@ -92125,6 +92262,7 @@
                     },
                     "hidden_models": {
                       "type": "array",
+                      "maxItems": 200,
                       "items": {
                         "type": "object",
                         "properties": {
@@ -93530,6 +93668,7 @@
                     },
                     "hidden_models": {
                       "type": "array",
+                      "maxItems": 200,
                       "items": {
                         "type": "object",
                         "properties": {
@@ -93549,6 +93688,141 @@
                           "model"
                         ]
                       }
+                    },
+                    "favorite_models": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "allowance": {
+                            "type": "object",
+                            "properties": {
+                              "state": {
+                                "enum": [
+                                  "included",
+                                  "free",
+                                  "blocked",
+                                  "credits",
+                                  "unknown"
+                                ],
+                                "type": "string"
+                              },
+                              "usage_level": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "free",
+                                      "low",
+                                      "medium",
+                                      "top_tier"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "resets_at_ms": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 8640000000000000
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "state",
+                              "usage_level",
+                              "resets_at_ms"
+                            ]
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "provider": {
+                            "type": "string"
+                          },
+                          "provider_id": {
+                            "type": "string"
+                          },
+                          "bare_id": {
+                            "type": "string"
+                          },
+                          "supports_fast_tier": {
+                            "type": "boolean"
+                          },
+                          "supported_speed_tiers": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "enum": [
+                                    "standard",
+                                    "priority",
+                                    "ultrafast",
+                                    "fast"
+                                  ],
+                                  "type": "string"
+                                },
+                                "service_tier": {
+                                  "enum": [
+                                    "default",
+                                    "priority",
+                                    "ultrafast"
+                                  ],
+                                  "type": "string",
+                                  "description": "Value to save; Anthropic Fast is persisted as priority and sent as speed: fast."
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "service_tier"
+                              ]
+                            }
+                          },
+                          "limit": {
+                            "type": "object",
+                            "properties": {
+                              "scope": {
+                                "const": "model"
+                              },
+                              "resets_at": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "scope",
+                              "resets_at"
+                            ]
+                          },
+                          "preferences_editable": {
+                            "type": "boolean"
+                          },
+                          "hidden": {
+                            "type": "boolean",
+                            "description": "TAL-2193: this profile hides the model from its Settings picker."
+                          },
+                          "favorite": {
+                            "type": "boolean",
+                            "description": "TAL-1857: the profile starred this `provider_id` and `bare_id` pair."
+                          }
+                        },
+                        "required": [
+                          "id"
+                        ],
+                        "additionalProperties": {}
+                      },
+                      "description": "Profile favorites in starred order, including saved custom models outside the current catalog; ready for native composer rendering."
                     },
                     "favorite_option_ids": {
                       "type": "array",
@@ -94377,6 +94651,7 @@
                         },
                         "hidden_models": {
                           "type": "array",
+                          "maxItems": 200,
                           "items": {
                             "type": "object",
                             "properties": {
@@ -94396,6 +94671,141 @@
                               "model"
                             ]
                           }
+                        },
+                        "favorite_models": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "allowance": {
+                                "type": "object",
+                                "properties": {
+                                  "state": {
+                                    "enum": [
+                                      "included",
+                                      "free",
+                                      "blocked",
+                                      "credits",
+                                      "unknown"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "usage_level": {
+                                    "anyOf": [
+                                      {
+                                        "enum": [
+                                          "free",
+                                          "low",
+                                          "medium",
+                                          "top_tier"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "resets_at_ms": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 8640000000000000
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "state",
+                                  "usage_level",
+                                  "resets_at_ms"
+                                ]
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "provider": {
+                                "type": "string"
+                              },
+                              "provider_id": {
+                                "type": "string"
+                              },
+                              "bare_id": {
+                                "type": "string"
+                              },
+                              "supports_fast_tier": {
+                                "type": "boolean"
+                              },
+                              "supported_speed_tiers": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "enum": [
+                                        "standard",
+                                        "priority",
+                                        "ultrafast",
+                                        "fast"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "service_tier": {
+                                      "enum": [
+                                        "default",
+                                        "priority",
+                                        "ultrafast"
+                                      ],
+                                      "type": "string",
+                                      "description": "Value to save; Anthropic Fast is persisted as priority and sent as speed: fast."
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "service_tier"
+                                  ]
+                                }
+                              },
+                              "limit": {
+                                "type": "object",
+                                "properties": {
+                                  "scope": {
+                                    "const": "model"
+                                  },
+                                  "resets_at": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "scope",
+                                  "resets_at"
+                                ]
+                              },
+                              "preferences_editable": {
+                                "type": "boolean"
+                              },
+                              "hidden": {
+                                "type": "boolean",
+                                "description": "TAL-2193: this profile hides the model from its Settings picker."
+                              },
+                              "favorite": {
+                                "type": "boolean",
+                                "description": "TAL-1857: the profile starred this `provider_id` and `bare_id` pair."
+                              }
+                            },
+                            "required": [
+                              "id"
+                            ],
+                            "additionalProperties": {}
+                          },
+                          "description": "Profile favorites in starred order, including saved custom models outside the current catalog; ready for native composer rendering."
                         },
                         "favorite_option_ids": {
                           "type": "array",
@@ -99334,6 +99744,7 @@
                         },
                         "hidden_models": {
                           "type": "array",
+                          "maxItems": 200,
                           "items": {
                             "type": "object",
                             "properties": {
@@ -99353,6 +99764,141 @@
                               "model"
                             ]
                           }
+                        },
+                        "favorite_models": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "allowance": {
+                                "type": "object",
+                                "properties": {
+                                  "state": {
+                                    "enum": [
+                                      "included",
+                                      "free",
+                                      "blocked",
+                                      "credits",
+                                      "unknown"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "usage_level": {
+                                    "anyOf": [
+                                      {
+                                        "enum": [
+                                          "free",
+                                          "low",
+                                          "medium",
+                                          "top_tier"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "resets_at_ms": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 8640000000000000
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "state",
+                                  "usage_level",
+                                  "resets_at_ms"
+                                ]
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "provider": {
+                                "type": "string"
+                              },
+                              "provider_id": {
+                                "type": "string"
+                              },
+                              "bare_id": {
+                                "type": "string"
+                              },
+                              "supports_fast_tier": {
+                                "type": "boolean"
+                              },
+                              "supported_speed_tiers": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "enum": [
+                                        "standard",
+                                        "priority",
+                                        "ultrafast",
+                                        "fast"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "service_tier": {
+                                      "enum": [
+                                        "default",
+                                        "priority",
+                                        "ultrafast"
+                                      ],
+                                      "type": "string",
+                                      "description": "Value to save; Anthropic Fast is persisted as priority and sent as speed: fast."
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "service_tier"
+                                  ]
+                                }
+                              },
+                              "limit": {
+                                "type": "object",
+                                "properties": {
+                                  "scope": {
+                                    "const": "model"
+                                  },
+                                  "resets_at": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "scope",
+                                  "resets_at"
+                                ]
+                              },
+                              "preferences_editable": {
+                                "type": "boolean"
+                              },
+                              "hidden": {
+                                "type": "boolean",
+                                "description": "TAL-2193: this profile hides the model from its Settings picker."
+                              },
+                              "favorite": {
+                                "type": "boolean",
+                                "description": "TAL-1857: the profile starred this `provider_id` and `bare_id` pair."
+                              }
+                            },
+                            "required": [
+                              "id"
+                            ],
+                            "additionalProperties": {}
+                          },
+                          "description": "Profile favorites in starred order, including saved custom models outside the current catalog; ready for native composer rendering."
                         },
                         "favorite_option_ids": {
                           "type": "array",
@@ -100236,6 +100782,7 @@
                         },
                         "hidden_models": {
                           "type": "array",
+                          "maxItems": 200,
                           "items": {
                             "type": "object",
                             "properties": {
@@ -100255,6 +100802,141 @@
                               "model"
                             ]
                           }
+                        },
+                        "favorite_models": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "allowance": {
+                                "type": "object",
+                                "properties": {
+                                  "state": {
+                                    "enum": [
+                                      "included",
+                                      "free",
+                                      "blocked",
+                                      "credits",
+                                      "unknown"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "usage_level": {
+                                    "anyOf": [
+                                      {
+                                        "enum": [
+                                          "free",
+                                          "low",
+                                          "medium",
+                                          "top_tier"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "resets_at_ms": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 8640000000000000
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "state",
+                                  "usage_level",
+                                  "resets_at_ms"
+                                ]
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "provider": {
+                                "type": "string"
+                              },
+                              "provider_id": {
+                                "type": "string"
+                              },
+                              "bare_id": {
+                                "type": "string"
+                              },
+                              "supports_fast_tier": {
+                                "type": "boolean"
+                              },
+                              "supported_speed_tiers": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "enum": [
+                                        "standard",
+                                        "priority",
+                                        "ultrafast",
+                                        "fast"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "service_tier": {
+                                      "enum": [
+                                        "default",
+                                        "priority",
+                                        "ultrafast"
+                                      ],
+                                      "type": "string",
+                                      "description": "Value to save; Anthropic Fast is persisted as priority and sent as speed: fast."
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "service_tier"
+                                  ]
+                                }
+                              },
+                              "limit": {
+                                "type": "object",
+                                "properties": {
+                                  "scope": {
+                                    "const": "model"
+                                  },
+                                  "resets_at": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "scope",
+                                  "resets_at"
+                                ]
+                              },
+                              "preferences_editable": {
+                                "type": "boolean"
+                              },
+                              "hidden": {
+                                "type": "boolean",
+                                "description": "TAL-2193: this profile hides the model from its Settings picker."
+                              },
+                              "favorite": {
+                                "type": "boolean",
+                                "description": "TAL-1857: the profile starred this `provider_id` and `bare_id` pair."
+                              }
+                            },
+                            "required": [
+                              "id"
+                            ],
+                            "additionalProperties": {}
+                          },
+                          "description": "Profile favorites in starred order, including saved custom models outside the current catalog; ready for native composer rendering."
                         },
                         "favorite_option_ids": {
                           "type": "array",

@@ -276,6 +276,14 @@ extension XCTestCase {
         let found = await awaitCondition {
             let element = HostedAccessibility.element(in: window, label: title)
             control = (element as? UIControl) ?? window.firstView(ofType: UIControl.self) { $0.accessibilityLabel == title }
+            if control == nil, let element {
+                // Composer menu labels are SwiftUI accessibility nodes over a non-accessible UIKit button.
+                let frame = window.convert(element.accessibilityFrame, from: window.screen.coordinateSpace)
+                control = window.firstView(ofType: UIButton.self) { button in
+                    button.menu != nil && button.isEnabled
+                        && window.convert(button.bounds, from: button).contains(CGPoint(x: frame.midX, y: frame.midY))
+                }
+            }
             trigger = control ?? element
             return trigger != nil
         }

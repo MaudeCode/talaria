@@ -418,7 +418,9 @@ export class SettingsStore {
     return this.updateModelPreferences(profile, HIDDEN_MODELS_BY_PROFILE_KEY, (list) => {
       const current = list ?? []
       if (!hidden) return current.filter((entry) => !sameFavorite(entry, model))
-      return current.some((entry) => sameFavorite(entry, model)) ? current : [...current, { provider_id: model.provider_id, model: model.model }]
+      if (current.some((entry) => sameFavorite(entry, model))) return current
+      if (current.length >= MODEL_FAVORITES_MAX) throw new RangeError(`A profile keeps at most ${String(MODEL_FAVORITES_MAX)} hidden models`)
+      return [...current, { provider_id: model.provider_id, model: model.model }]
     })
   }
 
