@@ -734,14 +734,40 @@ final class ProvidersViewModelTests: APIClientTestCase {
         XCTAssertEqual(critical.content.title, "Claude quota critical")
     }
 
-    func testOnlyQuotaAlertsStayInNotificationCenterWhileForegrounded() {
+    /// TAL-872: a chat on screen leaves quota alerts and other chats' notifications as they were.
+    func testOnlyQuotaAlertsStayInNotificationCenterWhileForegrounded() throws {
         let quota = ProviderQuotaAlertService.request(.warning, sourceID: "qsrc_a", name: "Claude", remaining: nil, preferences: .init())
-        XCTAssertEqual(TalariaAppDelegate.foregroundPresentation(for: quota.content), [.banner, .sound, .list])
-
         let session = UNMutableNotificationContent()
         session.userInfo = [SessionNotificationRefresh.sessionIDKey: "session-1"]
-        XCTAssertEqual(TalariaAppDelegate.foregroundPresentation(for: session), [.banner, .sound])
-        XCTAssertEqual(TalariaAppDelegate.foregroundPresentation(for: UNMutableNotificationContent()), [.banner, .sound])
+        let otherChat = try XCTUnwrap(SessionNotificationRefresh.VisibleChat(server: Self.serverURL, sessionID: "session-2"))
+
+        for visibleChats: Set<SessionNotificationRefresh.VisibleChat> in [[], [otherChat]] {
+            func presentation(_ content: UNNotificationContent) -> UNNotificationPresentationOptions {
+                TalariaAppDelegate.foregroundPresentation(for: content, visibleChats: visibleChats)
+            }
+            XCTAssertEqual(presentation(quota.content), [.banner, .sound, .list])
+            XCTAssertEqual(presentation(session), [.banner, .sound])
+            XCTAssertEqual(presentation(UNMutableNotificationContent()), [.banner, .sound])
+        }
+    }
+
+    /// TAL-872: the chat on screen already shows its own news, so its notification stays silent; the list still refreshes.
+    @MainActor
+    func testNotificationForTheVisibleChatIsSilentButStillRefreshesTheList() async throws {
+        let chat = try XCTUnwrap(SessionNotificationRefresh.VisibleChat(server: Self.serverURL, sessionID: "session-1"))
+        SessionNotificationRefresh.updateVisibleChat(from: nil, to: chat)
+        defer { SessionNotificationRefresh.updateVisibleChat(from: chat, to: nil) }
+        let content = UNMutableNotificationContent()
+        content.userInfo = [SessionNotificationRefresh.sessionIDKey: "session-1"]
+        let request = UNNotificationRequest(identifier: "visible-chat", content: content, trigger: nil)
+        // The delegate runs off the main actor; this test hands it the notification and never touches it again.
+        nonisolated(unsafe) let notification = try XCTUnwrap(UNNotification(coder: NotificationArchive(["request": request, "date": Date()])))
+        let refreshed = expectation(forNotification: .talariaSessionNotificationArrived, object: nil)
+
+        let options = await TalariaAppDelegate().userNotificationCenter(.current(), willPresent: notification)
+
+        await fulfillment(of: [refreshed], timeout: 5)
+        XCTAssertEqual(options, [])
     }
 
     /// TAL-2224: UIKit snapshots the app when a tap's completion runs and asserts it is on main.
