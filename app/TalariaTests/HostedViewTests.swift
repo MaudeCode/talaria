@@ -811,6 +811,39 @@ final class SettingsPlacementHostedTests: XCTestCase {
                 }
                 XCTAssertTrue(HostedAccessibility.activate(row))
                 _ = try await requireElement(in: window, label: "Save Custom Model")
+                XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Filter Models"),
+                                "Both Settings model pickers must expose provider and Favorites filters")
+                let heading = try await requireElement(in: window) {
+                    $0.accessibilityTraits.contains(.header) && $0.accessibilityLabel?.hasPrefix("Fixture Provider") == true
+                }
+                let selectedDefault = await awaitCondition {
+                    HostedAccessibility.element(in: window, identifier: "settings-model-option-fixture-model")?.accessibilityTraits.contains(.selected) == true
+                }
+                XCTAssertTrue(selectedDefault, "The server-selected default must retain its check after the shared catalog loads")
+                XCTAssertTrue(HostedAccessibility.activate(heading))
+                let collapsed = await awaitCondition { HostedAccessibility.element(in: window, identifier: "settings-model-option-fixture-model") == nil }
+                XCTAssertTrue(collapsed, "The provider header must collapse its rows")
+                XCTAssertTrue(HostedAccessibility.activate(heading))
+                let star = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-model-star-fixture-model" }
+                XCTAssertTrue(HostedAccessibility.activate(star))
+                _ = try await requireElement(in: window) {
+                    HostedAccessibility.identifier(of: $0) == "settings-model-star-fixture-model" && $0.accessibilityLabel?.hasPrefix("Add ") == true
+                }
+                XCTAssertTrue(HostedAccessibility.element(in: window, identifier: "settings-model-option-fixture-model")?.accessibilityTraits.contains(.selected) == true,
+                              "Starring must not change the selected default")
+                let hideActions = try await hostedMenuActions("Actions for Fixture Model, Fixture Provider", readyAction: "Hide Model", in: window)
+                XCTAssertTrue(HostedAccessibility.activate(try XCTUnwrap(hideActions.first { $0.title == "Hide Model" })))
+                let hidden = await awaitCondition { HostedAccessibility.element(in: window, identifier: "settings-model-option-fixture-model") == nil }
+                XCTAssertTrue(hidden, "Hide must remove the model from the visible catalog")
+                let filters = try await hostedMenuActions("Filter Models", readyAction: "Show Hidden", in: window)
+                XCTAssertTrue(HostedAccessibility.activate(try XCTUnwrap(filters.first { $0.title == "Show Hidden" })))
+                let restored = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-model-option-fixture-model" }
+                XCTAssertTrue(restored.accessibilityLabel?.contains("Hidden") == true)
+                let restoreActions = try await hostedMenuActions("Actions for Fixture Model, Fixture Provider", readyAction: "Unhide Model", in: window)
+                XCTAssertTrue(HostedAccessibility.activate(try XCTUnwrap(restoreActions.first { $0.title == "Unhide Model" })))
+                _ = try await requireElement(in: window) {
+                    HostedAccessibility.identifier(of: $0) == "settings-model-option-fixture-model" && $0.accessibilityLabel?.contains("Hidden") == false
+                }
                 attachHostedScreenshot(window, name: "settings-default-model-navigation")
                 XCTAssertNil(window.rootViewController?.presentedViewController,
                              "Default Model must push inside Settings, never present a sheet")

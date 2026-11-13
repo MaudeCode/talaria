@@ -30,6 +30,11 @@ public struct CatalogAvailability: Codable, Equatable, Sendable {
 
 public struct ModelsResponse: Decodable, Equatable, Sendable {
     public let availability: CatalogAvailability?
+    public let favorites: [ModelPreference]?
+    public let profile: String?
+    public let preferencesSupported: Bool?
+    public let providers: [ModelPickerProvider]?
+    public let totalCount: Int?
     let groups: [JSONValue]?
     let models: [JSONValue]?
     public let defaultModel: String?
@@ -41,7 +46,7 @@ public struct ModelsResponse: Decodable, Equatable, Sendable {
     public let defaultOptionID: String?
 
     private enum CodingKeys: String, CodingKey {
-        case availability
+        case availability, favorites, profile, preferencesSupported, providers, totalCount
         case groups
         case models
         case defaultModel
@@ -53,6 +58,11 @@ public struct ModelsResponse: Decodable, Equatable, Sendable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         availability = try? c.decodeIfPresent(CatalogAvailability.self, forKey: .availability)
+        favorites = try? c.decodeIfPresent([ModelPreference].self, forKey: .favorites)
+        profile = try? c.decodeIfPresent(String.self, forKey: .profile)
+        preferencesSupported = try? c.decodeIfPresent(Bool.self, forKey: .preferencesSupported)
+        providers = try? c.decodeIfPresent([ModelPickerProvider].self, forKey: .providers)
+        totalCount = try? c.decodeIfPresent(Int.self, forKey: .totalCount)
         groups = try? c.decodeIfPresent([JSONValue].self, forKey: .groups)
         models = try? c.decodeIfPresent([JSONValue].self, forKey: .models)
         defaultModel = c.decodeLossyStringIfPresent(forKey: .defaultModel)
@@ -340,6 +350,25 @@ public struct ProviderModel: Decodable, Equatable, Sendable {
         label = container.decodeLossyStringIfPresent(forKey: .label)
     }
 }
+
+/// Server preference identity. ModelFavoriteKey retains the older device-storage encoding.
+public struct ModelPreference: Codable, Equatable, Hashable, Sendable {
+    public let providerID: String
+    public let model: String
+    public init(providerID: String, model: String) { self.providerID = providerID; self.model = model }
+    private enum CodingKeys: String, CodingKey { case providerID = "providerId", model }
+}
+
+/// A provider choice remains available even when its filtered catalog is empty.
+public struct ModelPickerProvider: Decodable, Equatable, Identifiable, Sendable {
+    public let id: String
+    public let label: String
+}
+
+public struct ModelPreferenceWriteResponse: Decodable, Sendable {
+    public let ok: Bool
+}
+
 
 /// `GET /api/settings` (the saved-settings body `POST /api/settings` echoes the
 /// same shape back). The server returns ~75 keys; we decode only the ones with

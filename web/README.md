@@ -343,6 +343,18 @@ Agent gateway and the dashboard. Details, GPU images, and failure modes: [docs/d
 
 ## Settings
 
+The App's Default Model and Auxiliary Models pickers use the same catalog controls: provider and Favorites filters,
+collapsible provider sections, model stars, and Hide/Unhide with Show Hidden for recovery. Stars and hidden models
+belong to the active server profile; collapse choices stay on the device. Hiding a model changes the picker list and
+never changes the saved default or auxiliary selection.
+
+`GET /api/models/picker` computes the filtered groups, provider choices, counts and preference flags. The complete
+`GET /api/models` catalog remains compatible with existing consumers. The picker writes through the existing
+`/api/models/favorite` and guarded `/api/models/favorites/import`, and `/api/models/hidden`. An expected `profile`
+on a preference write refuses a stale picker after a profile switch. The additive `model_hidden_by_profile` settings
+map shares the favorites store's queued, revision-checked writer and is never exposed by `/api/settings`.
+
+
 Settings lists its sections in three groups, by what a change affects, in the order of `SETTINGS_SECTION_GROUPS`
 in `packages/contracts/src/settings-sections.ts`:
 

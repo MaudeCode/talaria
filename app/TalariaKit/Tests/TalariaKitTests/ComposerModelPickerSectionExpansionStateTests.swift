@@ -90,4 +90,17 @@ final class ComposerModelPickerSectionExpansionStateTests: XCTestCase {
         XCTAssertTrue(state.isExpanded(groupID: "openai"))
         XCTAssertFalse(state.isExpanded(groupID: "anthropic"))
     }
+    func testSettingsProvidersStartOpenAndRestoreOnlyExplicitCollapsesAcrossSearch() {
+        var state = ComposerModelPickerSectionExpansionState(initiallyExpanded: true)
+        XCTAssertTrue(state.isExpanded(groupID: "alpha"))
+        state.setExpanded(false, groupID: "alpha")
+        var reopened = ComposerModelPickerSectionExpansionState(initiallyExpanded: true, collapsedGroupIDs: state.collapsedGroupIDs)
+        XCTAssertFalse(reopened.isExpanded(groupID: "alpha"))
+        XCTAssertTrue(reopened.isExpanded(groupID: "new-provider"))
+        reopened.updateSearchText("matching model")
+        XCTAssertTrue(reopened.isExpanded(groupID: "alpha"))
+        reopened.updateSearchText("")
+        XCTAssertFalse(reopened.isExpanded(groupID: "alpha"))
+    }
+
 }

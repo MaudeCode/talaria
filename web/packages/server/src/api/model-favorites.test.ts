@@ -106,7 +106,7 @@ describe('model favorites', () => {
     const headers = { cookie }
     expect((await catalog(headers)).favorites).toBeNull()
     const list = [{ provider_id: 'anthropic', model: 'claude-sonnet-4-6' }, { provider_id: 'openrouter', model: 'shared-model' }]
-    let res = await post('/api/models/favorites/import', { favorites: [...list, list[0]] }, headers)
+    let res = await post('/api/models/favorites/import', { favorites: [{ ...list[0], model: '@anthropic:claude-sonnet-4-6' }, list[1], list[0]] }, headers)
     expect(await res.json()).toEqual({ ok: true, imported: true, favorites: list })
     res = await post('/api/models/favorites/import', { favorites: [{ provider_id: 'anthropic', model: 'claude-opus-4-7' }] }, headers)
     expect(await res.json()).toEqual({ ok: true, imported: false, favorites: list })
@@ -139,5 +139,39 @@ describe('model favorites', () => {
   it('refuses a malformed write', async () => {
     expect((await post('/api/models/favorite', { provider_id: '', model: 'x', favorite: true })).status).toBe(400)
     expect((await post('/api/models/favorite', { provider_id: 'anthropic', model: 'x' })).status).toBe(400)
+  })
+
+  it('filters the Settings picker and persists profile-owned hiding independently of stars (TAL-2193)', async () => {
+    const picker = async (query = '', headers: Record<string, string> = {}): Promise<Json> => {
+      const response = await s.get(`/api/models/picker${query}`, { headers })
+      expect(response.status, 'Settings model picker projection must be available').toBe(200)
+      return await response.json() as Json
+    }
+    const rows = (value: Json): Entry[] => (value.groups as Catalog['groups']).flatMap((g) => g.models)
+    const before = await picker()
+    expect((before.providers as { id: string }[]).map((p) => p.id)).toContain('anthropic')
+    await star('anthropic', 'shared-model', true)
+    const hidden = await post('/api/models/hidden', { provider_id: 'anthropic', model: 'shared-model', hidden: true })
+    expect(hidden.status).toBe(200)
+    expect(rows(await picker('?provider=anthropic')).some((m) => m.bare_id === 'shared-model')).toBe(false)
+    for (const live of [false, true]) {
+      const shown = rows(await picker(`?provider=anthropic&favorites=true&show_hidden=true&q=shared&live=${String(live)}`))
+      expect(shown).toHaveLength(1)
+      expect(shown[0]).toMatchObject({ provider_id: 'anthropic', bare_id: 'shared-model', favorite: true, hidden: true, preferences_editable: true })
+    }
+    expect((await post('/api/models/favorite', { provider_id: 'anthropic', model: 'shared-model', favorite: false, profile: 'work' })).status).toBe(409)
+    expect(await (await s.get('/api/settings')).json()).not.toHaveProperty('model_hidden_by_profile')
+    expect(rows(await picker('?provider=openrouter&q=shared'))).toHaveLength(1)
+    expect(rows(await picker('?provider=anthropic&q=shared', { cookie }))).toHaveLength(1)
+    expect((await catalog()).favorites).toContainEqual({ provider_id: 'anthropic', model: 'shared-model' })
+    await Promise.all(['shared-model', 'claude-opus-4-7'].map((model) => post('/api/models/hidden', { provider_id: 'anthropic', model, hidden: true })))
+    expect((await s.deps.settings.readRaw()).model_hidden_by_profile).toEqual({ default: [
+      { provider_id: 'anthropic', model: 'shared-model' }, { provider_id: 'anthropic', model: 'claude-opus-4-7' },
+    ] })
+    await post('/api/models/hidden', { provider_id: 'anthropic', model: 'shared-model', hidden: false })
+    expect(rows(await picker('?provider=anthropic&favorites=true&q=shared'))).toHaveLength(1)
+    expect((await post('/api/models/hidden', { provider_id: '', model: 'x', hidden: true })).status).toBe(400)
+    await post('/api/models/hidden', { provider_id: 'anthropic', model: 'claude-opus-4-7', hidden: false })
+    await star('anthropic', 'shared-model', false)
   })
 })

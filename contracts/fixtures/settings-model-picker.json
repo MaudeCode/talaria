@@ -1,0 +1,16 @@
+{
+  "profile": "work",
+  "preferences_supported": true,
+  "providers": [{"id": "alpha", "label": "Alpha Models"}, {"id": "beta", "label": "Beta Models"}],
+  "default_model": "shared",
+  "default_provider_id": "alpha",
+  "default_bare_id": "shared",
+  "default_option_id": "shared",
+  "favorites": [{"provider_id": "alpha", "model": "shared"}],
+  "hidden_models": [{"provider_id": "beta", "model": "shared"}],
+  "total_count": 1,
+  "groups": [{
+    "provider": "Alpha Models", "provider_id": "alpha", "model_count": 1,
+    "models": [{"id": "shared", "label": "Shared model", "provider_id": "alpha", "bare_id": "shared", "favorite": true, "hidden": false, "preferences_editable": true}]
+  }]
+}

@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import { CronBlueprintsSchema, CronBlueprintFillSchema, AgentHealthSchema, SystemHealthSchema, ErrorBodySchema, ChatEventSchema, ClarifyPendingEnvelopeSchema, MemoryWriteRefusalSchema, ModelsSchema, ProviderQuotasSchema, SIDECAR_RPC_VERSION, SkillsSchema, SpeechPrepareSchema, TranscribeResponseSchema, TranscribeStreamEndSchema, TranscribeStreamEventSchema, TranscribeStreamStartSchema, UpdatesCheckSchema, UpdateNotificationsSchema, UpdateApplySchema, SteerSendNowResponseSchema, WhatsNewAnnouncementSchema, WhatsNewStateSchema } from './index.js'
+import { CronBlueprintsSchema, CronBlueprintFillSchema, AgentHealthSchema, SystemHealthSchema, ErrorBodySchema, ChatEventSchema, ClarifyPendingEnvelopeSchema, MemoryWriteRefusalSchema, ModelsSchema, SettingsModelPickerSchema, ProviderQuotasSchema, SIDECAR_RPC_VERSION, SkillsSchema, SpeechPrepareSchema, TranscribeResponseSchema, TranscribeStreamEndSchema, TranscribeStreamEventSchema, TranscribeStreamStartSchema, UpdatesCheckSchema, UpdateNotificationsSchema, UpdateApplySchema, SteerSendNowResponseSchema, WhatsNewAnnouncementSchema, WhatsNewStateSchema } from './index.js'
 
 const shared = (path: string): unknown => JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts', path), 'utf8'))
 
@@ -297,6 +297,13 @@ describe('contracts package', () => {
     expect(ModelsSchema.parse(fixture.never_saved).favorites).toBeNull()
     expect(settingsContract.models.favorite['~orpc'].outputSchema!.parse(fixture.favorite)).toEqual(fixture.favorite)
     expect(settingsContract.models.importFavorites['~orpc'].outputSchema!.parse(fixture.import)).toEqual(fixture.import)
+  })
+  it('shares the filtered Settings picker identity, flags and unfiltered provider menu (TAL-2193)', () => {
+    const value = SettingsModelPickerSchema.parse(shared('fixtures/settings-model-picker.json'))
+    expect(value.providers.map((provider) => provider.id)).toEqual(['alpha', 'beta'])
+    expect(value.groups[0]?.models[0]).toMatchObject({ id: 'shared', provider_id: 'alpha', bare_id: 'shared', favorite: true, hidden: false, preferences_editable: true })
+    expect(value.hidden_models).toEqual([{ provider_id: 'beta', model: 'shared' }])
+    expect(value.total_count).toBe(1)
   })
   it('parses the shared live dictation exchange (TAL-802)', () => {
     const fixture = shared('fixtures/transcribe-stream.json') as { start: unknown; end: unknown; events: unknown[]; unavailable: unknown }

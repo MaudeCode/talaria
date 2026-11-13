@@ -15,7 +15,7 @@ final class ComposerModelPickerHostedTests: XCTestCase {
             ComposerModelPickerSheet(modelGroups: groups, selectedModelID: "gpt-6.1-sol", selectedModelProviderID: "openai-codex", selectedModelOptionID: "gpt-6.1-sol", favoriteModelKeys: [], recentModelKeys: [], onSelect: { _ in }, onToggleFavorite: { _ in }, onDeleteSavedCustom: { _ in })
         }
         let baseline = try hostWindow(picker([ModelCatalogGroup(id: "openai-codex", name: models.catalogGroups[0].name, providerID: "openai-codex", models: models.catalogGroups[0].models)]))
-        let baselineHeading = try XCTUnwrap(HostedAccessibility.elements(in: baseline, labelContaining: "openai-codex").last)
+        let baselineHeading = try XCTUnwrap(HostedAccessibility.elements(in: baseline, labelContaining: "OpenAI Codex").last)
         HostedAccessibility.activate(baselineHeading)
         attachHostedScreenshot(baseline, name: "catalog-before")
         baseline.isHidden = true

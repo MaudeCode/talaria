@@ -271,25 +271,40 @@ extension XCTestCase {
     /// SwiftUI toolbar menus defer their actions until UIKit presents them.
     @MainActor
     func hostedMenuActions(_ title: String, readyAction: String, in window: UIWindow) async throws -> [UIAction] {
-        var button: UIControl?
+        var trigger: NSObject?
+        var control: UIControl?
         let found = await awaitCondition {
-            button = (HostedAccessibility.element(in: window, label: title) as? UIControl)
-                ?? window.firstView(ofType: UIControl.self) { $0.accessibilityLabel == title }
-            return button != nil
+            let element = HostedAccessibility.element(in: window, label: title)
+            control = (element as? UIControl) ?? window.firstView(ofType: UIControl.self) { $0.accessibilityLabel == title }
+            trigger = control ?? element
+            return trigger != nil
         }
         XCTAssertTrue(found, "Missing \(title) menu control")
-        let control = try XCTUnwrap(button)
-        let interaction = try XCTUnwrap(control.contextMenuInteraction)
-        XCTAssertTrue(HostedAccessibility.activate(control))
+        XCTAssertTrue(HostedAccessibility.activate(try XCTUnwrap(trigger)))
         var actions: [UIAction] = []
+        var visibleInteraction: UIContextMenuInteraction?
         let resolved = await awaitCondition {
-            interaction.updateVisibleMenu { menu in
-                actions = HostedAccessibility.menuActions(in: menu)
-                return menu
+            // Toolbar menus have a UIControl; an inline SwiftUI Menu exposes an accessibility node instead.
+            var pending: [UIView] = [window]
+            var interactions = control?.contextMenuInteraction.map { [$0] } ?? []
+            while let view = pending.popLast() {
+                interactions += view.interactions.compactMap { $0 as? UIContextMenuInteraction }
+                pending += view.subviews
             }
-            return actions.contains { $0.title == readyAction }
+            for interaction in interactions {
+                interaction.updateVisibleMenu { menu in
+                    let candidate = HostedAccessibility.menuActions(in: menu)
+                    if candidate.contains(where: { $0.title == readyAction }) {
+                        actions = candidate
+                        visibleInteraction = interaction
+                    }
+                    return menu
+                }
+            }
+            return visibleInteraction != nil
         }
         XCTAssertTrue(resolved, "The visible menu must resolve its real actions")
+        let interaction = try XCTUnwrap(visibleInteraction)
         attachHostedScreenshot(window, name: "\(title.lowercased())-menu")
         interaction.dismissMenu()
         let closed = await awaitCondition {

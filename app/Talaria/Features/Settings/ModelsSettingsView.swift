@@ -87,27 +87,26 @@ struct DefaultModelPicker: View {
     let currentDefaultModel: String?
     let onSave: (String) -> Void
 
-    @State private var isLoading = false
-    @State private var groups: [ModelCatalogGroup] = []
     @State private var defaultModel: String?
     @State private var defaultOptionID: String?
     @State private var selectedModel: String?
     @State private var selectedProvider: String?
-    @State private var errorMessage: String?
     @State private var isSaving = false
     @State private var saveError: String?
 
     var body: some View {
         SettingsModelPickerPage(
-            title: String(localized: "Default Model"), groups: groups, isLoading: isLoading,
-            loadError: errorMessage, isSelected: isCurrentDefault, isSavingModel: isSavingRow,
+            title: String(localized: "Default Model"), server: server, liveModels: true,
+            isSelected: isCurrentDefault, isSavingModel: isSavingRow,
             isSaving: isSaving, saveError: saveError,
             customHelp: String(localized: "Type a model ID exactly as the server expects it."),
             onSelect: { await save($0, providerID: $1) },
-            onSaveCustom: { await save($0) }
+            onSaveCustom: { await save($0) },
+            onCatalog: { response in
+                defaultModel = response.defaultModel ?? currentDefaultModel
+                defaultOptionID = response.defaultOptionID
+            }
         ) { _ in }
-        .task { await loadModels() }
-        .refreshesLive(showsStatus: !groups.isEmpty) { await loadModels() }
     }
 
     /// Whether this row shows the spinner for an in-flight save.
@@ -130,33 +129,6 @@ struct DefaultModelPicker: View {
             defaultOptionID: defaultOptionID,
             defaultModel: defaultModel
         )
-    }
-
-    private func loadModels() async {
-        guard !isLoading else { return }
-        isLoading = true
-        errorMessage = nil
-
-        do {
-            let response = try await APIClient(baseURL: server).models()
-            defaultModel = response.defaultModel ?? currentDefaultModel
-            defaultOptionID = response.defaultOptionID
-            groups = response.catalogGroups
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-
-        isLoading = false
-
-        await overlayLiveModels()
-    }
-
-    /// Overlays the active provider's live (uncached) list onto the cached
-    /// catalog so newly available models appear. Failures are silent by
-    /// design — the cached list stays as-is (issue #236).
-    private func overlayLiveModels() async {
-        guard let live = try? await APIClient(baseURL: server).modelsLive() else { return }
-        groups = groups.mergingLiveModels(from: live)
     }
 
     private func save(_ model: String, providerID: String? = nil) async -> Bool {

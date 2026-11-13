@@ -11,7 +11,7 @@ import { InvalidDocument, RevisionConflict, type DocumentBackend } from './sessi
 import { withDocumentQueue } from './sessions/storage/document.js'
 import { resolveDefaultWorkspace, type Env } from './config.js'
 import { normalizeTrustedLinkHosts } from './links.js'
-import { KanbanPinnedBoardsSchema, MODEL_FAVORITES_MAX, ModelFavoritesSchema, OUTSIDE_SOURCE_SETTING_KEYS, WebUpdateChannelSchema, type ModelFavorite } from '@maudecode/talaria-web-contracts'
+import { KanbanPinnedBoardsSchema, MODEL_FAVORITES_MAX, ModelFavoritesSchema, HiddenModelsSchema, OUTSIDE_SOURCE_SETTING_KEYS, WebUpdateChannelSchema, type ModelFavorite } from '@maudecode/talaria-web-contracts'
 
 export type Settings = Record<string, unknown>
 
@@ -302,6 +302,7 @@ export const QUOTA_THRESHOLDS_BY_PROFILE_KEY = 'provider_quota_thresholds_by_pro
 export const KANBAN_PINS_BY_PROFILE_KEY = 'kanban_pinned_boards_by_profile'
 /** TAL-1857: settings.json key of each profile's model favorites; a profile without an entry has never saved any. */
 export const MODEL_FAVORITES_BY_PROFILE_KEY = 'model_favorites_by_profile'
+export const HIDDEN_MODELS_BY_PROFILE_KEY = 'model_hidden_by_profile'
 const sameFavorite = (a: ModelFavorite, b: ModelFavorite): boolean => a.provider_id === b.provider_id && a.model === b.model
 
 /**
@@ -388,7 +389,7 @@ export class SettingsStore {
 
   /** TAL-1857: star or unstar one model; concurrent writes for other models all persist. Returns the profile's list. */
   async setModelFavorite(profile: string, favorite: ModelFavorite, on: boolean): Promise<ModelFavorite[]> {
-    return this.updateFavorites(profile, (list) => {
+    return this.updateModelPreferences(profile, MODEL_FAVORITES_BY_PROFILE_KEY, (list) => {
       const current = list ?? []
       if (!on) return current.filter((f) => !sameFavorite(f, favorite))
       if (current.some((f) => sameFavorite(f, favorite))) return current
@@ -400,7 +401,7 @@ export class SettingsStore {
   /** TAL-1857: write `favorites` only while the profile has never saved any; a later import changes nothing. */
   async importModelFavorites(profile: string, favorites: ModelFavorite[]): Promise<{ imported: boolean; favorites: ModelFavorite[] }> {
     let imported = false
-    const result = await this.updateFavorites(profile, (list) => {
+    const result = await this.updateModelPreferences(profile, MODEL_FAVORITES_BY_PROFILE_KEY, (list) => {
       // Set per attempt: a revision retry that finds another server's list reports that import as not ours.
       imported = list === null
       if (list !== null) return list
@@ -409,23 +410,35 @@ export class SettingsStore {
     return { imported, favorites: result }
   }
 
-  private favoritesIn(raw: Settings, profile: string): ModelFavorite[] | null {
-    const byProfile = settingsByProfile(raw, MODEL_FAVORITES_BY_PROFILE_KEY)
+  async hiddenModels(profile: string): Promise<ModelFavorite[]> {
+    return this.favoritesIn(await this.readRaw(), profile, HIDDEN_MODELS_BY_PROFILE_KEY) ?? []
+  }
+
+  async setModelHidden(profile: string, model: ModelFavorite, hidden: boolean): Promise<ModelFavorite[]> {
+    return this.updateModelPreferences(profile, HIDDEN_MODELS_BY_PROFILE_KEY, (list) => {
+      const current = list ?? []
+      if (!hidden) return current.filter((entry) => !sameFavorite(entry, model))
+      return current.some((entry) => sameFavorite(entry, model)) ? current : [...current, { provider_id: model.provider_id, model: model.model }]
+    })
+  }
+
+  private favoritesIn(raw: Settings, profile: string, key = MODEL_FAVORITES_BY_PROFILE_KEY): ModelFavorite[] | null {
+    const byProfile = settingsByProfile(raw, key)
     if (!Object.hasOwn(byProfile, profile)) return null
-    const parsed = ModelFavoritesSchema.safeParse(byProfile[profile])
+    const parsed = (key === HIDDEN_MODELS_BY_PROFILE_KEY ? HiddenModelsSchema : ModelFavoritesSchema).safeParse(byProfile[profile])
     return parsed.success ? parsed.data ?? [] : []
   }
 
   /** One profile's favorites, read and rewritten under the settings queue so no other key or profile changes. */
-  private updateFavorites(profile: string, next: (list: ModelFavorite[] | null) => ModelFavorite[]): Promise<ModelFavorite[]> {
+  private updateModelPreferences(profile: string, key: string, next: (list: ModelFavorite[] | null) => ModelFavorite[]): Promise<ModelFavorite[]> {
     return withDocumentQueue(this.documents, 'settings', 'settings', async () => {
       for (let attempt = 0; ; attempt += 1) {
         const record = await this.documents.get('settings', 'settings')
         const raw = record?.value && typeof record.value === 'object' && !Array.isArray(record.value) ? { ...(record.value as Settings) } : {}
-        const before = this.favoritesIn(raw, profile)
+        const before = this.favoritesIn(raw, profile, key)
         const list = next(before)
         if (before !== null && list === before) return list
-        raw[MODEL_FAVORITES_BY_PROFILE_KEY] = { ...settingsByProfile(raw, MODEL_FAVORITES_BY_PROFILE_KEY), [profile]: list }
+        raw[key] = { ...settingsByProfile(raw, key), [profile]: list }
         try { await this.writeSettings(raw, record?.revision ?? null) }
         catch (error) { if (error instanceof RevisionConflict && attempt < 1) continue; throw error }
         return list

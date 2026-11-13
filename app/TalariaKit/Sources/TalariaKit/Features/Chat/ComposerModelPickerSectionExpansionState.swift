@@ -2,8 +2,13 @@ import Foundation
 
 public struct ComposerModelPickerSectionExpansionState: Sendable {
 
-    public init() {
+    public init(initiallyExpanded: Bool = false, collapsedGroupIDs: Set<String> = []) {
+        self.initiallyExpanded = initiallyExpanded
+        self.collapsedGroupIDs = collapsedGroupIDs
     }
+
+    private let initiallyExpanded: Bool
+    public private(set) var collapsedGroupIDs: Set<String>
 
     private var expandedGroupIDs: Set<String> = []
     private var collapsedSearchGroupIDs: Set<String> = []
@@ -19,7 +24,7 @@ public struct ComposerModelPickerSectionExpansionState: Sendable {
 
     public func isExpanded(groupID: String) -> Bool {
         if searchQuery.isEmpty {
-            return expandedGroupIDs.contains(groupID)
+            return initiallyExpanded ? !collapsedGroupIDs.contains(groupID) : expandedGroupIDs.contains(groupID)
         }
 
         return !collapsedSearchGroupIDs.contains(groupID)
@@ -29,8 +34,10 @@ public struct ComposerModelPickerSectionExpansionState: Sendable {
         if searchQuery.isEmpty {
             if isExpanded {
                 expandedGroupIDs.insert(groupID)
+                collapsedGroupIDs.remove(groupID)
             } else {
                 expandedGroupIDs.remove(groupID)
+                collapsedGroupIDs.insert(groupID)
             }
         } else if isExpanded {
             collapsedSearchGroupIDs.remove(groupID)

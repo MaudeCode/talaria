@@ -9,6 +9,22 @@ extension APIClient {
         try await send(endpoint: .models, method: "GET")
     }
 
+    public func settingsModelPicker(search: String, provider: String, favorites: Bool, showHidden: Bool, live: Bool) async throws -> ModelsResponse {
+        try await send(endpoint: .settingsModelPicker(search: search, provider: provider, favorites: favorites, showHidden: showHidden, live: live), method: "GET")
+    }
+
+    public func setModelFavorite(_ model: ModelPreference, favorite: Bool, profile: String) async throws -> ModelPreferenceWriteResponse {
+        try await send(endpoint: .modelFavorite, method: "POST", body: ModelPreferenceRequest(providerId: model.providerID, model: model.model, profile: profile, favorite: favorite, hidden: nil))
+    }
+
+    public func setModelHidden(_ model: ModelPreference, hidden: Bool, profile: String) async throws -> ModelPreferenceWriteResponse {
+        try await send(endpoint: .modelHidden, method: "POST", body: ModelPreferenceRequest(providerId: model.providerID, model: model.model, profile: profile, favorite: nil, hidden: hidden))
+    }
+
+    public func importModelFavorites(_ favorites: [ModelPreference], profile: String) async throws -> ModelPreferenceWriteResponse {
+        try await send(endpoint: .importModelFavorites, method: "POST", body: ModelFavoritesImportRequest(favorites: favorites, profile: profile))
+    }
+
     public func models(caching cache: ResponseCache.Entry?) async throws -> ModelsResponse {
         try await send(endpoint: .models, caching: cache)
     }
@@ -328,4 +344,17 @@ private struct ProfileUpdateRequest: Encodable {
     let name: String
     let displayName: String?
     let description: String
+}
+
+private struct ModelPreferenceRequest: Encodable {
+    let providerId: String
+    let model: String
+    let profile: String
+    let favorite: Bool?
+    let hidden: Bool?
+}
+
+private struct ModelFavoritesImportRequest: Encodable {
+    let favorites: [ModelPreference]
+    let profile: String
 }

@@ -4,7 +4,31 @@
       "category": "Changed",
       "summary": "Choose default and auxiliary models on Settings pages with a back button.",
       "highlight": false,
-      "components": ["app"],
+      "components": [
+        "app"
+      ],
+      "announce": false
+    },
+    {
+      "category": "Added",
+      "summary": "Filter model lists, collapse providers, and favorite or hide models in Settings.",
+      "highlight": false,
+      "components": [
+        "app"
+      ],
+      "announcement": {
+        "icon": "model",
+        "title": "Manage your model list",
+        "description": "Filter providers and favorites, collapse sections, and hide models from your Settings pickers."
+      }
+    },
+    {
+      "category": "Added",
+      "summary": "Model favorites and visibility choices stay with each server profile.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
       "announce": false
     }
   ]

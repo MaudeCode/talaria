@@ -8428,6 +8428,17 @@
         }
       }
     },
+    "Actions for %@, %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actions for %@, %@"
+          }
+        }
+      }
+    },
     "Active" : {
       "localizations" : {
         "ar" : {
@@ -10478,6 +10489,17 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "新增項目"
+          }
+        }
+      }
+    },
+    "Add to Favorites" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add to Favorites"
           }
         }
       }
@@ -12719,6 +12741,17 @@
       }
     },
     "All Profiles" : {},
+    "All Providers" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All Providers"
+          }
+        }
+      }
+    },
     "All Tenants" : {},
     "All Time" : {
       "localizations" : {
@@ -27532,6 +27565,17 @@
       }
     },
     "Collapse webhook sessions" : {},
+    "Collapsed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collapsed"
+          }
+        }
+      }
+    },
     "Color" : {
       "localizations" : {
         "ar" : {
@@ -49076,6 +49120,17 @@
       }
     },
     "Expand webhook sessions" : {},
+    "Expanded" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expanded"
+          }
+        }
+      }
+    },
     "Experimental" : {
       "localizations" : {
         "ar" : {
@@ -50562,6 +50617,17 @@
         }
       }
     },
+    "Favorites Only" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Favorites Only"
+          }
+        }
+      }
+    },
     "Feature Request" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -51759,6 +51825,17 @@
       }
     },
     "Files Button" : {},
+    "Filter Models" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filter Models"
+          }
+        }
+      }
+    },
     "Filters sessions to this project." : {
       "localizations" : {
         "ar" : {
@@ -55582,6 +55659,28 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Hermes 工作階段"
+          }
+        }
+      }
+    },
+    "Hidden" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hidden"
+          }
+        }
+      }
+    },
+    "Hide Model" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide Model"
           }
         }
       }
@@ -93810,6 +93909,17 @@
         }
       }
     },
+    "Remove from Favorites" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove from Favorites"
+          }
+        }
+      }
+    },
     "Remove header" : {
       "localizations" : {
         "ar" : {
@@ -108265,6 +108375,17 @@
         }
       }
     },
+    "Show Hidden" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Hidden"
+          }
+        }
+      }
+    },
     "Show Thinking" : {
       "localizations" : {
         "ar" : {
@@ -122065,6 +122186,17 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Talaria 伺服器暫時無法使用。請檢查伺服器是否正在運作，以及網絡連線是否正常。"
+          }
+        }
+      }
+    },
+    "The active profile changed. Reopen the model picker." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The active profile changed. Reopen the model picker."
           }
         }
       }
@@ -139017,6 +139149,17 @@
     "Unenroll %@?" : {},
     "Unenroll Server?" : {},
     "Unenrolling" : {},
+    "Unhide Model" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unhide Model"
+          }
+        }
+      }
+    },
     "Unknown" : {
       "localizations" : {
         "ar" : {
@@ -141457,6 +141600,17 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "更新伺服器？"
+          }
+        }
+      }
+    },
+    "Update the server to manage model preferences." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update the server to manage model preferences."
           }
         }
       }

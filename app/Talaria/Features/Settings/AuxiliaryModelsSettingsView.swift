@@ -91,8 +91,7 @@ struct AuxiliaryModelsSettingsView: View {
     private func taskRow(_ task: AuxiliaryModelTask) -> some View {
         NavigationLink {
             SettingsModelPickerPage(
-                title: task.label, groups: viewModel.catalogGroups, isLoading: viewModel.isLoadingCatalog,
-                loadError: viewModel.catalogErrorMessage,
+                title: task.label, server: server,
                 isSelected: { $0.id == viewModel.task(id: task.task)?.selectedOptionID },
                 isSavingModel: { _ in false }, isSaving: viewModel.savingTaskID != nil,
                 saveError: viewModel.saveErrorMessage,
@@ -120,7 +119,6 @@ struct AuxiliaryModelsSettingsView: View {
             }
             .task {
                 viewModel.clearSaveError()
-                await viewModel.loadCatalog()
             }
         } label: {
             SettingsItemRow(title: task.label, accessorySystemImage: "chevron.forward") {

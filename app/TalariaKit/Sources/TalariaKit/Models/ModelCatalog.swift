@@ -6,6 +6,7 @@ public struct ModelCatalogGroup: Identifiable, Equatable, Sendable {
     public let name: String
     public let providerID: String?
     public let models: [ModelCatalogOption]
+    public let modelCount: Int?
     /// TAL-807: every account in the provider's credential pool is rate-limited
     /// until then (`limit.scope == "account"`).
     public let accountLimitResetsAt: Date?
@@ -18,6 +19,7 @@ public struct ModelCatalogGroup: Identifiable, Equatable, Sendable {
         name: String,
         providerID: String?,
         models: [ModelCatalogOption],
+        modelCount: Int? = nil,
         accountLimitResetsAt: Date? = nil,
         quotaLevel: ProviderQuotaUrgency? = nil,
         availability: CatalogAvailability? = nil
@@ -27,6 +29,7 @@ public struct ModelCatalogGroup: Identifiable, Equatable, Sendable {
         self.name = name
         self.providerID = providerID
         self.models = models
+        self.modelCount = modelCount
         self.accountLimitResetsAt = accountLimitResetsAt
         self.quotaLevel = quotaLevel
     }
@@ -38,6 +41,7 @@ public struct ModelCatalogGroup: Identifiable, Equatable, Sendable {
             name: name,
             providerID: providerID,
             models: models,
+            modelCount: modelCount,
             accountLimitResetsAt: accountLimitResetsAt,
             quotaLevel: quotaLevel,
             availability: availability
@@ -49,18 +53,32 @@ public struct ModelCatalogOption: Identifiable, Equatable, Hashable, Sendable {
     public let id: String
     public let displayName: String
     public let providerID: String?
+    public let isFavorite: Bool
+    public let isHidden: Bool
+    public let preferencesEditable: Bool
     /// The server's split of `id` (`bare_id`); `nil` for an older server or a
     /// typed custom id.
     public let bareID: String?
     /// TAL-807: the provider's pool cannot serve this model until then.
     public let limitResetsAt: Date?
 
-    public init(id: String, displayName: String, providerID: String?, bareID: String? = nil, limitResetsAt: Date? = nil) {
+    public init(id: String, displayName: String, providerID: String?, bareID: String? = nil, limitResetsAt: Date? = nil, isFavorite: Bool = false, isHidden: Bool = false, preferencesEditable: Bool = false) {
         self.id = id
         self.displayName = displayName
         self.providerID = providerID
         self.bareID = bareID
+        self.isFavorite = isFavorite
+        self.isHidden = isHidden
+        self.preferencesEditable = preferencesEditable
         self.limitResetsAt = limitResetsAt
+    }
+}
+
+extension ModelCatalogOption {
+    /// Only the user's own in-flight preference writes override the server fields.
+    public func replacingPreferences(favorite: Bool? = nil, hidden: Bool? = nil) -> ModelCatalogOption {
+        ModelCatalogOption(id: id, displayName: displayName, providerID: providerID, bareID: bareID,
+                           limitResetsAt: limitResetsAt, isFavorite: favorite ?? isFavorite, isHidden: hidden ?? isHidden, preferencesEditable: preferencesEditable)
     }
 }
 
@@ -189,7 +207,7 @@ private enum ModelCatalogParser {
             guard case .object(let groupDict) = groupValue else { return nil }
 
             let providerID = stringValue(from: groupDict["provider_id"])
-            let name = stringValue(from: groupDict["name"]) ?? providerID ?? String(localized: "Models")
+            let name = stringValue(from: groupDict["name"]) ?? stringValue(from: groupDict["provider"]) ?? providerID ?? String(localized: "Models")
             let models = parseModelOptions(from: groupDict["models"], providerID: providerID)
             guard !models.isEmpty else { return nil }
 
@@ -199,6 +217,7 @@ private enum ModelCatalogParser {
                 name: name,
                 providerID: providerID,
                 models: models,
+                modelCount: { if case .number(let value) = groupDict["model_count"] { return Int(exactly: value) }; return nil }(),
                 accountLimitResetsAt: stringValue(from: limit?["scope"]) == "account"
                     ? ProviderQuotaDateParser.date(from: stringValue(from: limit?["resets_at"]))
                     : nil,
@@ -228,8 +247,10 @@ private enum ModelCatalogParser {
                 providerID: optionProviderID,
                 bareID: stringValue(from: dict["bare_id"]),
                 limitResetsAt: ProviderQuotaDateParser.date(
-                    from: stringValue(from: objectValue(from: dict["limit"])?["resets_at"])
-                )
+                    from: stringValue(from: objectValue(from: dict["limit"])?["resets_at"])),
+                isFavorite: { if case .bool(true) = dict["favorite"] { return true }; return false }(),
+                isHidden: { if case .bool(true) = dict["hidden"] { return true }; return false }(),
+                preferencesEditable: { if case .bool(true) = dict["preferences_editable"] { return true }; return false }()
             )
         }
     }

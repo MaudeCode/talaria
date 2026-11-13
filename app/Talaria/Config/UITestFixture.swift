@@ -466,6 +466,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
     private static let sessionToolsets = OSAllocatedUnfairLock<[String]?>(initialState: nil)
     private static let profileState = OSAllocatedUnfairLock(initialState: (rows: [[String: JSONValue]](), active: "fixture-profile"))
     private static let serverSettings = OSAllocatedUnfairLock(initialState: [String: JSONValue]())
+    private static let modelPreferences = OSAllocatedUnfairLock(initialState: (favorites: ["fixture-provider": Set(["fixture-model"])], hidden: [String: Set<String>]()))
     private static let reasoningDefaults = OSAllocatedUnfairLock(initialState: (effort: "medium", thinking: true))
     nonisolated(unsafe) private static var transcriptReads = 0
     nonisolated(unsafe) private static var archivedSessionIDs: Set<String> = []
@@ -507,6 +508,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
         approvalBypassOverride = nil
         sessionToolsets.withLock { $0 = nil }
         reasoningDefaults.withLock { $0 = ("medium", true) }
+        modelPreferences.withLock { $0 = (["fixture-provider": Set(["fixture-model"])], [:]) }
         serverSettings.withLock { $0 = [:] }
         profileState.withLock { $0 = ([], "fixture-profile") }
         sessionListFailures.withLock { $0 = [] }
@@ -920,6 +922,26 @@ final class UITestFixtureURLProtocol: URLProtocol {
                     "supports_thinking_toggle": true
                 ])
             }
+        case "/api/models/picker":
+            return json(settingsModelPickerResponse(url))
+        case "/api/models/favorite", "/api/models/hidden":
+            let body = requestJSON(request)
+            let provider = body["provider_id"] as? String ?? ""
+            let model = body["model"] as? String ?? ""
+            let favorite = body["favorite"] as? Bool
+            let hidden = body["hidden"] as? Bool
+            modelPreferences.withLock { state in
+                if let favorite {
+                    if favorite { state.favorites[provider, default: []].insert(model) }
+                    else { state.favorites[provider]?.remove(model) }
+                }
+                if let hidden {
+                    if hidden { state.hidden[provider, default: []].insert(model) }
+                    else { state.hidden[provider]?.remove(model) }
+                }
+            }
+            let picker = settingsModelPickerResponse(url)
+            return json(["ok": true, "favorites": picker["favorites"] ?? [], "hidden_models": picker["hidden_models"] ?? []])
         case "/api/models":
             return json([
                 "groups": [],
@@ -1785,6 +1807,37 @@ final class UITestFixtureURLProtocol: URLProtocol {
     }
 
     /// TAL-388: one pinned slot, one saved model the catalog no longer lists, and the rest on Auto.
+    private static func settingsModelPickerResponse(_ url: URL) -> [String: Any] {
+        let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        func value(_ name: String) -> String { query.first { $0.name == name }?.value ?? "" }
+        let state = modelPreferences.withLock { $0 }
+        let providers = [("fixture-provider", "Fixture Provider"), ("openrouter", "OpenRouter")]
+        let groups: [[String: Any]] = providers.compactMap { provider, label in
+            guard value("provider").isEmpty || value("provider") == provider else { return nil }
+            let ids = provider == "fixture-provider" ? ["fixture-model", "fixture-alternative"] : ["fixture-model"]
+            let models: [[String: Any]] = ids.compactMap { bare in
+                let favorite = state.favorites[provider]?.contains(bare) == true
+                let hidden = state.hidden[provider]?.contains(bare) == true
+                let id = provider == "fixture-provider" ? bare : "@openrouter:\(bare)"
+                let name = bare == "fixture-model" ? "Fixture Model" : "Fixture Alternative"
+                let needle = value("q").lowercased()
+                guard (value("show_hidden") == "true" || !hidden), (value("favorites") != "true" || favorite),
+                      needle.isEmpty || [id, name, label].contains(where: { $0.lowercased().contains(needle) }) else { return nil }
+                return ["id": id, "label": name, "provider_id": provider, "bare_id": bare,
+                        "favorite": favorite, "hidden": hidden, "preferences_editable": true]
+            }
+            return models.isEmpty ? nil : ["provider": label, "provider_id": provider, "models": models, "model_count": models.count]
+        }
+        func identities(_ values: [String: Set<String>]) -> [[String: String]] {
+            values.keys.sorted().flatMap { provider in (values[provider] ?? []).sorted().map { ["provider_id": provider, "model": $0] } }
+        }
+        return ["profile": "fixture-profile", "preferences_supported": true,
+                "default_model": "fixture-model", "default_option_id": "fixture-model", "active_provider": "fixture-provider",
+                "groups": groups, "providers": providers.map { ["id": $0.0, "label": $0.1] },
+                "favorites": identities(state.favorites), "hidden_models": identities(state.hidden),
+                "total_count": groups.reduce(0) { $0 + ($1["model_count"] as? Int ?? 0) }]
+    }
+
     private static func auxiliaryModelsResponse() -> [String: Any] {
         let slots: [(String, String, String)] = [
             ("vision", "Vision", "image/screenshot analysis"), ("web_extract", "Web extract", "web page summarization"),

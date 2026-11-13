@@ -355,6 +355,13 @@ Menus are interaction surfaces (§14); every Web menu is built with `Menu` from
 | Never in a menu | A form, a Save button or an explanatory footer | A form, a Save button, a native checkbox or radio, explanatory sub-text |
 | Composer menus | `ComposerReasoningMenu.swift` for short choices; a titled sheet for long or searchable choices | `ComposerMenu` (`features/composer/chips.tsx`): open upward at one width; at 640px and below span the composer's width |
 
+Settings model pickers share `SettingsModelPickerPage`. Its provider headers use `SettingsSection`'s header slot
+with `SidebarSectionHeader` and `SidebarDisclosureChevron`; sections start open and remember explicit collapses.
+Search and provider filters temporarily reveal matching sections without changing those saved choices. The search
+field's trailing slot holds the filter menu. `SettingsPickerRow` and `SettingsToggleRow` use their native menu mode
+there. Model rows keep selection separate from star and Hide/Unhide actions; favorites and visibility are profile
+fields from the server, with optimistic preference writes and rollback.
+
 ## 14. Exceptions
 
 | Surface | Rule | Owner |

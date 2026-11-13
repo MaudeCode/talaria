@@ -231,6 +231,7 @@ class Probe:
             ("workspaces list", "/api/workspaces", ("workspaces", "last"), "workspaces"),
             ("workspace suggestions", "/api/workspaces/suggest?prefix=%2F", ("suggestions", "prefix"), "workspace_suggestions"),
             ("models list", "/api/models", ("default_model", "active_provider"), "models"),
+            ("Settings model picker", "/api/models/picker", ("profile", "preferences_supported", "providers", "hidden_models", "total_count"), "settings_model_picker"),
             ("providers list", "/api/providers", ("providers", "active_provider"), "providers"),
             ("settings response", "/api/settings", ("webui_version", "agent_version", "bot_name"), "settings"),
             ("reasoning response", "/api/reasoning", ("show_reasoning",), "reasoning"),
