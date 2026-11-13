@@ -921,6 +921,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
                     "reasoning_effort": state.effort,
                     "supported_efforts": ["low", "medium", "high"],
                     "supports_reasoning_effort": true,
+                    "supports_session_scope": true,
                     "supports_thinking_toggle": true
                 ])
             }
@@ -949,6 +950,9 @@ final class UITestFixtureURLProtocol: URLProtocol {
                 "groups": settingsModelPickerResponse(url)["groups"] ?? [],
                 "models": [["id": "fixture-model", "label": "Fixture Model"]],
                 "default_model": "fixture-model",
+                "default_option_id": "fixture-model",
+                "default_provider_id": "fixture-provider",
+                "default_bare_id": "fixture-model",
                 "active_provider": "fixture-provider"
             ])
         case "/api/model/auxiliary":
@@ -1697,6 +1701,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
             "focus_path": id == sessionID && UITestFixtureEnvironment.hasCompanionFocus ? companionFiles[2] : NSNull(),
             "model": "fixture-model",
             "model_provider": "fixture-provider",
+            "model_option_id": overrides["model"] ?? "fixture-model",
             "profile": "fixture-profile",
             "archived": false,
             // Every row action gate the server ships (TAL-723); a row without one offers nothing.
@@ -1847,6 +1852,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
                             "label": model == "fixture-model" ? "Fixture Model" : "Fixture Alternative",
                             "provider_id": provider, "bare_id": model, "favorite": true, "preferences_editable": true]
                 },
+                "visible_favorite_models": groups.flatMap { $0["models"] as? [[String: Any]] ?? [] }.filter { $0["favorite"] as? Bool == true },
                 "total_count": groups.reduce(0) { $0 + ($1["model_count"] as? Int ?? 0) }]
     }
 

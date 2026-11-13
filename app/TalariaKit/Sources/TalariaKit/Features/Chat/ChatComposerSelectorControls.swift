@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The selectors in the composer's control strip, after model and reasoning (TAL-629).
+/// The selectors in the composer's control strip, after the model button (TAL-629).
 public struct ComposerSecondaryControlsState: Equatable, Sendable {
 
     public init(workspaceTitle: String?, profileOptions: [ProfileSummary], selectedProfileName: String?, selectedProfileTitle: String?, gitBranch: ComposerSecondaryControlsState.GitBranch?, toolsetsTitle: String? = nil, toolsetsAccessibilityValue: String? = nil, executionModes: [ExecutionModeOption] = [], selectedExecutionMode: ExecutionMode = .normal, isDisabled: Bool, workspaceIsDisabled: Bool? = nil) {
@@ -98,6 +98,14 @@ public struct ReasoningEffortOption: Identifiable, CaseIterable, Sendable {
     public static func title(for effort: String) -> String {
         allCases.first(where: { $0.id == effort })?.title
             ?? effort.capitalized
+    }
+
+    /// Localized wording shared by the single button and its Options row.
+    public static func summary(selectedEffort: String?, supportedEfforts: [String]?, showsEffort: Bool) -> String? {
+        guard showsEffort else { return nil }
+        if let selectedEffort, !selectedEffort.isEmpty { return title(for: selectedEffort) }
+        let options = options(forSupportedEfforts: supportedEfforts)
+        return options.count == 1 ? options[0].title : nil
     }
 
     /// Menu options for a server-provided effort vocabulary (issue #18).

@@ -56,5 +56,16 @@
       "hidden": false,
       "preferences_editable": true
     }
+  ],
+  "visible_favorite_models": [
+    {
+      "id": "shared",
+      "label": "Shared model",
+      "provider_id": "alpha",
+      "bare_id": "shared",
+      "favorite": true,
+      "hidden": false,
+      "preferences_editable": true
+    }
   ]
 }

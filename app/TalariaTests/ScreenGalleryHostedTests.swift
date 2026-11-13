@@ -238,17 +238,13 @@ final class ScreenGalleryHostedTests: XCTestCase {
         let preferences = SettingsModelPickerViewModel(client: fixture.client, favorites: .shared)
         await preferences.load()
         try await page("composer-model-picker", title: "Choose Model", wrapsNavigation: false, prepare: { window in
-            let provider = try await self.requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Fixture Provider") == true }
-            XCTAssertTrue(HostedAccessibility.activate(provider))
             _ = try await self.requireElement(in: window, label: "Remove Fixture Model from favorites")
         }) {
             ComposerModelPickerSheet(
-                modelGroups: preferences.groups, selectedModelID: "fixture-model",
+                client: fixture.client, catalog: preferences, selectedModelID: "fixture-model",
                 selectedModelProviderID: "fixture-provider", selectedModelOptionID: "fixture-model",
-                favoriteModelKeys: preferences.favoriteOptions.map(\.favoriteKey), recentModelKeys: [],
-                favoriteOptions: preferences.favoriteOptions, onSelect: { _ in },
-                onToggleFavorite: { option in Task { await preferences.toggleFavorite(option) } },
-                onDeleteSavedCustom: { option in Task { await preferences.removeFavorite(option) } }
+                onSelect: { _ in }, keepsSelectionOpen: true, showsReasoningControl: true,
+                selectedReasoningEffort: "medium", supportedReasoningEfforts: ["low", "medium", "high"]
             )
         }
     }
@@ -257,7 +253,7 @@ final class ScreenGalleryHostedTests: XCTestCase {
         try await page("settings-default-model", title: "Default Model", prepare: { window in
             let row = try await self.requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Default Model") == true }
             XCTAssertTrue(HostedAccessibility.activate(row))
-            _ = try await self.requireElement(in: window, label: "Save Custom Model")
+            _ = try await self.requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-model-option-fixture-model" }
         }) {
             ModelsSettingsView(server: server)
         }

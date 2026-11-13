@@ -180,6 +180,7 @@ final class ModelsSettingsViewModelTests: XCTestCase {
         rows[0]["hidden"] = hidden
         groups[0]["models"] = rows
         value["groups"] = empty ? [] : groups
+        value["visible_favorite_models"] = star && !hidden && !empty ? rows : []
         return String(decoding: try JSONSerialization.data(withJSONObject: value), as: UTF8.self)
     }
 
@@ -218,6 +219,7 @@ final class ModelsSettingsViewModelTests: XCTestCase {
         XCTAssertTrue(option.preferencesEditable)
         XCTAssertEqual(option.bareID, "shared")
         XCTAssertEqual(picker.favoriteOptions, [option])
+        XCTAssertEqual(picker.visibleFavoriteOptions, [option])
     }
 
     func testSettingsPickerPreferencesAppearImmediatelyAndRollBackDefinitiveRefusals() async throws {
@@ -235,6 +237,7 @@ final class ModelsSettingsViewModelTests: XCTestCase {
             let task = Task { if hiding { await picker.toggleHidden(option) } else { await picker.toggleFavorite(option) } }
             await fulfillment(of: [held], timeout: 5)
             XCTAssertTrue(picker.groups.isEmpty, "The tapped row must disappear before the held write answers")
+            XCTAssertTrue(picker.visibleFavoriteOptions.isEmpty)
             let body = try apiTestJSONBody(from: writes.request(at: 0).request)
             XCTAssertEqual(body["provider_id"] as? String, "alpha")
             XCTAssertEqual(body["model"] as? String, "shared")
@@ -245,6 +248,7 @@ final class ModelsSettingsViewModelTests: XCTestCase {
             XCTAssertEqual(picker.groups.first?.models.first?.isFavorite, true)
             XCTAssertEqual(picker.groups.first?.models.first?.isHidden, false)
             XCTAssertNotNil(picker.preferenceError)
+            XCTAssertEqual(picker.visibleFavoriteOptions, [option])
             XCTAssertEqual(writes.count, 1)
         }
     }

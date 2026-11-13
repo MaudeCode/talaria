@@ -59,8 +59,19 @@ public final class SettingsModelPickerViewModel {
         }
     }
 
-    public var favoriteOptions: [ModelCatalogOption] {
-        var result = confirmedFavoriteOptions
+    public var favoriteOptions: [ModelCatalogOption] { applyingFavoriteOverrides(to: confirmedFavoriteOptions) }
+
+    public var visibleFavoriteOptions: [ModelCatalogOption] {
+        applyingFavoriteOverrides(to: response?.visibleFavoriteOptions ?? []).compactMap { option in
+            guard let identity = preferenceIdentity(option) else { return option }
+            let hidden = hiddenOverrides[identity].flatMap { $0.profile == response?.profile ? $0.value : nil }
+            if !showHidden && hidden == true { return nil }
+            return option.replacingPreferences(hidden: hidden)
+        }
+    }
+
+    private func applyingFavoriteOverrides(to confirmed: [ModelCatalogOption]) -> [ModelCatalogOption] {
+        var result = confirmed
         for (identity, intent) in favoriteOverrides.sorted(by: { $0.value.order < $1.value.order }) where intent.profile == response?.profile {
             if !intent.value { result.removeAll { favoriteIdentity($0) == identity } }
             else if !result.contains(where: { favoriteIdentity($0) == identity }) { result.append(intent.option.replacingPreferences(favorite: true)) }

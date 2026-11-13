@@ -1,6 +1,7 @@
 import Foundation
 
 extension APIClient {
+    static let reasoningScopeUnsupportedErrorDomain = "Talaria.Reasoning"
     public func logs(file: String, tail: Int) async throws -> LogsResponse {
         try await send(endpoint: .logs(file: file, tail: tail), method: "GET")
     }
@@ -91,8 +92,8 @@ extension APIClient {
     /// Passing the session's current model + provider makes `supported_efforts`
     /// model-accurate (mirrors the upstream WebUI composer chip, issue #18);
     /// with no params the server resolves the config default model instead.
-    public func reasoning(model: String? = nil, provider: String? = nil) async throws -> ReasoningStatusResponse {
-        try await send(endpoint: .reasoning(model: model, provider: provider), method: "GET")
+    public func reasoning(model: String? = nil, provider: String? = nil, sessionID: String? = nil) async throws -> ReasoningStatusResponse {
+        try await send(endpoint: .reasoning(model: model, provider: provider, sessionID: sessionID), method: "GET")
     }
 
     /// Chat changes carry their session; nil is reserved for explicit profile settings.
@@ -100,7 +101,7 @@ extension APIClient {
         if sessionID != nil {
             let status = try await reasoning()
             guard status.supportsSessionScope == true else {
-                throw NSError(domain: "Talaria.Reasoning", code: 1, userInfo: [
+                throw NSError(domain: Self.reasoningScopeUnsupportedErrorDomain, code: 1, userInfo: [
                     NSLocalizedDescriptionKey: String(localized: "Update the server to change reasoning safely for a conversation.")
                 ])
             }

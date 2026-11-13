@@ -110,7 +110,7 @@ public enum Endpoint: Sendable {
     case defaultModel
     case auxiliaryModels
     case setModel
-    case reasoning(model: String? = nil, provider: String? = nil)
+    case reasoning(model: String? = nil, provider: String? = nil, sessionID: String? = nil)
     case personalities
     case setPersonality
     case profiles
@@ -770,8 +770,9 @@ public enum Endpoint: Sendable {
             return request.queryItems
         case let .kanbanAddDependency(request), let .kanbanRemoveDependency(request):
             return request.queryItems
-        case let .reasoning(model, provider):
+        case let .reasoning(model, provider, sessionID):
             var items: [URLQueryItem] = []
+            if let sessionID, !sessionID.isEmpty { items.append(URLQueryItem(name: "session_id", value: sessionID)) }
             if let model, !model.isEmpty {
                 items.append(URLQueryItem(name: "model", value: model))
             }

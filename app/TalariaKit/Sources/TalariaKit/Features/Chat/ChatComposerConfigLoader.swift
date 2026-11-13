@@ -64,10 +64,12 @@ struct ChatComposerConfigLoadResult: Sendable {
 struct ChatComposerConfigLoader {
     private let client: APIClient
     private let cache: ResponseCache?
+    private let sessionID: String?
 
-    init(client: APIClient, cache: ResponseCache? = nil) {
+    init(client: APIClient, cache: ResponseCache? = nil, sessionID: String? = nil) {
         self.client = client
         self.cache = cache
+        self.sessionID = sessionID
     }
 
     /// The catalogs the last load saw, so a chat's profile, model, workspace and command choices
@@ -199,7 +201,7 @@ struct ChatComposerConfigLoader {
         // the server's already-coerced value for that model.
         let reasoningResponse = try await client.reasoning(
             model: Self.nonEmpty(state.currentModel),
-            provider: Self.nonEmpty(state.currentModelProvider)
+            provider: Self.nonEmpty(state.currentModelProvider), sessionID: sessionID
         )
         state.selectedReasoningEffort = reasoningResponse.effectiveEffort
         state.supportedReasoningEfforts = reasoningResponse.normalizedSupportedEfforts

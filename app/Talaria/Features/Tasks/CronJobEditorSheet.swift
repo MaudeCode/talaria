@@ -2,6 +2,7 @@ import SwiftUI
 import TalariaKit
 
 struct CronJobEditorSheet: View {
+    private let client: APIClient
     let title: String
     let saveTitle: String
     let isSaving: Bool
@@ -60,6 +61,7 @@ struct CronJobEditorSheet: View {
         allowsBlueprints: Bool = false,
         onSave: @escaping (CronJobEditorDraft) async -> Bool
     ) {
+        self.client = client
         self.allowsBlueprints = allowsBlueprints
         self.title = title
         self.saveTitle = saveTitle
@@ -170,25 +172,12 @@ struct CronJobEditorSheet: View {
                 blueprintPicker
             }
             .sheet(isPresented: $isPresentingModelPicker) {
-                // Favorites stay out of task editing: starring a model here
-                // would silently change what the chat composer offers.
                 ComposerModelPickerSheet(
-                    modelGroups: catalogs.modelGroups,
-                    selectedModelID: draft.trimmedModel,
-                    selectedModelProviderID: draft.trimmedProvider,
+                    client: client,
+                    selectedModelID: draft.trimmedModel, selectedModelProviderID: draft.trimmedProvider,
                     selectedModelOptionID: draft.modelOptionID,
-                    favoriteModelKeys: [],
-                    recentModelKeys: [],
-                    onSelect: { option in
-                        draft.applyModelSelection(option)
-                    },
-                    onToggleFavorite: { _ in },
-                    onDeleteSavedCustom: { _ in },
-                    showsFavorites: false,
-                    requiresCustomProviderID: false,
-                    onClear: {
-                        draft.applyModelSelection(nil)
-                    }
+                    onSelect: { draft.applyModelSelection($0) }, requiresCustomProviderID: false,
+                    onClear: { draft.applyModelSelection(nil) }
                 )
             }
             .sheet(isPresented: $isPresentingSkillsPicker) {

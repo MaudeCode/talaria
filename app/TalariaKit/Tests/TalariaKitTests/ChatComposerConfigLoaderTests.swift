@@ -331,6 +331,19 @@ final class ChatComposerConfigLoaderTests: APIClientTestCase {
 /// building the option list from `supported_efforts` and deciding whether
 /// the control is shown at all.
 final class ReasoningEffortGatingTests: XCTestCase {
+    func testSummaryUsesLocalizedEffortAndHidesUnsupportedModels() {
+        for (effort, vocabulary, shown, expected) in [
+            ("high", ["low", "high"], true, "High"),
+            (nil, ["high"], true, "High"),
+            (nil, ["low", "high"], true, nil),
+            ("", ["low", "high"], true, nil),
+            ("high", ["high"], false, nil),
+            ("turbo", ["turbo"], true, "Turbo")
+        ] as [(String?, [String], Bool, String?)] {
+            XCTAssertEqual(ReasoningEffortOption.summary(selectedEffort: effort, supportedEfforts: vocabulary, showsEffort: shown), expected)
+        }
+    }
+
     func testOptionsFallBackToStaticListWithoutServerVocabulary() {
         XCTAssertEqual(
             ReasoningEffortOption.options(forSupportedEfforts: nil).map(\.id),

@@ -893,6 +893,7 @@ export const SettingsModelPickerSchema = ModelsSchema.extend({
   providers: z.array(z.object({ id: z.string(), label: z.string() })),
   hidden_models: HiddenModelsSchema,
   favorite_models: z.array(ModelEntrySchema).max(MODEL_FAVORITES_MAX),
+  visible_favorite_models: z.array(ModelEntrySchema).max(MODEL_FAVORITES_MAX).describe('Favorites in starred order after the same provider, search and visibility filters as the catalog.'),
   total_count: z.number().int().nonnegative(),
 })
 export type SettingsModelPicker = z.infer<typeof SettingsModelPickerSchema>

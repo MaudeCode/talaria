@@ -821,8 +821,10 @@ final class SettingsPlacementHostedTests: XCTestCase {
                 }
                 XCTAssertTrue(selectedDefault, "The server-selected default must retain its check after the shared catalog loads")
                 XCTAssertTrue(HostedAccessibility.activate(heading))
-                let collapsed = await awaitCondition { HostedAccessibility.element(in: window, identifier: "settings-model-option-fixture-model") == nil }
-                XCTAssertTrue(collapsed, "The provider header must collapse its rows")
+                let collapsed = await awaitCondition { HostedAccessibility.element(in: window, identifier: "settings-model-option-fixture-alternative") == nil }
+                XCTAssertTrue(collapsed, "The provider header must collapse its provider-only rows")
+                XCTAssertNotNil(HostedAccessibility.element(in: window, identifier: "settings-model-option-fixture-model"),
+                                "Favorites stay visible when their provider is collapsed")
                 XCTAssertTrue(HostedAccessibility.activate(heading))
                 let star = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-model-star-fixture-model" }
                 XCTAssertTrue(HostedAccessibility.activate(star))
