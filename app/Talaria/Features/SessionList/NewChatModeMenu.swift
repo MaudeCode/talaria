@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 import TalariaKit
 
-/// The same checked choices serve New Chat's long press and the unsent composer's menu.
+/// One set of checked choices for New Chat's long press (`items`, SwiftUI) and the unsent composer's menu (`make`, UIKit).
 @MainActor
 enum NewChatModeMenu {
     static func make(modes: [ExecutionModeOption], selected: ExecutionMode, onSelect: @escaping (ExecutionMode) -> Void) -> UIMenu {
