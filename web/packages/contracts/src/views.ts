@@ -834,8 +834,16 @@ export const ProfilesSchema = z.looseObject({
 export type Profiles = z.infer<typeof ProfilesSchema>
 export const ActiveProfileSchema = z.looseObject({ name: z.string(), path: z.string().optional(), is_default: z.boolean().optional(), default_workspace: NullableString.optional() })
 export const ProfileSwitchSchema = ProfilesSchema.extend({ is_default: z.boolean(), default_model: Json, default_model_provider: Json, default_workspace: z.string().nullable() })
+export const AuxiliaryReasoningSchema = z.looseObject({
+  saved: z.string().nullable().describe("The effort saved on the slot (`none` disables reasoning); null when none is saved and the slot inherits its default."),
+  effective: z.string().nullable().describe("The effort the slot runs with; `''` is the default named by `default_source`; null when the Agent does not report it."),
+  inherited: z.boolean().describe('No effort is saved, so the slot runs with its default.'),
+  default_source: z.enum(['provider', 'parent']).describe("What the default is: the provider's (auxiliary tasks) or the parent agent's (delegation)."),
+  options: z.array(z.string()).describe("Efforts the slot may save, in order (`none` last). Empty when `unavailable` is set."),
+  unavailable: z.enum(['slot', 'model', 'agent']).nullable().describe("Why no effort can be saved: the slot ignores one, its route's model has no reasoning control, or the Agent did not say. Null when `options` apply."),
+})
 /** `/api/reasoning`: config.yaml agent.reasoning_effort / display.show_reasoning, resolved for a model. */
-export const ReasoningStatusSchema = z.looseObject({ show_reasoning: z.boolean().optional(), reasoning_effort: z.string().nullable().optional(), supported_efforts: z.array(z.string()).optional(), supports_reasoning_effort: z.boolean().optional(), supports_thinking_toggle: z.boolean().optional(), supports_session_scope: z.boolean().optional() })
+export const ReasoningStatusSchema = z.looseObject({ auxiliary_reasoning: AuxiliaryReasoningSchema.optional().describe("Read-only auxiliary_task preview: current saved/effective fields and the proposed route's task-specific options."), show_reasoning: z.boolean().optional(), reasoning_effort: z.string().nullable().optional(), supported_efforts: z.array(z.string()).optional(), supports_reasoning_effort: z.boolean().optional(), supports_thinking_toggle: z.boolean().optional(), supports_session_scope: z.boolean().optional() })
 export type ReasoningStatus = z.infer<typeof ReasoningStatusSchema>
 export const QuotaLevelSchema = z.enum(['healthy', 'warning', 'critical', 'stale', 'unavailable'])
 export type QuotaLevel = z.infer<typeof QuotaLevelSchema>
@@ -1020,14 +1028,6 @@ export const ProviderCostHistorySchema = z.looseObject({
 })
 export type ProviderCostHistory = z.infer<typeof ProviderCostHistorySchema>
 export const PersonalitiesSchema = z.looseObject({ personalities: z.array(z.looseObject({ name: z.string(), description: z.string().optional() })) })
-export const AuxiliaryReasoningSchema = z.looseObject({
-  saved: z.string().nullable().describe("The effort saved on the slot (`none` disables reasoning); null when none is saved and the slot inherits its default."),
-  effective: z.string().nullable().describe("The effort the slot runs with; `''` is the default named by `default_source`; null when the Agent does not report it."),
-  inherited: z.boolean().describe('No effort is saved, so the slot runs with its default.'),
-  default_source: z.enum(['provider', 'parent']).describe("What the default is: the provider's (auxiliary tasks) or the parent agent's (delegation)."),
-  options: z.array(z.string()).describe("Efforts the slot may save, in order (`none` last). Empty when `unavailable` is set."),
-  unavailable: z.enum(['slot', 'model', 'agent']).nullable().describe("Why no effort can be saved: the slot ignores one, its route's model has no reasoning control, or the Agent did not say. Null when `options` apply."),
-})
 /** One auxiliary task slot in server order (TAL-388). The server owns ordering, normalization, and catalog matching. */
 export const AuxiliaryTaskSchema = z.looseObject({
   task: z.string(), label: z.string(), description: z.string(),

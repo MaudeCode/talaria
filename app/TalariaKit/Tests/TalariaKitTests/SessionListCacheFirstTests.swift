@@ -138,6 +138,27 @@ extension SessionListMutationTests {
         XCTAssertNil(cache.entry(ResponseCache.Kind.agentStorage).load(AgentStorage.self), "The previous profile's state reached the new one's cache")
     }
 
+    func testProfileCounterRemainsReadableWhileDefaultsNotifiesObservers() async throws {
+        let server = URL(string: "https://profile-notification-\(UUID().uuidString).test")!
+        let notified = expectation(description: "profile defaults notification")
+        notified.assertForOverFulfill = false
+        let observer = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification,
+            object: UserDefaults.standard, queue: nil) { _ in
+            let read = DispatchSemaphore(value: 0)
+            DispatchQueue.global(qos: .userInitiated).async {
+                _ = ActiveServerProfile.switchCount(for: server)
+                read.signal()
+            }
+            XCTAssertEqual(read.wait(timeout: .now() + 2), .success,
+                "The profile counter lock must be released before defaults observers run")
+            notified.fulfill()
+        }
+        await Task.detached { ActiveServerProfile.record("fixture", for: server) }.value
+        await fulfillment(of: [notified])
+        NotificationCenter.default.removeObserver(observer)
+        ActiveServerProfile.record(nil, for: server)
+    }
+
     func testRunningChatsNeverOpenedHereArePrefetchedOncePerRun() async throws {
         let context = try makeContext()
         let server = try XCTUnwrap(URL(string: "https://example.test"))

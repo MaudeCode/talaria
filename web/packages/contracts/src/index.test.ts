@@ -104,6 +104,9 @@ describe('contracts package', () => {
     const input = settingsContract.models.set['~orpc'].inputSchema!
     for (const request of [{ scope: 'auxiliary', task: 'compression', reasoning_effort: 'high' }, { scope: 'auxiliary', task: 'compression', reasoning_effort: null }, { scope: 'auxiliary', task: 'compression', provider: 'openai', model: 'small-model', reasoning_effort: 'low' }]) expect(input.parse(request)).toEqual(request)
     expect(AuxiliaryReasoningSchema.safeParse({ ...(fixture.explicit as object), unavailable: 'later' }).success).toBe(false)
+    const preview = (shared('fixtures/reasoning-scope.json') as { auxiliary_preview: { read: unknown; status: unknown } }).auxiliary_preview
+    expect(settingsContract.reasoning.get['~orpc'].inputSchema!.parse(preview.read)).toEqual(preview.read)
+    expect(settingsContract.reasoning.get['~orpc'].outputSchema!.parse(preview.status)).toEqual(preview.status)
   })
   it('shares live MCP progress between SSE and the running tool view', () => {
     const fixture = shared('fixtures/tool-progress.json') as { running: unknown; completed: unknown; tool: unknown }

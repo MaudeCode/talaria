@@ -168,3 +168,11 @@ OAuth pool recovery holds, source replacement, profile/server isolation, confirm
 removal and recovery. Native provider view-model and hosted picker/quota-row tests
 cover retention and unavailable wording; Web `catalog-recovery.spec.ts` covers
 both responsive layouts. Sidecar admission tests keep these reads guarded.
+
+Auxiliary model edits use the additive `auxiliary_task` query on the reasoning
+read endpoint. `contracts/fixtures/reasoning-scope.json` pins its task-specific
+preview envelope; contract-package tests and APIClientConfigurationTests consume
+it, while server settings tests prove preview/save agreement and unchanged
+persisted state. See [the Web contract](web/docs/CONTRACTS.md) for compatibility
+and Auto semantics. AuxiliaryModelsTests owns the App's preservation of the
+server-provided reasoning-off option and unknown older-server behavior.

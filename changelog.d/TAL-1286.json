@@ -1,0 +1,22 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Edit each auxiliary task's model and reasoning together, with cached model lists and recoverable drafts.",
+      "highlight": false,
+      "components": [
+        "app"
+      ],
+      "announce": false
+    },
+    {
+      "category": "Added",
+      "summary": "Supports reasoning previews for auxiliary model changes in the iPhone app.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

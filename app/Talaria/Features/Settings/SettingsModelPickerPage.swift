@@ -110,7 +110,7 @@ struct SettingsModelPickerPage<Leading: View>: View {
         .background(Color(.systemBackground))
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
-        .task(id: [catalog.searchText, catalog.providerID, String(catalog.favoritesOnly), String(catalog.showHidden)]) { await load() }
+        .task(id: [catalog.searchText, catalog.providerID, String(catalog.favoritesOnly), String(catalog.showHidden)]) { await catalog.loadIfNeeded() }
         .refreshesLive(showsStatus: !catalog.groups.isEmpty) { await load() }
         .onAppear {
             let saved = (try? JSONDecoder().decode(Set<String>.self, from: collapsedProviders)) ?? []

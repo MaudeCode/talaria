@@ -312,6 +312,8 @@ final class ContractReadinessTests: APIClientTestCase {
                 path: "/api/reasoning",
                 query: ["model": "gpt-5.4", "provider": "openai"]
             ),
+            .init(name: "auxiliary reasoning Auto preview", endpoint: .reasoning(model: "", provider: "auto", auxiliaryTask: "vision"),
+                  path: "/api/reasoning", query: ["auxiliary_task": "vision", "model": "", "provider": "auto"]),
             .init(name: "reasoning save", endpoint: .reasoning(), path: "/api/reasoning"),
             .init(name: "personalities", endpoint: .personalities, path: "/api/personalities"),
             .init(name: "set personality", endpoint: .setPersonality, path: "/api/personality/set"),

@@ -30,5 +30,26 @@
   "inherited": {
     "session_id": "legacy-chat",
     "reasoning_effort": null
+  },
+  "auxiliary_preview": {
+    "read": {
+      "auxiliary_task": "vision",
+      "model": "@openrouter:small",
+      "provider": "openrouter"
+    },
+    "status": {
+      "auxiliary_reasoning": {
+        "saved": "medium",
+        "effective": "medium",
+        "inherited": false,
+        "default_source": "provider",
+        "options": [
+          "low",
+          "high",
+          "none"
+        ],
+        "unavailable": null
+      }
+    }
   }
 }

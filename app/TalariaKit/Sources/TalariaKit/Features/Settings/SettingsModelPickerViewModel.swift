@@ -32,6 +32,11 @@ public final class SettingsModelPickerViewModel {
     private var importAttempts: Set<String> = []
     private var nextIntentOrder = 0
     private var generation = 0
+    private var loadingQuery: [String]?
+    private var cachedQuery: [String]?
+    private var loadedAt: Date?
+    private var cachedLoad: (id: UUID, query: [String], task: Task<Bool, Never>)?
+    private var profileSwitchCount: Int
     private var loadedProfile: String?
     @ObservationIgnored private let client: APIClient
     @ObservationIgnored private let favorites: ModelFavoritesStore
@@ -42,6 +47,7 @@ public final class SettingsModelPickerViewModel {
         self.client = client
         self.favorites = favorites
         self.live = live
+        profileSwitchCount = ActiveServerProfile.switchCount(for: client.baseURL)
     }
 
     public var providers: [ModelPickerProvider] { response?.providers ?? [] }
@@ -87,16 +93,45 @@ public final class SettingsModelPickerViewModel {
         _ = await load()
     }
 
+    /// A retained picker shares fresh data and an in-flight read across task editors.
+    public func loadIfNeeded() async {
+        let query = self.query
+        let switches = ActiveServerProfile.switchCount(for: client.baseURL)
+        if profileSwitchCount != switches {
+            invalidateLoads()
+            response = nil
+            confirmedGroups = []
+            confirmedFavoriteOptions = []
+            loadedProfile = nil
+            cachedQuery = nil
+            profileSwitchCount = switches
+        }
+        if let loadingQuery, loadingQuery != query { invalidateLoads() }
+        if cachedQuery == query, loadedAt.map({ Date().timeIntervalSince($0) < 60 }) == true { return }
+        if let cachedLoad, cachedLoad.query == query { _ = await cachedLoad.task.value; return }
+        let id = UUID()
+        let task = Task { @MainActor in await load() }
+        cachedLoad = (id, query, task)
+        _ = await task.value
+        guard cachedLoad?.id == id else { return }
+        cachedLoad = nil
+    }
+
     @discardableResult
     public func load() async -> Bool {
         generation += 1
         let current = generation
+        let switches = ActiveServerProfile.switchCount(for: client.baseURL)
+        let query = self.query
+        let isCurrent = { current == self.generation && switches == ActiveServerProfile.switchCount(for: self.client.baseURL)
+            && query == self.query && !Task.isCancelled }
+        loadingQuery = query
         isLoading = true
         errorMessage = nil
-        defer { if generation == current { isLoading = false } }
+        defer { if generation == current { isLoading = false; loadingQuery = nil } }
         do {
             var result = try await fetch()
-            guard current == generation, !Task.isCancelled else { return false }
+            guard isCurrent() else { return false }
             let profile = try acceptProfile(result)
             if result.favorites == nil && !importAttempts.contains(profile) {
                 importAttempts.insert(profile)
@@ -111,23 +146,23 @@ public final class SettingsModelPickerViewModel {
                 // Guarded import is never blindly replayed; a read establishes its outcome.
                 result = try await fetch()
             }
-            guard current == generation, !Task.isCancelled else { return false }
-            try apply(result)
+            guard isCurrent() else { return false }
+            try apply(result, query: query, switches: switches)
             favoriteOverrides = favoriteOverrides.filter { !unresolved.contains($0.value.id) }
             hiddenOverrides = hiddenOverrides.filter { !unresolved.contains($0.value.id) }
             unresolved.removeAll()
             isLoading = false
             if live {
                 // Show the confirmed catalog first, as the former default picker did; live lookup never hides it.
-                if let updated = try? await fetch(live: true), current == generation, !Task.isCancelled {
+                if let updated = try? await fetch(live: true), isCurrent() {
                     do {
-                        try apply(updated)
+                        try apply(updated, query: query, switches: switches)
                     } catch { errorMessage = error.localizedDescription }
                 }
             }
-            return true
+            return isCurrent()
         } catch {
-            if current == generation && !APIError.isCancellation(error) { errorMessage = error.localizedDescription }
+            if isCurrent() && !APIError.isCancellation(error) { errorMessage = error.localizedDescription }
             return false
         }
     }
@@ -136,11 +171,23 @@ public final class SettingsModelPickerViewModel {
     public func toggleHidden(_ option: ModelCatalogOption) async { await write(option, isFavorite: false) }
     public func removeFavorite(_ option: ModelCatalogOption) async { await write(option, isFavorite: true, desiredValue: false) }
 
-    private func apply(_ response: ModelsResponse) throws {
+    private var query: [String] { [searchText, providerID, String(favoritesOnly), String(showHidden)] }
+
+    private func invalidateLoads() {
+        generation += 1
+        loadingQuery = nil
+        cachedLoad = nil
+        isLoading = false
+    }
+
+    private func apply(_ response: ModelsResponse, query: [String], switches: Int) throws {
         _ = try acceptProfile(response)
         confirmedGroups = response.catalogGroups
         confirmedFavoriteOptions = response.favoriteOptions
         self.response = response
+        profileSwitchCount = switches
+        cachedQuery = query
+        loadedAt = Date()
     }
 
     /// A mounted picker and its queued row actions retain the profile that supplied them.

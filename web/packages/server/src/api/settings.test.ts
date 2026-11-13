@@ -606,6 +606,53 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect((await json(again)).password_auth_enabled).toBe(false)
   })
 
+  it('previews task-specific auxiliary reasoning without writing configuration', async () => {
+    const fake = new FakeSidecar()
+    const server = await bootTestServer({ sidecar: fake })
+    const store = fakeConfigStore(fake)
+    const before = { model: { default: 'claude-main', provider: 'anthropic', api_key: 'synthetic-preview-secret' }, agent: { reasoning_effort: 'high' }, auxiliary: {
+      vision: { provider: 'custom', model: 'old-pin', base_url: 'https://old.test', reasoning_effort: 'high' },
+      compression: { provider: 'openrouter', model: 'small' },
+      plugin_task: { provider: 'custom', model: 'old-pin', base_url: 'https://old.test' },
+    } }
+    writeFileSync(join(server.state, 'config.yaml'), '# synthetic preview state\n')
+    store.set(server.state, structuredClone(before))
+    const slot = (key: string, takes: boolean | null, inherit: string | null = null) => ({ key, label: key, description: key,
+      inherit_from: inherit, reasoning_effort: 'low', effective: { provider: 'custom', model: 'old-pin', base_url: 'https://old.test' }, takes_reasoning: takes })
+    fake.respond('aux.tasks', () => ({ tasks: [slot('vision', true), slot('compression', true), slot('plugin_task', true, 'compression'), slot('ignored', false), slot('unknown', null), slot('delegation', true)], reserved: [] }))
+    fake.respond('models.reasoning_efforts', (params) => ({ efforts: params.model === 'small' ? (params.provider === 'openrouter' ? ['low', 'high'] : ['high']) : [], supports_reasoning: params.model === 'small' }))
+    const writes = fake.calls.filter((c) => c.method === 'config.set').length
+    try {
+      const read = async (task: string, model = '@openrouter:small', provider = 'openrouter') => {
+        const query = new URLSearchParams({ auxiliary_task: task, model, provider })
+        const response = await server.get(`/api/reasoning?${query.toString()}`)
+        expect(response.status).toBe(200)
+        const body = await json(response)
+        expect(JSON.stringify(body)).not.toContain('synthetic-preview-secret')
+        return dictOf(body.auxiliary_reasoning)
+      }
+      expect(await read('vision')).toMatchObject({ saved: 'high', inherited: false, default_source: 'provider', options: ['low', 'high', 'none'], unavailable: null })
+      expect(await read('ignored')).toMatchObject({ options: [], unavailable: 'slot' })
+      expect(await read('unknown')).toMatchObject({ options: [], unavailable: 'agent' })
+      expect(await read('vision', 'plain')).toMatchObject({ options: [], unavailable: 'model' })
+      expect(await read('vision', 'small', 'anthropic')).toMatchObject({ options: ['high', 'none'] })
+      expect(await read('plugin_task', '', 'auto')).toMatchObject({ options: ['low', 'high', 'none'], unavailable: null })
+      expect((await server.get('/api/reasoning?auxiliary_task=missing&model=small')).status).toBe(400)
+      expect((await server.get('/api/reasoning?auxiliary_task=__reset__&model=small')).status).toBe(400)
+      expect((await server.get('/api/reasoning?auxiliary_task=vision&session_id=other')).status).toBe(400)
+      expect((await server.get('/api/reasoning?auxiliary_task=vision&model=%40openrouter%3Asmall&provider=anthropic')).status).toBe(400)
+      const delegation = loadSidecarFixtures().get('aux.delegation')![0]!.result as SidecarResult<'aux.delegation'>
+      fake.respond('aux.delegation', () => ({ ...delegation, fixed_model_active: false }))
+      expect(await read('delegation')).toMatchObject({ options: [], unavailable: 'slot', default_source: 'parent' })
+      expect(store.get(server.state)).toEqual(before)
+      expect(fake.calls.filter((c) => c.method === 'config.set')).toHaveLength(writes)
+      const persisted = await post(server, '/api/model/set', { scope: 'auxiliary', task: 'vision', provider: 'openrouter', model: '@openrouter:small', reasoning_effort: 'none' })
+      expect(persisted.status).toBe(200)
+      expect(dictOf(store.get(server.state)?.auxiliary).vision).toEqual({ provider: 'openrouter', model: 'small', reasoning_effort: 'none' })
+      expect(tasksFrom(await json(persisted)).vision!.reasoning.saved).toBe('none')
+    } finally { await server.close() }
+  })
+
   it('GET/POST /api/reasoning reads and writes config.yaml keys and coerces the stored effort', async () => {
     let res = await s.get('/api/reasoning')
     expect(res.status).toBe(200)

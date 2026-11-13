@@ -16,6 +16,7 @@ public struct ReasoningStatusResponse: Decodable, Equatable, Sendable {
     /// Only true when chat effort writes enforce session scope before profile writes.
     public let supportsSessionScope: Bool?
     let error: String?
+    let auxiliaryReasoning: AuxiliaryReasoning?
 
     public var effectiveEffort: String? {
         reasoningEffort ?? effort
