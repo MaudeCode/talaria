@@ -7,15 +7,37 @@ struct SettingsView: View {
     var profileName: String?
     var serverName: String?
     @Binding var selection: SettingsPane?
-    @State private var searchText = ""
+    @State private var search = SidebarSearchPull()
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
         ServerSettingsScope(server: server) { store in directory(store) }.id(server)
     }
 
     private func directory(_ settingsStore: ServerSettingsStore) -> some View {
+        VStack(spacing: 0) {
+            if search.isSearchPresented {
+                SettingsPickerSearchField(text: $search.text, prompt: "Search settings", clearLabel: "Close search",
+                                          autofocus: true) {
+                    search.text = ""
+                    search.isSearchPresented = false
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+            }
+            categories(settingsStore)
+        }
+        // The open field moves the list below the bar; this keeps the full-screen cover opaque behind the bar.
+        .background(Color(.systemBackground).ignoresSafeArea())
+        .toolbar {
+            SearchToolbarItem(pull: search, usesBottomBar: horizontalSizeClass == .compact,
+                              label: "Search settings", identifier: "settings-search-button")
+        }
+    }
+
+    private func categories(_ settingsStore: ServerSettingsStore) -> some View {
         SettingsPage(title: String(localized: "Settings")) {
-            if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if search.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 SectionSelectionRow(item: .userProfile, selection: $selection) {
                     UserProfileSettingsRow(server: server)
                 }
@@ -51,9 +73,9 @@ struct SettingsView: View {
                     }
                 }
             } else {
-                let results = SettingsIndex.search(searchText)
+                let results = SettingsIndex.search(search.text)
                 if results.isEmpty {
-                    ContentUnavailableView.search(text: searchText)
+                    ContentUnavailableView.search(text: search.text)
                         .listRowSeparator(.hidden)
                 }
                 ForEach(results) { entry in
@@ -69,9 +91,6 @@ struct SettingsView: View {
             }
             if let error = settingsStore.errorMessage { SettingsErrorFootnote(SettingsErrorText(error)) }
         }
-        .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search settings")
-        .navigationTitle("Settings")
-        .adaptiveSecondaryNavigationTitle(title: String(localized: "Settings"))
     }
 
     private func groupDetail(_ group: SettingsCategory.Group) -> String? {

@@ -61,18 +61,8 @@ struct AppSidebar<Sessions: View, Actions: ToolbarContent>: View {
                 if isActive {
                     actions(searchPull.isSearchPresented)
                 }
-                if isActive && !searchPull.isSearchPresented {
-                    if #available(iOS 27.1, *) {
-                        ToolbarItem(placement: searchUsesBottomBar ? .bottomBar : .topBarTrailing) {
-                            SidebarSearchButton(pull: searchPull)
-                        }
-                        .axisBehavior(searchUsesBottomBar ? .verticalPreferred : .horizontalOnly)
-                        .overflowPriority(.search, includesHorizontal: true)
-                    } else {
-                        ToolbarItem(placement: searchUsesBottomBar ? .bottomBar : .topBarTrailing) {
-                            SidebarSearchButton(pull: searchPull)
-                        }
-                    }
+                if isActive {
+                    SearchToolbarItem(pull: searchPull, usesBottomBar: searchUsesBottomBar)
                 }
             }
         }
@@ -230,7 +220,8 @@ struct AppSidebar<Sessions: View, Actions: ToolbarContent>: View {
 
 }
 
-/// Geometry callbacks write here; only the toolbar button reads progress during a pull.
+/// Geometry callbacks write here; only the toolbar button reads progress during a pull. Settings search, which has no
+/// pull, keeps its open state and query here too.
 @Observable
 final class SidebarSearchPull {
     var text = ""
@@ -261,8 +252,35 @@ final class SidebarSearchPull {
     }
 }
 
+/// The search button shared by the sidebar and the Settings root, hidden while its field is open. Compact width puts it
+/// in the bottom bar, which the Duo turns into the right-edge vertical bar; regular width puts it top trailing.
+struct SearchToolbarItem: ToolbarContent {
+    let pull: SidebarSearchPull
+    let usesBottomBar: Bool
+    var label: LocalizedStringKey = "Search"
+    var identifier = "sidebar-pull-search"
+
+    @ToolbarContentBuilder
+    var body: some ToolbarContent {
+        if !pull.isSearchPresented {
+            if #available(iOS 27.1, *) {
+                ToolbarItem(placement: placement) { button }
+                    .axisBehavior(usesBottomBar ? .verticalPreferred : .horizontalOnly)
+                    .overflowPriority(.search, includesHorizontal: true)
+            } else {
+                ToolbarItem(placement: placement) { button }
+            }
+        }
+    }
+
+    private var placement: ToolbarItemPlacement { usesBottomBar ? .bottomBar : .topBarTrailing }
+    private var button: some View { SidebarSearchButton(pull: pull, label: label, identifier: identifier) }
+}
+
 private struct SidebarSearchButton: View {
     let pull: SidebarSearchPull
+    let label: LocalizedStringKey
+    let identifier: String
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hasVerticalBar = false
 
@@ -298,8 +316,8 @@ private struct SidebarSearchButton: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Search")
-        .accessibilityIdentifier("sidebar-pull-search")
+        .accessibilityLabel(label)
+        .accessibilityIdentifier(identifier)
         .animation(reduceMotion ? nil : .smooth, value: isArmed)
         .onToolbarVerticalEdgeChange { hasVerticalBar = $0 }
     }
