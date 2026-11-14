@@ -438,6 +438,8 @@
 		D74A00000000000000000018 /* AgentRunIslandCompactTrailing.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000002 /* AgentRunIslandCompactTrailing.swift */; };
 		E14760000000000000000011 /* NewChatControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14760000000000000000001 /* NewChatControls.swift */; };
 		E14760000000000000000012 /* NewChatControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14760000000000000000001 /* NewChatControls.swift */; };
+		E00500000000000000000011 /* NewChatWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = E00500000000000000000001 /* NewChatWidget.swift */; };
+		E00500000000000000000012 /* ProfileEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000342 /* ProfileEntity.swift */; };
 		E14630000000000000000011 /* LiveActivityActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14630000000000000000001 /* LiveActivityActions.swift */; };
 		E14630000000000000000012 /* LiveActivityActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14630000000000000000001 /* LiveActivityActions.swift */; };
 		E14630000000000000000013 /* TalariaAggregateRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14630000000000000000002 /* TalariaAggregateRows.swift */; };
@@ -908,6 +910,7 @@
 		D74A00000000000000000001 /* AgentRunLiveActivityStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunLiveActivityStyle.swift; sourceTree = "<group>"; };
 		D74A00000000000000000002 /* AgentRunIslandCompactTrailing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunIslandCompactTrailing.swift; sourceTree = "<group>"; };
 		E14760000000000000000001 /* NewChatControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewChatControls.swift; sourceTree = "<group>"; };
+		E00500000000000000000001 /* NewChatWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewChatWidget.swift; sourceTree = "<group>"; };
 		E14630000000000000000001 /* LiveActivityActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityActions.swift; sourceTree = "<group>"; };
 		E14630000000000000000002 /* TalariaAggregateRows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalariaAggregateRows.swift; sourceTree = "<group>"; };
 		E14630000000000000000003 /* LiveActivityApprovalResponder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityApprovalResponder.swift; sourceTree = "<group>"; };
@@ -1526,6 +1529,7 @@
 				D74A00000000000000000002 /* AgentRunIslandCompactTrailing.swift */,
 				E14630000000000000000001 /* LiveActivityActions.swift */,
 				E14760000000000000000001 /* NewChatControls.swift */,
+				E00500000000000000000001 /* NewChatWidget.swift */,
 				E14630000000000000000002 /* TalariaAggregateRows.swift */,
 				A04500000000000000000022 /* Resources */,
 			);
@@ -2260,6 +2264,8 @@
 				D74A00000000000000000007 /* AgentRunIslandCompactTrailing.swift in Sources */,
 				E14630000000000000000012 /* LiveActivityActions.swift in Sources */,
 				E14760000000000000000012 /* NewChatControls.swift in Sources */,
+				E00500000000000000000011 /* NewChatWidget.swift in Sources */,
+				E00500000000000000000012 /* ProfileEntity.swift in Sources */,
 				E14630000000000000000014 /* TalariaAggregateRows.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

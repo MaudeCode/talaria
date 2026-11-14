@@ -56,9 +56,15 @@ extension ProfileEntityCache {
 /// still populated when the background fetch can't authenticate. Both paths degrade to an
 /// empty list rather than throwing, which the system renders as an empty picker (#339).
 struct ProfileEntityQuery: EntityQuery {
+    /// A profile the server no longer lists resolves to a stand-in named by its identifier, so a configured widget
+    /// keeps the user's choice instead of WidgetKit silently swapping it for the active profile (TAL-50). The server
+    /// then refuses the deleted profile on the first Send.
     func entities(for identifiers: [ProfileEntity.ID]) async throws -> [ProfileEntity] {
-        let wanted = Set(identifiers)
-        return await ProfileEntityProvider.currentEntities().filter { wanted.contains($0.id) }
+        Self.resolve(identifiers, in: await ProfileEntityProvider.currentEntities())
+    }
+
+    static func resolve(_ identifiers: [ProfileEntity.ID], in current: [ProfileEntity]) -> [ProfileEntity] {
+        identifiers.map { id in current.first { $0.id == id } ?? ProfileEntity(id: id, name: id, subtitle: nil) }
     }
 
     func suggestedEntities() async throws -> [ProfileEntity] {
@@ -66,6 +72,15 @@ struct ProfileEntityQuery: EntityQuery {
     }
 }
 
+#if TALARIA_WIDGET_EXTENSION
+/// The widget extension compiles this file for the New Chat widget's profile picker (TAL-50). It holds no server
+/// credentials and never calls the server, so it lists only the profiles the App last cached.
+enum ProfileEntityProvider {
+    static func currentEntities() async -> [ProfileEntity] {
+        ProfileEntityCache.shared.loadEntities()
+    }
+}
+#else
 /// Resolves the current profile list for App Intents, live-first with a cached fallback.
 /// Kept separate from the `EntityQuery` so the fetch/cache policy is reusable (e.g. by #8).
 enum ProfileEntityProvider {
@@ -82,11 +97,14 @@ enum ProfileEntityProvider {
         return ProfileEntityCache.shared.loadEntities()
     }
 
+    /// The saved server's client; nil when none is configured. The UI-test fixture substitutes its own server.
+    @MainActor static var makeClient: () -> APIClient? = { AppIntentServer.saved()?.client() }
+
     /// Best-effort live fetch against the saved server. Returns `[]` (not an error) when no
     /// server is configured; a network/auth failure throws so the caller falls back to cache.
     private static func fetchLiveProfiles() async throws -> [ProfileSummary] {
-        guard let server = AppIntentServer.saved() else { return [] }
-        let response = try await server.client().profiles()
+        guard let client = await MainActor.run(body: { makeClient() }) else { return [] }
+        let response = try await client.profiles()
         return response.profiles ?? []
     }
 
@@ -172,3 +190,4 @@ struct AppIntentServer {
         return URL(string: raw)
     }
 }
+#endif

@@ -12,6 +12,7 @@ struct TalariaLiveActivityWidgetBundle: WidgetBundle {
         ProviderQuotaPaceWidget()
         NewChatControl()
         NewChatVoiceControl()
+        NewChatWidget()
     }
 }
 

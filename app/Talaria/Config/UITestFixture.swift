@@ -201,6 +201,8 @@ struct UITestFixtureEnvironment {
         AskTalariaIntent.makeAskSession = {
             AskSession(client: client, memory: AskSession.Memory(serverID: serverURL.absoluteString, defaults: defaults)) { SSEClient() }
         }
+        // So do the App Intents profile pickers, such as the New Chat widget's (TAL-50).
+        ProfileEntityProvider.makeClient = { client }
         // Live Activity answers likewise go to the fixture server (TAL-1463).
         LiveActivityApprovalResponder.shared = LiveActivityApprovalResponder(
             makeClient: { _ in client }, appLock: .shared, display: .system

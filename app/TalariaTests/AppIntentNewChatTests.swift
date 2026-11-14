@@ -50,4 +50,14 @@ final class AppIntentNewChatTests: XCTestCase {
     func testVoiceIntentOpensAppWhenRun() {
         XCTAssertTrue(NewChatVoiceIntent.openAppWhenRun)
     }
+
+    /// TAL-50: a deleted profile still resolves, so WidgetKit keeps a widget's configured profile instead of swapping in
+    /// the active one; the server then refuses the deleted profile on the first Send.
+    func testProfileQueryKeepsAnIdentifierTheServerNoLongerLists() {
+        let resolved = ProfileEntityQuery.resolve(["dev", "deleted"], in: [Self.dev])
+        XCTAssertEqual(resolved.map(\.id), ["dev", "deleted"])
+        XCTAssertEqual(resolved.first?.name, "Dev")
+    }
+
+    private static let dev = ProfileEntity(id: "dev", name: "Dev", subtitle: nil)
 }

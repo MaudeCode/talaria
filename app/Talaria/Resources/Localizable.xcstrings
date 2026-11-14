@@ -81203,6 +81203,7 @@
     },
     "Open Talaria on a new chat and start voice dictation." : {},
     "Open Talaria on a new chat pinned to a specific profile." : {},
+    "Open Talaria on a new chat, optionally in a profile." : {},
     "Open Talaria on a new, empty chat." : {
       "localizations" : {
         "ar" : {
