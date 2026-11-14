@@ -48,6 +48,8 @@ services:
       # Optional: enable password auth. Set HERMES_WEBUI_PASSWORD in .env
       # (required if you expose the port beyond 127.0.0.1).
       - HERMES_WEBUI_PASSWORD=${HERMES_WEBUI_PASSWORD:-}
+      # Hostnames other than localhost and IP addresses this server answers to (others get 421).
+      - HERMES_WEBUI_ALLOWED_HOSTS=${HERMES_WEBUI_ALLOWED_HOSTS:-}
       #
       # Bind-mount permission handling (fixes #1389, #1399):
       #   When you mount an EXISTING ~/.hermes directory (the common case),

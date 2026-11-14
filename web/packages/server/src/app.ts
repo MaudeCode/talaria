@@ -29,7 +29,7 @@ import { handleApprovalStream, handleChatStream, handleClarifyStream, handleGate
 import { BodyError, RequestContext, acceptsEncoding, encodeJsonResponse, loggedUrl, type AppDeps, type HeaderMap } from './http/context.js'
 import { activeProfileName, checkAuth, checkCsrf, clearProfileCookieHeader, csrfError, getProfileCookie, isCsrfExemptPath, isPublicPath } from './auth/gate.js'
 import { guardQuerySessionId } from './api/session-visibility.js'
-import { checkSameOriginBrowserRequest } from './http/origin.js'
+import { checkSameOriginBrowserRequest, unexpectedRequestHost } from './http/origin.js'
 import { coreRouter, HttpError, errorResponseBody, errorResponseHeaders, shellLanguage, startupUnavailable, type ApiContext } from './api/router.js'
 import { isSpaPath, type Asset } from './spa.js'
 import { buildCspReportOnlyPolicy, CSP_REPORT_TO } from './http/csp.js'
@@ -397,12 +397,31 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
     return handler(req, res)
   }
 
+  // ponytail: warns for the first 32 distinct names only, so a client cycling Host values cannot grow this set.
+  const warnedHosts = new Set<string>()
+  /** TAL-2194: a DNS-rebinding page reaches this server under the attacker's name; answer 421 before anything else runs. */
+  const rejectUnexpectedHost = async (ctx: RequestContext): Promise<boolean> => {
+    const rejected = unexpectedRequestHost({
+      host: ctx.header('host'), forwardedHost: ctx.header('x-forwarded-host'), realHost: ctx.header('x-real-host'),
+      browser: Object.keys(ctx.req.headers).some((name) => name === 'origin' || name === 'referer' || name.startsWith('sec-fetch-')),
+    }, ctx.peer, deps.config.env, deps.config.host)
+    if (rejected === null) return false
+    const shown = JSON.stringify(rejected.slice(0, 253))
+    if (warnedHosts.size < 32 && !warnedHosts.has(rejected)) {
+      warnedHosts.add(rejected)
+      deps.log(`[webui] WARNING: rejected a request for host ${shown}; add it to HERMES_WEBUI_ALLOWED_HOSTS if this server should answer to it`)
+    }
+    await ctx.rawJson(421, { error: `This server does not answer to host ${shown}. Add it to HERMES_WEBUI_ALLOWED_HOSTS to allow it.` })
+    return true
+  }
+
   const dispatch = async (ctx: RequestContext): Promise<void> => {
     const { req, res } = ctx
     deps.stats.requestsTotal += 1
     deps.stats.lastRequestAt = Date.now() / 1000
     let releaseWrite: (() => void) | null = null
     try {
+      if (await rejectUnexpectedHost(ctx)) return
       if (ctx.method === 'OPTIONS') {
         await preflight(ctx)
         return

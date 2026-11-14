@@ -97,7 +97,8 @@ separate per worktree and picks the first free port from `HERMES_WEBUI_CTL_PORT_
 
 For frontend development against a deployed instance, set `HERMES_WEBUI_DEV_PROXY=http://webui-host:8787`
 in `.env` and run `talaria-web ctl start --remote`: it starts only the Vite dev server with hot reload and
-proxies API and static requests to that instance. See [docs/supervisor.md](docs/supervisor.md) for
+proxies API and static requests to that instance. Unless that URL uses an IP address, list its hostname in the instance's
+`HERMES_WEBUI_ALLOWED_HOSTS`. See [docs/supervisor.md](docs/supervisor.md) for
 launchd, systemd, and supervisord units and [docs/wsl-autostart.md](docs/wsl-autostart.md) for WSL2.
 
 ## Configuration
@@ -122,7 +123,8 @@ commented template.
 | `HERMES_WEBUI_PASSKEY` | unset | Passkey availability flag |
 | `HERMES_WEBUI_TLS_CERT` / `HERMES_WEBUI_TLS_KEY` | unset | Serve HTTPS directly (TLS 1.2+) |
 | `HERMES_WEBUI_TRUSTED_PROXY_CIDRS`, `HERMES_WEBUI_TRUST_FORWARDED_FOR`, `HERMES_WEBUI_TRUST_FORWARDED_HOST`, `HERMES_WEBUI_TRUST_FORWARDED_PROTO` | unset | Reverse-proxy trust |
-| `HERMES_WEBUI_ALLOWED_ORIGINS` | unset | Extra browser origins accepted by the same-origin check |
+| `HERMES_WEBUI_ALLOWED_ORIGINS` | unset | Extra browser origins accepted by the same-origin check; their hostnames also pass the Host check |
+| `HERMES_WEBUI_ALLOWED_HOSTS` | unset | Comma-separated hostnames the server answers to besides `localhost`, IP addresses and `HERMES_WEBUI_HOST`; any other `Host` gets `421` (DNS-rebinding guard). List your public name behind a reverse proxy or Tailscale Serve |
 | `HERMES_WEBUI_CSP_CONNECT_EXTRA` / `HERMES_WEBUI_CSP_FRAME_EXTRA` | unset | Extra CSP `connect-src` / `frame-src` origins |
 | `HERMES_WEBUI_TRUSTED_AUTH_HEADER`, `HERMES_WEBUI_TRUSTED_GROUPS_HEADER`, `HERMES_WEBUI_GROUP_PROFILE_MAP`, `HERMES_WEBUI_TRUSTED_AUTH_LOGOUT_URL` | unset | Trusted-header authentication behind an authenticating proxy |
 | `HERMES_WEBUI_OIDC_OWNER_CLAIM` / `HERMES_WEBUI_OIDC_OWNER_VALUES` | unset | OIDC owner policy for operator-only routes |

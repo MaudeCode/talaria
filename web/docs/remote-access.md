@@ -50,7 +50,13 @@ HERMES_WEBUI_PASSWORD=your-secret talaria-web
 tailscale serve --bg 8787
 ```
 
-4. Open the HTTPS MagicDNS URL that Tailscale prints in your phone's browser.
+4. Allow the MagicDNS hostname Tailscale prints, then restart WebUI:
+
+```bash
+HERMES_WEBUI_ALLOWED_HOSTS=<machine>.<tailnet>.ts.net HERMES_WEBUI_PASSWORD=your-secret talaria-web
+```
+
+5. Open the HTTPS MagicDNS URL in your phone's browser.
 
 Tailscale Serve keeps WebUI on loopback while giving your tailnet an HTTPS
 MagicDNS hostname. On Linux, changing Serve configuration may require elevated
@@ -91,6 +97,27 @@ for an app-like experience.
 > `HERMES_WEBUI_PASSWORD`.
 
 ## Behind a reverse proxy
+
+### Allowed hostnames
+
+WebUI answers only to `localhost`, IP addresses, the `HERMES_WEBUI_HOST` name,
+the hostnames in `HERMES_WEBUI_ALLOWED_ORIGINS`, and the comma-separated names
+in `HERMES_WEBUI_ALLOWED_HOSTS`. A request whose `Host` header names anything
+else gets `421 Misdirected Request` before authentication runs, and the first
+rejection of each name logs a warning. This stops a web page from reaching the
+server through DNS rebinding, where the attacker's own hostname resolves to
+this machine. Matching ignores case and the port.
+
+Behind a proxy, list the public hostname: `HERMES_WEBUI_ALLOWED_HOSTS=webui.example.com`.
+The `Host` header WebUI receives is always checked, so a proxy that rewrites it
+to an internal name such as a Docker service needs that name listed too
+(`HERMES_WEBUI_ALLOWED_HOSTS=webui.example.com,talaria`). With
+`HERMES_WEBUI_TRUST_FORWARDED_HOST=1` and the proxy's address listed in
+`HERMES_WEBUI_TRUSTED_PROXY_CIDRS` (loopback is not trusted implicitly here, so
+a same-host proxy lists `127.0.0.1/32`), the `X-Forwarded-Host` name must be
+allowed as well.
+
+### Client address
 
 Set `HERMES_WEBUI_TRUST_FORWARDED_FOR=1` to use the client address from
 `X-Forwarded-For`. It applies only when the connection comes from a trusted
