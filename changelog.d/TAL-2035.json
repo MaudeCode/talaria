@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Live Activities no longer show a made-up progress bar, and the compact Dynamic Island shows a word only when a run needs approval or input, or has finished.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

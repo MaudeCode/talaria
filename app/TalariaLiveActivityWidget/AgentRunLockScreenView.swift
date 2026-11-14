@@ -9,7 +9,7 @@ struct AgentRunLockScreenView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
-            activityProgressRow(progressWidth: 112)
+            activityRow
             transcriptPanel
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -54,20 +54,13 @@ struct AgentRunLockScreenView: View {
         }
     }
 
-    private func activityProgressRow(progressWidth: CGFloat) -> some View {
-        HStack(alignment: .center, spacing: 8) {
-            Text(activityText)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(AgentRunLiveActivityTheme.primaryText)
-                .lineLimit(1)
-                .minimumScaleFactor(0.82)
-                .layoutPriority(1)
-
-            Spacer(minLength: 8)
-
-            AgentRunProgressRail(status: state.status)
-                .frame(width: progressWidth)
-        }
+    private var activityRow: some View {
+        Text(activityText)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(AgentRunLiveActivityTheme.primaryText)
+            .lineLimit(1)
+            .minimumScaleFactor(0.82)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var transcriptPanel: some View {

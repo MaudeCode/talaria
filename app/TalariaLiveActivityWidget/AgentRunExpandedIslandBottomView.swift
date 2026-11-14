@@ -8,8 +8,6 @@ struct AgentRunExpandedIslandBottomView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            AgentRunProgressRail(status: state.status)
-
             if !state.responseExcerpt.isEmpty {
                 Text(state.responseExcerpt)
                     .font(.caption2)

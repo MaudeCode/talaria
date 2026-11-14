@@ -289,22 +289,11 @@ public enum AgentRunActivityStatus: String, Codable, Hashable, CaseIterable, Sen
         }
     }
 
-    public var compactTitle: String {
+    /// The compact island's trailing word: nil while working, since the leading glyph already shows the phase.
+    public var compactTitle: String? {
         switch self {
-        case .starting:
-            String(localized: "Start")
-        case .thinking:
-            String(localized: "Think")
-        case .usingTool:
-            String(localized: "Tool")
-        case .searchingFiles:
-            String(localized: "Search")
-        case .readingFiles:
-            String(localized: "Files")
-        case .runningCommand:
-            String(localized: "Cmd")
-        case .responding:
-            String(localized: "Reply")
+        case .starting, .thinking, .usingTool, .searchingFiles, .readingFiles, .runningCommand, .responding:
+            nil
         case .waitingForApproval:
             String(localized: "Approve")
         case .waitingForClarification:
@@ -312,9 +301,9 @@ public enum AgentRunActivityStatus: String, Codable, Hashable, CaseIterable, Sen
         case .complete:
             String(localized: "Done")
         case .failed:
-            String(localized: "Fail")
+            String(localized: "Failed")
         case .cancelled:
-            String(localized: "Stop")
+            String(localized: "Stopped")
         }
     }
 }

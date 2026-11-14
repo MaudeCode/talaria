@@ -127,7 +127,6 @@
 		C107M0000000000000000023 /* AgentRunIslandStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000218 /* AgentRunIslandStatusView.swift */; };
 		C107M0000000000000000024 /* AgentRunIslandCompactMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000219 /* AgentRunIslandCompactMark.swift */; };
 		C107M0000000000000000025 /* AgentRunStatusDot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000220 /* AgentRunStatusDot.swift */; };
-		C107M0000000000000000026 /* AgentRunProgressRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000221 /* AgentRunProgressRail.swift */; };
 		C107M0000000000000000027 /* AgentRunTimerPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000222 /* AgentRunTimerPill.swift */; };
 		C107M0000000000000000028 /* AgentRunElapsedTimerText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000223 /* AgentRunElapsedTimerText.swift */; };
 		A06100000000000000000008 /* ProviderQuotaWidgetSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000007 /* ProviderQuotaWidgetSettings.swift */; };
@@ -428,7 +427,6 @@
 		D74A00000000000000000006 /* AgentRunLiveActivityStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000001 /* AgentRunLiveActivityStyle.swift */; };
 		D74A00000000000000000007 /* AgentRunIslandCompactTrailing.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000002 /* AgentRunIslandCompactTrailing.swift */; };
 		D74A00000000000000000008 /* AgentRunStatusDot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000220 /* AgentRunStatusDot.swift */; };
-		D74A00000000000000000009 /* AgentRunProgressRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000221 /* AgentRunProgressRail.swift */; };
 		D74A00000000000000000010 /* AgentRunTimerPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000222 /* AgentRunTimerPill.swift */; };
 		D74A00000000000000000011 /* AgentRunElapsedTimerText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000223 /* AgentRunElapsedTimerText.swift */; };
 		D74A00000000000000000012 /* AgentRunLockScreenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000216 /* AgentRunLockScreenView.swift */; };
@@ -599,7 +597,6 @@
 		C107M0000000000000000218 /* AgentRunIslandStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunIslandStatusView.swift; sourceTree = "<group>"; };
 		C107M0000000000000000219 /* AgentRunIslandCompactMark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunIslandCompactMark.swift; sourceTree = "<group>"; };
 		C107M0000000000000000220 /* AgentRunStatusDot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunStatusDot.swift; sourceTree = "<group>"; };
-		C107M0000000000000000221 /* AgentRunProgressRail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunProgressRail.swift; sourceTree = "<group>"; };
 		C107M0000000000000000222 /* AgentRunTimerPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunTimerPill.swift; sourceTree = "<group>"; };
 		C107M0000000000000000223 /* AgentRunElapsedTimerText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunElapsedTimerText.swift; sourceTree = "<group>"; };
 		A10700000000000000000003 /* ProviderQuotaWidgetConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetConfiguration.swift; sourceTree = "<group>"; };
@@ -1510,7 +1507,6 @@
 				C107M0000000000000000218 /* AgentRunIslandStatusView.swift */,
 				C107M0000000000000000219 /* AgentRunIslandCompactMark.swift */,
 				C107M0000000000000000220 /* AgentRunStatusDot.swift */,
-				C107M0000000000000000221 /* AgentRunProgressRail.swift */,
 				C107M0000000000000000222 /* AgentRunTimerPill.swift */,
 				C107M0000000000000000223 /* AgentRunElapsedTimerText.swift */,
 				D74A00000000000000000001 /* AgentRunLiveActivityStyle.swift */,
@@ -2116,7 +2112,6 @@
 				C107I000000000000000006 /* ProviderRow.swift in Sources */,
 				C107I000000000000000007 /* ProvidersStatusRow.swift in Sources */,
 				D74A00000000000000000008 /* AgentRunStatusDot.swift in Sources */,
-				D74A00000000000000000009 /* AgentRunProgressRail.swift in Sources */,
 				D74A00000000000000000010 /* AgentRunTimerPill.swift in Sources */,
 				D74A00000000000000000011 /* AgentRunElapsedTimerText.swift in Sources */,
 				D74A00000000000000000012 /* AgentRunLockScreenView.swift in Sources */,
@@ -2235,7 +2230,6 @@
 				C107M0000000000000000023 /* AgentRunIslandStatusView.swift in Sources */,
 				C107M0000000000000000024 /* AgentRunIslandCompactMark.swift in Sources */,
 				C107M0000000000000000025 /* AgentRunStatusDot.swift in Sources */,
-				C107M0000000000000000026 /* AgentRunProgressRail.swift in Sources */,
 				C107M0000000000000000027 /* AgentRunTimerPill.swift in Sources */,
 				C107M0000000000000000028 /* AgentRunElapsedTimerText.swift in Sources */,
 				A10700000000000000000002 /* ProviderQuotaWidgetConfiguration.swift in Sources */,

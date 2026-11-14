@@ -16,5 +16,7 @@ struct AgentRunIslandCompactMark: View {
                 .foregroundStyle(AgentRunStatusStyle.color(for: status, isStale: false))
         }
         .frame(width: 22, height: 22)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(status.title)
     }
 }
