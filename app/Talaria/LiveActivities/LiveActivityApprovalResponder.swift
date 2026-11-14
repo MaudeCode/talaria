@@ -70,13 +70,16 @@ final class LiveActivityApprovalResponder {
         }
 
         guard let error = await refusal(publisherID: publisherID, sessionID: sessionID, choice: choice) else { return }
-        for run in runs where display.runs().first(where: { $0.id == run.id })?.state == answeredRuns[run.id] {
+        // ActivityKit can still read back the state from before the answer; anything else is a newer snapshot.
+        for run in runs
+        where [answeredRuns[run.id], run.state].contains(display.runs().first(where: { $0.id == run.id })?.state) {
             var restored = run.state
             restored.errorSummary = error
             await display.updateRun(run.id, restored)
         }
         for aggregate in aggregates
-        where display.aggregates().first(where: { $0.id == aggregate.id })?.state == answeredAggregates[aggregate.id] {
+        where [answeredAggregates[aggregate.id], aggregate.state]
+            .contains(display.aggregates().first(where: { $0.id == aggregate.id })?.state) {
             var restored = aggregate.state
             restored.subtitle = error
             await display.updateAggregate(aggregate.id, restored)

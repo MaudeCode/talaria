@@ -12,7 +12,7 @@ struct AgentRunLockScreenView: View {
             header
             activityProgressRow(progressWidth: 112)
             if let actions = LiveActivityRowActions(
-                status: state.status, isStale: state.isStale, isFinal: state.isFinal,
+                status: state.status, isFinal: state.isFinal,
                 sessionID: state.sessionID, publisherID: publisherID
             ) {
                 LiveActivityActionButtons(actions: actions)

@@ -353,7 +353,7 @@ final class LiveActivityTests: XCTestCase {
         let publisher = "https://relay-publisher.example"
         let approval = AgentRunScenario.waiting.state
         let actions = try XCTUnwrap(LiveActivityRowActions(
-            status: approval.status, isStale: false, isFinal: false, sessionID: approval.sessionID, publisherID: publisher
+            status: approval.status, isFinal: false, sessionID: approval.sessionID, publisherID: publisher
         ))
         XCTAssertEqual(actions.kind, .approval)
         for answer in [RespondToApprovalIntent.Answer.allow, .deny] {
@@ -376,7 +376,7 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertTrue(try labels(input).contains("Open"))
         XCTAssertTrue(try labels(input).isDisjoint(with: ["Allow", "Deny"]))
         XCTAssertTrue(try labels(running).isDisjoint(with: ["Allow", "Deny", "Open"]))
-        XCTAssertNil(LiveActivityRowActions(status: .waitingForApproval, isStale: true, isFinal: false, sessionID: "s", publisherID: nil))
+        XCTAssertTrue(try labels(AgentRunActivityStateReducer.stale(state: approval)).isSuperset(of: ["Allow", "Deny"]))
     }
 
     func testAllowFromTheLiveActivityAnswersAndLeavesTheWaitingState() async throws {
@@ -403,6 +403,17 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(fixture.aggregate.rows.map(\.phase), ["waiting_for_approval", "waiting_for_approval"])
         XCTAssertEqual(fixture.aggregate.subtitle, error)
     }
+
+    /// ActivityKit reads back the pre-answer state for a moment after an update; the rollback must still land.
+    func testRefusalRollsBackWhileTheActivityStillReadsThePreAnswerState() async throws {
+        let fixture = try ApprovalAnswerFixture(status: 200, body: #"{"ok":false}"#, readsLag: true, in: self)
+
+        _ = try await RespondToApprovalIntent(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s1", answer: .allow).perform()
+
+        XCTAssertEqual(fixture.updates.map(\.status), [.thinking, .waitingForApproval])
+        XCTAssertNotNil(fixture.run.errorSummary)
+        XCTAssertEqual(fixture.aggregate.rows.first?.phase, "waiting_for_approval")
+    }
 }
 
 /// One waiting run on a relay publisher, as the per-run and aggregate activities show it, and a fixture server that
@@ -412,13 +423,17 @@ private final class ApprovalAnswerFixture {
     static let publisher = "https://approvals.example.test"
     var run: AgentRunActivityAttributes.ContentState
     var aggregate: TalariaAggregateActivityAttributes.ContentState
+    private var readRun: AgentRunActivityAttributes.ContentState
+    private var readAggregate: TalariaAggregateActivityAttributes.ContentState
     private(set) var updates: [AgentRunActivityAttributes.ContentState] = []
     let requests = LockedTestValue<[[String: String]]>([])
 
-    init(status: Int, body: String, in test: XCTestCase) throws {
+    /// `readsLag` serves each activity's state from before its latest update, as ActivityKit can.
+    init(status: Int, body: String, readsLag: Bool = false, in test: XCTestCase) throws {
         run = AgentRunActivityStateReducer.waitingForApproval(
             state: AgentRunActivityStateReducer.initialState(sessionID: "s1", sessionTitle: "Deploy")
         )
+        readRun = run
         let row = { (session: String) in
             TalariaAggregateActivityAttributes.ContentState.Row(
                 publisherId: Self.publisher, publisherLabel: "approvals", sessionId: session, title: session,
@@ -426,6 +441,7 @@ private final class ApprovalAnswerFixture {
             )
         }
         aggregate = .init(schemaVersion: 1, activeCount: 2, title: "Talaria", subtitle: "2 waiting", updatedAt: 0, rows: [row("s1"), row("s2")])
+        readAggregate = aggregate
         let requests = requests
         let scope = MockURLProtocol.register { request in
             XCTAssertEqual(request.url?.path, "/api/approval/respond")
@@ -445,10 +461,10 @@ private final class ApprovalAnswerFixture {
             makeClient: { TalariaRelayClient.originIdentifier($0 ?? "") == Self.publisher ? client : nil },
             appLock: AppLockModel(defaults: try XCTUnwrap(UserDefaults(suiteName: lockName))),
             display: .init(
-                runs: { [unowned self] in [.init(id: "run", publisherID: Self.publisher, state: run)] },
-                updateRun: { [unowned self] in XCTAssertEqual($0, "run"); run = $1; updates.append($1) },
-                aggregates: { [unowned self] in [.init(id: "all", state: aggregate)] },
-                updateAggregate: { [unowned self] in XCTAssertEqual($0, "all"); aggregate = $1 }
+                runs: { [unowned self] in [.init(id: "run", publisherID: Self.publisher, state: readsLag ? readRun : run)] },
+                updateRun: { [unowned self] in XCTAssertEqual($0, "run"); readRun = run; run = $1; updates.append($1) },
+                aggregates: { [unowned self] in [.init(id: "all", state: readsLag ? readAggregate : aggregate)] },
+                updateAggregate: { [unowned self] in XCTAssertEqual($0, "all"); readAggregate = aggregate; aggregate = $1 }
             )
         )
     }

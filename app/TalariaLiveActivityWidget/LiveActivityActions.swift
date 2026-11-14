@@ -43,7 +43,8 @@ struct RespondToApprovalIntent: LiveActivityIntent {
 }
 
 /// What a waiting Live Activity row offers: Allow and Deny answer in place, Open lands in the chat for an input
-/// request. The phase comes from the server's row; a stale or finished row offers nothing.
+/// request. The phase comes from the server's row. A stale row keeps its buttons, since the server rejects an answer
+/// to an approval that is no longer pending; a finished run offers nothing.
 struct LiveActivityRowActions: Equatable {
     enum Kind: Equatable {
         case approval
@@ -54,8 +55,8 @@ struct LiveActivityRowActions: Equatable {
     let sessionID: String
     let publisherID: String?
 
-    init?(status: AgentRunActivityStatus, isStale: Bool, isFinal: Bool, sessionID: String, publisherID: String?) {
-        guard !isStale, !isFinal else { return nil }
+    init?(status: AgentRunActivityStatus, isFinal: Bool, sessionID: String, publisherID: String?) {
+        guard !isFinal else { return nil }
         switch status {
         case .waitingForApproval: kind = .approval
         case .waitingForClarification: kind = .input
@@ -65,8 +66,7 @@ struct LiveActivityRowActions: Equatable {
         self.publisherID = publisherID
     }
 
-    init?(row: TalariaAggregateActivityAttributes.ContentState.Row, isStale: Bool) {
-        guard !isStale else { return nil }
+    init?(row: TalariaAggregateActivityAttributes.ContentState.Row) {
         switch row.phase {
         case "waiting_for_approval": kind = .approval
         case "waiting_for_input": kind = .input
@@ -89,29 +89,39 @@ struct LiveActivityRowActions: Equatable {
 struct LiveActivityActionButtons: View {
     let actions: LiveActivityRowActions
 
+    /// Titles and symbols when they fit; otherwise, as in the Duo's vertical island, every button keeps its symbol.
     var body: some View {
-        HStack(spacing: 8) {
-            switch actions.kind {
-            case .approval:
-                Button(intent: actions.intent(.allow)) { label("Allow", systemImage: "checkmark") }
-                    .buttonStyle(.borderedProminent)
-                Button(intent: actions.intent(.deny)) { label("Deny", systemImage: "xmark") }
-                    .buttonStyle(.bordered)
-            case .input:
-                if let url = actions.openURL {
-                    Link(destination: url) { label("Open", systemImage: "arrow.up.forward.app") }
-                        .buttonStyle(.bordered)
-                }
-            }
+        ViewThatFits(in: .horizontal) {
+            buttons(titled: true)
+            buttons(titled: false)
         }
         .font(.caption.weight(.semibold))
         .tint(AgentRunStatusStyle.color(for: .waitingForApproval, isStale: false))
     }
 
-    /// A narrow region, such as the Duo's vertical island, keeps the symbol alone.
-    private func label(_ title: LocalizedStringKey, systemImage: String) -> some View {
-        ViewThatFits(in: .horizontal) {
+    private func buttons(titled: Bool) -> some View {
+        HStack(spacing: 8) {
+            switch actions.kind {
+            case .approval:
+                Button(intent: actions.intent(.allow)) { label("Allow", systemImage: "checkmark", titled: titled) }
+                    .buttonStyle(.borderedProminent)
+                Button(intent: actions.intent(.deny)) { label("Deny", systemImage: "xmark", titled: titled) }
+                    .buttonStyle(.bordered)
+            case .input:
+                if let url = actions.openURL {
+                    Link(destination: url) { label("Open", systemImage: "arrow.up.forward.app", titled: titled) }
+                        .buttonStyle(.bordered)
+                }
+            }
+        }
+        .fixedSize()
+    }
+
+    @ViewBuilder
+    private func label(_ title: LocalizedStringKey, systemImage: String, titled: Bool) -> some View {
+        if titled {
             Label(title, systemImage: systemImage).lineLimit(1)
+        } else {
             Label(title, systemImage: systemImage).labelStyle(.iconOnly)
         }
     }
