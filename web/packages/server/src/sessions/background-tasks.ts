@@ -16,6 +16,7 @@ import { isDict, stripToolCallXml } from './merge.js'
 import { toolKind } from './tool-display.js'
 import { isSafeSessionId } from './session.js'
 import { backgroundEventKind } from './background-events.js'
+import { MAX_WORK_COUNT } from './todo.js'
 import type { OwnerWorkOutcome, OwnerWorkRead, OwnerWorkRef } from './gateway-sessions.js'
 
 type Dict = Record<string, unknown>
@@ -184,6 +185,15 @@ export function taskView(r: Receipt, opts: { unconfirmed?: boolean; canStop?: bo
     can_stop: Boolean(opts.canStop) && (status === 'running' || status === 'attention') && r.kind !== 'background_command',
     dismissible: dismissible(r, status) && r.dismissed_at === null,
   }
+}
+
+/**
+ * TAL-1422: the workers running for a session, as every client and Live Activity counts them: each running subagent of a
+ * delegation, and each running process or `/background` task. Work nobody can confirm (`unknown`) is not counted.
+ */
+export function runningWorkers(tasks: readonly BackgroundTask[]): number {
+  const count = tasks.filter((task) => RUNNING_LIKE.has(task.status)).reduce((sum, task) => sum + (task.kind === 'delegation' ? Math.max(1, task.agents?.running ?? 1) : 1), 0)
+  return Math.min(count, MAX_WORK_COUNT)
 }
 
 /** When a session last had background work: Infinity while any of it is live, else its newest completion; null with none. */
@@ -517,7 +527,7 @@ export class BackgroundActivity {
   }
 
   /** `owner: false` leaves out a native owner's rows (TAL-1336), which only Background Work reads. */
-  async snapshot(sid: string, profile: string | null, opts: { agentOnly?: boolean; canStop?: boolean; owner?: boolean; excludeStreamId?: string; terminalPhase?: SessionActivityPhase } = {}): Promise<{ tasks: BackgroundTask[]; agent_available: boolean; agents_working: boolean; activity_phase: SessionActivityPhase; owner_work?: OwnerWorkRead['state'] }> {
+  async snapshot(sid: string, profile: string | null, opts: { agentOnly?: boolean; canStop?: boolean; owner?: boolean; excludeStreamId?: string; terminalPhase?: SessionActivityPhase } = {}): Promise<{ tasks: BackgroundTask[]; agent_available: boolean; agents_working: boolean; worker_count: number; activity_phase: SessionActivityPhase; owner_work?: OwnerWorkRead['state'] }> {
     const generation = this.deps.store.generation(sid)
     const sidecar = this.deps.sidecar()
     let agent: SidecarResult<'process.background_list'> | null = null
@@ -560,7 +570,7 @@ export class BackgroundActivity {
       : tasks.some((task) => task.status === 'unknown') ? 'stale'
       : settled === 'failed' || recent.some((task) => task.status === 'failed') ? 'failed'
       : settled === 'cancelled' || recent.some((task) => task.status === 'cancelled') ? 'cancelled' : settled)
-    return { tasks, activity_phase, agent_available: agent !== null, agents_working: tasks.some((t) => t.kind === 'delegation' && (t.status === 'running' || t.status === 'attention')), ...(owner ? { owner_work: owner.state } : {}) }
+    return { tasks, activity_phase, agent_available: agent !== null, agents_working: tasks.some((t) => t.kind === 'delegation' && (t.status === 'running' || t.status === 'attention')), worker_count: runningWorkers(tasks), ...(owner ? { owner_work: owner.state } : {}) }
   }
 
   /**

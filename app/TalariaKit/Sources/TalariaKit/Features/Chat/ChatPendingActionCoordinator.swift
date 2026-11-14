@@ -513,7 +513,7 @@ final class ChatPendingActionCoordinator {
         case .transportError, .error:
             startApprovalFallbackPolling(sessionID: sessionID)
         case .token, .interimAssistant, .reasoning, .toolStarted, .toolProgress, .toolCompleted, .title, .metering, .done, .clarificationPending, .connectionOperation,
-             .steerConsumed, .steerPending, .steerWithdrawn, .notices, .runStatus, .compressing, .compressed, .streamEnd, .settledSession, .sessionSnapshot, .cancelled, .warning, .heartbeat, .ignored:
+             .steerConsumed, .steerPending, .steerWithdrawn, .notices, .planProgress, .runStatus, .compressing, .compressed, .streamEnd, .settledSession, .sessionSnapshot, .cancelled, .warning, .heartbeat, .ignored:
             break
         }
     }
@@ -607,7 +607,7 @@ final class ChatPendingActionCoordinator {
         case .transportError, .error:
             startClarificationFallbackPolling(sessionID: sessionID)
         case .token, .interimAssistant, .reasoning, .toolStarted, .toolProgress, .toolCompleted, .title, .metering, .done, .connectionOperation,
-             .steerConsumed, .steerPending, .steerWithdrawn, .notices, .runStatus, .compressing, .compressed, .streamEnd, .settledSession, .sessionSnapshot, .cancelled, .warning, .heartbeat, .ignored:
+             .steerConsumed, .steerPending, .steerWithdrawn, .notices, .planProgress, .runStatus, .compressing, .compressed, .streamEnd, .settledSession, .sessionSnapshot, .cancelled, .warning, .heartbeat, .ignored:
             break
         }
     }

@@ -4,6 +4,23 @@ export const TODO_PAYLOAD_KEY = 'todo_state'
 
 const isDict = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
 
+/** Live Activity counts are bounded so a runaway list never outgrows the push payload (Relay rejects larger ones). */
+export const MAX_WORK_COUNT = 9_999
+
+/** TAL-1422: a plan's progress as completed items of all but cancelled ones. */
+export interface PlanProgress { completed: number; total: number }
+
+/**
+ * TAL-1422: the progress every client and Live Activity shows for a list. A plan with no item pending or in progress has
+ * nothing left to track and reads 0 of 0, which clears it.
+ */
+export function planProgress(items: readonly { state: string }[]): PlanProgress {
+  const count = (state: string): number => items.filter((item) => item.state === state).length
+  const completed = count('completed')
+  const open = count('pending') + count('in_progress')
+  return open ? { completed: Math.min(completed, MAX_WORK_COUNT), total: Math.min(completed + open, MAX_WORK_COUNT) } : { completed: 0, total: 0 }
+}
+
 export function normalizeTodoSnapshot(data: unknown): Record<string, unknown> | null {
   if (!isDict(data) || !Array.isArray(data.todos)) return null
   const display_items = data.todos.filter(isDict).map((item) => ({
@@ -15,6 +32,7 @@ export function normalizeTodoSnapshot(data: unknown): Record<string, unknown> | 
   return { todos: data.todos, summary: isDict(data.summary) ? data.summary : {}, version: TODO_STATE_VERSION,
     display_items, total_count: display_items.length,
     ...Object.fromEntries(['pending', 'in_progress', 'completed', 'cancelled'].map((state) => [`${state}_count`, display_items.filter((item) => item.state === state).length])),
+    plan_progress: planProgress(display_items),
   }
 }
 

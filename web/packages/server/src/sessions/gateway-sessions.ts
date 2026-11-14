@@ -29,7 +29,7 @@ import { withTurnIds } from './anchor.js'
 import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles.js'
 import { CANONICAL_READ_ONLY_REASON, WEB_DIAGNOSTIC_REQUEST_PREFIX } from './state-db.js'
 import { toolProgress } from './tool-display.js'
-import { deriveTodoState, normalizeTodoSnapshot } from './todo.js'
+import { deriveTodoState, normalizeTodoSnapshot, type PlanProgress } from './todo.js'
 import { catalogNames, offeredMove, ownerConnection, settledConnection, type ConnectorMove } from '../tools/connectors.js'
 
 type Row = Record<string, unknown>
@@ -1323,7 +1323,9 @@ export class GatewaySessions {
               return
             }
             if (kind === 'todo.updated') {
-              await put('todo_state', { ...normalizeTodoSnapshot(data), session_id: target.sid, stream_id: watch.stream, source: 'live' })
+              const todos = normalizeTodoSnapshot(data)
+              if (todos) registry.notePlan(watch.stream, todos.plan_progress as PlanProgress)
+              await put('todo_state', { ...todos, session_id: target.sid, stream_id: watch.stream, source: 'live' })
               return
             }
             if (kind === 'request.cancel') {

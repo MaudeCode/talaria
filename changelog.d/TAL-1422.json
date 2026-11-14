@@ -1,0 +1,19 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Live Activities show how far a run's plan has got and how many subagents, processes and background tasks are still running, on the Lock Screen, in the Dynamic Island and in the all-sessions activity.",
+      "highlight": false,
+      "components": [
+        "web",
+        "relay",
+        "app"
+      ],
+      "announcement": {
+        "title": "Plan and workers at a glance",
+        "description": "See a run's plan progress and its running workers on the Lock Screen and in the Dynamic Island.",
+        "icon": "notifications"
+      }
+    }
+  ]
+}

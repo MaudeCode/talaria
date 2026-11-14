@@ -47,6 +47,20 @@ describe('canonical owner attachment', () => {
       expect(frames.filter((frame) => frame.event === 'todo_state').map((frame) => frame.data)).toEqual([expect.objectContaining(display)])
     })
 
+    // TAL-1422: an owner chat's plan reaches its activity row through the run it streams, like a direct run's.
+    it('records the owner plan on its run for the Live Activity rows, ignoring rejected events', async () => {
+      const watch = await observeOwner(withTodo(null, { running: true, pending: [admission()] }))
+      try {
+        const plan = () => [...s.deps.registry.activeRuns.values()].find((run) => run.session_id === sid)?.plan
+        watch.event('todo.updated', raw, 1, { seq: 5 })
+        watch.event('todo.updated', { todos: [{ content: 'Stale task' }], revision: 99 }, 1, { seq: 4 })
+        await vi.waitFor(() => { expect(plan()).toEqual({ completed: 1, total: 2 }) })
+        // Every item done: nothing left to track.
+        watch.event('todo.updated', { todos: [{ content: 'Owner task', status: 'completed' }, { content: 'Finished task', completed: true }], revision: 4 }, 1, { seq: 6 })
+        await vi.waitFor(() => { expect(plan()).toEqual({ completed: 0, total: 0 }) })
+      } finally { watch.finish(); await watch.read }
+    })
+
     it('keeps snapshot precedence across replay and replaces todos on a new execution or owner epoch', async () => {
       const watch = await observeOwner(withTodo(raw, { running: true, pending: [admission()], last_sequence: 8 }))
       watch.event('todo.updated', { todos: [{ content: 'Old replay' }], revision: 2 }, 1, { seq: 7 })

@@ -351,6 +351,80 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(current.activityAt?.timeIntervalSince1970, 1_799_999_990)
     }
 
+    /// TAL-1422: Relay's plan and worker counts decode as sent; an older Relay or Web sends none, and zeros show nothing.
+    func testRelayWorkCountsDecodeAndOnlyNonzeroCountsShow() throws {
+        let legacy = #"{"sessionID":"session","sessionTitle":"Synthetic task","status":"thinking","currentActivity":"Working","responseExcerpt":"","startedAt":821692800,"updatedAt":821692800,"isStale":false,"isFinal":false}"#
+        let decode = { (json: String) in try JSONDecoder().decode(AgentRunActivityAttributes.ContentState.self, from: Data(json.utf8)) }
+        let old = try decode(legacy)
+        XCTAssertNil(old.planTotal)
+        XCTAssertNil(old.workerCount)
+        XCTAssertNil(old.workCounts)
+        let counted = try decode(legacy.replacingOccurrences(of: "}", with: #","planCompleted":2,"planTotal":5,"workerCount":3}"#))
+        XCTAssertEqual(counted.workCounts?.text, "Plan 2/5 · 3 workers")
+        XCTAssertEqual(counted.workCounts?.accessibilityLabel, "Plan steps done: 2 of 5, 3 workers running")
+        let cleared = try decode(legacy.replacingOccurrences(of: "}", with: #","planCompleted":0,"planTotal":0,"workerCount":0}"#))
+        XCTAssertNil(cleared.workCounts)
+        // Counts are formatted for the locale, so a large one keeps its grouping.
+        let large = 9_999.formatted()
+        XCTAssertEqual(AgentRunWorkCounts(planCompleted: 9_999, planTotal: 9_999, workerCount: nil)?.text, "Plan \(large)/\(large)")
+        let row = try JSONDecoder().decode(
+            TalariaAggregateActivityAttributes.ContentState.Row.self,
+            from: Data(#"{"publisherId":"p","publisherLabel":"P","sessionId":"s","title":"T","phase":"running","status":"Working","updatedAt":1,"deepLink":"/sessions/s","planCompleted":1,"planTotal":3,"workerCount":2}"#.utf8)
+        )
+        XCTAssertEqual(row.workCounts?.text, "Plan 1/3 · 2 workers")
+    }
+
+    /// TAL-1422: local stream updates keep the server's counts, a finished run drops its plan but not the session's
+    /// workers, another chat's counts change nothing, and an unchanged count is no new content.
+    func testLocalUpdatesKeepServerWorkCountsWithinTheirSession() {
+        let initial = AgentRunActivityStateReducer.initialState(sessionID: "session-a", sessionTitle: "Plan", startedAt: Date(timeIntervalSince1970: 0))
+        var state = AgentRunActivityStateReducer.settingPlanProgress(completed: 1, total: 4, sessionID: "session-a", state: initial)
+        state = AgentRunActivityStateReducer.settingWorkerCount(2, sessionID: "session-a", state: state)
+        XCTAssertEqual(state.workCounts?.text, "Plan 1/4 · 2 workers")
+        let repeated = AgentRunActivityStateReducer.settingPlanProgress(completed: 1, total: 4, sessionID: "session-a", state: state, now: Date(timeIntervalSince1970: 99))
+        XCTAssertTrue(repeated.hasSameContent(as: state))
+        let otherChat = AgentRunActivityStateReducer.settingWorkerCount(9, sessionID: "session-b", state:
+            AgentRunActivityStateReducer.settingPlanProgress(completed: 9, total: 9, sessionID: "session-b", state: state))
+        XCTAssertEqual(otherChat, state)
+        let local: [(AgentRunActivityAttributes.ContentState) -> AgentRunActivityAttributes.ContentState] = [
+            { AgentRunActivityStateReducer.toolStarted(kind: .shell, name: "shell", state: $0) },
+            { AgentRunActivityStateReducer.toolCompleted(state: $0) },
+            { AgentRunActivityStateReducer.reasoning("…", state: $0) },
+            { AgentRunActivityStateReducer.appendingToken("Hi", to: $0) },
+            { AgentRunActivityStateReducer.clearingResponseExcerpt(state: $0) },
+            { AgentRunActivityStateReducer.waitingForApproval(state: $0, approvalHeadID: "head") },
+            { AgentRunActivityStateReducer.waitingForClarification(state: $0) },
+            { AgentRunActivityStateReducer.promptSettled(state: $0) },
+            { AgentRunActivityStateReducer.updatingSessionTitle("Renamed", state: $0) },
+            { AgentRunActivityStateReducer.stale(state: $0) },
+        ]
+        for update in local {
+            XCTAssertEqual(update(state).workCounts, state.workCounts)
+        }
+        let finished = AgentRunActivityStateReducer.final(status: .complete, activity: "Done", state: state)
+        XCTAssertEqual(finished.planTotal, 0)
+        XCTAssertEqual(finished.workCounts?.text, "2 workers")
+        // A finished run takes no new plan; the session's workers still change.
+        XCTAssertEqual(AgentRunActivityStateReducer.settingPlanProgress(completed: 2, total: 4, sessionID: "session-a", state: finished), finished)
+        XCTAssertNil(AgentRunActivityStateReducer.settingWorkerCount(0, sessionID: "session-a", state: finished).workCounts)
+    }
+
+    /// TAL-1422: a `todo_state` frame carries the server's plan progress; an older server's frame has none.
+    func testTodoStateFrameDecodesOnlyTheServersPlanProgress() {
+        XCTAssertEqual(
+            SSEEventDecoder.decode(eventType: "todo_state", data: #"{"session_id":"session-a","stream_id":"s","todos":[],"total_count":5,"completed_count":2,"plan_progress":{"completed":2,"total":4}}"#),
+            .planProgress(PlanProgressStreamEvent(sessionId: "session-a", completed: 2, total: 4))
+        )
+        for data in [
+            #"{"session_id":"session-a","todos":[],"total_count":5,"completed_count":2}"#,
+            #"{"session_id":"session-a","plan_progress":{"completed":5,"total":4}}"#,
+            #"{"session_id":"session-a","plan_progress":{"completed":-1,"total":4}}"#,
+            #"{"plan_progress":{"completed":1,"total":4}}"#,
+        ] {
+            XCTAssertEqual(SSEEventDecoder.decode(eventType: "todo_state", data: data), .ignored, data)
+        }
+    }
+
     func testCompactIslandShowsAWordOnlyForAsksAndOutcomes() {
         let expected: [AgentRunActivityStatus: String?] = [
             .starting: nil, .thinking: nil, .usingTool: nil, .searchingFiles: nil, .readingFiles: nil,
@@ -1605,6 +1679,29 @@ final class LiveActivityTests: XCTestCase {
         ))
         XCTAssertNil(viewModel.activeStreamID)
         XCTAssertEqual(viewModel.responseCompletionHapticTrigger, 1)
+    }
+
+    /// TAL-1422: the chat forwards the server's plan progress from its stream and the worker count from its
+    /// background-work read to the activity of its own run, so the foreground matches what Relay pushes.
+    func testChatViewModelForwardsServerWorkCountsToItsRunsActivity() async throws {
+        let manager = SpyAgentLiveActivityManager()
+        let streamClient = LiveActivitySpySSEClient()
+        let viewModel = try makeRunStartViewModel(manager: manager, streamClient: streamClient)
+        LiveActivityURLProtocol.handler = { request in
+            if request.url?.path == "/api/chat/start" {
+                return Self.jsonResponse(#"{"stream_id":"stream-123","session_id":"session-abc"}"#, for: request)
+            }
+            XCTAssertEqual(request.url?.path, "/api/background/tasks")
+            return Self.jsonResponse(#"{"session_id":"session-abc","tasks":[],"agent_available":true,"pinned_count":0,"worker_count":3}"#, for: request)
+        }
+        let didStart = await viewModel.sendMessage("Plan the work")
+        XCTAssertTrue(didStart)
+        streamClient.emit(SSEEventDecoder.decode(eventType: "todo_state", data: #"{"session_id":"session-abc","stream_id":"stream-123","plan_progress":{"completed":1,"total":3}}"#))
+        await viewModel.refreshBackgroundTasks()
+        XCTAssertEqual(manager.updates, [
+            .planProgress(completed: 1, total: 3, sessionID: "session-abc"),
+            .workerCount(3, sessionID: "session-abc"),
+        ])
     }
 
     // MARK: - Server run start seeding (TAL-163)

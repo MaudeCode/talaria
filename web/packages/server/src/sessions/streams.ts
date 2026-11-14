@@ -6,6 +6,7 @@
 import { randomBytes } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import type { TurnOrigin } from './background-updates.js'
+import type { PlanProgress } from './todo.js'
 
 /** A live frame; `redacted` records whether a tool frame was redacted when produced, so delivery can apply the current policy. */
 export type StreamItem = [event: string, data: unknown, eventId: string | null, redacted?: boolean | undefined]
@@ -145,6 +146,8 @@ export interface ActiveRun {
   /** TAL-874: tool calls the run started, and when its latest tool call started or finished. */
   tool_count?: number
   tool_at?: number
+  /** TAL-1422: the plan this run last wrote (`planProgress`); a new run starts without one. */
+  plan?: PlanProgress
 }
 
 /** Process-wide stream registry: live channels, owners, active runs, cancel flags, partial buffers. */
@@ -191,7 +194,7 @@ export class StreamRegistry {
     this.activeRuns.set(run.stream_id, run)
   }
 
-  /** TAL-874: wakes the notification channels after tool activity, which changes no session and so publishes no event. */
+  /** TAL-874, TAL-1422: wakes the notification channels after tool or plan activity, which changes no session and so publishes no event. */
   onToolActivity: (() => void) | null = null
   /** How long tool activity batches before that wake; the Relay throttles a Live Activity's updates further. */
   toolWakeMs = 5_000
@@ -203,6 +206,18 @@ export class StreamRegistry {
     if (!run) return
     if (started) run.tool_count = (run.tool_count ?? 0) + 1
     run.tool_at = at
+    this.wakeActivity()
+  }
+
+  /** TAL-1422: the run wrote its plan; the activity rows show its progress, and an unchanged one wakes nothing. */
+  notePlan(streamId: string, plan: PlanProgress): void {
+    const run = this.activeRuns.get(streamId)
+    if (!run || (run.plan?.completed === plan.completed && run.plan.total === plan.total)) return
+    run.plan = plan
+    this.wakeActivity()
+  }
+
+  private wakeActivity(): void {
     // ponytail: one batch for every run; per-run batching only matters if one run's burst should not delay another's.
     if (this.onToolActivity && !this.toolWake) this.toolWake = setTimeout(() => { this.toolWake = null; this.onToolActivity?.() }, this.toolWakeMs).unref()
   }

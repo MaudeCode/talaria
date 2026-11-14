@@ -59,12 +59,17 @@ struct AgentRunLockScreenView: View {
     }
 
     private var activityRow: some View {
-        Text(state.lockScreenLead)
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(AgentRunLiveActivityTheme.primaryText)
-            .lineLimit(1)
-            .minimumScaleFactor(0.82)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(state.lockScreenLead)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(AgentRunLiveActivityTheme.primaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let counts = state.workCounts {
+                AgentRunWorkCountsLabel(counts: counts, font: .caption.weight(.semibold))
+            }
+        }
     }
 
     private var transcriptPanel: some View {
@@ -107,5 +112,22 @@ struct AgentRunLockScreenView: View {
         let format = SystemFormatStyle.DateReference(to: activityAt, allowedFields: [.day, .hour, .minute], maxFieldCount: 1)
         let relative = frozenClock.map { Text($0, format: format) } ?? Text(.currentDate, format: format)
         return Text("\(tools) · \(Text("Updated \(relative)"))")
+    }
+}
+
+/// TAL-1422: the server's plan progress and running workers, "Plan 2/5 · 3 workers", read as a sentence. Shared by the
+/// Lock Screen, the expanded island and the aggregate rows.
+struct AgentRunWorkCountsLabel: View {
+    let counts: AgentRunWorkCounts
+    let font: Font
+
+    var body: some View {
+        Text(counts.text)
+            .font(font)
+            .monospacedDigit()
+            .foregroundStyle(AgentRunLiveActivityTheme.secondaryText)
+            .lineLimit(1)
+            .fixedSize()
+            .accessibilityLabel(counts.accessibilityLabel)
     }
 }

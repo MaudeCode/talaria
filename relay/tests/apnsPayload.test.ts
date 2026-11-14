@@ -273,3 +273,17 @@ it("keeps all-running and native per-session payloads non-final after the foregr
     expect(nativeSessionRequest(request, 0).payload.aps).toMatchObject({ event: "update", "content-state": { isFinal: false, isStale: phase === "stale", currentActivity: phase === "running" ? "Working" : "Waiting" } });
   }
 });
+
+// TAL-1422: the largest plan and worker counts a publisher may send cost no row of a full aggregate with the longest titles.
+it("fits a full aggregate's largest plan and worker counts without dropping a row", () => {
+  const states: SessionState[] = Array.from({ length: 5 }, (_, index) => ({
+    ...attentionState, publisherId: "https://publisher.example.com", sessionId: `session-${String(index)}-${"s".repeat(32)}`,
+    streamId: `stream-${"r".repeat(32)}`, title: "t".repeat(120), deepLink: `/sessions/session-${String(index)}-${"s".repeat(32)}`,
+    startedAt: 1_799_999_000_000, toolCount: 9_999, activityAt: 1_800_000_000_000,
+    planCompleted: 9_999, planTotal: 9_999, workerCount: 9_999,
+  }));
+  const full = makeAggregate(states, 1_800_000_000_000)!;
+  expect(full.rows).toHaveLength(5);
+  expect(full.rows[0]).toMatchObject({ planCompleted: 9_999, planTotal: 9_999, workerCount: 9_999 });
+  expect(fitActivityAggregate(full).rows).toHaveLength(5);
+});

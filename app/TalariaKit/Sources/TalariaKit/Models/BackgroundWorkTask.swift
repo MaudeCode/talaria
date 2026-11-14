@@ -127,8 +127,10 @@ public struct BackgroundTasksResponse: Decodable, Equatable, Sendable {
     public let pinnedCount: Int?
     /// TAL-1579: the server's delegation delivery summary. Nil from a server older than the field.
     public let delegationStatus: DelegationStatus?
+    /// TAL-1422: the session's running workers, as its Live Activity shows them. Nil from a server older than the field.
+    public let workerCount: Int?
 
-    enum CodingKeys: String, CodingKey { case tasks, agentAvailable, activityPhase, ownerWork, pinnedCount, delegationStatus }
+    enum CodingKeys: String, CodingKey { case tasks, agentAvailable, activityPhase, ownerWork, pinnedCount, delegationStatus, workerCount }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -138,6 +140,7 @@ public struct BackgroundTasksResponse: Decodable, Equatable, Sendable {
         ownerWork = container.decodeLossyStringIfPresent(forKey: .ownerWork).flatMap(OwnerWork.init(rawValue:))
         pinnedCount = container.decodeLossyIntIfPresent(forKey: .pinnedCount).flatMap { $0 >= 0 ? $0 : nil }
         delegationStatus = try? container.decodeIfPresent(DelegationStatus.self, forKey: .delegationStatus)
+        workerCount = container.decodeLossyIntIfPresent(forKey: .workerCount).flatMap { $0 >= 0 ? $0 : nil }
     }
 }
 

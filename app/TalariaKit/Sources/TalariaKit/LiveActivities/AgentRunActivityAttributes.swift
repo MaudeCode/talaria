@@ -24,6 +24,16 @@ public struct AgentRunActivityAttributes: Codable, Sendable {
         /// stream and from an older Relay or Web.
         public var toolCount: Int?
         public var activityAt: Date?
+        /// TAL-1422: the server's plan progress for this run and the session's running workers, from Relay or the App's own
+        /// server reads. 0 clears a count; nil is a server or Relay that sends none.
+        public var planCompleted: Int?
+        public var planTotal: Int?
+        public var workerCount: Int?
+
+        /// TAL-1422: the plan and worker counts to show, or nil when there are none.
+        public var workCounts: AgentRunWorkCounts? {
+            AgentRunWorkCounts(planCompleted: planCompleted, planTotal: planTotal, workerCount: workerCount)
+        }
 
         /// The lock screen's lead line. A stale activity still waiting on the user keeps its ask.
         public var lockScreenLead: String {
@@ -56,7 +66,10 @@ public struct AgentRunActivityAttributes: Codable, Sendable {
             approvalHeadID: String? = nil,
             approvalText: String? = nil,
             toolCount: Int? = nil,
-            activityAt: Date? = nil
+            activityAt: Date? = nil,
+            planCompleted: Int? = nil,
+            planTotal: Int? = nil,
+            workerCount: Int? = nil
         ) {
             self.sessionID = sessionID
             self.sessionTitle = AgentRunActivitySanitizer.sessionTitle(sessionTitle)
@@ -72,6 +85,9 @@ public struct AgentRunActivityAttributes: Codable, Sendable {
             self.approvalText = approvalText
             self.toolCount = toolCount
             self.activityAt = activityAt
+            self.planCompleted = planCompleted
+            self.planTotal = planTotal
+            self.workerCount = workerCount
         }
     }
 
@@ -111,8 +127,16 @@ public struct TalariaAggregateActivityAttributes: Codable, Sendable {
             var deepLink: String
             /// TAL-1463: the approval a waiting row shows, so Allow and Deny answer only it.
             public var approvalHeadId: String? = nil
+            /// TAL-1422: the row's plan progress and running workers, as Relay sends them.
+            public var planCompleted: Int? = nil
+            public var planTotal: Int? = nil
+            public var workerCount: Int? = nil
 
-            public init(completionId: String? = nil, streamId: String? = nil, publisherId: String, publisherLabel: String, sessionId: String, title: String, phase: String, status: String, updatedAt: Double, deepLink: String, approvalHeadId: String? = nil) {
+            public var workCounts: AgentRunWorkCounts? {
+                AgentRunWorkCounts(planCompleted: planCompleted, planTotal: planTotal, workerCount: workerCount)
+            }
+
+            public init(completionId: String? = nil, streamId: String? = nil, publisherId: String, publisherLabel: String, sessionId: String, title: String, phase: String, status: String, updatedAt: Double, deepLink: String, approvalHeadId: String? = nil, planCompleted: Int? = nil, planTotal: Int? = nil, workerCount: Int? = nil) {
                 self.completionId = completionId
                 self.streamId = streamId
                 self.publisherId = publisherId
@@ -124,6 +148,9 @@ public struct TalariaAggregateActivityAttributes: Codable, Sendable {
                 self.updatedAt = updatedAt
                 self.deepLink = deepLink
                 self.approvalHeadId = approvalHeadId
+                self.planCompleted = planCompleted
+                self.planTotal = planTotal
+                self.workerCount = workerCount
             }
 
             public var id: String { "\(publisherId):\(sessionId)" }
@@ -278,6 +305,42 @@ public enum TalariaRelayNotifications {
     public static let backgroundAlertsEnabledKey = "talariaRelay.backgroundAlertsEnabled"
     public static let pushTokenKey = "talariaRelay.pushToken"
     public static let pushToStartTokenKey = "talariaRelay.pushToStartToken"
+}
+
+/// TAL-1422: the plan progress and running workers a Live Activity shows, as the server counted them. The App only words
+/// and formats them; a plan with nothing open or no running workers arrives as 0 and shows nothing.
+public struct AgentRunWorkCounts: Equatable, Sendable {
+    public let plan: (completed: Int, total: Int)?
+    public let workers: Int?
+
+    /// Nil when there is nothing to show.
+    public init?(planCompleted: Int?, planTotal: Int?, workerCount: Int?) {
+        let plan = planTotal.flatMap { total in total > 0 ? (completed: planCompleted ?? 0, total: total) : nil }
+        let workers = workerCount.flatMap { $0 > 0 ? $0 : nil }
+        guard plan != nil || workers != nil else { return nil }
+        self.plan = plan
+        self.workers = workers
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.plan?.completed == rhs.plan?.completed && lhs.plan?.total == rhs.plan?.total && lhs.workers == rhs.workers
+    }
+
+    /// "Plan 2/5 · 3 workers".
+    public var text: String {
+        [
+            plan.map { String(localized: "Plan \($0.completed)/\($0.total)") },
+            workers.map { String(localized: "\($0) workers") },
+        ].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /// "Plan steps done: 2 of 5, 3 workers running".
+    public var accessibilityLabel: String {
+        [
+            plan.map { String(localized: "Plan steps done: \($0.completed) of \($0.total)") },
+            workers.map { String(localized: "\($0) workers running") },
+        ].compactMap { $0 }.joined(separator: ", ")
+    }
 }
 
 public enum AgentRunActivityStatus: String, Codable, Hashable, CaseIterable, Sendable {
@@ -567,7 +630,7 @@ public enum AgentRunActivityStateReducer {
         state: AgentRunActivityAttributes.ContentState,
         now: Date = Date()
     ) -> AgentRunActivityAttributes.ContentState {
-        AgentRunActivityAttributes.ContentState(
+        keepingWorkCounts(of: state, in: AgentRunActivityAttributes.ContentState(
             sessionID: state.sessionID,
             sessionTitle: title,
             status: state.status,
@@ -580,7 +643,44 @@ public enum AgentRunActivityStateReducer {
             errorSummary: state.errorSummary,
             approvalHeadID: state.approvalHeadID,
             approvalText: state.approvalText
-        )
+        ))
+    }
+
+    /// TAL-1422: the server's plan progress for the run, from its `todo_state` frame. A frame of another chat changes nothing.
+    public static func settingPlanProgress(
+        completed: Int, total: Int, sessionID: String,
+        state: AgentRunActivityAttributes.ContentState, now: Date = Date()
+    ) -> AgentRunActivityAttributes.ContentState {
+        guard state.sessionID == sessionID, !state.isFinal else { return state }
+        var result = state
+        result.planCompleted = completed
+        result.planTotal = total
+        result.updatedAt = now
+        return result
+    }
+
+    /// TAL-1422: the server's count of the chat's running workers, from its background-work read.
+    public static func settingWorkerCount(
+        _ count: Int, sessionID: String,
+        state: AgentRunActivityAttributes.ContentState, now: Date = Date()
+    ) -> AgentRunActivityAttributes.ContentState {
+        guard state.sessionID == sessionID else { return state }
+        var result = state
+        result.workerCount = count
+        result.updatedAt = now
+        return result
+    }
+
+    /// TAL-1422: the plan and worker counts come only from the server, so a local status change keeps them.
+    private static func keepingWorkCounts(
+        of state: AgentRunActivityAttributes.ContentState,
+        in next: AgentRunActivityAttributes.ContentState
+    ) -> AgentRunActivityAttributes.ContentState {
+        var result = next
+        result.planCompleted = state.planCompleted
+        result.planTotal = state.planTotal
+        result.workerCount = state.workerCount
+        return result
     }
 
     /// `startedAt` may be backdated to the server's run start; `updatedAt` is
@@ -608,7 +708,7 @@ public enum AgentRunActivityStateReducer {
         now: Date = Date()
     ) -> AgentRunActivityAttributes.ContentState {
         guard !text.isEmpty else { return state }
-        return AgentRunActivityAttributes.ContentState(
+        return keepingWorkCounts(of: state, in: AgentRunActivityAttributes.ContentState(
             sessionID: state.sessionID,
             sessionTitle: state.sessionTitle,
             status: .responding,
@@ -616,7 +716,7 @@ public enum AgentRunActivityStateReducer {
             responseExcerpt: state.responseExcerpt + text,
             startedAt: state.startedAt,
             updatedAt: now
-        )
+        ))
     }
 
     public static func settingInterimAssistant(
@@ -653,7 +753,7 @@ public enum AgentRunActivityStateReducer {
         state: AgentRunActivityAttributes.ContentState,
         now: Date = Date()
     ) -> AgentRunActivityAttributes.ContentState {
-        AgentRunActivityAttributes.ContentState(
+        keepingWorkCounts(of: state, in: AgentRunActivityAttributes.ContentState(
             sessionID: state.sessionID,
             sessionTitle: state.sessionTitle,
             status: state.status,
@@ -666,7 +766,7 @@ public enum AgentRunActivityStateReducer {
             errorSummary: state.errorSummary,
             approvalHeadID: state.approvalHeadID,
             approvalText: state.approvalText
-        )
+        ))
     }
 
     public static func reasoning(
@@ -735,7 +835,7 @@ public enum AgentRunActivityStateReducer {
         state: AgentRunActivityAttributes.ContentState,
         now: Date = Date()
     ) -> AgentRunActivityAttributes.ContentState {
-        AgentRunActivityAttributes.ContentState(
+        keepingWorkCounts(of: state, in: AgentRunActivityAttributes.ContentState(
             sessionID: state.sessionID,
             sessionTitle: state.sessionTitle,
             status: state.status,
@@ -748,7 +848,7 @@ public enum AgentRunActivityStateReducer {
             errorSummary: state.errorSummary,
             approvalHeadID: state.approvalHeadID,
             approvalText: state.approvalText
-        )
+        ))
     }
 
     public static func final(
@@ -758,7 +858,7 @@ public enum AgentRunActivityStateReducer {
         errorSummary: String? = nil,
         now: Date = Date()
     ) -> AgentRunActivityAttributes.ContentState {
-        AgentRunActivityAttributes.ContentState(
+        var result = keepingWorkCounts(of: state, in: AgentRunActivityAttributes.ContentState(
             sessionID: state.sessionID,
             sessionTitle: state.sessionTitle,
             status: status,
@@ -769,7 +869,11 @@ public enum AgentRunActivityStateReducer {
             isStale: false,
             isFinal: true,
             errorSummary: errorSummary
-        )
+        ))
+        // A finished run has no plan left to track, as the server clears it; its session's workers may still run.
+        result.planCompleted = state.planTotal.map { _ in 0 }
+        result.planTotal = state.planTotal.map { _ in 0 }
+        return result
     }
 
     private static func statusState(
@@ -778,7 +882,7 @@ public enum AgentRunActivityStateReducer {
         state: AgentRunActivityAttributes.ContentState,
         now: Date
     ) -> AgentRunActivityAttributes.ContentState {
-        AgentRunActivityAttributes.ContentState(
+        keepingWorkCounts(of: state, in: AgentRunActivityAttributes.ContentState(
             sessionID: state.sessionID,
             sessionTitle: state.sessionTitle,
             status: status,
@@ -786,6 +890,6 @@ public enum AgentRunActivityStateReducer {
             responseExcerpt: state.responseExcerpt,
             startedAt: state.startedAt,
             updatedAt: now
-        )
+        ))
     }
 }

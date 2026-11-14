@@ -121,6 +121,65 @@ final class LiveActivityVisualReferenceTests: XCTestCase {
         }
     }
 
+    /// TAL-1422: the server's plan progress and running workers beside the activity line, in the expanded island and on
+    /// the aggregate rows; one worker, many, and the largest counts the server sends.
+    func testWorkCountsReferences() throws {
+        let counted = { (plan: (Int, Int)?, workers: Int?) in
+            AgentRunActivityAttributes.ContentState(
+                sessionID: "session-visual-reference", sessionTitle: "Talaria visual references", status: .thinking,
+                currentActivity: "Working", startedAt: AgentRunScenario.startedAt, updatedAt: AgentRunScenario.frozenClock,
+                toolCount: 4, activityAt: AgentRunScenario.startedAt.addingTimeInterval(60),
+                planCompleted: plan?.0, planTotal: plan?.1, workerCount: workers
+            )
+        }
+        for (name, state) in [
+            ("plan-workers", counted((2, 5), 3)),
+            ("one-worker", counted((0, 0), 1)),
+            ("large", counted((9_999, 9_999), 9_999)),
+        ] {
+            try VisualReference.assertMatchesReference(
+                AgentRunLockScreenView(state: state)
+                    .environment(\.agentRunFrozenClock, AgentRunScenario.frozenClock),
+                named: "live-activity-lock-screen-counts-\(name)",
+                size: CGSize(width: 360, height: 140),
+                colorScheme: .dark,
+                background: AgentRunLiveActivityTheme.background
+            )
+        }
+        try VisualReference.assertMatchesReference(
+            expandedIsland(counted((2, 5), 3))
+                .environment(\.agentRunFrozenClock, AgentRunScenario.frozenClock),
+            named: "live-activity-island-expanded-counts",
+            size: CGSize(width: 360, height: 108),
+            colorScheme: .dark,
+            background: .black
+        )
+        let row = { (session: String, phase: String, status: String, plan: (Int, Int)?, workers: Int?) in
+            TalariaAggregateActivityAttributes.ContentState.Row(
+                publisherId: "https://fixture.example", publisherLabel: "fixture", sessionId: session,
+                title: "Session \(session)", phase: phase, status: status, updatedAt: 0, deepLink: "",
+                planCompleted: plan?.0, planTotal: plan?.1, workerCount: workers
+            )
+        }
+        let aggregate = TalariaAggregateActivityAttributes.ContentState(
+            schemaVersion: 1, activeCount: 3, title: "Talaria", subtitle: "3 active", updatedAt: 0,
+            rows: [
+                row("A", "running", "Working", (2, 5), 3), row("B", "running", "Working", (0, 0), 1),
+                row("C", "running", "Working", nil, nil), row("D", "completed", "Done", (0, 0), 0)
+            ]
+        )
+        try VisualReference.assertMatchesReference(
+            TalariaAggregateRows(
+                state: aggregate, isStale: false,
+                limit: TalariaAggregateLiveActivityPresentation.lockScreenRowLimit, spacing: 6
+            ).padding(14),
+            named: "live-activity-aggregate-rows-counts",
+            size: CGSize(width: 360, height: 160),
+            colorScheme: .dark,
+            background: AgentRunLiveActivityTheme.background
+        )
+    }
+
     func testDynamicIslandExpandedReferences() throws {
         for scenario in AgentRunScenario.allCases {
             try VisualReference.assertMatchesReference(

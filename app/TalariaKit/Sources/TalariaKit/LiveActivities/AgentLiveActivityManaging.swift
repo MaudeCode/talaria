@@ -14,6 +14,10 @@ public enum AgentLiveActivityEvent: Equatable, Sendable {
     case waitingForClarification
     /// The pending approval or clarification settled, here or in another client, and the run goes on.
     case promptSettled
+    /// TAL-1422: the server's plan progress for the run of `sessionID` (`todo_state.plan_progress`).
+    case planProgress(completed: Int, total: Int, sessionID: String)
+    /// TAL-1422: the server's count of running workers for `sessionID` (`worker_count` of its background-work read).
+    case workerCount(Int, sessionID: String)
 }
 
 /// A persisted Live Activity left over from a previous launch that this manager

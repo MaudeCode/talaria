@@ -7402,6 +7402,26 @@
                               "minimum": 0,
                               "maximum": 9007199254740991
                             },
+                            "plan_progress": {
+                              "type": "object",
+                              "properties": {
+                                "completed": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9999
+                                },
+                                "total": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9999
+                                }
+                              },
+                              "required": [
+                                "completed",
+                                "total"
+                              ],
+                              "description": "TAL-1422: completed items of all but cancelled ones while any is pending or in progress, else 0 of 0 (nothing left to track). Absent from older servers."
+                            },
                             "session_id": {
                               "type": "string"
                             },
@@ -13102,6 +13122,26 @@
                               "minimum": 0,
                               "maximum": 9007199254740991
                             },
+                            "plan_progress": {
+                              "type": "object",
+                              "properties": {
+                                "completed": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9999
+                                },
+                                "total": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9999
+                                }
+                              },
+                              "required": [
+                                "completed",
+                                "total"
+                              ],
+                              "description": "TAL-1422: completed items of all but cancelled ones while any is pending or in progress, else 0 of 0 (nothing left to track). Absent from older servers."
+                            },
                             "session_id": {
                               "type": "string"
                             },
@@ -17472,6 +17512,26 @@
                               "type": "integer",
                               "minimum": 0,
                               "maximum": 9007199254740991
+                            },
+                            "plan_progress": {
+                              "type": "object",
+                              "properties": {
+                                "completed": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9999
+                                },
+                                "total": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9999
+                                }
+                              },
+                              "required": [
+                                "completed",
+                                "total"
+                              ],
+                              "description": "TAL-1422: completed items of all but cancelled ones while any is pending or in progress, else 0 of 0 (nothing left to track). Absent from older servers."
                             },
                             "session_id": {
                               "type": "string"
@@ -24976,6 +25036,26 @@
                               "minimum": 0,
                               "maximum": 9007199254740991
                             },
+                            "plan_progress": {
+                              "type": "object",
+                              "properties": {
+                                "completed": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9999
+                                },
+                                "total": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9999
+                                }
+                              },
+                              "required": [
+                                "completed",
+                                "total"
+                              ],
+                              "description": "TAL-1422: completed items of all but cancelled ones while any is pending or in progress, else 0 of 0 (nothing left to track). Absent from older servers."
+                            },
                             "session_id": {
                               "type": "string"
                             },
@@ -31789,6 +31869,26 @@
                               "type": "integer",
                               "minimum": 0,
                               "maximum": 9007199254740991
+                            },
+                            "plan_progress": {
+                              "type": "object",
+                              "properties": {
+                                "completed": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9999
+                                },
+                                "total": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9999
+                                }
+                              },
+                              "required": [
+                                "completed",
+                                "total"
+                              ],
+                              "description": "TAL-1422: completed items of all but cancelled ones while any is pending or in progress, else 0 of 0 (nothing left to track). Absent from older servers."
                             },
                             "session_id": {
                               "type": "string"
@@ -39236,6 +39336,26 @@
                               "minimum": 0,
                               "maximum": 9007199254740991
                             },
+                            "plan_progress": {
+                              "type": "object",
+                              "properties": {
+                                "completed": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9999
+                                },
+                                "total": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9999
+                                }
+                              },
+                              "required": [
+                                "completed",
+                                "total"
+                              ],
+                              "description": "TAL-1422: completed items of all but cancelled ones while any is pending or in progress, else 0 of 0 (nothing left to track). Absent from older servers."
+                            },
                             "session_id": {
                               "type": "string"
                             },
@@ -43551,6 +43671,26 @@
                               "type": "integer",
                               "minimum": 0,
                               "maximum": 9007199254740991
+                            },
+                            "plan_progress": {
+                              "type": "object",
+                              "properties": {
+                                "completed": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9999
+                                },
+                                "total": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9999
+                                }
+                              },
+                              "required": [
+                                "completed",
+                                "total"
+                              ],
+                              "description": "TAL-1422: completed items of all but cancelled ones while any is pending or in progress, else 0 of 0 (nothing left to track). Absent from older servers."
                             },
                             "session_id": {
                               "type": "string"
@@ -47930,6 +48070,26 @@
                               "minimum": 0,
                               "maximum": 9007199254740991
                             },
+                            "plan_progress": {
+                              "type": "object",
+                              "properties": {
+                                "completed": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9999
+                                },
+                                "total": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9999
+                                }
+                              },
+                              "required": [
+                                "completed",
+                                "total"
+                              ],
+                              "description": "TAL-1422: completed items of all but cancelled ones while any is pending or in progress, else 0 of 0 (nothing left to track). Absent from older servers."
+                            },
                             "session_id": {
                               "type": "string"
                             },
@@ -52305,6 +52465,26 @@
                               "type": "integer",
                               "minimum": 0,
                               "maximum": 9007199254740991
+                            },
+                            "plan_progress": {
+                              "type": "object",
+                              "properties": {
+                                "completed": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9999
+                                },
+                                "total": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9999
+                                }
+                              },
+                              "required": [
+                                "completed",
+                                "total"
+                              ],
+                              "description": "TAL-1422: completed items of all but cancelled ones while any is pending or in progress, else 0 of 0 (nothing left to track). Absent from older servers."
                             },
                             "session_id": {
                               "type": "string"
@@ -67878,6 +68058,26 @@
                               "minimum": 0,
                               "maximum": 9007199254740991
                             },
+                            "plan_progress": {
+                              "type": "object",
+                              "properties": {
+                                "completed": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9999
+                                },
+                                "total": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9999
+                                }
+                              },
+                              "required": [
+                                "completed",
+                                "total"
+                              ],
+                              "description": "TAL-1422: completed items of all but cancelled ones while any is pending or in progress, else 0 of 0 (nothing left to track). Absent from older servers."
+                            },
                             "session_id": {
                               "type": "string"
                             },
@@ -72245,6 +72445,26 @@
                               "type": "integer",
                               "minimum": 0,
                               "maximum": 9007199254740991
+                            },
+                            "plan_progress": {
+                              "type": "object",
+                              "properties": {
+                                "completed": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9999
+                                },
+                                "total": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9999
+                                }
+                              },
+                              "required": [
+                                "completed",
+                                "total"
+                              ],
+                              "description": "TAL-1422: completed items of all but cancelled ones while any is pending or in progress, else 0 of 0 (nothing left to track). Absent from older servers."
                             },
                             "session_id": {
                               "type": "string"
@@ -77300,6 +77520,26 @@
                               "minimum": 0,
                               "maximum": 9007199254740991
                             },
+                            "plan_progress": {
+                              "type": "object",
+                              "properties": {
+                                "completed": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9999
+                                },
+                                "total": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9999
+                                }
+                              },
+                              "required": [
+                                "completed",
+                                "total"
+                              ],
+                              "description": "TAL-1422: completed items of all but cancelled ones while any is pending or in progress, else 0 of 0 (nothing left to track). Absent from older servers."
+                            },
                             "session_id": {
                               "type": "string"
                             },
@@ -82246,6 +82486,26 @@
                                   "type": "integer",
                                   "minimum": 0,
                                   "maximum": 9007199254740991
+                                },
+                                "plan_progress": {
+                                  "type": "object",
+                                  "properties": {
+                                    "completed": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9999
+                                    },
+                                    "total": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9999
+                                    }
+                                  },
+                                  "required": [
+                                    "completed",
+                                    "total"
+                                  ],
+                                  "description": "TAL-1422: completed items of all but cancelled ones while any is pending or in progress, else 0 of 0 (nothing left to track). Absent from older servers."
                                 },
                                 "session_id": {
                                   "type": "string"
@@ -87627,6 +87887,12 @@
                     },
                     "agents_working": {
                       "type": "boolean"
+                    },
+                    "worker_count": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9999,
+                      "description": "TAL-1422: running subagents, processes and `/background` tasks across every kind, the count a Live Activity shows. Absent from older servers."
                     },
                     "delegation_status": {
                       "type": "object",
