@@ -3168,6 +3168,9 @@ describe("Convex relay state", () => {
     const secondRunJobs = (await queuedJobs()).filter((job) => !firstRunJobs.some((first) => first._id === job._id));
     expect(secondRunJobs).toHaveLength(1);
     expect(secondRunJobs[0]?.aggregate?.rows[0]).toMatchObject({ streamId: "stream-2", phase: "running" });
+    // Without a publisher run start, the card's timer counts from run 2's registration, not run 1's.
+    const contentState = JSON.parse(secondRunJobs[0]!.request.payloadJson).aps["content-state"];
+    expect(contentState).toMatchObject({ status: "thinking", isFinal: false, startedAt: (now + 4) / 1_000 - 978_307_200 });
     await expect(backend.mutation(internal.delivery.claimJob, { jobId: secondRunJobs[0]!._id, now: now + 6 }))
       .resolves.toMatchObject({ status: "ready", kind: "live_activity_update" });
   });

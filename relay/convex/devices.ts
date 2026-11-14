@@ -183,6 +183,7 @@ export const registerActivity = internalMutation({
     }
 
     const sameRegistration = existing?.activityPushToken === args.activityPushToken;
+    const streamId = args.mode === "per_session" ? args.streamId : undefined;
     const value = {
       userId: args.userId,
       deviceId: args.deviceId,
@@ -190,7 +191,7 @@ export const registerActivity = internalMutation({
       mode: args.mode,
       publisherId: args.mode === "per_session" ? args.publisherId : undefined,
       sessionId: args.mode === "per_session" ? args.sessionId : undefined,
-      streamId: args.mode === "per_session" ? args.streamId : undefined,
+      streamId,
       attributesType: args.attributesType,
       schemaVersion: args.schemaVersion,
       activityPushToken: args.activityPushToken,
@@ -198,7 +199,8 @@ export const registerActivity = internalMutation({
       lastDeliveryAt: sameRegistration ? existing.lastDeliveryAt : undefined,
       emptyStateLeaseUntil: args.seededLocally ? args.now + 30_000 : undefined,
       endedAt: undefined,
-      createdAt: existing?.createdAt ?? args.now,
+      // A card rebound to its session's next run times that run when the publisher omits its start.
+      createdAt: existing && existing.streamId === streamId ? existing.createdAt : args.now,
       updatedAt: args.now,
     };
     if (existing) await ctx.db.replace(existing._id, value);
