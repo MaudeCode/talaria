@@ -290,6 +290,7 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
         self.currentState = finalState
         let endingActivity = activity
         let endingSessionID = currentSessionID
+        let endingStreamID = currentStreamID
         let lifecycle = nextLifecycleGeneration()
         _ = nextUpdateGeneration()
         activity = nil
@@ -300,6 +301,7 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
                 with: finalState,
                 status: status,
                 endingSessionID: endingSessionID,
+                endingStreamID: endingStreamID,
                 lifecycle: lifecycle
             )
         }
@@ -315,9 +317,7 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
         // caller gates purely on the server's status instead, which is ground
         // truth — a genuinely live run reports active=true and is left alone.
         let result: [OrphanedLiveActivity] = all.compactMap { activity in
-            guard let streamID = AgentLiveActivityReusePolicy.normalizedStreamID(activity.attributes.streamID) else {
-                return nil
-            }
+            guard let streamID = Self.candidate(for: activity).streamID else { return nil }
             let state = activity.content.state
             guard state.isFinal == false else { return nil }
             // Skip a stream whose SSE is live in this process right now: the
@@ -346,7 +346,7 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
 
         var didEndRunningActivity = false
         for persisted in Activity<AgentRunActivityAttributes>.activities
-        where AgentLiveActivityReusePolicy.normalizedStreamID(persisted.attributes.streamID) == normalized {
+        where Self.candidate(for: persisted).streamID == normalized {
             guard persisted.content.state.isFinal == false else { continue }
 
             let finalState = AgentRunActivityStateReducer.final(
@@ -392,20 +392,16 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
         guard let publisherID = TalariaRelayClient.originURL(viewedPublisherURL)?.absoluteString else { return }
         for activity in Activity<AgentRunActivityAttributes>.activities {
             guard TalariaRelayConfigurationStore.load() == credentials else { return }
-            let matches = completions.contains { completion in
-                completion.row.publisherId == activity.attributes.relayPublisherID
-                    && completion.row.sessionId == activity.attributes.sessionID
-                    && completion.row.streamId != nil
-                    && completion.row.streamId == activity.attributes.streamID
-            }
+            let candidate = Self.candidate(for: activity)
+            let matches = completions.contains { AgentLiveActivityReusePolicy.completion($0.row, matches: candidate) }
             let viewedCompletion = AgentLiveActivityReusePolicy.isViewedCompletion(
                 state: activity.content.state, publisherID: activity.attributes.relayPublisherID,
                 viewedPublisherID: publisherID, viewedSessionID: viewedSessionID, through: viewedAt
             )
             guard matches || viewedCompletion else { continue }
             await activity.end(nil, dismissalPolicy: .immediate)
-            let tracksCompletedStream = activity.attributes.streamID != nil
-                && currentStreamID == activity.attributes.streamID
+            let tracksCompletedStream = candidate.streamID != nil
+                && currentStreamID == candidate.streamID
                 && currentSessionID == activity.attributes.sessionID
                 && currentPublisherURL?.absoluteString == activity.attributes.relayPublisherID
             if self.activity?.id == activity.id || tracksCompletedStream { reset() }
@@ -431,19 +427,14 @@ private extension AgentLiveActivityManager {
         do {
             let relayContext = PerSessionRelayContext.make(for: publisherURL)
             let existingActivities = Activity<AgentRunActivityAttributes>.activities
-            let reusableActivity = existingActivities.first { existing in
-                !existing.content.state.isFinal && AgentLiveActivityReusePolicy.canReuseActivity(
-                    existingSessionID: existing.attributes.sessionID,
-                    existingStreamID: existing.attributes.streamID,
-                    requestedSessionID: sessionID,
-                    requestedStreamID: streamID
-                )
-                    && (
-                        relayContext == nil
-                            || existing.attributes.relayPublisherID == relayContext?.publisherID
-                            || existing.id == relayRegistration.activityID
-                    )
-            }
+            let reusableID = AgentLiveActivityReusePolicy.reusableActivityID(
+                in: existingActivities.map(Self.candidate(for:)),
+                sessionID: sessionID,
+                streamID: streamID,
+                publisherID: relayContext?.publisherID,
+                registeredActivityID: relayRegistration.activityID
+            )
+            let reusableActivity = existingActivities.first { $0.id == reusableID }
 
             for staleActivity in existingActivities {
                 if let reusableActivity, staleActivity.id == reusableActivity.id {
@@ -464,11 +455,19 @@ private extension AgentLiveActivityManager {
 
             if let existing = reusableActivity {
                 activity = existing
+                // A retained completion restarts in place for the session's next run (TAL-192).
+                if Self.candidate(for: existing).streamID != streamID {
+                    AgentLiveActivityReusePolicy.bindStream(
+                        streamID, toActivityID: existing.id,
+                        liveActivityIDs: Set(existingActivities.map(\.id))
+                    )
+                }
                 if let relayContext {
                     relayRegistration.observe(
                         activity: existing,
                         context: relayContext,
-                        sessionID: sessionID
+                        sessionID: sessionID,
+                        streamID: streamID
                     )
                 }
                 let latestState = currentState ?? state
@@ -497,7 +496,8 @@ private extension AgentLiveActivityManager {
                 relayRegistration.observe(
                     activity: requestedActivity,
                     context: relayContext,
-                    sessionID: sessionID
+                    sessionID: sessionID,
+                    streamID: streamID
                 )
             }
             recordSentUpdate(state)
@@ -644,12 +644,15 @@ private extension AgentLiveActivityManager {
         with finalState: AgentRunActivityAttributes.ContentState,
         status: AgentRunActivityStatus,
         endingSessionID: String?,
+        endingStreamID: String?,
         lifecycle: Int
     ) async {
         guard let endingActivity else {
             resetIfStillCurrent(endingSessionID: endingSessionID, finalState: finalState)
             return
         }
+        // The session's next run restarted this card; the finished run no longer owns it.
+        guard Self.candidate(for: endingActivity).streamID == endingStreamID else { return }
 
         let policy = dismissalPolicy(for: status)
         let fallbackCredentials = TalariaRelayConfigurationStore.load()
@@ -737,6 +740,18 @@ private extension AgentLiveActivityManager {
     private func nextLifecycleGeneration() -> Int {
         lifecycleGeneration += 1
         return lifecycleGeneration
+    }
+
+    static func candidate(for activity: Activity<AgentRunActivityAttributes>) -> AgentLiveActivityReusePolicy.Candidate {
+        AgentLiveActivityReusePolicy.Candidate(
+            id: activity.id,
+            sessionID: activity.attributes.sessionID,
+            streamID: AgentLiveActivityReusePolicy.effectiveStreamID(
+                activityID: activity.id, attributeStreamID: activity.attributes.streamID
+            ),
+            isFinal: activity.content.state.isFinal,
+            relayPublisherID: activity.attributes.relayPublisherID
+        )
     }
 
     private func resetIfStillCurrent(
