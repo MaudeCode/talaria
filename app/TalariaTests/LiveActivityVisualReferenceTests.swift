@@ -235,6 +235,7 @@ enum AgentRunScenario: String, CaseIterable {
     static let startedAt = Date(timeIntervalSince1970: 1_760_000_000)
     static let frozenClock = startedAt.addingTimeInterval(125)
     static let approvalHeadID = "visual-approval-head"
+    static let approvalText = "rm -rf build/cache"
 
     var state: AgentRunActivityAttributes.ContentState {
         switch self {
@@ -245,7 +246,10 @@ enum AgentRunScenario: String, CaseIterable {
                 responseExcerpt: "Reworked the transcript cache so a reconnect keeps the streamed turn."
             )
         case .waiting:
-            makeState(status: .waitingForApproval, currentActivity: "Waiting for approval", approvalHeadID: Self.approvalHeadID)
+            makeState(
+                status: .waitingForApproval, currentActivity: "Waiting for approval",
+                approvalHeadID: Self.approvalHeadID, approvalText: Self.approvalText
+            )
         case .input:
             makeState(status: .waitingForClarification, currentActivity: "Input")
         case .stale:
@@ -281,7 +285,8 @@ enum AgentRunScenario: String, CaseIterable {
         isStale: Bool = false,
         isFinal: Bool = false,
         errorSummary: String? = nil,
-        approvalHeadID: String? = nil
+        approvalHeadID: String? = nil,
+        approvalText: String? = nil
     ) -> AgentRunActivityAttributes.ContentState {
         AgentRunActivityAttributes.ContentState(
             sessionID: "session-visual-reference",
@@ -294,7 +299,8 @@ enum AgentRunScenario: String, CaseIterable {
             isStale: isStale,
             isFinal: isFinal,
             errorSummary: errorSummary,
-            approvalHeadID: approvalHeadID
+            approvalHeadID: approvalHeadID,
+            approvalText: approvalText
         )
     }
 }

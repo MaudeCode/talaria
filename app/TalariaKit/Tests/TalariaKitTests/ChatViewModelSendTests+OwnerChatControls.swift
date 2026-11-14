@@ -570,9 +570,9 @@ extension ChatViewModelSendTests {
         await viewModel.reconnectStreamIfNeeded()
 
         stream.emit(SSEEventDecoder.decode(eventType: "approval", data: #"{"approval_id":"owner-approval","head_id":"owner-head","command":"ls","pending_count":1}"#))
-        XCTAssertEqual(activity.updates.last, .waitingForApproval(headID: "owner-head"), "TAL-1463: the activity names the approval it shows")
+        XCTAssertEqual(activity.updates.last, .waitingForApproval(headID: "owner-head", text: "ls"), "TAL-1463: the activity names the approval it shows")
         stream.emit(SSEEventDecoder.decode(eventType: "approval_cleared", data: #"{"session_id":"session-abc","pending_count":0}"#))
-        XCTAssertNotEqual(activity.updates.last, .waitingForApproval(headID: "owner-head"), "The settled approval is not announced as a wait")
+        XCTAssertNotEqual(activity.updates.last, .waitingForApproval(headID: "owner-head", text: "ls"), "The settled approval is not announced as a wait")
         XCTAssertEqual(activity.updates.last, .promptSettled)
 
         stream.emit(SSEEventDecoder.decode(eventType: "clarify", data: #"{"clarify_id":"owner-clarify","steps":[{"qid":"q0","question":"Pick","choices":["a"],"multi_select":false}],"pending_count":1}"#))

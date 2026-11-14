@@ -9,15 +9,10 @@ struct AgentRunExpandedIslandBottomView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            if let actions = LiveActivityRowActions(
-                status: state.status, approvalHeadID: state.approvalHeadID, isFinal: state.isFinal,
-                sessionID: state.sessionID, publisherID: publisherID
-            ) {
-                // The Lock Screen shows a refused answer's error in its activity line; the island has none.
-                if let errorSummary = state.errorSummary {
-                    LiveActivityAnswerError(text: errorSummary)
-                }
-                LiveActivityActionButtons(actions: actions)
+            if let actions = LiveActivityRowActions(state: state, publisherID: publisherID) {
+                // The island has no activity line, so a refused answer's error shows with the choices.
+                LiveActivityActionButtons(actions: actions, error: state.errorSummary)
+                    .controlSize(.small)
             } else if !state.responseExcerpt.isEmpty {
                 Text(state.responseExcerpt)
                     .font(.caption2)

@@ -8,8 +8,9 @@ public enum AgentLiveActivityEvent: Equatable, Sendable {
     case reasoning(String)
     case toolStarted(kind: ToolDisplayKind?, name: String?)
     case toolCompleted
-    /// `headID` is the server's `head_id` for the pending approval; nil keeps the head already shown.
-    case waitingForApproval(headID: String?)
+    /// `headID` is the server's `head_id` for the pending approval and `text` what it runs (its command, else its
+    /// description); a nil head keeps the approval already shown.
+    case waitingForApproval(headID: String?, text: String?)
     case waitingForClarification
     /// The pending approval or clarification settled, here or in another client, and the run goes on.
     case promptSettled

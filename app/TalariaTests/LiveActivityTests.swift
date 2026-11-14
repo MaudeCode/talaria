@@ -352,11 +352,8 @@ final class LiveActivityTests: XCTestCase {
     func testWaitingRunsOfferAllowAndDenyOrOpenAndRunningOffersNothing() throws {
         let publisher = "https://relay-publisher.example"
         let approval = AgentRunScenario.waiting.state
-        let actions = try XCTUnwrap(LiveActivityRowActions(
-            status: approval.status, approvalHeadID: approval.approvalHeadID, isFinal: false,
-            sessionID: approval.sessionID, publisherID: publisher
-        ))
-        XCTAssertEqual(actions.kind, .approval(headID: AgentRunScenario.approvalHeadID))
+        let actions = try XCTUnwrap(LiveActivityRowActions(state: approval, publisherID: publisher))
+        XCTAssertEqual(actions.kind, .approval(headID: AgentRunScenario.approvalHeadID, text: AgentRunScenario.approvalText))
         for answer in [RespondToApprovalIntent.Answer.allow, .deny] {
             let intent = actions.intent(answer, headID: AgentRunScenario.approvalHeadID)
             XCTAssertEqual(intent.sessionID, approval.sessionID)
@@ -366,15 +363,31 @@ final class LiveActivityTests: XCTestCase {
         }
         let input = AgentRunActivityStateReducer.waitingForClarification(state: approval)
         let running = AgentRunScenario.running.state
-        func labels(_ state: AgentRunActivityAttributes.ContentState) throws -> Set<String> {
-            let lock = try hostWindow(AgentRunLockScreenView(state: state, publisherID: publisher), size: CGSize(width: 360, height: 160))
-            let island = try hostWindow(
-                AgentRunExpandedIslandBottomView(state: state, publisherID: publisher), size: CGSize(width: 360, height: 80)
-            )
-            return Set(HostedAccessibility.labels(in: lock) + HostedAccessibility.labels(in: island))
+        func lockLabels(_ state: AgentRunActivityAttributes.ContentState) throws -> Set<String> {
+            // Room to spare: a hosted window's safe area would otherwise take the height the choices need. Whether they
+            // fit an activity's real size is `LiveActivityVisualReferenceTests`' concern.
+            let lock = try hostWindow(AgentRunLockScreenView(state: state, publisherID: publisher), size: CGSize(width: 360, height: 400))
+            return Set(HostedAccessibility.labels(in: lock))
         }
-        XCTAssertTrue(try labels(approval).isSuperset(of: ["Allow", "Deny"]))
-        XCTAssertFalse(try labels(approval).contains("Open"))
+        func islandLabels(_ state: AgentRunActivityAttributes.ContentState) throws -> Set<String> {
+            let island = try hostWindow(
+                AgentRunExpandedIslandBottomView(state: state, publisherID: publisher), size: CGSize(width: 360, height: 400)
+            )
+            return Set(HostedAccessibility.labels(in: island))
+        }
+        func labels(_ state: AgentRunActivityAttributes.ContentState) throws -> Set<String> {
+            try lockLabels(state).union(islandLabels(state))
+        }
+        for surface in [try lockLabels(approval), try islandLabels(approval)] {
+            XCTAssertTrue(surface.isSuperset(of: ["Allow", "Deny", AgentRunScenario.approvalText]), "Allow sits beside what it runs: \(surface)")
+            XCTAssertFalse(surface.contains("Open"), "\(surface)")
+        }
+        // A relay-driven activity names the approval but never shows what it runs: Deny, or Open to review it.
+        var relayDriven = approval
+        relayDriven.approvalText = nil
+        let relayLabels = try labels(relayDriven)
+        XCTAssertTrue(relayLabels.isSuperset(of: ["Deny", "Open"]), "\(relayLabels)")
+        XCTAssertFalse(relayLabels.contains("Allow"), "\(relayLabels)")
         XCTAssertTrue(try labels(input).contains("Open"))
         XCTAssertTrue(try labels(input).isDisjoint(with: ["Allow", "Deny"]))
         XCTAssertTrue(try labels(running).isDisjoint(with: ["Allow", "Deny", "Open"]))

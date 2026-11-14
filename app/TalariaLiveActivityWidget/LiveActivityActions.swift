@@ -45,13 +45,14 @@ struct RespondToApprovalIntent: LiveActivityIntent {
     }
 }
 
-/// What a waiting Live Activity row offers: Allow and Deny answer in place the approval the server says the activity
-/// shows, and Open lands in the chat for an input request or an approval the activity cannot name. A stale row keeps
-/// its buttons, since the server refuses an answer to an approval that is no longer the one shown; a finished run
+/// What a waiting Live Activity row offers. An approval the activity names offers Deny and, when the activity also
+/// shows what it runs, Allow; Open lands in the chat for an input request or any approval to review there. A stale row
+/// keeps its buttons, since the server refuses an answer to an approval that is no longer the one shown; a finished run
 /// offers nothing.
 struct LiveActivityRowActions: Equatable {
     enum Kind: Equatable {
-        case approval(headID: String)
+        /// `text` is what the approval runs; Relay never sends it, so a relay-driven row has none and offers no Allow.
+        case approval(headID: String, text: String?)
         case open
     }
 
@@ -59,20 +60,21 @@ struct LiveActivityRowActions: Equatable {
     let sessionID: String
     let publisherID: String?
 
-    init?(status: AgentRunActivityStatus, approvalHeadID: String?, isFinal: Bool, sessionID: String, publisherID: String?) {
-        guard !isFinal else { return nil }
-        switch status {
-        case .waitingForApproval: kind = approvalHeadID.map { .approval(headID: $0) } ?? .open
+    init?(state: AgentRunActivityAttributes.ContentState, publisherID: String?) {
+        guard !state.isFinal else { return nil }
+        switch state.status {
+        case .waitingForApproval:
+            kind = state.approvalHeadID.map { .approval(headID: $0, text: state.approvalText) } ?? .open
         case .waitingForClarification: kind = .open
         default: return nil
         }
-        self.sessionID = sessionID
+        sessionID = state.sessionID
         self.publisherID = publisherID
     }
 
     init?(row: TalariaAggregateActivityAttributes.ContentState.Row) {
         switch row.phase {
-        case "waiting_for_approval": kind = row.approvalHeadId.map { .approval(headID: $0) } ?? .open
+        case "waiting_for_approval": kind = row.approvalHeadId.map { .approval(headID: $0, text: nil) } ?? .open
         case "waiting_for_input": kind = .open
         default: return nil
         }
@@ -90,39 +92,70 @@ struct LiveActivityRowActions: Equatable {
     static let aggregateRowLimit = 2
 }
 
+/// A waiting row's choices, with a refused answer's error above them. Allow appears only beside the whole text of what
+/// it approves: when that text does not fit, as in the Duo's narrow vertical island, the row offers Deny and Open.
 struct LiveActivityActionButtons: View {
     let actions: LiveActivityRowActions
+    var error: String? = nil
 
-    /// Titles and symbols when they fit; otherwise, as in the Duo's vertical island, every button keeps its symbol.
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            buttons(titled: true)
-            buttons(titled: false)
+        VStack(alignment: .leading, spacing: 4) {
+            if let error {
+                LiveActivityAnswerError(text: error)
+            }
+            // The whole text with Allow and Deny when it fits; otherwise Deny and Open.
+            ViewThatFits(in: .vertical) {
+                if case let .approval(_, text?) = actions.kind {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(text)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(AgentRunLiveActivityTheme.primaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                        buttons { titled in
+                            allowButton(titled: titled)
+                            denyButton(titled: titled)
+                        }
+                    }
+                }
+                buttons { titled in
+                    denyButton(titled: titled)
+                    if let url = actions.openURL {
+                        Link(destination: url) { label("Open", systemImage: "arrow.up.forward.app", titled: titled) }
+                            .buttonStyle(.bordered)
+                    }
+                }
+            }
         }
         .font(.caption.weight(.semibold))
         .tint(AgentRunStatusStyle.color(for: .waitingForApproval, isStale: false))
     }
 
-    private func buttons(titled: Bool) -> some View {
-        HStack(spacing: 8) {
-            switch actions.kind {
-            case .approval(let headID):
-                Button(intent: actions.intent(.allow, headID: headID)) {
-                    label("Allow", systemImage: "checkmark", titled: titled)
-                }
-                .buttonStyle(.borderedProminent)
-                Button(intent: actions.intent(.deny, headID: headID)) {
-                    label("Deny", systemImage: "xmark", titled: titled)
-                }
-                .buttonStyle(.bordered)
-            case .open:
-                if let url = actions.openURL {
-                    Link(destination: url) { label("Open", systemImage: "arrow.up.forward.app", titled: titled) }
-                        .buttonStyle(.bordered)
-                }
-            }
+    /// Titles and symbols when they fit; otherwise, as in the Duo's vertical island, every button keeps its symbol.
+    private func buttons(@ViewBuilder _ content: @escaping (Bool) -> some View) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) { content(true) }.fixedSize()
+            HStack(spacing: 8) { content(false) }.fixedSize()
         }
-        .fixedSize()
+    }
+
+    @ViewBuilder
+    private func allowButton(titled: Bool) -> some View {
+        if case let .approval(headID, _) = actions.kind {
+            Button(intent: actions.intent(.allow, headID: headID)) {
+                label("Allow", systemImage: "checkmark", titled: titled)
+            }
+            .buttonStyle(.borderedProminent)
+        }
+    }
+
+    @ViewBuilder
+    private func denyButton(titled: Bool) -> some View {
+        if case let .approval(headID, _) = actions.kind {
+            Button(intent: actions.intent(.deny, headID: headID)) {
+                label("Deny", systemImage: "xmark", titled: titled)
+            }
+            .buttonStyle(.bordered)
+        }
     }
 
     @ViewBuilder

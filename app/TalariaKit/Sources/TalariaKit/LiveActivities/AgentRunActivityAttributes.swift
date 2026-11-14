@@ -17,6 +17,9 @@ public struct AgentRunActivityAttributes: Codable, Sendable {
         public var errorSummary: String?
         /// TAL-1463: Relay's `approvalHeadId` for the approval this run waits on; Allow and Deny answer only it.
         public var approvalHeadID: String?
+        /// TAL-1463: what that approval runs, from the App's own stream. Relay never sends it, so a relay-driven
+        /// activity offers Deny and Open; Allow needs the whole text on screen.
+        public var approvalText: String?
 
         public func hasSameContent(as other: Self) -> Bool {
             var comparison = other
@@ -35,7 +38,8 @@ public struct AgentRunActivityAttributes: Codable, Sendable {
             isStale: Bool = false,
             isFinal: Bool = false,
             errorSummary: String? = nil,
-            approvalHeadID: String? = nil
+            approvalHeadID: String? = nil,
+            approvalText: String? = nil
         ) {
             self.sessionID = sessionID
             self.sessionTitle = AgentRunActivitySanitizer.sessionTitle(sessionTitle)
@@ -48,6 +52,7 @@ public struct AgentRunActivityAttributes: Codable, Sendable {
             self.isFinal = isFinal
             self.errorSummary = errorSummary.map(AgentRunActivitySanitizer.activityLine)
             self.approvalHeadID = approvalHeadID
+            self.approvalText = approvalText
         }
     }
 
@@ -342,6 +347,7 @@ public enum AgentRunActivitySanitizer: Sendable {
     static let maximumSessionTitleCharacters = 42
     static let maximumActivityCharacters = 64
     static let maximumExcerptCharacters = 140
+    static let maximumApprovalTextCharacters = 140
     static let maximumResponsePrefixScalars = 1_024
     static let maximumToolLabelCharacters = 28
 
@@ -372,6 +378,13 @@ public enum AgentRunActivitySanitizer: Sendable {
             prefix += " "
         }
         return (prefix, isFull)
+    }
+
+    /// The approval's text on one line, or nil when it is empty or longer than an activity shows: Allow is never offered
+    /// beside a shortened text.
+    static func approvalText(_ rawValue: String) -> String? {
+        let normalized = normalizedSingleLine(rawValue)
+        return normalized.isEmpty || normalized.count > maximumApprovalTextCharacters ? nil : normalized
     }
 
     static func responseExcerpt(_ rawValue: String) -> String {
@@ -545,7 +558,8 @@ public enum AgentRunActivityStateReducer {
             isStale: state.isStale,
             isFinal: state.isFinal,
             errorSummary: state.errorSummary,
-            approvalHeadID: state.approvalHeadID
+            approvalHeadID: state.approvalHeadID,
+            approvalText: state.approvalText
         )
     }
 
@@ -630,7 +644,8 @@ public enum AgentRunActivityStateReducer {
             isStale: state.isStale,
             isFinal: state.isFinal,
             errorSummary: state.errorSummary,
-            approvalHeadID: state.approvalHeadID
+            approvalHeadID: state.approvalHeadID,
+            approvalText: state.approvalText
         )
     }
 
@@ -669,13 +684,16 @@ public enum AgentRunActivityStateReducer {
     }
 
     /// `approvalHeadID` names the approval the activity shows; without one, it offers Open instead of Allow and Deny.
+    /// `approvalText` is what it runs, shown beside Allow; a text too long for an activity is left out.
     public static func waitingForApproval(
         state: AgentRunActivityAttributes.ContentState,
         approvalHeadID: String? = nil,
+        approvalText: String? = nil,
         now: Date = Date()
     ) -> AgentRunActivityAttributes.ContentState {
         var result = statusState(.waitingForApproval, activity: String(localized: "Waiting for approval"), state: state, now: now)
         result.approvalHeadID = approvalHeadID
+        result.approvalText = approvalText.flatMap(AgentRunActivitySanitizer.approvalText)
         return result
     }
 
@@ -708,7 +726,8 @@ public enum AgentRunActivityStateReducer {
             isStale: true,
             isFinal: state.isFinal,
             errorSummary: state.errorSummary,
-            approvalHeadID: state.approvalHeadID
+            approvalHeadID: state.approvalHeadID,
+            approvalText: state.approvalText
         )
     }
 
