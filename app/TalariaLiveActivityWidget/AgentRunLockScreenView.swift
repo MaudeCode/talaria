@@ -17,18 +17,6 @@ struct AgentRunLockScreenView: View {
         .padding(.vertical, 14)
     }
 
-    private var activityText: String {
-        if state.isStale {
-            return "Latest status shown"
-        }
-
-        if let errorSummary = state.errorSummary, !errorSummary.isEmpty {
-            return errorSummary
-        }
-
-        return state.currentActivity
-    }
-
     private var header: some View {
         HStack(alignment: .center, spacing: 10) {
             AgentRunStatusDot(status: state.status, isStale: state.isStale, size: 34)
@@ -55,7 +43,7 @@ struct AgentRunLockScreenView: View {
     }
 
     private var activityRow: some View {
-        Text(activityText)
+        Text(state.lockScreenLead)
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(AgentRunLiveActivityTheme.primaryText)
             .lineLimit(1)
