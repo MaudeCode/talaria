@@ -154,13 +154,18 @@ struct RespondToApprovalByVoiceIntent: AppIntent, ForegroundContinuableIntent {
         guard let pending = try await client.approvalPending(sessionID: approval.id).pending else {
             return .spoken(String(localized: "\(approval.title) is no longer waiting for approval."))
         }
-        guard pending.allows(answer.choice) else {
+        // What the approval runs, as the server words it. Allow confirms only that, never a chat title, so an approval
+        // that names no action is reviewed in the chat; Deny runs nothing and may confirm on the title.
+        let action = [pending.command, pending.description]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+        guard pending.allows(answer.choice), action != nil || answer == .deny else {
             return .openInApp(
                 String(localized: "Open Talaria to answer this one."),
                 TalariaDeepLink.sessionURL(sessionID: approval.id)
             )
         }
-        try await Self.confirm(self, pending.command ?? pending.description ?? approval.title)
+        try await Self.confirm(self, action ?? approval.title)
         if let error = await LiveActivityApprovalResponder.shared.respond(
             publisherID: nil, sessionID: approval.id, approval: .approval(pending.approvalId), choice: answer.choice
         ) {

@@ -134,6 +134,20 @@ final class AppIntentActivityTests: XCTestCase {
         XCTAssertEqual(fixture.requests.value, [])
     }
 
+    /// An approval that names no action is never allowed on its chat title alone; Deny still confirms on the title.
+    func testAllowWithoutActionTextOffersToOpenTheChatButDenyStillAnswers() async throws {
+        let fixture = try answerFixture(pending: #"{"approval_id":"approval-s1","command":"  "}"#)
+
+        let allow = try await voiceIntent(.allow).respond()
+        XCTAssertEqual(allow, .openInApp("Open Talaria to answer this one.", TalariaDeepLink.sessionURL(sessionID: "s1")))
+        XCTAssertEqual(confirmations, [])
+        XCTAssertEqual(fixture.requests.value, [])
+
+        _ = try await voiceIntent(.deny).respond()
+        XCTAssertEqual(confirmations, ["Deploy fix"])
+        XCTAssertEqual(fixture.requests.value, [["session_id": "s1", "choice": "deny", "approval_id": "approval-s1"]])
+    }
+
     func testARefusedAnswerSpeaksTheServersError() async throws {
         let fixture = try answerFixture(
             pending: #"{"approval_id":"approval-s1","description":"Deploy to production"}"#,
