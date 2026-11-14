@@ -38,23 +38,24 @@ struct TalariaStatusIntent: AppIntent {
         return try await client.activitySummary()
     }
 
-    /// Waiting rows name their phase with the Live Activity's words; running and starting rows are listed by title.
+    /// The server's waiting and running groups as they come: waiting rows name their phase with the Live Activity's
+    /// words; running and starting rows are listed by title.
     static func dialog(for summary: ActivitySummary) -> String {
-        guard !summary.rows.isEmpty else { return String(localized: "Nothing is running and nothing needs you.") }
-        let running = summary.rows.filter { ["running", "starting"].contains($0.phase) }
-        let waiting = summary.rows.filter { !["running", "starting"].contains($0.phase) }
+        guard summary.waitingCount > 0 || summary.runningCount > 0 else {
+            return String(localized: "Nothing is running and nothing needs you.")
+        }
         var sentences: [String] = []
         if summary.waitingCount > 0 {
             sentences.append(String(localized: "\(summary.waitingCount) chats need you."))
-            for row in waiting.prefix(namedLimit) {
+            for row in summary.waiting.prefix(namedLimit) {
                 let phase = TalariaAggregateLiveActivityPresentation.accessibilityLabel(for: row.phase)
                 sentences.append(String(localized: "\(row.title): \(phase)."))
             }
-            let more = summary.waitingCount - min(waiting.count, namedLimit)
+            let more = summary.waitingCount - min(summary.waiting.count, namedLimit)
             if more > 0 { sentences.append(String(localized: "And \(more) more.")) }
         }
         if summary.runningCount > 0 {
-            var names = running.prefix(namedLimit).map(\.title)
+            var names = summary.running.prefix(namedLimit).map(\.title)
             let more = summary.runningCount - names.count
             if more > 0 { names.append(String(localized: "\(more) more")) }
             let list = ListFormatter.localizedString(byJoining: names)
@@ -87,7 +88,7 @@ extension PendingApprovalEntity: OwnershipProvidingEntity {
     var ownership: EntityOwnership { [] }
 }
 
-/// The summary's chats waiting for an approval, in the server's order; they are also the suggestions.
+/// The summary's approvals, in the server's order; they are also the suggestions.
 struct PendingApprovalQuery: EntityQuery {
     func entities(for identifiers: [PendingApprovalEntity.ID]) async throws -> [PendingApprovalEntity] {
         let waiting = try await suggestedEntities()
@@ -95,9 +96,7 @@ struct PendingApprovalQuery: EntityQuery {
     }
 
     func suggestedEntities() async throws -> [PendingApprovalEntity] {
-        try await TalariaStatusIntent.summary().rows
-            .filter { $0.phase == "waiting_for_approval" }
-            .map { PendingApprovalEntity(id: $0.sessionId, title: $0.title) }
+        try await TalariaStatusIntent.summary().approvals.map { PendingApprovalEntity(id: $0.sessionId, title: $0.title) }
     }
 }
 

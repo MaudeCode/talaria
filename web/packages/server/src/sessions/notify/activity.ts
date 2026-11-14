@@ -93,14 +93,19 @@ const SUMMARY_RANK = new Map<string, number>([['waiting_for_approval', 0], ['wai
 export function activitySummary(rows: readonly ActivityState[], visible: (owner: string | null) => boolean, redact: boolean): ActivitySummary {
   const shown = rows.filter((row) => SUMMARY_RANK.has(row.phase) && visible(row.ownerPersonId))
     .sort((a, b) => SUMMARY_RANK.get(a.phase)! - SUMMARY_RANK.get(b.phase)! || b.startedAt - a.startedAt)
-  const waiting = shown.filter((row) => SUMMARY_RANK.get(row.phase)! < 2).length
+  const listed = shown.map((row) => {
+    const fields = activityRowFields(row)
+    return { session_id: fields.sessionId, title: redactString(fields.title, redact), phase: fields.phase as ActivitySummary['rows'][number]['phase'], started_at: fields.startedAt / 1000, updated_at: fields.updatedAt / 1000, deep_link: fields.deepLink, ...(row.approvalId ? { approval_id: row.approvalId } : {}) }
+  })
+  // TAL-2233: the groups clients list as they come; an approval without its id cannot be answered by it.
+  const waiting = listed.filter((row) => SUMMARY_RANK.get(row.phase)! < 2)
   return {
-    running_count: shown.length - waiting,
-    waiting_count: waiting,
-    rows: shown.map((row) => {
-      const fields = activityRowFields(row)
-      return { session_id: fields.sessionId, title: redactString(fields.title, redact), phase: fields.phase as ActivitySummary['rows'][number]['phase'], started_at: fields.startedAt / 1000, updated_at: fields.updatedAt / 1000, deep_link: fields.deepLink, ...(row.approvalId ? { approval_id: row.approvalId } : {}) }
-    }),
+    running_count: listed.length - waiting.length,
+    waiting_count: waiting.length,
+    rows: listed,
+    waiting,
+    running: listed.filter((row) => SUMMARY_RANK.get(row.phase) === 2),
+    approvals: waiting.filter((row) => row.phase === 'waiting_for_approval' && row.approval_id),
   }
 }
 

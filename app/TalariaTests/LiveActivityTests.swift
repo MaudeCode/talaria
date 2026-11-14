@@ -567,8 +567,8 @@ final class LiveActivityTests: XCTestCase {
 /// One waiting run on a relay publisher, as the per-run and aggregate activities show it, beside a second waiting
 /// session, and a fixture server. `approval/pending` answers `pendingBodies` in turn (the last repeats), by default
 /// the session's own pending approval; `approval/respond` answers `responses` per session, by default success, and
-/// holds `heldSession`'s answer until `releaseHeldRespond()`. The responder reaches `client` for the publisher and for
-/// the active server (no publisher), as Siri answers (TAL-2233).
+/// holds `heldSession`'s answer until `releaseHeldRespond()`. `activeServer` is the server a nil publisher names, as Siri
+/// answers for it (TAL-2233).
 @MainActor
 final class ApprovalAnswerFixture {
     static let publisher = "https://approvals.example.test"
@@ -591,6 +591,7 @@ final class ApprovalAnswerFixture {
         holdsRespondFor heldSession: String? = nil,
         readsLag: Bool = false,
         suspendsWrites: Bool = false,
+        activeServer: String? = nil,
         in test: XCTestCase
     ) throws {
         run = AgentRunActivityStateReducer.waitingForApproval(
@@ -634,7 +635,8 @@ final class ApprovalAnswerFixture {
         let original = LiveActivityApprovalResponder.shared
         test.addTeardownBlock { @MainActor in LiveActivityApprovalResponder.shared = original }
         LiveActivityApprovalResponder.shared = LiveActivityApprovalResponder(
-            makeClient: { $0 == nil || TalariaRelayClient.originIdentifier($0 ?? "") == Self.publisher ? client : nil },
+            makeClient: { TalariaRelayClient.originIdentifier($0 ?? activeServer ?? "") == Self.publisher ? client : nil },
+            activeServer: { activeServer },
             appLock: AppLockModel(defaults: try XCTUnwrap(UserDefaults(suiteName: lockName))),
             display: .init(
                 runs: { [unowned self] in [.init(id: "run", publisherID: Self.publisher, state: readsLag ? readRun : run)] },

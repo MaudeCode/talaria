@@ -45,16 +45,24 @@ final class LiveActivityApprovalResponder {
     /// client and display.
     static var shared = LiveActivityApprovalResponder(
         makeClient: { AppIntentServer.saved(publisherID: $0)?.client() },
+        activeServer: { AppIntentServer.saved()?.url.absoluteString },
         appLock: .shared,
         display: .system
     )
 
     private let makeClient: (String?) -> APIClient?
+    private let activeServer: () -> String?
     private let appLock: AppLockModel
     private let display: Display
 
-    init(makeClient: @escaping (String?) -> APIClient?, appLock: AppLockModel, display: Display) {
+    init(
+        makeClient: @escaping (String?) -> APIClient?,
+        activeServer: @escaping () -> String?,
+        appLock: AppLockModel,
+        display: Display
+    ) {
         self.makeClient = makeClient
+        self.activeServer = activeServer
         self.appLock = appLock
         self.display = display
     }
@@ -62,12 +70,11 @@ final class LiveActivityApprovalResponder {
     /// Nil when the answer stands; otherwise the error the rows show again.
     @discardableResult
     func respond(publisherID: String?, sessionID: String, approval: ShownApproval, choice: ApprovalChoice) async -> String? {
-        let publisher = publisherID.flatMap(TalariaRelayClient.originIdentifier)
+        let publisher = origin(publisherID)
         let runs = display.runs().filter {
-            $0.state.sessionID == sessionID && $0.state.status == .waitingForApproval
-                && $0.publisherID.flatMap(TalariaRelayClient.originIdentifier) == publisher
+            $0.state.sessionID == sessionID && $0.state.status == .waitingForApproval && origin($0.publisherID) == publisher
         }
-        let aggregates = display.aggregates().filter { $0.state.rows.contains { Self.isWaiting($0, sessionID, publisher) } }
+        let aggregates = display.aggregates().filter { $0.state.rows.contains { isWaiting($0, sessionID, publisher) } }
 
         var answeredRuns: [String: AgentRunActivityAttributes.ContentState] = [:]
         for run in runs {
@@ -78,7 +85,7 @@ final class LiveActivityApprovalResponder {
         for aggregate in aggregates {
             // Patch the latest state, so an answer made meanwhile keeps its own rows.
             guard var answered = currentAggregate(aggregate.id) else { continue }
-            for index in answered.rows.indices where Self.isWaiting(answered.rows[index], sessionID, publisher) {
+            for index in answered.rows.indices where isWaiting(answered.rows[index], sessionID, publisher) {
                 answered.rows[index] = Self.answered(answered.rows[index])
             }
             await writeAggregate(aggregate.id, answered)
@@ -100,7 +107,7 @@ final class LiveActivityApprovalResponder {
             var restoredRow = false
             for index in current.rows.indices {
                 guard let original = aggregate.state.rows.first(where: {
-                    $0.id == current.rows[index].id && Self.isWaiting($0, sessionID, publisher)
+                    $0.id == current.rows[index].id && isWaiting($0, sessionID, publisher)
                 }), [Self.answered(original), original].contains(current.rows[index]) else { continue }
                 current.rows[index] = original
                 restoredRow = true
@@ -181,11 +188,16 @@ final class LiveActivityApprovalResponder {
         return answered
     }
 
-    private static func isWaiting(
+    private func isWaiting(
         _ row: TalariaAggregateActivityAttributes.ContentState.Row, _ sessionID: String, _ publisher: String?
     ) -> Bool {
-        row.sessionId == sessionID && row.phase == "waiting_for_approval"
-            && TalariaRelayClient.originIdentifier(row.publisherId) == publisher
+        row.sessionId == sessionID && row.phase == "waiting_for_approval" && origin(row.publisherId) == publisher
+    }
+
+    /// No publisher is the active server, as `makeClient` reads it: a run started without the relay and the relay's rows
+    /// for that server are the same server's, so Siri's answer (TAL-2233) reaches both.
+    private func origin(_ publisherID: String?) -> String? {
+        (publisherID ?? activeServer()).flatMap(TalariaRelayClient.originIdentifier)
     }
 }
 

@@ -69,19 +69,21 @@ final class AppIntentActivityTests: XCTestCase {
 
     // MARK: - Pending approvals
 
-    func testApprovalQueryListsOnlyApprovalRowsInServerOrder() async throws {
+    /// The server's `approvals` group, as it comes: here it leaves out an approval it cannot answer by id.
+    func testApprovalQueryListsTheServersApprovalsInOrder() async throws {
         serveSummary(
-            waiting: [("Deploy fix", "waiting_for_approval"), ("Release notes", "waiting_for_input"), ("Migrate", "waiting_for_approval")],
-            running: ["Refactor auth"]
+            waiting: [("Deploy fix", "waiting_for_approval"), ("Release notes", "waiting_for_input"), ("Migrate", "waiting_for_approval"), ("Rotate keys", "waiting_for_approval")],
+            running: ["Refactor auth"],
+            approvals: ["Migrate", "Rotate keys"]
         )
         let query = PendingApprovalQuery()
 
         let suggested = try await query.suggestedEntities()
-        XCTAssertEqual(suggested.map(\.title), ["Deploy fix", "Migrate"])
-        XCTAssertEqual(suggested.map(\.id), ["s-Deploy fix", "s-Migrate"])
+        XCTAssertEqual(suggested.map(\.title), ["Migrate", "Rotate keys"])
+        XCTAssertEqual(suggested.map(\.id), ["s-Migrate", "s-Rotate keys"])
 
-        let found = try await query.entities(for: ["s-Migrate", "s-Release notes"])
-        XCTAssertEqual(found.map(\.title), ["Migrate"], "An input request is not an approval")
+        let found = try await query.entities(for: ["s-Rotate keys", "s-Release notes"])
+        XCTAssertEqual(found.map(\.title), ["Rotate keys"], "Only an approval the server lists resolves")
     }
 
     func testApprovalEntityIsPersonalOnIOS27() throws {
@@ -107,6 +109,9 @@ final class AppIntentActivityTests: XCTestCase {
             XCTAssertEqual(confirmations, ["rm -rf build"])
             XCTAssertEqual(fixture.requests.value, [["session_id": "s1", "choice": choice, "approval_id": "approval-s1"]])
             XCTAssertEqual(spoken, answer == .allow ? "Allowed." : "Denied.")
+            // The active server's relay-driven rows leave "waiting for approval" as a Live Activity answer does.
+            XCTAssertEqual(fixture.run.status, .thinking)
+            XCTAssertEqual(fixture.aggregate.rows.map(\.phase), ["running", "waiting_for_approval"])
         }
     }
 
@@ -143,6 +148,8 @@ final class AppIntentActivityTests: XCTestCase {
         }
         XCTAssertEqual(confirmations, ["Deploy to production"], "Without a command the description is read back")
         XCTAssertEqual(fixture.requests.value.count, 1)
+        XCTAssertEqual(fixture.run.status, .waitingForApproval, "The refused answer rolls the rows back")
+        XCTAssertEqual(fixture.run.errorSummary, "The server refused the request: Only the owner can answer")
     }
 
     // MARK: - Fixtures
@@ -151,23 +158,29 @@ final class AppIntentActivityTests: XCTestCase {
         RespondToApprovalByVoiceIntent(approval: PendingApprovalEntity(id: "s1", title: "Deploy fix"), answer: answer)
     }
 
-    /// TAL-1463's responder spy: Siri reaches it through the active server, with no relay publisher.
+    /// TAL-1463's responder spy, with its relay publisher as the active server Siri answers for.
     private func answerFixture(
         pending: String, response: (status: Int, body: String)? = nil
     ) throws -> ApprovalAnswerFixture {
         let fixture = try ApprovalAnswerFixture(
-            responses: response.map { ["s1": $0] } ?? [:], pendingBodies: [#"{"pending":\#(pending)}"#], in: self
+            responses: response.map { ["s1": $0] } ?? [:], pendingBodies: [#"{"pending":\#(pending)}"#],
+            activeServer: ApprovalAnswerFixture.publisher, in: self
         )
         TalariaStatusIntent.makeClient = { fixture.client }
         return fixture
     }
 
-    /// Waiting rows then running rows, in the order given, as `GET /api/activity/summary` serves them.
-    private func serveSummary(waiting: [(title: String, phase: String)], running: [String]) {
+    /// Waiting rows then running rows, in the order given, with the server's groups, as `GET /api/activity/summary` serves
+    /// them.
+    private func serveSummary(waiting: [(title: String, phase: String)], running: [String], approvals: [String]? = nil) {
         let rows: [[String: Any]] = (waiting + running.map { ($0, "running") }).map { title, phase in
             ["session_id": "s-\(title)", "title": title, "phase": phase, "started_at": 1, "updated_at": 2, "deep_link": "/sessions/s-\(title)"]
         }
-        let summary: [String: Any] = ["waiting_count": waiting.count, "running_count": running.count, "rows": rows]
+        let summary: [String: Any] = [
+            "waiting_count": waiting.count, "running_count": running.count, "rows": rows,
+            "waiting": Array(rows.prefix(waiting.count)), "running": Array(rows.dropFirst(waiting.count)),
+            "approvals": rows.filter { row in approvals.map { $0.contains(row["title"] as? String ?? "") } ?? false }
+        ]
         let body = String(decoding: try! JSONSerialization.data(withJSONObject: summary), as: UTF8.self)
         let scope = MockURLProtocol.register { request in
             XCTAssertEqual(request.url?.path, "/api/activity/summary")

@@ -203,9 +203,11 @@ struct UITestFixtureEnvironment {
         }
         // So do the App Intents profile pickers, such as the New Chat widget's (TAL-50).
         ProfileEntityProvider.makeClient = { client }
+        // And Siri's activity status and approvals (TAL-2233).
+        TalariaStatusIntent.makeClient = { client }
         // Live Activity answers likewise go to the fixture server (TAL-1463).
         LiveActivityApprovalResponder.shared = LiveActivityApprovalResponder(
-            makeClient: { _ in client }, appLock: .shared, display: .system
+            makeClient: { _ in client }, activeServer: { serverURL.absoluteString }, appLock: .shared, display: .system
         )
         let authManager = AuthManager(
             keychain: keychain,

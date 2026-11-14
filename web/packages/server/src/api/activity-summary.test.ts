@@ -50,6 +50,13 @@ it('lists waiting rows first, then running ones newest first, without the finish
   expect(body).toEqual(FIXTURE)
 })
 
+it('groups the rows for clients to list as they come, with only answerable approvals under approvals (TAL-2233)', async () => {
+  const body = await summary(await boot([...ROWS, row('no_id', 'waiting_for_approval', 1_799_997_000_000)])) as unknown as Record<'waiting' | 'running' | 'approvals', { session_id: string }[]>
+  expect(body.waiting.map((r) => r.session_id)).toEqual(['approval', 'no_id', 'input'])
+  expect(body.running.map((r) => r.session_id)).toEqual(['run_new', 'run_old'])
+  expect(body.approvals.map((r) => r.session_id)).toEqual(['approval'])
+})
+
 it('reads a named profile, except another one from a login bound to its own', async () => {
   const server = await boot(ROWS)
   expect((await server.get('/api/activity/summary?profile=work')).status).toBe(200)

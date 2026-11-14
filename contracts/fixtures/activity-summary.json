@@ -35,5 +35,53 @@
       "updated_at": 1800000000,
       "deep_link": "/sessions/run_old"
     }
+  ],
+  "waiting": [
+    {
+      "session_id": "approval",
+      "title": "Chat approval",
+      "phase": "waiting_for_approval",
+      "started_at": 1799998000,
+      "updated_at": 1800000000,
+      "deep_link": "/sessions/approval",
+      "approval_id": "appr-1"
+    },
+    {
+      "session_id": "input",
+      "title": "Chat input",
+      "phase": "waiting_for_input",
+      "started_at": 1799998500,
+      "updated_at": 1800000000,
+      "deep_link": "/sessions/input"
+    }
+  ],
+  "running": [
+    {
+      "session_id": "run_new",
+      "title": "Chat run_new",
+      "phase": "running",
+      "started_at": 1799999500,
+      "updated_at": 1800000000,
+      "deep_link": "/sessions/run_new"
+    },
+    {
+      "session_id": "run_old",
+      "title": "Chat run_old",
+      "phase": "running",
+      "started_at": 1799999000,
+      "updated_at": 1800000000,
+      "deep_link": "/sessions/run_old"
+    }
+  ],
+  "approvals": [
+    {
+      "session_id": "approval",
+      "title": "Chat approval",
+      "phase": "waiting_for_approval",
+      "started_at": 1799998000,
+      "updated_at": 1800000000,
+      "deep_link": "/sessions/approval",
+      "approval_id": "appr-1"
+    }
   ]
 }
