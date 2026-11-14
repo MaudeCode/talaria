@@ -240,6 +240,8 @@ public enum TalariaLiveActivityMode: String, CaseIterable, Identifiable, Sendabl
 
 public enum TalariaRelayNotifications {
     public static let isEnabledKey = "talariaRelay.notificationsEnabled"
+    /// TAL-873: completion alerts for turns a finished sub-agent or background process started; off by default.
+    public static let backgroundAlertsEnabledKey = "talariaRelay.backgroundAlertsEnabled"
     public static let pushTokenKey = "talariaRelay.pushToken"
     public static let pushToStartTokenKey = "talariaRelay.pushToStartToken"
 }

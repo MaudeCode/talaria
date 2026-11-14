@@ -12,6 +12,7 @@ import type { PresenceLeases } from '../relay.js'
 import type { Session } from '../session.js'
 import type { SessionStore } from '../store.js'
 import type { ActiveRun, StreamRegistry } from '../streams.js'
+import type { TurnOrigin } from '../background-updates.js'
 import { str } from '../../util.js'
 
 const TERMINAL_RETENTION_S = 15 * 60
@@ -51,6 +52,8 @@ export interface ActivityState {
   updatedAt: number
   deepLink: string
   alertEligible: boolean
+  /** TAL-873: who started the row's turn; the Relay mutes a `background` completion unless the device opts in. */
+  origin: TurnOrigin
   /** The approval at the head of the queue while the session waits for one, as an opaque digest (TAL-59). */
   approvalHeadId?: string
   /** TAL-1966: the session's newest decision review by creation and its title; its alert opens the review. */
@@ -223,7 +226,7 @@ export class ActivityStates {
       const approvalId = phase === 'waiting_for_approval' ? str(approval?.approval_id) : ''
       const review = this.deps.decisionReview?.(sid)
       const notices = this.notices.get(sid)?.shown.map((shown) => shown.notice) ?? []
-      states.push({ sessionId: sid, streamId: run.stream_id || null, ...(snapshot ? { activityPhase: snapshot.activity_phase } : {}), title: (session.title || 'Untitled').slice(0, 120), phase, startedAt: Math.floor((run.started_at || this.deps.now()) * 1000), updatedAt, deepLink: `/sessions/${encodeURIComponent(sid)}`, alertEligible, ...(approvalId ? { approvalHeadId: approvalHeadId(sid, approvalId) } : {}), ...(review ? { decisionReviewId: review.review_id, decisionReviewTitle: review.title } : {}), ...(notices.length ? { agentNotices: notices } : {}), ownerPersonId: session.owner_person_id })
+      states.push({ sessionId: sid, streamId: run.stream_id || null, ...(snapshot ? { activityPhase: snapshot.activity_phase } : {}), title: (session.title || 'Untitled').slice(0, 120), phase, startedAt: Math.floor((run.started_at || this.deps.now()) * 1000), updatedAt, deepLink: `/sessions/${encodeURIComponent(sid)}`, alertEligible, origin: run.origin ?? 'user', ...(approvalId ? { approvalHeadId: approvalHeadId(sid, approvalId) } : {}), ...(review ? { decisionReviewId: review.review_id, decisionReviewTitle: review.title } : {}), ...(notices.length ? { agentNotices: notices } : {}), ownerPersonId: session.owner_person_id })
     }
     if (incomplete) this.incompleteProfiles.add(profile)
     else this.incompleteProfiles.delete(profile)

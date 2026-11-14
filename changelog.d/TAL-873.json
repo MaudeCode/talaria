@@ -1,0 +1,19 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Finished sub-agents and background processes no longer send a completion alert to your iPhone unless you turn on Sub-agent and Background Alerts; their approval, input, and failure alerts still arrive.",
+      "highlight": false,
+      "components": [
+        "web",
+        "relay",
+        "app"
+      ],
+      "announcement": {
+        "title": "Quieter background alerts",
+        "description": "Finished sub-agents and background work stay silent unless you turn their alerts on.",
+        "icon": "notifications"
+      }
+    }
+  ]
+}

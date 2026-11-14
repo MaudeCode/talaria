@@ -98,6 +98,7 @@ function asSessionState(state: DataModel["sessionStates"]["document"]): SessionS
     expiresAt: state.expiresAt,
     terminalExpiresAt: state.terminalExpiresAt,
     activityExpiresAt: state.activityExpiresAt,
+    origin: state.origin,
     alertEligible: state.alertEligible,
     approvalHeadId: state.approvalHeadId,
     decisionReviewId: state.decisionReviewId,

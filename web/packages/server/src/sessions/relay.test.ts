@@ -204,6 +204,22 @@ describe('Talaria relay pairing and publishing', () => {
     }
   })
 
+  it('publishes a finished turn with the origin of its run, so the relay can mute background completions (TAL-873)', async () => {
+    if (!s.deps.relay.current()) await post(s, '/api/talaria/relay/pair', { relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'invite-origin' })
+    const publisher = s.deps.relay.current()!
+    const published = async (origin: 'user' | 'background' | undefined): Promise<Json> => {
+      const sid = String(((await json(await post(s, '/api/session/new', { title: `Origin ${String(origin)}` }))).session as Json).session_id)
+      s.deps.registry.activeRuns.set(`origin-${String(origin)}`, { stream_id: `origin-${String(origin)}`, session_id: sid, started_at: 1, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false, ...(origin ? { origin } : {}) })
+      s.deps.notifications.noteTerminal(`origin-${String(origin)}`, 'completed')
+      s.deps.registry.activeRuns.delete(`origin-${String(origin)}`)
+      await publisher.publishSnapshot()
+      return (relay.snapshots().at(-1)!.body.states as Json[]).find((state) => state.sessionId === sid)!
+    }
+    expect(await published('background')).toMatchObject({ phase: 'completed', origin: 'background' })
+    expect(await published('user')).toMatchObject({ phase: 'completed', origin: 'user' })
+    expect(await published(undefined)).toMatchObject({ phase: 'completed', origin: 'user' })
+  })
+
   it('acknowledges a viewed session on the relay after the snapshot carrying its terminal state', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', { title: 'Viewed run' }))).session as Json).session_id)
     const profileId = (await loadRelayConfig(new JsonDocuments(s.state)))!.profiles.default!.profile_id

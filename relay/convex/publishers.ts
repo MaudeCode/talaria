@@ -142,6 +142,7 @@ function exposedState(state: Doc<"sessionStates">) {
     expiresAt: state.expiresAt,
     terminalExpiresAt: state.terminalExpiresAt,
     activityExpiresAt: state.activityExpiresAt,
+    origin: state.origin,
     alertEligible: state.alertEligible,
     approvalHeadId: state.approvalHeadId,
     decisionReviewId: state.decisionReviewId,

@@ -696,6 +696,17 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(completionPreferences["notifyOnInput"], false)
         XCTAssertEqual(completionPreferences["notifyOnCompletion"], true)
         XCTAssertEqual(completionPreferences["notifyOnFailure"], true)
+        XCTAssertEqual(completionPreferences["notifyOnBackground"], false)
+
+        UserDefaults.standard.set(true, forKey: TalariaRelayNotifications.backgroundAlertsEnabledKey)
+        defer { UserDefaults.standard.removeObject(forKey: TalariaRelayNotifications.backgroundAlertsEnabledKey) }
+        try await client.configureDevice()
+        let backgroundBody = try XCTUnwrap(requests.last.flatMap(apiTestBodyData))
+        let backgroundRegistration = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: backgroundBody) as? [String: Any]
+        )
+        let backgroundPreferences = try XCTUnwrap(backgroundRegistration["preferences"] as? [String: Bool])
+        XCTAssertEqual(backgroundPreferences["notifyOnBackground"], true)
 
         try await client.configureDevice(pushToStartEnabled: false)
         let perSessionDeviceBody = try XCTUnwrap(requests.last.flatMap(apiTestBodyData))

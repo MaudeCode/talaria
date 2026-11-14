@@ -44,6 +44,8 @@ struct RelayNotificationSettingsRow: View {
     @State private var statusMessage: String?
     @State private var isRelayAvailable = false
     @AppStorage(TalariaRelayNotifications.isEnabledKey) private var notificationsEnabled = false
+    @AppStorage(TalariaRelayNotifications.backgroundAlertsEnabledKey) private var backgroundAlertsEnabled = false
+    @AppStorage(ResponseCompletionNotifications.isEnabledKey) private var completionAlertsEnabled = false
 
     var body: some View {
         Group {
@@ -54,12 +56,22 @@ struct RelayNotificationSettingsRow: View {
             )
             .disabled(!isRelayAvailable)
 
+            SettingsToggleRow(
+                title: SettingsIndex.notificationsBackgroundAlerts.title,
+                systemImage: "arrow.triangle.branch",
+                isOn: $backgroundAlertsEnabled
+            )
+            .disabled(!isRelayAvailable || !completionAlertsEnabled)
+
             SettingsFootnote(
                 statusMessage
                     ?? (isRelayAvailable
                         ? String(localized: "Delivered for servers connected to Talaria Relay.")
                         : String(localized: "Connect a server to Talaria Relay to enable remote alerts."))
             )
+        }
+        .onChange(of: backgroundAlertsEnabled) {
+            Task { try? await TalariaAggregateLiveActivityManager.shared.refresh() }
         }
         .task {
             isRelayAvailable = authManager.servers.contains { account in
