@@ -115,6 +115,8 @@ public struct AskSession {
             throw Failure(message: error)
         }
         let sessionID: String
+        // A reply restores the chat's profile even after the app switched profiles; nil only when the server names none.
+        var sessionProfile = profile
         if let existingSessionID {
             sessionID = existingSessionID
         } else {
@@ -123,12 +125,13 @@ public struct AskSession {
                 throw Failure(message: String(localized: "The server did not return the new session ID."))
             }
             sessionID = newID
+            sessionProfile = created.session?.profile ?? profile
         }
         let started = try await client.startChat(sessionID: sessionID, message: prompt, workspace: nil, model: nil, profile: profile)
         guard let streamID = started.streamId, !streamID.isEmpty else {
             throw Failure(message: started.error ?? String(localized: "The server did not return a stream ID."))
         }
-        memory?.remember(Last(sessionID: sessionID, profile: profile))
+        memory?.remember(Last(sessionID: sessionID, profile: sessionProfile))
 
         let sessionURL = TalariaDeepLink.sessionURL(sessionID: sessionID)
         func result(_ status: Result.Status, _ text: String = "") -> Result {

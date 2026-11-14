@@ -101,7 +101,10 @@ final class AskSessionTests: XCTestCase {
         _ = try await session.ask("Status?", profile: nil, sessionID: session.last?.sessionID)
 
         XCTAssertEqual(fixture.paths.prefix(2), ["/api/session/new", "/api/chat/start"])
-        XCTAssertEqual(session.last, .init(sessionID: AskFixture.sessionID, profile: nil))
+        XCTAssertEqual(
+            session.last, .init(sessionID: AskFixture.sessionID, profile: "default"),
+            "The chat's own profile, so a reply after a profile switch in the app still reaches it."
+        )
         let otherServer = AskSession.Memory(serverID: "https://other.example.test", defaults: memory.defaults)
         XCTAssertNil(otherServer.last, "Another server's chat is never continued.")
     }

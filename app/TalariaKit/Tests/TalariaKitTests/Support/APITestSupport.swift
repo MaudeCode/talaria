@@ -574,7 +574,8 @@ final class AskFixture {
             case "/api/chat/start" where (json["profile"] as? String).map { $0 != activeProfile.value } == true:
                 return apiTestJSONResponse(#"{"error":"Session not found"}"#, statusCode: 404, for: request)
             case "/api/session/new":
-                return apiTestJSONResponse(#"{"session":{"session_id":"\#(Self.sessionID)","title":"Untitled"}}"#, for: request)
+                // The server creates the chat in the request's active profile and names it on the session.
+                return apiTestJSONResponse(#"{"session":{"session_id":"\#(Self.sessionID)","title":"Untitled","profile":"\#(activeProfile.value)"}}"#, for: request)
             case "/api/chat/start":
                 return apiTestJSONResponse(#"{"stream_id":"ask-stream-1","session_id":"\#(Self.sessionID)"}"#, for: request)
             case "/api/speech/prepare":
