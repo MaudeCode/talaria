@@ -12,6 +12,8 @@
         "activityPhase": "waiting_for_approval",
         "startedAt": 1799999940000,
         "updatedAt": 1800000000000,
+        "toolCount": 0,
+        "activityAt": 1799999940000,
         "deepLink": "/sessions/contract-session",
         "origin": "user",
         "approvalHeadId": "v5zPlTFdGWPlzGHmTN5i3e"

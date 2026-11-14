@@ -322,6 +322,9 @@ function parseAgentNotify(value: unknown): AgentNotify | null {
   return { id, title, body, level };
 }
 
+// A non-negative integer: a count, or an instant in epoch milliseconds.
+const isCount = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+
 function parseState(
   value: unknown,
   envelope?: { eventId: string; revision: number },
@@ -336,6 +339,8 @@ function parseState(
   const activityPhase = value.activityPhase;
   const startedAt = value.startedAt === undefined ? undefined : numberField(value, "startedAt");
   const updatedAt = numberField(value, "updatedAt");
+  const toolCount = value.toolCount;
+  const activityAt = value.activityAt;
   const deepLink = stringField(value, "deepLink", 512);
   const origin = value.origin;
   const alertEligible = value.alertEligible;
@@ -360,6 +365,8 @@ function parseState(
     !isSessionPhase(phase) ||
     (activityPhase !== undefined && !isSessionPhase(activityPhase)) ||
     (startedAt !== undefined && (startedAt === null || !Number.isSafeInteger(startedAt) || startedAt < 0)) ||
+    (toolCount !== undefined && !isCount(toolCount)) ||
+    (activityAt !== undefined && !isCount(activityAt)) ||
     updatedAt === null ||
     !deepLink ||
     !safePath(deepLink)
@@ -376,6 +383,8 @@ function parseState(
     ...(isSessionPhase(activityPhase) ? { activityPhase } : {}),
     ...(startedAt === undefined ? {} : { startedAt }),
     updatedAt,
+    ...(isCount(toolCount) ? { toolCount } : {}),
+    ...(isCount(activityAt) ? { activityAt } : {}),
     deepLink,
     ...(origin === undefined ? {} : { origin }),
     alertEligible,
@@ -591,6 +600,8 @@ http.route({
               activityPhase: state.activityPhase,
               startedAt: state.startedAt,
               updatedAt: state.updatedAt,
+              toolCount: state.toolCount,
+              activityAt: state.activityAt,
               deepLink: state.deepLink,
               origin: state.origin,
               alertEligible: state.alertEligible,

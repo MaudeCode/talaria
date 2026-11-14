@@ -108,6 +108,8 @@ BASE64URL_SHA256_OF_EXACT_BODY
       "activityPhase": "running",
       "startedAt": 1787845500000,
       "updatedAt": 1787845600000,
+      "toolCount": 3,
+      "activityAt": 1787845580000,
       "deepLink": "/sessions/session-id"
     }
   ]
@@ -147,6 +149,8 @@ including tombstones awaiting cleanup. A request that would exceed it fails with
 updated or revoked at the limit.
 
 Each state may carry `startedAt`, the run's start in epoch milliseconds (a non-negative integer). Relay copies it onto the aggregate row and uses it as the native Live Activity's timer start, so the lock screen counts from the same instant as the chat. Publishers that omit it fall back to when Relay registered the activity.
+
+Each state may carry `toolCount`, the tool calls the run started, and `activityAt`, the run's last phase change or tool event in epoch milliseconds; both are non-negative integers. Unlike `updatedAt`, `activityAt` does not move when the publisher republishes an unchanged run. Relay copies both onto the aggregate row and into the native Live Activity's content state, where the lock screen shows the count and how long ago the run last changed.
 
 Each state may carry an optional `alertEligible` boolean. Omitting it means `true`. `alertEligible: false` applies only to the exact event carrying it, including a session's first publication: the relay still persists the transition and delivers the Live Activity state silently, but produces no ordinary notification and no `alert` or sound on a Live Activity update or end. Because APNs requires an alert on push-to-start, an ineligible transition on a device with no running Live Activity defers the start, and the deferral persists on that device while the suppressed state is visible and otherwise until an eligible phase transition, an activity registration, or idle work releases it. The stored value carries forward across same-phase updates of the same run (same `streamId`) until the next phase transition or a new run, so a later heartbeat or eligibility change in the same phase never alerts or starts an activity for the already-consumed transition.
 

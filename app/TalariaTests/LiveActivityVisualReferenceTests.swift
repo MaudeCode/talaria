@@ -92,6 +92,35 @@ final class LiveActivityVisualReferenceTests: XCTestCase {
         }
     }
 
+    /// TAL-874: a relay-driven run carries no excerpt; the panel shows its tool count and last activity instead, and an
+    /// older Relay or Web, which sends neither, keeps the earlier wording.
+    func testRelayLockScreenReferences() throws {
+        let startedAt = AgentRunScenario.startedAt
+        let relay = { (name: String, status: AgentRunActivityStatus, activity: String, toolCount: Int?, activityAt: Date?) in
+            (name, AgentRunActivityAttributes.ContentState(
+                sessionID: "session-visual-reference", sessionTitle: "Talaria visual references", status: status,
+                currentActivity: activity, startedAt: startedAt, updatedAt: AgentRunScenario.frozenClock,
+                isFinal: status == .complete, toolCount: toolCount, activityAt: activityAt
+            ))
+        }
+        for (name, state) in [
+            relay("tools", .thinking, "Working", 3, startedAt.addingTimeInterval(60)),
+            relay("started", .thinking, "Working", 3, startedAt.addingTimeInterval(5)),
+            relay("now", .thinking, "Working", 3, AgentRunScenario.frozenClock.addingTimeInterval(-5)),
+            relay("finished", .complete, "Done", 3, AgentRunScenario.frozenClock),
+            relay("legacy", .thinking, "Working", nil, nil),
+        ] {
+            try VisualReference.assertMatchesReference(
+                AgentRunLockScreenView(state: state)
+                    .environment(\.agentRunFrozenClock, AgentRunScenario.frozenClock),
+                named: "live-activity-lock-screen-relay-\(name)",
+                size: CGSize(width: 360, height: 140),
+                colorScheme: .dark,
+                background: AgentRunLiveActivityTheme.background
+            )
+        }
+    }
+
     func testDynamicIslandExpandedReferences() throws {
         for scenario in AgentRunScenario.allCases {
             try VisualReference.assertMatchesReference(

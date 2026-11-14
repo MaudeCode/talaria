@@ -574,6 +574,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     profileExists: (profile) => { try { return statSync(profileHome(profile)).isDirectory() } catch { return false } },
     session: (sid) => store.get(sid), redactEnabled: sessions.deps.redactEnabled, env, now, log })
   const notifications = new NotificationHub(activity, [relay, webPush], events)
+  registry.onToolActivity = () => { notifications.changed() }
   const turns = new TurnRunner({
     notifications: updateNotifications,
     notificationOwner: () => {

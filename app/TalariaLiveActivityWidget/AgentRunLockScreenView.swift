@@ -7,6 +7,11 @@ struct AgentRunLockScreenView: View {
     let state: AgentRunActivityAttributes.ContentState
     var publisherID: String? = nil
 
+    @Environment(\.agentRunFrozenClock) private var frozenClock
+
+    /// TAL-874: "Updated" stays hidden while the run's last activity is its start.
+    private static let updatedQuietInterval: TimeInterval = 10
+
     var body: some View {
         let actions = LiveActivityRowActions(state: state, publisherID: publisherID)
         // What an approval runs takes the activity line's place, so the text and Allow fit; a refused answer's error,
@@ -64,7 +69,7 @@ struct AgentRunLockScreenView: View {
 
     private var transcriptPanel: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(excerptText)
+            detailText
                 .font(.caption)
                 .foregroundStyle(AgentRunLiveActivityTheme.secondaryText)
                 .lineLimit(2)
@@ -80,15 +85,27 @@ struct AgentRunLockScreenView: View {
         )
     }
 
-    private var excerptText: String {
+    /// The App's own stream shows its excerpt. Relay never sends one, so its run shows the tool count and how long ago
+    /// the run last changed (TAL-874); an older Relay or Web, which sends neither, keeps the earlier wording.
+    private var detailText: Text {
         if !state.responseExcerpt.isEmpty {
-            return state.responseExcerpt
+            return Text(state.responseExcerpt)
         }
-
+        guard let toolCount = state.toolCount else {
+            return Text(verbatim: state.isFinal ? "Response is ready to review." : "Waiting for the next agent update.")
+        }
         if state.isFinal {
-            return "Response is ready to review."
+            return Text("Open to read the reply")
         }
-
-        return "Waiting for the next agent update."
+        let tools = Text("\(toolCount) tools")
+        guard let activityAt = state.activityAt,
+              activityAt.timeIntervalSince(state.startedAt) >= Self.updatedQuietInterval else {
+            return tools
+        }
+        // A Live Activity redraws only for a content update or a live date, so the label stays live rather than appearing
+        // on a timer. Whole minutes keep its first minute at "now" instead of counting seconds.
+        let format = SystemFormatStyle.DateReference(to: activityAt, allowedFields: [.day, .hour, .minute], maxFieldCount: 1)
+        let relative = frozenClock.map { Text($0, format: format) } ?? Text(.currentDate, format: format)
+        return Text("\(tools) · \(Text("Updated \(relative)"))")
     }
 }

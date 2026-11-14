@@ -1048,6 +1048,59 @@ describe('session activity lifecycle (TAL-1520)', () => {
   })
 })
 
+describe('relay activity of a running turn (TAL-874)', () => {
+  it('counts the run\'s tool calls and keeps its last activity when the run is republished unchanged', async () => {
+    let clock = 1_800_000_000
+    const sidecar = new FakeSidecar()
+    const steps: (() => void)[] = []
+    const step = (): Promise<void> => new Promise((resolve) => { steps.push(resolve) })
+    const tool = (event: 'tool' | 'tool_complete', tid: string) => ({ event, data: { event_type: event === 'tool' ? 'tool.started' : 'tool.completed', name: 'terminal', preview: null, args: { command: 'ls' }, tid } })
+    sidecar.respond('chat.start', async (_params, emit, opts) => {
+      emit(tool('tool', 'call-1'))
+      await step()
+      emit(tool('tool_complete', 'call-1'))
+      emit(tool('tool', 'call-2'))
+      await new Promise((resolve) => opts.signal?.addEventListener('abort', resolve))
+      return { status: 'cancelled', messages: [], final_response: '', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: {}, context: {}, model: 'test-model', provider: 'test', compressed: false, agent_session_id: 'x', token_sent: false, pending_steer: '', live_tool_calls: [] } as unknown as SidecarResult<'chat.start'>
+    })
+    const server = await bootTestServer({ sidecar, now: () => clock })
+    const relay = fakeRelay()
+    server.deps.fetch = relay.fetch
+    // The registry batches tool activity before waking the publisher; the test wakes it at once.
+    server.deps.registry.toolWakeMs = 0
+    let streamId = ''
+    try {
+      await post(server, '/api/talaria/relay/pair', { relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'synthetic' })
+      const sid = String(((await json(await post(server, '/api/session/new', { title: 'Tool run' }))).session as Json).session_id)
+      const response = await post(server, '/api/chat/start', { session_id: sid, message: 'List the files' })
+      expect(response.status, await response.clone().text()).toBe(200)
+      streamId = String((await json(response)).stream_id)
+      const row = async () => (await server.deps.relay.current()!.buildStates('default')).find((state) => state.sessionId === sid)
+      await vi.waitFor(async () => { expect(await row()).toMatchObject({ phase: 'running', toolCount: 1, activityAt: 1_800_000_000_000 }) }, { timeout: 5000 })
+      await vi.waitFor(() => { expect((relay.snapshots().at(-1)?.body.states as Json[] | undefined)?.find((state) => state.sessionId === sid)).toMatchObject({ toolCount: 1 }) })
+      clock += 30
+      await vi.waitFor(() => { expect(steps).toHaveLength(1) })
+      steps[0]!()
+      // Tool activity alone wakes the publisher, well before its idle refresh.
+      await vi.waitFor(() => { expect((relay.snapshots().at(-1)?.body.states as Json[] | undefined)?.find((state) => state.sessionId === sid)).toMatchObject({ toolCount: 2, activityAt: 1_800_000_030_000 }) })
+      // A republish of the unchanged run moves updatedAt but never the last activity.
+      clock += 60
+      expect(await row()).toMatchObject({ toolCount: 2, activityAt: 1_800_000_030_000, updatedAt: 1_800_000_090_000 })
+      // A phase change is activity.
+      server.deps.pending.submitApproval(sid, { request_id: 'approval', tool: 'shell' })
+      expect(await row()).toMatchObject({ phase: 'waiting_for_approval', toolCount: 2, activityAt: 1_800_000_090_000 })
+      clock += 60
+      expect(await row()).toMatchObject({ activityAt: 1_800_000_090_000 })
+      server.deps.pending.resolveApproval(sid, 'approval')
+    } finally {
+      for (const release of steps) release()
+      if (streamId) { await server.get(`/api/chat/cancel?stream_id=${streamId}`); await server.deps.turns.finished(streamId) }
+      server.deps.relay.stop()
+      await server.close()
+    }
+  })
+})
+
 describe('session-started events under person isolation (TAL-48)', () => {
   it('never announces a person\'s Agent-owned chat to the shared profile scope', async () => {
     const s = await bootTestServer({ sidecar: new FakeSidecar(), env: { HERMES_WEBUI_PERSON_ISOLATION: '1' } })

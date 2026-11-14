@@ -1,0 +1,19 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "While Talaria is closed, the lock-screen Live Activity shows how many tools the run has used and when it last changed, instead of \"Waiting for the next agent update.\" A finished run says \"Open to read the reply\".",
+      "highlight": false,
+      "components": [
+        "web",
+        "relay",
+        "app"
+      ],
+      "announcement": {
+        "title": "Run progress on the Lock Screen",
+        "description": "See how many tools a run has used and when it last changed, even while Talaria is closed.",
+        "icon": "notifications"
+      }
+    }
+  ]
+}

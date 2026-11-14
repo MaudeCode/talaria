@@ -20,6 +20,10 @@ public struct AgentRunActivityAttributes: Codable, Sendable {
         /// TAL-1463: what that approval runs, from the App's own stream. Relay never sends it, so a relay-driven
         /// activity offers Deny and Open; Allow needs the whole text on screen.
         public var approvalText: String?
+        /// TAL-874: Relay's tool calls the run started and its last phase change or tool event. Absent from the App's own
+        /// stream and from an older Relay or Web.
+        public var toolCount: Int?
+        public var activityAt: Date?
 
         /// The lock screen's lead line. A stale activity still waiting on the user keeps its ask.
         public var lockScreenLead: String {
@@ -50,7 +54,9 @@ public struct AgentRunActivityAttributes: Codable, Sendable {
             isFinal: Bool = false,
             errorSummary: String? = nil,
             approvalHeadID: String? = nil,
-            approvalText: String? = nil
+            approvalText: String? = nil,
+            toolCount: Int? = nil,
+            activityAt: Date? = nil
         ) {
             self.sessionID = sessionID
             self.sessionTitle = AgentRunActivitySanitizer.sessionTitle(sessionTitle)
@@ -64,6 +70,8 @@ public struct AgentRunActivityAttributes: Codable, Sendable {
             self.errorSummary = errorSummary.map(AgentRunActivitySanitizer.activityLine)
             self.approvalHeadID = approvalHeadID
             self.approvalText = approvalText
+            self.toolCount = toolCount
+            self.activityAt = activityAt
         }
     }
 

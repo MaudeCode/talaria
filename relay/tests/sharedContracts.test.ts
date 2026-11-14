@@ -68,30 +68,34 @@ async function relayWithPublisher() {
 const publisherPath = (profileId: string, rest: string) =>
   `/v1/publishers/${encodeURIComponent("https://contract.example")}/profiles/${profileId}/${rest}`;
 
-type PublisherSnapshot = { states: { startedAt?: number }[] };
+// TAL-868, TAL-874: fields an older Web publisher does not send; Relay copies each onto the App's row only when sent.
+const optionalRunFields = ["startedAt", "toolCount", "activityAt"] as const;
+type PublisherSnapshot = { states: Partial<Record<(typeof optionalRunFields)[number], number>>[] };
 
-function withoutStartedAt(body: string) {
+function withoutRunFields(body: string) {
   const snapshot = JSON.parse(body) as PublisherSnapshot;
-  for (const state of snapshot.states) delete state.startedAt;
+  for (const state of snapshot.states) for (const field of optionalRunFields) delete state[field];
   return JSON.stringify(snapshot);
 }
 
-// The release gate pairs the selected Relay and App with each supported Web's own publisher fixture, and an older Web
-// sends no startedAt. Relay copies the field only when it was sent, so each row's expected value follows the publisher.
+// The release gate pairs the selected Relay and App with each supported Web's own publisher fixture, so each row's
+// expected optional fields follow the publisher.
 function expectedAppSnapshot(publisherBody: string) {
   const { states } = JSON.parse(publisherBody) as PublisherSnapshot;
-  const expected = JSON.parse(fixture("relay-snapshot")) as { aggregate: { rows: { startedAt?: number }[] } };
+  const expected = JSON.parse(fixture("relay-snapshot")) as { aggregate: { rows: PublisherSnapshot["states"] } };
   for (const [index, row] of expected.aggregate.rows.entries()) {
-    const startedAt = states[index]?.startedAt;
-    if (startedAt === undefined) delete row.startedAt;
-    else row.startedAt = startedAt;
+    for (const field of optionalRunFields) {
+      const value = states[index]?.[field];
+      if (value === undefined) delete row[field];
+      else row[field] = value;
+    }
   }
   return expected;
 }
 
 it.each([
   ["its fixture", (body: string) => body],
-  ["no startedAt", withoutStartedAt],
+  ["none of the optional run fields", withoutRunFields],
 ])("accepts a Web publisher sending %s and App registration, then returns the shared App snapshot", async (_, publish) => {
   const clock = vi.spyOn(Date, "now").mockReturnValue(now);
   try {
@@ -142,25 +146,25 @@ it("accepts only the bounded session-started fields for the publisher's own prof
   }
 });
 
-it("times a relay-pushed Live Activity from the run's start, not from the activity's registration", async () => {
+// TAL-868, TAL-874: the run's start times the activity; its tool count and last activity replace the lock screen's
+// empty excerpt, which Relay never has.
+it("maps the run's start, tool count and last activity into a relay-pushed Live Activity", async () => {
   let clock = now;
   const spy = vi.spyOn(Date, "now").mockImplementation(() => clock);
   try {
     const { backend, signedPut } = await relayWithPublisher();
     const runStartedAt = now - 60_000;
+    const activityAt = now - 20_000;
     const snapshot = (revision: number) => {
       const body = JSON.parse(fixture("publisher-snapshot")) as { snapshotId: string; states: Record<string, unknown>[] };
       body.snapshotId = `contract-snapshot-${String(revision)}`;
       body.states = body.states.map((state) => ({
         ...state, startedAt: runStartedAt, revision: now + revision, eventId: `snapshot:${String(now + revision)}:contract-session`,
-        updatedAt: clock,
+        updatedAt: clock, toolCount: 3, activityAt,
       }));
       return JSON.stringify(body);
     };
     expect((await signedPut(publisherPath("prf_default", "snapshot"), snapshot(1))).status).toBe(200);
-    const invalid = JSON.parse(snapshot(1)) as { states: Record<string, unknown>[] };
-    invalid.states[0]!.startedAt = 1.5;
-    expect((await signedPut(publisherPath("prf_default", "snapshot"), JSON.stringify(invalid))).status).toBe(400);
     // The phone registers its activity (or reconnects) well after the run began.
     clock = now + 30_000;
     const headers = { authorization: "Bearer contract-session-token", "x-talaria-device-id": "contract-device", "content-type": "application/json" };
@@ -175,9 +179,16 @@ it("times a relay-pushed Live Activity from the run's start, not from the activi
     const updates = jobs.filter((job) => job.kind === "live_activity_update" && job.activityId === "contract-activity");
     expect(updates.length).toBeGreaterThan(0);
     // Swift's default Codable Date representation is seconds since 2001-01-01.
-    const swiftRunStart = runStartedAt / 1_000 - 978_307_200;
+    const swiftDate = (milliseconds: number) => milliseconds / 1_000 - 978_307_200;
     for (const job of updates) {
-      expect(JSON.parse(job.request.payloadJson).aps["content-state"].startedAt).toBe(swiftRunStart);
+      expect(JSON.parse(job.request.payloadJson).aps["content-state"]).toMatchObject({
+        responseExcerpt: "", startedAt: swiftDate(runStartedAt), toolCount: 3, activityAt: swiftDate(activityAt),
+      });
+    }
+    for (const [field, value] of [["startedAt", 1.5], ["toolCount", -1], ["toolCount", 1.5], ["activityAt", 1.5]] as const) {
+      const invalid = JSON.parse(snapshot(3)) as { states: Record<string, unknown>[] };
+      invalid.states[0]![field] = value;
+      expect((await signedPut(publisherPath("prf_default", "snapshot"), JSON.stringify(invalid))).status).toBe(400);
     }
   } finally {
     spy.mockRestore();
