@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Settings search now opens from a search button instead of a field that is always on screen; the button sits in the bottom bar on iPhone, the right-edge bar on iPhone Duo, and the top bar on iPad.",
+      "highlight": false,
+      "components": [
+        "app"
+      ],
+      "announce": false
+    }
+  ]
+}

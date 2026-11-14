@@ -218,7 +218,7 @@ final class ScreenGalleryHostedTests: XCTestCase {
     func testSettingsSearchResultsAndEmptyState() async throws {
         for query in ["thinking", "not-a-real-setting-87321"] {
             try await page(query == "thinking" ? "settings-search-results" : "settings-search-empty", title: "Settings", prepare: { window in
-                let field = try XCTUnwrap(window.firstView(ofType: UISearchTextField.self))
+                let field = try await self.openSettingsSearch(in: window)
                 field.text = query
                 field.sendActions(for: .editingChanged)
                 if query == "thinking" {
