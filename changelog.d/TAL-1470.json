@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Ask Talaria a question from Siri, Shortcuts, or the Action button and hear the reply without opening the app.",
+      "highlight": true,
+      "components": [
+        "app"
+      ],
+      "announcement": {
+        "title": "Ask Talaria with Siri",
+        "description": "Say \"Ask Talaria\" or use the Action button, and hear the reply without opening the app.",
+        "icon": "voice"
+      }
+    }
+  ]
+}

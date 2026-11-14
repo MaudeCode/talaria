@@ -127,6 +127,13 @@ public final class AppLockModel {
         }
     }
 
+    /// Whether work done without the scene, such as an App Intent, finds the app locked (TAL-1470). The minute away
+    /// counts before the scene returns; a launch for the intent alone starts locked.
+    public func locksBackgroundWork() -> Bool {
+        lockIfAwayTooLong()
+        return isLocked
+    }
+
     private func lockIfAwayTooLong() {
         guard isEnabled, !isLocked, let backgroundedAt, backgroundedAt.duration(to: now()) > Self.backgroundGrace else {
             return

@@ -67,12 +67,67 @@ struct NewChatInProfileIntent: AppIntent {
     }
 }
 
+/// "Ask Talaria" — sends a prompt to a new chat and speaks the server's reply without opening the app, so Siri, a
+/// Shortcut, or the Action button can ask and hear the answer (TAL-1470). Shortcuts can chain the reply text. It never
+/// answers an approval or a question itself: those, and a run still going after a minute, leave the chat running and
+/// offer to open it. With App Lock on and Talaria locked it asks nothing and offers to open Talaria to unlock.
+struct AskTalariaIntent: AppIntent, ForegroundContinuableIntent {
+    static let title: LocalizedStringResource = "Ask Talaria"
+    static let description = IntentDescription("Send a prompt to a new chat and hear the reply.")
+
+    static let openAppWhenRun: Bool = false
+
+    @Parameter(title: "Prompt", requestValueDialog: "What do you want to ask?")
+    var prompt: String
+
+    /// Nil asks in the server's active profile.
+    @Parameter(title: "Profile")
+    var profile: ProfileEntity?
+
+    /// The saved server's session; tests substitute a fixture.
+    @MainActor static var makeAskSession: () -> AskSession? = { AppIntentServer.saved()?.askSession() }
+    /// App Lock guards the agent too: a locked Talaria asks nothing until it is unlocked in the app.
+    @MainActor static var appLock = AppLockModel.shared
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ProvidesDialog & ReturnsValue<String> {
+        guard !Self.appLock.locksBackgroundWork() else { throw needsToContinueInForegroundError("Unlock Talaria") }
+        guard let session = Self.makeAskSession() else {
+            throw AskSession.Failure(message: String(localized: "Add a server in Talaria first."))
+        }
+        let result = try await session.ask(prompt, profile: profile?.id)
+        let openChat: @MainActor () async throws -> Void = { AppIntentRouter.shared.requestDeepLink(result.sessionURL) }
+        switch result.status {
+        case .replied:
+            return .result(value: result.text, dialog: "\(result.text)")
+        case .failed:
+            throw AskSession.Failure(message: result.text)
+        case .needsInput:
+            throw needsToContinueInForegroundError("\(result.text) Open Talaria to continue.", continuation: openChat)
+        case .stillWorking:
+            throw needsToContinueInForegroundError(
+                "Talaria is still working on it. Open Talaria to see the reply.",
+                continuation: openChat
+            )
+        }
+    }
+}
+
 /// Registers Talaria's App Shortcuts. iOS discovers this conformance automatically at build
 /// time — it does not need to be referenced from the `App` struct. Exposing the intent here
 /// is what makes "New Chat" appear in the Shortcuts app, Spotlight, and Siri, and assignable
 /// to the iPhone Action button.
 struct TalariaShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
+        AppShortcut(
+            intent: AskTalariaIntent(),
+            phrases: [
+                "Ask \(.applicationName)",
+                "Ask \(.applicationName) a question"
+            ],
+            shortTitle: "Ask Talaria",
+            systemImageName: "bubble.left.and.text.bubble.right"
+        )
         AppShortcut(
             intent: NewChatIntent(),
             phrases: [

@@ -516,3 +516,82 @@ func executionModesFixture(_ key: String) throws -> String {
     let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("execution-modes")) as? [String: Any])
     return String(decoding: try JSONSerialization.data(withJSONObject: try XCTUnwrap(fixture[key])), as: UTF8.self)
 }
+
+/// TAL-1470: the ask flow's fixture server. It answers `profile/switch`, `session/new`, `chat/start` and `speech/prepare`,
+/// records each request's path and JSON body, and its chat stream plays the given wire frames through the real frame
+/// decoder. Like the server's admission check, `chat/start` in a profile other than the active one is not found.
+@MainActor
+final class AskFixture {
+    @MainActor
+    final class Stream: SSEStreamingClient {
+        let frames: [(event: String, data: String)]
+        private(set) var startedURLs: [URL] = []
+        private(set) var stopCount = 0
+        let lastEventID: String? = nil
+
+        init(frames: [(event: String, data: String)]) { self.frames = frames }
+
+        func start(url: URL, onEvent: @escaping @MainActor (SSEEvent) -> Void) {
+            startedURLs.append(url)
+            for frame in frames {
+                SSEEventDecoder.decodeFrame(eventType: frame.event, data: frame.data).forEach(onEvent)
+            }
+        }
+
+        func stop() { stopCount += 1 }
+    }
+
+    static let sessionID = "ask-session-1"
+    let stream: Stream
+    let client: APIClient
+    private let recorded = LockedTestValue<[(path: String, body: [String: String])]>([])
+
+    /// A `done` frame whose settled session carries `finalAnswer` as the turn's scene.
+    static func doneFrame(finalAnswer: String) -> (event: String, data: String) {
+        let answer = String(decoding: try! JSONEncoder().encode(finalAnswer), as: UTF8.self)
+        return ("done", #"{"terminal_state":"completed","session":{"session_id":"\#(sessionID)","messages":[{"role":"user","content":"q"},{"role":"assistant","content":"a","_anchor_activity_scene":{"version":"activity_scene_v1","activity_rows":[],"final_answer":\#(answer)}}]}}"#)
+    }
+
+    init(frames: [(event: String, data: String)]) {
+        stream = Stream(frames: frames)
+        let recorded = recorded
+        let activeProfile = LockedTestValue("default")
+        let scope = MockURLProtocol.register { request in
+            let path = request.url?.path ?? ""
+            let json = apiTestBodyData(from: request).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+            recorded.value.append((path, json.compactMapValues { $0 as? String }))
+            switch path {
+            case "/api/profile/switch":
+                activeProfile.value = json["name"] as? String ?? ""
+                return apiTestJSONResponse(#"{"active":"\#(activeProfile.value)"}"#, for: request)
+            case "/api/chat/start" where (json["profile"] as? String).map { $0 != activeProfile.value } == true:
+                return apiTestJSONResponse(#"{"error":"Session not found"}"#, statusCode: 404, for: request)
+            case "/api/session/new":
+                return apiTestJSONResponse(#"{"session":{"session_id":"\#(Self.sessionID)","title":"Untitled"}}"#, for: request)
+            case "/api/chat/start":
+                return apiTestJSONResponse(#"{"stream_id":"ask-stream-1","session_id":"\#(Self.sessionID)"}"#, for: request)
+            case "/api/speech/prepare":
+                let text = json["text"] as? String ?? ""
+                let spoken = String(decoding: try JSONEncoder().encode("Spoken: \(text)"), as: UTF8.self)
+                return apiTestJSONResponse(#"{"spoken_text":\#(spoken)}"#, for: request)
+            default:
+                return apiTestJSONResponse(#"{"error":"not found"}"#, statusCode: 404, for: request)
+            }
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        configuration.httpAdditionalHeaders = [MockURLProtocol.scopeHeader: scope]
+        client = APIClient(baseURL: URL(string: "https://ask.example.test")!, session: URLSession(configuration: configuration))
+    }
+
+    func session(timeout: Duration = .seconds(60)) -> AskSession {
+        AskSession(client: client, timeout: timeout) { [stream] in stream }
+    }
+
+    /// The JSON body the server received at `path`, string fields only.
+    func body(at path: String) -> [String: String]? {
+        recorded.value.first { $0.path == path }?.body
+    }
+
+    var paths: [String] { recorded.value.map(\.path) }
+}

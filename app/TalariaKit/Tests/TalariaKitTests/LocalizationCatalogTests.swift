@@ -392,6 +392,8 @@ final class LocalizationCatalogTests: XCTestCase {
     func testAppShortcutPhrasesHaveDedicatedCatalogEntries() throws {
         let strings = try catalogStrings(at: "Talaria/Resources/AppShortcuts.xcstrings")
         let expectedPhrases = [
+            "Ask ${applicationName}",
+            "Ask ${applicationName} a question",
             "New chat in ${applicationName}",
             "New ${applicationName} chat",
             "Start a new chat in ${applicationName}",
