@@ -5,12 +5,22 @@ import TalariaKit
 
 struct AgentRunExpandedIslandBottomView: View {
     let state: AgentRunActivityAttributes.ContentState
+    var publisherID: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             AgentRunProgressRail(status: state.status)
 
-            if !state.responseExcerpt.isEmpty {
+            if let actions = LiveActivityRowActions(
+                status: state.status, isFinal: state.isFinal,
+                sessionID: state.sessionID, publisherID: publisherID
+            ) {
+                // The Lock Screen shows a refused answer's error in its activity line; the island has none.
+                if let errorSummary = state.errorSummary {
+                    LiveActivityAnswerError(text: errorSummary)
+                }
+                LiveActivityActionButtons(actions: actions)
+            } else if !state.responseExcerpt.isEmpty {
                 Text(state.responseExcerpt)
                     .font(.caption2)
                     .foregroundStyle(AgentRunLiveActivityTheme.secondaryText)

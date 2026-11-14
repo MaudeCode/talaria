@@ -22,9 +22,10 @@ struct TalariaAggregateLiveActivityWidget: Widget {
             )
             VStack(alignment: .leading, spacing: 6) {
                 TalariaAggregateHeader(state: context.state, isStale: isStale)
-                ForEach(context.state.rows.prefix(TalariaAggregateLiveActivityPresentation.lockScreenRowLimit)) { row in
-                    AggregateRowLink(row: row, isStale: isStale)
-                }
+                TalariaAggregateRows(
+                    state: context.state, isStale: isStale,
+                    limit: TalariaAggregateLiveActivityPresentation.lockScreenRowLimit, spacing: 6
+                )
             }
             .padding(14)
             .activityBackgroundTint(AgentRunLiveActivityTheme.background)
@@ -53,13 +54,10 @@ struct TalariaAggregateLiveActivityWidget: Widget {
                         .padding(.vertical, 4)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        ForEach(context.state.rows.prefix(
-                            TalariaAggregateLiveActivityPresentation.expandedIslandRowLimit
-                        )) { row in
-                            AggregateRowLink(row: row, isStale: isStale)
-                        }
-                    }
+                    TalariaAggregateRows(
+                        state: context.state, isStale: isStale,
+                        limit: TalariaAggregateLiveActivityPresentation.expandedIslandRowLimit, spacing: 5
+                    )
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 2)
@@ -76,85 +74,10 @@ struct TalariaAggregateLiveActivityWidget: Widget {
     }
 }
 
-
-
-
-private extension TalariaAggregateActivityAttributes.ContentState.Row {
-    var sessionURL: URL? {
-        TalariaDeepLink.sessionURL(sessionID: sessionId, publisherID: publisherId)
-    }
-}
-
-/// One aggregate row that opens its own session. The card's `widgetURL` only covers taps
-/// outside a row and the compact and minimal presentations, which show no rows.
-private struct AggregateRowLink: View {
-    let row: TalariaAggregateActivityAttributes.ContentState.Row
-    let isStale: Bool
-
-    var body: some View {
-        let content = HStack(spacing: 7) {
-            Text(row.title)
-                .font(.system(size: 13, weight: .semibold))
-                .lineLimit(1)
-            Spacer(minLength: 8)
-            AggregateStatusLabel(
-                status: row.status,
-                phase: row.phase,
-                isStale: isStale
-            )
-                .layoutPriority(1)
-        }
-        if let url = row.sessionURL {
-            Link(destination: url) { content }
-        } else {
-            content
-        }
-    }
-}
-
-enum AggregatePhaseStyle {
-    static func color(
-        for phase: String,
-        isLuminanceReduced: Bool
-    ) -> Color {
-        guard let hex = TalariaAggregateLiveActivityPresentation.colorHex(
-            for: phase,
-            isLuminanceReduced: isLuminanceReduced
-        ) else {
-            return AgentRunLiveActivityTheme.secondaryText
-        }
-        return Color(
-            red: Double((hex >> 16) & 0xFF) / 255,
-            green: Double((hex >> 8) & 0xFF) / 255,
-            blue: Double(hex & 0xFF) / 255
-        )
-    }
-
-    static func headerColor(
-        for state: TalariaAggregateActivityAttributes.ContentState,
-        isLuminanceReduced: Bool
-    ) -> Color {
-        let hero = state.rows.first(where: {
-            $0.phase == "waiting_for_approval" || $0.phase == "waiting_for_input"
-        }) ?? state.rows.first(where: { $0.phase == "failed" }) ?? state.rows.first
-        return hero.map {
-            color(
-                for: $0.phase,
-                isLuminanceReduced: isLuminanceReduced
-            )
-        } ?? AgentRunLiveActivityTheme.primaryText
-    }
-
-    static func symbol(for phase: String) -> String {
-        TalariaAggregateLiveActivityPresentation.signalSymbol(for: phase)
-    }
-}
-
-
 struct AgentRunLiveActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: AgentRunActivityAttributes.self) { context in
-            AgentRunLockScreenView(state: context.state)
+            AgentRunLockScreenView(state: context.state, publisherID: context.attributes.relayPublisherID)
                 .activityBackgroundTint(AgentRunLiveActivityTheme.background)
                 .activitySystemActionForegroundColor(AgentRunLiveActivityTheme.primaryText)
                 .widgetURL(TalariaDeepLink.sessionURL(sessionID: context.state.sessionID, publisherID: context.attributes.relayPublisherID))
@@ -171,7 +94,7 @@ struct AgentRunLiveActivityWidget: Widget {
                 }
 
                 DynamicIslandExpandedRegion(.bottom) {
-                    AgentRunExpandedIslandBottomView(state: context.state)
+                    AgentRunExpandedIslandBottomView(state: context.state, publisherID: context.attributes.relayPublisherID)
                 }
             } compactLeading: {
                 AgentRunIslandCompactMark(status: context.state.status)

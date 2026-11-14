@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Allow or deny a waiting run from its Live Activity on the Lock Screen, the Dynamic Island, or the closed iPhone Duo, and open a chat that needs your input from the same place.",
+      "highlight": true,
+      "components": [
+        "app"
+      ],
+      "announcement": {
+        "title": "Approve from the Lock Screen",
+        "description": "Allow or Deny a waiting run right from its Live Activity, without opening Talaria.",
+        "icon": "notifications"
+      }
+    }
+  ]
+}

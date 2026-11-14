@@ -5,12 +5,20 @@ import TalariaKit
 
 struct AgentRunLockScreenView: View {
     let state: AgentRunActivityAttributes.ContentState
+    var publisherID: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
             activityProgressRow(progressWidth: 112)
-            transcriptPanel
+            if let actions = LiveActivityRowActions(
+                status: state.status, isFinal: state.isFinal,
+                sessionID: state.sessionID, publisherID: publisherID
+            ) {
+                LiveActivityActionButtons(actions: actions)
+            } else {
+                transcriptPanel
+            }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(.horizontal, 16)

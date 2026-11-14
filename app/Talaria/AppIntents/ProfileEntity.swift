@@ -123,6 +123,18 @@ struct AppIntentServer {
         return AppIntentServer(url: url, headers: customHeaders(for: url))
     }
 
+    /// The saved server whose origin a relay publisher names, or the active server for a run started without the
+    /// relay (TAL-1463). Nil when no saved server matches.
+    static func saved(publisherID: String?) -> AppIntentServer? {
+        guard let publisherID else { return saved() }
+        guard let origin = TalariaRelayClient.originIdentifier(publisherID),
+              let raw = ServerRegistry.shared.servers.first(where: {
+                  TalariaRelayClient.originIdentifier($0.urlString) == origin
+              })?.urlString,
+              let url = URL(string: raw) else { return nil }
+        return AppIntentServer(url: url, headers: customHeaders(for: url))
+    }
+
     func client() -> APIClient {
         let headers = headers
         return APIClient(baseURL: url, customHeaderProvider: { headers })

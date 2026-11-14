@@ -201,6 +201,10 @@ struct UITestFixtureEnvironment {
         AskTalariaIntent.makeAskSession = {
             AskSession(client: client, memory: AskSession.Memory(serverID: serverURL.absoluteString, defaults: defaults)) { SSEClient() }
         }
+        // Live Activity answers likewise go to the fixture server (TAL-1463).
+        LiveActivityApprovalResponder.shared = LiveActivityApprovalResponder(
+            makeClient: { _ in client }, appLock: .shared, display: .system
+        )
         let authManager = AuthManager(
             keychain: keychain,
             clientFactory: { _ in client },
