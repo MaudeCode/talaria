@@ -5,7 +5,7 @@ import { oc } from '@orpc/contract'
 import { z } from 'zod'
 import { ModelSelectionWarningSchema, SessionDeleteRefusedSchema } from '../sidecar-shared.js'
 import { ExecutionModesSchema } from '../gateway-session.js'
-import { AgentRuntimeMetadataSchema, SessionIdSchema, SessionRowSchema, SessionEnvelopeSchema, SessionsListSchema, SessionNewRequestSchema, DraftSchema, DraftResponseSchema, ProjectSchema, ProjectsSchema, SessionStatusSchema, SessionUsageSchema, SessionSkillsSchema, SessionOutlineSchema, SessionDeleteResultSchema, ShareReadSchema, ShareCreateResponseSchema, ActivitySceneRowSchema, ToolResultViewSchema, SessionSchema, AttachmentSchema } from '../views.js'
+import { AgentRuntimeMetadataSchema, SessionIdSchema, SessionRowSchema, SessionEnvelopeSchema, SessionsListSchema, SessionNewRequestSchema, DraftSchema, DraftResponseSchema, ProjectSchema, ProjectsSchema, SessionStatusSchema, SessionUsageSchema, SessionSkillsSchema, SessionOutlineSchema, SessionDeleteResultSchema, ShareReadSchema, ShareCreateResponseSchema, ActivitySceneRowSchema, ActivitySummarySchema, ToolResultViewSchema, SessionSchema, AttachmentSchema } from '../views.js'
 
 /** Session, project, share, and draft routes. Response rows are loose: the sidecar carries operator-defined extras. */
 
@@ -218,6 +218,11 @@ export const sessionsContract = {
     create: oc.route({ method: 'POST', path: '/api/share/create', tags: ['shares'] }).input(z.object({ session_id: z.string() })).output(ShareCreateResponseSchema),
     revoke: oc.route({ method: 'POST', path: '/api/share/revoke', tags: ['shares'] }).input(z.object({ session_id: z.string() })).output(OkSchema.extend({ session: SessionRowSchema })),
     read: oc.route({ method: 'GET', path: '/api/share/{token}', tags: ['shares'], summary: 'Public read of a shared conversation snapshot.' }).input(z.object({ token: z.string() })).output(ShareReadSchema),
+  },
+  activity: {
+    summary: oc.route({ method: 'GET', path: '/api/activity/summary', tags: ['activity'], summary: 'TAL-2232: the running and waiting chats of the active profile (or `profile`) the requester may see, in display order.' })
+      .input(z.object({ profile: z.string().optional() }))
+      .output(ActivitySummarySchema),
   },
   talaria: {
     pair: oc.route({ method: 'POST', path: '/api/talaria/relay/pair', tags: ['talaria'], summary: 'Register this server with Talaria Relay (owner) or enroll the active profile (any session).' })

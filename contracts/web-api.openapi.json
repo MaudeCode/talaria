@@ -61403,6 +61403,105 @@
         }
       }
     },
+    "/api/activity/summary": {
+      "get": {
+        "operationId": "activity.summary",
+        "summary": "TAL-2232: the running and waiting chats of the active profile (or `profile`) the requester may see, in display order.",
+        "tags": [
+          "activity"
+        ],
+        "parameters": [
+          {
+            "name": "profile",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "running_count": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "description": "Rows running or starting."
+                    },
+                    "waiting_count": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "description": "Rows waiting for an approval or for input."
+                    },
+                    "rows": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "session_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "phase": {
+                            "enum": [
+                              "waiting_for_approval",
+                              "waiting_for_input",
+                              "running",
+                              "starting"
+                            ],
+                            "type": "string"
+                          },
+                          "started_at": {
+                            "type": "number",
+                            "description": "When the run started (epoch seconds)."
+                          },
+                          "updated_at": {
+                            "type": "number",
+                            "description": "When the row was built (epoch seconds)."
+                          },
+                          "deep_link": {
+                            "type": "string",
+                            "description": "The chat's path in Talaria, such as `/sessions/<id>`."
+                          },
+                          "approval_id": {
+                            "type": "string",
+                            "description": "With `waiting_for_approval`: the approval at the head of the queue, as `POST /api/approval/respond` takes it."
+                          }
+                        },
+                        "required": [
+                          "session_id",
+                          "title",
+                          "phase",
+                          "started_at",
+                          "updated_at",
+                          "deep_link"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "running_count",
+                    "waiting_count",
+                    "rows"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/talaria/relay/pair": {
       "post": {
         "operationId": "talaria.pair",

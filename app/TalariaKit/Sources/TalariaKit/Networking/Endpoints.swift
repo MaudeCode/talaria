@@ -21,6 +21,8 @@ public enum Endpoint: Sendable {
     case newSession
     /// TAL-1045: the modes a new chat in the active profile can start in now.
     case executionModes
+    /// TAL-2232: the running and waiting chats of the active profile, or of `profile`.
+    case activitySummary(profile: String?)
     case renameSession
     case deleteSession
     case pinSession
@@ -235,6 +237,8 @@ public enum Endpoint: Sendable {
             return "/api/session/new"
         case .executionModes:
             return "/api/session/execution-modes"
+        case .activitySummary:
+            return "/api/activity/summary"
         case .renameSession:
             return "/api/session/rename"
         case .deleteSession:
@@ -583,6 +587,8 @@ public enum Endpoint: Sendable {
             return [URLQueryItem(name: "q", value: search), URLQueryItem(name: "provider", value: provider),
                     URLQueryItem(name: "favorites", value: String(favorites)), URLQueryItem(name: "show_hidden", value: String(showHidden)),
                     URLQueryItem(name: "live", value: String(live))]
+        case let .activitySummary(profile):
+            return profile.map { [URLQueryItem(name: "profile", value: $0)] } ?? []
         case let .logs(file, tail):
             return [URLQueryItem(name: "file", value: file), URLQueryItem(name: "tail", value: String(tail))]
         case let .sessionStream(sessionID):

@@ -27,6 +27,7 @@ import { pyOsError, pyRepr, str } from '../util.js'
 import { activeProfileName, ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
 import { RelayPairingError } from '../sessions/relay.js'
 import { loginHash, WebPushRequestError, type WebPushRequester } from '../sessions/notify/web-push.js'
+import { activitySummary } from '../sessions/notify/activity.js'
 import { requestBaseUrl } from './auth-raw.js'
 import { EscapeGrantExpired, type EscapeRequest } from '../workspace/escape.js'
 import { ProfileError } from '../profiles/profiles.js'
@@ -634,6 +635,22 @@ export const sessionsRouter = os.router({
       await ctx.deps.sessionStore.unlinkProject(input.project_id)
       ctx.deps.events.publish('project_delete', { profile: activeProfile })
       return { ok: true as const }
+    })),
+  },
+  activity: {
+    summary: os.activity.summary.handler(({ input, context: { ctx } }) => run(async () => {
+      const session = await ensureTrustedAuthSession(ctx)
+      const bound = str(session?.bound_profile).trim() || null
+      const active = bound ?? activeProfileName(ctx)
+      const profile = str(input.profile).trim() || active
+      // A login bound to one profile, or a server pinned to one, never reads another profile's activity.
+      if ((bound || ctx.deps.isolatedProfileMode()) && !ctx.deps.profilesMatch(profile, active)) throw new HttpError(403, 'This sign-in cannot read another profile')
+      const key = ctx.deps.isRootProfile(profile) ? 'default' : profile
+      // A run that replaced another mid-build drops its row from that build; one rebuild picks it up.
+      let replaced = false
+      let rows = await ctx.deps.activity.states(key, () => { replaced = true })
+      if (replaced) rows = await ctx.deps.activity.states(key, () => undefined)
+      return activitySummary(rows, (owner) => ctx.deps.sessions.personMaySee(owner))
     })),
   },
   talaria: {

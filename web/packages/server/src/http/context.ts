@@ -66,6 +66,7 @@ import type { TerminalRegistry } from '../tools/terminal.js'
 import type { OidcService } from '../auth/oidc.js'
 import type { RelayService } from '../sessions/relay.js'
 import type { NotificationHub } from '../sessions/notify/channel.js'
+import type { ActivityStates } from '../sessions/notify/activity.js'
 import type { WebPushChannel } from '../sessions/notify/web-push.js'
 import type { CliSessionSource } from '../sessions/cli-sessions.js'
 import type { CompletionDrain } from '../sessions/completions.js'
@@ -235,6 +236,8 @@ export interface AppDeps {
   relay: RelayService
   webPush: WebPushChannel
   notifications: NotificationHub
+  /** The per-profile activity rows every notification channel and `GET /api/activity/summary` read. */
+  activity: ActivityStates
   // ── OIDC and passkeys (checkpoint 7d) ──
   oidc: OidcService
   passkeys: PasskeyStore

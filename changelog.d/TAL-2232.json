@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web can now list which chats are running and which are waiting for you, ready for upcoming Siri and watch features.",
+      "highlight": false,
+      "components": ["app", "web"],
+      "announce": false
+    }
+  ]
+}
