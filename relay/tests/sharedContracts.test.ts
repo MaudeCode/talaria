@@ -234,8 +234,14 @@ it("updates, fences and clears a relay-pushed Live Activity's plan and worker co
     expect((await backend.fetch("/v1/devices/contract-device/live-activities/contract-activity", { method: "PUT", headers, body: fixture("app-registration") })).status).toBe(200);
     await backend.mutation(internal.delivery.recompute, { userId: "contract-user" });
     expect((await contentStates()).at(-1)).toMatchObject({ sessionID: "contract-session", planCompleted: 2, planTotal: 5, workerCount: 3 });
+    // APNs accepted that push, as the delivery worker records it, whenever the scheduler gets to it.
+    await backend.run(async (ctx) => {
+      const job = (await ctx.db.query("deliveryJobs").collect()).filter((candidate) => candidate.activityId === "contract-activity").at(-1)!;
+      const activity = (await ctx.db.query("liveActivities").collect()).find((candidate) => candidate.activityId === "contract-activity")!;
+      await ctx.db.patch(activity._id, { lastAggregate: job.aggregate, lastDeliveryAt: clock });
+    });
     const delivered = (await contentStates()).length;
-    // The same counts again, well past the update throttle: no new push.
+    // The same counts again, past the update throttle but inside the unchanged-content heartbeat: no new push.
     clock = now + 60_000;
     await publish({ planCompleted: 2, planTotal: 5, workerCount: 3 });
     expect(await contentStates()).toHaveLength(delivered);
