@@ -53,6 +53,13 @@ export interface ActivityState {
   /** TAL-874: tool calls the run started, and its last phase change or tool event (epoch ms); absent without a tracked run. */
   toolCount?: number
   activityAt?: number
+  /**
+   * TAL-1422: the run's plan (`planProgress`) and the session's running workers (`runningWorkers`), sent on every row whose
+   * background work could be read: 0 of 0 once the plan has nothing open or the run finished, 0 workers when none runs.
+   */
+  planCompleted?: number
+  planTotal?: number
+  workerCount?: number
   deepLink: string
   alertEligible: boolean
   /** TAL-873: who started the row's turn; the Relay mutes a `background` completion unless the device opts in. */
@@ -231,9 +238,12 @@ export class ActivityStates {
         if (run.seen_phase?.phase !== phase) run.seen_phase = { phase, at: run.seen_phase ? run.terminal_at ?? this.deps.now() : run.started_at }
         activity = { toolCount: run.tool_count ?? 0, activityAt: Math.floor(Math.max(run.seen_phase.at, run.tool_at ?? 0) * 1000) }
       }
+      // TAL-1422: only a live run has a plan; a finished, replaced or restarted one clears it.
+      const plan = run.relay_phase || run.phase === 'settled' ? undefined : run.plan
+      const work: Pick<ActivityState, 'planCompleted' | 'planTotal' | 'workerCount'> = snapshot ? { planCompleted: plan?.completed ?? 0, planTotal: plan?.total ?? 0, workerCount: snapshot.worker_count } : {}
       const review = this.deps.decisionReview?.(sid)
       const notices = this.notices.get(sid)?.shown.map((shown) => shown.notice) ?? []
-      states.push({ sessionId: sid, streamId: run.stream_id || null, ...(snapshot ? { activityPhase: snapshot.activity_phase } : {}), title: (session.title || 'Untitled').slice(0, 120), phase, startedAt: Math.floor((run.started_at || this.deps.now()) * 1000), updatedAt, ...activity, deepLink: `/sessions/${encodeURIComponent(sid)}`, alertEligible, origin: run.origin ?? 'user', ...(approvalId ? { approvalHeadId: approvalHeadId(sid, approvalId) } : {}), ...(review ? { decisionReviewId: review.review_id, decisionReviewTitle: review.title } : {}), ...(notices.length ? { agentNotices: notices } : {}), ownerPersonId: session.owner_person_id })
+      states.push({ sessionId: sid, streamId: run.stream_id || null, ...(snapshot ? { activityPhase: snapshot.activity_phase } : {}), title: (session.title || 'Untitled').slice(0, 120), phase, startedAt: Math.floor((run.started_at || this.deps.now()) * 1000), updatedAt, ...activity, ...work, deepLink: `/sessions/${encodeURIComponent(sid)}`, alertEligible, origin: run.origin ?? 'user', ...(approvalId ? { approvalHeadId: approvalHeadId(sid, approvalId) } : {}), ...(review ? { decisionReviewId: review.review_id, decisionReviewTitle: review.title } : {}), ...(notices.length ? { agentNotices: notices } : {}), ownerPersonId: session.owner_person_id })
     }
     if (incomplete) this.incompleteProfiles.add(profile)
     else this.incompleteProfiles.delete(profile)

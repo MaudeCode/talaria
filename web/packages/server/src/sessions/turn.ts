@@ -31,7 +31,7 @@ import { anchorMessageKey, markerSummary, insertCompactionRow, visibleMessagesFo
 import { buildActiveTurnToken, completedToolIndex, publicToolFrame, redactNestedMessageContainers, redactString, withToolId } from '../redact.js'
 import { dict, findPersonality, type Config, type PersonalityRow } from '../config/agent-config.js'
 import { ReasoningTitleTracker, reasoningDisclosureKey, reasoningEventPayload } from './reasoning-titles.js'
-import { UNSETTLED_TODO_KEY, parseTodoToolResult } from './todo.js'
+import { UNSETTLED_TODO_KEY, parseTodoToolResult, type PlanProgress } from './todo.js'
 import type { UpdateNotificationStore } from '../tools/update-notifications.js'
 import { SessionNotices } from './notices.js'
 import { SessionGoals } from './goals.js'
@@ -1141,6 +1141,7 @@ export class TurnRunner {
                 if (todos) {
                   todos.ts = receivedAt
                   this.liveTodos.set(streamId, todos)
+                  this.registry.notePlan(streamId, todos.plan_progress as PlanProgress)
                   await emitFrame('todo_state', redactNestedMessageContainers({ ...todos, session_id: sessionId, stream_id: streamId, source: 'live' }, redacted) as Record<string, unknown>)
                 }
                 return

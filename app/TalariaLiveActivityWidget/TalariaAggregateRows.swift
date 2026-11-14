@@ -45,6 +45,9 @@ private struct AggregateRowLink: View {
                 .font(.system(size: 13, weight: .semibold))
                 .lineLimit(1)
             Spacer(minLength: 8)
+            if actions == nil, let counts = row.workCounts {
+                AgentRunWorkCountsLabel(counts: counts, font: .system(size: 12, weight: .medium))
+            }
             if actions == nil {
                 AggregateStatusLabel(
                     status: row.status,

@@ -29,7 +29,7 @@ import { withTurnIds } from './anchor.js'
 import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles.js'
 import { CANONICAL_READ_ONLY_REASON, WEB_DIAGNOSTIC_REQUEST_PREFIX } from './state-db.js'
 import { toolProgress } from './tool-display.js'
-import { deriveTodoState, normalizeTodoSnapshot } from './todo.js'
+import { deriveTodoState, normalizeTodoSnapshot, type PlanProgress } from './todo.js'
 import { catalogNames, offeredMove, ownerConnection, settledConnection, type ConnectorMove } from '../tools/connectors.js'
 
 type Row = Record<string, unknown>
@@ -226,6 +226,11 @@ export class GatewaySessions {
 
   private changed(target: Target): void {
     this.deps.channels.emit(target.sid, 'session-updated', { session_id: target.sid, source: 'native_owner' }, target.profile)
+  }
+
+  /** TAL-1422: the plan an owner run's Live Activity shows, from the same resolved todo state the chat shows. */
+  private ownerPlan(target: Target, snapshot: GatewaySnapshot): PlanProgress {
+    return (this.nativeTodo(target, snapshot) ?? normalizeTodoSnapshot({ todos: [] }))!.plan_progress as PlanProgress
   }
 
   private nativeTodo(target: Target, snapshot: GatewaySnapshot): Row | null {
@@ -1161,7 +1166,8 @@ export class GatewaySessions {
     watch.controller.signal.addEventListener('abort', () => { observation.listeners.delete(listener); release() }, { once: true })
     const registry = this.deps.registry
     const channel = registry.create(watch.stream, target.sid)
-    registry.registerActiveRun({ stream_id: watch.stream, session_id: target.sid, phase: 'running', started_at: this.deps.now(), workspace: str(base.workspace), model: str(base.model) || null, provider: null, ephemeral: false, origin: 'user' })
+    // TAL-1422: a run attached mid-plan shows its plan before the owner writes it again.
+    registry.registerActiveRun({ stream_id: watch.stream, session_id: target.sid, phase: 'running', started_at: this.deps.now(), workspace: str(base.workspace), model: str(base.model) || null, provider: null, ephemeral: false, origin: 'user', plan: this.ownerPlan(target, watch.snapshot) })
     // TAL-1564: the sidebar row turns streaming now, including for an idle observation whose owner just started a run.
     this.deps.events.publish('owner_changed', { profile: target.profile, sessionId: target.sid })
     let chain = Promise.resolve()
@@ -1303,6 +1309,8 @@ export class GatewaySessions {
               if (replaying) liveRunning = false
               if (!result.snapshot) return
               if (result.replay_gap || !sameExecution(result.snapshot, watch.snapshot)) await resetProjection()
+              // TAL-1422: an owner snapshot, a replay gap's included, replaces the plan the run's Live Activity shows.
+              registry.notePlan(watch.stream, this.ownerPlan(target, result.snapshot))
               await put('session_snapshot', { session: await this.view(base, result, watch.stream, target), replay_gap: result.replay_gap === true })
               await prompts(result.snapshot)
               liveRunning ||= !replaying && result.snapshot.running
@@ -1323,7 +1331,9 @@ export class GatewaySessions {
               return
             }
             if (kind === 'todo.updated') {
-              await put('todo_state', { ...normalizeTodoSnapshot(data), session_id: target.sid, stream_id: watch.stream, source: 'live' })
+              const todos = normalizeTodoSnapshot(data)
+              if (todos) registry.notePlan(watch.stream, todos.plan_progress as PlanProgress)
+              await put('todo_state', { ...todos, session_id: target.sid, stream_id: watch.stream, source: 'live' })
               return
             }
             if (kind === 'request.cancel') {

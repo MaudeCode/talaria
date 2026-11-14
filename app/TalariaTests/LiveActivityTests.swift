@@ -99,6 +99,54 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(updates.last?.updatedAt, clock)
     }
 
+    /// TAL-1422: each change of the server's plan or worker count pushes one update; a repeat of the same counts, or
+    /// counts of another chat, push nothing.
+    func testRepeatedUnchangedWorkCountsPushNoActivityUpdate() async throws {
+        let clock = Date(timeIntervalSince1970: 1_800_000_000)
+        var updates: [AgentRunActivityAttributes.ContentState] = []
+        let manager = AgentLiveActivityManager(minimumUpdateInterval: 0, now: { clock }, updateActivity: { updates.append($0) })
+        manager.start(
+            sessionID: "counts-fixture", sessionTitle: "Counts", streamID: "counts-stream",
+            publisherURL: URL(string: "https://fixture.example")!
+        )
+        let settle = { for _ in 0..<10 { await Task.yield() } }
+        await settle()
+        let initial = updates.count
+        // Back-to-back writes coalesce into one push, so each change settles before the next.
+        manager.update(.planProgress(completed: 1, total: 3, sessionID: "counts-fixture"))
+        await settle()
+        manager.update(.workerCount(2, sessionID: "counts-fixture"))
+        await settle()
+        XCTAssertEqual(updates.count, initial + 2)
+        for _ in 0..<5 {
+            manager.update(.planProgress(completed: 1, total: 3, sessionID: "counts-fixture"))
+            manager.update(.workerCount(2, sessionID: "counts-fixture"))
+            manager.update(.workerCount(7, sessionID: "another-chat"))
+        }
+        await settle()
+        XCTAssertEqual(updates.count, initial + 2, "Unchanged counts must not request ActivityKit updates")
+        manager.update(.workerCount(0, sessionID: "counts-fixture"))
+        await settle()
+        XCTAssertEqual(updates.count, initial + 3)
+        XCTAssertEqual(updates.last?.workCounts?.text, AgentRunWorkCounts(planCompleted: 1, planTotal: 3, workerCount: nil)?.text)
+    }
+
+    /// TAL-1422: the counts' wording comes from the App's catalog, with plural forms in every shipped language.
+    func testWorkCountsAreLocalizedWithPluralForms() throws {
+        XCTAssertEqual(AgentRunWorkCounts(planCompleted: 2, planTotal: 5, workerCount: 1)?.text, "Plan 2/5 · 1 worker")
+        XCTAssertEqual(AgentRunWorkCounts(planCompleted: nil, planTotal: nil, workerCount: 3)?.accessibilityLabel, "3 workers running")
+        for (language, one, many, plan) in [
+            ("de", "1 Worker", "5 Worker", "Plan 2/5"), ("ru", "1 исполнитель", "5 исполнителей", "План 2/5"), ("ja", "ワーカー 1", "ワーカー 5", "計画 2/5"),
+        ] {
+            let bundle = try XCTUnwrap(Bundle.main.path(forResource: language, ofType: "lproj").flatMap(Bundle.init(path:)), language)
+            // The locale picks the plural category, as it does on a phone set to that language.
+            let locale = Locale(identifier: language)
+            XCTAssertEqual(String(localized: "\(1) workers", bundle: bundle, locale: locale), one, language)
+            XCTAssertEqual(String(localized: "\(5) workers", bundle: bundle, locale: locale), many, language)
+            XCTAssertEqual(String(localized: "Plan \(2)/\(5)", bundle: bundle, locale: locale), plan, language)
+        }
+    }
+
     func testFullExcerptPreservesPhaseChangesAndResets() async throws {
         var updates: [AgentRunActivityAttributes.ContentState] = []
         let resumed = expectation(description: "Token resumes the writing phase")

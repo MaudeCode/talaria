@@ -8,8 +8,9 @@ struct AgentRunExpandedIslandBottomView: View {
     var publisherID: String? = nil
 
     var body: some View {
+        let actions = LiveActivityRowActions(state: state, publisherID: publisherID)
         VStack(alignment: .leading, spacing: 4) {
-            if let actions = LiveActivityRowActions(state: state, publisherID: publisherID) {
+            if let actions {
                 // The island has no activity line, so a refused answer's error shows with the choices.
                 LiveActivityActionButtons(actions: actions, error: state.errorSummary)
                     .controlSize(.small)
@@ -25,6 +26,9 @@ struct AgentRunExpandedIslandBottomView: View {
                     .foregroundStyle(AgentRunLiveActivityTheme.secondaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)
+            }
+            if actions == nil, let counts = state.workCounts {
+                AgentRunWorkCountsLabel(counts: counts, font: .caption2.weight(.semibold))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

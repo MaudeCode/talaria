@@ -324,6 +324,9 @@ function parseAgentNotify(value: unknown): AgentNotify | null {
 
 // A non-negative integer: a count, or an instant in epoch milliseconds.
 const isCount = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+// TAL-1422: plan and worker counts the publisher bounds before they reach a Live Activity.
+export const MAX_WORK_COUNT = 9_999;
+const isWorkCount = (value: unknown): value is number => isCount(value) && value <= MAX_WORK_COUNT;
 
 function parseState(
   value: unknown,
@@ -341,6 +344,9 @@ function parseState(
   const updatedAt = numberField(value, "updatedAt");
   const toolCount = value.toolCount;
   const activityAt = value.activityAt;
+  const planCompleted = value.planCompleted;
+  const planTotal = value.planTotal;
+  const workerCount = value.workerCount;
   const deepLink = stringField(value, "deepLink", 512);
   const origin = value.origin;
   const alertEligible = value.alertEligible;
@@ -367,6 +373,10 @@ function parseState(
     (startedAt !== undefined && (startedAt === null || !Number.isSafeInteger(startedAt) || startedAt < 0)) ||
     (toolCount !== undefined && !isCount(toolCount)) ||
     (activityAt !== undefined && !isCount(activityAt)) ||
+    // A plan's two counts travel together, and none of it can be done beyond its total.
+    (planCompleted === undefined) !== (planTotal === undefined) ||
+    (planTotal !== undefined && (!isWorkCount(planTotal) || !isWorkCount(planCompleted) || planCompleted > planTotal)) ||
+    (workerCount !== undefined && !isWorkCount(workerCount)) ||
     updatedAt === null ||
     !deepLink ||
     !safePath(deepLink)
@@ -385,6 +395,8 @@ function parseState(
     updatedAt,
     ...(isCount(toolCount) ? { toolCount } : {}),
     ...(isCount(activityAt) ? { activityAt } : {}),
+    ...(isWorkCount(planTotal) && isWorkCount(planCompleted) ? { planCompleted, planTotal } : {}),
+    ...(isWorkCount(workerCount) ? { workerCount } : {}),
     deepLink,
     ...(origin === undefined ? {} : { origin }),
     alertEligible,
@@ -602,6 +614,9 @@ http.route({
               updatedAt: state.updatedAt,
               toolCount: state.toolCount,
               activityAt: state.activityAt,
+              planCompleted: state.planCompleted,
+              planTotal: state.planTotal,
+              workerCount: state.workerCount,
               deepLink: state.deepLink,
               origin: state.origin,
               alertEligible: state.alertEligible,

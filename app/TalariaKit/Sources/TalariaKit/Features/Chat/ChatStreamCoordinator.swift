@@ -810,6 +810,8 @@ public final class ChatStreamCoordinator {
             let hasCompletedTranscript = delegate?.streamCoordinatorApplyDone(payload) == true
             sessionActivityPhase = payload.session?.activityPhase
             completeCurrentResponse(needsTranscriptRefresh: !hasCompletedTranscript, terminalState: payload.terminalState)
+        case .planProgress(let payload):
+            liveActivityManager?.update(.planProgress(completed: payload.completed, total: payload.total, sessionID: payload.sessionId))
         case .approvalPending(let update):
             // An empty update is the settled prompt (`approval_cleared`); the run goes on.
             liveActivityManager?.update(
@@ -1014,6 +1016,15 @@ public final class ChatStreamCoordinator {
         if let phase, let liveActivityManager {
             LiveActivityReconciler.applySessionPhase(phase, sessionID: delegate?.streamCoordinatorSessionID, streamID: sessionActivityStreamID, manager: liveActivityManager)
         }
+    }
+
+    /// TAL-1422: the server's running-worker count from the chat's background-work read, for the activity of this chat's
+    /// run only, as `applySessionActivityPhase` fences it.
+    public func applyWorkerCount(_ count: Int?) {
+        guard let count, let sessionID = delegate?.streamCoordinatorSessionID, let liveActivityManager,
+              liveActivityManager.currentSessionID == sessionID,
+              liveActivityManager.currentStreamID == sessionActivityStreamID else { return }
+        liveActivityManager.update(.workerCount(count, sessionID: sessionID))
     }
 
     private func finishLiveActivity(status: AgentRunActivityStatus, activity: String, errorSummary: String?) {

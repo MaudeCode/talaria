@@ -254,6 +254,15 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
             updateCurrentState { state in
                 AgentRunActivityStateReducer.promptSettled(state: state)
             }
+        case .planProgress(let completed, let total, let sessionID):
+            // An unchanged count leaves the content as it is, so no update reaches ActivityKit.
+            updateCurrentState { state in
+                AgentRunActivityStateReducer.settingPlanProgress(completed: completed, total: total, sessionID: sessionID, state: state)
+            }
+        case .workerCount(let count, let sessionID):
+            updateCurrentState { state in
+                AgentRunActivityStateReducer.settingWorkerCount(count, sessionID: sessionID, state: state)
+            }
         }
     }
 

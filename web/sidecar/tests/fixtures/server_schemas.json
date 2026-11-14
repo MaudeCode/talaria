@@ -1893,6 +1893,12 @@
         "agents_working": {
           "type": "boolean"
         },
+        "worker_count": {
+          "description": "TAL-1422: running subagents, processes and `/background` tasks across every kind, the count a Live Activity shows. Absent from older servers.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9999
+        },
         "delegation_status": {
           "type": "object",
           "properties": {

@@ -34,6 +34,11 @@ export interface SessionState {
   toolCount?: number;
   /** TAL-874: the run's last phase change or tool event, in epoch milliseconds. */
   activityAt?: number;
+  /** TAL-1422: the run's plan, completed items of all but cancelled ones; 0 of 0 while it has none open. */
+  planCompleted?: number;
+  planTotal?: number;
+  /** TAL-1422: the session's running workers (subagents, processes, `/background` tasks); 0 clears the count. */
+  workerCount?: number;
   deepLink: string;
   expiresAt: number;
   activityExpiresAt?: number;
@@ -66,6 +71,9 @@ export interface PublishedSessionState {
   updatedAt: number;
   toolCount?: number;
   activityAt?: number;
+  planCompleted?: number;
+  planTotal?: number;
+  workerCount?: number;
   deepLink: string;
   origin?: TurnOrigin;
   alertEligible?: boolean;
@@ -88,6 +96,9 @@ export interface AggregateRow {
   updatedAt: number;
   toolCount?: number;
   activityAt?: number;
+  planCompleted?: number;
+  planTotal?: number;
+  workerCount?: number;
   deepLink: string;
   /** TAL-1463: the approval this row waits on, so the App answers only the approval the activity shows. */
   approvalHeadId?: string;

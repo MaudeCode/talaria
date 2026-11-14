@@ -10,6 +10,7 @@ import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
 import { fakeRelay, type Captured, type FakeRelay } from '../test/notifications.js'
+import { StreamRegistry } from './streams.js'
 import * as atomic from '../fs/atomic.js'
 import { loadRelayConfig, saveRelayConfig, PRESENCE_FENCE_SECONDS, PRESENCE_LEASE_SECONDS, PRESENCE_MAX_LEASES, PresenceLeases, RelayPairingError, RelayPublisher, validatedOrigin, type RelayConfig } from './relay.js'
 
@@ -1097,6 +1098,112 @@ describe('relay activity of a running turn (TAL-874)', () => {
       if (streamId) { await server.get(`/api/chat/cancel?stream_id=${streamId}`); await server.deps.turns.finished(streamId) }
       server.deps.relay.stop()
       await server.close()
+    }
+  })
+})
+
+describe('plan and worker counts on activity rows (TAL-1422)', () => {
+  const todos = (...states: string[]) => JSON.stringify({ todos: states.map((status, index) => ({ id: String(index), content: `Step ${String(index)}`, status })) })
+
+  it('counts the run\'s plan and the session\'s workers, and clears them on plan completion, finish and turn replacement', async () => {
+    let clock = 1_800_000_000
+    const sidecar = new FakeSidecar()
+    const steps: (() => void)[] = []
+    // Once the test ends, every later step passes at once, so a failed assertion never leaves the run waiting.
+    let ended = false
+    const step = (): Promise<void> => ended ? Promise.resolve() : new Promise((resolve) => { steps.push(resolve) })
+    const todo = (tid: string, result: string) => [
+      { event: 'tool', data: { event_type: 'tool.started', name: 'todo', preview: null, args: {}, tid } },
+      { event: 'tool_complete', data: { event_type: 'tool.completed', name: 'todo', preview: null, args: {}, tid, todo_result: result } },
+    ]
+    sidecar.respond('chat.start', async (_params, emit, opts) => {
+      for (const frame of todo('todo-1', todos('completed', 'in_progress', 'pending', 'cancelled'))) emit(frame)
+      await step()
+      for (const frame of todo('todo-2', todos('completed', 'completed', 'in_progress', 'cancelled'))) emit(frame)
+      await step()
+      for (const frame of todo('todo-3', todos('completed', 'completed', 'completed', 'cancelled'))) emit(frame)
+      await new Promise((resolve) => opts.signal?.addEventListener('abort', resolve))
+      return { status: 'cancelled', messages: [], final_response: '', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: {}, context: {}, model: 'test-model', provider: 'test', compressed: false, agent_session_id: 'x', token_sent: false, pending_steer: '', live_tool_calls: [] } as unknown as SidecarResult<'chat.start'>
+    })
+    // Two running subagents of one delegation and one running process; a finished process and lost work never count.
+    let subagents = 2
+    sidecar.respond('process.background_list', ({ session_ids: [listed = ''] }) => ({
+      delegations: [{ delegation_id: 'unit-1', origin_ui_session_id: listed, state: subagents ? 'running' : 'completed', dispatched_at: clock, completed_at: subagents ? null : clock, updated_at: clock, goals: ['One', 'Two'], child_statuses: subagents ? [] : ['completed', 'completed'], has_result: !subagents, live_status: subagents ? 'running' : null }],
+      processes: [
+        { process_id: 'proc_live', session_key: listed, command: 'serve', started_at: clock, exited: false, exited_at: null, exit_code: null, completion_reason: '', watched: false },
+        { process_id: 'proc_done', session_key: listed, command: 'build', started_at: clock, exited: true, exited_at: clock, exit_code: 0, completion_reason: 'exited', watched: false },
+      ],
+    }))
+    const server = await bootTestServer({ sidecar, now: () => clock })
+    const relay = fakeRelay()
+    server.deps.fetch = relay.fetch
+    server.deps.registry.toolWakeMs = 0
+    let streamId = ''
+    try {
+      await post(server, '/api/talaria/relay/pair', { relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'synthetic' })
+      const sid = String(((await json(await post(server, '/api/session/new', { title: 'Plan run' }))).session as Json).session_id)
+      const row = async () => (await server.deps.relay.current()!.buildStates('default')).find((state) => state.sessionId === sid)
+      const published = () => (relay.snapshots().at(-1)?.body.states as Json[] | undefined)?.find((state) => state.sessionId === sid)
+      const response = await post(server, '/api/chat/start', { session_id: sid, message: 'Plan the work' })
+      expect(response.status, await response.clone().text()).toBe(200)
+      streamId = String((await json(response)).stream_id)
+      // Cancelled items leave the plan; the publisher sends what the rows show.
+      await vi.waitFor(async () => { expect(await row()).toMatchObject({ phase: 'running', planCompleted: 1, planTotal: 3, workerCount: 3 }) }, { timeout: 5000 })
+      await vi.waitFor(() => { expect(published()).toMatchObject({ planCompleted: 1, planTotal: 3, workerCount: 3 }) })
+      // The in-app background read reports the same worker count.
+      expect(await json(await server.get(`/api/background/tasks?session_id=${sid}`))).toMatchObject({ worker_count: 3 })
+      await vi.waitFor(() => { expect(steps).toHaveLength(1) })
+      steps[0]!()
+      await vi.waitFor(async () => { expect(await row()).toMatchObject({ planCompleted: 2, planTotal: 3 }) })
+      subagents = 0
+      expect(await row()).toMatchObject({ workerCount: 1 })
+      await vi.waitFor(() => { expect(steps).toHaveLength(2) })
+      steps[1]!()
+      // Every open item done: nothing is left to track, so the plan clears.
+      await vi.waitFor(async () => { expect(await row()).toMatchObject({ planCompleted: 0, planTotal: 0, workerCount: 1 }) })
+      await server.get(`/api/chat/cancel?stream_id=${streamId}`)
+      await server.deps.turns.finished(streamId)
+      streamId = ''
+      // The finished run keeps no plan; the process still runs.
+      expect(await row()).toMatchObject({ phase: 'cancelled', planCompleted: 0, planTotal: 0, workerCount: 1 })
+      // A replacement run starts without the old run's plan until it writes its own.
+      server.deps.registry.activeRuns.set('old-run', { stream_id: 'old-run', session_id: sid, started_at: clock, phase: 'running', workspace: server.state, model: null, provider: null, ephemeral: false })
+      server.deps.registry.notePlan('old-run', { completed: 1, total: 4 })
+      expect(await row()).toMatchObject({ streamId: 'old-run', planCompleted: 1, planTotal: 4 })
+      clock += 1
+      server.deps.registry.activeRuns.set('new-run', { stream_id: 'new-run', session_id: sid, started_at: clock, phase: 'running', workspace: server.state, model: null, provider: null, ephemeral: false })
+      expect(await row()).toMatchObject({ streamId: 'new-run', planCompleted: 0, planTotal: 0 })
+      server.deps.registry.activeRuns.delete('old-run')
+      server.deps.registry.activeRuns.delete('new-run')
+    } finally {
+      ended = true
+      for (const release of steps) release()
+      if (streamId) { await server.get(`/api/chat/cancel?stream_id=${streamId}`); await server.deps.turns.finished(streamId) }
+      server.deps.relay.stop()
+      await server.close()
+    }
+  })
+
+  it('wakes the publisher only when a run\'s plan changes, and never for another stream', () => {
+    vi.useFakeTimers()
+    try {
+      const registry = new StreamRegistry()
+      registry.toolWakeMs = 0
+      const wake = vi.fn()
+      registry.onToolActivity = wake
+      registry.activeRuns.set('run', { stream_id: 'run', session_id: 'sid', started_at: 1, phase: 'running', workspace: '/tmp', model: null, provider: null, ephemeral: false })
+      registry.notePlan('run', { completed: 1, total: 3 })
+      vi.runAllTimers()
+      registry.notePlan('run', { completed: 1, total: 3 })
+      registry.notePlan('unknown-run', { completed: 2, total: 3 })
+      vi.runAllTimers()
+      expect(wake).toHaveBeenCalledTimes(1)
+      registry.notePlan('run', { completed: 2, total: 3 })
+      vi.runAllTimers()
+      expect(wake).toHaveBeenCalledTimes(2)
+      expect(registry.activeRuns.get('run')?.plan).toEqual({ completed: 2, total: 3 })
+    } finally {
+      vi.useRealTimers()
     }
   })
 })

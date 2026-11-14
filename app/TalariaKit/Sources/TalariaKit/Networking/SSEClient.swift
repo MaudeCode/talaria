@@ -139,6 +139,8 @@ public enum SSEEvent: Equatable, Sendable {
     case steerWithdrawn(SteerWithdrawnEvent)
     /// TAL-831: the session's Agent notices changed; the list replaces the shown one.
     case notices(SessionNoticesEvent)
+    /// TAL-1422: the run's plan progress from a `todo_state` frame, as the server counted it.
+    case planProgress(PlanProgressStreamEvent)
     /// TAL-1006: the server's open compression span; `startedAt` is the span's start, the same on every heartbeat.
     case compressing(startedAt: Date)
     /// TAL-1006: the compression span closed; the run goes on.
@@ -346,6 +348,36 @@ public struct InterimAssistantStreamEvent: Decodable, Equatable, Sendable {
     }
 }
 
+/// TAL-1422: the `session_id` and `plan_progress` of a `todo_state` frame; the App shows the counts as sent.
+public struct PlanProgressStreamEvent: Decodable, Equatable, Sendable {
+    public let sessionId: String
+    public let completed: Int
+    public let total: Int
+
+    var isValid: Bool { !sessionId.isEmpty && completed >= 0 && completed <= total }
+
+    public init(sessionId: String, completed: Int, total: Int) {
+        self.sessionId = sessionId
+        self.completed = completed
+        self.total = total
+    }
+
+    private struct Progress: Decodable {
+        let completed: Int
+        let total: Int
+    }
+
+    enum CodingKeys: String, CodingKey { case sessionId, planProgress }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sessionId = try container.decode(String.self, forKey: .sessionId)
+        let progress = try container.decode(Progress.self, forKey: .planProgress)
+        completed = progress.completed
+        total = progress.total
+    }
+}
+
 public struct MeteringStreamEvent: Decodable, Equatable, Sendable {
     let tokensPerSecond: Double?
     let isTokensPerSecondAvailable: Bool?
@@ -489,6 +521,11 @@ struct SSEEventDecoder {
         case "notices":
             guard let payload = decodePayload(SessionNoticesEvent.self, eventType: eventType, from: eventData, decoder: snakeCaseDecoder) else { return .ignored }
             return .notices(payload)
+        case "todo_state":
+            // An older server sends no `plan_progress`; the frame then changes nothing here.
+            guard let payload = decodePayload(PlanProgressStreamEvent.self, eventType: eventType, from: eventData, decoder: snakeCaseDecoder),
+                  payload.isValid else { return .ignored }
+            return .planProgress(payload)
         case "run_status":
             guard let payload = decodePayload(RunStatusPayload.self, eventType: eventType, from: eventData, decoder: snakeCaseDecoder) else { return .ignored }
             return .runStatus(sessionID: payload.sessionId, status: payload.status)

@@ -68,8 +68,8 @@ async function relayWithPublisher() {
 const publisherPath = (profileId: string, rest: string) =>
   `/v1/publishers/${encodeURIComponent("https://contract.example")}/profiles/${profileId}/${rest}`;
 
-// TAL-868, TAL-874: fields an older Web publisher does not send; Relay copies each onto the App's row only when sent.
-const optionalRunFields = ["startedAt", "toolCount", "activityAt"] as const;
+// TAL-868, TAL-874, TAL-1422: fields an older Web publisher does not send; Relay copies each onto the App's row only when sent.
+const optionalRunFields = ["startedAt", "toolCount", "activityAt", "planCompleted", "planTotal", "workerCount"] as const;
 type PublisherSnapshot = { states: Partial<Record<(typeof optionalRunFields)[number], number>>[] };
 
 function withoutRunFields(body: string) {
@@ -160,7 +160,7 @@ it("maps the run's start, tool count and last activity into a relay-pushed Live 
       body.snapshotId = `contract-snapshot-${String(revision)}`;
       body.states = body.states.map((state) => ({
         ...state, startedAt: runStartedAt, revision: now + revision, eventId: `snapshot:${String(now + revision)}:contract-session`,
-        updatedAt: clock, toolCount: 3, activityAt,
+        updatedAt: clock, toolCount: 3, activityAt, planCompleted: 2, planTotal: 5, workerCount: 3,
       }));
       return JSON.stringify(body);
     };
@@ -183,6 +183,7 @@ it("maps the run's start, tool count and last activity into a relay-pushed Live 
     for (const job of updates) {
       expect(JSON.parse(job.request.payloadJson).aps["content-state"]).toMatchObject({
         responseExcerpt: "", startedAt: swiftDate(runStartedAt), toolCount: 3, activityAt: swiftDate(activityAt),
+        planCompleted: 2, planTotal: 5, workerCount: 3,
       });
     }
     for (const [field, value] of [["startedAt", 1.5], ["toolCount", -1], ["toolCount", 1.5], ["activityAt", 1.5]] as const) {
@@ -190,6 +191,67 @@ it("maps the run's start, tool count and last activity into a relay-pushed Live 
       invalid.states[0]![field] = value;
       expect((await signedPut(publisherPath("prf_default", "snapshot"), JSON.stringify(invalid))).status).toBe(400);
     }
+    // TAL-1422: a plan's counts travel together, stay within its total, and every count is bounded.
+    for (const fields of [
+      { planCompleted: undefined }, { planTotal: undefined }, { planCompleted: 6 }, { planTotal: 10_000, planCompleted: 0 },
+      { workerCount: 10_000 }, { workerCount: -1 }, { workerCount: 1.5 }, { planCompleted: "2" },
+    ]) {
+      const invalid = JSON.parse(snapshot(3)) as { states: Record<string, unknown>[] };
+      Object.assign(invalid.states[0]!, fields);
+      expect((await signedPut(publisherPath("prf_default", "snapshot"), JSON.stringify(invalid))).status, JSON.stringify(fields)).toBe(400);
+    }
+  } finally {
+    spy.mockRestore();
+  }
+});
+
+// TAL-1422: plan and worker counts reach only their own session's activity, a repeat of unchanged counts pushes nothing,
+// and the publisher's zeros clear what the activity showed.
+it("updates, fences and clears a relay-pushed Live Activity's plan and worker counts", async () => {
+  let clock = now;
+  const spy = vi.spyOn(Date, "now").mockImplementation(() => clock);
+  try {
+    const { backend, signedPut } = await relayWithPublisher();
+    let revision = 0;
+    const publish = async (counts: { planCompleted: number; planTotal: number; workerCount: number }) => {
+      revision += 1;
+      const body = JSON.parse(fixture("publisher-snapshot")) as { snapshotId: string; states: Record<string, unknown>[] };
+      body.snapshotId = `contract-snapshot-${String(revision)}`;
+      const state = body.states[0]!;
+      body.states = [
+        { ...state, ...counts, revision: now + revision, eventId: `snapshot:${String(now + revision)}:contract-session` },
+        // Another chat of the same publisher and profile, with its own counts.
+        { ...state, sessionId: "other-session", streamId: "other-stream", deepLink: "/sessions/other-session", planCompleted: 9, planTotal: 9_999, workerCount: 9_999, revision: now + revision, eventId: `snapshot:${String(now + revision)}:other-session` },
+      ];
+      expect((await signedPut(publisherPath("prf_default", "snapshot"), JSON.stringify(body))).status).toBe(200);
+      await backend.mutation(internal.delivery.recompute, { userId: "contract-user" });
+    };
+    const contentStates = async () => (await backend.run((ctx) => ctx.db.query("deliveryJobs").collect()))
+      .filter((job) => job.kind === "live_activity_update" && job.activityId === "contract-activity")
+      .map((job) => JSON.parse(job.request.payloadJson).aps["content-state"] as Record<string, unknown>);
+    await publish({ planCompleted: 2, planTotal: 5, workerCount: 3 });
+    const headers = { authorization: "Bearer contract-session-token", "x-talaria-device-id": "contract-device", "content-type": "application/json" };
+    expect((await backend.fetch("/v1/devices/contract-device/live-activities/contract-activity", { method: "PUT", headers, body: fixture("app-registration") })).status).toBe(200);
+    await backend.mutation(internal.delivery.recompute, { userId: "contract-user" });
+    expect((await contentStates()).at(-1)).toMatchObject({ sessionID: "contract-session", planCompleted: 2, planTotal: 5, workerCount: 3 });
+    // APNs accepted that push, as the delivery worker records it, whenever the scheduler gets to it.
+    await backend.run(async (ctx) => {
+      const job = (await ctx.db.query("deliveryJobs").collect()).filter((candidate) => candidate.activityId === "contract-activity").at(-1)!;
+      const activity = (await ctx.db.query("liveActivities").collect()).find((candidate) => candidate.activityId === "contract-activity")!;
+      await ctx.db.patch(activity._id, { lastAggregate: job.aggregate, lastDeliveryAt: clock });
+    });
+    const delivered = (await contentStates()).length;
+    // The same counts again, past the update throttle but inside the unchanged-content heartbeat: no new push.
+    clock = now + 60_000;
+    await publish({ planCompleted: 2, planTotal: 5, workerCount: 3 });
+    expect(await contentStates()).toHaveLength(delivered);
+    // A plan item completes and a worker finishes.
+    await publish({ planCompleted: 3, planTotal: 5, workerCount: 2 });
+    expect((await contentStates()).at(-1)).toMatchObject({ planCompleted: 3, planTotal: 5, workerCount: 2 });
+    // The plan completes and the last worker ends: the zeros clear both.
+    clock = now + 120_000;
+    await publish({ planCompleted: 0, planTotal: 0, workerCount: 0 });
+    expect((await contentStates()).at(-1)).toMatchObject({ planCompleted: 0, planTotal: 0, workerCount: 0 });
   } finally {
     spy.mockRestore();
   }

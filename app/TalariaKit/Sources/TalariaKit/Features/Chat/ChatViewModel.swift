@@ -6243,7 +6243,7 @@ public final class ChatViewModel {
             activeBtwAnswer = "Error: \(message)"
             updateActiveBtwMessage(isLoading: false)
             finishBtwStream()
-        case .heartbeat, .ignored, .reasoning, .toolStarted, .toolProgress, .toolCompleted, .title, .metering, .steerConsumed, .steerPending, .steerWithdrawn, .notices, .connectionOperation,
+        case .heartbeat, .ignored, .reasoning, .toolStarted, .toolProgress, .toolCompleted, .title, .metering, .steerConsumed, .steerPending, .steerWithdrawn, .notices, .planProgress, .connectionOperation,
              .runStatus, .compressing, .compressed:
             break
         }
@@ -6319,6 +6319,7 @@ public final class ChatViewModel {
               read.activityGeneration == streamCoordinator.sessionActivityGeneration else { return false }
         backgroundReadShown = read.sequence
         streamCoordinator.applySessionActivityPhase(response.activityPhase)
+        streamCoordinator.applyWorkerCount(response.workerCount)
         backgroundTasks = response.tasks
         backgroundPinnedCount = response.pinnedCount
         backgroundOwnerWork = response.ownerWork

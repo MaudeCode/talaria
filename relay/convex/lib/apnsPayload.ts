@@ -50,6 +50,8 @@ export function nativeSessionRequest(request: ApnsRequest, registeredAt: number)
     updatedAt: swiftDate(row.updatedAt), isStale: row.phase === "stale", isFinal: terminal,
     ...(row.toolCount === undefined ? {} : { toolCount: row.toolCount }),
     ...(row.activityAt === undefined ? {} : { activityAt: swiftDate(row.activityAt) }),
+    ...(row.planTotal === undefined ? {} : { planCompleted: row.planCompleted ?? 0, planTotal: row.planTotal }),
+    ...(row.workerCount === undefined ? {} : { workerCount: row.workerCount }),
     ...(row.approvalHeadId ? { approvalHeadID: row.approvalHeadId } : {}),
   } } } };
 }

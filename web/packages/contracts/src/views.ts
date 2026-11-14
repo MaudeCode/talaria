@@ -387,6 +387,8 @@ export const TodoStateSchema = z.looseObject({
   display_items: z.array(z.object({ id: z.union([z.string(), z.number()]).optional(), text: z.string(), state: z.enum(['pending', 'in_progress', 'completed', 'cancelled']) })).optional(),
   total_count: z.number().int().nonnegative().optional(), completed_count: z.number().int().nonnegative().optional(),
   pending_count: z.number().int().nonnegative().optional(), in_progress_count: z.number().int().nonnegative().optional(), cancelled_count: z.number().int().nonnegative().optional(),
+  plan_progress: z.object({ completed: z.number().int().nonnegative().max(9_999), total: z.number().int().nonnegative().max(9_999) }).optional()
+    .describe('TAL-1422: completed items of all but cancelled ones while any is pending or in progress, else 0 of 0 (nothing left to track). Absent from older servers.'),
   session_id: z.string().optional(), todos: z.array(TodoItemSchema).optional(), summary: z.record(z.string(), z.unknown()).optional(),
   version: z.number().optional(), ts: z.number().optional(), source: z.string().optional(), description: z.string().optional(),
 })
@@ -712,7 +714,9 @@ export type DelegationStatus = z.infer<typeof DelegationStatusSchema>
  */
 export const BackgroundTasksResponseSchema = z.object({ activity_phase: SessionActivityPhaseSchema.optional(), session_id: z.string(), tasks: z.array(BackgroundTaskSchema),
   pinned_count: z.number().int().nonnegative().describe('TAL-1531: how many of `tasks` are pinned; every client shows this count. Absent from older servers.'),
-  agent_available: z.boolean(), agents_working: z.boolean().optional(), delegation_status: DelegationStatusSchema.optional(), owner_work: z.enum(['available', 'unsupported', 'unavailable']).optional() })
+  agent_available: z.boolean(), agents_working: z.boolean().optional(),
+  worker_count: z.number().int().nonnegative().max(9_999).optional().describe('TAL-1422: running subagents, processes and `/background` tasks across every kind, the count a Live Activity shows. Absent from older servers.'),
+  delegation_status: DelegationStatusSchema.optional(), owner_work: z.enum(['available', 'unsupported', 'unavailable']).optional() })
 export const BackgroundTaskResultSchema = z.object({ task_id: z.string(), text: z.string(), launch_state: SideLaunchStateSchema.optional() })
 export type BackgroundTaskResult = z.infer<typeof BackgroundTaskResultSchema>
 export const BackgroundDismissRequestSchema = z.object({ session_id: SessionIdSchema, task_id: z.string().min(1) })

@@ -23,6 +23,7 @@ it('publishes exactly the shared publisher-snapshot fixture', async () => {
     registry.activeRuns.set('contract-stream', { stream_id: 'contract-stream', session_id: 'contract-session', started_at: expected.states[0]!.startedAt / 1000, phase: 'running', workspace: home, model: null, provider: null, ephemeral: false })
     registry.noteToolEvent('contract-stream', now - 20, true)
     registry.noteToolEvent('contract-stream', expected.states[0]!.activityAt / 1000, true)
+    registry.notePlan('contract-stream', { completed: 2, total: 5 })
     const presence = new PresenceLeases(() => now)
     presence.renew('default', 'tab_contract')
     const requests: { url: string; body: string }[] = []
@@ -30,7 +31,7 @@ it('publishes exactly the shared publisher-snapshot fixture', async () => {
       documents: new JsonDocuments(home, () => home), registry, presence, now: () => now, log: vi.fn(),
       pending: { approvalPending: () => ({ pending: null, pending_count: 0 }), clarifyPending: () => ({ pending: null, pending_count: 0 }) },
       store: { sessions: new Map(), exists: () => Promise.resolve(true), get: () => ({ title: 'Contract fixture', profile: 'default' }) },
-      background: { sessionIds: () => Promise.resolve([]), snapshot: () => Promise.resolve({ activity_phase: 'running' }) },
+      background: { sessionIds: () => Promise.resolve([]), snapshot: () => Promise.resolve({ activity_phase: 'running', worker_count: 3 }) },
       profileHome: () => home,
       profilesMatch: (row: string | null | undefined, active: string | null | undefined) => row === active,
       fetch: () => (url: string, init: { body: string }) => { requests.push({ url, body: init.body }); return Promise.resolve(new Response('{}')) },
@@ -60,7 +61,7 @@ it('publishes the shared approval queue head fixture for a pending approval', as
       documents: new JsonDocuments(home, () => home), registry, presence: new PresenceLeases(() => now), now: () => now, log: vi.fn(),
       pending: { approvalPending: () => ({ pending: { approval_id: 'contract-approval', command: 'private command' }, pending_count: 1 }), clarifyPending: () => ({ pending: null, pending_count: 0 }) },
       store: { sessions: new Map(), exists: () => Promise.resolve(true), get: () => ({ title: 'Contract fixture', profile: 'default' }) },
-      background: { sessionIds: () => Promise.resolve([]), snapshot: () => Promise.resolve({ activity_phase: 'waiting_for_approval' }) },
+      background: { sessionIds: () => Promise.resolve([]), snapshot: () => Promise.resolve({ activity_phase: 'waiting_for_approval', worker_count: 0 }) },
       profileHome: () => home,
       profilesMatch: (row: string | null | undefined, active: string | null | undefined) => row === active,
       fetch: () => (url: string, init: { body: string }) => { requests.push({ url, body: init.body }); return Promise.resolve(new Response('{}')) },
