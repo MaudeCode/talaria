@@ -14,6 +14,7 @@ import type { SessionStore } from '../store.js'
 import type { ActiveRun, StreamRegistry } from '../streams.js'
 import type { TurnOrigin } from '../background-updates.js'
 import { str } from '../../util.js'
+import { redactString } from '../../redact.js'
 
 const TERMINAL_RETENTION_S = 15 * 60
 // ponytail: bounds the terminal ledger when no channel ever reads it; the oldest finished run goes first.
@@ -85,8 +86,11 @@ export function activityRowFields(row: ActivityState) {
 /** TAL-2232: the summary's phases by display rank: waiting for an approval, then for input, then running or starting. */
 const SUMMARY_RANK = new Map<string, number>([['waiting_for_approval', 0], ['waiting_for_input', 1], ['running', 2], ['starting', 2]])
 
-/** TAL-2232: `GET /api/activity/summary`: the live rows `visible` lets the requester see, waiting first, then newest start. */
-export function activitySummary(rows: readonly ActivityState[], visible: (owner: string | null) => boolean): ActivitySummary {
+/**
+ * TAL-2232: `GET /api/activity/summary`: the live rows `visible` lets the requester see, waiting first, then newest start,
+ * with titles masked under the `api_redact_enabled` policy (`redact`) as the session list masks them.
+ */
+export function activitySummary(rows: readonly ActivityState[], visible: (owner: string | null) => boolean, redact: boolean): ActivitySummary {
   const shown = rows.filter((row) => SUMMARY_RANK.has(row.phase) && visible(row.ownerPersonId))
     .sort((a, b) => SUMMARY_RANK.get(a.phase)! - SUMMARY_RANK.get(b.phase)! || b.startedAt - a.startedAt)
   const waiting = shown.filter((row) => SUMMARY_RANK.get(row.phase)! < 2).length
@@ -95,7 +99,7 @@ export function activitySummary(rows: readonly ActivityState[], visible: (owner:
     waiting_count: waiting,
     rows: shown.map((row) => {
       const fields = activityRowFields(row)
-      return { session_id: fields.sessionId, title: fields.title, phase: fields.phase as ActivitySummary['rows'][number]['phase'], started_at: fields.startedAt / 1000, updated_at: fields.updatedAt / 1000, deep_link: fields.deepLink, ...(row.approvalId ? { approval_id: row.approvalId } : {}) }
+      return { session_id: fields.sessionId, title: redactString(fields.title, redact), phase: fields.phase as ActivitySummary['rows'][number]['phase'], started_at: fields.startedAt / 1000, updated_at: fields.updatedAt / 1000, deep_link: fields.deepLink, ...(row.approvalId ? { approval_id: row.approvalId } : {}) }
     }),
   }
 }

@@ -60,6 +60,13 @@ it('reads a named profile, except another one from a login bound to its own', as
   expect(states?.mock.lastCall?.[0]).toBe('work')
 })
 
+it('masks a credential in a title as the session list does', async () => {
+  const secret = 'ghp_' + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8'
+  const body = await summary(await boot([row('leaky', 'running', 1_000, { title: `deploy with ${secret}` })])) as unknown as { rows: { title: string }[] }
+  expect(body.rows[0]!.title).not.toContain(secret)
+  expect(body.rows[0]!.title).toMatch(/^deploy with /)
+})
+
 describe('person isolation', () => {
   function signIn(server: TestServer, subject: string, owner = false): Record<string, string> {
     const cookie = server.deps.auth.createSession({ authType: 'oidc', username: `${subject}@example.invalid`, oidcBinding: { issuer: ISSUER, subject, ...(owner ? { owner: true } : {}) } })

@@ -650,7 +650,7 @@ export const sessionsRouter = os.router({
       let replaced = false
       let rows = await ctx.deps.activity.states(key, () => { replaced = true })
       if (replaced) rows = await ctx.deps.activity.states(key, () => undefined)
-      return activitySummary(rows, (owner) => ctx.deps.sessions.personMaySee(owner))
+      return activitySummary(rows, (owner) => ctx.deps.sessions.personMaySee(owner), ctx.deps.sessions.deps.redactEnabled())
     })),
   },
   talaria: {
