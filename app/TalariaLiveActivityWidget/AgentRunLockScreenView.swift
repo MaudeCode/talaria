@@ -5,12 +5,23 @@ import TalariaKit
 
 struct AgentRunLockScreenView: View {
     let state: AgentRunActivityAttributes.ContentState
+    var publisherID: String? = nil
 
     var body: some View {
+        let actions = LiveActivityRowActions(state: state, publisherID: publisherID)
+        // What an approval runs takes the activity line's place, so the text and Allow fit; a refused answer's error,
+        // otherwise in the activity line, then shows with the choices.
+        let showsApprovalText = if case .approval(_, _?) = actions?.kind { true } else { false }
         VStack(alignment: .leading, spacing: 10) {
             header
-            activityRow
-            transcriptPanel
+            if !showsApprovalText {
+                activityRow
+            }
+            if let actions {
+                LiveActivityActionButtons(actions: actions, error: showsApprovalText ? state.errorSummary : nil)
+            } else {
+                transcriptPanel
+            }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(.horizontal, 16)

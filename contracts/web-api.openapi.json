@@ -86582,6 +86582,10 @@
                               "type": "string",
                               "description": "The running tool call this approval holds, the `id` of its `tool` frame. Absent when the Agent names none."
                             },
+                            "head_id": {
+                              "type": "string",
+                              "description": "The identity Relay publishes as `approvalHeadId` for this approval, so a Live Activity answers only the approval it showed (TAL-1463). Absent without an `approval_id`."
+                            },
                             "approval_id": {
                               "type": "string"
                             },

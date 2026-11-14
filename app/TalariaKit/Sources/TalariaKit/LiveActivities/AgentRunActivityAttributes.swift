@@ -15,6 +15,11 @@ public struct AgentRunActivityAttributes: Codable, Sendable {
         public var isStale: Bool
         public var isFinal: Bool
         public var errorSummary: String?
+        /// TAL-1463: Relay's `approvalHeadId` for the approval this run waits on; Allow and Deny answer only it.
+        public var approvalHeadID: String?
+        /// TAL-1463: what that approval runs, from the App's own stream. Relay never sends it, so a relay-driven
+        /// activity offers Deny and Open; Allow needs the whole text on screen.
+        public var approvalText: String?
 
         /// The lock screen's lead line. A stale activity still waiting on the user keeps its ask.
         public var lockScreenLead: String {
@@ -43,7 +48,9 @@ public struct AgentRunActivityAttributes: Codable, Sendable {
             updatedAt: Date,
             isStale: Bool = false,
             isFinal: Bool = false,
-            errorSummary: String? = nil
+            errorSummary: String? = nil,
+            approvalHeadID: String? = nil,
+            approvalText: String? = nil
         ) {
             self.sessionID = sessionID
             self.sessionTitle = AgentRunActivitySanitizer.sessionTitle(sessionTitle)
@@ -55,6 +62,8 @@ public struct AgentRunActivityAttributes: Codable, Sendable {
             self.isStale = isStale
             self.isFinal = isFinal
             self.errorSummary = errorSummary.map(AgentRunActivitySanitizer.activityLine)
+            self.approvalHeadID = approvalHeadID
+            self.approvalText = approvalText
         }
     }
 
@@ -92,8 +101,10 @@ public struct TalariaAggregateActivityAttributes: Codable, Sendable {
             public var status: String
             public var updatedAt: Double
             var deepLink: String
+            /// TAL-1463: the approval a waiting row shows, so Allow and Deny answer only it.
+            public var approvalHeadId: String? = nil
 
-            public init(completionId: String? = nil, streamId: String? = nil, publisherId: String, publisherLabel: String, sessionId: String, title: String, phase: String, status: String, updatedAt: Double, deepLink: String) {
+            public init(completionId: String? = nil, streamId: String? = nil, publisherId: String, publisherLabel: String, sessionId: String, title: String, phase: String, status: String, updatedAt: Double, deepLink: String, approvalHeadId: String? = nil) {
                 self.completionId = completionId
                 self.streamId = streamId
                 self.publisherId = publisherId
@@ -104,6 +115,7 @@ public struct TalariaAggregateActivityAttributes: Codable, Sendable {
                 self.status = status
                 self.updatedAt = updatedAt
                 self.deepLink = deepLink
+                self.approvalHeadId = approvalHeadId
             }
 
             public var id: String { "\(publisherId):\(sessionId)" }
@@ -117,6 +129,9 @@ public struct TalariaAggregateActivityAttributes: Codable, Sendable {
         public var subtitle: String
         public var updatedAt: Double
         public var rows: [Row]
+        /// Why an answer from the activity was refused (TAL-1463). Device-local: the relay never sends it, so its next
+        /// snapshot clears it.
+        public var answerError: String? = nil
 
         public init(schemaVersion: Int, activeCount: Int, title: String, subtitle: String, updatedAt: Double, rows: [Row]) {
             self.schemaVersion = schemaVersion
@@ -343,6 +358,8 @@ public enum AgentRunActivitySanitizer: Sendable {
     static let maximumSessionTitleCharacters = 42
     static let maximumActivityCharacters = 64
     static let maximumExcerptCharacters = 140
+    /// About two lines of an activity's monospaced caption, so the text and its buttons fit a Lock Screen activity.
+    static let maximumApprovalTextCharacters = 80
     static let maximumResponsePrefixScalars = 1_024
     static let maximumToolLabelCharacters = 28
 
@@ -373,6 +390,13 @@ public enum AgentRunActivitySanitizer: Sendable {
             prefix += " "
         }
         return (prefix, isFull)
+    }
+
+    /// The approval's text on one line, or nil when it is empty or longer than an activity shows: Allow is never offered
+    /// beside a shortened text.
+    static func approvalText(_ rawValue: String) -> String? {
+        let normalized = normalizedSingleLine(rawValue)
+        return normalized.isEmpty || normalized.count > maximumApprovalTextCharacters ? nil : normalized
     }
 
     static func responseExcerpt(_ rawValue: String) -> String {
@@ -545,7 +569,9 @@ public enum AgentRunActivityStateReducer {
             updatedAt: now,
             isStale: state.isStale,
             isFinal: state.isFinal,
-            errorSummary: state.errorSummary
+            errorSummary: state.errorSummary,
+            approvalHeadID: state.approvalHeadID,
+            approvalText: state.approvalText
         )
     }
 
@@ -629,7 +655,9 @@ public enum AgentRunActivityStateReducer {
             updatedAt: now,
             isStale: state.isStale,
             isFinal: state.isFinal,
-            errorSummary: state.errorSummary
+            errorSummary: state.errorSummary,
+            approvalHeadID: state.approvalHeadID,
+            approvalText: state.approvalText
         )
     }
 
@@ -667,11 +695,18 @@ public enum AgentRunActivityStateReducer {
         statusState(.responding, activity: String(localized: "Processing result"), state: state, now: now)
     }
 
+    /// `approvalHeadID` names the approval the activity shows; without one, it offers Open instead of Allow and Deny.
+    /// `approvalText` is what it runs, shown beside Allow; a text too long for an activity is left out.
     public static func waitingForApproval(
         state: AgentRunActivityAttributes.ContentState,
+        approvalHeadID: String? = nil,
+        approvalText: String? = nil,
         now: Date = Date()
     ) -> AgentRunActivityAttributes.ContentState {
-        statusState(.waitingForApproval, activity: String(localized: "Waiting for approval"), state: state, now: now)
+        var result = statusState(.waitingForApproval, activity: String(localized: "Waiting for approval"), state: state, now: now)
+        result.approvalHeadID = approvalHeadID
+        result.approvalText = approvalText.flatMap(AgentRunActivitySanitizer.approvalText)
+        return result
     }
 
     public static func promptSettled(
@@ -702,7 +737,9 @@ public enum AgentRunActivityStateReducer {
             updatedAt: now,
             isStale: true,
             isFinal: state.isFinal,
-            errorSummary: state.errorSummary
+            errorSummary: state.errorSummary,
+            approvalHeadID: state.approvalHeadID,
+            approvalText: state.approvalText
         )
     }
 

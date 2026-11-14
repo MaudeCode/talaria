@@ -4,7 +4,7 @@
  * Agent thread; these queues are what `/api/approval/pending`,
  * `/api/clarify/pending`, and their SSE streams read.
  */
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type { SessionEventBus } from './events.js'
 import { str } from '../util.js'
 import { ApprovalChoiceSchema, type ClarifyAnswers, type ClarifyStep, type VaultPrompt, type VaultPromptField } from '@maudecode/talaria-web-contracts'
@@ -242,9 +242,12 @@ export class PendingPrompts {
     return entry
   }
 
+  /** TAL-1463: the head carries `head_id`, the identity Relay shows for it, so a Live Activity answers only the approval it showed. */
   approvalPending(sid: string): { pending: Record<string, unknown> | null; pending_count: number } {
     const q = this.approvals.get(sid)
-    return { pending: q?.entries[0] ? { ...q.entries[0] } : null, pending_count: q?.entries.length ?? 0 }
+    const head = q?.entries[0]
+    const approvalId = str(head?.approval_id)
+    return { pending: head ? { ...head, ...(approvalId ? { head_id: approvalHeadId(sid, approvalId) } : {}) } : null, pending_count: q?.entries.length ?? 0 }
   }
 
   /** The targeted (or oldest) approval without removing it; `found` is false only for a stale id. */
@@ -450,4 +453,9 @@ export function nextPendingItem(sub: PendingSubscriber, timeoutMs: number): Prom
       resolve(sub.queue.shift() ?? null)
     }
   })
+}
+
+/** Stable for one approval across snapshots and restarts; the digest carries nothing the approval says. */
+export function approvalHeadId(sid: string, approvalId: string): string {
+  return createHash('sha256').update(`${sid}\0${approvalId}`, 'utf8').digest('base64url').slice(0, 22)
 }

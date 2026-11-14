@@ -5,10 +5,15 @@ import TalariaKit
 
 struct AgentRunExpandedIslandBottomView: View {
     let state: AgentRunActivityAttributes.ContentState
+    var publisherID: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            if !state.responseExcerpt.isEmpty {
+            if let actions = LiveActivityRowActions(state: state, publisherID: publisherID) {
+                // The island has no activity line, so a refused answer's error shows with the choices.
+                LiveActivityActionButtons(actions: actions, error: state.errorSummary)
+                    .controlSize(.small)
+            } else if !state.responseExcerpt.isEmpty {
                 Text(state.responseExcerpt)
                     .font(.caption2)
                     .foregroundStyle(AgentRunLiveActivityTheme.secondaryText)

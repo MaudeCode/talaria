@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "See what a waiting run wants to do and allow or deny it from its Live Activity on the Lock Screen or in the Dynamic Island, or open a chat that needs your input from there.",
+      "highlight": true,
+      "components": [
+        "app"
+      ],
+      "announcement": {
+        "title": "Approve from the Lock Screen",
+        "description": "See a waiting run's command and Allow or Deny it right from its Live Activity.",
+        "icon": "notifications"
+      }
+    }
+  ]
+}

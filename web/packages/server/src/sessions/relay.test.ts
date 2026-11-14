@@ -146,11 +146,15 @@ describe('Talaria relay pairing and publishing', () => {
       expect(first.phase).toBe('waiting_for_approval')
       expect(String(first.approvalHeadId)).toMatch(/^[A-Za-z0-9_-]{22}$/)
       expect(await head()).toEqual(first)
+      // TAL-1463: the App's pending read names the same head, so a Live Activity answers only the approval it showed.
+      const pendingHead = async () => ((await json(await s.get(`/api/approval/pending?session_id=${sid}`))).pending as Json).head_id
+      expect(await pendingHead()).toBe(first.approvalHeadId)
 
       s.deps.pending.resolveApproval(sid, 'first-approval')
       const second = await head()
       expect(second.phase).toBe('waiting_for_approval')
       expect(second.approvalHeadId).not.toBe(first.approvalHeadId)
+      expect(await pendingHead()).toBe(second.approvalHeadId)
       expect(JSON.stringify(relay.snapshots().at(-1)!.body)).not.toMatch(/second-approval|private\/secret/)
 
       s.deps.pending.resolveApproval(sid, 'second-approval')

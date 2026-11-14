@@ -3,10 +3,10 @@
  * recently finished run, its phase, and whether a browser tab for the profile mutes alerts. Channels add their
  * own transport fields (the Relay adds revisions and event IDs) on top of these rows.
  */
-import { createHash, randomBytes } from 'node:crypto'
+import { randomBytes } from 'node:crypto'
 import type { AgentNotifyLevel, DecisionReviewRef, SessionActivityPhase } from '@maudecode/talaria-web-contracts'
 import { settledActivityPhase, type BackgroundActivity } from '../background-tasks.js'
-import type { PendingPrompts } from '../pending.js'
+import { approvalHeadId, type PendingPrompts } from '../pending.js'
 import type { SessionPrefixIndex } from '../prefix-index.js'
 import type { PresenceLeases } from '../relay.js'
 import type { Session } from '../session.js'
@@ -73,10 +73,6 @@ export async function hasSessionData(store: SessionStore, sid: string): Promise<
   return (await store.exists(sid))
 }
 
-/** Stable for one approval across snapshots and restarts; the digest carries nothing the approval says. */
-export function approvalHeadId(sid: string, approvalId: string): string {
-  return createHash('sha256').update(`${sid}\0${approvalId}`, 'utf8').digest('base64url').slice(0, 22)
-}
 
 /** Python `build_states` without the Relay's revision numbering. */
 export class ActivityStates {

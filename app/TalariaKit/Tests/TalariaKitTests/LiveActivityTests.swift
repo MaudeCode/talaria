@@ -2613,6 +2613,18 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(scheduler.scheduledRequests.map(\.body), ["Response failed"])
     }
 
+
+    /// TAL-1463: Allow sits only beside the whole of what it approves, so a text an activity would shorten is left out.
+    func testApprovalTextIsKeptWholeOrLeftOut() {
+        let initial = AgentRunActivityStateReducer.initialState(sessionID: "s", sessionTitle: "Run")
+        let short = AgentRunActivityStateReducer.waitingForApproval(state: initial, approvalHeadID: "h", approvalText: "rm -rf\n  build")
+        XCTAssertEqual(short.approvalText, "rm -rf build")
+        let long = AgentRunActivityStateReducer.waitingForApproval(
+            state: initial, approvalHeadID: "h", approvalText: "echo safe && " + String(repeating: "x", count: 200) + " && rm -rf ~"
+        )
+        XCTAssertNil(long.approvalText)
+        XCTAssertEqual(long.approvalHeadID, "h", "Deny still answers the approval the activity names")
+    }
 }
 
 @MainActor

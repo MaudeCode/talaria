@@ -55,6 +55,8 @@ public struct PendingApproval: Decodable, Equatable, Identifiable, Sendable {
     }
 
     public let approvalId: String?
+    /// TAL-1463: the identity Relay shows for this approval on a Live Activity (`head_id`).
+    public let headId: String?
     public let command: String?
     public let description: String?
     let patternKey: String?
@@ -100,9 +102,11 @@ public struct PendingApproval: Decodable, Equatable, Identifiable, Sendable {
         patternKey: String? = nil,
         patternKeys: [String]? = nil,
         allowedChoices: [ApprovalChoice]? = nil,
-        canEnableYolo: Bool? = nil
+        canEnableYolo: Bool? = nil,
+        headId: String? = nil
     ) {
         self.approvalId = Self.normalizedApprovalId(approvalId)
+        self.headId = headId
         self.command = command
         self.description = description
         self.patternKey = patternKey
@@ -125,11 +129,16 @@ public struct PendingApproval: Decodable, Equatable, Identifiable, Sendable {
         case allowedChoicesSnake = "allowed_choices"
         case canEnableYolo
         case canEnableYoloSnake = "can_enable_yolo"
+        case headId
+        case headIdSnake = "head_id"
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         approvalId = Self.decodeApprovalId(from: container)
+        headId = Self.normalizedApprovalId(
+            container.decodeLossyStringIfPresent(forKey: .headId) ?? container.decodeLossyStringIfPresent(forKey: .headIdSnake)
+        )
         command = container.decodeLossyStringIfPresent(forKey: .command)
         description = container.decodeLossyStringIfPresent(forKey: .description)
         patternKey = container.decodeLossyStringIfPresent(forKey: .patternKey)

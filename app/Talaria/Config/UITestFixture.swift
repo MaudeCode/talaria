@@ -201,6 +201,10 @@ struct UITestFixtureEnvironment {
         AskTalariaIntent.makeAskSession = {
             AskSession(client: client, memory: AskSession.Memory(serverID: serverURL.absoluteString, defaults: defaults)) { SSEClient() }
         }
+        // Live Activity answers likewise go to the fixture server (TAL-1463).
+        LiveActivityApprovalResponder.shared = LiveActivityApprovalResponder(
+            makeClient: { _ in client }, appLock: .shared, display: .system
+        )
         let authManager = AuthManager(
             keychain: keychain,
             clientFactory: { _ in client },
@@ -465,6 +469,8 @@ private final class UITestChatFixtureState: @unchecked Sendable {
 final class UITestFixtureURLProtocol: URLProtocol {
     static let forkSessionID = "ui-fixture-fresh-fork"
     static let sessionID = "ui-fixture-session"
+    /// The full chat's approval as Relay names it (TAL-1463).
+    static let approvalHeadID = "ui-fixture-approval-head"
     static let sessionTitle = "UI Fixture Session"
     private static let recoveryState = NSLock()
     nonisolated(unsafe) private static var approvalBypassOverride: Bool?
@@ -1048,7 +1054,14 @@ final class UITestFixtureURLProtocol: URLProtocol {
             chatState.answerApproval()
             return json(["ok": true, "choice": "once"])
         case "/api/approval/pending":
-            return json(["pending_count": 0])
+            // The full chat's approval stays pending until answered, as a Live Activity's Allow reads it (TAL-1463).
+            let state = chatState.snapshot()
+            guard UITestChatScenario.current == .full, state.started, !state.approvalAnswered else {
+                return json(["pending_count": 0])
+            }
+            return json([
+                "pending": ["approval_id": "ui-fixture-approval", "head_id": UITestFixtureURLProtocol.approvalHeadID], "pending_count": 1
+            ])
         case "/api/clarify/respond":
             let answers = requestJSON(request)["answers"] as? [String: Any] ?? [:]
             chatState.answerClarification(answers)
@@ -2060,6 +2073,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
                 ]),
                 ("approval", [
                     "approval_id": "ui-fixture-approval",
+                    "head_id": UITestFixtureURLProtocol.approvalHeadID,
                     "command": "fixture-tool --synthetic",
                     "description": "Allow the deterministic fixture to continue."
                 ].merging(Self.ownerApprovalChoices) { $1 })
