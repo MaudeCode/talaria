@@ -148,6 +148,27 @@ final class AppIntentActivityTests: XCTestCase {
         XCTAssertEqual(fixture.requests.value, [["session_id": "s1", "choice": "deny", "approval_id": "approval-s1"]])
     }
 
+    /// Answered elsewhere or expired while Siri waited for confirmation: Siri never claims the user's answer took.
+    func testAnApprovalSettledDuringConfirmationIsNotReportedAsAnswered() async throws {
+        let pending = #"{"pending":{"approval_id":"approval-s1","command":"deploy"}}"#
+        // Gone by the responder's own read; or still listed, but the write finds it settled and clears it.
+        let cases: [(name: String, pendingBodies: [String], response: (status: Int, body: String)?)] = [
+            ("answered elsewhere", [pending, "{}"], nil),
+            ("stale", [pending], (200, #"{"ok":false,"stale_cleared":true}"#)),
+        ]
+        for (name, pendingBodies, response) in cases {
+            let fixture = try ApprovalAnswerFixture(
+                responses: response.map { ["s1": $0] } ?? [:], pendingBodies: pendingBodies,
+                activeServer: ApprovalAnswerFixture.publisher, in: self
+            )
+            TalariaStatusIntent.makeClient = { fixture.client }
+
+            let outcome = try await voiceIntent(.allow).respond()
+
+            XCTAssertEqual(outcome, .spoken("Deploy fix is no longer waiting for approval."), name)
+        }
+    }
+
     func testARefusedAnswerSpeaksTheServersError() async throws {
         let fixture = try answerFixture(
             pending: #"{"approval_id":"approval-s1","description":"Deploy to production"}"#,

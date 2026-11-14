@@ -143,6 +143,8 @@ struct RespondToApprovalByVoiceIntent: AppIntent, ForegroundContinuableIntent {
         }
     }
 
+    private var noLongerWaiting: String { String(localized: "\(approval.title) is no longer waiting for approval.") }
+
     @MainActor
     func respond() async throws -> Outcome {
         guard !TalariaStatusIntent.appLock.locksBackgroundWork() else {
@@ -152,7 +154,7 @@ struct RespondToApprovalByVoiceIntent: AppIntent, ForegroundContinuableIntent {
             throw AskSession.Failure(message: String(localized: "Add a server in Talaria first."))
         }
         guard let pending = try await client.approvalPending(sessionID: approval.id).pending else {
-            return .spoken(String(localized: "\(approval.title) is no longer waiting for approval."))
+            return .spoken(noLongerWaiting)
         }
         // What the approval runs, as the server words it. Allow confirms only that, never a chat title, so an approval
         // that names no action is reviewed in the chat; Deny runs nothing and may confirm on the title.
@@ -166,11 +168,15 @@ struct RespondToApprovalByVoiceIntent: AppIntent, ForegroundContinuableIntent {
             )
         }
         try await Self.confirm(self, action ?? approval.title)
-        if let error = await LiveActivityApprovalResponder.shared.respond(
+        switch await LiveActivityApprovalResponder.shared.respond(
             publisherID: nil, sessionID: approval.id, approval: .approval(pending.approvalId), choice: answer.choice
         ) {
+        case .answered:
+            return .spoken(answer == .allow ? String(localized: "Allowed.") : String(localized: "Denied."))
+        case .settledElsewhere:
+            return .spoken(noLongerWaiting)
+        case let .refused(error):
             throw AskSession.Failure(message: error)
         }
-        return .spoken(answer == .allow ? String(localized: "Allowed.") : String(localized: "Denied."))
     }
 }

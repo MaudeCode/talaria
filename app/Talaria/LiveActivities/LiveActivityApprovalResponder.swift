@@ -67,9 +67,17 @@ final class LiveActivityApprovalResponder {
         self.display = display
     }
 
-    /// Nil when the answer stands; otherwise the error the rows show again.
+    /// How an answer ended. Only a refusal rolls the rows back; Siri says which of the others happened (TAL-2233).
+    enum Outcome: Equatable {
+        case answered
+        /// Answered elsewhere or expired before this answer reached it; the rows stay answered.
+        case settledElsewhere
+        /// The error the rows show again.
+        case refused(String)
+    }
+
     @discardableResult
-    func respond(publisherID: String?, sessionID: String, approval: ShownApproval, choice: ApprovalChoice) async -> String? {
+    func respond(publisherID: String?, sessionID: String, approval: ShownApproval, choice: ApprovalChoice) async -> Outcome {
         let publisher = origin(publisherID)
         let runs = display.runs().filter {
             $0.state.sessionID == sessionID && $0.state.status == .waitingForApproval && origin($0.publisherID) == publisher
@@ -91,9 +99,8 @@ final class LiveActivityApprovalResponder {
             await writeAggregate(aggregate.id, answered)
         }
 
-        guard let error = await refusal(
-            publisherID: publisherID, sessionID: sessionID, approval: approval, choice: choice
-        ) else { return nil }
+        let outcome = await answer(publisherID: publisherID, sessionID: sessionID, approval: approval, choice: choice)
+        guard case let .refused(error) = outcome else { return outcome }
         // ActivityKit can still read back the state from before the answer; anything else is a newer snapshot.
         for run in runs
         where [answeredRuns[run.id], run.state].contains(display.runs().first(where: { $0.id == run.id })?.state) {
@@ -116,7 +123,7 @@ final class LiveActivityApprovalResponder {
             current.answerError = error
             await writeAggregate(aggregate.id, current)
         }
-        return error
+        return outcome
     }
 
     /// Every aggregate state this responder wrote since the last snapshot, and the latest of them.
@@ -139,43 +146,41 @@ final class LiveActivityApprovalResponder {
         await display.updateAggregate(id, state)
     }
 
-    /// Nil when the server took the answer or the approval is no longer pending; otherwise the error to show.
-    private func refusal(
+    private func answer(
         publisherID: String?, sessionID: String, approval: ShownApproval, choice: ApprovalChoice
-    ) async -> String? {
-        guard !appLock.locksBackgroundWork() else { return String(localized: "Unlock Talaria in the app first.") }
-        guard let client = makeClient(publisherID) else { return String(localized: "Add a server in Talaria first.") }
+    ) async -> Outcome {
+        guard !appLock.locksBackgroundWork() else { return .refused(String(localized: "Unlock Talaria in the app first.")) }
+        guard let client = makeClient(publisherID) else { return .refused(String(localized: "Add a server in Talaria first.")) }
         // The server answers a prompt by its id (an owner session refuses any other), so read the pending one first.
         // None pending: the approval was already answered elsewhere. Another one pending: the user never saw it, so
         // nothing is answered until it is reviewed.
         let approvalID: String?
         do {
-            guard let pending = try await client.approvalPending(sessionID: sessionID).pending else { return nil }
+            guard let pending = try await client.approvalPending(sessionID: sessionID).pending else { return .settledElsewhere }
             guard approval.matches(pending) else {
-                return String(localized: "This approval changed. Open Talaria to review it.")
+                return .refused(String(localized: "This approval changed. Open Talaria to review it."))
             }
             approvalID = pending.approvalId
         } catch {
-            return error.localizedDescription
+            return .refused(error.localizedDescription)
         }
         do {
             let response = try await client.respondApproval(sessionID: sessionID, choice: choice, approvalID: approvalID)
             // Same rule as the chat's approval card: only an explicit success or a cleared stale card is final.
-            guard response.ok == true || response.staleCleared == true else {
-                return String(localized: "The server did not accept that response. The request is still waiting.")
-            }
-            return nil
+            if response.ok == true { return .answered }
+            if response.staleCleared == true { return .settledElsewhere }
+            return .refused(String(localized: "The server did not accept that response. The request is still waiting."))
         } catch let error as APIError where error.indicatesExpiredPendingPrompt {
-            return nil
+            return .settledElsewhere
         } catch {
             // A network loss, timeout or 5xx leaves the outcome unknown: keep the answer only if the server no longer
-            // has this approval pending. The answer is never sent again.
+            // has this approval pending, most likely because this answer took it. The answer is never sent again.
             if !APIError.isDefinitiveWriteFailure(error),
                let pending = try? await client.approvalPending(sessionID: sessionID),
                pending.pending.map({ $0.approvalId != approvalID }) ?? true {
-                return nil
+                return .answered
             }
-            return error.localizedDescription
+            return .refused(error.localizedDescription)
         }
     }
 
