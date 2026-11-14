@@ -355,6 +355,20 @@ final class LiveActivityTests: XCTestCase {
         }
     }
 
+    func testStaleLockScreenKeepsTheLeadOnlyWhileWaitingOnTheUser() {
+        for status in AgentRunActivityStatus.allCases {
+            let fresh = AgentRunActivityAttributes.ContentState(
+                sessionID: "s", sessionTitle: "Chat", status: status, currentActivity: "Live line",
+                startedAt: Date(timeIntervalSince1970: 0), updatedAt: Date(timeIntervalSince1970: 1)
+            )
+            XCTAssertEqual(fresh.lockScreenLead, "Live line", "\(status) fresh")
+
+            let stale = AgentRunActivityStateReducer.stale(state: fresh, now: Date(timeIntervalSince1970: 2))
+            let waiting = status == .waitingForApproval || status == .waitingForClarification
+            XCTAssertEqual(stale.lockScreenLead, waiting ? "Live line" : "Latest status shown", "\(status) stale")
+        }
+    }
+
     func testTerminalAggregateOutcomeDoesNotShowZeroOrWaiting() {
         let state = TalariaAggregateActivityAttributes.ContentState(
             schemaVersion: 1, activeCount: 0, title: "Talaria", subtitle: "Agent work completed", updatedAt: 100,

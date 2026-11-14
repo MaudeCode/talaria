@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A chat's Live Activity on the lock screen keeps showing that it is waiting for your approval or answer after it stops receiving updates.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}
