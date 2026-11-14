@@ -9,8 +9,6 @@ struct AgentRunExpandedIslandBottomView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            AgentRunProgressRail(status: state.status)
-
             if let actions = LiveActivityRowActions(
                 status: state.status, approvalHeadID: state.approvalHeadID, isFinal: state.isFinal,
                 sessionID: state.sessionID, publisherID: publisherID

@@ -33,7 +33,8 @@ final class PerSessionRelayActivityRegistration {
     func observe(
         activity: Activity<AgentRunActivityAttributes>,
         context: PerSessionRelayContext,
-        sessionID: String
+        sessionID: String,
+        streamID: String?
     ) {
         tokenTask?.cancel()
         let client = TalariaRelayClient(credentials: context.credentials)
@@ -58,7 +59,7 @@ final class PerSessionRelayActivityRegistration {
                             pushToken: tokenString,
                             publisherID: context.publisherID,
                             sessionID: sessionID,
-                            streamID: activity.attributes.streamID
+                            streamID: streamID
                         )
                         lastToken = tokenString
                         self?.settleHandoff(activityID: activity.id, confirmed: true)

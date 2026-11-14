@@ -3082,6 +3082,99 @@ describe("Convex relay state", () => {
     });
   });
 
+  // TAL-192: the App restarts a retained current-session card for the session's next run by
+  // re-registering the same activity and token with the new stream.
+  it("rebinds a current-session activity to the next run of its session", async () => {
+    const backend = testBackend();
+    const now = Date.now();
+    const sessionState = (streamId: string, phase: "completed" | "running", revision: number) => ({
+      version: 2 as const,
+      userId: "user-1",
+      profileId: "profile-1",
+      deleted: false,
+      publisherId: "https://hermes.example",
+      publisherLabel: "Home",
+      sessionId: "session-1",
+      streamId,
+      eventId: `event-${revision}`,
+      revision,
+      title: "Fixture session",
+      phase,
+      updatedAt: now + revision,
+      deepLink: "/sessions/session-1",
+      expiresAt: now + 15 * 60_000,
+      terminalExpiresAt: phase === "completed" ? now + 15 * 60_000 : undefined,
+      receivedAt: now + revision,
+    });
+    let stateId!: Id<"sessionStates">;
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("devices", {
+        userId: "user-1",
+        deviceId: "device-1",
+        label: "iPhone",
+        bundleId: "dev.kil.talaria",
+        apsEnvironment: "sandbox",
+        preferences: { ...defaultNotificationPreferences, liveActivitiesEnabled: true },
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("publisherGrants", {
+        publisherOwnerUserId: "user-1",
+        userId: "user-1",
+        publisherId: "https://hermes.example",
+        profileId: "profile-1",
+        createdAt: now,
+        updatedAt: now,
+      });
+      stateId = await ctx.db.insert("sessionStates", sessionState("stream-1", "completed", 1));
+    });
+    const register = (streamId: string, at: number) => backend.mutation(internal.devices.registerActivity, {
+      userId: "user-1",
+      deviceId: "device-1",
+      activityId: "activity-1",
+      mode: "per_session",
+      publisherId: "https://hermes.example",
+      sessionId: "session-1",
+      streamId,
+      attributesType: "AgentRunActivityAttributes",
+      schemaVersion: 1,
+      activityPushToken: "activity-token",
+      seededLocally: false,
+      now: at,
+    });
+    const queuedJobs = () => backend.run(async (ctx) =>
+      ctx.db.query("deliveryJobs").withIndex("by_status_and_updated_at", (query) => query.eq("status", "queued")).collect(),
+    );
+
+    await expect(register("stream-1", now + 2)).resolves.toEqual({ ok: true });
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    // The next run starts before the App rebinds the card, so run 1's registration gets an end.
+    await backend.run(async (ctx) => ctx.db.replace(stateId, sessionState("stream-2", "running", 3)));
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    const firstRunJobs = await queuedJobs();
+    expect(firstRunJobs.map((job) => job.kind).sort()).toEqual(["live_activity_end", "live_activity_update"]);
+
+    await expect(register("stream-2", now + 4)).resolves.toEqual({ ok: true });
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    const activities = await backend.run(async (ctx) => ctx.db.query("liveActivities").collect());
+    expect(activities).toHaveLength(1);
+    expect(activities[0]).toMatchObject({ activityId: "activity-1", streamId: "stream-2" });
+    expect(activities[0]?.endedAt).toBeUndefined();
+
+    for (const job of firstRunJobs) {
+      await expect(backend.mutation(internal.delivery.claimJob, { jobId: job._id, now: now + 5 }))
+        .resolves.toEqual({ status: "stale" });
+    }
+    const secondRunJobs = (await queuedJobs()).filter((job) => !firstRunJobs.some((first) => first._id === job._id));
+    expect(secondRunJobs).toHaveLength(1);
+    expect(secondRunJobs[0]?.aggregate?.rows[0]).toMatchObject({ streamId: "stream-2", phase: "running" });
+    // Without a publisher run start, the card's timer counts from run 2's registration, not run 1's.
+    const contentState = JSON.parse(secondRunJobs[0]!.request.payloadJson).aps["content-state"];
+    expect(contentState).toMatchObject({ status: "thinking", isFinal: false, startedAt: (now + 4) / 1_000 - 978_307_200 });
+    await expect(backend.mutation(internal.delivery.claimJob, { jobId: secondRunJobs[0]!._id, now: now + 6 }))
+      .resolves.toMatchObject({ status: "ready", kind: "live_activity_update" });
+  });
+
   it("leases a locally seeded activity for publisher reconciliation", async () => {
     const backend = testBackend();
     const now = Date.now();
