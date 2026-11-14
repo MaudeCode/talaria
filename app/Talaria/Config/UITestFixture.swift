@@ -198,7 +198,9 @@ struct UITestFixtureEnvironment {
         CustomHeaderStore.shared.replace(with: [])
         let client = APIClient(baseURL: serverURL)
         // Ask Talaria reads the real Keychain, which the fixture leaves empty; it asks the fixture server instead.
-        AskTalariaIntent.makeAskSession = { AskSession(client: client) { SSEClient() } }
+        AskTalariaIntent.makeAskSession = {
+            AskSession(client: client, memory: AskSession.Memory(serverID: serverURL.absoluteString, defaults: defaults)) { SSEClient() }
+        }
         let authManager = AuthManager(
             keychain: keychain,
             clientFactory: { _ in client },

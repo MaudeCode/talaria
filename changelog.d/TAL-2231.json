@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "On iOS 27, Ask Talaria waits for answers that take minutes, and Reply to Talaria continues the last conversation by voice.",
+      "highlight": false,
+      "components": [
+        "app"
+      ],
+      "announce": false
+    }
+  ]
+}
