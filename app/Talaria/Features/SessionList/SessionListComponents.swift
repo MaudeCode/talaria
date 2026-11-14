@@ -68,21 +68,19 @@ struct SessionListRowActions {
     var sidebarChatLifted: (SessionSummary) -> Void = { _ in }
 }
 
-/// Reads the hinge for the session list root, the only place the App does (TAL-1460). The UI fixture's tent pose
-/// stands in for it, since no simulator pose opens the hinge with the outer display active.
+/// The session list root's one hinge read (TAL-1460): `AppSidebarController` observes its window's hinge and reports
+/// it here. The UI fixture's tent pose stands in for it, since no simulator pose opens the hinge with the outer display
+/// active.
 struct SessionListHingeReader: ViewModifier {
     @Binding var status: SessionRunMonitor.HingeStatus?
 
     func body(content: Content) -> some View {
-        if Self.forcesTentHinge {
-            content.onAppear { status = .partiallyOpen }
-        } else if #available(iOS 27.1, *) {
-            content.onHingeChange { _, context in
-                status = context.hinge.map { Self.status($0.status) }
-            }
-        } else {
-            content
-        }
+        content.onAppear { if Self.forcesTentHinge { status = .partiallyOpen } }
+    }
+
+    func admit(_ hinge: SessionRunMonitor.HingeStatus?) {
+        guard !Self.forcesTentHinge, status != hinge else { return }
+        status = hinge
     }
 
     private static var forcesTentHinge: Bool {
@@ -91,15 +89,6 @@ struct SessionListHingeReader: ViewModifier {
         #else
         false
         #endif
-    }
-
-    @available(iOS 27.1, *)
-    private static func status(_ status: DeviceHinge.Status) -> SessionRunMonitor.HingeStatus {
-        switch status {
-        case .partiallyOpen: .partiallyOpen
-        case .fullyOpen: .fullyOpen
-        default: .closed
-        }
     }
 }
 

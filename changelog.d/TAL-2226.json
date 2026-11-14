@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "On iPhone Duo's outer display, the sidebar fills the screen the first time you open it, without folding the phone first.",
+      "highlight": false,
+      "components": ["app"],
+      "announce": false
+    }
+  ]
+}

@@ -31,6 +31,7 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
     private let onPresentationChange: (Bool) -> Void
     private let onChatDrop: (([NSItemProvider]) -> Bool)?
     private let onChatDropHover: (Bool) -> Void
+    private let onHingeChange: (SessionRunMonitor.HingeStatus?) -> Void
     private let sidebar: (Bool) -> Sidebar
     private let content: Content
 
@@ -43,6 +44,7 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
         onPresentationChange: @escaping (Bool) -> Void,
         onChatDrop: (([NSItemProvider]) -> Bool)? = nil,
         onChatDropHover: @escaping (Bool) -> Void = { _ in },
+        onHingeChange: @escaping (SessionRunMonitor.HingeStatus?) -> Void = { _ in },
         @ViewBuilder sidebar: @escaping (_ isPresented: Bool) -> Sidebar,
         @ViewBuilder content: () -> Content
     ) {
@@ -54,6 +56,7 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
         self.onPresentationChange = onPresentationChange
         self.onChatDrop = onChatDrop
         self.onChatDropHover = onChatDropHover
+        self.onHingeChange = onHingeChange
         self.sidebar = sidebar
         self.content = content()
     }
@@ -75,7 +78,8 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
             }),
             onPresentationChange: onPresentationChange,
             onChatDrop: onChatDrop,
-            onChatDropHover: onChatDropHover
+            onChatDropHover: onChatDropHover,
+            onHingeChange: onHingeChange
         )
         .ignoresSafeArea()
     }
@@ -102,6 +106,7 @@ private struct AppSidebarHost: UIViewControllerRepresentable {
     let onPresentationChange: (Bool) -> Void
     let onChatDrop: (([NSItemProvider]) -> Bool)?
     let onChatDropHover: (Bool) -> Void
+    let onHingeChange: (SessionRunMonitor.HingeStatus?) -> Void
 
     func makeUIViewController(context: Context) -> AppSidebarController {
         AppSidebarController(presentation: presentation)
@@ -116,6 +121,7 @@ private struct AppSidebarHost: UIViewControllerRepresentable {
         controller.onPresentationChange = onPresentationChange
         controller.onChatDrop = onChatDrop
         controller.onChatDropHover = onChatDropHover
+        controller.onHingeChange = onHingeChange
         controller.isRightToLeft = environment.layoutDirection == .rightToLeft
         controller.reduceMotion = environment.accessibilityReduceMotion
         // Each hosting controller starts its own environment; hand it this one whole, so the
@@ -143,6 +149,10 @@ final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate,
     var onPresentationChange: (Bool) -> Void = { _ in }
     var onChatDrop: (([NSItemProvider]) -> Bool)?
     var onChatDropHover: (Bool) -> Void = { _ in }
+    /// The window's hinge, or nil without one. UIKit documents this interaction's first update as the hinge already
+    /// present when the view joins its window; SwiftUI's `onHingeChange` promises only later changes, so a Duo opened
+    /// on its outer display kept a phone's partial drawer until its first fold (TAL-2226).
+    var onHingeChange: (SessionRunMonitor.HingeStatus?) -> Void = { _ in }
     var isRightToLeft = false {
         didSet {
             guard isRightToLeft != oldValue, isViewLoaded else { return }
@@ -249,6 +259,9 @@ final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate,
             registerForTraitChanges(UITraitCollection.systemTraitsAffectingVerticalBarEdge) { (self: Self, _) in
                 self.invalidateHostedLayout()
             }
+            view.addInteraction(UIHingeInteraction { [weak self] _, update in
+                self?.onHingeChange(update.hinge.map { Self.hingeStatus($0.status) })
+            })
         }
 
         reflect(isPresented: presentation.isPresented)
@@ -290,6 +303,15 @@ final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate,
         coordinator.animate(alongsideTransition: nil) { [weak self] _ in
             self?.invalidateHostedLayout()
             self?.reconcileNativeSidebar()
+        }
+    }
+
+    @available(iOS 27.1, *)
+    private static func hingeStatus(_ status: UIHinge.Status) -> SessionRunMonitor.HingeStatus {
+        switch status {
+        case .partiallyOpen: .partiallyOpen
+        case .fullyOpen: .fullyOpen
+        default: .closed
         }
     }
 

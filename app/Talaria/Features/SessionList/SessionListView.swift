@@ -135,6 +135,7 @@ struct SessionListView: View {
     @State private var sidebarScrollPosition: String?
     /// The app's one hinge read (TAL-1460), for the tent pose's run cards.
     @State private var observedHingeStatus: SessionRunMonitor.HingeStatus?
+    private var hingeReader: SessionListHingeReader { SessionListHingeReader(status: $observedHingeStatus) }
     private var hingeStatus: SessionRunMonitor.HingeStatus? {
         if let appliedSidebarLayout { return appliedSidebarLayout.hingeStatus }
         return observedHingeStatus
@@ -263,7 +264,7 @@ struct SessionListView: View {
             .onChange(of: viewModel.activeProfileName) {
                 sectionViewModels = SectionViewModels(server: server)
             }
-            .modifier(SessionListHingeReader(status: $observedHingeStatus))
+            .modifier(hingeReader)
             .safeAreaInset(edge: .top, spacing: 0) {
                 if hasWaitingSharedImport { waitingSharedImportBanner }
             }
@@ -577,7 +578,8 @@ struct SessionListView: View {
             collapsesNativeSidebar: sidebarPresentation.toggleTarget == .drawer,
             onPresentationChange: appSidebarPresentationChanged,
             onChatDrop: sidebarChatDropHandler,
-            onChatDropHover: sidebarChatDropHovered
+            onChatDropHover: sidebarChatDropHovered,
+            onHingeChange: hingeReader.admit
         ) { presented in
             if sidebarPresentation.toggleTarget == .drawer {
                 sharedSidebar(isPresented: presented, isDrawer: true)
