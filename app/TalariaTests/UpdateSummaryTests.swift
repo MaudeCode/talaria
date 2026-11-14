@@ -98,6 +98,100 @@ final class UpdateSummaryTests: APIClientTestCase {
         XCTAssertEqual(taps, 1)
     }
 
+    /// TAL-2248: the System section presents its summary sheet and alerts over Settings, once, and loads once.
+    @MainActor
+    func testSystemSettingsPresentOverSettingsAndLoadOnce() async throws {
+        let fixture = try FixtureApp(for: self)
+        let host = "system-summary-\(UUID().uuidString.lowercased()).test"
+        let server = try XCTUnwrap(URL(string: "https://\(host)"))
+        let checks = LockedTestValue(0)
+        let check = #"""
+        { "webui": { "state": "release_ready", "can_apply": true, "behind": 1, "current_version": "0.0.1",
+                     "target_version": "0.0.2", "summary_available": true },
+          "agent": { "state": "release_ready", "behind": 1, "current_version": "v2026.9.24",
+                     "target_version": "v0.21.7", "summary_available": true } }
+        """#
+        DeferredMockURLProtocol.setOnRequest({ request in
+            switch (request.request.httpMethod, request.request.url?.path) {
+            case ("GET", "/api/updates/check"):
+                checks.value += 1
+                request.complete(withJSON: check)
+            case (_, "/api/updates/check"): request.complete(withJSON: check)
+            case (_, "/api/updates/summary"): request.complete(withJSON: Self.sectionsJSON)
+            case (_, "/api/settings"): request.complete(withJSON: #"{ "webui_version": "0.0.1" }"#)
+            default: request.complete(withJSON: "{}")
+            }
+        }, forHost: host)
+        let previousHook = UITestURLSessionHook.configure
+        UITestURLSessionHook.configure = { $0.protocolClasses = [DeferredMockURLProtocol.self] }
+        addTeardownBlock {
+            UITestURLSessionHook.configure = previousHook
+            DeferredMockURLProtocol.setOnRequest(nil, forHost: host)
+        }
+
+        // Compact phone and the open Duo's regular display; the Settings sheet stands in for SessionListView's.
+        for (sizeName, size) in [("phone", HostedSize.phone), ("duo-inner", HostedSize.duoInner)] {
+            checks.value = 0
+            let window = try hostWindow(Color.clear.sheet(isPresented: .constant(true)) {
+                NavigationStack {
+                    SettingsPaneView(authManager: fixture.environment.authManager, server: server, pane: .category(.system))
+                }
+            }, size: size)
+            let presented = await presentedController(in: window)
+            let settings = try XCTUnwrap(presented, "Settings presents")
+            let offered = await awaitCondition {
+                HostedAccessibility.elements(in: window, labelContaining: "Summarize with AI").count == 2
+            }
+            XCTAssertTrue(offered, "Elements: \(HostedAccessibility.labels(in: window))")
+            settle(0.5)
+            XCTAssertEqual(checks.value, 1, "Opening System checks for updates once, not once per row")
+
+            for (index, name) in ["Talaria Web", "Hermes Agent"].enumerated() {
+                func chain() -> String {
+                    var controller = window.rootViewController
+                    var names: [String] = []
+                    while let next = controller?.presentedViewController {
+                        names.append("\(type(of: next))\(next === settings ? " (Settings)" : "")")
+                        controller = next
+                    }
+                    return names.joined(separator: " > ")
+                }
+                let button = HostedAccessibility.elements(in: window, labelContaining: "Summarize with AI")[index]
+                XCTAssertTrue(HostedAccessibility.activate(button))
+                let loaded = await awaitElement(in: window, label: "Chats open faster.")
+                XCTAssertNotNil(loaded, "\(name)'s summary loads: \(chain())")
+                XCTAssertTrue(window.rootViewController?.presentedViewController === settings, "Settings closed: \(chain())")
+                let summary = try XCTUnwrap(settings.presentedViewController, "\(name)'s summary presents over Settings: \(chain())")
+                let closed = await awaitCondition(timeout: 2) {
+                    window.rootViewController?.presentedViewController !== settings || settings.presentedViewController !== summary
+                }
+                XCTAssertFalse(closed, "\(name)'s summary and Settings stay presented after it loads")
+                attachHostedScreenshot(window, name: "system-summary-over-settings-\(sizeName)-\(index)")
+                XCTAssertNil(summary.presentedViewController, "Exactly one summary sheet presents")
+                XCTAssertNotNil(HostedAccessibility.element(in: window, label: "What's new in \(name)"))
+
+                try HostedAccessibility.activate(XCTUnwrap(HostedAccessibility.toolbarAction("Done", in: window)))
+                let dismissed = await awaitCondition { settings.presentedViewController == nil }
+                XCTAssertTrue(dismissed, "Done dismisses \(name)'s summary")
+                XCTAssertTrue(window.rootViewController?.presentedViewController === settings, "Done leaves Settings open")
+            }
+
+            for (control, cancel) in [(SettingsIndex.systemCheckNow.title, "Dismiss"), (SettingsIndex.systemUpdate.title, "Cancel")] {
+                let button = try await requireElement(in: window, label: control)
+                XCTAssertTrue(HostedAccessibility.activate(button))
+                _ = await awaitCondition { settings.presentedViewController is UIAlertController }
+                let alert = try XCTUnwrap(settings.presentedViewController as? UIAlertController,
+                                          "\(control)'s alert presents over Settings")
+                XCTAssertTrue(HostedAccessibility.tap(cancel, in: alert))
+                let closed = await awaitCondition(timeout: 1) { window.rootViewController?.presentedViewController !== settings }
+                XCTAssertFalse(closed, "\(control)'s alert leaves Settings open")
+                XCTAssertNil(settings.presentedViewController, "\(control)'s alert presents once")
+            }
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+    }
+
     func testTheSheetNamesEachTargetAndFormatsAKnownRange() {
         XCTAssertEqual(UpdateSummaryRequest(target: .agent).name, "Hermes Agent")
         XCTAssertEqual(UpdateSummaryRequest(target: .webui).name, "Talaria Web")

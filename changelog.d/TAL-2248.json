@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Summarize with AI in Settings › System opens the summary over Settings instead of closing Settings.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

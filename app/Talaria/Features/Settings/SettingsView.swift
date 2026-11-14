@@ -163,13 +163,7 @@ struct SettingsPaneView: View {
         case .logs:
             LogsSettingsView(server: server)
         case .system:
-            SettingsCategoryPage(category: .system) {
-                ServerSettingsSections(page: .updates)
-                SettingsSection(title: String(localized: "System")) {
-                    ServerSettingsSections(page: .titles)
-                    ServerUpdateSettingsSection(authManager: authManager, server: server)
-                }
-            }
+            ServerUpdateSettingsSection(authManager: authManager, server: server)
         case .chats:
             ChatsSettingsView()
         case .liveActivitiesAndWidgets:
