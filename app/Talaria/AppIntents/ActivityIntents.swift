@@ -9,6 +9,8 @@ struct TalariaStatusIntent: AppIntent {
     static let description = IntentDescription("Hear which chats need you and which are running.")
 
     static let openAppWhenRun: Bool = false
+    /// Chat titles are the user's: a locked device that starts the request authenticates first.
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
     @available(iOS 26, *)
     static var supportedModes: IntentModes { .background }
@@ -107,6 +109,9 @@ struct RespondToApprovalByVoiceIntent: AppIntent, ForegroundContinuableIntent {
     static let description = IntentDescription("Allow or deny a command a Talaria chat is waiting on.")
 
     static let openAppWhenRun: Bool = false
+    /// Answering runs or stops a command on the user's server: a locked device that starts the request authenticates
+    /// first. An authenticated device elsewhere (an unlocked Watch, a recognized HomeView voice) may start it.
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
     @Parameter(title: "Approval")
     var approval: PendingApprovalEntity

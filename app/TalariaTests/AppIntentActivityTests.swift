@@ -86,6 +86,12 @@ final class AppIntentActivityTests: XCTestCase {
         XCTAssertEqual(found.map(\.title), ["Rotate keys"], "Only an approval the server lists resolves")
     }
 
+    /// Chat titles and approvals never reach a locked device that has not authenticated.
+    func testStatusAndVoiceAnswersRequireAuthentication() {
+        XCTAssertEqual(TalariaStatusIntent.authenticationPolicy, .requiresAuthentication)
+        XCTAssertEqual(RespondToApprovalByVoiceIntent.authenticationPolicy, .requiresAuthentication)
+    }
+
     func testApprovalEntityIsPersonalOnIOS27() throws {
         guard #available(iOS 27, *) else { throw XCTSkip("Entity ownership needs iOS 27.") }
         let entity: Any = PendingApprovalEntity(id: "s1", title: "Deploy fix")
