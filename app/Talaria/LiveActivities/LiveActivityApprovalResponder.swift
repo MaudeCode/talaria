@@ -59,11 +59,12 @@ final class LiveActivityApprovalResponder {
             await display.updateRun(run.id, answered)
         }
         for aggregate in aggregates {
-            var answered = aggregate.state
+            // Patch the latest state, so an answer made meanwhile keeps its own rows.
+            guard var answered = currentAggregate(aggregate.id) else { continue }
             for index in answered.rows.indices where Self.isWaiting(answered.rows[index], sessionID, publisher) {
                 answered.rows[index] = Self.answered(answered.rows[index])
             }
-            await display.updateAggregate(aggregate.id, answered)
+            await writeAggregate(aggregate.id, answered)
         }
 
         guard let error = await refusal(publisherID: publisherID, sessionID: sessionID, choice: choice) else { return }
@@ -76,7 +77,7 @@ final class LiveActivityApprovalResponder {
         }
         // Only this session's rows roll back, so another row answered meanwhile keeps its own state.
         for aggregate in aggregates {
-            guard var current = display.aggregates().first(where: { $0.id == aggregate.id })?.state else { continue }
+            guard var current = currentAggregate(aggregate.id) else { continue }
             var restoredRow = false
             for index in current.rows.indices {
                 guard let original = aggregate.state.rows.first(where: {
@@ -87,8 +88,28 @@ final class LiveActivityApprovalResponder {
             }
             guard restoredRow else { continue }
             current.answerError = error
-            await display.updateAggregate(aggregate.id, current)
+            await writeAggregate(aggregate.id, current)
         }
+    }
+
+    /// Every aggregate state this responder wrote since the last snapshot, and the latest of them.
+    private var aggregateWrites: [String: (states: Set<TalariaAggregateActivityAttributes.ContentState>, latest: TalariaAggregateActivityAttributes.ContentState)] = [:]
+
+    /// The aggregate as it stands. ActivityKit can read back any state this responder wrote, or the one before them,
+    /// for a moment after an update, so those read as the latest write; any other state is a newer snapshot.
+    private func currentAggregate(_ id: String) -> TalariaAggregateActivityAttributes.ContentState? {
+        guard let read = display.aggregates().first(where: { $0.id == id })?.state else { return nil }
+        if let writes = aggregateWrites[id], writes.states.contains(read) { return writes.latest }
+        aggregateWrites[id] = nil
+        return read
+    }
+
+    private func writeAggregate(_ id: String, _ state: TalariaAggregateActivityAttributes.ContentState) async {
+        let read = display.aggregates().first(where: { $0.id == id })?.state
+        var states = aggregateWrites[id]?.states ?? Set(read.map { [$0] } ?? [])
+        states.insert(state)
+        aggregateWrites[id] = (states, state)
+        await display.updateAggregate(id, state)
     }
 
     /// Nil when the server took the answer or the approval is no longer pending; otherwise the error to show.

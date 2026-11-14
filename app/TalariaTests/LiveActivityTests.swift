@@ -431,6 +431,17 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertNotNil(fixture.aggregate.answerError)
     }
 
+    /// Two answers overlapping while the activity writes are suspended: neither undoes the other's optimistic rows.
+    func testOverlappingAnswersKeepBothOptimisticRows() async throws {
+        let fixture = try ApprovalAnswerFixture(suspendsWrites: true, in: self)
+
+        async let first = RespondToApprovalIntent(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s1", answer: .allow).perform()
+        async let second = RespondToApprovalIntent(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s2", answer: .allow).perform()
+        _ = try await (first, second)
+
+        XCTAssertEqual(fixture.aggregate.rows.map(\.phase), ["running", "running"])
+    }
+
     /// The expanded island has no activity line or header, so a refused answer shows its error above the buttons.
     func testARefusedAnswersErrorShowsInTheExpandedIsland() throws {
         let error = "Unlock Talaria in the app first."
@@ -491,12 +502,14 @@ private final class ApprovalAnswerFixture {
 
     func releaseHeldRespond() { held.signal() }
 
-    /// `readsLag` serves each activity's state from before its latest update, as ActivityKit can.
+    /// `readsLag` serves each activity's state from before its latest update, as ActivityKit can; `suspendsWrites`
+    /// suspends each per-run write, as ActivityKit's `update` does, so another answer can run in between.
     init(
         responses: [String: (status: Int, body: String)] = [:],
         pendingBodies: [String] = [],
         holdsRespondFor heldSession: String? = nil,
         readsLag: Bool = false,
+        suspendsWrites: Bool = false,
         in test: XCTestCase
     ) throws {
         run = AgentRunActivityStateReducer.waitingForApproval(
@@ -543,7 +556,10 @@ private final class ApprovalAnswerFixture {
             appLock: AppLockModel(defaults: try XCTUnwrap(UserDefaults(suiteName: lockName))),
             display: .init(
                 runs: { [unowned self] in [.init(id: "run", publisherID: Self.publisher, state: readsLag ? readRun : run)] },
-                updateRun: { [unowned self] in XCTAssertEqual($0, "run"); readRun = run; run = $1; updates.append($1) },
+                updateRun: { [unowned self] in
+                    if suspendsWrites { for _ in 0..<5 { await Task.yield() } }
+                    XCTAssertEqual($0, "run"); readRun = run; run = $1; updates.append($1)
+                },
                 aggregates: { [unowned self] in [.init(id: "all", state: readsLag ? readAggregate : aggregate)] },
                 updateAggregate: { [unowned self] in XCTAssertEqual($0, "all"); readAggregate = aggregate; aggregate = $1 }
             )
