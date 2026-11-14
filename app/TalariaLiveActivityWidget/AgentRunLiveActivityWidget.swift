@@ -23,14 +23,18 @@ struct TalariaAggregateLiveActivityWidget: Widget {
                 state: context.state,
                 isStale: context.isStale
             )
-            VStack(alignment: .leading, spacing: 6) {
-                TalariaAggregateHeader(state: context.state, isStale: isStale)
-                TalariaAggregateRows(
-                    state: context.state, isStale: isStale,
-                    limit: TalariaAggregateLiveActivityPresentation.lockScreenRowLimit, spacing: 6
-                )
+            ActivityFamilyContent {
+                TalariaAggregateSmallView(state: context.state, isStale: isStale)
+            } medium: {
+                VStack(alignment: .leading, spacing: 6) {
+                    TalariaAggregateHeader(state: context.state, isStale: isStale)
+                    TalariaAggregateRows(
+                        state: context.state, isStale: isStale,
+                        limit: TalariaAggregateLiveActivityPresentation.lockScreenRowLimit, spacing: 6
+                    )
+                }
+                .padding(14)
             }
-            .padding(14)
             .liveActivityPalette(on: .lockScreen)
             .activityBackgroundTint(LiveActivityPalette.Surface.lockScreen.backgroundTint)
             .activitySystemActionForegroundColor(LiveActivityPalette.Surface.lockScreen.actionForeground)
@@ -81,17 +85,22 @@ struct TalariaAggregateLiveActivityWidget: Widget {
             }
             .widgetURL(context.state.rows.first?.sessionURL)
         }
+        .supplementalActivityFamilies([.small])
     }
 }
 
 struct AgentRunLiveActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: AgentRunActivityAttributes.self) { context in
-            AgentRunLockScreenView(state: context.state, publisherID: context.attributes.relayPublisherID)
-                .liveActivityPalette(on: .lockScreen)
-                .activityBackgroundTint(LiveActivityPalette.Surface.lockScreen.backgroundTint)
-                .activitySystemActionForegroundColor(LiveActivityPalette.Surface.lockScreen.actionForeground)
-                .widgetURL(TalariaDeepLink.sessionURL(sessionID: context.state.sessionID, publisherID: context.attributes.relayPublisherID))
+            ActivityFamilyContent {
+                AgentRunSmallView(state: context.state)
+            } medium: {
+                AgentRunLockScreenView(state: context.state, publisherID: context.attributes.relayPublisherID)
+            }
+            .liveActivityPalette(on: .lockScreen)
+            .activityBackgroundTint(LiveActivityPalette.Surface.lockScreen.backgroundTint)
+            .activitySystemActionForegroundColor(LiveActivityPalette.Surface.lockScreen.actionForeground)
+            .widgetURL(TalariaDeepLink.sessionURL(sessionID: context.state.sessionID, publisherID: context.attributes.relayPublisherID))
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
@@ -123,6 +132,23 @@ struct AgentRunLiveActivityWidget: Widget {
             .widgetURL(TalariaDeepLink.sessionURL(sessionID: context.state.sessionID, publisherID: context.attributes.relayPublisherID))
             // The keyline rings the black island, so it keeps the dark card's hues.
             .keylineTint(LiveActivityPalette.darkCard.color(for: context.state.status, isStale: context.state.isStale))
+        }
+        .supplementalActivityFamilies([.small])
+    }
+}
+
+/// TAL-2037: the small layout on the Apple Watch Smart Stack and CarPlay, the Lock Screen layout everywhere else.
+/// ActivityConfiguration's content closure gets no environment, so the family is read here.
+private struct ActivityFamilyContent<Small: View, Medium: View>: View {
+    @Environment(\.activityFamily) private var family
+    @ViewBuilder let small: Small
+    @ViewBuilder let medium: Medium
+
+    var body: some View {
+        if family == .small {
+            small
+        } else {
+            medium
         }
     }
 }

@@ -239,6 +239,38 @@ final class LiveActivityVisualReferenceTests: XCTestCase {
         }
     }
 
+    /// TAL-2037: the small family on the Apple Watch Smart Stack and CarPlay; the timer while working, the stale
+    /// wording, the ask and the outcome, then the aggregate's header and first row.
+    func testSmallFamilyReferences() throws {
+        for scenario in [AgentRunScenario.running, .stale, .waiting, .completed] {
+            try VisualReference.assertMatchesReference(
+                AgentRunSmallView(state: scenario.state)
+                    .environment(\.agentRunFrozenClock, AgentRunScenario.frozenClock),
+                named: "live-activity-small-\(scenario.rawValue)",
+                size: CGSize(width: 170, height: 72),
+                colorScheme: .dark,
+                background: AgentRunLiveActivityTheme.background
+            )
+        }
+        let aggregate = TalariaAggregateActivityAttributes.ContentState(
+            schemaVersion: 1, activeCount: 2, title: "Talaria", subtitle: "2 active sessions", updatedAt: 0,
+            rows: [
+                TalariaAggregateActivityAttributes.ContentState.Row(
+                    publisherId: "https://fixture.example", publisherLabel: "fixture", sessionId: "A",
+                    title: "Session A", phase: "waiting_for_approval", status: "Approval", updatedAt: 0, deepLink: "",
+                    approvalHeadId: "head-A"
+                ),
+            ]
+        )
+        try VisualReference.assertMatchesReference(
+            TalariaAggregateSmallView(state: aggregate, isStale: false),
+            named: "live-activity-small-aggregate",
+            size: CGSize(width: 170, height: 72),
+            colorScheme: .dark,
+            background: AgentRunLiveActivityTheme.background
+        )
+    }
+
     /// TAL-1463: the aggregate's Lock Screen rows; the first two waiting rows carry their buttons.
     func testAggregateRowsWithActionsReference() throws {
         let row = { (session: String, phase: String, status: String) in

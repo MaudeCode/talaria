@@ -133,3 +133,44 @@ struct AgentRunWorkCountsLabel: View {
             .accessibilityLabel(counts.accessibilityLabel)
     }
 }
+
+/// TAL-2037: the small family on the Apple Watch Smart Stack and CarPlay. The status glyph and title, then the timer or
+/// the ask or outcome; no excerpt, counts or buttons, so it reads at a glance.
+struct AgentRunSmallView: View {
+    @Environment(\.liveActivityPalette) private var palette
+    let state: AgentRunActivityAttributes.ContentState
+
+    var body: some View {
+        let detail = state.smallDetail
+        let showsTimer = if case .timer = detail { true } else { false }
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                // The timer names no phase, so the glyph does; a status word already says it.
+                AgentRunStatusDot(status: state.status, isStale: state.isStale, size: 20)
+                    .accessibilityLabel(state.status.title)
+                    .accessibilityHidden(!showsTimer)
+                Text(state.sessionTitle)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(palette.primaryText)
+                    .lineLimit(1)
+            }
+            Group {
+                switch detail {
+                case let .timer(startedAt):
+                    AgentRunElapsedTimerText(startedAt: startedAt, alignment: .leading)
+                        .foregroundStyle(palette.secondaryText)
+                case let .text(text):
+                    Text(text)
+                        .foregroundStyle(state.isStale ? palette.secondaryText : palette.color(for: state.status, isStale: false))
+                }
+            }
+            .font(.subheadline)
+            .lineLimit(1)
+            .minimumScaleFactor(0.82)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .accessibilityElement(children: .combine)
+    }
+}
