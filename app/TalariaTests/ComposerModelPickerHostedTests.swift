@@ -11,7 +11,10 @@ final class ComposerModelPickerHostedTests: APIClientTestCase {
         continueAfterFailure = false
         let fixture = try FixtureApp(for: self)
         let summary = try await fixture.session()
-        let model = ChatViewModel(session: summary, server: UITestFixtureEnvironment.serverURL, client: fixture.client)
+        let model = ChatViewModel(
+            session: summary, server: UITestFixtureEnvironment.serverURL, client: fixture.client,
+            liveActivityManager: SpyChatLiveActivityManager()
+        )
         defer { model.cleanupPollingTasks() }
         let window = try hostWindow(fixture.chat(summary, viewModel: model))
         _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
@@ -232,7 +235,10 @@ final class ComposerModelPickerHostedTests: APIClientTestCase {
             }
         }
         let summary = SessionSummary(sessionId: "session-abc", title: "Effort recovery", model: "shared", modelProvider: "alpha", modelOptionID: "shared", profile: "work")
-        let model = ChatViewModel(session: summary, server: client.baseURL, client: client)
+        let model = ChatViewModel(
+            session: summary, server: client.baseURL, client: client,
+            liveActivityManager: SpyChatLiveActivityManager()
+        )
         defer { model.cleanupPollingTasks() }
         await model.loadComposerConfiguration()
         let window = try hostWindow(NavigationStack {
@@ -286,7 +292,10 @@ final class ComposerModelPickerHostedTests: APIClientTestCase {
             return (HTTPURLResponse(url: request.url!, statusCode: 409, httpVersion: nil, headerFields: nil)!, refusalData)
         }
         let summary = SessionSummary(sessionId: "session-abc", title: "Guarded model selection", model: "shared", modelProvider: "alpha", modelOptionID: "shared", profile: "work")
-        let model = ChatViewModel(session: summary, server: server, client: client)
+        let model = ChatViewModel(
+            session: summary, server: server, client: client,
+            liveActivityManager: SpyChatLiveActivityManager()
+        )
         defer { model.cleanupPollingTasks() }
         await model.loadComposerConfiguration()
         let window = try hostWindow(NavigationStack {
