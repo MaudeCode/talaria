@@ -21,26 +21,33 @@ struct ServerUpdateSettingsSection: View {
     @State private var updateTargets: UpdatesCheckResponse?
     @State private var summaryRequest: UpdateSummaryRequest?
 
+    /// Owns the System page so its sheet, alerts and loads attach once, to the page. On a `Group` or `Section` of rows,
+    /// SwiftUI copies them onto every row, and a copy that never presented dismisses Settings itself (TAL-2248).
     var body: some View {
-        Group {
-            SettingsValueRow(title: SettingsIndex.systemStatus.title, systemImage: "server.rack") {
-                serverStatusPill
-            }
+        SettingsCategoryPage(category: .system) {
+            ServerSettingsSections(page: .updates)
+            SettingsSection(title: String(localized: "System")) {
+                ServerSettingsSections(page: .titles)
+                SettingsValueRow(title: SettingsIndex.systemStatus.title, systemImage: "server.rack") {
+                    serverStatusPill
+                }
 
-            SettingsValueRow(title: SettingsIndex.systemVersion.title, systemImage: "number") {
-                serverVersionContent
-            }
+                SettingsValueRow(title: SettingsIndex.systemVersion.title, systemImage: "number") {
+                    serverVersionContent
+                }
 
-            serverUpdateCheckAction
-            serverUpdateNote
-            UpdateSummaryButton(info: updateTargets?.webui) {
-                summaryRequest = UpdateSummaryRequest(target: .webui)
-            }
-            serverUpdateAction
-            agentUpdateRows
-            if scrollAnchor == .setting(.systemUpdateSummary),
-               updateTargets?.webui?.offersSummary != true, updateTargets?.agent?.offersSummary != true {
-                SettingsInfoRow(title: SettingsIndex.systemUpdateSummary.title, value: String(localized: "Not Available on This Server"))
+                serverUpdateCheckAction
+                serverUpdateNote
+                UpdateSummaryButton(info: updateTargets?.webui) {
+                    summaryRequest = UpdateSummaryRequest(target: .webui)
+                }
+                serverUpdateAction
+                agentUpdateRows
+                if scrollAnchor == .setting(.systemUpdateSummary),
+                   updateTargets?.webui?.offersSummary != true, updateTargets?.agent?.offersSummary != true {
+                    SettingsInfoRow(title: SettingsIndex.systemUpdateSummary.title,
+                                    value: String(localized: "Not Available on This Server"))
+                }
             }
         }
         .task { await loadServerSettings() }
