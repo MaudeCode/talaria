@@ -84,19 +84,54 @@ enum ProfileEntityProvider {
 
     /// Best-effort live fetch against the saved server. Returns `[]` (not an error) when no
     /// server is configured; a network/auth failure throws so the caller falls back to cache.
-    ///
-    /// Runs out-of-process (App Intents), where `CustomHeaderStore.shared` — which
-    /// `AuthManager` hydrates only on a foreground launch — is empty. So we read the server's
-    /// custom headers straight from the Keychain (reachable cross-process) and pass them
-    /// explicitly; otherwise a reverse proxy that authenticates on a header rejects this fetch
-    /// and the picker can never refresh live. (The session cookie is also absent out-of-process,
-    /// so a cookie-auth server still falls back to the cache — this just stops the ad-hoc client
-    /// from silently dropping the headers every other client in the app carries.)
     private static func fetchLiveProfiles() async throws -> [ProfileSummary] {
-        guard let server = savedServerURL() else { return [] }
-        let headers = customHeaders(for: server)
-        let response = try await APIClient(baseURL: server, customHeaderProvider: { headers }).profiles()
+        guard let server = AppIntentServer.saved() else { return [] }
+        let response = try await server.client().profiles()
         return response.profiles ?? []
+    }
+
+    @MainActor private static var didRefreshAppShortcutsThisLaunch = false
+
+    /// Nudges the system to re-read `suggestedEntities()` so a freshly loaded profile list
+    /// surfaces (or updates) the parameterized "New Chat in <Profile>" App Shortcut. iOS only
+    /// indexes a parameterized App Shortcut once its suggested values exist, so without this
+    /// call the shortcut never appears — the parameter-less New Chat shortcuts show, but this
+    /// one doesn't until the system re-queries (#339).
+    ///
+    /// Fires on the first profile load of each app launch (so the shortcut re-registers after
+    /// an app reinstall / index reset, even when the profile list itself is unchanged) and on
+    /// any later change — but not on every redundant reload, to avoid needless re-indexing.
+    @MainActor
+    static func refreshAppShortcuts(changed: Bool) {
+        guard changed || !didRefreshAppShortcutsThisLaunch else { return }
+        didRefreshAppShortcutsThisLaunch = true
+        TalariaShortcuts.updateAppShortcutParameters()
+    }
+}
+
+/// The saved server as an App Intent reaches it. Intents can run without a foreground launch, where
+/// `CustomHeaderStore.shared` — which `AuthManager` hydrates only on a foreground launch — is empty. So the server's
+/// custom headers are read straight from the Keychain (reachable cross-process) and passed explicitly; otherwise a
+/// reverse proxy that authenticates on a header rejects the request. The session cookie comes from
+/// `ServerCookieStore`, which also persists in the Keychain.
+struct AppIntentServer {
+    let url: URL
+    let headers: [CustomHeader]
+
+    static func saved() -> AppIntentServer? {
+        guard let url = savedServerURL() else { return nil }
+        return AppIntentServer(url: url, headers: customHeaders(for: url))
+    }
+
+    func client() -> APIClient {
+        let headers = headers
+        return APIClient(baseURL: url, customHeaderProvider: { headers })
+    }
+
+    @MainActor
+    func askSession() -> AskSession {
+        let headers = headers
+        return AskSession(client: client()) { SSEClient(customHeaderProvider: { headers }) }
     }
 
     /// Loads the server's stored custom headers (scoped key first, then the pre-#16 global
@@ -121,23 +156,5 @@ enum ProfileEntityProvider {
         // Pre-registry installs are migrated by AuthManager on the next app launch.
         guard let raw = try? KeychainStore().load(.serverURL) else { return nil }
         return URL(string: raw)
-    }
-
-    @MainActor private static var didRefreshAppShortcutsThisLaunch = false
-
-    /// Nudges the system to re-read `suggestedEntities()` so a freshly loaded profile list
-    /// surfaces (or updates) the parameterized "New Chat in <Profile>" App Shortcut. iOS only
-    /// indexes a parameterized App Shortcut once its suggested values exist, so without this
-    /// call the shortcut never appears — the parameter-less New Chat shortcuts show, but this
-    /// one doesn't until the system re-queries (#339).
-    ///
-    /// Fires on the first profile load of each app launch (so the shortcut re-registers after
-    /// an app reinstall / index reset, even when the profile list itself is unchanged) and on
-    /// any later change — but not on every redundant reload, to avoid needless re-indexing.
-    @MainActor
-    static func refreshAppShortcuts(changed: Bool) {
-        guard changed || !didRefreshAppShortcutsThisLaunch else { return }
-        didRefreshAppShortcutsThisLaunch = true
-        TalariaShortcuts.updateAppShortcutParameters()
     }
 }

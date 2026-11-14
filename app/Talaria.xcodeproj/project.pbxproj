@@ -35,6 +35,7 @@
 		1A2B3C4D5E6F700000000338 /* TalariaAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000337 /* TalariaAppIntents.swift */; };
 		1A2B3C4D5E6F700000000343 /* ProfileEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000342 /* ProfileEntity.swift */; };
 		1A2B3C4D5E6F700000000341 /* AppIntentNewChatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000340 /* AppIntentNewChatTests.swift */; };
+		1A2B3C4D5E6F7000000014A1 /* AppIntentAskTalariaTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000014A0 /* AppIntentAskTalariaTests.swift */; };
 		1A2B3C4D5E6F700000000345 /* AppIntentNewChatInProfileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000344 /* AppIntentNewChatInProfileTests.swift */; };
 		1A2B3C4D5E6F700000000003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000014 /* Assets.xcassets */; };
 		A09400000000000000000102 /* BrandAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A09400000000000000000101 /* BrandAssets.xcassets */; };
@@ -517,6 +518,7 @@
 		1A2B3C4D5E6F700000000337 /* TalariaAppIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalariaAppIntents.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F700000000342 /* ProfileEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileEntity.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F700000000340 /* AppIntentNewChatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIntentNewChatTests.swift; sourceTree = "<group>"; };
+		1A2B3C4D5E6F7000000014A0 /* AppIntentAskTalariaTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIntentAskTalariaTests.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F700000000344 /* AppIntentNewChatInProfileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIntentNewChatInProfileTests.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F700000000013 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		1A2B3C4D5E6F700000000014 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -1073,6 +1075,7 @@
 				C1TAL1396000000000000001 /* ChatCodeBlockStreamingTests.swift */,
 				A04500000000000000000018 /* LiveActivityTests.swift */,
 				1A2B3C4D5E6F700000000340 /* AppIntentNewChatTests.swift */,
+				1A2B3C4D5E6F7000000014A0 /* AppIntentAskTalariaTests.swift */,
 				1A2B3C4D5E6F700000000344 /* AppIntentNewChatInProfileTests.swift */,
 				D74A00000000000000000003 /* VisualReference.swift */,
 				D74A00000000000000000004 /* LiveActivityVisualReferenceTests.swift */,
@@ -2185,6 +2188,7 @@
 				C1TAL1396000000000000002 /* ChatCodeBlockStreamingTests.swift in Sources */,
 				A04500000000000000000008 /* LiveActivityTests.swift in Sources */,
 				1A2B3C4D5E6F700000000341 /* AppIntentNewChatTests.swift in Sources */,
+				1A2B3C4D5E6F7000000014A1 /* AppIntentAskTalariaTests.swift in Sources */,
 				1A2B3C4D5E6F700000000345 /* AppIntentNewChatInProfileTests.swift in Sources */,
 				D74A00000000000000000019 /* VisualReference.swift in Sources */,
 				D74A00000000000000000020 /* LiveActivityVisualReferenceTests.swift in Sources */,

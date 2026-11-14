@@ -68,6 +68,8 @@ struct UITestFixtureEnvironment {
     /// Reports the hinge partly open to the Chats list, which no simulator pose produces on the Duo's outer display
     /// (TAL-1460); the list then reads no hinge API.
     nonisolated static let tentHingeArgument = "--ui-test-tent-hinge"
+    /// TAL-1470: the chat stream ends its turn with a reply, so Ask Talaria run from Shortcuts has one to speak.
+    nonisolated static let askReplyArgument = "--ui-test-ask-reply"
     /// Holds `/api/chat/cancel` until the test releases it, so a test sees a stop before the server answers (TAL-1460).
     nonisolated static let holdChatCancelArgument = "--ui-test-hold-chat-cancel"
     /// Opens the fixture session through the deep-link route at launch, as `simctl openurl` would without the system's
@@ -195,6 +197,8 @@ struct UITestFixtureEnvironment {
         defaults.removePersistentDomain(forName: defaultsName)
         CustomHeaderStore.shared.replace(with: [])
         let client = APIClient(baseURL: serverURL)
+        // Ask Talaria reads the real Keychain, which the fixture leaves empty; it asks the fixture server instead.
+        AskTalariaIntent.makeAskSession = { AskSession(client: client) { SSEClient() } }
         let authManager = AuthManager(
             keychain: keychain,
             clientFactory: { _ in client },
@@ -1125,6 +1129,17 @@ final class UITestFixtureURLProtocol: URLProtocol {
                     ?? ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.approvalBypassArgument)
             }
             return json(["ok": true, "yolo_enabled": enabled])
+        case "/api/chat/stream" where ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.askReplyArgument):
+            let answer = "The fixture deploy finished at 10:42 with all checks green."
+            let done = json([
+                "terminal_state": "completed",
+                "session": ["session_id": newSessionID, "messages": [
+                    ["role": "assistant", "content": answer, "_anchor_activity_scene": [
+                        "version": "activity_scene_v1", "activity_rows": [], "final_answer": answer
+                    ]]
+                ]]
+            ])
+            return Data("event: token\ndata: {\"text\":\"The fixture deploy\"}\n\nevent: done\ndata: \(String(decoding: done, as: UTF8.self))\n\nevent: stream_end\ndata: {}\n\n".utf8)
         case "/api/chat/stream", "/api/approval/stream", "/api/clarify/stream", "/api/kanban/events/stream":
             return Data("event: stream_end\ndata: {}\n\n".utf8)
         default:
