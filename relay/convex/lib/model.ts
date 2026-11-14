@@ -81,6 +81,8 @@ export interface AggregateRow {
   startedAt?: number;
   updatedAt: number;
   deepLink: string;
+  /** TAL-1463: the approval this row waits on, so the App answers only the approval the activity shows. */
+  approvalHeadId?: string;
 }
 
 export interface ActivityAggregate {

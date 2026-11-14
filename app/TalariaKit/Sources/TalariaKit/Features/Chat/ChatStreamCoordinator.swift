@@ -812,7 +812,7 @@ public final class ChatStreamCoordinator {
             completeCurrentResponse(needsTranscriptRefresh: !hasCompletedTranscript, terminalState: payload.terminalState)
         case .approvalPending(let update):
             // An empty update is the settled prompt (`approval_cleared`); the run goes on.
-            liveActivityManager?.update(update.pending == nil ? .promptSettled : .waitingForApproval)
+            liveActivityManager?.update(update.pending.map { .waitingForApproval(headID: $0.headId) } ?? .promptSettled)
             delegate?.streamCoordinatorApplyApprovalUpdate(update)
             markProgress()
         case .clarificationPending(let update):

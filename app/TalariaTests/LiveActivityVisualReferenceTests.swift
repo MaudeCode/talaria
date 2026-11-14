@@ -156,7 +156,8 @@ final class LiveActivityVisualReferenceTests: XCTestCase {
         let row = { (session: String, phase: String, status: String) in
             TalariaAggregateActivityAttributes.ContentState.Row(
                 publisherId: "https://fixture.example", publisherLabel: "fixture", sessionId: session,
-                title: "Session \(session)", phase: phase, status: status, updatedAt: 0, deepLink: ""
+                title: "Session \(session)", phase: phase, status: status, updatedAt: 0, deepLink: "",
+                approvalHeadId: phase == "waiting_for_approval" ? "head-\(session)" : nil
             )
         }
         let state = TalariaAggregateActivityAttributes.ContentState(
@@ -233,6 +234,7 @@ enum AgentRunScenario: String, CaseIterable {
 
     static let startedAt = Date(timeIntervalSince1970: 1_760_000_000)
     static let frozenClock = startedAt.addingTimeInterval(125)
+    static let approvalHeadID = "visual-approval-head"
 
     var state: AgentRunActivityAttributes.ContentState {
         switch self {
@@ -243,7 +245,7 @@ enum AgentRunScenario: String, CaseIterable {
                 responseExcerpt: "Reworked the transcript cache so a reconnect keeps the streamed turn."
             )
         case .waiting:
-            makeState(status: .waitingForApproval, currentActivity: "Waiting for approval")
+            makeState(status: .waitingForApproval, currentActivity: "Waiting for approval", approvalHeadID: Self.approvalHeadID)
         case .input:
             makeState(status: .waitingForClarification, currentActivity: "Input")
         case .stale:
@@ -278,7 +280,8 @@ enum AgentRunScenario: String, CaseIterable {
         responseExcerpt: String = "",
         isStale: Bool = false,
         isFinal: Bool = false,
-        errorSummary: String? = nil
+        errorSummary: String? = nil,
+        approvalHeadID: String? = nil
     ) -> AgentRunActivityAttributes.ContentState {
         AgentRunActivityAttributes.ContentState(
             sessionID: "session-visual-reference",
@@ -290,7 +293,8 @@ enum AgentRunScenario: String, CaseIterable {
             updatedAt: Self.frozenClock,
             isStale: isStale,
             isFinal: isFinal,
-            errorSummary: errorSummary
+            errorSummary: errorSummary,
+            approvalHeadID: approvalHeadID
         )
     }
 }

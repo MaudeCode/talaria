@@ -12,7 +12,7 @@ struct AgentRunExpandedIslandBottomView: View {
             AgentRunProgressRail(status: state.status)
 
             if let actions = LiveActivityRowActions(
-                status: state.status, isFinal: state.isFinal,
+                status: state.status, approvalHeadID: state.approvalHeadID, isFinal: state.isFinal,
                 sessionID: state.sessionID, publisherID: publisherID
             ) {
                 // The Lock Screen shows a refused answer's error in its activity line; the island has none.

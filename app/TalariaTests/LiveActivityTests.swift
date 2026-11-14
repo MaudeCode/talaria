@@ -353,13 +353,15 @@ final class LiveActivityTests: XCTestCase {
         let publisher = "https://relay-publisher.example"
         let approval = AgentRunScenario.waiting.state
         let actions = try XCTUnwrap(LiveActivityRowActions(
-            status: approval.status, isFinal: false, sessionID: approval.sessionID, publisherID: publisher
+            status: approval.status, approvalHeadID: approval.approvalHeadID, isFinal: false,
+            sessionID: approval.sessionID, publisherID: publisher
         ))
-        XCTAssertEqual(actions.kind, .approval)
+        XCTAssertEqual(actions.kind, .approval(headID: AgentRunScenario.approvalHeadID))
         for answer in [RespondToApprovalIntent.Answer.allow, .deny] {
-            let intent = actions.intent(answer)
+            let intent = actions.intent(answer, headID: AgentRunScenario.approvalHeadID)
             XCTAssertEqual(intent.sessionID, approval.sessionID)
             XCTAssertEqual(intent.publisherID, publisher)
+            XCTAssertEqual(intent.approvalHeadID, AgentRunScenario.approvalHeadID)
             XCTAssertEqual(intent.answer, answer)
         }
         let input = AgentRunActivityStateReducer.waitingForClarification(state: approval)
@@ -377,12 +379,17 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertTrue(try labels(input).isDisjoint(with: ["Allow", "Deny"]))
         XCTAssertTrue(try labels(running).isDisjoint(with: ["Allow", "Deny", "Open"]))
         XCTAssertTrue(try labels(AgentRunActivityStateReducer.stale(state: approval)).isSuperset(of: ["Allow", "Deny"]))
+        // An approval the activity cannot name is reviewed in the chat, never answered blind.
+        var unnamed = approval
+        unnamed.approvalHeadID = nil
+        XCTAssertTrue(try labels(unnamed).contains("Open"))
+        XCTAssertTrue(try labels(unnamed).isDisjoint(with: ["Allow", "Deny"]))
     }
 
     func testAllowFromTheLiveActivityAnswersThePendingApprovalAndLeavesTheWaitingState() async throws {
         let fixture = try ApprovalAnswerFixture(in: self)
 
-        _ = try await RespondToApprovalIntent(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s1", answer: .allow).perform()
+        _ = try await RespondToApprovalIntent(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s1", approvalHeadID: "head-s1", answer: .allow).perform()
 
         XCTAssertEqual(fixture.requests.value, [["session_id": "s1", "choice": "once", "approval_id": "approval-s1"]])
         XCTAssertEqual(fixture.run.status, .thinking, "The run leaves waiting for approval at once")
@@ -394,16 +401,27 @@ final class LiveActivityTests: XCTestCase {
     func testAnApprovalAlreadyAnsweredSendsNothing() async throws {
         let fixture = try ApprovalAnswerFixture(pendingBodies: ["{}"], in: self)
 
-        _ = try await RespondToApprovalIntent(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s1", answer: .allow).perform()
+        _ = try await RespondToApprovalIntent(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s1", approvalHeadID: "head-s1", answer: .allow).perform()
 
         XCTAssertEqual(fixture.requests.value, [])
         XCTAssertEqual(fixture.run.status, .thinking)
     }
 
+    /// Another approval pending than the one the activity showed: nothing is answered and the rows ask for a review.
+    func testAnotherPendingApprovalIsNeverAnswered() async throws {
+        let fixture = try ApprovalAnswerFixture(pendingBodies: [#"{"pending":{"approval_id":"approval-b","head_id":"head-b"}}"#], in: self)
+
+        _ = try await RespondToApprovalIntent(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s1", approvalHeadID: "head-s1", answer: .allow).perform()
+
+        XCTAssertEqual(fixture.requests.value, [], "Approval B was never shown, so it is not answered")
+        XCTAssertEqual(fixture.run.status, .waitingForApproval)
+        XCTAssertEqual(fixture.run.errorSummary, "This approval changed. Open Talaria to review it.")
+    }
+
     func testRefusedDenyRestoresTheWaitingStateWithTheServersError() async throws {
         let fixture = try ApprovalAnswerFixture(responses: ["s1": (200, #"{"ok":false}"#)], in: self)
 
-        _ = try await RespondToApprovalIntent(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s1", answer: .deny).perform()
+        _ = try await RespondToApprovalIntent(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s1", approvalHeadID: "head-s1", answer: .deny).perform()
 
         let error = "The server did not accept that response. The request is still waiting."
         XCTAssertEqual(fixture.requests.value, [["session_id": "s1", "choice": "deny", "approval_id": "approval-s1"]])
@@ -420,10 +438,10 @@ final class LiveActivityTests: XCTestCase {
         let fixture = try ApprovalAnswerFixture(responses: ["s1": (200, #"{"ok":false}"#)], holdsRespondFor: "s1", in: self)
 
         // s1's answer reaches the server and waits there while s2 is answered in full.
-        async let first = RespondToApprovalIntent(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s1", answer: .allow).perform()
+        async let first = RespondToApprovalIntent(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s1", approvalHeadID: "head-s1", answer: .allow).perform()
         let reached = await awaitCondition(timeout: 5) { fixture.requests.value.contains { $0["session_id"] == "s1" } }
         XCTAssertTrue(reached)
-        _ = try await RespondToApprovalIntent(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s2", answer: .allow).perform()
+        _ = try await RespondToApprovalIntent(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s2", approvalHeadID: "head-s2", answer: .allow).perform()
         fixture.releaseHeldRespond()
         _ = try await first
 
@@ -435,8 +453,8 @@ final class LiveActivityTests: XCTestCase {
     func testOverlappingAnswersKeepBothOptimisticRows() async throws {
         let fixture = try ApprovalAnswerFixture(suspendsWrites: true, in: self)
 
-        async let first = RespondToApprovalIntent(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s1", answer: .allow).perform()
-        async let second = RespondToApprovalIntent(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s2", answer: .allow).perform()
+        async let first = RespondToApprovalIntent(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s1", approvalHeadID: "head-s1", answer: .allow).perform()
+        async let second = RespondToApprovalIntent(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s2", approvalHeadID: "head-s2", answer: .allow).perform()
         _ = try await (first, second)
 
         XCTAssertEqual(fixture.aggregate.rows.map(\.phase), ["running", "running"])
@@ -460,13 +478,13 @@ final class LiveActivityTests: XCTestCase {
 
     /// A 5xx leaves the outcome unknown: the answer stays when the server no longer has that approval pending.
     func testUnknownOutcomeKeepsTheAnswerOnlyWhenTheApprovalIsGone() async throws {
-        let stillPending = #"{"pending":{"approval_id":"approval-s1"}}"#
-        for (afterwards, keeps) in [("{}", true), (#"{"pending":{"approval_id":"approval-next"}}"#, true), (stillPending, false)] {
+        let stillPending = #"{"pending":{"approval_id":"approval-s1","head_id":"head-s1"}}"#
+        for (afterwards, keeps) in [("{}", true), (#"{"pending":{"approval_id":"approval-next","head_id":"head-next"}}"#, true), (stillPending, false)] {
             let fixture = try ApprovalAnswerFixture(
                 responses: ["s1": (502, "{}")], pendingBodies: [stillPending, afterwards], in: self
             )
 
-            _ = try await RespondToApprovalIntent(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s1", answer: .allow).perform()
+            _ = try await RespondToApprovalIntent(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s1", approvalHeadID: "head-s1", answer: .allow).perform()
 
             XCTAssertEqual(fixture.requests.value.count, 1, "The answer is never sent twice")
             XCTAssertEqual(fixture.run.status, keeps ? .thinking : .waitingForApproval, afterwards)
@@ -477,7 +495,7 @@ final class LiveActivityTests: XCTestCase {
     func testRefusalRollsBackWhileTheActivityStillReadsThePreAnswerState() async throws {
         let fixture = try ApprovalAnswerFixture(responses: ["s1": (200, #"{"ok":false}"#)], readsLag: true, in: self)
 
-        _ = try await RespondToApprovalIntent(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s1", answer: .allow).perform()
+        _ = try await RespondToApprovalIntent(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s1", approvalHeadID: "head-s1", answer: .allow).perform()
 
         XCTAssertEqual(fixture.updates.map(\.status), [.thinking, .waitingForApproval])
         XCTAssertNotNil(fixture.run.errorSummary)
@@ -513,13 +531,13 @@ private final class ApprovalAnswerFixture {
         in test: XCTestCase
     ) throws {
         run = AgentRunActivityStateReducer.waitingForApproval(
-            state: AgentRunActivityStateReducer.initialState(sessionID: "s1", sessionTitle: "Deploy")
+            state: AgentRunActivityStateReducer.initialState(sessionID: "s1", sessionTitle: "Deploy"), approvalHeadID: "head-s1"
         )
         readRun = run
         let row = { (session: String) in
             TalariaAggregateActivityAttributes.ContentState.Row(
                 publisherId: Self.publisher, publisherLabel: "approvals", sessionId: session, title: session,
-                phase: "waiting_for_approval", status: "Approval", updatedAt: 0, deepLink: ""
+                phase: "waiting_for_approval", status: "Approval", updatedAt: 0, deepLink: "", approvalHeadId: "head-\(session)"
             )
         }
         aggregate = .init(schemaVersion: 1, activeCount: 2, title: "Talaria", subtitle: "2 waiting", updatedAt: 0, rows: [row("s1"), row("s2")])
@@ -531,7 +549,7 @@ private final class ApprovalAnswerFixture {
             if request.url?.path == "/api/approval/pending" {
                 let session = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
                     .queryItems?.first { $0.name == "session_id" }?.value ?? ""
-                let body = pendingQueue.value.first ?? #"{"pending":{"approval_id":"approval-\#(session)"}}"#
+                let body = pendingQueue.value.first ?? #"{"pending":{"approval_id":"approval-\#(session)","head_id":"head-\#(session)"}}"#
                 if pendingQueue.value.count > 1 { pendingQueue.value.removeFirst() }
                 return apiTestJSONResponse(body, for: request)
             }

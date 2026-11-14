@@ -21,13 +21,16 @@ struct RespondToApprovalIntent: LiveActivityIntent {
     /// The relay publisher (server origin) the run belongs to; nil for a run the App started without the relay.
     @Parameter(title: "Server") var publisherID: String?
     @Parameter(title: "Session") var sessionID: String
+    /// The approval the activity shows; the answer is refused when another one is pending.
+    @Parameter(title: "Approval") var approvalHeadID: String
     @Parameter(title: "Answer") var answer: Answer
 
     init() {}
 
-    init(publisherID: String?, sessionID: String, answer: Answer) {
+    init(publisherID: String?, sessionID: String, approvalHeadID: String, answer: Answer) {
         self.publisherID = publisherID
         self.sessionID = sessionID
+        self.approvalHeadID = approvalHeadID
         self.answer = answer
     }
 
@@ -35,31 +38,32 @@ struct RespondToApprovalIntent: LiveActivityIntent {
     func perform() async throws -> some IntentResult {
         #if !TALARIA_WIDGET_EXTENSION
         await LiveActivityApprovalResponder.shared.respond(
-            publisherID: publisherID, sessionID: sessionID, choice: answer.choice
+            publisherID: publisherID, sessionID: sessionID, approvalHeadID: approvalHeadID, choice: answer.choice
         )
         #endif
         return .result()
     }
 }
 
-/// What a waiting Live Activity row offers: Allow and Deny answer in place, Open lands in the chat for an input
-/// request. The phase comes from the server's row. A stale row keeps its buttons, since the server rejects an answer
-/// to an approval that is no longer pending; a finished run offers nothing.
+/// What a waiting Live Activity row offers: Allow and Deny answer in place the approval the server says the activity
+/// shows, and Open lands in the chat for an input request or an approval the activity cannot name. A stale row keeps
+/// its buttons, since the server refuses an answer to an approval that is no longer the one shown; a finished run
+/// offers nothing.
 struct LiveActivityRowActions: Equatable {
     enum Kind: Equatable {
-        case approval
-        case input
+        case approval(headID: String)
+        case open
     }
 
     let kind: Kind
     let sessionID: String
     let publisherID: String?
 
-    init?(status: AgentRunActivityStatus, isFinal: Bool, sessionID: String, publisherID: String?) {
+    init?(status: AgentRunActivityStatus, approvalHeadID: String?, isFinal: Bool, sessionID: String, publisherID: String?) {
         guard !isFinal else { return nil }
         switch status {
-        case .waitingForApproval: kind = .approval
-        case .waitingForClarification: kind = .input
+        case .waitingForApproval: kind = approvalHeadID.map { .approval(headID: $0) } ?? .open
+        case .waitingForClarification: kind = .open
         default: return nil
         }
         self.sessionID = sessionID
@@ -68,16 +72,16 @@ struct LiveActivityRowActions: Equatable {
 
     init?(row: TalariaAggregateActivityAttributes.ContentState.Row) {
         switch row.phase {
-        case "waiting_for_approval": kind = .approval
-        case "waiting_for_input": kind = .input
+        case "waiting_for_approval": kind = row.approvalHeadId.map { .approval(headID: $0) } ?? .open
+        case "waiting_for_input": kind = .open
         default: return nil
         }
         sessionID = row.sessionId
         publisherID = row.publisherId
     }
 
-    func intent(_ answer: RespondToApprovalIntent.Answer) -> RespondToApprovalIntent {
-        RespondToApprovalIntent(publisherID: publisherID, sessionID: sessionID, answer: answer)
+    func intent(_ answer: RespondToApprovalIntent.Answer, headID: String) -> RespondToApprovalIntent {
+        RespondToApprovalIntent(publisherID: publisherID, sessionID: sessionID, approvalHeadID: headID, answer: answer)
     }
 
     var openURL: URL? { TalariaDeepLink.sessionURL(sessionID: sessionID, publisherID: publisherID) }
@@ -102,12 +106,16 @@ struct LiveActivityActionButtons: View {
     private func buttons(titled: Bool) -> some View {
         HStack(spacing: 8) {
             switch actions.kind {
-            case .approval:
-                Button(intent: actions.intent(.allow)) { label("Allow", systemImage: "checkmark", titled: titled) }
-                    .buttonStyle(.borderedProminent)
-                Button(intent: actions.intent(.deny)) { label("Deny", systemImage: "xmark", titled: titled) }
-                    .buttonStyle(.bordered)
-            case .input:
+            case .approval(let headID):
+                Button(intent: actions.intent(.allow, headID: headID)) {
+                    label("Allow", systemImage: "checkmark", titled: titled)
+                }
+                .buttonStyle(.borderedProminent)
+                Button(intent: actions.intent(.deny, headID: headID)) {
+                    label("Deny", systemImage: "xmark", titled: titled)
+                }
+                .buttonStyle(.bordered)
+            case .open:
                 if let url = actions.openURL {
                     Link(destination: url) { label("Open", systemImage: "arrow.up.forward.app", titled: titled) }
                         .buttonStyle(.bordered)

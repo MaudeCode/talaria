@@ -579,6 +579,8 @@ export const ApprovalPendingSchema = z.looseObject({
     .describe('This approval offers deny and its turn can take a steer, so a deny may carry an instruction. Absent means no.'),
   tool_call_id: z.string().optional()
     .describe('The running tool call this approval holds, the `id` of its `tool` frame. Absent when the Agent names none.'),
+  head_id: z.string().optional()
+    .describe('The identity Relay publishes as `approvalHeadId` for this approval, so a Live Activity answers only the approval it showed (TAL-1463). Absent without an `approval_id`.'),
   approval_id: z.string().optional(), session_id: z.string().optional(), command: z.string().optional(), description: z.string().optional(), title: z.string().optional(), name: z.string().optional(), kind: z.string().optional(),
   reason: z.string().optional(), action: z.string().optional(), question: z.string().optional(), status: z.string().optional(), pending_count: z.number().optional(), run_id: z.string().optional(), mirror_token: z.string().optional(),
 })

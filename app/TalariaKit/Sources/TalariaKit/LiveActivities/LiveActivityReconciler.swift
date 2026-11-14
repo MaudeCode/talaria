@@ -67,7 +67,7 @@ public enum LiveActivityReconciler: Sendable {
         guard let sessionID, manager.currentSessionID == sessionID, manager.currentStreamID == streamID else { return true }
         switch phase {
         case "starting", "running": manager.update(.promptSettled)
-        case "waiting_for_approval": manager.update(.waitingForApproval)
+        case "waiting_for_approval": manager.update(.waitingForApproval(headID: nil))
         case "waiting_for_input": manager.update(.waitingForClarification)
         case "completed", "failed", "cancelled":
             let outcome = outcome(forTurnTerminalState: phase == "failed" ? "error" : phase)

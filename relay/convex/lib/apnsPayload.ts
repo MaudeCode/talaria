@@ -48,6 +48,7 @@ export function nativeSessionRequest(request: ApnsRequest, registeredAt: number)
     sessionID: row.sessionId, sessionTitle: row.title, status: statuses[row.phase],
     currentActivity: row.status, responseExcerpt: "", startedAt: swiftDate(row.startedAt ?? registeredAt),
     updatedAt: swiftDate(row.updatedAt), isStale: row.phase === "stale", isFinal: terminal,
+    ...(row.approvalHeadId ? { approvalHeadID: row.approvalHeadId } : {}),
   } } } };
 }
 

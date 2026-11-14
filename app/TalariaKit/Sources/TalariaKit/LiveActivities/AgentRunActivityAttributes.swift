@@ -15,6 +15,8 @@ public struct AgentRunActivityAttributes: Codable, Sendable {
         public var isStale: Bool
         public var isFinal: Bool
         public var errorSummary: String?
+        /// TAL-1463: Relay's `approvalHeadId` for the approval this run waits on; Allow and Deny answer only it.
+        public var approvalHeadID: String?
 
         public func hasSameContent(as other: Self) -> Bool {
             var comparison = other
@@ -32,7 +34,8 @@ public struct AgentRunActivityAttributes: Codable, Sendable {
             updatedAt: Date,
             isStale: Bool = false,
             isFinal: Bool = false,
-            errorSummary: String? = nil
+            errorSummary: String? = nil,
+            approvalHeadID: String? = nil
         ) {
             self.sessionID = sessionID
             self.sessionTitle = AgentRunActivitySanitizer.sessionTitle(sessionTitle)
@@ -44,6 +47,7 @@ public struct AgentRunActivityAttributes: Codable, Sendable {
             self.isStale = isStale
             self.isFinal = isFinal
             self.errorSummary = errorSummary.map(AgentRunActivitySanitizer.activityLine)
+            self.approvalHeadID = approvalHeadID
         }
     }
 
@@ -81,8 +85,10 @@ public struct TalariaAggregateActivityAttributes: Codable, Sendable {
             public var status: String
             public var updatedAt: Double
             var deepLink: String
+            /// TAL-1463: the approval a waiting row shows, so Allow and Deny answer only it.
+            public var approvalHeadId: String? = nil
 
-            public init(completionId: String? = nil, streamId: String? = nil, publisherId: String, publisherLabel: String, sessionId: String, title: String, phase: String, status: String, updatedAt: Double, deepLink: String) {
+            public init(completionId: String? = nil, streamId: String? = nil, publisherId: String, publisherLabel: String, sessionId: String, title: String, phase: String, status: String, updatedAt: Double, deepLink: String, approvalHeadId: String? = nil) {
                 self.completionId = completionId
                 self.streamId = streamId
                 self.publisherId = publisherId
@@ -93,6 +99,7 @@ public struct TalariaAggregateActivityAttributes: Codable, Sendable {
                 self.status = status
                 self.updatedAt = updatedAt
                 self.deepLink = deepLink
+                self.approvalHeadId = approvalHeadId
             }
 
             public var id: String { "\(publisherId):\(sessionId)" }
@@ -490,7 +497,8 @@ public enum AgentRunActivityStateReducer {
             updatedAt: now,
             isStale: state.isStale,
             isFinal: state.isFinal,
-            errorSummary: state.errorSummary
+            errorSummary: state.errorSummary,
+            approvalHeadID: state.approvalHeadID
         )
     }
 
@@ -574,7 +582,8 @@ public enum AgentRunActivityStateReducer {
             updatedAt: now,
             isStale: state.isStale,
             isFinal: state.isFinal,
-            errorSummary: state.errorSummary
+            errorSummary: state.errorSummary,
+            approvalHeadID: state.approvalHeadID
         )
     }
 
@@ -612,11 +621,15 @@ public enum AgentRunActivityStateReducer {
         statusState(.responding, activity: String(localized: "Processing result"), state: state, now: now)
     }
 
+    /// `approvalHeadID` names the approval the activity shows; without one, it offers Open instead of Allow and Deny.
     public static func waitingForApproval(
         state: AgentRunActivityAttributes.ContentState,
+        approvalHeadID: String? = nil,
         now: Date = Date()
     ) -> AgentRunActivityAttributes.ContentState {
-        statusState(.waitingForApproval, activity: String(localized: "Waiting for approval"), state: state, now: now)
+        var result = statusState(.waitingForApproval, activity: String(localized: "Waiting for approval"), state: state, now: now)
+        result.approvalHeadID = approvalHeadID
+        return result
     }
 
     public static func promptSettled(
@@ -647,7 +660,8 @@ public enum AgentRunActivityStateReducer {
             updatedAt: now,
             isStale: true,
             isFinal: state.isFinal,
-            errorSummary: state.errorSummary
+            errorSummary: state.errorSummary,
+            approvalHeadID: state.approvalHeadID
         )
     }
 

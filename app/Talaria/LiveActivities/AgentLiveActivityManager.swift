@@ -236,9 +236,12 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
             updateCurrentState { state in
                 AgentRunActivityStateReducer.toolCompleted(state: state)
             }
-        case .waitingForApproval:
+        case .waitingForApproval(let headID):
             updateCurrentState { state in
-                AgentRunActivityStateReducer.waitingForApproval(state: state)
+                AgentRunActivityStateReducer.waitingForApproval(
+                    state: state,
+                    approvalHeadID: headID ?? (state.status == .waitingForApproval ? state.approvalHeadID : nil)
+                )
             }
         case .waitingForClarification:
             updateCurrentState { state in

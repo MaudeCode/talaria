@@ -47,6 +47,7 @@ export const aggregateRowValidator = v.object({
   startedAt: v.optional(v.number()),
   updatedAt: v.number(),
   deepLink: v.string(),
+  approvalHeadId: v.optional(v.string()),
 });
 
 export const aggregateValidator = v.object({

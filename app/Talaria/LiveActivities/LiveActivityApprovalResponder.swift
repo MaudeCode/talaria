@@ -44,7 +44,7 @@ final class LiveActivityApprovalResponder {
         self.display = display
     }
 
-    func respond(publisherID: String?, sessionID: String, choice: ApprovalChoice) async {
+    func respond(publisherID: String?, sessionID: String, approvalHeadID: String, choice: ApprovalChoice) async {
         let publisher = publisherID.flatMap(TalariaRelayClient.originIdentifier)
         let runs = display.runs().filter {
             $0.state.sessionID == sessionID && $0.state.status == .waitingForApproval
@@ -67,7 +67,9 @@ final class LiveActivityApprovalResponder {
             await writeAggregate(aggregate.id, answered)
         }
 
-        guard let error = await refusal(publisherID: publisherID, sessionID: sessionID, choice: choice) else { return }
+        guard let error = await refusal(
+            publisherID: publisherID, sessionID: sessionID, approvalHeadID: approvalHeadID, choice: choice
+        ) else { return }
         // ActivityKit can still read back the state from before the answer; anything else is a newer snapshot.
         for run in runs
         where [answeredRuns[run.id], run.state].contains(display.runs().first(where: { $0.id == run.id })?.state) {
@@ -113,14 +115,20 @@ final class LiveActivityApprovalResponder {
     }
 
     /// Nil when the server took the answer or the approval is no longer pending; otherwise the error to show.
-    private func refusal(publisherID: String?, sessionID: String, choice: ApprovalChoice) async -> String? {
+    private func refusal(
+        publisherID: String?, sessionID: String, approvalHeadID: String, choice: ApprovalChoice
+    ) async -> String? {
         guard !appLock.locksBackgroundWork() else { return String(localized: "Unlock Talaria in the app first.") }
         guard let client = makeClient(publisherID) else { return String(localized: "Add a server in Talaria first.") }
         // The server answers a prompt by its id (an owner session refuses any other), so read the pending one first.
-        // None pending: the approval was already answered elsewhere.
+        // None pending: the approval was already answered elsewhere. Another one pending: the activity never showed it,
+        // so nothing is answered until it is reviewed.
         let approvalID: String?
         do {
             guard let pending = try await client.approvalPending(sessionID: sessionID).pending else { return nil }
+            guard pending.headId == approvalHeadID else {
+                return String(localized: "This approval changed. Open Talaria to review it.")
+            }
             approvalID = pending.approvalId
         } catch {
             return error.localizedDescription
