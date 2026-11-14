@@ -46,6 +46,13 @@ public struct AgentRunActivityAttributes: Codable, Sendable {
             return currentActivity
         }
 
+        /// TAL-2037: the small family's second line (Apple Watch Smart Stack, CarPlay): the elapsed timer while working,
+        /// otherwise the ask or outcome title. Stale work shows the Lock Screen's stale wording; a stale ask stays an ask.
+        public var smallDetail: AgentRunSmallDetail {
+            guard status.isWorking, !isFinal else { return .text(status.title) }
+            return isStale ? .text(lockScreenLead) : .timer(startedAt: startedAt)
+        }
+
         public func hasSameContent(as other: Self) -> Bool {
             var comparison = other
             comparison.updatedAt = updatedAt
@@ -344,6 +351,12 @@ public struct AgentRunWorkCounts: Equatable, Sendable {
             workers.map { String(localized: "\($0) workers running") },
         ].compactMap { $0 }.joined(separator: ", ")
     }
+}
+
+/// TAL-2037: the second line of the small family: the elapsed timer from `startedAt`, or a status word.
+public enum AgentRunSmallDetail: Equatable, Sendable {
+    case timer(startedAt: Date)
+    case text(String)
 }
 
 public enum AgentRunActivityStatus: String, Codable, Hashable, CaseIterable, Sendable {

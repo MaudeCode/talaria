@@ -452,6 +452,27 @@ final class LiveActivityTests: XCTestCase {
         }
     }
 
+    /// TAL-2037: the small family's second line is the timer while working, otherwise the ask or outcome title; a stale
+    /// run still waiting on the user keeps its ask.
+    func testSmallFamilyDetailShowsTheTimerOrTheAskOrOutcome() {
+        let startedAt = Date(timeIntervalSince1970: 0)
+        let working = AgentRunActivityAttributes.ContentState(
+            sessionID: "s", sessionTitle: "Chat", status: .runningCommand, currentActivity: "Running tests",
+            startedAt: startedAt, updatedAt: Date(timeIntervalSince1970: 1)
+        )
+        XCTAssertEqual(working.smallDetail, .timer(startedAt: startedAt))
+        let staleWorking = AgentRunActivityStateReducer.stale(state: working, now: Date(timeIntervalSince1970: 2))
+        XCTAssertEqual(staleWorking.smallDetail, .text("Latest status shown"))
+
+        let ask = AgentRunActivityStateReducer.waitingForClarification(state: working, now: Date(timeIntervalSince1970: 2))
+        XCTAssertEqual(ask.smallDetail, .text("Input"))
+        let staleAsk = AgentRunActivityStateReducer.stale(state: ask, now: Date(timeIntervalSince1970: 3))
+        XCTAssertEqual(staleAsk.smallDetail, .text("Input"))
+
+        let finished = AgentRunActivityStateReducer.final(status: .complete, activity: "Response complete", state: working)
+        XCTAssertEqual(finished.smallDetail, .text("Complete"))
+    }
+
     func testTerminalAggregateOutcomeDoesNotShowZeroOrWaiting() {
         let state = TalariaAggregateActivityAttributes.ContentState(
             schemaVersion: 1, activeCount: 0, title: "Talaria", subtitle: "Agent work completed", updatedAt: 100,

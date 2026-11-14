@@ -82,3 +82,26 @@ extension LiveActivityPalette {
         return hero.map { color(forPhase: $0.phase) } ?? primaryText
     }
 }
+
+/// TAL-2037: the aggregate's small family on the Apple Watch Smart Stack and CarPlay: the header line, then the first
+/// session's row without its buttons.
+struct TalariaAggregateSmallView: View {
+    @Environment(\.liveActivityPalette) private var palette
+    let state: TalariaAggregateActivityAttributes.ContentState
+    let isStale: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(TalariaAggregateLiveActivityPresentation.headerText(state: state, isStale: isStale))
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(isStale ? palette.secondaryText : palette.headerColor(for: state))
+                .lineLimit(1)
+            if let row = state.rows.first {
+                AggregateRowLink(row: row, isStale: isStale, actions: nil)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+    }
+}
