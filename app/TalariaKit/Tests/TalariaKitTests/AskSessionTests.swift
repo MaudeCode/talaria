@@ -20,6 +20,7 @@ final class AskSessionTests: XCTestCase {
         XCTAssertEqual(fixture.body(at: "/api/chat/start")?["message"], "Did the deploy finish?")
         XCTAssertEqual(fixture.body(at: "/api/chat/start")?["session_id"], AskFixture.sessionID)
         XCTAssertNil(fixture.body(at: "/api/chat/start")?["profile"])
+        XCTAssertNil(fixture.body(at: "/api/profile/switch"), "No profile keeps the active one.")
         XCTAssertEqual(fixture.stream.startedURLs.first?.query?.contains("stream_id=ask-stream-1"), true)
         XCTAssertEqual(fixture.stream.stopCount, 1)
     }
@@ -35,6 +36,8 @@ final class AskSessionTests: XCTestCase {
         XCTAssertEqual(result.status, .needsInput)
         XCTAssertEqual(result.text, "Run the deploy script?")
         XCTAssertEqual(result.sessionURL, TalariaDeepLink.sessionURL(sessionID: AskFixture.sessionID))
+        XCTAssertEqual(fixture.paths.first, "/api/profile/switch", "A picked profile becomes the request context first.")
+        XCTAssertEqual(fixture.body(at: "/api/profile/switch")?["name"], "work")
         XCTAssertEqual(fixture.body(at: "/api/session/new")?["profile"], "work")
         XCTAssertEqual(fixture.body(at: "/api/chat/start")?["profile"], "work")
         XCTAssertFalse(fixture.paths.contains { $0.contains("approval") }, "\(fixture.paths)")

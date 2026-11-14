@@ -517,8 +517,9 @@ func executionModesFixture(_ key: String) throws -> String {
     return String(decoding: try JSONSerialization.data(withJSONObject: try XCTUnwrap(fixture[key])), as: UTF8.self)
 }
 
-/// TAL-1470: the ask flow's fixture server. It answers `session/new`, `chat/start` and `speech/prepare`, records each
-/// request's path and JSON body, and its chat stream plays the given wire frames through the real frame decoder.
+/// TAL-1470: the ask flow's fixture server. It answers `profile/switch`, `session/new`, `chat/start` and `speech/prepare`,
+/// records each request's path and JSON body, and its chat stream plays the given wire frames through the real frame
+/// decoder. Like the server's admission check, `chat/start` in a profile other than the active one is not found.
 @MainActor
 final class AskFixture {
     @MainActor
@@ -554,11 +555,17 @@ final class AskFixture {
     init(frames: [(event: String, data: String)]) {
         stream = Stream(frames: frames)
         let recorded = recorded
+        let activeProfile = LockedTestValue("default")
         let scope = MockURLProtocol.register { request in
             let path = request.url?.path ?? ""
             let json = apiTestBodyData(from: request).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
             recorded.value.append((path, json.compactMapValues { $0 as? String }))
             switch path {
+            case "/api/profile/switch":
+                activeProfile.value = json["name"] as? String ?? ""
+                return apiTestJSONResponse(#"{"active":"\#(activeProfile.value)"}"#, for: request)
+            case "/api/chat/start" where (json["profile"] as? String).map { $0 != activeProfile.value } == true:
+                return apiTestJSONResponse(#"{"error":"Session not found"}"#, statusCode: 404, for: request)
             case "/api/session/new":
                 return apiTestJSONResponse(#"{"session":{"session_id":"\#(Self.sessionID)","title":"Untitled"}}"#, for: request)
             case "/api/chat/start":

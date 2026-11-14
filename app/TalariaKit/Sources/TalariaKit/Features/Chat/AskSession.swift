@@ -46,8 +46,12 @@ public struct AskSession {
         self.makeStream = makeStream
     }
 
-    /// `profile` nil asks in the server's active profile.
+    /// `profile` nil asks in the server's active profile. Another profile is switched to first, as the app does: the
+    /// server admits a chat and its stream only in the request's active profile, which the profile cookie carries.
     public func ask(_ prompt: String, profile: String?) async throws -> Result {
+        if let profile, let error = try await client.switchProfile(name: profile).error {
+            throw Failure(message: error)
+        }
         let created = try await client.createSession(workspace: nil, model: nil, modelProvider: nil, profile: profile)
         guard let sessionID = created.session?.sessionId, !sessionID.isEmpty else {
             throw Failure(message: String(localized: "The server did not return the new session ID."))
