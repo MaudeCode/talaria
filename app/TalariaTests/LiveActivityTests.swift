@@ -346,4 +346,110 @@ final class LiveActivityTests: XCTestCase {
         await yieldToPendingTasks()
         XCTAssertEqual(updates.filter(\.isStale).count, 1)
     }
+
+    // MARK: - TAL-1463: Allow, Deny and Open on the Live Activity
+
+    func testWaitingRunsOfferAllowAndDenyOrOpenAndRunningOffersNothing() throws {
+        let publisher = "https://relay-publisher.example"
+        let approval = AgentRunScenario.waiting.state
+        let actions = try XCTUnwrap(LiveActivityRowActions(
+            status: approval.status, isStale: false, isFinal: false, sessionID: approval.sessionID, publisherID: publisher
+        ))
+        XCTAssertEqual(actions.kind, .approval)
+        for answer in [RespondToApprovalIntent.Answer.allow, .deny] {
+            let intent = actions.intent(answer)
+            XCTAssertEqual(intent.sessionID, approval.sessionID)
+            XCTAssertEqual(intent.publisherID, publisher)
+            XCTAssertEqual(intent.answer, answer)
+        }
+        let input = AgentRunActivityStateReducer.waitingForClarification(state: approval)
+        let running = AgentRunScenario.running.state
+        func labels(_ state: AgentRunActivityAttributes.ContentState) throws -> Set<String> {
+            let lock = try hostWindow(AgentRunLockScreenView(state: state, publisherID: publisher), size: CGSize(width: 360, height: 160))
+            let island = try hostWindow(
+                AgentRunExpandedIslandBottomView(state: state, publisherID: publisher), size: CGSize(width: 360, height: 80)
+            )
+            return Set(HostedAccessibility.labels(in: lock) + HostedAccessibility.labels(in: island))
+        }
+        XCTAssertTrue(try labels(approval).isSuperset(of: ["Allow", "Deny"]))
+        XCTAssertFalse(try labels(approval).contains("Open"))
+        XCTAssertTrue(try labels(input).contains("Open"))
+        XCTAssertTrue(try labels(input).isDisjoint(with: ["Allow", "Deny"]))
+        XCTAssertTrue(try labels(running).isDisjoint(with: ["Allow", "Deny", "Open"]))
+        XCTAssertNil(LiveActivityRowActions(status: .waitingForApproval, isStale: true, isFinal: false, sessionID: "s", publisherID: nil))
+    }
+
+    func testAllowFromTheLiveActivityAnswersAndLeavesTheWaitingState() async throws {
+        let fixture = try ApprovalAnswerFixture(status: 200, body: #"{"ok":true,"choice":"once"}"#, in: self)
+
+        _ = try await RespondToApprovalIntent(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s1", answer: .allow).perform()
+
+        XCTAssertEqual(fixture.requests.value, [["session_id": "s1", "choice": "once"]])
+        XCTAssertEqual(fixture.run.status, .thinking, "The run leaves waiting for approval at once")
+        XCTAssertNil(fixture.run.errorSummary)
+        XCTAssertEqual(fixture.aggregate.rows.map(\.phase), ["running", "waiting_for_approval"])
+    }
+
+    func testRefusedDenyRestoresTheWaitingStateWithTheServersError() async throws {
+        let fixture = try ApprovalAnswerFixture(status: 200, body: #"{"ok":false}"#, in: self)
+
+        _ = try await RespondToApprovalIntent(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s1", answer: .deny).perform()
+
+        let error = "The server did not accept that response. The request is still waiting."
+        XCTAssertEqual(fixture.requests.value, [["session_id": "s1", "choice": "deny"]])
+        XCTAssertEqual(fixture.updates.map(\.status), [.thinking, .waitingForApproval], "Optimistic first, then rolled back")
+        XCTAssertEqual(fixture.run.status, .waitingForApproval)
+        XCTAssertEqual(fixture.run.errorSummary, error)
+        XCTAssertEqual(fixture.aggregate.rows.map(\.phase), ["waiting_for_approval", "waiting_for_approval"])
+        XCTAssertEqual(fixture.aggregate.subtitle, error)
+    }
+}
+
+/// One waiting run on a relay publisher, as the per-run and aggregate activities show it, and a fixture server that
+/// answers `approval/respond` with the given response. A second waiting session must stay untouched.
+@MainActor
+private final class ApprovalAnswerFixture {
+    static let publisher = "https://approvals.example.test"
+    var run: AgentRunActivityAttributes.ContentState
+    var aggregate: TalariaAggregateActivityAttributes.ContentState
+    private(set) var updates: [AgentRunActivityAttributes.ContentState] = []
+    let requests = LockedTestValue<[[String: String]]>([])
+
+    init(status: Int, body: String, in test: XCTestCase) throws {
+        run = AgentRunActivityStateReducer.waitingForApproval(
+            state: AgentRunActivityStateReducer.initialState(sessionID: "s1", sessionTitle: "Deploy")
+        )
+        let row = { (session: String) in
+            TalariaAggregateActivityAttributes.ContentState.Row(
+                publisherId: Self.publisher, publisherLabel: "approvals", sessionId: session, title: session,
+                phase: "waiting_for_approval", status: "Approval", updatedAt: 0, deepLink: ""
+            )
+        }
+        aggregate = .init(schemaVersion: 1, activeCount: 2, title: "Talaria", subtitle: "2 waiting", updatedAt: 0, rows: [row("s1"), row("s2")])
+        let requests = requests
+        let scope = MockURLProtocol.register { request in
+            XCTAssertEqual(request.url?.path, "/api/approval/respond")
+            let json = apiTestBodyData(from: request).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            requests.value.append((json ?? [:]).compactMapValues { $0 as? String })
+            return apiTestJSONResponse(body, statusCode: status, for: request)
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        configuration.httpAdditionalHeaders = [MockURLProtocol.scopeHeader: scope]
+        let client = APIClient(baseURL: URL(string: Self.publisher)!, session: URLSession(configuration: configuration))
+        let lockName = "ApprovalAnswerFixture.\(UUID())"
+        test.addTeardownBlock { UserDefaults().removePersistentDomain(forName: lockName) }
+        let original = LiveActivityApprovalResponder.shared
+        test.addTeardownBlock { @MainActor in LiveActivityApprovalResponder.shared = original }
+        LiveActivityApprovalResponder.shared = LiveActivityApprovalResponder(
+            makeClient: { TalariaRelayClient.originIdentifier($0 ?? "") == Self.publisher ? client : nil },
+            appLock: AppLockModel(defaults: try XCTUnwrap(UserDefaults(suiteName: lockName))),
+            display: .init(
+                runs: { [unowned self] in [.init(id: "run", publisherID: Self.publisher, state: run)] },
+                updateRun: { [unowned self] in XCTAssertEqual($0, "run"); run = $1; updates.append($1) },
+                aggregates: { [unowned self] in [.init(id: "all", state: aggregate)] },
+                updateAggregate: { [unowned self] in XCTAssertEqual($0, "all"); aggregate = $1 }
+            )
+        )
+    }
 }

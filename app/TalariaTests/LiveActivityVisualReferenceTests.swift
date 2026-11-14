@@ -129,6 +129,55 @@ final class LiveActivityVisualReferenceTests: XCTestCase {
         }
     }
 
+    /// TAL-1463: the iPhone Duo's outer display. Its Lock Screen is wider than an iPhone 17's, and the vertical
+    /// island's expanded bottom region is narrow, where the buttons keep their symbols alone.
+    func testDuoOuterDisplayActionReferences() throws {
+        for scenario in [AgentRunScenario.waiting, .input] {
+            try VisualReference.assertMatchesReference(
+                AgentRunLockScreenView(state: scenario.state)
+                    .environment(\.agentRunFrozenClock, AgentRunScenario.frozenClock),
+                named: "live-activity-lock-screen-\(scenario.rawValue)-duo-outer",
+                size: CGSize(width: 436, height: 140),
+                colorScheme: .dark,
+                background: AgentRunLiveActivityTheme.background
+            )
+            try VisualReference.assertMatchesReference(
+                AgentRunExpandedIslandBottomView(state: scenario.state),
+                named: "live-activity-island-expanded-\(scenario.rawValue)-duo-outer",
+                size: CGSize(width: 120, height: 60),
+                colorScheme: .dark,
+                background: .black
+            )
+        }
+    }
+
+    /// TAL-1463: the aggregate's Lock Screen rows; the first two waiting rows carry their buttons.
+    func testAggregateRowsWithActionsReference() throws {
+        let row = { (session: String, phase: String, status: String) in
+            TalariaAggregateActivityAttributes.ContentState.Row(
+                publisherId: "https://fixture.example", publisherLabel: "fixture", sessionId: session,
+                title: "Session \(session)", phase: phase, status: status, updatedAt: 0, deepLink: ""
+            )
+        }
+        let state = TalariaAggregateActivityAttributes.ContentState(
+            schemaVersion: 1, activeCount: 5, title: "Talaria", subtitle: "5 active", updatedAt: 0,
+            rows: [
+                row("A", "waiting_for_approval", "Approval"), row("B", "waiting_for_input", "Input"),
+                row("C", "waiting_for_approval", "Approval"), row("D", "running", "Running"), row("E", "running", "Running")
+            ]
+        )
+        try VisualReference.assertMatchesReference(
+            TalariaAggregateRows(
+                state: state, isStale: false,
+                limit: TalariaAggregateLiveActivityPresentation.lockScreenRowLimit, spacing: 6
+            ).padding(14),
+            named: "live-activity-aggregate-rows-actions",
+            size: CGSize(width: 360, height: 160),
+            colorScheme: .dark,
+            background: AgentRunLiveActivityTheme.background
+        )
+    }
+
     /// The Lock Screen title, activity line and excerpt all scale, so an
     /// accessibility text size is where its layout gives out first.
     func testLockScreenAccessibilityTextSizeReference() throws {
@@ -176,6 +225,7 @@ final class LiveActivityVisualReferenceTests: XCTestCase {
 enum AgentRunScenario: String, CaseIterable {
     case running
     case waiting
+    case input
     case stale
     case completed
     case failed
@@ -194,6 +244,8 @@ enum AgentRunScenario: String, CaseIterable {
             )
         case .waiting:
             makeState(status: .waitingForApproval, currentActivity: "Waiting for approval")
+        case .input:
+            makeState(status: .waitingForClarification, currentActivity: "Input")
         case .stale:
             makeState(
                 status: .usingTool,
