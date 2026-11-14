@@ -9,7 +9,7 @@ struct AgentRunLockScreenView: View {
 
     @Environment(\.agentRunFrozenClock) private var frozenClock
 
-    /// TAL-874: "Updated" stays hidden while it would only restate the start or the present.
+    /// TAL-874: "Updated" stays hidden while the run's last activity is its start.
     private static let updatedQuietInterval: TimeInterval = 10
 
     var body: some View {
@@ -98,13 +98,13 @@ struct AgentRunLockScreenView: View {
             return Text("Open to read the reply")
         }
         let tools = Text("\(toolCount) tools")
-        let now = frozenClock ?? .now
         guard let activityAt = state.activityAt,
-              activityAt.timeIntervalSince(state.startedAt) >= Self.updatedQuietInterval,
-              now.timeIntervalSince(activityAt) >= Self.updatedQuietInterval else {
+              activityAt.timeIntervalSince(state.startedAt) >= Self.updatedQuietInterval else {
             return tools
         }
-        let format = SystemFormatStyle.DateReference(to: activityAt, allowedFields: [.day, .hour, .minute, .second], maxFieldCount: 1)
+        // A Live Activity redraws only for a content update or a live date, so the label stays live rather than appearing
+        // on a timer. Whole minutes keep its first minute at "now" instead of counting seconds.
+        let format = SystemFormatStyle.DateReference(to: activityAt, allowedFields: [.day, .hour, .minute], maxFieldCount: 1)
         let relative = frozenClock.map { Text($0, format: format) } ?? Text(.currentDate, format: format)
         return Text("\(tools) · \(Text("Updated \(relative)"))")
     }

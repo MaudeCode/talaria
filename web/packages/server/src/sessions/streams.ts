@@ -191,12 +191,20 @@ export class StreamRegistry {
     this.activeRuns.set(run.stream_id, run)
   }
 
+  /** TAL-874: wakes the notification channels after tool activity, which changes no session and so publishes no event. */
+  onToolActivity: (() => void) | null = null
+  /** How long tool activity batches before that wake; the Relay throttles a Live Activity's updates further. */
+  toolWakeMs = 5_000
+  private toolWake: NodeJS.Timeout | null = null
+
   /** TAL-874: a tool call of the run started or finished at `at`; the activity rows count the starts and show the latest. */
   noteToolEvent(streamId: string, at: number, started: boolean): void {
     const run = this.activeRuns.get(streamId)
     if (!run) return
     if (started) run.tool_count = (run.tool_count ?? 0) + 1
     run.tool_at = at
+    // ponytail: one batch for every run; per-run batching only matters if one run's burst should not delay another's.
+    if (this.onToolActivity && !this.toolWake) this.toolWake = setTimeout(() => { this.toolWake = null; this.onToolActivity?.() }, this.toolWakeMs).unref()
   }
 
   /**

@@ -105,7 +105,8 @@ final class LiveActivityVisualReferenceTests: XCTestCase {
         }
         for (name, state) in [
             relay("tools", .thinking, "Working", 3, startedAt.addingTimeInterval(60)),
-            relay("recent", .thinking, "Working", 3, AgentRunScenario.frozenClock.addingTimeInterval(-5)),
+            relay("started", .thinking, "Working", 3, startedAt.addingTimeInterval(5)),
+            relay("now", .thinking, "Working", 3, AgentRunScenario.frozenClock.addingTimeInterval(-5)),
             relay("finished", .complete, "Done", 3, AgentRunScenario.frozenClock),
             relay("legacy", .thinking, "Working", nil, nil),
         ] {

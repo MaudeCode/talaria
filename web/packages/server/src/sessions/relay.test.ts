@@ -1064,7 +1064,10 @@ describe('relay activity of a running turn (TAL-874)', () => {
       return { status: 'cancelled', messages: [], final_response: '', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: {}, context: {}, model: 'test-model', provider: 'test', compressed: false, agent_session_id: 'x', token_sent: false, pending_steer: '', live_tool_calls: [] } as unknown as SidecarResult<'chat.start'>
     })
     const server = await bootTestServer({ sidecar, now: () => clock })
-    server.deps.fetch = fakeRelay().fetch
+    const relay = fakeRelay()
+    server.deps.fetch = relay.fetch
+    // The registry batches tool activity before waking the publisher; the test wakes it at once.
+    server.deps.registry.toolWakeMs = 0
     let streamId = ''
     try {
       await post(server, '/api/talaria/relay/pair', { relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'synthetic' })
@@ -1074,10 +1077,12 @@ describe('relay activity of a running turn (TAL-874)', () => {
       streamId = String((await json(response)).stream_id)
       const row = async () => (await server.deps.relay.current()!.buildStates('default')).find((state) => state.sessionId === sid)
       await vi.waitFor(async () => { expect(await row()).toMatchObject({ phase: 'running', toolCount: 1, activityAt: 1_800_000_000_000 }) }, { timeout: 5000 })
+      await vi.waitFor(() => { expect((relay.snapshots().at(-1)?.body.states as Json[] | undefined)?.find((state) => state.sessionId === sid)).toMatchObject({ toolCount: 1 }) })
       clock += 30
       await vi.waitFor(() => { expect(steps).toHaveLength(1) })
       steps[0]!()
-      await vi.waitFor(async () => { expect(await row()).toMatchObject({ toolCount: 2, activityAt: 1_800_000_030_000 }) })
+      // Tool activity alone wakes the publisher, well before its idle refresh.
+      await vi.waitFor(() => { expect((relay.snapshots().at(-1)?.body.states as Json[] | undefined)?.find((state) => state.sessionId === sid)).toMatchObject({ toolCount: 2, activityAt: 1_800_000_030_000 }) })
       // A republish of the unchanged run moves updatedAt but never the last activity.
       clock += 60
       expect(await row()).toMatchObject({ toolCount: 2, activityAt: 1_800_000_030_000, updatedAt: 1_800_000_090_000 })
