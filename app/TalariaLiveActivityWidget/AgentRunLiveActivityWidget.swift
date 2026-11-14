@@ -30,8 +30,9 @@ struct TalariaAggregateLiveActivityWidget: Widget {
                 )
             }
             .padding(14)
-            .activityBackgroundTint(AgentRunLiveActivityTheme.background)
-            .activitySystemActionForegroundColor(AgentRunLiveActivityTheme.primaryText)
+            .liveActivityPalette(on: .lockScreen)
+            .activityBackgroundTint(LiveActivityPalette.Surface.lockScreen.backgroundTint)
+            .activitySystemActionForegroundColor(LiveActivityPalette.Surface.lockScreen.actionForeground)
             .widgetURL(context.state.rows.first?.sessionURL)
         } dynamicIsland: { context in
             let isStale = TalariaAggregateLiveActivityPresentation.isEffectivelyStale(
@@ -43,6 +44,7 @@ struct TalariaAggregateLiveActivityWidget: Widget {
                     SandalMark(height: 15)
                     .padding(.leading, 4)
                     .padding(.vertical, 4)
+                    .liveActivityPalette(on: .darkCard)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     Text(isStale
@@ -54,6 +56,7 @@ struct TalariaAggregateLiveActivityWidget: Widget {
                         .lineLimit(1)
                         .padding(.trailing, 8)
                         .padding(.vertical, 4)
+                        .liveActivityPalette(on: .darkCard)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     TalariaAggregateRows(
@@ -63,13 +66,17 @@ struct TalariaAggregateLiveActivityWidget: Widget {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 2)
+                    .liveActivityPalette(on: .darkCard)
                 }
             } compactLeading: {
                 SandalMark(height: 16)
+                    .liveActivityPalette(on: .darkCard)
             } compactTrailing: {
                 AggregateCompactTrailing(state: context.state, isStale: isStale)
+                    .liveActivityPalette(on: .darkCard)
             } minimal: {
                 SandalMark(height: 13)
+                    .liveActivityPalette(on: .darkCard)
             }
             .widgetURL(context.state.rows.first?.sessionURL)
         }
@@ -80,33 +87,41 @@ struct AgentRunLiveActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: AgentRunActivityAttributes.self) { context in
             AgentRunLockScreenView(state: context.state, publisherID: context.attributes.relayPublisherID)
-                .activityBackgroundTint(AgentRunLiveActivityTheme.background)
-                .activitySystemActionForegroundColor(AgentRunLiveActivityTheme.primaryText)
+                .liveActivityPalette(on: .lockScreen)
+                .activityBackgroundTint(LiveActivityPalette.Surface.lockScreen.backgroundTint)
+                .activitySystemActionForegroundColor(LiveActivityPalette.Surface.lockScreen.actionForeground)
                 .widgetURL(TalariaDeepLink.sessionURL(sessionID: context.state.sessionID, publisherID: context.attributes.relayPublisherID))
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     AgentRunIslandBadge(status: context.state.status)
                         .padding(.leading, 18)
+                        .liveActivityPalette(on: .darkCard)
                 }
 
                 DynamicIslandExpandedRegion(.trailing) {
                     AgentRunIslandStatusView(state: context.state)
                         .padding(.trailing, 18)
+                        .liveActivityPalette(on: .darkCard)
                 }
 
                 DynamicIslandExpandedRegion(.bottom) {
                     AgentRunExpandedIslandBottomView(state: context.state, publisherID: context.attributes.relayPublisherID)
+                        .liveActivityPalette(on: .darkCard)
                 }
             } compactLeading: {
                 AgentRunIslandCompactMark(status: context.state.status)
+                    .liveActivityPalette(on: .darkCard)
             } compactTrailing: {
                 AgentRunIslandCompactTrailing(state: context.state)
+                    .liveActivityPalette(on: .darkCard)
             } minimal: {
                 AgentRunIslandCompactMark(status: context.state.status)
+                    .liveActivityPalette(on: .darkCard)
             }
             .widgetURL(TalariaDeepLink.sessionURL(sessionID: context.state.sessionID, publisherID: context.attributes.relayPublisherID))
-            .keylineTint(AgentRunStatusStyle.color(for: context.state.status, isStale: context.state.isStale))
+            // The keyline rings the black island, so it keeps the dark card's hues.
+            .keylineTint(LiveActivityPalette.darkCard.color(for: context.state.status, isStale: context.state.isStale))
         }
     }
 }

@@ -4,6 +4,7 @@ import WidgetKit
 import TalariaKit
 
 struct AgentRunIslandBadge: View {
+    @Environment(\.liveActivityPalette) private var palette
     let status: AgentRunActivityStatus
 
     var body: some View {
@@ -11,7 +12,7 @@ struct AgentRunIslandBadge: View {
             AgentRunStatusDot(status: status, isStale: false)
             Text("Talaria")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(AgentRunLiveActivityTheme.primaryText)
+                .foregroundStyle(palette.primaryText)
                 .lineLimit(1)
         }
     }

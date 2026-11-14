@@ -4,21 +4,19 @@ import WidgetKit
 import TalariaKit
 
 struct AggregateCompactTrailing: View {
+    @Environment(\.liveActivityPalette) private var palette
     let state: TalariaAggregateActivityAttributes.ContentState
     let isStale: Bool
-    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
 
     var body: some View {
         if let phase = TalariaAggregateLiveActivityPresentation.signalPhase(
             state: state,
             isStale: isStale
         ) {
-            Image(systemName: AggregatePhaseStyle.symbol(for: phase))
+            Image(systemName: TalariaAggregateLiveActivityPresentation.signalSymbol(for: phase))
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(AggregatePhaseStyle.color(
-                    for: phase,
-                    isLuminanceReduced: isLuminanceReduced
-                ))
+                .foregroundStyle(palette.color(forPhase: phase))
+                .widgetAccentable()
                 .accessibilityLabel(
                     TalariaAggregateLiveActivityPresentation.accessibilityLabel(for: phase)
                 )

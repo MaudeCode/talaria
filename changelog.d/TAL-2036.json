@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "On iOS 26 and later, Lock Screen Live Activities follow the system's light or dark look, dim with the Always-On display, and take on a tinted Lock Screen's colour.",
+      "highlight": false,
+      "announce": false
+    }
+  ]
+}

@@ -3,6 +3,7 @@ import SwiftUI
 import WidgetKit
 
 struct SandalMark: View {
+    @Environment(\.liveActivityPalette) private var palette
     let height: CGFloat
 
     var body: some View {
@@ -10,7 +11,7 @@ struct SandalMark: View {
             .resizable()
             .renderingMode(.template)
             .scaledToFit()
-            .foregroundStyle(AgentRunLiveActivityTheme.primaryText)
+            .foregroundStyle(palette.primaryText)
             .frame(width: height * 0.93, height: height)
             .accessibilityHidden(true)
     }

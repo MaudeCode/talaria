@@ -35,6 +35,7 @@ struct TalariaAggregateRows: View {
 /// One aggregate row that opens its own session. The card's `widgetURL` only covers taps
 /// outside a row and the compact and minimal presentations, which show no rows.
 private struct AggregateRowLink: View {
+    @Environment(\.liveActivityPalette) private var palette
     let row: TalariaAggregateActivityAttributes.ContentState.Row
     let isStale: Bool
     let actions: LiveActivityRowActions?
@@ -43,6 +44,7 @@ private struct AggregateRowLink: View {
         let content = HStack(spacing: 7) {
             Text(row.title)
                 .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(palette.primaryText)
                 .lineLimit(1)
             Spacer(minLength: 8)
             if actions == nil, let counts = row.workCounts {
@@ -72,40 +74,11 @@ private struct AggregateRowLink: View {
     }
 }
 
-enum AggregatePhaseStyle {
-    static func color(
-        for phase: String,
-        isLuminanceReduced: Bool
-    ) -> Color {
-        guard let hex = TalariaAggregateLiveActivityPresentation.colorHex(
-            for: phase,
-            isLuminanceReduced: isLuminanceReduced
-        ) else {
-            return AgentRunLiveActivityTheme.secondaryText
-        }
-        return Color(
-            red: Double((hex >> 16) & 0xFF) / 255,
-            green: Double((hex >> 8) & 0xFF) / 255,
-            blue: Double(hex & 0xFF) / 255
-        )
-    }
-
-    static func headerColor(
-        for state: TalariaAggregateActivityAttributes.ContentState,
-        isLuminanceReduced: Bool
-    ) -> Color {
+extension LiveActivityPalette {
+    func headerColor(for state: TalariaAggregateActivityAttributes.ContentState) -> Color {
         let hero = state.rows.first(where: {
             $0.phase == "waiting_for_approval" || $0.phase == "waiting_for_input"
         }) ?? state.rows.first(where: { $0.phase == "failed" }) ?? state.rows.first
-        return hero.map {
-            color(
-                for: $0.phase,
-                isLuminanceReduced: isLuminanceReduced
-            )
-        } ?? AgentRunLiveActivityTheme.primaryText
-    }
-
-    static func symbol(for phase: String) -> String {
-        TalariaAggregateLiveActivityPresentation.signalSymbol(for: phase)
+        return hero.map { color(forPhase: $0.phase) } ?? primaryText
     }
 }

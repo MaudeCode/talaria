@@ -243,17 +243,20 @@ public enum TalariaAggregateLiveActivityPresentation: Sendable {
         })?.phase ?? state.rows.first(where: { $0.phase == "failed" })?.phase
     }
 
-    public static func colorHex(for phase: String, isLuminanceReduced: Bool = false) -> UInt32? {
-        if isLuminanceReduced, phase != "starting", phase != "running" { return nil }
-
+    public static func colorHex(for phase: String) -> UInt32? {
         switch phase {
-        case "waiting_for_approval": return 0xD97706
-        case "waiting_for_input": return 0x4F46E5
-        case "failed": return 0xDC2626
-        case "completed": return 0x059669
-        case "starting", "running": return 0x0284C7
-        default: return nil
+        case "waiting_for_approval": 0xD97706
+        case "waiting_for_input": 0x4F46E5
+        case "failed": 0xDC2626
+        case "completed": 0x059669
+        case "starting", "running": 0x0284C7
+        default: nil
         }
+    }
+
+    /// Work in progress, which keeps its hue on the dimmed Lock Screen (`LiveActivityPalette.tint(isWorking:)`).
+    public static func isWorking(_ phase: String) -> Bool {
+        phase == "starting" || phase == "running"
     }
 
     public static func signalSymbol(for phase: String) -> String {
@@ -383,6 +386,14 @@ public enum AgentRunActivityStatus: String, Codable, Hashable, CaseIterable, Sen
             String(localized: "Failed")
         case .cancelled:
             String(localized: "Cancelled")
+        }
+    }
+
+    /// Work in progress: neither waiting on the user nor finished.
+    public var isWorking: Bool {
+        switch self {
+        case .starting, .thinking, .usingTool, .searchingFiles, .readingFiles, .runningCommand, .responding: true
+        case .waitingForApproval, .waitingForClarification, .complete, .failed, .cancelled: false
         }
     }
 
