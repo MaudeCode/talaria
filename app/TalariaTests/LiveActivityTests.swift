@@ -404,6 +404,18 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(fixture.aggregate.subtitle, error)
     }
 
+    /// A 5xx leaves the outcome unknown: the answer stays when the server no longer has the approval pending.
+    func testUnknownOutcomeKeepsTheAnswerOnlyWhenTheApprovalIsGone() async throws {
+        for (pendingBody, keeps) in [("{}", true), (#"{"pending":{"approval_id":"a1"}}"#, false)] {
+            let fixture = try ApprovalAnswerFixture(status: 502, body: "{}", pendingBody: pendingBody, in: self)
+
+            _ = try await RespondToApprovalIntent(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s1", answer: .allow).perform()
+
+            XCTAssertEqual(fixture.requests.value.count, 1, "The answer is never sent twice")
+            XCTAssertEqual(fixture.run.status, keeps ? .thinking : .waitingForApproval, pendingBody)
+        }
+    }
+
     /// ActivityKit reads back the pre-answer state for a moment after an update; the rollback must still land.
     func testRefusalRollsBackWhileTheActivityStillReadsThePreAnswerState() async throws {
         let fixture = try ApprovalAnswerFixture(status: 200, body: #"{"ok":false}"#, readsLag: true, in: self)
@@ -429,7 +441,8 @@ private final class ApprovalAnswerFixture {
     let requests = LockedTestValue<[[String: String]]>([])
 
     /// `readsLag` serves each activity's state from before its latest update, as ActivityKit can.
-    init(status: Int, body: String, readsLag: Bool = false, in test: XCTestCase) throws {
+    /// `pendingBody` answers `approval/pending`, which only an unknown outcome asks.
+    init(status: Int, body: String, pendingBody: String = "{}", readsLag: Bool = false, in test: XCTestCase) throws {
         run = AgentRunActivityStateReducer.waitingForApproval(
             state: AgentRunActivityStateReducer.initialState(sessionID: "s1", sessionTitle: "Deploy")
         )
@@ -444,6 +457,7 @@ private final class ApprovalAnswerFixture {
         readAggregate = aggregate
         let requests = requests
         let scope = MockURLProtocol.register { request in
+            if request.url?.path == "/api/approval/pending" { return apiTestJSONResponse(pendingBody, for: request) }
             XCTAssertEqual(request.url?.path, "/api/approval/respond")
             let json = apiTestBodyData(from: request).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
             requests.value.append((json ?? [:]).compactMapValues { $0 as? String })

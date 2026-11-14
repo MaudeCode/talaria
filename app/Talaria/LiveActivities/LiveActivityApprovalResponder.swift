@@ -99,11 +99,13 @@ final class LiveActivityApprovalResponder {
             return nil
         } catch let error as APIError where error.indicatesExpiredPendingPrompt {
             return nil
-        } catch APIError.network(let underlying) {
-            // Unknown outcome: keep the answer only if the server no longer has the approval pending.
-            if let pending = try? await client.approvalPending(sessionID: sessionID), pending.pending == nil { return nil }
-            return APIError.network(underlying: underlying).localizedDescription
         } catch {
+            // A network loss, timeout or 5xx leaves the outcome unknown: keep the answer only if the server no longer
+            // has the approval pending. The answer is never sent again.
+            if !APIError.isDefinitiveWriteFailure(error),
+               let pending = try? await client.approvalPending(sessionID: sessionID), pending.pending == nil {
+                return nil
+            }
             return error.localizedDescription
         }
     }
