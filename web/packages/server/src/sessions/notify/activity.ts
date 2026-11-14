@@ -50,6 +50,9 @@ export interface ActivityState {
   activityPhase?: SessionActivityPhase
   startedAt: number
   updatedAt: number
+  /** TAL-874: tool calls the run started, and its last phase change or tool event (epoch ms); absent without a tracked run. */
+  toolCount?: number
+  activityAt?: number
   deepLink: string
   alertEligible: boolean
   /** TAL-873: who started the row's turn; the Relay mutes a `background` completion unless the device opts in. */
@@ -65,7 +68,8 @@ export interface ActivityState {
   ownerPersonId: string | null
 }
 
-type TrackedRun = ActiveRun & { relay_phase?: string; terminal_at?: number }
+/** `seen_phase`: TAL-874: the row phase the run last showed and when it changed, kept across rebuilds of the rows. */
+type TrackedRun = ActiveRun & { relay_phase?: string; terminal_at?: number; seen_phase?: { phase: string; at: number } }
 
 /** A staged deletion cannot clear a session that survived a failed removal or a restart before removal. */
 export async function hasSessionData(store: SessionStore, sid: string): Promise<boolean> {
@@ -76,7 +80,7 @@ export async function hasSessionData(store: SessionStore, sid: string): Promise<
 
 /** Python `build_states` without the Relay's revision numbering. */
 export class ActivityStates {
-  private readonly terminal = new Map<string, ActiveRun & { relay_phase: string; terminal_at: number }>()
+  private readonly terminal = new Map<string, TrackedRun & { relay_phase: string; terminal_at: number }>()
   /** TAL-1970: per session, when each notice of the window was accepted, and the unmuted ones the rows carry, with their time. */
   private readonly notices = new Map<string, { sent: { at: number; level: AgentNotifyLevel }[]; shown: { notice: AgentNotice; at: number }[] }>()
   /** TAL-1722: per profile, the rows built for the latest hub change, shared by every channel passing for it. */
@@ -220,9 +224,16 @@ export class ActivityStates {
       // A finished run keeps the instant it ended, so a viewer who saw that turn covers it whenever the snapshot is built.
       const updatedAt = Math.floor((run.terminal_at ?? this.deps.now()) * 1000)
       const approvalId = phase === 'waiting_for_approval' ? str(approval?.approval_id) : ''
+      // TAL-874: a run's first phase dates from its start, a later one from when a build first saw it (a finished run's
+      // from its end); a rebuild of an unchanged run keeps it. A row with no tracked run reports neither field.
+      let activity: Pick<ActivityState, 'toolCount' | 'activityAt'> = {}
+      if (run.phase !== 'settled') {
+        if (run.seen_phase?.phase !== phase) run.seen_phase = { phase, at: run.seen_phase ? run.terminal_at ?? this.deps.now() : run.started_at }
+        activity = { toolCount: run.tool_count ?? 0, activityAt: Math.floor(Math.max(run.seen_phase.at, run.tool_at ?? 0) * 1000) }
+      }
       const review = this.deps.decisionReview?.(sid)
       const notices = this.notices.get(sid)?.shown.map((shown) => shown.notice) ?? []
-      states.push({ sessionId: sid, streamId: run.stream_id || null, ...(snapshot ? { activityPhase: snapshot.activity_phase } : {}), title: (session.title || 'Untitled').slice(0, 120), phase, startedAt: Math.floor((run.started_at || this.deps.now()) * 1000), updatedAt, deepLink: `/sessions/${encodeURIComponent(sid)}`, alertEligible, origin: run.origin ?? 'user', ...(approvalId ? { approvalHeadId: approvalHeadId(sid, approvalId) } : {}), ...(review ? { decisionReviewId: review.review_id, decisionReviewTitle: review.title } : {}), ...(notices.length ? { agentNotices: notices } : {}), ownerPersonId: session.owner_person_id })
+      states.push({ sessionId: sid, streamId: run.stream_id || null, ...(snapshot ? { activityPhase: snapshot.activity_phase } : {}), title: (session.title || 'Untitled').slice(0, 120), phase, startedAt: Math.floor((run.started_at || this.deps.now()) * 1000), updatedAt, ...activity, deepLink: `/sessions/${encodeURIComponent(sid)}`, alertEligible, origin: run.origin ?? 'user', ...(approvalId ? { approvalHeadId: approvalHeadId(sid, approvalId) } : {}), ...(review ? { decisionReviewId: review.review_id, decisionReviewTitle: review.title } : {}), ...(notices.length ? { agentNotices: notices } : {}), ownerPersonId: session.owner_person_id })
     }
     if (incomplete) this.incompleteProfiles.add(profile)
     else this.incompleteProfiles.delete(profile)

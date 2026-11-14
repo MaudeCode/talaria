@@ -1088,6 +1088,7 @@ export class TurnRunner {
                 liveToolCalls.push(call)
                 toolIds.set(call, call.tid || mintToolId())
                 toolStartedAt.set(call, receivedAt)
+                this.registry.noteToolEvent(streamId, receivedAt, true)
                 const redacted = deps.redactEnabled()
                 await emitFrame('tool', publicToolFrame(withToolId(data, toolIds.get(call)!), redacted, s.workspace), { redacted })
                 return
@@ -1114,6 +1115,7 @@ export class TurnRunner {
                 const editDiff = toolEditDiff(data.name, { diff: resultDiff }, displayMetadata)
                 if (editDiff) complete.edit_diff = editDiff
                 const tc = liveToolCalls[completedToolIndex(liveToolCalls, str(data.tid), data.name)]
+                this.registry.noteToolEvent(streamId, receivedAt, false)
                 if (tc) {
                   const startedAt = toolStartedAt.get(tc)
                   if (startedAt !== undefined) complete.duration = Math.round(Math.max(0, receivedAt - startedAt) * 1000) / 1000

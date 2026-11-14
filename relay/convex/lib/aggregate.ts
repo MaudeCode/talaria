@@ -61,6 +61,8 @@ export function rowForState(state: SessionState, phase = activityPhase(state)): 
     status: statusForPhase(phase),
     ...(state.startedAt === undefined ? {} : { startedAt: state.startedAt }),
     updatedAt: state.updatedAt,
+    ...(state.toolCount === undefined ? {} : { toolCount: state.toolCount }),
+    ...(state.activityAt === undefined ? {} : { activityAt: state.activityAt }),
     deepLink: state.deepLink,
     ...(phase === "waiting_for_approval" && state.approvalHeadId ? { approvalHeadId: state.approvalHeadId } : {}),
   };

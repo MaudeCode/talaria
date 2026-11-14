@@ -30,6 +30,10 @@ export interface SessionState {
   activityPhase?: SessionPhase;
   startedAt?: number;
   updatedAt: number;
+  /** TAL-874: tool calls the run started, counted by the publisher. */
+  toolCount?: number;
+  /** TAL-874: the run's last phase change or tool event, in epoch milliseconds. */
+  activityAt?: number;
   deepLink: string;
   expiresAt: number;
   activityExpiresAt?: number;
@@ -60,6 +64,8 @@ export interface PublishedSessionState {
   activityPhase?: SessionPhase;
   startedAt?: number;
   updatedAt: number;
+  toolCount?: number;
+  activityAt?: number;
   deepLink: string;
   origin?: TurnOrigin;
   alertEligible?: boolean;
@@ -80,6 +86,8 @@ export interface AggregateRow {
   status: string;
   startedAt?: number;
   updatedAt: number;
+  toolCount?: number;
+  activityAt?: number;
   deepLink: string;
   /** TAL-1463: the approval this row waits on, so the App answers only the approval the activity shows. */
   approvalHeadId?: string;

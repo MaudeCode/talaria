@@ -174,6 +174,8 @@ export default defineSchema({
     activityPhase: v.optional(sessionPhaseValidator),
     startedAt: v.optional(v.number()),
     updatedAt: v.number(),
+    toolCount: v.optional(v.number()),
+    activityAt: v.optional(v.number()),
     deepLink: v.string(),
     expiresAt: v.number(),
     terminalExpiresAt: v.optional(v.number()),

@@ -15,6 +15,8 @@
         "phase": "running",
         "startedAt": 1799999940000,
         "updatedAt": 1800000000000,
+        "toolCount": 2,
+        "activityAt": 1799999990000,
         "deepLink": "/sessions/contract-session",
         "publisherId": "https://contract.example",
         "publisherLabel": "Contract publisher",

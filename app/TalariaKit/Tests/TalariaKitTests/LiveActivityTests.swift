@@ -340,6 +340,15 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertTrue(state.isFinal)
         XCTAssertFalse(state.isStale)
         XCTAssertEqual(state.startedAt.timeIntervalSince1970, 1_800_000_000)
+        // TAL-874: an older Relay sends no tool count or last activity; a current one sends both.
+        XCTAssertNil(state.toolCount)
+        XCTAssertNil(state.activityAt)
+        let current = try JSONDecoder().decode(
+            AgentRunActivityAttributes.ContentState.self,
+            from: Data(String(decoding: data, as: UTF8.self).replacingOccurrences(of: "}", with: #","toolCount":3,"activityAt":821692790}"#).utf8)
+        )
+        XCTAssertEqual(current.toolCount, 3)
+        XCTAssertEqual(current.activityAt?.timeIntervalSince1970, 1_799_999_990)
     }
 
     func testCompactIslandShowsAWordOnlyForAsksAndOutcomes() {

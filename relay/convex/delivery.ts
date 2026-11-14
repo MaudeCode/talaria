@@ -94,6 +94,8 @@ function asSessionState(state: DataModel["sessionStates"]["document"]): SessionS
     activityPhase: state.activityPhase,
     startedAt: state.startedAt,
     updatedAt: state.updatedAt,
+    toolCount: state.toolCount,
+    activityAt: state.activityAt,
     deepLink: state.deepLink,
     expiresAt: state.expiresAt,
     terminalExpiresAt: state.terminalExpiresAt,
