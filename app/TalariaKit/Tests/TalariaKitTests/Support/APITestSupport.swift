@@ -527,14 +527,21 @@ final class AskFixture {
         let frames: [(event: String, data: String)]
         private(set) var startedURLs: [URL] = []
         private(set) var stopCount = 0
+        private var onEvent: (@MainActor (SSEEvent) -> Void)?
         let lastEventID: String? = nil
 
         init(frames: [(event: String, data: String)]) { self.frames = frames }
 
         func start(url: URL, onEvent: @escaping @MainActor (SSEEvent) -> Void) {
             startedURLs.append(url)
+            self.onEvent = onEvent
+            send(frames)
+        }
+
+        /// Frames that arrive after the start, as a long run's later events do.
+        func send(_ frames: [(event: String, data: String)]) {
             for frame in frames {
-                SSEEventDecoder.decodeFrame(eventType: frame.event, data: frame.data).forEach(onEvent)
+                SSEEventDecoder.decodeFrame(eventType: frame.event, data: frame.data).forEach { onEvent?($0) }
             }
         }
 
@@ -584,14 +591,95 @@ final class AskFixture {
         client = APIClient(baseURL: URL(string: "https://ask.example.test")!, session: URLSession(configuration: configuration))
     }
 
-    func session(timeout: Duration = .seconds(60)) -> AskSession {
-        AskSession(client: client, timeout: timeout) { [stream] in stream }
+    /// A tool call whose server preview is `preview`, the activity text a long run reports.
+    static func toolFrame(preview: String) -> (event: String, data: String) {
+        let text = String(decoding: try! JSONEncoder().encode(preview), as: UTF8.self)
+        return ("tool", #"{"id":"call-1","name":"terminal","preview":\#(text)}"#)
+    }
+
+    func session(
+        timeout: Duration? = .seconds(60),
+        memory: AskSession.Memory? = nil,
+        clock: any Clock<Duration> = ContinuousClock()
+    ) -> AskSession {
+        AskSession(client: client, timeout: timeout, memory: memory, clock: clock) { [stream] in stream }
+    }
+
+    /// Memory in a defaults suite the test owns.
+    static func memory(serverID: String = "https://ask.example.test", in test: XCTestCase) -> AskSession.Memory {
+        let name = "AskFixture.\(UUID())"
+        test.addTeardownBlock { UserDefaults().removePersistentDomain(forName: name) }
+        return AskSession.Memory(serverID: serverID, defaults: UserDefaults(suiteName: name))
     }
 
     /// The JSON body the server received at `path`, string fields only.
     func body(at path: String) -> [String: String]? {
-        recorded.value.first { $0.path == path }?.body
+        bodies(at: path).first
+    }
+
+    /// Every JSON body the server received at `path`, in order.
+    func bodies(at path: String) -> [[String: String]] {
+        recorded.value.filter { $0.path == path }.map(\.body)
     }
 
     var paths: [String] { recorded.value.map(\.path) }
+}
+
+/// A clock that moves only when the test advances it, waking each sleeper at its deadline in order.
+final class ManualTestClock: Clock, @unchecked Sendable {
+    struct Instant: InstantProtocol {
+        let offset: Duration
+        func advanced(by duration: Duration) -> Instant { Instant(offset: offset + duration) }
+        func duration(to other: Instant) -> Duration { other.offset - offset }
+        static func < (lhs: Instant, rhs: Instant) -> Bool { lhs.offset < rhs.offset }
+    }
+
+    private struct Sleeper {
+        let deadline: Instant
+        let continuation: CheckedContinuation<Void, Error>
+    }
+
+    private let lock = NSLock()
+    private var current = Instant(offset: .zero)
+    private var sleepers: [UUID: Sleeper] = [:]
+
+    var now: Instant { lock.withLock { current } }
+    var minimumResolution: Duration { .zero }
+
+    func sleep(until deadline: Instant, tolerance: Duration?) async throws {
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                let outcome: Result<Void, Error>? = lock.withLock {
+                    if Task.isCancelled { return .failure(CancellationError()) }
+                    if deadline <= current { return .success(()) }
+                    sleepers[id] = Sleeper(deadline: deadline, continuation: continuation)
+                    return nil
+                }
+                if let outcome { continuation.resume(with: outcome) }
+            }
+        } onCancel: {
+            lock.withLock { sleepers.removeValue(forKey: id) }?.continuation.resume(throwing: CancellationError())
+        }
+    }
+
+    /// Moves time forward by `duration`, letting each woken task run before the next deadline.
+    @MainActor
+    func advance(by duration: Duration) async {
+        let target = now.advanced(by: duration)
+        for _ in 0..<10 { await Task.yield() }
+        while true {
+            let woken: Sleeper? = lock.withLock {
+                guard let (id, sleeper) = sleepers.filter({ $0.value.deadline <= target })
+                    .min(by: { $0.value.deadline < $1.value.deadline }) else { return nil }
+                sleepers.removeValue(forKey: id)
+                current = sleeper.deadline
+                return sleeper
+            }
+            guard let woken else { break }
+            woken.continuation.resume()
+            for _ in 0..<10 { await Task.yield() }
+        }
+        lock.withLock { current = target }
+    }
 }

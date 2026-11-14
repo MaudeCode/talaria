@@ -131,7 +131,9 @@ struct AppIntentServer {
     @MainActor
     func askSession() -> AskSession {
         let headers = headers
-        return AskSession(client: client()) { SSEClient(customHeaderProvider: { headers }) }
+        return AskSession(client: client(), memory: AskSession.Memory(serverID: url.absoluteString)) {
+            SSEClient(customHeaderProvider: { headers })
+        }
     }
 
     /// Loads the server's stored custom headers (scoped key first, then the pre-#16 global
