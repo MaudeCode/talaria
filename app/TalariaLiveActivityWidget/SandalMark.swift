@@ -1,6 +1,7 @@
 import ActivityKit
 import SwiftUI
 import WidgetKit
+import TalariaKit
 
 struct SandalMark: View {
     @Environment(\.liveActivityPalette) private var palette
