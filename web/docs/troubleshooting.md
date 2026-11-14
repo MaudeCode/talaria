@@ -6,6 +6,24 @@ If your symptom isn't listed and the diagnostics don't narrow it down, keep the 
 
 ---
 
+## `421` "This server does not answer to host …"
+
+**Symptom.** After an update, the page or API answers `421` with an error naming
+`HERMES_WEBUI_ALLOWED_HOSTS`, usually behind a reverse proxy, Tailscale Serve,
+or a LAN hostname. The server log shows `rejected a request for host "…"`.
+
+**Why.** WebUI answers only to `localhost`, IP addresses, `HERMES_WEBUI_HOST`,
+the `HERMES_WEBUI_ALLOWED_ORIGINS` hostnames and `HERMES_WEBUI_ALLOWED_HOSTS`.
+Any other `Host` header is refused so a web page cannot reach the server through
+DNS rebinding.
+
+**Fix.** Add the hostname from the log to `HERMES_WEBUI_ALLOWED_HOSTS`
+(comma-separated, port optional) and restart WebUI. If the proxy rewrites `Host`
+to an internal name, either allow that name too or follow the `X-Forwarded-Host`
+setup in [remote-access.md](remote-access.md#allowed-hostnames).
+
+---
+
 ## "Failed to load session" or "Could not load conversations" after an update
 
 **Symptom.** Session navigation or the conversation sidebar fails, but a browser

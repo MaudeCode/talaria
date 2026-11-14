@@ -94,6 +94,48 @@ export function checkSameOriginBrowserRequest(h: ProvenanceHeaders, env: Env, op
   return 'origin_mismatch'
 }
 
+// ── Host allowlist (TAL-2194) ─────────────────────────────────────────────
+
+function hostName(value: string): string {
+  return normalizeHostPort(value)[0].replace(/\.$/, '')
+}
+
+/** Names this server answers to besides IP literals: loopback, the bind host, allowed origins and HERMES_WEBUI_ALLOWED_HOSTS. */
+function allowedHostNames(env: Env, bindHost: string): Set<string> {
+  const names = new Set(['localhost', hostName(bindHost)])
+  for (const origin of allowedPublicOrigins(env)) {
+    try { names.add(hostName(new URL(origin).host)) } catch { /* not a URL: matches nothing */ }
+  }
+  for (const entry of (env.HERMES_WEBUI_ALLOWED_HOSTS ?? '').split(',')) names.add(hostName(entry))
+  names.delete('')
+  return names
+}
+
+export interface RequestHostHeaders {
+  host?: string | undefined
+  forwardedHost?: string | undefined
+  realHost?: string | undefined
+  /** The request carries Origin, Referer or a Sec-Fetch-* header. */
+  browser: boolean
+}
+
+/**
+ * The rejected hostname when the request names a host this server does not answer to, else null. DNS rebinding needs a
+ * DNS name, so IP literals always pass. A forwarded host replaces `Host` only from a proxy listed in
+ * HERMES_WEBUI_TRUSTED_PROXY_CIDRS: with implicit loopback trust a rebound page on this machine could name `localhost`
+ * itself. A request without `Host` (HTTP/1.0) passes only without browser provenance; it is rejected as `''`.
+ */
+export function unexpectedRequestHost(h: RequestHostHeaders, peer: string, env: Env, bindHost: string): string | null {
+  let host = h.host ?? ''
+  if (truthy(env.HERMES_WEBUI_TRUST_FORWARDED_HOST) && rawPeerIsTrustedProxy(peer, env, { implicitLoopback: false })) {
+    const forwarded = (h.forwardedHost ?? '').split(',')[0]?.trim() || (h.realHost ?? '').trim()
+    if (forwarded) host = forwarded
+  }
+  if (!host.trim()) return h.browser ? '' : null
+  const name = hostName(host)
+  return isIP(name) || allowedHostNames(env, bindHost).has(name) ? null : name
+}
+
 export function isBrowserUnsafeRequest(h: ProvenanceHeaders): boolean {
   return Boolean(h.origin) || Boolean(h.referer)
 }
