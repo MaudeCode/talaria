@@ -382,22 +382,28 @@ export const SessionActivityPhaseSchema = z.enum(['starting', 'running', 'waitin
 export type SessionActivityPhase = z.infer<typeof SessionActivityPhaseSchema>
 /** TAL-2232: the phases `GET /api/activity/summary` lists; a finished or stale row is left out. */
 export const ActivitySummaryPhaseSchema = SessionActivityPhaseSchema.extract(['waiting_for_approval', 'waiting_for_input', 'running', 'starting'])
+const ActivitySummaryRowSchema = z.object({
+  session_id: SessionIdSchema,
+  title: z.string(),
+  phase: ActivitySummaryPhaseSchema,
+  started_at: z.number().describe('When the run started (epoch seconds).'),
+  updated_at: z.number().describe('When the row was built (epoch seconds).'),
+  deep_link: z.string().describe('The chat\'s path in Talaria, such as `/sessions/<id>`.'),
+  approval_id: z.string().optional().describe('With `waiting_for_approval`: the approval at the head of the queue, as `POST /api/approval/respond` takes it.'),
+})
 /**
  * TAL-2232: what is running and what needs the requester, for Siri, widgets and the watch without Relay pairing. Rows come
  * in display order: waiting for an approval, then for input, then running and starting rows, each newest start first.
+ * TAL-2233: `waiting`, `running` and `approvals` are the server's groups of those rows, in the same order, so a client
+ * lists a group as it comes.
  */
 export const ActivitySummarySchema = z.object({
   running_count: z.number().int().describe('Rows running or starting.'),
   waiting_count: z.number().int().describe('Rows waiting for an approval or for input.'),
-  rows: z.array(z.object({
-    session_id: SessionIdSchema,
-    title: z.string(),
-    phase: ActivitySummaryPhaseSchema,
-    started_at: z.number().describe('When the run started (epoch seconds).'),
-    updated_at: z.number().describe('When the row was built (epoch seconds).'),
-    deep_link: z.string().describe('The chat\'s path in Talaria, such as `/sessions/<id>`.'),
-    approval_id: z.string().optional().describe('With `waiting_for_approval`: the approval at the head of the queue, as `POST /api/approval/respond` takes it.'),
-  })),
+  rows: z.array(ActivitySummaryRowSchema),
+  waiting: z.array(ActivitySummaryRowSchema).describe('The rows waiting for an approval or for input.'),
+  running: z.array(ActivitySummaryRowSchema).describe('The rows running or starting.'),
+  approvals: z.array(ActivitySummaryRowSchema).describe('The rows waiting for an approval that `POST /api/approval/respond` can answer by their `approval_id`.'),
 })
 export type ActivitySummary = z.infer<typeof ActivitySummarySchema>
 

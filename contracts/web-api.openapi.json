@@ -61488,12 +61488,162 @@
                           "deep_link"
                         ]
                       }
+                    },
+                    "waiting": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "session_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "phase": {
+                            "enum": [
+                              "waiting_for_approval",
+                              "waiting_for_input",
+                              "running",
+                              "starting"
+                            ],
+                            "type": "string"
+                          },
+                          "started_at": {
+                            "type": "number",
+                            "description": "When the run started (epoch seconds)."
+                          },
+                          "updated_at": {
+                            "type": "number",
+                            "description": "When the row was built (epoch seconds)."
+                          },
+                          "deep_link": {
+                            "type": "string",
+                            "description": "The chat's path in Talaria, such as `/sessions/<id>`."
+                          },
+                          "approval_id": {
+                            "type": "string",
+                            "description": "With `waiting_for_approval`: the approval at the head of the queue, as `POST /api/approval/respond` takes it."
+                          }
+                        },
+                        "required": [
+                          "session_id",
+                          "title",
+                          "phase",
+                          "started_at",
+                          "updated_at",
+                          "deep_link"
+                        ]
+                      },
+                      "description": "The rows waiting for an approval or for input."
+                    },
+                    "running": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "session_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "phase": {
+                            "enum": [
+                              "waiting_for_approval",
+                              "waiting_for_input",
+                              "running",
+                              "starting"
+                            ],
+                            "type": "string"
+                          },
+                          "started_at": {
+                            "type": "number",
+                            "description": "When the run started (epoch seconds)."
+                          },
+                          "updated_at": {
+                            "type": "number",
+                            "description": "When the row was built (epoch seconds)."
+                          },
+                          "deep_link": {
+                            "type": "string",
+                            "description": "The chat's path in Talaria, such as `/sessions/<id>`."
+                          },
+                          "approval_id": {
+                            "type": "string",
+                            "description": "With `waiting_for_approval`: the approval at the head of the queue, as `POST /api/approval/respond` takes it."
+                          }
+                        },
+                        "required": [
+                          "session_id",
+                          "title",
+                          "phase",
+                          "started_at",
+                          "updated_at",
+                          "deep_link"
+                        ]
+                      },
+                      "description": "The rows running or starting."
+                    },
+                    "approvals": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "session_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "phase": {
+                            "enum": [
+                              "waiting_for_approval",
+                              "waiting_for_input",
+                              "running",
+                              "starting"
+                            ],
+                            "type": "string"
+                          },
+                          "started_at": {
+                            "type": "number",
+                            "description": "When the run started (epoch seconds)."
+                          },
+                          "updated_at": {
+                            "type": "number",
+                            "description": "When the row was built (epoch seconds)."
+                          },
+                          "deep_link": {
+                            "type": "string",
+                            "description": "The chat's path in Talaria, such as `/sessions/<id>`."
+                          },
+                          "approval_id": {
+                            "type": "string",
+                            "description": "With `waiting_for_approval`: the approval at the head of the queue, as `POST /api/approval/respond` takes it."
+                          }
+                        },
+                        "required": [
+                          "session_id",
+                          "title",
+                          "phase",
+                          "started_at",
+                          "updated_at",
+                          "deep_link"
+                        ]
+                      },
+                      "description": "The rows waiting for an approval that `POST /api/approval/respond` can answer by their `approval_id`."
                     }
                   },
                   "required": [
                     "running_count",
                     "waiting_count",
-                    "rows"
+                    "rows",
+                    "waiting",
+                    "running",
+                    "approvals"
                   ]
                 }
               }

@@ -38,7 +38,7 @@ struct RespondToApprovalIntent: LiveActivityIntent {
     func perform() async throws -> some IntentResult {
         #if !TALARIA_WIDGET_EXTENSION
         await LiveActivityApprovalResponder.shared.respond(
-            publisherID: publisherID, sessionID: sessionID, approvalHeadID: approvalHeadID, choice: answer.choice
+            publisherID: publisherID, sessionID: sessionID, approval: .head(approvalHeadID), choice: answer.choice
         )
         #endif
         return .result()

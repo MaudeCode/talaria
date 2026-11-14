@@ -24,5 +24,9 @@ final class APIClientActivitySummaryTests: APIClientTestCase {
         XCTAssertEqual(approval.deepLink, "/sessions/approval")
         XCTAssertEqual(approval.startedAt, 1_799_998_000)
         XCTAssertNil(summary.rows[1].approvalId)
+        // TAL-2233: the server's groups, in the same order.
+        XCTAssertEqual(summary.waiting.map(\.sessionId), ["approval", "input"])
+        XCTAssertEqual(summary.running.map(\.sessionId), ["run_new", "run_old"])
+        XCTAssertEqual(summary.approvals.map(\.sessionId), ["approval"])
     }
 }

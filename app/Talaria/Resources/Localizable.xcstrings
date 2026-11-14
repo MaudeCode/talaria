@@ -976,6 +976,7 @@
         }
       }
     },
+    "%@ is no longer waiting for approval." : {},
     "%@ is reconnecting the response stream" : {
       "localizations" : {
         "ar" : {
@@ -2197,6 +2198,7 @@
         }
       }
     },
+    "%@: %@." : {},
     "%lld" : {
       "shouldTranslate" : false
     },
@@ -3398,6 +3400,50 @@
       }
     },
     "%lld changes" : {},
+    "%lld chats are running: %@." : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld chat is running: %@."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld chats are running: %@."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld chats need you." : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld chat needs you."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld chats need you."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld comments" : {
       "localizations" : {
         "ar" : {
@@ -4906,6 +4952,7 @@
         }
       }
     },
+    "%lld more" : {},
     "%lld of %lld done" : {
       "localizations" : {
         "ar" : {
@@ -14448,6 +14495,7 @@
         }
       }
     },
+    "Allow %@?" : {},
     "Allow Photos access to save images from Talaria." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -14556,6 +14604,8 @@
       }
     },
     "Allow Photos access to save media from Talaria." : {},
+    "Allow or deny a command a Talaria chat is waiting on." : {},
+    "Allowed." : {},
     "Already have a server?" : {
       "localizations" : {
         "ar" : {
@@ -14881,6 +14931,7 @@
         }
       }
     },
+    "And %lld more." : {},
     "Another Board action is in progress." : {
       "localizations" : {
         "ar" : {
@@ -15200,6 +15251,7 @@
         }
       }
     },
+    "Answer Talaria Approval" : {},
     "App" : {
       "localizations" : {
         "ar" : {
@@ -44265,6 +44317,7 @@
         }
       }
     },
+    "Denied." : {},
     "Deny" : {
       "localizations" : {
         "ar" : {
@@ -44371,6 +44424,7 @@
         }
       }
     },
+    "Deny %@?" : {},
     "Dependencies" : {
       "localizations" : {
         "ar" : {
@@ -58092,6 +58146,7 @@
         }
       }
     },
+    "Hear which chats need you and which are running." : {},
     "Hermes" : {
       "shouldTranslate" : false
     },
@@ -79173,6 +79228,7 @@
         }
       }
     },
+    "Nothing is running and nothing needs you." : {},
     "Nothing is running to take it now; it stays pending." : {
       "comment" : "Send now outcome reported by the server",
       "extractionState" : "manual",
@@ -81310,6 +81366,7 @@
         }
       }
     },
+    "Open Talaria to answer this one." : {},
     "Open attachment %@" : {
       "localizations" : {
         "ar" : {
@@ -123650,6 +123707,7 @@
       "shouldTranslate" : false
     },
     "Talaria Relay" : {},
+    "Talaria Status" : {},
     "Talaria cannot restore an archived Board in-app." : {
       "localizations" : {
         "ar" : {

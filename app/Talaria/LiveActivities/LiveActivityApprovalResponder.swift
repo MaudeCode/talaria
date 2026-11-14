@@ -2,10 +2,10 @@ import ActivityKit
 import Foundation
 import TalariaKit
 
-/// TAL-1463: answers an approval from a Live Activity's Allow or Deny, in the App's process. Optimistic update with
-/// rollback: the session's rows leave "waiting for approval" at once and the relay's next snapshot confirms them. A
-/// refused answer restores the waiting rows with the error; an unknown outcome first asks the server whether the
-/// approval is still pending. A rollback never overwrites a newer snapshot.
+/// TAL-1463: answers an approval from a Live Activity's Allow or Deny, or from Siri (TAL-2233), in the App's process.
+/// Optimistic update with rollback: the session's rows leave "waiting for approval" at once and the relay's next
+/// snapshot confirms them. A refused answer restores the waiting rows with the error; an unknown outcome first asks the
+/// server whether the approval is still pending. A rollback never overwrites a newer snapshot.
 @MainActor
 final class LiveActivityApprovalResponder {
     struct Run: Equatable {
@@ -27,30 +27,62 @@ final class LiveActivityApprovalResponder {
         var updateAggregate: @MainActor (_ id: String, _ state: TalariaAggregateActivityAttributes.ContentState) async -> Void
     }
 
-    /// What `RespondToApprovalIntent` answers through; tests substitute a fixture client and display.
+    /// The approval the user saw and answers: the one a Live Activity showed (its `head_id`) or the one Siri read back
+    /// (its `approval_id`). Nothing else pending is answered.
+    enum ShownApproval: Equatable {
+        case head(String)
+        case approval(String?)
+
+        func matches(_ pending: PendingApproval) -> Bool {
+            switch self {
+            case let .head(id): pending.headId == id
+            case let .approval(id): pending.approvalId == id
+            }
+        }
+    }
+
+    /// What `RespondToApprovalIntent` and `RespondToApprovalByVoiceIntent` answer through; tests substitute a fixture
+    /// client and display.
     static var shared = LiveActivityApprovalResponder(
         makeClient: { AppIntentServer.saved(publisherID: $0)?.client() },
+        activeServer: { AppIntentServer.saved()?.url.absoluteString },
         appLock: .shared,
         display: .system
     )
 
     private let makeClient: (String?) -> APIClient?
+    private let activeServer: () -> String?
     private let appLock: AppLockModel
     private let display: Display
 
-    init(makeClient: @escaping (String?) -> APIClient?, appLock: AppLockModel, display: Display) {
+    init(
+        makeClient: @escaping (String?) -> APIClient?,
+        activeServer: @escaping () -> String?,
+        appLock: AppLockModel,
+        display: Display
+    ) {
         self.makeClient = makeClient
+        self.activeServer = activeServer
         self.appLock = appLock
         self.display = display
     }
 
-    func respond(publisherID: String?, sessionID: String, approvalHeadID: String, choice: ApprovalChoice) async {
-        let publisher = publisherID.flatMap(TalariaRelayClient.originIdentifier)
+    /// How an answer ended. Only a refusal rolls the rows back; Siri says which of the others happened (TAL-2233).
+    enum Outcome: Equatable {
+        case answered
+        /// Answered elsewhere or expired before this answer reached it; the rows stay answered.
+        case settledElsewhere
+        /// The error the rows show again.
+        case refused(String)
+    }
+
+    @discardableResult
+    func respond(publisherID: String?, sessionID: String, approval: ShownApproval, choice: ApprovalChoice) async -> Outcome {
+        let publisher = origin(publisherID)
         let runs = display.runs().filter {
-            $0.state.sessionID == sessionID && $0.state.status == .waitingForApproval
-                && $0.publisherID.flatMap(TalariaRelayClient.originIdentifier) == publisher
+            $0.state.sessionID == sessionID && $0.state.status == .waitingForApproval && origin($0.publisherID) == publisher
         }
-        let aggregates = display.aggregates().filter { $0.state.rows.contains { Self.isWaiting($0, sessionID, publisher) } }
+        let aggregates = display.aggregates().filter { $0.state.rows.contains { isWaiting($0, sessionID, publisher) } }
 
         var answeredRuns: [String: AgentRunActivityAttributes.ContentState] = [:]
         for run in runs {
@@ -61,15 +93,14 @@ final class LiveActivityApprovalResponder {
         for aggregate in aggregates {
             // Patch the latest state, so an answer made meanwhile keeps its own rows.
             guard var answered = currentAggregate(aggregate.id) else { continue }
-            for index in answered.rows.indices where Self.isWaiting(answered.rows[index], sessionID, publisher) {
+            for index in answered.rows.indices where isWaiting(answered.rows[index], sessionID, publisher) {
                 answered.rows[index] = Self.answered(answered.rows[index])
             }
             await writeAggregate(aggregate.id, answered)
         }
 
-        guard let error = await refusal(
-            publisherID: publisherID, sessionID: sessionID, approvalHeadID: approvalHeadID, choice: choice
-        ) else { return }
+        let outcome = await answer(publisherID: publisherID, sessionID: sessionID, approval: approval, choice: choice)
+        guard case let .refused(error) = outcome else { return outcome }
         // ActivityKit can still read back the state from before the answer; anything else is a newer snapshot.
         for run in runs
         where [answeredRuns[run.id], run.state].contains(display.runs().first(where: { $0.id == run.id })?.state) {
@@ -83,7 +114,7 @@ final class LiveActivityApprovalResponder {
             var restoredRow = false
             for index in current.rows.indices {
                 guard let original = aggregate.state.rows.first(where: {
-                    $0.id == current.rows[index].id && Self.isWaiting($0, sessionID, publisher)
+                    $0.id == current.rows[index].id && isWaiting($0, sessionID, publisher)
                 }), [Self.answered(original), original].contains(current.rows[index]) else { continue }
                 current.rows[index] = original
                 restoredRow = true
@@ -92,6 +123,7 @@ final class LiveActivityApprovalResponder {
             current.answerError = error
             await writeAggregate(aggregate.id, current)
         }
+        return outcome
     }
 
     /// Every aggregate state this responder wrote since the last snapshot, and the latest of them.
@@ -114,43 +146,41 @@ final class LiveActivityApprovalResponder {
         await display.updateAggregate(id, state)
     }
 
-    /// Nil when the server took the answer or the approval is no longer pending; otherwise the error to show.
-    private func refusal(
-        publisherID: String?, sessionID: String, approvalHeadID: String, choice: ApprovalChoice
-    ) async -> String? {
-        guard !appLock.locksBackgroundWork() else { return String(localized: "Unlock Talaria in the app first.") }
-        guard let client = makeClient(publisherID) else { return String(localized: "Add a server in Talaria first.") }
+    private func answer(
+        publisherID: String?, sessionID: String, approval: ShownApproval, choice: ApprovalChoice
+    ) async -> Outcome {
+        guard !appLock.locksBackgroundWork() else { return .refused(String(localized: "Unlock Talaria in the app first.")) }
+        guard let client = makeClient(publisherID) else { return .refused(String(localized: "Add a server in Talaria first.")) }
         // The server answers a prompt by its id (an owner session refuses any other), so read the pending one first.
-        // None pending: the approval was already answered elsewhere. Another one pending: the activity never showed it,
-        // so nothing is answered until it is reviewed.
+        // None pending: the approval was already answered elsewhere. Another one pending: the user never saw it, so
+        // nothing is answered until it is reviewed.
         let approvalID: String?
         do {
-            guard let pending = try await client.approvalPending(sessionID: sessionID).pending else { return nil }
-            guard pending.headId == approvalHeadID else {
-                return String(localized: "This approval changed. Open Talaria to review it.")
+            guard let pending = try await client.approvalPending(sessionID: sessionID).pending else { return .settledElsewhere }
+            guard approval.matches(pending) else {
+                return .refused(String(localized: "This approval changed. Open Talaria to review it."))
             }
             approvalID = pending.approvalId
         } catch {
-            return error.localizedDescription
+            return .refused(error.localizedDescription)
         }
         do {
             let response = try await client.respondApproval(sessionID: sessionID, choice: choice, approvalID: approvalID)
             // Same rule as the chat's approval card: only an explicit success or a cleared stale card is final.
-            guard response.ok == true || response.staleCleared == true else {
-                return String(localized: "The server did not accept that response. The request is still waiting.")
-            }
-            return nil
+            if response.ok == true { return .answered }
+            if response.staleCleared == true { return .settledElsewhere }
+            return .refused(String(localized: "The server did not accept that response. The request is still waiting."))
         } catch let error as APIError where error.indicatesExpiredPendingPrompt {
-            return nil
+            return .settledElsewhere
         } catch {
             // A network loss, timeout or 5xx leaves the outcome unknown: keep the answer only if the server no longer
-            // has this approval pending. The answer is never sent again.
+            // has this approval pending, most likely because this answer took it. The answer is never sent again.
             if !APIError.isDefinitiveWriteFailure(error),
                let pending = try? await client.approvalPending(sessionID: sessionID),
                pending.pending.map({ $0.approvalId != approvalID }) ?? true {
-                return nil
+                return .answered
             }
-            return error.localizedDescription
+            return .refused(error.localizedDescription)
         }
     }
 
@@ -163,11 +193,16 @@ final class LiveActivityApprovalResponder {
         return answered
     }
 
-    private static func isWaiting(
+    private func isWaiting(
         _ row: TalariaAggregateActivityAttributes.ContentState.Row, _ sessionID: String, _ publisher: String?
     ) -> Bool {
-        row.sessionId == sessionID && row.phase == "waiting_for_approval"
-            && TalariaRelayClient.originIdentifier(row.publisherId) == publisher
+        row.sessionId == sessionID && row.phase == "waiting_for_approval" && origin(row.publisherId) == publisher
+    }
+
+    /// No publisher is the active server, as `makeClient` reads it: a run started without the relay and the relay's rows
+    /// for that server are the same server's, so Siri's answer (TAL-2233) reaches both.
+    private func origin(_ publisherID: String?) -> String? {
+        (publisherID ?? activeServer()).flatMap(TalariaRelayClient.originIdentifier)
     }
 }
 
