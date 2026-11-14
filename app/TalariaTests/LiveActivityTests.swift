@@ -567,10 +567,12 @@ final class LiveActivityTests: XCTestCase {
 /// One waiting run on a relay publisher, as the per-run and aggregate activities show it, beside a second waiting
 /// session, and a fixture server. `approval/pending` answers `pendingBodies` in turn (the last repeats), by default
 /// the session's own pending approval; `approval/respond` answers `responses` per session, by default success, and
-/// holds `heldSession`'s answer until `releaseHeldRespond()`.
+/// holds `heldSession`'s answer until `releaseHeldRespond()`. The responder reaches `client` for the publisher and for
+/// the active server (no publisher), as Siri answers (TAL-2233).
 @MainActor
-private final class ApprovalAnswerFixture {
+final class ApprovalAnswerFixture {
     static let publisher = "https://approvals.example.test"
+    private(set) var client: APIClient!
     var run: AgentRunActivityAttributes.ContentState
     var aggregate: TalariaAggregateActivityAttributes.ContentState
     private var readRun: AgentRunActivityAttributes.ContentState
@@ -626,12 +628,13 @@ private final class ApprovalAnswerFixture {
         configuration.protocolClasses = [MockURLProtocol.self]
         configuration.httpAdditionalHeaders = [MockURLProtocol.scopeHeader: scope]
         let client = APIClient(baseURL: URL(string: Self.publisher)!, session: URLSession(configuration: configuration))
+        self.client = client
         let lockName = "ApprovalAnswerFixture.\(UUID())"
         test.addTeardownBlock { UserDefaults().removePersistentDomain(forName: lockName) }
         let original = LiveActivityApprovalResponder.shared
         test.addTeardownBlock { @MainActor in LiveActivityApprovalResponder.shared = original }
         LiveActivityApprovalResponder.shared = LiveActivityApprovalResponder(
-            makeClient: { TalariaRelayClient.originIdentifier($0 ?? "") == Self.publisher ? client : nil },
+            makeClient: { $0 == nil || TalariaRelayClient.originIdentifier($0 ?? "") == Self.publisher ? client : nil },
             appLock: AppLockModel(defaults: try XCTUnwrap(UserDefaults(suiteName: lockName))),
             display: .init(
                 runs: { [unowned self] in [.init(id: "run", publisherID: Self.publisher, state: readsLag ? readRun : run)] },

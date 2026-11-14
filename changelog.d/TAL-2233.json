@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Siri can tell you which Talaria chats need you and which are running, and can allow or deny a waiting command after reading it back for confirmation.",
+      "highlight": false,
+      "components": ["app"],
+      "announce": false
+    }
+  ]
+}
