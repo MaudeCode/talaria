@@ -357,7 +357,10 @@ public final class TalariaRelayClient: Sendable {
             "notifyOnApproval": approvalInputAlertsEnabled,
             "notifyOnInput": approvalInputAlertsEnabled,
             "notifyOnCompletion": completionAlertsEnabled,
-            "notifyOnFailure": completionAlertsEnabled
+            "notifyOnFailure": completionAlertsEnabled,
+            "notifyOnBackground": UserDefaults.standard.bool(
+                forKey: TalariaRelayNotifications.backgroundAlertsEnabledKey
+            )
         ]
         var body: [String: Any] = [
             "label": await Self.deviceLabel,

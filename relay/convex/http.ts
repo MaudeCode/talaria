@@ -225,7 +225,12 @@ function parsePreferences(value: unknown): NotificationPreferences | null {
   if (!isRecord(value)) return null;
   const keys = Object.keys(defaultNotificationPreferences) as (keyof NotificationPreferences)[];
   if (keys.some((key) => typeof value[key] !== "boolean")) return null;
-  return Object.fromEntries(keys.map((key) => [key, value[key]])) as unknown as NotificationPreferences;
+  const { notifyOnBackground } = value;
+  if (notifyOnBackground !== undefined && typeof notifyOnBackground !== "boolean") return null;
+  return {
+    ...Object.fromEntries(keys.map((key) => [key, value[key]])) as unknown as NotificationPreferences,
+    ...(notifyOnBackground === undefined ? {} : { notifyOnBackground }),
+  };
 }
 
 async function authenticateUser(
@@ -332,6 +337,7 @@ function parseState(
   const startedAt = value.startedAt === undefined ? undefined : numberField(value, "startedAt");
   const updatedAt = numberField(value, "updatedAt");
   const deepLink = stringField(value, "deepLink", 512);
+  const origin = value.origin;
   const alertEligible = value.alertEligible;
   const approvalHeadId = value.approvalHeadId;
   const decisionReviewId = value.decisionReviewId;
@@ -339,6 +345,7 @@ function parseState(
   const agentNotices = value.agentNotices === undefined ? undefined : parseAgentNotices(value.agentNotices);
   if (
     agentNotices === null ||
+    (origin !== undefined && origin !== "user" && origin !== "background") ||
     (alertEligible !== undefined && typeof alertEligible !== "boolean") ||
     (approvalHeadId !== undefined && (typeof approvalHeadId !== "string" || !approvalHeadPattern.test(approvalHeadId))) ||
     (decisionReviewId !== undefined && (typeof decisionReviewId !== "string" || !decisionReviewPattern.test(decisionReviewId))) ||
@@ -370,6 +377,7 @@ function parseState(
     ...(startedAt === undefined ? {} : { startedAt }),
     updatedAt,
     deepLink,
+    ...(origin === undefined ? {} : { origin }),
     alertEligible,
     ...(approvalHeadId === undefined ? {} : { approvalHeadId }),
     ...(decisionReviewId === undefined ? {} : { decisionReviewId, decisionReviewTitle: decisionReviewTitle ?? "" }),
@@ -584,6 +592,7 @@ http.route({
               startedAt: state.startedAt,
               updatedAt: state.updatedAt,
               deepLink: state.deepLink,
+              origin: state.origin,
               alertEligible: state.alertEligible,
               approvalHeadId: state.approvalHeadId,
               decisionReviewId: state.decisionReviewId,

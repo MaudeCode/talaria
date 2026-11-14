@@ -21,6 +21,9 @@ export const apsEnvironmentValidator = v.union(
   v.literal("production"),
 );
 
+// TAL-873: who started a published turn; Relay mutes a background turn's completion unless the device opts in.
+export const turnOriginValidator = v.union(v.literal("user"), v.literal("background"));
+
 export const preferencesValidator = v.object({
   liveActivitiesEnabled: v.boolean(),
   notificationsEnabled: v.boolean(),
@@ -28,6 +31,8 @@ export const preferencesValidator = v.object({
   notifyOnInput: v.boolean(),
   notifyOnCompletion: v.boolean(),
   notifyOnFailure: v.boolean(),
+  // TAL-873: completion alerts for background turns; absent (an older App or device record) means off.
+  notifyOnBackground: v.optional(v.boolean()),
 });
 
 export const aggregateRowValidator = v.object({
@@ -74,6 +79,7 @@ export const sessionStateContentValidator = v.object({
   startedAt: v.optional(v.number()),
   updatedAt: v.number(),
   deepLink: v.string(),
+  origin: v.optional(turnOriginValidator),
   alertEligible: v.optional(v.boolean()),
   approvalHeadId: v.optional(v.string()),
   decisionReviewId: v.optional(v.string()),
@@ -105,6 +111,7 @@ export const storedSessionStateValidator = v.object({
   expiresAt: v.number(),
   terminalExpiresAt: v.optional(v.number()),
   activityExpiresAt: v.optional(v.number()),
+  origin: v.optional(turnOriginValidator),
   alertEligible: v.optional(v.boolean()),
   approvalHeadId: v.optional(v.string()),
   decisionReviewId: v.optional(v.string()),

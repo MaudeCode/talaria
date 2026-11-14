@@ -9,6 +9,7 @@ import {
   apsEnvironmentValidator,
   preferencesValidator,
   sessionPhaseValidator,
+  turnOriginValidator,
   aggregateRowValidator,
   feedbackAttachmentRefusalValidator,
   feedbackAttachmentTypeValidator,
@@ -178,6 +179,7 @@ export default defineSchema({
     terminalExpiresAt: v.optional(v.number()),
     activityExpiresAt: v.optional(v.number()),
     runKey: v.optional(v.string()),
+    origin: v.optional(turnOriginValidator),
     alertEligible: v.optional(v.boolean()),
     // The latest approval queue head this run made visible; it outlives the approval phase within the run.
     approvalHeadId: v.optional(v.string()),

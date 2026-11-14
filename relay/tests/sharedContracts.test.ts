@@ -221,3 +221,49 @@ it("alerts a Web publisher's approval queue head with only the shared localized 
     clock.mockRestore();
   }
 });
+
+// TAL-873: a turn a finished sub-agent or background process started (`origin: "background"`) completes without an alert
+// unless the device turns background alerts on; its approval and failure alerts, and user turns, still alert.
+it.each([
+  ["mutes a background completion by default", "background", "completed", {}, []],
+  ["alerts a background completion once the device opts in", "background", "completed", { notifyOnBackground: true }, ["Completed on Contract publisher"]],
+  ["still alerts a background failure", "background", "failed", {}, ["Failed on Contract publisher"]],
+  ["still alerts a background approval", "background", "waiting_for_approval", {}, ["An agent run is waiting for your approval."]],
+  ["still alerts a user completion", "user", "completed", {}, ["Completed on Contract publisher"]],
+] as const)("%s", async (_, origin, phase, preferences, expected) => {
+  const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+  try {
+    const { backend, signedPut } = await relayWithPublisher();
+    await backend.run(async (ctx) => {
+      const device = (await ctx.db.query("devices").collect())[0]!;
+      await ctx.db.patch(device._id, {
+        pushToken: "contract-push-token", preferences: { ...defaultNotificationPreferences, notificationsEnabled: true, ...preferences },
+      });
+    });
+    const path = publisherPath("prf_default", "snapshot");
+    const publish = async (revision: number, statePhase: string) => {
+      const body = JSON.parse(fixture("publisher-snapshot")) as { snapshotId: string; states: Record<string, unknown>[] };
+      const state = body.states[0]!;
+      delete state.alertEligible;
+      Object.assign(state, {
+        origin, phase: statePhase, activityPhase: statePhase, revision, eventId: `snapshot:${String(revision)}:contract-session`,
+        ...(statePhase === "waiting_for_approval" ? { approvalHeadId: "contract-head" } : {}),
+      });
+      body.snapshotId = `contract-snapshot-${String(revision)}`;
+      expect((await signedPut(path, JSON.stringify(body))).status).toBe(200);
+    };
+    await publish(now - 1, "running");
+    await publish(now, phase);
+    const scheduled = await backend.run(async (ctx) => ctx.db.system.query("_scheduled_functions").collect());
+    for (const job of scheduled) {
+      if (job.name === "delivery:recompute") await backend.mutation(internal.delivery.recompute, (job.args as [never])[0]);
+    }
+    const alerts = (await backend.run((ctx) => ctx.db.query("deliveryJobs").collect()))
+      .filter((job) => job.kind === "notification")
+      .map((job) => (JSON.parse(job.request.payloadJson) as { aps: { alert: { body?: string; "loc-key"?: string } } }).aps.alert)
+      .map((alert) => alert.body ?? alert["loc-key"]);
+    expect(alerts).toEqual(expected);
+  } finally {
+    clock.mockRestore();
+  }
+});

@@ -13,6 +13,9 @@ export type SessionPhase = (typeof sessionPhases)[number];
 export type ActivityMode = "per_session" | "all_running";
 export type ApsEnvironment = "sandbox" | "production";
 
+// TAL-873: who started a published turn; a publisher that omits it started every turn for the user.
+export type TurnOrigin = "user" | "background";
+
 export interface SessionState {
   completionId?: string;
   deleted?: boolean;
@@ -31,6 +34,7 @@ export interface SessionState {
   expiresAt: number;
   activityExpiresAt?: number;
   terminalExpiresAt?: number;
+  origin?: TurnOrigin;
   alertEligible?: boolean;
   approvalHeadId?: string;
   decisionReviewId?: string;
@@ -57,6 +61,7 @@ export interface PublishedSessionState {
   startedAt?: number;
   updatedAt: number;
   deepLink: string;
+  origin?: TurnOrigin;
   alertEligible?: boolean;
   approvalHeadId?: string;
   decisionReviewId?: string;
@@ -96,6 +101,8 @@ export interface NotificationPreferences {
   notifyOnInput: boolean;
   notifyOnCompletion: boolean;
   notifyOnFailure: boolean;
+  // TAL-873: completion alerts for background turns; absent means off.
+  notifyOnBackground?: boolean;
 }
 
 export interface ActivityAlert {

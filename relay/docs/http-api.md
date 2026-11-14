@@ -150,6 +150,8 @@ Each state may carry `startedAt`, the run's start in epoch milliseconds (a non-n
 
 Each state may carry an optional `alertEligible` boolean. Omitting it means `true`. `alertEligible: false` applies only to the exact event carrying it, including a session's first publication: the relay still persists the transition and delivers the Live Activity state silently, but produces no ordinary notification and no `alert` or sound on a Live Activity update or end. Because APNs requires an alert on push-to-start, an ineligible transition on a device with no running Live Activity defers the start, and the deferral persists on that device while the suppressed state is visible and otherwise until an eligible phase transition, an activity registration, or idle work releases it. The stored value carries forward across same-phase updates of the same run (same `streamId`) until the next phase transition or a new run, so a later heartbeat or eligibility change in the same phase never alerts or starts an activity for the already-consumed transition.
 
+A state may carry `origin`: `user` for a turn the user started, or `background` for a turn a finished sub-agent or background process started; any other value rejects the state, and omitting it means `user`. A `completed` alert for a `background` state is sent only to a device whose `notifyOnBackground` preference is `true`; its approval, input, decision review, failure and agent notice alerts, and every Live Activity update, follow the usual rules.
+
 A state in `waiting_for_approval` may carry `approvalHeadId`: an opaque identity of the approval at the head of the session's queue, 1 to 64 characters from `A-Z`, `a-z`, `0-9`, `_` and `-` (Talaria Web sends a 22-character SHA-256 digest of the session and approval ids). It never carries the approval's content, stays the same across snapshot retries and restarts, and changes when a different approval becomes the head. Relay keeps the run's latest head across its other phases. When both the stored and the incoming state name a head, the head decides: a new head alerts once, even while the session stays in `waiting_for_approval`, and a head Relay already saw never alerts again, including after the row went stale. A head that becomes visible while `alertEligible: false` is consumed silently, and the next head starts from its own eligibility. A pending approval notification stays deliverable through retries while its head leads, and becomes stale once another approval leads or the session leaves the approval phase. Publishers that omit the field, or Relay rows stored before it, keep phase-only alerts.
 
 A state may carry `decisionReviewId` (`dr_` and 8 lowercase hex digits) with `decisionReviewTitle` (at most 200 characters): the session's newest Talaria Web decision review by creation, open or not, so closing a newer review never brings an older one back. Relay keeps the value the session last held, across runs. A review the stored state did not hold alerts once under `notifyOnInput`, whatever the phase did, with the title "Decision review ready", the review title as the body, `interruption-level: active` so it arrives as a standalone notification rather than on a Live Activity, and `deepLink: /decisions/<review id>`; the phase rule applies otherwise. A review that appears while `alertEligible: false` never alerts. A pending review notification stays deliverable through retries while the session still holds that review. Publishers that omit the fields keep phase-only alerts.
@@ -197,10 +199,13 @@ The publisher sends this once when a session first appears in an enrolled profil
     "notifyOnApproval": true,
     "notifyOnInput": true,
     "notifyOnCompletion": true,
-    "notifyOnFailure": true
+    "notifyOnFailure": true,
+    "notifyOnBackground": false
   }
 }
 ```
+
+`notifyOnBackground` is optional and defaults to `false`: completion alerts for turns a finished sub-agent or background process started (a state's `origin: "background"`) reach the device only while it is `true` and `notifyOnCompletion` is on.
 
 Send either token field as `null` to clear the stored token. The relay uses `pushToStartToken` to start the aggregate Live Activity when work begins while no aggregate activity is registered.
 

@@ -220,7 +220,8 @@ export function alertForState(
         ? { title: next.title, body: `Input needed on ${next.publisherLabel}`, interruptionLevel: "time-sensitive" }
         : null;
     case "completed":
-      return preferences.notifyOnCompletion
+      // TAL-873: a turn a finished sub-agent or background process started completes quietly unless the device opts in.
+      return preferences.notifyOnCompletion && (next.origin !== "background" || preferences.notifyOnBackground === true)
         ? { title: next.title, body: `Completed on ${next.publisherLabel}` }
         : null;
     case "failed":
