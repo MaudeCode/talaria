@@ -120,31 +120,4 @@ struct NewChatWidgetConfigurationIntent: WidgetConfigurationIntent {
 
     @Parameter(title: "Profile")
     var profile: ProfileEntity?
-
-    init() {}
-
-    init(profile: ProfileEntity?) {
-        self.profile = profile
-    }
-}
-
-/// What a New Chat widget shows and opens. A configured profile the App no longer lists shows a recovery prompt and
-/// opens a plain new chat, so a tap never pins a chat to a profile the server lacks. With no cached list (signed out,
-/// or before the App first loads profiles) the profile is kept and the App's own onboarding or errors take over.
-struct NewChatWidgetEntry: TimelineEntry {
-    let date: Date
-    /// The profile the new chat is pinned to; nil opens a plain new chat.
-    let profile: ProfileEntity?
-    /// The configured profile's name when it is missing from `available`.
-    let missingProfileName: String?
-
-    init(date: Date = .now, configuration: NewChatWidgetConfigurationIntent, available: [ProfileEntity]) {
-        self.date = date
-        let configured = configuration.profile
-        let isAvailable = configured.map { profile in
-            available.isEmpty || available.contains { $0.id == profile.id }
-        } ?? false
-        profile = isAvailable ? configured : nil
-        missingProfileName = isAvailable ? nil : configured?.name
-    }
 }

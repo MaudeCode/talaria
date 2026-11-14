@@ -1,13 +1,10 @@
 import Foundation
-import WidgetKit
 
 /// Persists the last-known profile list to the app-group container so an App Intents query
 /// (and #8's widgets, which run out-of-process) can populate their picker without a live,
 /// authenticated server call. The app refreshes this on every foreground profiles load.
 public struct ProfileEntityCache {
     public static var shared: ProfileEntityCache { ProfileEntityCache() }
-    /// The New Chat widget (TAL-50) reads this cache, so a change reloads its timelines.
-    public static let newChatWidgetKind = "NewChatWidget"
 
     private let defaults: UserDefaults?
     // `.v2`: bumped from v1 when the App Shortcut refresh nudge was added, so the first load
@@ -31,11 +28,10 @@ public struct ProfileEntityCache {
 
         if snapshot.isEmpty {
             defaults.removeObject(forKey: storageKey)
-        } else {
-            guard let data = try? JSONEncoder().encode(snapshot) else { return false }
-            defaults.set(data, forKey: storageKey)
+            return true
         }
-        WidgetCenter.shared.reloadTimelines(ofKind: Self.newChatWidgetKind)
+        guard let data = try? JSONEncoder().encode(snapshot) else { return false }
+        defaults.set(data, forKey: storageKey)
         return true
     }
 

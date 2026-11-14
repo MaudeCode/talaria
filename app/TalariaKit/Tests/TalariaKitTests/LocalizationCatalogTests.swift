@@ -152,6 +152,7 @@ final class LocalizationCatalogTests: XCTestCase {
         "On-device speech recognition is not available for the current locale.",
         "Open Talaria on a new chat and start voice dictation.",
         "Open Talaria on a new chat pinned to a specific profile.",
+        "Open Talaria on a new chat, optionally in a profile.",
         "Open media video %@",
         "Pause %@",
         "Pause audio",

@@ -57,7 +57,8 @@ extension ProfileEntityCache {
 /// empty list rather than throwing, which the system renders as an empty picker (#339).
 struct ProfileEntityQuery: EntityQuery {
     /// A profile the server no longer lists resolves to a stand-in named by its identifier, so a configured widget
-    /// keeps it and shows its recovery prompt (TAL-50) instead of silently dropping it.
+    /// keeps the user's choice instead of WidgetKit silently swapping it for the active profile (TAL-50). The server
+    /// then refuses the deleted profile on the first Send.
     func entities(for identifiers: [ProfileEntity.ID]) async throws -> [ProfileEntity] {
         Self.resolve(identifiers, in: await ProfileEntityProvider.currentEntities())
     }
