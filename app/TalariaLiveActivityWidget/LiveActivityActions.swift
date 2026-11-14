@@ -96,6 +96,7 @@ struct LiveActivityRowActions: Equatable {
 /// approves, which is never shortened: in a region too small for both, the bottom is cut first, so a visible Allow
 /// always has its whole text above it.
 struct LiveActivityActionButtons: View {
+    @Environment(\.liveActivityPalette) private var palette
     let actions: LiveActivityRowActions
     var error: String? = nil
 
@@ -107,7 +108,7 @@ struct LiveActivityActionButtons: View {
             if case let .approval(_, text?) = actions.kind {
                 Text(text)
                     .font(.caption.monospaced())
-                    .foregroundStyle(AgentRunLiveActivityTheme.primaryText)
+                    .foregroundStyle(palette.primaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 buttons { titled in
                     allowButton(titled: titled)
@@ -124,7 +125,7 @@ struct LiveActivityActionButtons: View {
             }
         }
         .font(.caption.weight(.semibold))
-        .tint(AgentRunStatusStyle.color(for: .waitingForApproval, isStale: false))
+        .tint(palette.actionTint)
     }
 
     /// Titles and symbols when they fit; otherwise, as in the Duo's vertical island, every button keeps its symbol.
@@ -167,12 +168,13 @@ struct LiveActivityActionButtons: View {
 
 /// Why an answer from the activity was refused, above the restored buttons.
 struct LiveActivityAnswerError: View {
+    @Environment(\.liveActivityPalette) private var palette
     let text: String
 
     var body: some View {
         Text(text)
             .font(.caption2.weight(.semibold))
-            .foregroundStyle(AgentRunStatusStyle.color(for: .failed, isStale: false))
+            .foregroundStyle(palette.color(for: .failed, isStale: false))
             .lineLimit(2)
     }
 }

@@ -267,6 +267,55 @@ final class LiveActivityVisualReferenceTests: XCTestCase {
         )
     }
 
+    /// TAL-2036: from iOS 26 the Lock Screen activity sits on system material, light or dark with the system appearance,
+    /// and Always-On mutes every status but work in progress. Both activities read the same palette.
+    func testSystemMaterialLockScreenReferences() throws {
+        let palette = { (dark: Bool, dimmed: Bool) in
+            LiveActivityPalette(
+                surface: .system, isDarkAppearance: dark, isFullColor: true, isLuminanceReduced: dimmed, increasedContrast: false
+            )
+        }
+        let variants: [(String, LiveActivityPalette, ColorScheme, Color)] = [
+            ("light", palette(false, false), .light, Color(white: 0.92)),
+            ("always-on", palette(true, true), .dark, .black),
+        ]
+        for (variant, palette, colorScheme, background) in variants {
+            for scenario in [AgentRunScenario.running, .waiting, .failed] {
+                try VisualReference.assertMatchesReference(
+                    AgentRunLockScreenView(state: scenario.state)
+                        .environment(\.agentRunFrozenClock, AgentRunScenario.frozenClock)
+                        .environment(\.liveActivityPalette, palette),
+                    named: "live-activity-lock-screen-\(scenario.rawValue)-\(variant)",
+                    size: CGSize(width: 360, height: 140),
+                    colorScheme: colorScheme,
+                    background: background
+                )
+            }
+        }
+        let row = { (session: String, phase: String, status: String) in
+            TalariaAggregateActivityAttributes.ContentState.Row(
+                publisherId: "https://fixture.example", publisherLabel: "fixture", sessionId: session,
+                title: "Session \(session)", phase: phase, status: status, updatedAt: 0, deepLink: ""
+            )
+        }
+        let state = TalariaAggregateActivityAttributes.ContentState(
+            schemaVersion: 1, activeCount: 3, title: "Talaria", subtitle: "3 active", updatedAt: 0,
+            rows: [row("A", "failed", "Failed"), row("B", "running", "Running"), row("C", "completed", "Done")]
+        )
+        try VisualReference.assertMatchesReference(
+            TalariaAggregateRows(
+                state: state, isStale: false,
+                limit: TalariaAggregateLiveActivityPresentation.lockScreenRowLimit, spacing: 6
+            )
+            .padding(14)
+            .environment(\.liveActivityPalette, palette(false, false)),
+            named: "live-activity-aggregate-rows-light",
+            size: CGSize(width: 360, height: 90),
+            colorScheme: .light,
+            background: Color(white: 0.92)
+        )
+    }
+
     /// The Lock Screen title, activity line and excerpt all scale, so an
     /// accessibility text size is where its layout gives out first.
     func testLockScreenAccessibilityTextSizeReference() throws {

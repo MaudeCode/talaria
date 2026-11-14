@@ -4,6 +4,7 @@ import WidgetKit
 import TalariaKit
 
 struct AgentRunExpandedIslandBottomView: View {
+    @Environment(\.liveActivityPalette) private var palette
     let state: AgentRunActivityAttributes.ContentState
     var publisherID: String? = nil
 
@@ -17,13 +18,13 @@ struct AgentRunExpandedIslandBottomView: View {
             } else if !state.responseExcerpt.isEmpty {
                 Text(state.responseExcerpt)
                     .font(.caption2)
-                    .foregroundStyle(AgentRunLiveActivityTheme.secondaryText)
+                    .foregroundStyle(palette.secondaryText)
                     .lineLimit(2)
                     .truncationMode(.tail)
             } else {
                 Text(state.currentActivity)
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(AgentRunLiveActivityTheme.secondaryText)
+                    .foregroundStyle(palette.secondaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }

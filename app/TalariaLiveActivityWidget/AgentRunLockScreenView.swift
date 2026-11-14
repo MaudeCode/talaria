@@ -4,6 +4,7 @@ import WidgetKit
 import TalariaKit
 
 struct AgentRunLockScreenView: View {
+    @Environment(\.liveActivityPalette) private var palette
     let state: AgentRunActivityAttributes.ContentState
     var publisherID: String? = nil
 
@@ -40,12 +41,12 @@ struct AgentRunLockScreenView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Talaria")
                     .font(.caption2.weight(.bold))
-                    .foregroundStyle(AgentRunLiveActivityTheme.secondaryText)
+                    .foregroundStyle(palette.secondaryText)
                     .textCase(.uppercase)
 
                 Text(state.sessionTitle)
                     .font(.headline.weight(.semibold))
-                    .foregroundStyle(AgentRunLiveActivityTheme.primaryText)
+                    .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .minimumScaleFactor(0.82)
@@ -62,7 +63,7 @@ struct AgentRunLockScreenView: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(state.lockScreenLead)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(AgentRunLiveActivityTheme.primaryText)
+                .foregroundStyle(palette.primaryText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -76,17 +77,17 @@ struct AgentRunLockScreenView: View {
         VStack(alignment: .leading, spacing: 0) {
             detailText
                 .font(.caption)
-                .foregroundStyle(AgentRunLiveActivityTheme.secondaryText)
+                .foregroundStyle(palette.secondaryText)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
-        .background(AgentRunStatusStyle.color(for: state.status, isStale: state.isStale).opacity(0.14), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(palette.color(for: state.status, isStale: state.isStale).opacity(0.14), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(AgentRunLiveActivityTheme.stroke, lineWidth: 1)
+                .stroke(palette.stroke, lineWidth: 1)
         )
     }
 
@@ -118,6 +119,7 @@ struct AgentRunLockScreenView: View {
 /// TAL-1422: the server's plan progress and running workers, "Plan 2/5 · 3 workers", read as a sentence. Shared by the
 /// Lock Screen, the expanded island and the aggregate rows.
 struct AgentRunWorkCountsLabel: View {
+    @Environment(\.liveActivityPalette) private var palette
     let counts: AgentRunWorkCounts
     let font: Font
 
@@ -125,7 +127,7 @@ struct AgentRunWorkCountsLabel: View {
         Text(counts.text)
             .font(font)
             .monospacedDigit()
-            .foregroundStyle(AgentRunLiveActivityTheme.secondaryText)
+            .foregroundStyle(palette.secondaryText)
             .lineLimit(1)
             .fixedSize()
             .accessibilityLabel(counts.accessibilityLabel)

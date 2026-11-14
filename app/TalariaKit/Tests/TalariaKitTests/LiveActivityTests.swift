@@ -1270,25 +1270,38 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(TalariaAggregateLiveActivityPresentation.colorHex(for: "running"), 0x0284C7)
     }
 
-    func testAggregatePresentationKeepsWorkingTintWhenLuminanceIsReduced() {
+    /// TAL-2036: one resolver picks ink and status tint from the surface, appearance, rendering and dimming.
+    func testLiveActivityPaletteResolvesInkAndTint() {
+        func palette(
+            _ surface: LiveActivityPalette.Surface, dark: Bool, fullColor: Bool = true, dimmed: Bool = false
+        ) -> LiveActivityPalette {
+            LiveActivityPalette(
+                surface: surface, isDarkAppearance: dark, isFullColor: fullColor,
+                isLuminanceReduced: dimmed, increasedContrast: false
+            )
+        }
+        let cases: [(String, LiveActivityPalette, LiveActivityPalette.Ink, LiveActivityPalette.Tint, LiveActivityPalette.Tint)] = [
+            ("dark material", palette(.system, dark: true), .white, .bright, .bright),
+            ("light material", palette(.system, dark: false), .black, .deep, .deep),
+            ("dark card in light appearance", palette(.darkCard, dark: false), .white, .bright, .bright),
+            ("Always-On", palette(.system, dark: false, dimmed: true), .black, .muted, .deep),
+            ("accented", palette(.system, dark: false, fullColor: false), .hierarchical, .accented, .accented),
+            ("accented Always-On", palette(.darkCard, dark: true, fullColor: false, dimmed: true), .hierarchical, .muted, .accented),
+        ]
+        for (name, palette, ink, waitingTint, workingTint) in cases {
+            XCTAssertEqual(palette.ink, ink, name)
+            XCTAssertEqual(palette.tint(isWorking: false), waitingTint, name)
+            XCTAssertEqual(palette.tint(isWorking: true), workingTint, name)
+        }
+        XCTAssertEqual(LiveActivityPalette.darkCard, palette(.darkCard, dark: true))
+        // TAL-109: only work in progress keeps its hue on the dimmed Lock Screen, in both activities.
+        XCTAssertTrue(TalariaAggregateLiveActivityPresentation.isWorking("running"))
+        XCTAssertTrue(TalariaAggregateLiveActivityPresentation.isWorking("starting"))
+        XCTAssertFalse(TalariaAggregateLiveActivityPresentation.isWorking("waiting_for_approval"))
         XCTAssertEqual(
-            TalariaAggregateLiveActivityPresentation.colorHex(
-                for: "running",
-                isLuminanceReduced: true
-            ),
-            0x0284C7
+            AgentRunActivityStatus.allCases.filter(\.isWorking),
+            AgentRunActivityStatus.allCases.filter { $0.compactTitle == nil }
         )
-        XCTAssertEqual(
-            TalariaAggregateLiveActivityPresentation.colorHex(
-                for: "starting",
-                isLuminanceReduced: true
-            ),
-            0x0284C7
-        )
-        XCTAssertNil(TalariaAggregateLiveActivityPresentation.colorHex(
-            for: "waiting_for_approval",
-            isLuminanceReduced: true
-        ))
     }
 
     func testTerminalAggregateOverridesStalePresentation() {
