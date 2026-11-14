@@ -58,14 +58,11 @@ final class LiveActivityApprovalResponder {
             answeredRuns[run.id] = answered
             await display.updateRun(run.id, answered)
         }
-        var answeredAggregates: [String: TalariaAggregateActivityAttributes.ContentState] = [:]
         for aggregate in aggregates {
             var answered = aggregate.state
             for index in answered.rows.indices where Self.isWaiting(answered.rows[index], sessionID, publisher) {
-                answered.rows[index].phase = "running"
-                answered.rows[index].status = String(localized: "Working")
+                answered.rows[index] = Self.answered(answered.rows[index])
             }
-            answeredAggregates[aggregate.id] = answered
             await display.updateAggregate(aggregate.id, answered)
         }
 
@@ -77,12 +74,20 @@ final class LiveActivityApprovalResponder {
             restored.errorSummary = error
             await display.updateRun(run.id, restored)
         }
-        for aggregate in aggregates
-        where [answeredAggregates[aggregate.id], aggregate.state]
-            .contains(display.aggregates().first(where: { $0.id == aggregate.id })?.state) {
-            var restored = aggregate.state
-            restored.subtitle = error
-            await display.updateAggregate(aggregate.id, restored)
+        // Only this session's rows roll back, so another row answered meanwhile keeps its own state.
+        for aggregate in aggregates {
+            guard var current = display.aggregates().first(where: { $0.id == aggregate.id })?.state else { continue }
+            var restoredRow = false
+            for index in current.rows.indices {
+                guard let original = aggregate.state.rows.first(where: {
+                    $0.id == current.rows[index].id && Self.isWaiting($0, sessionID, publisher)
+                }), [Self.answered(original), original].contains(current.rows[index]) else { continue }
+                current.rows[index] = original
+                restoredRow = true
+            }
+            guard restoredRow else { continue }
+            current.answerError = error
+            await display.updateAggregate(aggregate.id, current)
         }
     }
 
@@ -90,8 +95,17 @@ final class LiveActivityApprovalResponder {
     private func refusal(publisherID: String?, sessionID: String, choice: ApprovalChoice) async -> String? {
         guard !appLock.locksBackgroundWork() else { return String(localized: "Unlock Talaria in the app first.") }
         guard let client = makeClient(publisherID) else { return String(localized: "Add a server in Talaria first.") }
+        // The server answers a prompt by its id (an owner session refuses any other), so read the pending one first.
+        // None pending: the approval was already answered elsewhere.
+        let approvalID: String?
         do {
-            let response = try await client.respondApproval(sessionID: sessionID, choice: choice, approvalID: nil)
+            guard let pending = try await client.approvalPending(sessionID: sessionID).pending else { return nil }
+            approvalID = pending.approvalId
+        } catch {
+            return error.localizedDescription
+        }
+        do {
+            let response = try await client.respondApproval(sessionID: sessionID, choice: choice, approvalID: approvalID)
             // Same rule as the chat's approval card: only an explicit success or a cleared stale card is final.
             guard response.ok == true || response.staleCleared == true else {
                 return String(localized: "The server did not accept that response. The request is still waiting.")
@@ -101,13 +115,23 @@ final class LiveActivityApprovalResponder {
             return nil
         } catch {
             // A network loss, timeout or 5xx leaves the outcome unknown: keep the answer only if the server no longer
-            // has the approval pending. The answer is never sent again.
+            // has this approval pending. The answer is never sent again.
             if !APIError.isDefinitiveWriteFailure(error),
-               let pending = try? await client.approvalPending(sessionID: sessionID), pending.pending == nil {
+               let pending = try? await client.approvalPending(sessionID: sessionID),
+               pending.pending.map({ $0.approvalId != approvalID }) ?? true {
                 return nil
             }
             return error.localizedDescription
         }
+    }
+
+    private static func answered(
+        _ row: TalariaAggregateActivityAttributes.ContentState.Row
+    ) -> TalariaAggregateActivityAttributes.ContentState.Row {
+        var answered = row
+        answered.phase = "running"
+        answered.status = String(localized: "Working")
+        return answered
     }
 
     private static func isWaiting(

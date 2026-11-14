@@ -126,3 +126,15 @@ struct LiveActivityActionButtons: View {
         }
     }
 }
+
+/// Why an answer from the activity was refused, above the restored buttons.
+struct LiveActivityAnswerError: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(AgentRunStatusStyle.color(for: .failed, isStale: false))
+            .lineLimit(2)
+    }
+}

@@ -15,6 +15,10 @@ struct AgentRunExpandedIslandBottomView: View {
                 status: state.status, isFinal: state.isFinal,
                 sessionID: state.sessionID, publisherID: publisherID
             ) {
+                // The Lock Screen shows a refused answer's error in its activity line; the island has none.
+                if let errorSummary = state.errorSummary {
+                    LiveActivityAnswerError(text: errorSummary)
+                }
                 LiveActivityActionButtons(actions: actions)
             } else if !state.responseExcerpt.isEmpty {
                 Text(state.responseExcerpt)

@@ -22,6 +22,9 @@ struct TalariaAggregateRows: View {
             return (row: row, actions: actions)
         }
         VStack(alignment: .leading, spacing: spacing) {
+            if let answerError = state.answerError {
+                LiveActivityAnswerError(text: answerError)
+            }
             ForEach(rows, id: \.row.id) { item in
                 AggregateRowLink(row: item.row, isStale: isStale, actions: item.actions)
             }

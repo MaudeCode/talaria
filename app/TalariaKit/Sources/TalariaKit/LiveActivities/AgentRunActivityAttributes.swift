@@ -106,6 +106,9 @@ public struct TalariaAggregateActivityAttributes: Codable, Sendable {
         public var subtitle: String
         public var updatedAt: Double
         public var rows: [Row]
+        /// Why an answer from the activity was refused (TAL-1463). Device-local: the relay never sends it, so its next
+        /// snapshot clears it.
+        public var answerError: String? = nil
 
         public init(schemaVersion: Int, activeCount: Int, title: String, subtitle: String, updatedAt: Double, rows: [Row]) {
             self.schemaVersion = schemaVersion
