@@ -37,6 +37,16 @@ final class AppIntentNewChatTests: XCTestCase {
         XCTAssertEqual(router.pendingDeepLink, TalariaDeepLink.newChatVoiceURL)
     }
 
+    /// TAL-1476: each Control Center control runs the intent that opens its own composer.
+    @MainActor
+    func testNewChatControlsRequestTheirDeepLinks() async throws {
+        let router = AppIntentRouter.shared
+        _ = try await NewChatControl.action.perform()
+        XCTAssertEqual(router.pendingDeepLink, TalariaDeepLink.newChatURL)
+        _ = try await NewChatVoiceControl.action.perform()
+        XCTAssertEqual(router.pendingDeepLink, TalariaDeepLink.newChatVoiceURL)
+    }
+
     func testVoiceIntentOpensAppWhenRun() {
         XCTAssertTrue(NewChatVoiceIntent.openAppWhenRun)
     }

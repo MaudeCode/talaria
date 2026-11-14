@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Add New Chat and New Chat with Voice controls to Control Center, the Lock Screen, or the Action button.",
+      "highlight": false,
+      "components": [
+        "app"
+      ],
+      "announcement": {
+        "title": "New Chat in Control Center",
+        "description": "Start a chat or a voice chat from Control Center, the Lock Screen, or the Action button.",
+        "icon": "chat"
+      }
+    }
+  ]
+}
