@@ -228,6 +228,11 @@ export class GatewaySessions {
     this.deps.channels.emit(target.sid, 'session-updated', { session_id: target.sid, source: 'native_owner' }, target.profile)
   }
 
+  /** TAL-1422: the plan an owner run's Live Activity shows, from the same resolved todo state the chat shows. */
+  private ownerPlan(target: Target, snapshot: GatewaySnapshot): PlanProgress {
+    return (this.nativeTodo(target, snapshot) ?? normalizeTodoSnapshot({ todos: [] }))!.plan_progress as PlanProgress
+  }
+
   private nativeTodo(target: Target, snapshot: GatewaySnapshot): Row | null {
     const observed = this.observations.get(target.key)?.snapshot
     const current = observed && (newerTodo(observed, snapshot) || observed.authority_epoch > snapshot.authority_epoch
@@ -1161,7 +1166,8 @@ export class GatewaySessions {
     watch.controller.signal.addEventListener('abort', () => { observation.listeners.delete(listener); release() }, { once: true })
     const registry = this.deps.registry
     const channel = registry.create(watch.stream, target.sid)
-    registry.registerActiveRun({ stream_id: watch.stream, session_id: target.sid, phase: 'running', started_at: this.deps.now(), workspace: str(base.workspace), model: str(base.model) || null, provider: null, ephemeral: false, origin: 'user' })
+    // TAL-1422: a run attached mid-plan shows its plan before the owner writes it again.
+    registry.registerActiveRun({ stream_id: watch.stream, session_id: target.sid, phase: 'running', started_at: this.deps.now(), workspace: str(base.workspace), model: str(base.model) || null, provider: null, ephemeral: false, origin: 'user', plan: this.ownerPlan(target, watch.snapshot) })
     // TAL-1564: the sidebar row turns streaming now, including for an idle observation whose owner just started a run.
     this.deps.events.publish('owner_changed', { profile: target.profile, sessionId: target.sid })
     let chain = Promise.resolve()
@@ -1303,6 +1309,8 @@ export class GatewaySessions {
               if (replaying) liveRunning = false
               if (!result.snapshot) return
               if (result.replay_gap || !sameExecution(result.snapshot, watch.snapshot)) await resetProjection()
+              // TAL-1422: an owner snapshot, a replay gap's included, replaces the plan the run's Live Activity shows.
+              registry.notePlan(watch.stream, this.ownerPlan(target, result.snapshot))
               await put('session_snapshot', { session: await this.view(base, result, watch.stream, target), replay_gap: result.replay_gap === true })
               await prompts(result.snapshot)
               liveRunning ||= !replaying && result.snapshot.running

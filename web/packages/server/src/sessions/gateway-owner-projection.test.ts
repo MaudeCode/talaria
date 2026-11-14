@@ -61,6 +61,18 @@ describe('canonical owner attachment', () => {
       } finally { watch.finish(); await watch.read }
     })
 
+    it('takes the owner plan from the snapshot it attaches to and from each replacement snapshot', async () => {
+      const watch = await observeOwner(withTodo(raw, { running: true, pending: [admission()] }))
+      try {
+        const plan = () => [...s.deps.registry.activeRuns.values()].find((run) => run.session_id === sid)?.plan
+        // Attached mid-plan: the plan shows before the owner writes it again.
+        expect(plan()).toEqual({ completed: 1, total: 2 })
+        // A replay gap's snapshot carries the owner's current list.
+        watch.snapshot({ todo_state: { todos: [{ content: 'One', status: 'completed' }, { content: 'Two' }, { content: 'Three' }], revision: 5 }, last_sequence: 9 }, true)
+        await vi.waitFor(() => { expect(plan()).toEqual({ completed: 1, total: 3 }) })
+      } finally { watch.finish(); await watch.read }
+    })
+
     it('keeps snapshot precedence across replay and replaces todos on a new execution or owner epoch', async () => {
       const watch = await observeOwner(withTodo(raw, { running: true, pending: [admission()], last_sequence: 8 }))
       watch.event('todo.updated', { todos: [{ content: 'Old replay' }], revision: 2 }, 1, { seq: 7 })
