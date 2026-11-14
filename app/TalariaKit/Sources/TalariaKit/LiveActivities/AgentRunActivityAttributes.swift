@@ -21,6 +21,17 @@ public struct AgentRunActivityAttributes: Codable, Sendable {
         /// activity offers Deny and Open; Allow needs the whole text on screen.
         public var approvalText: String?
 
+        /// The lock screen's lead line. A stale activity still waiting on the user keeps its ask.
+        public var lockScreenLead: String {
+            if isStale, status != .waitingForApproval, status != .waitingForClarification {
+                return String(localized: "Latest status shown")
+            }
+            if let errorSummary, !errorSummary.isEmpty {
+                return errorSummary
+            }
+            return currentActivity
+        }
+
         public func hasSameContent(as other: Self) -> Bool {
             var comparison = other
             comparison.updatedAt = updatedAt
