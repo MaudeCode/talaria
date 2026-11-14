@@ -121,19 +121,25 @@ export interface RequestHostHeaders {
 
 /**
  * The rejected hostname when the request names a host this server does not answer to, else null. DNS rebinding needs a
- * DNS name, so IP literals always pass. A forwarded host replaces `Host` only from a proxy listed in
- * HERMES_WEBUI_TRUSTED_PROXY_CIDRS: with implicit loopback trust a rebound page on this machine could name `localhost`
- * itself. A request without `Host` (HTTP/1.0) passes only without browser provenance; it is rejected as `''`.
+ * DNS name, so IP literals always pass. The raw `Host` is always checked: a rebound page reaching the listener directly
+ * shares a same-host proxy's peer address and can send any forwarded header. From a proxy listed in
+ * HERMES_WEBUI_TRUSTED_PROXY_CIDRS with HERMES_WEBUI_TRUST_FORWARDED_HOST on, the forwarded host the CSRF check trusts
+ * must pass too. A request without `Host` (HTTP/1.0) passes only without browser provenance; it is rejected as `''`.
  */
 export function unexpectedRequestHost(h: RequestHostHeaders, peer: string, env: Env, bindHost: string): string | null {
-  let host = h.host ?? ''
+  const raw = (h.host ?? '').trim()
+  if (!raw && h.browser) return ''
+  const hosts = raw ? [raw] : []
   if (truthy(env.HERMES_WEBUI_TRUST_FORWARDED_HOST) && rawPeerIsTrustedProxy(peer, env, { implicitLoopback: false })) {
     const forwarded = (h.forwardedHost ?? '').split(',')[0]?.trim() || (h.realHost ?? '').trim()
-    if (forwarded) host = forwarded
+    if (forwarded) hosts.push(forwarded)
   }
-  if (!host.trim()) return h.browser ? '' : null
-  const name = hostName(host)
-  return isIP(name) || allowedHostNames(env, bindHost).has(name) ? null : name
+  const allowed = allowedHostNames(env, bindHost)
+  for (const host of hosts) {
+    const name = hostName(host)
+    if (!isIP(name) && !allowed.has(name)) return name
+  }
+  return null
 }
 
 export function isBrowserUnsafeRequest(h: ProvenanceHeaders): boolean {

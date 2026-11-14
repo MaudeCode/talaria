@@ -65,19 +65,20 @@ describe('Host allowlist', () => {
     expect(await get(s, 'other.lan')).toBe(421)
   })
 
-  it('honours X-Forwarded-Host only from a listed proxy with TRUST_FORWARDED_HOST on', async () => {
+  it('checks X-Forwarded-Host as well as Host only from a listed proxy with TRUST_FORWARDED_HOST on', async () => {
     const proxied = ['X-Forwarded-Host: talaria.lan']
-    let s = await boot({ HERMES_WEBUI_ALLOWED_HOSTS: 'talaria.lan', HERMES_WEBUI_TRUST_FORWARDED_HOST: '1', HERMES_WEBUI_TRUSTED_PROXY_CIDRS: '127.0.0.1/32' })
+    let s = await boot({ HERMES_WEBUI_ALLOWED_HOSTS: 'talaria.lan,talaria-upstream', HERMES_WEBUI_TRUST_FORWARDED_HOST: '1', HERMES_WEBUI_TRUSTED_PROXY_CIDRS: '127.0.0.1/32' })
     expect(await get(s, 'talaria-upstream:8787', proxied)).not.toBe(421)
     expect(await get(s, 'talaria.lan', ['X-Forwarded-Host: rebind.attacker.example'])).toBe(421)
-    await s.close()
-    // Loopback is not an implicit proxy here: a rebound page on this host could otherwise name `localhost` itself.
-    s = await boot({ HERMES_WEBUI_ALLOWED_HOSTS: 'talaria.lan', HERMES_WEBUI_TRUST_FORWARDED_HOST: '1' })
+    // A rebound page shares a same-host proxy's peer address, so its forwarded header never vouches for its own Host.
     expect(await get(s, 'rebind.attacker.example', proxied)).toBe(421)
+    await s.close()
+    // Without a listed proxy or the opt-in the forwarded header is ignored and the real Host decides.
+    s = await boot({ HERMES_WEBUI_ALLOWED_HOSTS: 'talaria.lan', HERMES_WEBUI_TRUST_FORWARDED_HOST: '1' })
     expect(await get(s, 'talaria.lan', ['X-Forwarded-Host: rebind.attacker.example'])).not.toBe(421)
     await s.close()
     s = await boot({ HERMES_WEBUI_ALLOWED_HOSTS: 'talaria.lan', HERMES_WEBUI_TRUSTED_PROXY_CIDRS: '127.0.0.1/32' })
-    expect(await get(s, 'rebind.attacker.example', proxied)).toBe(421)
+    expect(await get(s, 'talaria.lan', ['X-Forwarded-Host: rebind.attacker.example'])).not.toBe(421)
   })
 
   it('serves a request without Host only when it carries no browser provenance', async () => {

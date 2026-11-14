@@ -19,8 +19,8 @@ DNS rebinding.
 
 **Fix.** Add the hostname from the log to `HERMES_WEBUI_ALLOWED_HOSTS`
 (comma-separated, port optional) and restart WebUI. If the proxy rewrites `Host`
-to an internal name, either allow that name too or follow the `X-Forwarded-Host`
-setup in [remote-access.md](remote-access.md#allowed-hostnames).
+to an internal name, allow that name too; see
+[remote-access.md](remote-access.md#allowed-hostnames).
 
 ---
 

@@ -109,12 +109,13 @@ server through DNS rebinding, where the attacker's own hostname resolves to
 this machine. Matching ignores case and the port.
 
 Behind a proxy, list the public hostname: `HERMES_WEBUI_ALLOWED_HOSTS=webui.example.com`.
-A proxy that rewrites `Host` to an internal name such as a Docker service can
-pass the public name in `X-Forwarded-Host` instead. That header counts only
-with `HERMES_WEBUI_TRUST_FORWARDED_HOST=1` and when the proxy's address is
-listed in `HERMES_WEBUI_TRUSTED_PROXY_CIDRS`; loopback is not trusted
-implicitly here, so a same-host proxy lists `127.0.0.1/32`. The forwarded name
-must still be allowed.
+The `Host` header WebUI receives is always checked, so a proxy that rewrites it
+to an internal name such as a Docker service needs that name listed too
+(`HERMES_WEBUI_ALLOWED_HOSTS=webui.example.com,talaria`). With
+`HERMES_WEBUI_TRUST_FORWARDED_HOST=1` and the proxy's address listed in
+`HERMES_WEBUI_TRUSTED_PROXY_CIDRS` (loopback is not trusted implicitly here, so
+a same-host proxy lists `127.0.0.1/32`), the `X-Forwarded-Host` name must be
+allowed as well.
 
 ### Client address
 
