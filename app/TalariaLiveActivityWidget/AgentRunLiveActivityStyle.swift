@@ -7,7 +7,6 @@ enum AgentRunLiveActivityTheme {
     static let secondaryText = Color.white.opacity(0.68)
     static let stroke = Color.white.opacity(0.13)
     static let pillBackground = Color.white.opacity(0.08)
-    static let railBackground = Color.white.opacity(0.14)
     static let liveDot = Color(red: 0.35, green: 0.95, blue: 0.7)
 }
 

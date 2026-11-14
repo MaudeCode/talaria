@@ -342,6 +342,19 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(state.startedAt.timeIntervalSince1970, 1_800_000_000)
     }
 
+    func testCompactIslandShowsAWordOnlyForAsksAndOutcomes() {
+        let expected: [AgentRunActivityStatus: String?] = [
+            .starting: nil, .thinking: nil, .usingTool: nil, .searchingFiles: nil, .readingFiles: nil,
+            .runningCommand: nil, .responding: nil,
+            .waitingForApproval: "Approve", .waitingForClarification: "Input",
+            .complete: "Done", .failed: "Failed", .cancelled: "Stopped",
+        ]
+        XCTAssertEqual(Set(expected.keys), Set(AgentRunActivityStatus.allCases))
+        for status in AgentRunActivityStatus.allCases {
+            XCTAssertEqual(status.compactTitle, expected[status] ?? nil, "\(status)")
+        }
+    }
+
     func testTerminalAggregateOutcomeDoesNotShowZeroOrWaiting() {
         let state = TalariaAggregateActivityAttributes.ContentState(
             schemaVersion: 1, activeCount: 0, title: "Talaria", subtitle: "Agent work completed", updatedAt: 100,
