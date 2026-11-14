@@ -18,6 +18,9 @@ jobs:
         variant: [single, two-container, three-container, auto-uid, explicit-uid, agent-upgrade]
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
       - uses: ./.github/actions/docker-plugins
       # BuildKit's GitHub Actions cache reads the runtime token and cache URL, which only action steps receive.
       - name: Expose the Actions cache service to Buildx
@@ -32,6 +35,8 @@ jobs:
           VARIANT: ${{ matrix.variant }}
         run: |
           set -euo pipefail
+          # The entrypoint's Agent install runs under real uv against a spoofed PyPI (TAL-2195).
+          python3 -m pip install --disable-pip-version-check "uv==0.11.3"
           python3 -m unittest discover -s web/scripts/lib -p 'test_*.py'
           # Every variant builds the same image, so they share one layer cache scope; the cache needs a container builder.
           docker buildx create --driver docker-container --use --bootstrap >/dev/null

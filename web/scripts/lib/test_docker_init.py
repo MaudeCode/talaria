@@ -10,9 +10,13 @@ import os
 from pathlib import Path
 import re
 import shutil
+import socketserver
+import ssl
 import subprocess
+import sys
 import tempfile
 import textwrap
+import threading
 import unittest
 
 SCRIPT = Path(__file__).resolve().parents[2] / "docker_init.bash"
@@ -286,6 +290,99 @@ class IdentityChange(HomeFixture):
         result, _ = self.align(old_uid=str(os.getuid()), STUB_TARGET=target,
                                STUB_CHOWN="chown: changing ownership of '{}': Read-only file system")
         self.assertFails(result, "Failed to")
+
+
+class SpoofedPyPI(socketserver.ThreadingTCPServer):
+    """An HTTPS proxy that answers every CONNECT as pypi.org with a certificate from a test-owned CA."""
+
+    daemon_threads = True
+
+    def __init__(self, certs):
+        self.tls = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        self.tls.load_cert_chain(certs / "leaf.pem", certs / "leaf.key")
+        self.tunnels, self.requests = [], []
+        super().__init__(("127.0.0.1", 0), SpoofedPyPIHandler)
+
+
+class SpoofedPyPIHandler(socketserver.StreamRequestHandler):
+    def handle(self):
+        self.server.tunnels.append(self.rfile.readline().decode().split()[1])
+        while self.rfile.readline() not in (b"\r\n", b"\n", b""):
+            pass
+        self.wfile.write(b"HTTP/1.1 200 Connection established\r\n\r\n")
+        try:
+            with self.server.tls.wrap_socket(self.connection, server_side=True) as tunnel:
+                self.server.requests.append(tunnel.makefile("rb").readline().decode().strip())
+                tunnel.sendall(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+        except (ssl.SSLError, OSError):
+            pass  # The client refused the certificate: nothing was requested.
+
+
+class PackageInstall(unittest.TestCase):
+    """The shipped Agent dependency install, run through a spoofed PyPI on the network path."""
+
+    def setUp(self):
+        self.assertIsNotNone(shutil.which("uv"), "uv runs the shipped install; CI installs it")
+        self.assertIsNotNone(shutil.which("openssl"), "openssl issues the spoofed certificate")
+        temporary = tempfile.TemporaryDirectory(prefix="talaria-docker-init-tls-")
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        self.root, self.certs, self.source = root, root / "certs", root / "agent"
+        self.certs.mkdir()
+        self.source.mkdir()
+        self.issue_certificates()
+        (self.source / "pyproject.toml").write_text(textwrap.dedent("""\
+            [project]
+            name = "agent-probe"
+            version = "0"
+            [project.optional-dependencies]
+            all = ["talaria-tls-probe"]
+            [build-system]
+            requires = ["hatchling"]
+            build-backend = "hatchling.build"
+            """))
+        self.env = {"PATH": os.environ["PATH"], "HOME": str(root), "UV_CACHE_DIR": str(root / "cache"),
+                    "UV_NO_CONFIG": "1", "UV_PYTHON_DOWNLOADS": "never", "UV_HTTP_TIMEOUT": "10",
+                    "UV_HTTP_RETRIES": "0", "LC_ALL": "C"}
+        subprocess.run(["uv", "venv", str(self.source / "venv"), "--python", sys.executable],
+                       env=self.env, check=True, capture_output=True)
+        self.proxy = SpoofedPyPI(self.certs)
+        threading.Thread(target=self.proxy.serve_forever, daemon=True).start()
+        self.addCleanup(self.proxy.server_close)
+        self.addCleanup(self.proxy.shutdown)
+
+    def issue_certificates(self):
+        def openssl(*args):
+            subprocess.run(["openssl", *args], cwd=self.certs, check=True, capture_output=True)
+        openssl("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "2", "-subj", "/CN=Talaria test CA",
+                "-keyout", "ca.key", "-out", "ca.pem")
+        openssl("req", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=pypi.org", "-keyout", "leaf.key", "-out", "leaf.csr")
+        (self.certs / "leaf.ext").write_text("basicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\n"
+                                             "extendedKeyUsage=serverAuth\nsubjectAltName=DNS:pypi.org\n")
+        openssl("x509", "-req", "-in", "leaf.csr", "-CA", "ca.pem", "-CAkey", "ca.key", "-CAcreateserial",
+                "-days", "2", "-extfile", "leaf.ext", "-out", "leaf.pem")
+
+    def install(self, **env):
+        """Run the entrypoint's own install command, fatal branch included, with PyPI traffic sent to the spoof."""
+        command = re.search(r"^\s*uv pip install .*\\\n\s*\|\| error_exit .*$", SCRIPT.read_text(), re.M)
+        self.assertIsNotNone(command, "docker_init.bash no longer installs the Agent's dependencies with uv")
+        script = f"{entrypoint_code()}\n_stage_src={self.source}\n{command.group(0).strip()}\necho INSTALL-CONTINUES\n"
+        proxy = f"http://127.0.0.1:{self.proxy.server_address[1]}"
+        return subprocess.run(["bash", "-c", script], env={**self.env, "HTTPS_PROXY": proxy, "https_proxy": proxy, **env},
+                              text=True, capture_output=True, timeout=120)
+
+    def test_spoofed_pypi_certificate_stops_the_install(self):
+        result = self.install()
+        output = result.stdout + result.stderr
+        self.assertIn("pypi.org:443", self.proxy.tunnels, output)
+        self.assertEqual(self.proxy.requests, [], output)
+        self.assertIn("Failed to install hermes-agent's requirements", output)
+        self.assertNotIn("INSTALL-CONTINUES", result.stdout)
+
+    def test_proxy_ca_in_ssl_cert_file_is_trusted(self):
+        result = self.install(SSL_CERT_FILE=str(self.certs / "ca.pem"))
+        self.assertTrue(any(request.startswith("GET /simple/") for request in self.proxy.requests),
+                        result.stdout + result.stderr)
 
 
 if __name__ == "__main__":
