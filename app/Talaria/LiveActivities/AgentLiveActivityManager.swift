@@ -258,16 +258,17 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
         guard currentState?.isFinal == false else { return }
 
         // A relay-backed activity stays live: the relay's pushes own freshness
-        // once it confirms the activity (TAL-836).
-        switch relayRegistration.handoff {
-        case .confirmed:
-            pendingUpdateTask?.cancel()
-            pendingUpdateTask = nil
-            _ = nextUpdateGeneration()
-        case .pending(let activityID):
-            deferStaleUntilRelayHandoff(activityID: activityID)
-        case nil:
+        // once it confirms the activity, so queued foreground writes must not
+        // land after them (TAL-836).
+        guard let handoff = relayRegistration.handoff else {
             writeStaleState()
+            return
+        }
+        pendingUpdateTask?.cancel()
+        pendingUpdateTask = nil
+        _ = nextUpdateGeneration()
+        if case .pending(let activityID) = handoff {
+            deferStaleUntilRelayHandoff(activityID: activityID)
         }
     }
 

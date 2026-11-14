@@ -253,12 +253,12 @@ final class LiveActivityTests: XCTestCase {
     // TAL-836: a relay-backed activity stays live while the relay owns or is
     // registering for it; markStale writes the stale state only without a relay.
     private func relayHandoffFixture(
-        limit: Duration = .seconds(10)
+        limit: Duration = .seconds(10), minimumUpdateInterval: TimeInterval = 0
     ) -> (AgentLiveActivityManager, PerSessionRelayActivityRegistration, () -> [AgentRunActivityAttributes.ContentState]) {
         let registration = PerSessionRelayActivityRegistration()
         var updates: [AgentRunActivityAttributes.ContentState] = []
         let manager = AgentLiveActivityManager(
-            minimumUpdateInterval: 0, relayRegistration: registration, relayHandoffLimit: limit,
+            minimumUpdateInterval: minimumUpdateInterval, relayRegistration: registration, relayHandoffLimit: limit,
             updateActivity: { updates.append($0) }
         )
         manager.start(
@@ -282,15 +282,17 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertNil(manager.activeConnectedStreamID)
     }
 
-    func testPendingRelayHandoffThatSucceedsSendsNoStaleState() async {
-        let (manager, registration, updates) = relayHandoffFixture()
+    func testPendingRelayHandoffThatSucceedsSendsNoStaleState() async throws {
+        let (manager, registration, updates) = relayHandoffFixture(minimumUpdateInterval: 0.1)
+        manager.update(.token("Queued behind the throttle"))
         manager.markStale()
         await yieldToPendingTasks()
         XCTAssertFalse(updates().contains(where: \.isStale), "A pending handoff keeps the last state")
         XCTAssertNil(manager.activeConnectedStreamID)
         registration.settleHandoff(activityID: "relay-activity", confirmed: true)
+        try await Task.sleep(for: .milliseconds(500))
         await yieldToPendingTasks()
-        XCTAssertFalse(updates().contains(where: \.isStale))
+        XCTAssertEqual(updates().count, 1, "A queued foreground write must not overwrite the relay's content")
     }
 
     func testPendingRelayHandoffThatFailsSendsOneStaleState() async {
