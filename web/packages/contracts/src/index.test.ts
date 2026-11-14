@@ -406,6 +406,11 @@ it('parses both shared automation blueprint route fixtures', () => {
   expect(CronBlueprintFillSchema.parse(fixture.fill).draft.schedule).toBe('30 8 * * *')
 })
 
+it('parses the shared activity summary fixture as the route answers it (TAL-2232)', () => {
+  const fixture = shared('fixtures/activity-summary.json')
+  expect(sessionsContract.activity.summary['~orpc'].outputSchema!.parse(fixture)).toEqual(fixture)
+})
+
 it('parses the shared diagnostic execution mode fixtures the App renders (TAL-1045)', () => {
   const fixture = shared('fixtures/execution-modes.json') as Record<'available' | 'unavailable' | 'create_request' | 'created' | 'existing' | 'refusal', unknown>
   expect(ExecutionModesSchema.parse(fixture.available).modes.map((m) => [m.mode, m.available])).toEqual([['normal', true], ['ignore_config', true], ['safe', true]])

@@ -23,7 +23,7 @@ import type { Session } from './session.js'
 import type { SessionPrefixIndex } from './prefix-index.js'
 import type { SessionStore } from './store.js'
 import { str } from '../util.js'
-import { ActivityStates, hasSessionData, TERMINAL_PHASES, type AgentNotice } from './notify/activity.js'
+import { ActivityStates, activityRowFields, hasSessionData, TERMINAL_PHASES, type AgentNotice } from './notify/activity.js'
 import type { NotificationChannel } from './notify/channel.js'
 import { completionNotification } from './notify/alerts.js'
 
@@ -440,7 +440,7 @@ export class RelayPublisher {
   /** Python `build_states`: the shared activity rows, numbered with this relay's revisions. */
   async buildStates(profile: string, change?: number): Promise<RelayState[]> {
     const states: RelayState[] = (await this.activity.states(profile, () => { this.changed() }, change)).filter((row) => this.publishesOwner(row.ownerPersonId)).map((row) => {
-      const state: RelayState = { sessionId: row.sessionId, streamId: row.streamId, eventId: 'snapshot:0:' + row.sessionId, revision: 0, ...(row.activityPhase ? { activityPhase: row.activityPhase } : {}), title: row.title, phase: row.phase, startedAt: row.startedAt, updatedAt: row.updatedAt, ...(row.activityAt === undefined ? {} : { toolCount: row.toolCount, activityAt: row.activityAt }), ...(row.workerCount === undefined ? {} : { planCompleted: row.planCompleted, planTotal: row.planTotal, workerCount: row.workerCount }), deepLink: row.deepLink, origin: row.origin, ...(row.approvalHeadId ? { approvalHeadId: row.approvalHeadId } : {}), ...(row.decisionReviewId ? { decisionReviewId: row.decisionReviewId, decisionReviewTitle: row.decisionReviewTitle ?? '' } : {}), ...(row.agentNotices ? { agentNotices: row.agentNotices } : {}) }
+      const state: RelayState = { eventId: 'snapshot:0:' + row.sessionId, revision: 0, ...activityRowFields(row) }
       if (this.alertEligibilitySupported && !row.alertEligible) state.alertEligible = false
       return state
     })

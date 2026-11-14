@@ -4,7 +4,7 @@
  * own transport fields (the Relay adds revisions and event IDs) on top of these rows.
  */
 import { randomBytes } from 'node:crypto'
-import type { AgentNotifyLevel, DecisionReviewRef, SessionActivityPhase } from '@maudecode/talaria-web-contracts'
+import type { ActivitySummary, AgentNotifyLevel, DecisionReviewRef, SessionActivityPhase } from '@maudecode/talaria-web-contracts'
 import { settledActivityPhase, type BackgroundActivity } from '../background-tasks.js'
 import { approvalHeadId, type PendingPrompts } from '../pending.js'
 import type { SessionPrefixIndex } from '../prefix-index.js'
@@ -14,6 +14,7 @@ import type { SessionStore } from '../store.js'
 import type { ActiveRun, StreamRegistry } from '../streams.js'
 import type { TurnOrigin } from '../background-updates.js'
 import { str } from '../../util.js'
+import { redactString } from '../../redact.js'
 
 const TERMINAL_RETENTION_S = 15 * 60
 // ponytail: bounds the terminal ledger when no channel ever reads it; the oldest finished run goes first.
@@ -66,6 +67,8 @@ export interface ActivityState {
   origin: TurnOrigin
   /** The approval at the head of the queue while the session waits for one, as an opaque digest (TAL-59). */
   approvalHeadId?: string
+  /** TAL-2232: that approval's own id, which only an authenticated Web client receives; the Relay gets the digest. */
+  approvalId?: string
   /** TAL-1966: the session's newest decision review by creation and its title; its alert opens the review. */
   decisionReviewId?: string
   decisionReviewTitle?: string
@@ -73,6 +76,32 @@ export interface ActivityState {
   agentNotices?: AgentNotice[]
   /** TAL-48: the session's person under person isolation; channels never send it, they filter by it. */
   ownerPersonId: string | null
+}
+
+/** The fields of a row every channel shows. The Relay adds its transport fields; the activity summary renames a few. */
+export function activityRowFields(row: ActivityState) {
+  return { sessionId: row.sessionId, streamId: row.streamId, ...(row.activityPhase ? { activityPhase: row.activityPhase } : {}), title: row.title, phase: row.phase, startedAt: row.startedAt, updatedAt: row.updatedAt, ...(row.activityAt === undefined ? {} : { toolCount: row.toolCount, activityAt: row.activityAt }), ...(row.workerCount === undefined ? {} : { planCompleted: row.planCompleted, planTotal: row.planTotal, workerCount: row.workerCount }), deepLink: row.deepLink, origin: row.origin, ...(row.approvalHeadId ? { approvalHeadId: row.approvalHeadId } : {}), ...(row.decisionReviewId ? { decisionReviewId: row.decisionReviewId, decisionReviewTitle: row.decisionReviewTitle ?? '' } : {}), ...(row.agentNotices ? { agentNotices: row.agentNotices } : {}) }
+}
+
+/** TAL-2232: the summary's phases by display rank: waiting for an approval, then for input, then running or starting. */
+const SUMMARY_RANK = new Map<string, number>([['waiting_for_approval', 0], ['waiting_for_input', 1], ['running', 2], ['starting', 2]])
+
+/**
+ * TAL-2232: `GET /api/activity/summary`: the live rows `visible` lets the requester see, waiting first, then newest start,
+ * with titles masked under the `api_redact_enabled` policy (`redact`) as the session list masks them.
+ */
+export function activitySummary(rows: readonly ActivityState[], visible: (owner: string | null) => boolean, redact: boolean): ActivitySummary {
+  const shown = rows.filter((row) => SUMMARY_RANK.has(row.phase) && visible(row.ownerPersonId))
+    .sort((a, b) => SUMMARY_RANK.get(a.phase)! - SUMMARY_RANK.get(b.phase)! || b.startedAt - a.startedAt)
+  const waiting = shown.filter((row) => SUMMARY_RANK.get(row.phase)! < 2).length
+  return {
+    running_count: shown.length - waiting,
+    waiting_count: waiting,
+    rows: shown.map((row) => {
+      const fields = activityRowFields(row)
+      return { session_id: fields.sessionId, title: redactString(fields.title, redact), phase: fields.phase as ActivitySummary['rows'][number]['phase'], started_at: fields.startedAt / 1000, updated_at: fields.updatedAt / 1000, deep_link: fields.deepLink, ...(row.approvalId ? { approval_id: row.approvalId } : {}) }
+    }),
+  }
 }
 
 /** `seen_phase`: TAL-874: the row phase the run last showed and when it changed, kept across rebuilds of the rows. */
@@ -243,7 +272,7 @@ export class ActivityStates {
       const work: Pick<ActivityState, 'planCompleted' | 'planTotal' | 'workerCount'> = snapshot ? { planCompleted: plan?.completed ?? 0, planTotal: plan?.total ?? 0, workerCount: snapshot.worker_count } : {}
       const review = this.deps.decisionReview?.(sid)
       const notices = this.notices.get(sid)?.shown.map((shown) => shown.notice) ?? []
-      states.push({ sessionId: sid, streamId: run.stream_id || null, ...(snapshot ? { activityPhase: snapshot.activity_phase } : {}), title: (session.title || 'Untitled').slice(0, 120), phase, startedAt: Math.floor((run.started_at || this.deps.now()) * 1000), updatedAt, ...activity, ...work, deepLink: `/sessions/${encodeURIComponent(sid)}`, alertEligible, origin: run.origin ?? 'user', ...(approvalId ? { approvalHeadId: approvalHeadId(sid, approvalId) } : {}), ...(review ? { decisionReviewId: review.review_id, decisionReviewTitle: review.title } : {}), ...(notices.length ? { agentNotices: notices } : {}), ownerPersonId: session.owner_person_id })
+      states.push({ sessionId: sid, streamId: run.stream_id || null, ...(snapshot ? { activityPhase: snapshot.activity_phase } : {}), title: (session.title || 'Untitled').slice(0, 120), phase, startedAt: Math.floor((run.started_at || this.deps.now()) * 1000), updatedAt, ...activity, ...work, deepLink: `/sessions/${encodeURIComponent(sid)}`, alertEligible, origin: run.origin ?? 'user', ...(approvalId ? { approvalHeadId: approvalHeadId(sid, approvalId), approvalId } : {}), ...(review ? { decisionReviewId: review.review_id, decisionReviewTitle: review.title } : {}), ...(notices.length ? { agentNotices: notices } : {}), ownerPersonId: session.owner_person_id })
     }
     if (incomplete) this.incompleteProfiles.add(profile)
     else this.incompleteProfiles.delete(profile)

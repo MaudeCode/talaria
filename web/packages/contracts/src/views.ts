@@ -380,6 +380,26 @@ export type AcceptedSourceReference = z.infer<typeof AcceptedSourceReferenceSche
 /** Full session record from `GET /api/session` and mutations returning `session`. */
 export const SessionActivityPhaseSchema = z.enum(['starting', 'running', 'waiting_for_approval', 'waiting_for_input', 'completed', 'failed', 'cancelled', 'stale'])
 export type SessionActivityPhase = z.infer<typeof SessionActivityPhaseSchema>
+/** TAL-2232: the phases `GET /api/activity/summary` lists; a finished or stale row is left out. */
+export const ActivitySummaryPhaseSchema = SessionActivityPhaseSchema.extract(['waiting_for_approval', 'waiting_for_input', 'running', 'starting'])
+/**
+ * TAL-2232: what is running and what needs the requester, for Siri, widgets and the watch without Relay pairing. Rows come
+ * in display order: waiting for an approval, then for input, then running and starting rows, each newest start first.
+ */
+export const ActivitySummarySchema = z.object({
+  running_count: z.number().int().describe('Rows running or starting.'),
+  waiting_count: z.number().int().describe('Rows waiting for an approval or for input.'),
+  rows: z.array(z.object({
+    session_id: SessionIdSchema,
+    title: z.string(),
+    phase: ActivitySummaryPhaseSchema,
+    started_at: z.number().describe('When the run started (epoch seconds).'),
+    updated_at: z.number().describe('When the row was built (epoch seconds).'),
+    deep_link: z.string().describe('The chat\'s path in Talaria, such as `/sessions/<id>`.'),
+    approval_id: z.string().optional().describe('With `waiting_for_approval`: the approval at the head of the queue, as `POST /api/approval/respond` takes it.'),
+  })),
+})
+export type ActivitySummary = z.infer<typeof ActivitySummarySchema>
 
 /** Raw rows remain for older clients; current clients render only the server-normalized display items. */
 export const TodoItemSchema = z.looseObject({ id: z.union([z.string(), z.number()]).optional(), text: z.string().optional(), content: z.string().optional(), title: z.string().optional(), status: z.string().optional(), done: z.boolean().optional(), completed: z.boolean().optional() })

@@ -1066,6 +1066,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     relay,
     webPush,
     notifications,
+    activity,
     oidc,
     passkeys,
     nativeOidcLimiter: new WindowLimiter(60, 10, now),

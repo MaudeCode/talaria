@@ -108,6 +108,12 @@ extension APIClient {
         )
     }
 
+    /// TAL-2232: what is running and what waits for the user in the active profile (or `profile`), in display order.
+    /// An older server answers 404.
+    public func activitySummary(profile: String? = nil) async throws -> ActivitySummary {
+        try await send(endpoint: .activitySummary(profile: profile), method: "GET")
+    }
+
     /// TAL-1045: which modes a new chat in the active profile can start in now. An older server answers 404.
     public func executionModes() async throws -> ExecutionModesResponse {
         try await send(endpoint: .executionModes, method: "GET")
