@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Add a New Chat widget for the Home Screen and Lock Screen that can open a new chat in a chosen profile.",
+      "highlight": false,
+      "components": [
+        "app"
+      ],
+      "announcement": {
+        "title": "New Chat widget",
+        "description": "Start a chat, in any profile you pick, from the Home Screen or Lock Screen.",
+        "icon": "chat"
+      }
+    }
+  ]
+}

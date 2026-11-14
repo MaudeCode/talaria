@@ -2,34 +2,6 @@ import AppIntents
 import Foundation
 import TalariaKit
 
-/// "New Chat in <Profile>" — opens Talaria on a new chat pinned to a specific server profile
-/// the user picks when configuring the Shortcut/Siri phrase (issue #339). The chosen
-/// `ProfileEntity` is carried through the same `AppIntentRouter`/deep-link plumbing as the
-/// other New Chat intents, on its own host (`new-chat-profile`) with the profile name as a
-/// query item, so `PendingNewChatView` can create the session pinned to it.
-struct NewChatInProfileIntent: AppIntent {
-    static let title: LocalizedStringResource = "New Chat in Profile"
-    static let description = IntentDescription("Open Talaria on a new chat pinned to a specific profile.")
-
-    /// Foregrounds the app so the navigation can run in-process.
-    static let openAppWhenRun: Bool = true
-
-    @Parameter(title: "Profile")
-    var profile: ProfileEntity
-
-    static var parameterSummary: some ParameterSummary {
-        Summary("New chat in \(\.$profile)")
-    }
-
-    @MainActor
-    func perform() async throws -> some IntentResult {
-        AppIntentRouter.shared.requestDeepLink(
-            TalariaDeepLink.newChatInProfileURL(profileName: profile.id)
-        )
-        return .result()
-    }
-}
-
 /// "Ask Talaria" — sends a prompt to a new chat and speaks the server's reply without opening the app, so Siri, a
 /// Shortcut, or the Action button can ask and hear the answer (TAL-1470). Shortcuts can chain the reply text.
 struct AskTalariaIntent: AskingTalariaIntent {
