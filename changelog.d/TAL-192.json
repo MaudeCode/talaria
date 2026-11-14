@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Replying in a chat whose Live Activity still shows Done now restarts that same card instead of adding a second one.",
+      "highlight": false,
+      "components": [
+        "app",
+        "relay"
+      ],
+      "announce": false
+    }
+  ]
+}

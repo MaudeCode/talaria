@@ -460,14 +460,72 @@ public enum AgentLiveActivityReusePolicy {
         return normalized.isEmpty ? nil : normalized
     }
 
-    public static func canReuseActivity(
-        existingSessionID: String,
-        existingStreamID: String?,
-        requestedSessionID: String,
-        requestedStreamID: String?
+    /// A persisted current-session activity, with the stream of the run that owns it now.
+    public struct Candidate: Equatable, Sendable {
+        public var id: String
+        public var sessionID: String
+        public var streamID: String?
+        public var isFinal: Bool
+        public var relayPublisherID: String?
+
+        public init(id: String, sessionID: String, streamID: String?, isFinal: Bool, relayPublisherID: String?) {
+            self.id = id
+            self.sessionID = sessionID
+            self.streamID = AgentLiveActivityReusePolicy.normalizedStreamID(streamID)
+            self.isFinal = isFinal
+            self.relayPublisherID = relayPublisherID
+        }
+    }
+
+    /// The activity a new or reattached run drives: its own live activity, else the retained
+    /// relay-backed completion of the same publisher and session, restarted in place (TAL-192).
+    public static func reusableActivityID(
+        in candidates: [Candidate], sessionID: String, streamID: String?,
+        publisherID: String?, registeredActivityID: String?
+    ) -> String? {
+        let streamID = normalizedStreamID(streamID)
+        let live = candidates.first { candidate in
+            !candidate.isFinal && candidate.sessionID == sessionID && candidate.streamID == streamID
+                && (publisherID == nil || candidate.relayPublisherID == publisherID || candidate.id == registeredActivityID)
+        }
+        if let live { return live.id }
+        guard let publisherID else { return nil }
+        return candidates.first { candidate in
+            candidate.isFinal && candidate.relayPublisherID == publisherID && candidate.sessionID == sessionID
+        }?.id
+    }
+
+    /// Whether an acknowledged relay completion belongs to the run that owns `candidate`.
+    public static func completion(
+        _ row: TalariaAggregateActivityAttributes.ContentState.Row, matches candidate: Candidate
     ) -> Bool {
-        existingSessionID == requestedSessionID
-            && normalizedStreamID(existingStreamID) == normalizedStreamID(requestedStreamID)
+        row.publisherId == candidate.relayPublisherID && row.sessionId == candidate.sessionID
+            && candidate.streamID != nil && normalizedStreamID(row.streamId) == candidate.streamID
+    }
+
+    static let streamBindingsKey = "liveActivity.streamBindings"
+
+    /// The run that owns an activity. ActivityKit attributes are immutable and relay pushes
+    /// replace the content without a stream, so a reused card's run is recorded locally.
+    public static func effectiveStreamID(
+        activityID: String, attributeStreamID: String?, defaults: UserDefaults = .standard
+    ) -> String? {
+        guard let bound = defaults.dictionary(forKey: streamBindingsKey)?[activityID] as? String else {
+            return normalizedStreamID(attributeStreamID)
+        }
+        return normalizedStreamID(bound)
+    }
+
+    /// Records that `streamID` now owns `activityID`, dropping bindings of ended activities.
+    public static func bindStream(
+        _ streamID: String?, toActivityID activityID: String,
+        liveActivityIDs: Set<String>, defaults: UserDefaults = .standard
+    ) {
+        var bindings = (defaults.dictionary(forKey: streamBindingsKey) as? [String: String] ?? [:])
+            .filter { liveActivityIDs.contains($0.key) }
+        // An empty value records a run without a stream, so the attribute's stale run is not used.
+        bindings[activityID] = normalizedStreamID(streamID) ?? ""
+        defaults.set(bindings, forKey: streamBindingsKey)
     }
 }
 

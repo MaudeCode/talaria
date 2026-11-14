@@ -1295,55 +1295,84 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertFalse(AgentLiveActivityReusePolicy.preservesCompletedActivity(isFinal: true, relayPublisherID: nil))
     }
 
-    func testLiveActivityReusePolicyRequiresMatchingSessionAndStream() {
-        XCTAssertTrue(
-            AgentLiveActivityReusePolicy.canReuseActivity(
-                existingSessionID: "session-abc",
-                existingStreamID: "stream-1",
-                requestedSessionID: "session-abc",
-                requestedStreamID: "stream-1"
-            )
+    private typealias Candidate = AgentLiveActivityReusePolicy.Candidate
+    private static let publisher = "https://relay.example"
+
+    private func reusableActivityID(
+        _ candidates: [Candidate], sessionID: String = "session-abc", streamID: String?,
+        publisherID: String? = publisher, registeredActivityID: String? = nil
+    ) -> String? {
+        AgentLiveActivityReusePolicy.reusableActivityID(
+            in: candidates, sessionID: sessionID, streamID: streamID,
+            publisherID: publisherID, registeredActivityID: registeredActivityID
         )
-        XCTAssertTrue(
-            AgentLiveActivityReusePolicy.canReuseActivity(
-                existingSessionID: "session-abc",
-                existingStreamID: " stream-1 ",
-                requestedSessionID: "session-abc",
-                requestedStreamID: "stream-1"
-            )
+    }
+
+    func testLiveActivityReusePolicyRequiresMatchingSessionAndStreamForALiveRun() {
+        let live = Candidate(id: "live", sessionID: "session-abc", streamID: " stream-1 ", isFinal: false, relayPublisherID: Self.publisher)
+        XCTAssertEqual(reusableActivityID([live], streamID: "stream-1"), "live")
+        XCTAssertEqual(reusableActivityID([live], streamID: "stream-1", publisherID: nil), "live")
+        XCTAssertNil(reusableActivityID([live], streamID: "stream-2"))
+        XCTAssertNil(reusableActivityID([live], sessionID: "other-session", streamID: "stream-1"))
+        XCTAssertNil(reusableActivityID([live], streamID: "stream-1", publisherID: "https://other.example"))
+        XCTAssertEqual(
+            reusableActivityID([live], streamID: "stream-1", publisherID: "https://other.example", registeredActivityID: "live"),
+            "live"
         )
-        XCTAssertFalse(
-            AgentLiveActivityReusePolicy.canReuseActivity(
-                existingSessionID: "session-abc",
-                existingStreamID: "stream-1",
-                requestedSessionID: "session-abc",
-                requestedStreamID: "stream-2"
-            )
+        let legacy = Candidate(id: "legacy", sessionID: "session-abc", streamID: nil, isFinal: false, relayPublisherID: Self.publisher)
+        XCTAssertNil(reusableActivityID([legacy], streamID: "stream-2"))
+    }
+
+    // TAL-192: run-1 running -> completed -> run-2 starting keeps one card per publisher and session.
+    func testNextRunRestartsTheRetainedCompletionOfItsSession() {
+        let suite = "LiveActivityTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let retained = Candidate(id: "card", sessionID: "session-abc", streamID: "run-1", isFinal: true, relayPublisherID: Self.publisher)
+
+        XCTAssertEqual(reusableActivityID([retained], streamID: "run-2"), "card")
+        AgentLiveActivityReusePolicy.bindStream("run-2", toActivityID: "card", liveActivityIDs: ["card"], defaults: defaults)
+        XCTAssertEqual(
+            AgentLiveActivityReusePolicy.effectiveStreamID(activityID: "card", attributeStreamID: "run-1", defaults: defaults),
+            "run-2"
         )
-        XCTAssertFalse(
-            AgentLiveActivityReusePolicy.canReuseActivity(
-                existingSessionID: "session-abc",
-                existingStreamID: "stream-1",
-                requestedSessionID: "session-abc",
-                requestedStreamID: "stream-2"
-            )
-        )
-        XCTAssertFalse(
-            AgentLiveActivityReusePolicy.canReuseActivity(
-                existingSessionID: "session-abc",
-                existingStreamID: nil,
-                requestedSessionID: "session-abc",
-                requestedStreamID: "stream-2"
-            )
-        )
-        XCTAssertFalse(
-            AgentLiveActivityReusePolicy.canReuseActivity(
-                existingSessionID: "other-session",
-                existingStreamID: "stream-1",
-                requestedSessionID: "session-abc",
-                requestedStreamID: "stream-2"
-            )
-        )
+    }
+
+    func testRetainedCompletionIsNeverReusedAcrossPublisherSessionOrLocalFallback() {
+        let retained = Candidate(id: "card", sessionID: "session-abc", streamID: "run-1", isFinal: true, relayPublisherID: Self.publisher)
+        XCTAssertNil(reusableActivityID([retained], sessionID: "other-session", streamID: "run-2"))
+        XCTAssertNil(reusableActivityID([retained], streamID: "run-2", publisherID: "https://other.example"))
+        XCTAssertNil(reusableActivityID([retained], streamID: "run-2", publisherID: nil))
+        XCTAssertNil(reusableActivityID([retained], streamID: "run-2", publisherID: "https://other.example", registeredActivityID: "card"))
+        let local = Candidate(id: "local", sessionID: "session-abc", streamID: "run-1", isFinal: true, relayPublisherID: nil)
+        XCTAssertNil(reusableActivityID([local], streamID: "run-2"))
+    }
+
+    func testStreamBindingOwnsAReusedCardWhileLegacyCardsKeepTheirAttributeStream() {
+        let suite = "LiveActivityTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        func stream(_ id: String) -> String? {
+            AgentLiveActivityReusePolicy.effectiveStreamID(activityID: id, attributeStreamID: "run-1", defaults: defaults)
+        }
+
+        XCTAssertEqual(stream("card"), "run-1")
+        AgentLiveActivityReusePolicy.bindStream(nil, toActivityID: "card", liveActivityIDs: ["card"], defaults: defaults)
+        XCTAssertNil(stream("card"), "A run without a stream must not fall back to the previous run")
+        AgentLiveActivityReusePolicy.bindStream("run-3", toActivityID: "other", liveActivityIDs: ["other"], defaults: defaults)
+        XCTAssertEqual(stream("card"), "run-1", "Ended activities drop their binding")
+        XCTAssertEqual(stream("other"), "run-3")
+    }
+
+    func testAcknowledgedCompletionMatchesOnlyTheRunThatOwnsTheCard() {
+        let reused = Candidate(id: "card", sessionID: "session-abc", streamID: "run-2", isFinal: false, relayPublisherID: Self.publisher)
+        func row(_ streamID: String?) -> TalariaAggregateActivityAttributes.ContentState.Row {
+            .init(streamId: streamID, publisherId: Self.publisher, publisherLabel: "Home", sessionId: "session-abc",
+                  title: "Fixture", phase: "completed", status: "Done", updatedAt: 0, deepLink: "/sessions/session-abc")
+        }
+        XCTAssertFalse(AgentLiveActivityReusePolicy.completion(row("run-1"), matches: reused))
+        XCTAssertFalse(AgentLiveActivityReusePolicy.completion(row(nil), matches: reused))
+        XCTAssertTrue(AgentLiveActivityReusePolicy.completion(row("run-2"), matches: reused))
     }
 
     func testLiveActivityAttributesPersistRelayPublisherIdentityTolerantly() throws {
