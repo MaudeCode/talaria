@@ -60,6 +60,7 @@ struct NewChatWidgetView: View {
             }
         }
         .buttonStyle(.plain)
+        .widgetURL(deepLink)
         .containerBackground(for: .widget) {
             switch family {
             case .systemSmall: Color(uiColor: .systemBackground)
@@ -101,6 +102,11 @@ struct NewChatWidgetView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
         }
+    }
+
+    /// The inline Lock Screen family takes no buttons; a tap there opens the same deep link the intent requests.
+    private var deepLink: URL? {
+        profile.flatMap { TalariaDeepLink.newChatInProfileURL(profileName: $0.id) } ?? TalariaDeepLink.newChatURL
     }
 
     private var symbol: String { "square.and.pencil" }
