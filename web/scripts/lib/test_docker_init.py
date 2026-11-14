@@ -288,5 +288,13 @@ class IdentityChange(HomeFixture):
         self.assertFails(result, "Failed to")
 
 
+class PackageInstall(unittest.TestCase):
+    def test_agent_dependencies_install_with_tls_verification(self):
+        """uv's trusted and insecure host flags skip certificate checks, so a spoofed PyPI could serve the Agent."""
+        text = SCRIPT.read_text()
+        self.assertRegex(text, r"(?m)^\s*uv pip install ", "docker_init.bash no longer installs the Agent with uv")
+        self.assertEqual(re.findall(r"(?m)^.*--(?:trusted|allow-insecure)-host\b.*$", text), [])
+
+
 if __name__ == "__main__":
     unittest.main()

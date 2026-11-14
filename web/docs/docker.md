@@ -389,6 +389,14 @@ disappears between listing and `chown` is skipped. Any other failure, such as
 directories and a writable `~/.hermes/hermes-agent` checkout move from the old
 UID to the new one; a read-only Agent source mount is left untouched.
 
+### 10. "Failed to install hermes-agent's requirements" behind a TLS-intercepting proxy
+
+First start installs the Agent's Python packages from PyPI with certificate
+verification on. If a corporate proxy re-signs HTTPS traffic, mount its CA
+bundle and set `SSL_CERT_FILE` to it in the service's `environment:`, or set
+`UV_NATIVE_TLS=1` when the container's system trust store already includes that
+CA.
+
 ## Multi-container architecture
 
 The two- and three-container setups use **named Docker volumes** (not bind mounts) by default for a reason: named volumes solve the UID/GID problem by construction. Docker creates the volume's root directory with the correct ownership, all containers reading/writing to it see the same files, no host-side permission setup required.
