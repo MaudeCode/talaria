@@ -7,15 +7,41 @@ import AppIntents
 @MainActor
 final class AppIntentAskTalariaTests: XCTestCase {
     private var originalFactory: (() -> AskSession?)!
+    private var originalAppLock: AppLockModel!
 
     override func setUp() async throws {
         try await super.setUp()
         originalFactory = AskTalariaIntent.makeAskSession
+        originalAppLock = AskTalariaIntent.appLock
+        AskTalariaIntent.appLock = AppLockModel(defaults: lockDefaults(enabled: false))
     }
 
     override func tearDown() async throws {
         AskTalariaIntent.makeAskSession = originalFactory
+        AskTalariaIntent.appLock = originalAppLock
         try await super.tearDown()
+    }
+
+    private func lockDefaults(enabled: Bool) -> UserDefaults {
+        let name = "AppIntentAskTalariaTests.\(UUID())"
+        let defaults = UserDefaults(suiteName: name)!
+        defaults.set(enabled, forKey: AppLockModel.isEnabledKey)
+        addTeardownBlock { UserDefaults().removePersistentDomain(forName: name) }
+        return defaults
+    }
+
+    /// App Lock guards the agent too: a locked Talaria asks nothing and speaks nothing until it is unlocked.
+    func testLockedAppAsksNothing() async throws {
+        AskTalariaIntent.appLock = AppLockModel(defaults: lockDefaults(enabled: true))
+        let fixture = AskFixture(frames: [AskFixture.doneFrame(finalAnswer: "Secret reply.")])
+        AskTalariaIntent.makeAskSession = { fixture.session() }
+        let intent = AskTalariaIntent()
+        intent.prompt = "Status?"
+
+        let reply = try? await intent.perform().value
+
+        XCTAssertNil(reply)
+        XCTAssertEqual(fixture.paths, [])
     }
 
     func testAskWithoutAProfileUsesTheActiveProfileAndReturnsTheReply() async throws {

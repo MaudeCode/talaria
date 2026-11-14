@@ -70,7 +70,7 @@ struct NewChatInProfileIntent: AppIntent {
 /// "Ask Talaria" — sends a prompt to a new chat and speaks the server's reply without opening the app, so Siri, a
 /// Shortcut, or the Action button can ask and hear the answer (TAL-1470). Shortcuts can chain the reply text. It never
 /// answers an approval or a question itself: those, and a run still going after a minute, leave the chat running and
-/// offer to open it.
+/// offer to open it. With App Lock on and Talaria locked it asks nothing and offers to open Talaria to unlock.
 struct AskTalariaIntent: AppIntent, ForegroundContinuableIntent {
     static let title: LocalizedStringResource = "Ask Talaria"
     static let description = IntentDescription("Send a prompt to a new chat and hear the reply.")
@@ -86,9 +86,12 @@ struct AskTalariaIntent: AppIntent, ForegroundContinuableIntent {
 
     /// The saved server's session; tests substitute a fixture.
     @MainActor static var makeAskSession: () -> AskSession? = { AppIntentServer.saved()?.askSession() }
+    /// App Lock guards the agent too: a locked Talaria asks nothing until it is unlocked in the app.
+    @MainActor static var appLock = AppLockModel.shared
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog & ReturnsValue<String> {
+        guard !Self.appLock.locksBackgroundWork() else { throw needsToContinueInForegroundError("Unlock Talaria") }
         guard let session = Self.makeAskSession() else {
             throw AskSession.Failure(message: String(localized: "Add a server in Talaria first."))
         }

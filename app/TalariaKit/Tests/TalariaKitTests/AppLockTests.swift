@@ -104,6 +104,19 @@ final class AppLockTests: XCTestCase {
         XCTAssertEqual(authenticator.promptCount, 2)
     }
 
+    /// TAL-1470: an App Intent runs with the scene still in the background, so the minute away counts before it returns.
+    func testBackgroundWorkSeesTheLockBeforeTheSceneReturns() async {
+        let model = await unlockedModel()
+        XCTAssertFalse(model.locksBackgroundWork())
+        model.sceneDidChange(.background)
+        instant += .seconds(60)
+        XCTAssertFalse(model.locksBackgroundWork(), "Within the grace period")
+        instant += .seconds(1)
+        XCTAssertTrue(model.locksBackgroundWork())
+        XCTAssertTrue(coldLaunch().locksBackgroundWork(), "A launch for the intent alone starts locked")
+        XCTAssertFalse(coldLaunch(enabled: false).locksBackgroundWork())
+    }
+
     /// A deep link is delivered between entering the foreground and becoming active, so the lock must already hold.
     func testLockHoldsBeforeActivationSoAReturningDeepLinkQueues() async {
         let model = await unlockedModel()
