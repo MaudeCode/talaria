@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A chat's Live Activity stays live when you leave Talaria while the relay drives it, instead of switching to \"Latest status shown\".",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

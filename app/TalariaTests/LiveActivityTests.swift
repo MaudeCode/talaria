@@ -249,4 +249,99 @@ final class LiveActivityTests: XCTestCase {
         manager.end(status: .complete, activity: "Response complete")
         XCTAssertNil(manager.activeConnectedStreamID)
     }
+
+    // TAL-836: a relay-backed activity stays live while the relay owns or is
+    // registering for it; markStale writes the stale state only without a relay.
+    private func relayHandoffFixture(
+        limit: Duration = .seconds(10)
+    ) -> (AgentLiveActivityManager, PerSessionRelayActivityRegistration, () -> [AgentRunActivityAttributes.ContentState]) {
+        let registration = PerSessionRelayActivityRegistration()
+        var updates: [AgentRunActivityAttributes.ContentState] = []
+        let manager = AgentLiveActivityManager(
+            minimumUpdateInterval: 0, relayRegistration: registration, relayHandoffLimit: limit,
+            updateActivity: { updates.append($0) }
+        )
+        manager.start(
+            sessionID: "relay-session", sessionTitle: "Relay", streamID: "relay-stream",
+            publisherURL: URL(string: "https://fixture.example")!
+        )
+        registration.beginHandoff(activityID: "relay-activity")
+        return (manager, registration, { updates })
+    }
+
+    private func yieldToPendingTasks() async {
+        for _ in 0..<20 { await Task.yield() }
+    }
+
+    func testConfirmedRelayHandoffSendsNoStaleState() async {
+        let (manager, registration, updates) = relayHandoffFixture()
+        registration.settleHandoff(activityID: "relay-activity", confirmed: true)
+        manager.markStale()
+        await yieldToPendingTasks()
+        XCTAssertFalse(updates().contains(where: \.isStale), "The relay owns freshness once it confirms the activity")
+        XCTAssertNil(manager.activeConnectedStreamID)
+    }
+
+    func testPendingRelayHandoffThatSucceedsSendsNoStaleState() async {
+        let (manager, registration, updates) = relayHandoffFixture()
+        manager.markStale()
+        await yieldToPendingTasks()
+        XCTAssertFalse(updates().contains(where: \.isStale), "A pending handoff keeps the last state")
+        XCTAssertNil(manager.activeConnectedStreamID)
+        registration.settleHandoff(activityID: "relay-activity", confirmed: true)
+        await yieldToPendingTasks()
+        XCTAssertFalse(updates().contains(where: \.isStale))
+    }
+
+    func testPendingRelayHandoffThatFailsSendsOneStaleState() async {
+        let (manager, registration, updates) = relayHandoffFixture()
+        manager.markStale()
+        await yieldToPendingTasks()
+        XCTAssertFalse(updates().contains(where: \.isStale))
+        registration.settleHandoff(activityID: "relay-activity", confirmed: false)
+        await yieldToPendingTasks()
+        XCTAssertEqual(updates().filter(\.isStale).count, 1)
+    }
+
+    func testPendingRelayHandoffPastTheLimitSendsOneStaleState() async throws {
+        let (manager, _, updates) = relayHandoffFixture(limit: .milliseconds(50))
+        manager.markStale()
+        await yieldToPendingTasks()
+        XCTAssertFalse(updates().contains(where: \.isStale))
+        try await Task.sleep(for: .milliseconds(500))
+        await yieldToPendingTasks()
+        XCTAssertEqual(updates().filter(\.isStale).count, 1)
+    }
+
+    func testStartOrEndDuringRelayHandoffCancelsTheDeferredStaleState() async throws {
+        for finish in ["start", "end"] {
+            let (manager, _, updates) = relayHandoffFixture(limit: .milliseconds(50))
+            manager.markStale()
+            if finish == "start" {
+                manager.start(
+                    sessionID: "relay-session", sessionTitle: "Relay", streamID: "relay-stream",
+                    publisherURL: URL(string: "https://fixture.example")!
+                )
+            } else {
+                manager.end(status: .complete, activity: "Response complete")
+            }
+            try await Task.sleep(for: .milliseconds(500))
+            await yieldToPendingTasks()
+            XCTAssertFalse(updates().contains(where: \.isStale), "\(finish) must cancel the deferred stale write")
+        }
+    }
+
+    func testMarkStaleWithoutRelaySendsStaleStateImmediately() async {
+        var updates: [AgentRunActivityAttributes.ContentState] = []
+        let manager = AgentLiveActivityManager(minimumUpdateInterval: 0, updateActivity: { updates.append($0) })
+        manager.start(
+            sessionID: "local-session", sessionTitle: "Local", streamID: "local-stream",
+            publisherURL: URL(string: "https://fixture.example")!
+        )
+        manager.markStale()
+        XCTAssertEqual(manager.currentState?.isStale, true)
+        XCTAssertNil(manager.activeConnectedStreamID)
+        await yieldToPendingTasks()
+        XCTAssertEqual(updates.filter(\.isStale).count, 1)
+    }
 }

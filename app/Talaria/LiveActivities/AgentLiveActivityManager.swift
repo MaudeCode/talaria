@@ -1,6 +1,7 @@
 @preconcurrency import ActivityKit
 import Foundation
 import TalariaKit
+import UIKit
 
 @MainActor
 final class AgentLiveActivityManager: AgentLiveActivityManaging {
@@ -28,13 +29,19 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
     private var lastSentState: AgentRunActivityAttributes.ContentState?
     static let staleContentInterval: TimeInterval = 300
     private var pendingUpdateTask: Task<Void, Never>?
+    // The stale write markStale defers while the relay registers this activity.
+    private var deferredStaleTask: Task<Void, Never>?
+    private var deferredStaleBackgroundTask = UIBackgroundTaskIdentifier.invalid
     private var updateGeneration = 0
     private var lifecycleGeneration = 0
-    private let relayRegistration = PerSessionRelayActivityRegistration()
+    private let relayRegistration: PerSessionRelayActivityRegistration
+    private let relayHandoffLimit: Duration
 
     init(
         minimumUpdateInterval: TimeInterval = 1.5,
         now: @escaping () -> Date = Date.init,
+        relayRegistration: PerSessionRelayActivityRegistration = PerSessionRelayActivityRegistration(),
+        relayHandoffLimit: Duration = .seconds(10),
         updateActivity: ((AgentRunActivityAttributes.ContentState) -> Void)? = nil,
         setInterimAssistant: @escaping (String, AgentRunActivityAttributes.ContentState) -> AgentRunActivityAttributes.ContentState = {
             AgentRunActivityStateReducer.settingInterimAssistant($0, on: $1)
@@ -42,6 +49,8 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
     ) {
         self.minimumUpdateInterval = minimumUpdateInterval
         self.now = now
+        self.relayRegistration = relayRegistration
+        self.relayHandoffLimit = relayHandoffLimit
         self.updateActivity = updateActivity
         self.setInterimAssistant = setInterimAssistant
     }
@@ -87,6 +96,7 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
 
         pendingUpdateTask?.cancel()
         pendingUpdateTask = nil
+        cancelDeferredStale()
         relayRegistration.cancelObservation()
         responsePrefix = (text: "", isFull: false)
         currentSessionID = normalizedSessionID
@@ -247,8 +257,17 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
         activeConnectedStreamID = nil
         guard currentState?.isFinal == false else { return }
 
-        updateCurrentState { state in
-            AgentRunActivityStateReducer.stale(state: state)
+        // A relay-backed activity stays live: the relay's pushes own freshness
+        // once it confirms the activity (TAL-836).
+        switch relayRegistration.handoff {
+        case .confirmed:
+            pendingUpdateTask?.cancel()
+            pendingUpdateTask = nil
+            _ = nextUpdateGeneration()
+        case .pending(let activityID):
+            deferStaleUntilRelayHandoff(activityID: activityID)
+        case nil:
+            writeStaleState()
         }
     }
 
@@ -259,6 +278,7 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
 
         pendingUpdateTask?.cancel()
         pendingUpdateTask = nil
+        cancelDeferredStale()
 
         let finalState = AgentRunActivityStateReducer.final(
             status: status,
@@ -491,10 +511,52 @@ private extension AgentLiveActivityManager {
         }
     }
 
+    private func writeStaleState() {
+        guard currentState?.isFinal == false else { return }
+        updateCurrentState { state in
+            AgentRunActivityStateReducer.stale(state: state)
+        }
+    }
+
+    /// Keeps the last state while the relay registers `activityID`, inside a
+    /// background task, and writes the stale state only if the handoff fails,
+    /// times out, or no background time is granted. Any newer write cancels it.
+    private func deferStaleUntilRelayHandoff(activityID: String) {
+        guard deferredStaleTask == nil else { return }
+        deferredStaleTask = Task { [weak self, relayRegistration, relayHandoffLimit] in
+            let confirmed = await relayRegistration.awaitRegistration(activityID: activityID, limit: relayHandoffLimit)
+            guard !Task.isCancelled else { return }
+            self?.finishDeferredStale(writeStale: !confirmed)
+        }
+        deferredStaleBackgroundTask = UIApplication.shared.beginBackgroundTask(
+            withName: "Live Activity relay handoff"
+        ) { [weak self] in
+            MainActor.assumeIsolated { self?.finishDeferredStale(writeStale: true) }
+        }
+        if deferredStaleBackgroundTask == .invalid {
+            finishDeferredStale(writeStale: true)
+        }
+    }
+
+    private func finishDeferredStale(writeStale: Bool) {
+        cancelDeferredStale()
+        if writeStale { writeStaleState() }
+    }
+
+    private func cancelDeferredStale() {
+        deferredStaleTask?.cancel()
+        deferredStaleTask = nil
+        if deferredStaleBackgroundTask != .invalid {
+            UIApplication.shared.endBackgroundTask(deferredStaleBackgroundTask)
+            deferredStaleBackgroundTask = .invalid
+        }
+    }
+
     private func updateCurrentState(
         immediate: Bool = true,
         _ transform: (AgentRunActivityAttributes.ContentState) -> AgentRunActivityAttributes.ContentState
     ) {
+        cancelDeferredStale()
         guard let currentState else { return }
 
         var updatedState = transform(currentState)
@@ -660,6 +722,7 @@ private extension AgentLiveActivityManager {
         lastSentState = nil
         pendingUpdateTask?.cancel()
         pendingUpdateTask = nil
+        cancelDeferredStale()
         relayRegistration.reset()
         _ = nextLifecycleGeneration()
         _ = nextUpdateGeneration()
