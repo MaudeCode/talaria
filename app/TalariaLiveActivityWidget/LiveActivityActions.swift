@@ -92,8 +92,9 @@ struct LiveActivityRowActions: Equatable {
     static let aggregateRowLimit = 2
 }
 
-/// A waiting row's choices, with a refused answer's error above them. Allow appears only beside the whole text of what
-/// it approves: when that text does not fit, as in the Duo's narrow vertical island, the row offers Deny and Open.
+/// A waiting row's choices, with a refused answer's error above them. Allow sits below the whole text of what it
+/// approves, which is never shortened: in a region too small for both, the bottom is cut first, so a visible Allow
+/// always has its whole text above it.
 struct LiveActivityActionButtons: View {
     let actions: LiveActivityRowActions
     var error: String? = nil
@@ -103,20 +104,16 @@ struct LiveActivityActionButtons: View {
             if let error {
                 LiveActivityAnswerError(text: error)
             }
-            // The whole text with Allow and Deny when it fits; otherwise Deny and Open.
-            ViewThatFits(in: .vertical) {
-                if case let .approval(_, text?) = actions.kind {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(text)
-                            .font(.caption.monospaced())
-                            .foregroundStyle(AgentRunLiveActivityTheme.primaryText)
-                            .fixedSize(horizontal: false, vertical: true)
-                        buttons { titled in
-                            allowButton(titled: titled)
-                            denyButton(titled: titled)
-                        }
-                    }
+            if case let .approval(_, text?) = actions.kind {
+                Text(text)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(AgentRunLiveActivityTheme.primaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                buttons { titled in
+                    allowButton(titled: titled)
+                    denyButton(titled: titled)
                 }
+            } else {
                 buttons { titled in
                     denyButton(titled: titled)
                     if let url = actions.openURL {

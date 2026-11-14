@@ -358,7 +358,8 @@ public enum AgentRunActivitySanitizer: Sendable {
     static let maximumSessionTitleCharacters = 42
     static let maximumActivityCharacters = 64
     static let maximumExcerptCharacters = 140
-    static let maximumApprovalTextCharacters = 140
+    /// About two lines of an activity's monospaced caption, so the text and its buttons fit a Lock Screen activity.
+    static let maximumApprovalTextCharacters = 80
     static let maximumResponsePrefixScalars = 1_024
     static let maximumToolLabelCharacters = 28
 
