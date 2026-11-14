@@ -74,9 +74,13 @@ enum HostedScene {
         return window
     }
 
+    /// Lets interactions created while it is set read the device's hinge, for a test of the hinge's own delivery.
+    static var deliversHinge = false
+
     /// Hosted screens see no hinge, as on a phone: a closed Duo's hinge, delivered after the screen's first layout,
-    /// re-admits a regular-width split and drops a Sidebar press queued meanwhile. SwiftUI's `onHingeChange` observes
-    /// through `UIHingeInteraction`, so every interaction's handler is replaced with one that ignores updates.
+    /// re-admits a regular-width split and drops a Sidebar press queued meanwhile. The App reads the hinge through
+    /// `UIHingeInteraction`, so every interaction's handler is replaced with one that ignores updates unless
+    /// `deliversHinge` is set when it is created.
     private static let silencesHinge: Void = {
         guard #available(iOS 27.1, *) else { return }
         let selector = NSSelectorFromString("initWithUpdateHandler:")
@@ -84,8 +88,8 @@ enum HostedScene {
         typealias Initialize = @convention(c) (AnyObject, Selector, AnyObject) -> AnyObject
         let initialize = unsafeBitCast(method_getImplementation(method), to: Initialize.self)
         let ignoresUpdates: @convention(block) (AnyObject, AnyObject) -> Void = { _, _ in }
-        let replacement: @convention(block) (AnyObject, AnyObject) -> AnyObject = { interaction, _ in
-            initialize(interaction, selector, ignoresUpdates as AnyObject)
+        let replacement: @convention(block) (AnyObject, AnyObject) -> AnyObject = { interaction, handler in
+            initialize(interaction, selector, MainActor.assumeIsolated { deliversHinge } ? handler : ignoresUpdates as AnyObject)
         }
         method_setImplementation(method, imp_implementationWithBlock(replacement))
     }()

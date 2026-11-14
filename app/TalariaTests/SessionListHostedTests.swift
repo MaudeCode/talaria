@@ -245,10 +245,11 @@ final class SessionListHostedTests: XCTestCase {
             element.accessibilityHint == "Long press to switch servers."
     }
 
-    func testSettingsAvatarJoinsTheDuoVerticalToolbar() async throws {
+    /// The host's scene on the iPhone Duo simulator's active outer display, where the simulator boots.
+    private func requireDuoOuterDisplay() throws -> UIWindowScene {
         try XCTSkipUnless(
             ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] == "iPhone19,4",
-            "Requires the iPhone Duo simulator's native vertical toolbar"
+            "Requires the iPhone Duo simulator's outer display and hinge"
         )
         let scene = try HostedScene.current()
         let panel = scene.screen.nativeBounds.size
@@ -259,6 +260,27 @@ final class SessionListHostedTests: XCTestCase {
                 [viewport.width, viewport.height].sorted() == cover,
             "Requires the active iPhone Duo outer display; close and verify the Duo posture before running"
         )
+        return scene
+    }
+
+    /// The App opens on the Duo's outer display with the hinge already there. Its first drawer, before any fold, fills
+    /// the display rather than taking a phone's partial width (TAL-2226).
+    func testDuoOuterSidebarFillsTheDisplayOnItsFirstOpenBeforeAnyFold() async throws {
+        let scene = try requireDuoOuterDisplay()
+        HostedScene.deliversHinge = true
+        defer { HostedScene.deliversHinge = false }
+        let fixture = try FixtureApp(for: self)
+        let window = try hostWindow(fixture.sessionList(), size: scene.coordinateSpace.bounds.size)
+        try await openSidebar(in: window)
+        let drawer = try XCTUnwrap(window.rootViewController?.firstDescendant(ofType: AppSidebarController.self))
+        let available = drawer.view.bounds.width - drawer.view.safeAreaInsets.left - drawer.view.safeAreaInsets.right
+        let fills = await awaitCondition(timeout: 2) { drawer.revealWidth == available }
+        attachHostedScreenshot(window, name: "duo-outer-first-sidebar")
+        XCTAssertTrue(fills, "The first sidebar is \(drawer.revealWidth) of the outer display's \(available) points")
+    }
+
+    func testSettingsAvatarJoinsTheDuoVerticalToolbar() async throws {
+        let scene = try requireDuoOuterDisplay()
         let fixture = try FixtureApp(for: self)
         addTeardownBlock { @MainActor in
             scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait))
