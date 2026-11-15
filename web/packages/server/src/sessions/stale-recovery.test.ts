@@ -60,6 +60,9 @@ describe('stale-stream cleanup with a run journal', () => {
     expect(messages.map((m) => [m.role, m.content])).toEqual([['user', 'summarize the repo'], ['assistant', 'Checking the tree.'], ['assistant', 'It is a mono'], ['assistant', MARKER]])
     expect(messages[2]).toMatchObject({ _partial: true })
     expect(messages.filter((m) => m.content === MARKER)).toHaveLength(1)
+    // TAL-2270: the served marker is the `web_interrupted` Talaria activity a shutdown saves.
+    const served = ((await (await s.get(`/api/session?session_id=${sid}&messages=1`)).json()) as { session: { messages: Json[] } }).session.messages
+    expect(served.find((m) => m.content === MARKER)?._talaria_activity).toMatchObject({ origin: 'talaria', kind: 'web_interrupted', summary: 'The reply was interrupted before it could be saved' })
   })
 
   it('an eager checkpoint keeps the prompt once and the model context gains it', async () => {

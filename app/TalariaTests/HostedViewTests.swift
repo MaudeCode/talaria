@@ -848,7 +848,7 @@ final class SettingsPlacementHostedTests: XCTestCase {
         let fixture = try FixtureApp(for: self)
         let pages = [
             ("models", ["settings-chat-max-tokens", "settings-chat-compression-ahead"]),
-            ("system", ["settings-chat-title-refresh", "settings-system-check-updates", "settings-system-auto-apply", "settings-system-summarize",
+            ("system", ["settings-chat-title-refresh", "settings-system-check-updates", "settings-system-auto-apply", "settings-system-continue-interrupted", "settings-system-summarize",
                         "settings-system-web-channel", "settings-system-agent-channel", "settings-system-ignore-agent"]),
             ("tools", ["settings-tools-agent-approvals"])
         ]

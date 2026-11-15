@@ -112,7 +112,7 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
   ]),
   ...rows('system', m.system_software, 'server', [['settingsUpdateChannel', m.settings_label_web_update_channel], ['settingsAgentUpdateChannel', m.settings_label_agent_update_channel]]),
   ...rows('system', m.system_updates, 'server', [
-    ['settingsCheckUpdates', m.settings_label_check_updates], ['settingsAutoApplyUpdates', m.settings_label_auto_apply_updates],
+    ['settingsCheckUpdates', m.settings_label_check_updates], ['settingsAutoApplyUpdates', m.settings_label_auto_apply_updates], ['settingsContinueInterruptedChats', m.settings_label_continue_interrupted_chats],
     ['settingsIgnoreAgentUpdates', m.settings_label_ignore_agent_updates], ['settingsSummarizeUpdatesAutomatically', m.settings_label_summarize_updates_automatically],
   ]),
   // TAL-1828, TAL-2160: the root profile's Group discussion limits, sent only to a session that can manage the server.

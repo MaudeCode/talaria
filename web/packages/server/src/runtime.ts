@@ -39,7 +39,7 @@ import type { AppDeps, RequestScope } from './http/context.js'
 import { checkoutRevision, detectWebuiVersion, loadReleaseInfo, loadWhatsNew, whenDescribeInputsChange } from './release.js'
 import { gatewayDrainDetail, ghcrExperimental, githubJson, normalizeChannel, normalizeWebChannel, purgePycache, sanitizeGitDiagnostic, UpdateService, waitUntilRestartSafe, type RestartBlockers } from './tools/updates.js'
 import { UpdateNotificationStore } from './tools/update-notifications.js'
-import { continueChat, UPDATE_CONTINUATION_PROMPT, UPDATE_CONTINUATION_SOURCE, type ContinuationRun } from './tools/update-continuation.js'
+import { appendContinuation, continueChat, UPDATE_CONTINUATION_PROMPT, UPDATE_CONTINUATION_SOURCE, type ContinuationRun } from './tools/update-continuation.js'
 import { RESTART_EXIT_CODE, RUN_SETTLE_MS } from './cli/supervise.js'
 import { displayBotName, pyBool, SettingsStore } from './settings.js'
 import { AssetCache, SpaShell } from './spa.js'
@@ -53,7 +53,7 @@ import { profileList } from './api/settings-router.js'
 import { HttpError } from './api/router.js'
 import { str } from './util.js'
 import { cancelSessionStream, sendSessionMessage, startSessionChat } from './sessions/admission.js'
-import { peerAgentActivity } from './sessions/talaria-activities.js'
+import { peerAgentActivity, talariaActivity } from './sessions/talaria-activities.js'
 import { JsonStorage } from './sessions/storage/json.js'
 import { attachmentSessionName, createBlobStore, localAttachmentRoot } from './sessions/storage/blobs.js'
 import { SqliteStorage } from './sessions/storage/sqlite.js'
@@ -591,6 +591,9 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     onBackgroundWork: (sessionId, profile) => { background.refresh(sessionId, profile); completions.wake() },
     profileDeleting: (profile) => profiles.isDeleting(profile),
     updateInProgress: () => deps.updates.blocksNewWork(),
+    // TAL-2270: with the owner's setting on, chats a shutdown interrupted continue on the next start (TAL-1990's record).
+    continueInterruptedChats: () => { try { return settings.peekValue('continue_interrupted_chats') === true } catch { return false } },
+    recordInterruptedChats: async (chats) => { appendContinuation(config.stateDir, (await Promise.all(chats.map((chat) => continuationRun(chat.session_id, chat.stream_id)))).map((run) => ({ ...run, restart: true }))) },
     workspaceBusy: (workspace) => deps.git.workspaceBusy(workspace),
     checkpointStoreBusy: (profile) => rollback.storeBusy(profileHome(profile ?? activeProfile())),
     syncTitle: (session) => sessions.deps.syncTitle(session),
@@ -1143,6 +1146,12 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       return result.text
     },
   }
+  // TAL-1990, TAL-2270: one interrupted chat's continuation entry; its profile is informational, so an unreadable one is null.
+  const continuationRun = async (sessionId: string, streamId: string): Promise<ContinuationRun> => {
+    let profile: string | null = null
+    try { profile = (await store.get(sessionId, { metadataOnly: true })).profile ?? null } catch { /* informational only */ }
+    return { session_id: sessionId, profile, stream_id: streamId }
+  }
   const restartBlockers = (): RestartBlockers => {
     const streams = [...activeStreamIds].map(String)
     const runs = [...registry.activeRuns.keys()].map(String)
@@ -1266,19 +1275,18 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     // TAL-1629: an Update anyway may interrupt only this server's own local chats; a terminal or cron run keeps refusing.
     interruptibleRuns: () => { const b = restartBlockers(); return b.active_terminals || b.active_cron_jobs ? null : turns.interruptibleRuns() },
     interruptRuns: (runs) => turns.interrupt(runs, RUN_SETTLE_MS),
-    // TAL-1990: each run's chat, read before it is interrupted; its profile is informational, so an unreadable one is null.
-    continuationRuns: async (runs) => (await Promise.all(runs.map(async (streamId): Promise<ContinuationRun | null> => {
-      const sessionId = registry.activeRuns.get(streamId)?.session_id ?? registry.ownerSessionId(streamId)
-      if (!sessionId) return null
-      let profile: string | null = null
-      try { profile = (await store.get(sessionId, { metadataOnly: true })).profile ?? null } catch { /* informational only */ }
-      return { session_id: sessionId, profile, stream_id: streamId }
+    // TAL-1990: each run's chat, read before it is interrupted.
+    continuationRuns: async (runs) => (await Promise.all(runs.map((streamId) => {
+      const sessionId = registry.sessionOf(streamId)
+      return sessionId ? continuationRun(sessionId, streamId) : Promise.resolve(null)
     }))).filter((run) => run !== null),
     continueChat: (run, entry) => continueChat(run, entry, {
       ensureRuntime: () => ensureAgentRuntimeCurrent(sidecar),
       session: async (sid) => { try { return await store.get(sid) } catch (error) { if (error instanceof SessionNotFound) return null; throw error } },
       readOnlyReason: (session) => sessions.readOnlyReason(session),
-      startTurn: (session) => turns.startServerTurn(session, { msg: UPDATE_CONTINUATION_PROMPT, source: UPDATE_CONTINUATION_SOURCE }),
+      startTurn: (session, run) => turns.startServerTurn(session, run.restart
+        ? { msg: UPDATE_CONTINUATION_PROMPT, talariaActivity: talariaActivity('restart_continuation', 'Continued after Web restart') }
+        : { msg: UPDATE_CONTINUATION_PROMPT, source: UPDATE_CONTINUATION_SOURCE }),
       log,
     }),
     scheduleRestart: () => { setTimeout(() => { void waitUntilRestartSafe(restartBlockers, { maxWaitMs: Infinity, log }).then(() => { deps.requestRestart() }) }, 2000).unref() },

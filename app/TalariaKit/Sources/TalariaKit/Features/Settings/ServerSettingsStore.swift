@@ -97,6 +97,10 @@ public final class ServerSettingsStore {
         save("ignore_agent_updates", \.ignoreAgentUpdates, value)
     }
     @discardableResult
+    public func setContinueInterruptedChats(_ value: Bool) -> Task<Void, Never> {
+        save("continue_interrupted_chats", \.continueInterruptedChats, value)
+    }
+    @discardableResult
     public func setQuotaThresholds(_ value: ProviderQuotaThresholds) -> Task<Void, Never> {
         save("provider_quota_thresholds", \.providerQuotaThresholds, value)
     }

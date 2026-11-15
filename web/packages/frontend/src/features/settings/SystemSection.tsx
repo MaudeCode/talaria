@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bot, ChevronDown, ChevronUp, CircleArrowUp, Download, MessagesSquare, Pause, Power, RefreshCw, Repeat, RotateCw, Sparkles } from 'lucide-react'
+import { Bot, ChevronDown, ChevronUp, CircleArrowUp, Download, History, MessagesSquare, Pause, Power, RefreshCw, Repeat, RotateCw, Sparkles } from 'lucide-react'
 import type { WebUpdateChannel } from '@maudecode/talaria-web-contracts'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -169,6 +169,8 @@ export function SystemSection() {
       <SettingsGroup id="updates" title={m.system_updates()}>
         <SettingToggle label={m.settings_label_check_updates()} hint={m.system_check_updates_hint()} icon={RefreshCw} id="settingsCheckUpdates" settingKey="check_for_updates" fallback disabled={!canManage} />
         <SettingToggle label={m.settings_label_auto_apply_updates()} hint={m.system_auto_apply_hint()} icon={Download} id="settingsAutoApplyUpdates" settingKey="auto_apply_updates" disabled={!canManage || !bool('check_for_updates', true)} />
+        {/* TAL-2270: a restart mid-reply continues the chat on the next start. */}
+        <SettingToggle label={m.settings_label_continue_interrupted_chats()} hint={m.system_continue_interrupted_hint()} icon={History} id="settingsContinueInterruptedChats" settingKey="continue_interrupted_chats" disabled={!canManage} />
         <SettingToggle label={m.settings_label_ignore_agent_updates()} hint={m.system_agent_manual_hint()} icon={Pause} id="settingsIgnoreAgentUpdates" settingKey="ignore_agent_updates" onSaved={recheck} disabled={!canManage} />
         <SettingToggle label={m.settings_label_summarize_updates_automatically()} icon={Sparkles} id="settingsSummarizeUpdatesAutomatically" settingKey="summarize_updates_automatically" fallback disabled={!canManage || !bool('check_for_updates', true)} />
       </SettingsGroup>

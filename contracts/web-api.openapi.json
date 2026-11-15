@@ -647,6 +647,10 @@
                             "ignore_agent_updates": {
                               "type": "boolean"
                             },
+                            "continue_interrupted_chats": {
+                              "type": "boolean",
+                              "description": "TAL-2270: continue each local chat a Web shutdown or restart saved as interrupted once Web starts again; off by default, owner-managed."
+                            },
                             "auth_enabled": {
                               "type": "boolean"
                             },
@@ -92586,6 +92590,10 @@
                     "ignore_agent_updates": {
                       "type": "boolean"
                     },
+                    "continue_interrupted_chats": {
+                      "type": "boolean",
+                      "description": "TAL-2270: continue each local chat a Web shutdown or restart saved as interrupted once Web starts again; off by default, owner-managed."
+                    },
                     "auth_enabled": {
                       "type": "boolean"
                     },
@@ -93054,6 +93062,10 @@
                     },
                     "ignore_agent_updates": {
                       "type": "boolean"
+                    },
+                    "continue_interrupted_chats": {
+                      "type": "boolean",
+                      "description": "TAL-2270: continue each local chat a Web shutdown or restart saved as interrupted once Web starts again; off by default, owner-managed."
                     },
                     "auth_enabled": {
                       "type": "boolean"

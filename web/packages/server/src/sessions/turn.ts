@@ -8,7 +8,7 @@ import { applyPlanGauge } from './session.js'
  */
 import { StartupTiming, timingOutcome } from '../startup-timing.js'
 import { randomUUID } from 'node:crypto'
-import { recordTalariaActivity } from './talaria-activities.js'
+import { recordTalariaActivity, talariaActivity } from './talaria-activities.js'
 import { closeSync, fstatSync, readFileSync } from 'node:fs'
 import { openAnchoredFd } from '../workspace/fs.js'
 import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
@@ -34,6 +34,7 @@ import { dict, findPersonality, type Config, type PersonalityRow } from '../conf
 import { ReasoningTitleTracker, reasoningDisclosureKey, reasoningEventPayload } from './reasoning-titles.js'
 import { UNSETTLED_TODO_KEY, parseTodoToolResult, type PlanProgress } from './todo.js'
 import type { UpdateNotificationStore } from '../tools/update-notifications.js'
+import type { ContinuationRun } from '../tools/update-continuation.js'
 import { SessionNotices } from './notices.js'
 import { SessionGoals } from './goals.js'
 import { turnTerminalState } from './anchor.js'
@@ -64,15 +65,32 @@ const BACKGROUND_UNWIND_WAIT_MS = 30_000
 const SHUTDOWN_INTERRUPT_TIMEOUT_MS = 1_000
 export const SHUTTING_DOWN_MESSAGE = 'Web is shutting down. Retry after it restarts.'
 const UPDATING_MESSAGE = 'Web is updating. Retry after it restarts.'
-const SHUTDOWN_INTERRUPTED_MESSAGE = 'Talaria Web stopped before this reply finished.'
-const SHUTDOWN_INTERRUPTED_HINT = 'The partial reply was saved. Send a new message to continue.'
+/**
+ * TAL-1628: what a run the server stopped says happened, on its live `apperror` and its saved row. TAL-2270: the saved row
+ * is a `web_interrupted` Talaria activity, and its hint says whether the chat continues on its own.
+ */
+export interface ShutdownNotice { summary: string; hint: string }
+const STOPPED = 'Talaria Web stopped before this reply finished'
+const SAVED = 'The partial reply was saved.'
+const CONTINUES = `${SAVED} This chat continues when Talaria Web is back.`
+export const SHUTDOWN_NOTICE: ShutdownNotice = { summary: STOPPED, hint: `${SAVED} Send a new message to continue.` }
+export const SHUTDOWN_CONTINUES_NOTICE: ShutdownNotice = { summary: STOPPED, hint: CONTINUES }
+/** TAL-1629's Update anyway: TAL-1990 continues every chat it interrupted. */
+export const UPDATE_NOTICE: ShutdownNotice = { summary: 'Talaria Web restarted to install an update before this reply finished', hint: CONTINUES }
 
 /** TAL-1628: how long a drain lets local runs finish on their own, then how long it may take to save the rest as interrupted. */
 export interface DrainOptions { waitMs: number; settleMs: number }
 /** Runs that ended on their own, runs saved as interrupted, and streams left without a saved outcome. */
 export interface DrainResult { completed: number; interrupted: number; unresolved: string[] }
 
+/** TAL-2270: one chat a shutdown saved as interrupted, for continuation on the next start. */
+export type InterruptedChat = Pick<ContinuationRun, 'session_id' | 'stream_id'>
+
 export interface TurnRunnerDeps {
+  /** TAL-2270: whether a shutdown's drain records the chats it interrupts so they continue on the next start. */
+  continueInterruptedChats?: () => boolean
+  /** TAL-2270: records them; called once per drain, before storage closes. */
+  recordInterruptedChats?: (chats: InterruptedChat[]) => Promise<void>
   notifications: UpdateNotificationStore
   /** Authenticated request owner; null for automatic turns, which retain the session owner. */
   notificationOwner: () => string | null
@@ -406,8 +424,8 @@ export class TurnRunner {
   private wakeDrain: (() => void) | null = null
   /** Streams a drain stopped: whether their stopped outcome is saved (`pending` until a save reports). */
   private readonly drainOutcomes = new Map<string, 'pending' | 'saved' | 'failed'>()
-  /** Streams stopped by the server's shutdown rather than the user: they end `interrupted`, not `cancelled`. */
-  private readonly shutdownStops = new Set<string>()
+  /** Streams stopped by the server's shutdown rather than the user, with what they say: they end `interrupted`, not `cancelled`. */
+  private readonly shutdownStops = new Map<string, ShutdownNotice>()
   /** Stopped streams whose terminal frame was sent (by the worker or the Stop), so the other sends none. */
   private readonly stopTerminals = new Set<string>()
   /** TAL-2189: a Stop's in-flight terminal rows; the worker's teardown waits for them before it closes the journal. */
@@ -444,7 +462,11 @@ export class TurnRunner {
     try {
       await Promise.race([idle(), new Promise<void>((resolve) => { timer = setTimeout(resolve, waitMs) }), escalation])
     } finally { clearTimeout(timer) }
-    const { stops, interrupted } = await this.stopAsInterrupted(() => [...this.workers.keys(), ...this.admissions.keys()], settleMs)
+    const continuing = this.deps.continueInterruptedChats?.() === true
+    const { stops, interrupted, chats } = await this.stopAsInterrupted(() => [...this.workers.keys(), ...this.admissions.keys()], settleMs, continuing ? SHUTDOWN_CONTINUES_NOTICE : SHUTDOWN_NOTICE)
+    if (continuing && chats.length) {
+      try { await this.deps.recordInterruptedChats?.(chats) } catch (error) { this.deps.log(`[webui] shutdown: could not record interrupted chats for continuation: ${(error as Error).message}`) }
+    }
     // An admission still persisting at the deadline never got a worker to stop; it stays unresolved and never launches.
     this.drainFinished = true
     const unresolved = [...[...stops.keys()].filter((streamId) => this.drainOutcomes.get(streamId) !== 'saved'), ...[...this.admissions.keys()].filter((streamId) => !stops.has(streamId))]
@@ -467,7 +489,7 @@ export class TurnRunner {
    * `settleMs`. The caller keeps new turns fenced meanwhile. Lists each run left without a saved outcome.
    */
   async interrupt(streamIds: readonly string[], settleMs: number): Promise<{ interrupted: number; unresolved: string[] }> {
-    const { stops, interrupted } = await this.stopAsInterrupted(() => streamIds, settleMs)
+    const { stops, interrupted } = await this.stopAsInterrupted(() => streamIds, settleMs, UPDATE_NOTICE)
     const unresolved = streamIds.filter((streamId) => stops.has(streamId) ? this.drainOutcomes.get(streamId) !== 'saved' : this.admissions.has(streamId))
     for (const streamId of unresolved) this.deps.log(`[webui] update: run ${streamId} has no saved interrupted outcome`)
     return { interrupted, unresolved }
@@ -475,16 +497,21 @@ export class TurnRunner {
 
   /**
    * The one interruption path (TAL-1628, TAL-1629): stop each of `candidates` that has a worker as interrupted, including a
-   * launch whose admission settles meanwhile, and wait up to `settleMs` for their outcomes to be saved.
+   * launch whose admission settles meanwhile, and wait up to `settleMs` for their outcomes to be saved. `chats` lists each
+   * run saved as interrupted with its session (TAL-2270).
    */
-  private async stopAsInterrupted(candidates: () => readonly string[], settleMs: number): Promise<{ stops: Map<string, Promise<boolean>>; interrupted: number }> {
+  private async stopAsInterrupted(candidates: () => readonly string[], settleMs: number, notice: ShutdownNotice): Promise<{ stops: Map<string, Promise<boolean>>; interrupted: number; chats: InterruptedChat[] }> {
     let timer: NodeJS.Timeout | undefined
     const stops = new Map<string, Promise<boolean>>()
+    const sessions = new Map<string, string>()
     const stopRemaining = (): void => {
       for (const streamId of candidates()) {
         if (stops.has(streamId) || !this.workers.has(streamId)) continue
         this.drainOutcomes.set(streamId, 'pending')
-        stops.set(streamId, this.stop(streamId, 'shutdown').then((r) => r.cancelled, (error: unknown) => {
+        // A user's Stop already under way keeps its cancelled outcome; only the server's own stops are recorded.
+        const sessionId = this.registry.cancelled.has(streamId) ? null : this.registry.sessionOf(streamId)
+        if (sessionId) sessions.set(streamId, sessionId)
+        stops.set(streamId, this.stop(streamId, notice).then((r) => r.cancelled, (error: unknown) => {
           this.deps.log(`[webui] shutdown: interrupting ${streamId} failed: ${(error as Error).message}`)
           return false
         }))
@@ -501,8 +528,12 @@ export class TurnRunner {
     try {
       await Promise.race([settle(), new Promise<void>((resolve) => { timer = setTimeout(resolve, settleMs) })])
     } finally { clearTimeout(timer) }
-    const interrupted = (await Promise.all([...stops.values()].map((stop) => Promise.race([stop, Promise.resolve(false)])))).filter(Boolean).length
-    return { stops, interrupted }
+    const outcomes = await Promise.all([...stops].map(async ([streamId, stop]) => [streamId, await Promise.race([stop, Promise.resolve(false)])] as const))
+    const chats = outcomes.flatMap(([streamId, stopped]) => {
+      const sessionId = sessions.get(streamId)
+      return stopped && sessionId && this.drainOutcomes.get(streamId) === 'saved' ? [{ session_id: sessionId, stream_id: streamId }] : []
+    })
+    return { stops, interrupted: outcomes.filter(([, stopped]) => stopped).length, chats }
   }
 
   /** TAL-1628: a drained stream's stopped outcome; a skipped settlement only resolves one nothing reported yet. */
@@ -1776,7 +1807,8 @@ export class TurnRunner {
     let snapshot: Record<string, unknown> | null = null
     if (sessionId) try { snapshot = (await this.publicTerminalSession((await this.deps.store.get(sessionId)), streamId)) } catch { snapshot = null }
     const context = { ...(sessionId ? { session_id: sessionId } : {}), ...(snapshot ? { session: snapshot } : {}) }
-    if (this.shutdownStops.has(streamId)) return ['apperror', { type: 'interrupted', terminal_state: 'interrupted', message: SHUTDOWN_INTERRUPTED_MESSAGE, hint: SHUTDOWN_INTERRUPTED_HINT, ...context }]
+    const notice = this.shutdownStops.get(streamId)
+    if (notice) return ['apperror', { type: 'interrupted', terminal_state: 'interrupted', message: `${notice.summary}.`, hint: notice.hint, ...context }]
     return ['cancel', { type: 'cancelled', status: 'cancelled', terminal_state: 'cancelled', ...context }]
   }
 
@@ -1846,10 +1878,13 @@ export class TurnRunner {
     this.clearPendingTurn(current)
     if (!quiet) {
       this.appendPartialSnapshot(current, streamId)
-      // TAL-1628: the server's shutdown ends the turn as interrupted, in the wording next-open recovery uses.
-      current.messages.push(this.shutdownStops.has(streamId)
-        ? { role: 'assistant', content: `**Interrupted:** ${SHUTDOWN_INTERRUPTED_MESSAGE}`, _error: true, _terminal_state: 'interrupted', timestamp: Math.trunc(this.deps.now()), _turn_id: streamId }
-        : { role: 'assistant', content: '', _error: true, _terminal_state: 'cancelled', timestamp: Math.trunc(this.deps.now()), _turn_id: streamId })
+      // TAL-1628: the server's shutdown ends the turn as interrupted. TAL-2270: its row shows as a Talaria activity.
+      const notice = this.shutdownStops.get(streamId)
+      if (notice) {
+        const messageId = randomUUID()
+        recordTalariaActivity(current, `message:${messageId}`, { ...talariaActivity('web_interrupted', notice.summary), details: notice.hint })
+        current.messages.push({ role: 'assistant', message_id: messageId, content: `**Interrupted:** ${notice.summary}.`, _error: true, _terminal_state: 'interrupted', timestamp: Math.trunc(this.deps.now()), _turn_id: streamId })
+      } else current.messages.push({ role: 'assistant', content: '', _error: true, _terminal_state: 'cancelled', timestamp: Math.trunc(this.deps.now()), _turn_id: streamId })
     }
     this.keepLiveState(current, streamId)
     this.persistConsumedSteers(current, streamId, startedAt, this.deps.now())
@@ -2129,7 +2164,7 @@ export class TurnRunner {
     if (ownerCancelled !== null && ownerCancelled !== undefined) return { cancelled: ownerCancelled, withdrawn: [] }
     // TAL-899: the user's Stop holds automatic turns, even one that lands after `done`, unless a newer turn already
     // took the session: a late or retried Stop for a turn the user followed holds nothing.
-    const owner = this.registry.ownerSessionId(streamId) ?? this.registry.activeRuns.get(streamId)?.session_id
+    const owner = this.registry.sessionOf(streamId)
     if (owner && this.registry.writebackOwners.get(owner) === streamId) {
       this.stopHeld.add(owner)
       try {
@@ -2143,8 +2178,8 @@ export class TurnRunner {
     return (await this.stop(streamId))
   }
 
-  /** `shutdown` (TAL-1628): the server's drain stops the run; it ends interrupted, and a user's Stop already under way wins. */
-  private async stop(streamId: string, reason: 'user' | 'shutdown' = 'user'): Promise<{ cancelled: boolean; withdrawn: SteerWithdrawn[] }> {
+  /** `shutdown` (TAL-1628): the server's drain stops the run; it ends interrupted with that notice, and a user's Stop already under way wins. */
+  private async stop(streamId: string, shutdown?: ShutdownNotice): Promise<{ cancelled: boolean; withdrawn: SteerWithdrawn[] }> {
     const channel = this.registry.peek(streamId)
     const run = this.registry.activeRuns.get(streamId)
     // A run that already settled on its own has its outcome saved by its worker.
@@ -2152,8 +2187,8 @@ export class TurnRunner {
     // Python popped the run before its title work: a cancel that lands after `done` (while the title prompts still run)
     // is not a cancellation, so it neither journals a `cancel` frame nor marks the completed run interrupted.
     if (!run && this.settledStreams.has(streamId)) { this.noteDrainOutcome(streamId, 'saved', false); return { cancelled: false, withdrawn: [] } }
-    const sessionId = this.registry.ownerSessionId(streamId) ?? run?.session_id ?? null
-    if (reason === 'shutdown' && !this.registry.cancelled.has(streamId)) this.shutdownStops.add(streamId)
+    const sessionId = this.registry.sessionOf(streamId)
+    if (shutdown && !this.registry.cancelled.has(streamId)) this.shutdownStops.set(streamId, shutdown)
     this.registry.cancelled.add(streamId)
     if (run) { run.phase = 'cancelling'; run.cancelled_at = this.deps.now() }
     // Python `_finalize_webui_steers` drained the Agent's pending steer text at cancel time: the interrupt reply
@@ -2163,7 +2198,7 @@ export class TurnRunner {
     let interrupt = this.interrupts.get(streamId)
     if (!interrupt) {
       const sidecar = this.deps.sidecar()
-      interrupt = sidecar ? sidecar.call('chat.interrupt', { stream_id: streamId }, { timeoutMs: reason === 'shutdown' ? SHUTDOWN_INTERRUPT_TIMEOUT_MS : 5_000 }).catch(() => null) : Promise.resolve(null)
+      interrupt = sidecar ? sidecar.call('chat.interrupt', { stream_id: streamId }, { timeoutMs: shutdown ? SHUTDOWN_INTERRUPT_TIMEOUT_MS : 5_000 }).catch(() => null) : Promise.resolve(null)
       this.interrupts.set(streamId, interrupt)
     }
     const reply = await interrupt

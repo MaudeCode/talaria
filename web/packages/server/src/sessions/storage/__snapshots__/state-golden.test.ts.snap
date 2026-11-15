@@ -72,6 +72,7 @@ exports[`preserves main JSON bytes for every document namespace and run-journal 
   "update_channel": "stable",
   "agent_update_channel": "stable",
   "ignore_agent_updates": false,
+  "continue_interrupted_chats": false,
   "theme": "light",
   "skin": "default",
   "font_size": "default",

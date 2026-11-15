@@ -367,14 +367,18 @@ describe('SystemSection "Check now"', () => {
     await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', 'experimental', 'webui', {}))
   })
 
-  it('persists the opt-in automatic Web update switch', async () => {
+  // TAL-2270: continuing interrupted chats is off until the owner turns it on, like automatic updates.
+  it.each([
+    ['auto_apply_updates', /install web updates automatically/i],
+    ['continue_interrupted_chats', /continue interrupted chats/i],
+  ] as const)('persists the opt-in %s switch', async (key, name) => {
     settingsState.check_for_updates = true
-    vi.mocked(api.saveSettings).mockResolvedValue({ ...settingsState, auto_apply_updates: true })
+    vi.mocked(api.saveSettings).mockResolvedValue({ ...settingsState, [key]: true })
     renderSystem()
-    const toggle = await screen.findByRole('switch', { name: /install web updates automatically/i })
+    const toggle = await screen.findByRole('switch', { name })
     expect(toggle).not.toBeChecked()
     await userEvent.click(toggle)
-    await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ auto_apply_updates: true }))
+    await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ [key]: true }))
   })
 
   it('offers the normal apply action for a direct global npm Stable update', async () => {

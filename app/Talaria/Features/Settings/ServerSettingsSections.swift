@@ -69,7 +69,7 @@ struct ServerSettingsSections: View {
                 }
             case .updates:
                 if settings.checkForUpdates != nil || settings.autoApplyUpdates != nil || settings.summarizeUpdatesAutomatically != nil
-                    || settings.updateChannel != nil || settings.agentUpdateChannel != nil || settings.ignoreAgentUpdates != nil {
+                    || settings.continueInterruptedChats != nil || settings.updateChannel != nil || settings.agentUpdateChannel != nil || settings.ignoreAgentUpdates != nil {
                     SettingsSection(title: String(localized: "Updates")) {
                         if let value = settings.checkForUpdates {
                             toggle(SettingsIndex.systemCheckForUpdates.titleResource, "arrow.triangle.2.circlepath", \.checkForUpdates, value,
@@ -78,6 +78,10 @@ struct ServerSettingsSections: View {
                         if let value = settings.autoApplyUpdates {
                             toggle(SettingsIndex.systemApplyWebUpdatesAutomatically.titleResource, "arrow.down.circle", \.autoApplyUpdates, value,
                                    "settings-system-auto-apply", store.setAutoApplyUpdates)
+                        }
+                        if let value = settings.continueInterruptedChats {
+                            toggle(SettingsIndex.systemContinueInterruptedChats.titleResource, "clock.arrow.circlepath", \.continueInterruptedChats, value,
+                                   "settings-system-continue-interrupted", store.setContinueInterruptedChats)
                         }
                         if let value = settings.summarizeUpdatesAutomatically {
                             toggle(SettingsIndex.systemSummarizeUpdates.titleResource, "text.alignleft", \.summarizeUpdatesAutomatically, value,
@@ -130,6 +134,7 @@ struct ServerSettingsSections: View {
         case (.titles, .systemRefreshTitlesEvery): available = settings?.autoTitleRefreshEvery != nil
         case (.updates, .systemCheckForUpdates): available = settings?.checkForUpdates != nil
         case (.updates, .systemApplyWebUpdatesAutomatically): available = settings?.autoApplyUpdates != nil
+        case (.updates, .systemContinueInterruptedChats): available = settings?.continueInterruptedChats != nil
         case (.updates, .systemSummarizeUpdates): available = settings?.summarizeUpdatesAutomatically != nil
         case (.updates, .systemWebChannel): available = settings?.updateChannel != nil && settings?.updateChannels != nil
         case (.updates, .systemAgentChannel): available = settings?.agentUpdateChannel != nil

@@ -212,7 +212,9 @@ describe('a confirmed Web update interrupts the named local runs (TAL-1629)', ()
       expect(saved.active_stream_id).toBeNull()
       expect(saved.messages.map((m) => [m.role, m._terminal_state ?? null])).toEqual([['user', null], ['assistant', null], ['assistant', 'interrupted']])
       expect(saved.messages[1]).toMatchObject({ content: 'partial', _partial: true })
-      expect((await terminalEvents(server, named.sid, named.streamId)).map((e) => [e.event, (e.payload as { terminal_state?: string }).terminal_state])).toEqual([['apperror', 'interrupted']])
+      // TAL-2270: the row names the update and says the chat continues (TAL-1990).
+      expect(saved.messages[2]?.content).toBe('**Interrupted:** Talaria Web restarted to install an update before this reply finished.')
+      expect((await terminalEvents(server, named.sid, named.streamId)).map((e) => { const p = e.payload as { terminal_state?: string; hint?: string }; return [e.event, p.terminal_state, p.hint] })).toEqual([['apperror', 'interrupted', 'The partial reply was saved. This chat continues when Talaria Web is back.']])
       expect(interrupts).toEqual([named.streamId])
       expect(server.deps.registry.activeRuns.has(other.streamId)).toBe(true)
       expect(server.deps.turns.interruptibleRuns()).toEqual([other.streamId])
@@ -415,5 +417,48 @@ describe('chats a confirmed Web update interrupted continue once Web is back (TA
       expect([...server.deps.registry.activeRuns.keys()]).toEqual([])
       expect(recorded(server)).toBe(false)
     } finally { release(); await server.running.close().catch(() => undefined) }
+  })
+})
+
+describe('chats a shutdown interrupted continue on the next start when the owner allows it (TAL-2270)', () => {
+  const recordPath = (state: string): string => join(state, 'update-continuation.json')
+  const record = (state: string): { runs: { session_id: string; restart?: boolean }[] } | null => { try { return JSON.parse(readFileSync(recordPath(state), 'utf8')) as never } catch { return null } }
+  const interruptedRow = (server: TestServer, sid: string): Row | undefined => durable(server, sid).messages.find((m) => m._terminal_state === 'interrupted')
+
+  it('keeps the stopped wording and records nothing while the setting is off', async () => {
+    const { sidecar, release } = heldSidecar()
+    const server = await bootTestServer({ sidecar, drain: { waitMs: 0, settleMs: 5_000 } })
+    try {
+      const { sid, streamId } = await startTurn(server, 'hello')
+      await server.running.close()
+      expect(interruptedRow(server, sid)).toMatchObject({ content: '**Interrupted:** Talaria Web stopped before this reply finished.' })
+      expect((await terminalEvents(server, sid, streamId)).map((e) => (e.payload as { hint?: string }).hint)).toEqual(['The partial reply was saved. Send a new message to continue.'])
+      expect(record(server.state)).toBeNull()
+    } finally { release() }
+  })
+
+  it('continues the chat on the next server, on any revision, keeping an update\'s own entries bound to its target', async () => {
+    const first = heldSidecar()
+    const server = await bootTestServer({ sidecar: first.sidecar, drain: { waitMs: 0, settleMs: 5_000 } })
+    const { sid, streamId } = await startTurn(server, 'hello')
+    await server.deps.settings.save({ continue_interrupted_chats: true })
+    // An Update anyway entry for another release is already waiting; the drain adds to it.
+    writeContinuation(server.state, { update_id: 'update-1', target_revision: 'f'.repeat(40), target_version: '2.0.0', runs: [{ session_id: 'other', profile: null, stream_id: 'other-stream' }] })
+    await server.running.close()
+    first.release()
+    expect(record(server.state)?.runs).toEqual([{ session_id: 'other', profile: null, stream_id: 'other-stream' }, { session_id: sid, profile: null, stream_id: streamId, restart: true }])
+
+    const next = heldSidecar()
+    const restarted = await bootTestServer({ sidecar: next.sidecar, env: { HERMES_HOME: server.state, TALARIA_WEB_STATE_DIR: server.state, TALARIA_WEB_DEFAULT_WORKSPACE: join(server.state, 'workspace'), TALARIA_WEB_CLAUDE_PROJECTS_DIR: join(server.state, 'claude-projects') } })
+    try {
+      await restarted.deps.updates.resumeContinuations()
+      await expect.poll(() => next.sidecar.calls.filter((c) => c.method === 'chat.start').map((c) => (c.params as { session_id?: string }).session_id)).toEqual([sid])
+      expect(record(server.state)).toBeNull()
+      next.release()
+      await expect.poll(async () => (await restarted.deps.sessionStore.get(sid)).active_stream_id).toBeNull()
+      const served = ((await (await restarted.get(`/api/session?session_id=${sid}&messages=1`)).json()) as { session: { messages: Record<string, unknown>[] } }).session.messages
+      expect(served.find((m) => m._terminal_state === 'interrupted')?._talaria_activity).toMatchObject({ origin: 'talaria', kind: 'web_interrupted', summary: 'Talaria Web stopped before this reply finished', details: 'The partial reply was saved. This chat continues when Talaria Web is back.' })
+      expect(served.find((m) => m.role === 'user' && m.content === 'Continue where you left off.')?._talaria_activity).toMatchObject({ kind: 'restart_continuation', summary: 'Continued after Web restart' })
+    } finally { next.release(); await restarted.running.close().catch(() => undefined) }
   })
 })
