@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Paste copied images into feedback attachments.",
+      "highlight": false,
+      "components": ["app"],
+      "announcement": {
+        "title": "Paste feedback images",
+        "description": "Attach copied screenshots and photos from the Send Feedback sheet.",
+        "icon": "attachment"
+      }
+    }
+  ]
+}

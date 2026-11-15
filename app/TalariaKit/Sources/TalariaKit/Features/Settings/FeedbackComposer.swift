@@ -173,10 +173,21 @@ public final class FeedbackComposer {
         attachmentOptions = options.attachments
     }
 
+    /// Rejects a whole input batch before any of its attachments enter the draft.
+    public func checkAttachmentCapacity(_ count: Int) -> Bool {
+        guard attachmentsEnabled else { return false }
+        guard count <= remainingAttachmentSlots else {
+            let limit = attachmentOptions?.maxCount ?? 0
+            attachmentError = SettingsErrorText(String(localized: "Attach up to \(limit) files."))
+            return false
+        }
+        return true
+    }
+
     /// Re-encodes a picked photo (JPEG) or the screen capture (PNG) without metadata, then stages it.
     @discardableResult
     public func addImage(_ data: Data, isScreenCapture: Bool = false) -> Task<Void, Never>? {
-        guard remainingAttachmentSlots > 0, let maxBytes = attachmentOptions?.maxImageBytes else { return nil }
+        guard let maxBytes = attachmentOptions?.maxImageBytes else { return nil }
         let attachment = FeedbackAttachment(contentType: isScreenCapture ? "image/png" : "image/jpeg")
         return add(attachment) { destination in
             guard let image = await ImagePreviewDownsampler.uploadImage(
@@ -191,7 +202,7 @@ public final class FeedbackComposer {
     /// Re-encodes a picked clip to the server's limits; a clip over `maxVideoSeconds` is refused inline.
     @discardableResult
     public func addVideo(at source: URL) -> Task<Void, Never>? {
-        guard remainingAttachmentSlots > 0, videoAllowed, let options = attachmentOptions else { return nil }
+        guard videoAllowed, let options = attachmentOptions else { return nil }
         return add(FeedbackAttachment(contentType: "video/mp4")) { destination in
             try await FeedbackVideoEncoder.encode(source, to: destination, maxBytes: options.maxVideoBytes, maxSeconds: options.maxVideoSeconds)
             return await FeedbackVideoEncoder.thumbnail(of: destination)
@@ -339,7 +350,8 @@ public final class FeedbackComposer {
         draft.attachmentIds = nil
     }
 
-    private func add(_ attachment: FeedbackAttachment, encode: @escaping (URL) async throws -> Data?) -> Task<Void, Never> {
+    private func add(_ attachment: FeedbackAttachment, encode: @escaping (URL) async throws -> Data?) -> Task<Void, Never>? {
+        guard checkAttachmentCapacity(1) else { return nil }
         attachmentError = nil
         attachments.append(attachment)
         uploadPhases[attachment.id] = .uploading
