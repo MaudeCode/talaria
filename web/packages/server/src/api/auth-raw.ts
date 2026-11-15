@@ -7,7 +7,9 @@ import { truthy } from '../config.js'
 import type { RequestContext } from '../http/context.js'
 import { normalizeHostPort } from '../http/origin.js'
 import { buildProfileCookie, loginRedirectPath, safeLoginRedirectPath } from '../auth/gate.js'
-import { OidcAuthError, OidcConfigError } from '../auth/oidc.js'
+import { hmacHex, safeEqual } from '../auth/crypto.js'
+import { OidcAuthError, OidcConfigError, PENDING_TTL_S } from '../auth/oidc.js'
+import { rateLimitClientIp } from './router.js'
 
 /** Python `_validated_request_host`: a bare `host[:port]` with no userinfo, path, or stray separators. */
 export function validatedRequestHost(raw: string | undefined): string | null {
@@ -54,16 +56,37 @@ async function oidcFailure(ctx: RequestContext, error: unknown): Promise<void> {
   else throw error
 }
 
+/** TAL-2206: the browser that starts a sign-in carries an HMAC of its state, so a callback link replayed into another browser (a login swap) is refused. */
+const OIDC_STATE_COOKIE = 'hermes_oidc_state'
+
+function oidcStateCookie(ctx: RequestContext, value: string, maxAge: number, path: string): string {
+  const parts = [`${OIDC_STATE_COOKIE}=${value}`, 'HttpOnly', `Max-Age=${String(maxAge)}`, `Path=${path}`, 'SameSite=Lax']
+  if (ctx.isSecureContext()) parts.push('Secure')
+  return parts.join('; ')
+}
+
+const oidcStateMac = (ctx: RequestContext, state: string): string => hmacHex(ctx.deps.auth.signingKey(), `oidc_state:${state}`)
+
 export async function handleOidcStart(ctx: RequestContext): Promise<void> {
   ctx.requestProfile = null
+  if (ctx.deps.browserOidcLimiter.limited(rateLimitClientIp(ctx))) {
+    await ctx.rawJson(429, { error: 'Too many OIDC sign-in starts; try again in a minute' })
+    return
+  }
   const nextPath = loginRedirectPath(ctx.query.get('next'), ctx.query.get('mount_path'))
   const nativeFlowId = (ctx.query.get('native_flow') ?? '').trim() || null
+  let base: string
   let location: string
   try {
-    location = await ctx.deps.oidc.authorizationRedirect(await requestBaseUrl(ctx), nextPath, nativeFlowId)
+    base = await requestBaseUrl(ctx)
+    location = await ctx.deps.oidc.authorizationRedirect(base, nextPath, nativeFlowId)
   } catch (error) {
     await oidcFailure(ctx, error)
     return
+  }
+  if (!nativeFlowId) {
+    const state = new URL(location).searchParams.get('state') ?? ''
+    ctx.queueCookie(oidcStateCookie(ctx, oidcStateMac(ctx, state), PENDING_TTL_S, await ctx.deps.oidc.callbackDirectory(base)))
   }
   await redirectNoStore(ctx, location)
 }
@@ -75,6 +98,8 @@ export async function handleOidcCallback(ctx: RequestContext): Promise<void> {
   const state = (query.get('state') ?? '').trim()
   const providerError = (query.get('error') ?? '').trim()
   const base = await requestBaseUrl(ctx)
+  const stateCookie = ctx.cookies.get(OIDC_STATE_COOKIE) ?? null
+  if (stateCookie !== null) ctx.queueCookie(oidcStateCookie(ctx, '', 0, await oidc.callbackDirectory(base)))
   if (providerError) {
     const nativeFlowId = oidc.consumeFailedProviderAuthorization(state)
     if (nativeFlowId) {
@@ -96,7 +121,7 @@ export async function handleOidcCallback(ctx: RequestContext): Promise<void> {
   }
   let result: Awaited<ReturnType<typeof oidc.completeCodeFlow>>
   try {
-    result = await oidc.completeCodeFlow(base, state, code)
+    result = await oidc.completeCodeFlow(base, state, code, stateCookie !== null && safeEqual(stateCookie, oidcStateMac(ctx, state)))
   } catch (error) {
     const nativeFlowId = (error instanceof OidcConfigError || error instanceof OidcAuthError) ? error.nativeFlowId : null
     if (nativeFlowId) {

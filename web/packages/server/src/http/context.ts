@@ -243,6 +243,8 @@ export interface AppDeps {
   passkeys: PasskeyStore
   /** Python `_native_oidc_start_rate_limited`: 10 starts per client IP per 60 s. */
   nativeOidcLimiter: WindowLimiter
+  /** TAL-2206: browser `/api/auth/oidc/start`, the same policy and client key as native starts. */
+  browserOidcLimiter: WindowLimiter
   // ── crons, kanban, extensions, terminal (checkpoint 7c) ──
   crons: CronService
   kanban: KanbanService

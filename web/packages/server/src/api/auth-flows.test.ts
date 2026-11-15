@@ -20,6 +20,8 @@ type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...headers } })
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
 const cookieOf = (res: Response, name: string): string | null => res.headers.getSetCookie().map((c) => c.split(';')[0] ?? '').find((c) => c.startsWith(name + '='))?.slice(name.length + 1) ?? null
+/** TAL-2206: the state cookie a browser start set, as the browser sends it back to the callback. */
+const stateCookie = (start: Response): Record<string, string> => ({ cookie: `hermes_oidc_state=${cookieOf(start, 'hermes_oidc_state') ?? ''}` })
 
 // ── fake identity provider ────────────────────────────────────────────────
 
@@ -95,7 +97,7 @@ describe('OIDC browser login', () => {
     expect(start.status).toBe(302)
     expect(start.headers.get('cache-control')).toBe('no-store')
     const { state, code } = providerCode(start.headers.get('location') ?? '')
-    const cb = await s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`)
+    const cb = await s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`, { headers: stateCookie(start) })
     expect(cb.status).toBe(302)
     expect(cb.headers.get('location')).toBe('/settings')
     const cookie = cookieOf(cb, s.deps.auth.cookieName())
@@ -118,20 +120,20 @@ describe('OIDC browser login', () => {
       const start = await s.get(`/api/auth/oidc/start?next=${encodeURIComponent(next)}&mount_path=${encodeURIComponent('/mount/')}`)
       expect(start.status).toBe(302)
       const { state, code } = providerCode(start.headers.get('location') ?? '')
-      const cb = await s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`)
+      const cb = await s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`, { headers: stateCookie(start) })
       expect(cb.status, next).toBe(302)
       expect(cb.headers.get('location'), next).toBe('/mount/tasks?view=open')
     }
     const start = await s.get(`/api/auth/oidc/start?next=${encodeURIComponent('//evil.example/x')}&mount_path=${encodeURIComponent('/mount/')}`)
     const { state, code } = providerCode(start.headers.get('location') ?? '')
-    expect((await s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`)).headers.get('location')).toBe('/mount/')
+    expect((await s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`, { headers: stateCookie(start) })).headers.get('location')).toBe('/mount/')
   })
 
   it('grants owner authority only from the owner allowlist and revokes it when the policy fingerprint changes', async () => {
     idp.claimsFor = (nonce) => ({ iss: ISSUER, aud: 'web-client', sub: 'user-2', email: 'own@example.com', groups: ['admins', 'owners'], exp: now() + 300, nonce })
     const start = await s.get('/api/auth/oidc/start')
     const { state, code } = providerCode(start.headers.get('location') ?? '')
-    const cb = await s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`)
+    const cb = await s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`, { headers: stateCookie(start) })
     const cookie = `${s.deps.auth.cookieName()}=${cookieOf(cb, s.deps.auth.cookieName()) ?? ''}`
     expect((await json(await s.get('/api/auth/status', { headers: { cookie } }))).can_manage_server).toBe(true)
     const saved = await s.get('/api/settings', { method: 'POST', body: JSON.stringify({ trusted_link_hosts: ['docs.example.com'], api_redact_enabled: false }), headers: { 'content-type': 'application/json', cookie } })
@@ -155,7 +157,7 @@ describe('OIDC browser login', () => {
       isolatedIdp.claimsFor = (nonce) => ({ iss: ISSUER, aud: 'web-client', sub: subject, email: 'shared@example.com', groups: ['admins', 'owners'], exp: now() + 300, nonce })
       const start = await isolated.get('/api/auth/oidc/start')
       const { state, code } = providerCode(start.headers.get('location') ?? '')
-      const callback = await isolated.get(`/api/auth/oidc/callback?state=${state}&code=${code}`)
+      const callback = await isolated.get(`/api/auth/oidc/callback?state=${state}&code=${code}`, { headers: stateCookie(start) })
       const value = cookieOf(callback, isolated.deps.auth.cookieName()) ?? ''
       const cookie = `${isolated.deps.auth.cookieName()}=${value}`
       return { cookie, headers: { cookie, origin, 'x-csrf-token': isolated.deps.auth.csrfTokenForSession(value) ?? '' } }
@@ -181,7 +183,7 @@ describe('OIDC browser login', () => {
     idp.claimsFor = (nonce) => ({ iss: ISSUER, aud: 'web-client', sub: 'user-3', groups: ['guests'], exp: now() + 300, nonce })
     const start = await s.get('/api/auth/oidc/start')
     const { state, code } = providerCode(start.headers.get('location') ?? '')
-    const denied = await s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`)
+    const denied = await s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`, { headers: stateCookie(start) })
     expect(denied.status).toBe(403)
     expect((await json(denied)).error).toBe('OIDC identity is not allowed')
     expect((await s.get('/api/auth/oidc/callback?state=nope&code=x')).status).toBe(401)
@@ -252,6 +254,62 @@ describe('OIDC browser login', () => {
       last = (await post(s, '/api/auth/oidc/native/start', { callback_url: 'talaria://oidc-callback', state: b64u(randomBytes(24)), code_challenge: challenge, code_challenge_method: 'S256' })).status
     }
     expect(last).toBe(429)
+  })
+})
+
+// TAL-2206: a callback link only completes in the browser that started the sign-in, and browser starts are rate limited.
+describe('OIDC browser state binding', () => {
+  let s: TestServer
+  const now = () => Date.now() / 1000
+  beforeAll(async () => {
+    s = await bootTestServer({ env: { ...OIDC_BASE_ENV, TALARIA_WEB_TRUST_FORWARDED_FOR: '1', TALARIA_WEB_TRUSTED_PROXY_CIDRS: '127.0.0.1/32' } })
+    s.deps.fetch = fakeIdp(now).fetch
+  })
+  afterAll(() => s.close())
+  const setCookie = (res: Response, name: string): string | undefined => res.headers.getSetCookie().find((c) => c.startsWith(name + '='))
+  let client = 0
+  /** Each test signs in from its own forwarded client, so the start limiter's budget is per test. */
+  const fresh = (): Record<string, string> => ({ 'x-forwarded-for': `203.0.113.${String((client += 1))}` })
+
+  it('refuses a callback replayed into another browser and keeps the login for the browser that started it', async () => {
+    const ip = fresh()
+    const start = await s.get('/api/auth/oidc/start', { headers: ip })
+    const other = await s.get('/api/auth/oidc/start', { headers: ip })
+    const { state, code } = providerCode(start.headers.get('location') ?? '')
+    const callback = `/api/auth/oidc/callback?state=${state}&code=${code}`
+    for (const headers of [ip, { ...ip, ...stateCookie(other) }]) {
+      const refused = await s.get(callback, { headers })
+      expect(refused.status).toBe(401)
+      expect((await json(refused)).error).toBe('Invalid OIDC state')
+      expect(cookieOf(refused, s.deps.auth.cookieName())).toBeNull()
+    }
+    const done = await s.get(callback, { headers: { ...ip, ...stateCookie(start) } })
+    expect(done.status).toBe(302)
+    expect(s.deps.auth.getSessionInfo(cookieOf(done, s.deps.auth.cookieName()))).toMatchObject({ oidc_issuer: ISSUER, oidc_subject: 'user-1' })
+    expect(setCookie(done, 'hermes_oidc_state')).toBe('hermes_oidc_state=; HttpOnly; Max-Age=0; Path=/api/auth/oidc; SameSite=Lax')
+  })
+
+  it('sets the state cookie with the decided attributes, Secure only in a secure context', async () => {
+    const start = await s.get('/api/auth/oidc/start', { headers: fresh() })
+    expect(setCookie(start, 'hermes_oidc_state')).toMatch(/^hermes_oidc_state=[0-9a-f]{64}; HttpOnly; Max-Age=600; Path=\/api\/auth\/oidc; SameSite=Lax$/)
+    s.deps.config.env.TALARIA_WEB_SECURE = '1'
+    try {
+      const secure = await s.get('/api/auth/oidc/start', { headers: fresh() })
+      expect(setCookie(secure, 'hermes_oidc_state')).toMatch(/^hermes_oidc_state=[0-9a-f]{64}; HttpOnly; Max-Age=600; Path=\/api\/auth\/oidc; SameSite=Lax; Secure$/)
+    } finally { delete s.deps.config.env.TALARIA_WEB_SECURE }
+    // A redirect URI under a mount moves the path with it, so the browser still sends the cookie to the callback.
+    const mounted = new OidcService({
+      env: { ...OIDC_BASE_ENV, TALARIA_WEB_OIDC_REDIRECT_URI: 'https://talaria.example/mount/api/auth/oidc/callback' }, operatorConfig: () => Promise.resolve({}), profileHome: () => '',
+      fetch: () => fakeIdp(now).fetch, pinned: () => { throw new Error('trusted host uses plain fetch') }, now, log: () => undefined,
+    })
+    expect(await mounted.callbackDirectory('http://127.0.0.1:8787')).toBe('/mount/api/auth/oidc')
+  })
+
+  it('answers the 11th browser start from one client within a minute with 429 and leaves other clients alone', async () => {
+    const ip = fresh()
+    for (let i = 0; i < 10; i += 1) expect((await s.get('/api/auth/oidc/start', { headers: ip })).status).toBe(302)
+    expect((await s.get('/api/auth/oidc/start', { headers: ip })).status).toBe(429)
+    expect((await s.get('/api/auth/oidc/start', { headers: fresh() })).status).toBe(302)
   })
 })
 
@@ -505,7 +563,7 @@ describe('OIDC profile binding', () => {
   const callback = async (): Promise<Response> => {
     const start = await s.get('/api/auth/oidc/start')
     const { state, code } = providerCode(start.headers.get('location') ?? '')
-    return s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`)
+    return s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`, { headers: stateCookie(start) })
   }
 
   it('a mapped identity gets a session bound to its profile and a signed profile cookie', async () => {
@@ -650,7 +708,7 @@ describe('OIDC outbound vetting', () => {
       const start = await s.get('/api/auth/oidc/start')
       expect(start.status).toBe(302)
       const { state, code } = providerCode(start.headers.get('location') ?? '')
-      const cb = await s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`)
+      const cb = await s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`, { headers: stateCookie(start) })
       expect(cb.status).toBe(302)
       expect(pinnedTo.length).toBeGreaterThanOrEqual(2)
       expect(pinnedTo.every((a) => a.length === 1 && a[0] === '93.184.216.34')).toBe(true)
@@ -821,7 +879,7 @@ describe('OIDC operator config availability', () => {
       const start = await s.get('/api/auth/oidc/start')
       expect(start.status).toBe(302)
       const { state, code } = providerCode(start.headers.get('location') ?? '')
-      const callback = await s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`)
+      const callback = await s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`, { headers: stateCookie(start) })
       expect(callback.status).toBe(302)
       const cookie = cookieOf(callback, s.deps.auth.cookieName())
       expect(cookie).toBeTruthy()
@@ -953,7 +1011,7 @@ describe('OIDC browser and native login against a client_secret_basic-only provi
   it('browser callback authenticates with the Basic header alone and creates the session', async () => {
     const start = await s.get('/api/auth/oidc/start?next=%2Fsettings')
     const { state, code } = providerCode(start.headers.get('location') ?? '')
-    const cb = await s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`)
+    const cb = await s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`, { headers: stateCookie(start) })
     expect(cb.status).toBe(302)
     expect(cb.headers.get('location')).toBe('/settings')
     expect(s.deps.auth.getSessionInfo(cookieOf(cb, s.deps.auth.cookieName()))).toMatchObject({ oidc_issuer: ISSUER, oidc_subject: 'user-1' })
@@ -998,8 +1056,9 @@ describe('OIDC browser and native login against a client_secret_basic-only provi
         return redirect ? Promise.resolve(new Response(null, { status: 307, headers: { location: 'https://elsewhere.example/token' } })) : provider.fetch(url, init)
       }
       const login = async (): Promise<Response> => {
-        const { state, code } = providerCode((await u.get('/api/auth/oidc/start')).headers.get('location') ?? '')
-        return u.get(`/api/auth/oidc/callback?state=${state}&code=${code}`)
+        const start = await u.get('/api/auth/oidc/start')
+        const { state, code } = providerCode(start.headers.get('location') ?? '')
+        return u.get(`/api/auth/oidc/callback?state=${state}&code=${code}`, { headers: stateCookie(start) })
       }
       expect((await login()).status).toBe(302)
       redirect = true
@@ -1027,7 +1086,7 @@ describe('OIDC token endpoint authentication method', () => {
       fetch: () => idp.fetch, pinned: () => { throw new Error('trusted host uses plain fetch') }, now, log: (line) => { logs.push(line) },
     })
     const { state, code } = providerCode(await oidc.authorizationRedirect(BASE, null, null))
-    await oidc.completeCodeFlow(BASE, state, code)
+    await oidc.completeCodeFlow(BASE, state, code, true)
     expect(idp.tokens).toHaveLength(1)
     return { form: idp.tokens[0] ?? {}, authorization: idp.tokenAuth[0] ?? null, logs }
   }

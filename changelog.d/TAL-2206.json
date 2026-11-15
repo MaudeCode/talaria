@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Single sign-on now finishes only in the browser that started it, so a shared sign-in link can no longer log someone into another account, and repeated sign-in starts from one client are rate limited.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}
