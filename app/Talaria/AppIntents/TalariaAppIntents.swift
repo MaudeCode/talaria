@@ -136,9 +136,7 @@ private func askInBackground<Intent: LongRunningIntent & CancellableIntent>(
 }
 
 /// Registers Talaria's App Shortcuts. iOS discovers this conformance automatically at build
-/// time — it does not need to be referenced from the `App` struct. Exposing the intent here
-/// is what makes "New Chat" appear in the Shortcuts app, Spotlight, and Siri, and assignable
-/// to the iPhone Action button.
+/// time. Registering each voice action here makes its phrases work without Shortcuts setup.
 struct TalariaShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
@@ -149,6 +147,33 @@ struct TalariaShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Ask Talaria",
             systemImageName: "bubble.left.and.text.bubble.right"
+        )
+        AppShortcut(
+            intent: ReplyToTalariaIntent(),
+            phrases: ["Reply to \(.applicationName)"],
+            shortTitle: "Reply to Talaria",
+            systemImageName: "arrowshape.turn.up.left"
+        )
+        AppShortcut(
+            intent: TalariaStatusIntent(),
+            phrases: [
+                "What's \(.applicationName) working on",
+                "Ask \(.applicationName) what needs me"
+            ],
+            shortTitle: "Talaria Status",
+            systemImageName: "waveform"
+        )
+        AppShortcut(
+            intent: RespondToApprovalByVoiceIntent(answer: .allow),
+            phrases: ["Approve in \(.applicationName)"],
+            shortTitle: "Approve",
+            systemImageName: "checkmark.circle"
+        )
+        AppShortcut(
+            intent: RespondToApprovalByVoiceIntent(answer: .deny),
+            phrases: ["Deny in \(.applicationName)"],
+            shortTitle: "Deny",
+            systemImageName: "xmark.circle"
         )
         AppShortcut(
             intent: NewChatIntent(),
