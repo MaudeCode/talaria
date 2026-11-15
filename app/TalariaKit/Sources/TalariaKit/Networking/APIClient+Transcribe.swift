@@ -37,7 +37,7 @@ extension APIClient {
         body.appendMultipartClosingBoundary(boundary)
         request.httpBody = body
 
-        let (responseData, response) = try await session.data(for: request)
+        let (responseData, response) = try await session.data(for: request, delegate: redirectHeaderStripper)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.http(statusCode: -1, body: nil)
         }

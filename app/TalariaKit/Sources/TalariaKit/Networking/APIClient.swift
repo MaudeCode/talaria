@@ -17,16 +17,17 @@ public actor APIClient {
     public nonisolated let baseURL: URL
     let session: URLSession
     let publicMediaSession: URLSession
-    /// The redirect guard wired into both default sessions. Strips the user's
-    /// custom headers when the server redirects a same-origin request to a
-    /// cross-origin host (#277). `nonisolated` so tests can drive the exact
-    /// delegate the client installs; it is immutable and `Sendable`.
+    /// The redirect guard every request carries as its task delegate. Strips the
+    /// user's custom headers when the server redirects a same-origin request to a
+    /// cross-origin host (#277). It rides on each task rather than the session
+    /// because the default sessions are shared by every client (TAL-847).
+    /// `nonisolated` so tests can drive the exact delegate the client installs;
+    /// it is immutable and `Sendable`.
     nonisolated let redirectHeaderStripper: CrossOriginHeaderStripper
-    /// Sessions this client created (vs. ones a caller injected). A `URLSession`
-    /// built with a delegate keeps a strong reference to it and to itself until
-    /// invalidated, so we tear these down in `deinit` to avoid leaking them — many
-    /// `APIClient`s are created ad hoc and discarded (#277).
-    private let ownedSessions: [URLSession]
+    /// The session this client built for an injected cookie jar (a sign-in
+    /// probe's throwaway jar), invalidated in `deinit`. Shared and injected
+    /// sessions are never invalidated by a client.
+    private let privateSession: URLSession?
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
     private let cookieStorage: HTTPCookieStorage?
@@ -57,10 +58,9 @@ public actor APIClient {
         self.baseURL = baseURL
         self.customHeaderProvider = customHeaderProvider
 
-        // One redirect guard shared by both sessions (same origin + same header
-        // provider). Wired into the default sessions so a server-issued
-        // same-origin → cross-origin redirect can't forward the user's custom
-        // headers off-origin (#277).
+        // One redirect guard for every request (same origin + same header
+        // provider), so a server-issued same-origin → cross-origin redirect can't
+        // forward the user's custom headers off-origin (#277).
         let redirectHeaderStripper = CrossOriginHeaderStripper(
             baseURL: baseURL,
             customHeaderProvider: customHeaderProvider
@@ -70,14 +70,17 @@ public actor APIClient {
         let resolvedCookieStorage = cookieStorage
             ?? session?.configuration.httpCookieStorage
             ?? ServerCookieStore.shared.storage(for: baseURL)
-        let resolvedSession = session ?? Self.makeDefaultSession(
-            delegate: redirectHeaderStripper,
+        // Clients for one server share its warm connection pool and cookie jar;
+        // an injected jar gets a session of its own (TAL-847).
+        let privateSession = session == nil && cookieStorage != nil
+            ? Self.makeDefaultSession(cookieStorage: resolvedCookieStorage)
+            : nil
+        self.session = session ?? privateSession ?? SharedURLSessions.defaultSession(
+            for: baseURL,
             cookieStorage: resolvedCookieStorage
         )
-        let resolvedPublicMediaSession = publicMediaSession
-            ?? Self.makeDefaultPublicMediaSession(delegate: redirectHeaderStripper)
-        self.session = resolvedSession
-        self.publicMediaSession = resolvedPublicMediaSession
+        self.privateSession = privateSession
+        self.publicMediaSession = publicMediaSession ?? SharedURLSessions.publicMediaSession()
         self.cookieStorage = resolvedCookieStorage
         if let cookiePersistence {
             persistCookies = cookiePersistence
@@ -95,13 +98,6 @@ public actor APIClient {
         } else {
             self.forgetProfileOwner = {}
         }
-        // Only the sessions we created carry our delegate and must be invalidated;
-        // an injected session is the caller's to manage.
-        var ownedSessions: [URLSession] = []
-        if session == nil { ownedSessions.append(resolvedSession) }
-        if publicMediaSession == nil { ownedSessions.append(resolvedPublicMediaSession) }
-        self.ownedSessions = ownedSessions
-
         self.decoder = Self.responseDecoder()
 
         let encoder = JSONEncoder()
@@ -110,13 +106,9 @@ public actor APIClient {
     }
 
     deinit {
-        // Break the session ↔ delegate retain so the sessions we created don't
-        // outlive this client (#277). `finishTasksAndInvalidate` lets any in-flight
-        // request finish first; by deinit there should be none, since an in-flight
-        // actor call keeps `self` alive.
-        for session in ownedSessions {
-            session.finishTasksAndInvalidate()
-        }
+        // `finishTasksAndInvalidate` lets any in-flight request finish first; by
+        // deinit there should be none, since an in-flight actor call keeps `self` alive.
+        privateSession?.finishTasksAndInvalidate()
     }
 
     public func health() async throws -> HealthResponse {
@@ -331,7 +323,7 @@ public actor APIClient {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(for: request)
+            (data, response) = try await session.data(for: request, delegate: redirectHeaderStripper)
         } catch {
             throw APIError.network(underlying: error)
         }
@@ -377,7 +369,7 @@ public actor APIClient {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(for: request)
+            (data, response) = try await session.data(for: request, delegate: redirectHeaderStripper)
         } catch {
             throw APIError.network(underlying: error)
         }
@@ -430,11 +422,9 @@ public actor APIClient {
     }
 }
 
-private extension APIClient {
-    static func makeDefaultSession(
-        delegate: URLSessionDelegate?,
-        cookieStorage: HTTPCookieStorage
-    ) -> URLSession {
+extension APIClient {
+    /// No session delegate: the redirect guard rides on each task (TAL-847).
+    static func makeDefaultSession(cookieStorage: HTTPCookieStorage) -> URLSession {
         let configuration = URLSessionConfiguration.default
         #if DEBUG
         UITestURLSessionHook.configure(configuration)
@@ -442,10 +432,10 @@ private extension APIClient {
         configuration.httpCookieStorage = cookieStorage
         configuration.httpCookieAcceptPolicy = .always
         configuration.httpShouldSetCookies = true
-        return URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+        return URLSession(configuration: configuration)
     }
 
-    static func makeDefaultPublicMediaSession(delegate: URLSessionDelegate?) -> URLSession {
+    static func makeDefaultPublicMediaSession() -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
         #if DEBUG
         UITestURLSessionHook.configure(configuration)
@@ -453,7 +443,54 @@ private extension APIClient {
         configuration.httpCookieStorage = nil
         configuration.httpCookieAcceptPolicy = .never
         configuration.httpShouldSetCookies = false
-        return URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+        return URLSession(configuration: configuration)
+    }
+}
+
+/// The sessions `APIClient`s share, so a new client reuses warm connections
+/// instead of paying a fresh TCP and TLS handshake (TAL-847). Default sessions
+/// are keyed by the server's cookie scope and carry that server's
+/// `ServerCookieStore` jar, so cookies stay per server; the cookie-less media
+/// session is process-wide. They are never invalidated: `ServerCookieStore.clear`
+/// empties the same jar object, so a cached session stays valid after sign-out.
+enum SharedURLSessions {
+    private struct Cache {
+        var hookGeneration = 0
+        var defaults: [String: URLSession] = [:]
+        var media: URLSession?
+    }
+
+    private static let cache = OSAllocatedUnfairLock(initialState: Cache())
+
+    static func defaultSession(for server: URL, cookieStorage: HTTPCookieStorage) -> URLSession {
+        let scope = ServerCookieStore.scopeURL(for: server).absoluteString
+        return withCurrentCache { cache in
+            if let session = cache.defaults[scope] { return session }
+            let session = APIClient.makeDefaultSession(cookieStorage: cookieStorage)
+            cache.defaults[scope] = session
+            return session
+        }
+    }
+
+    static func publicMediaSession() -> URLSession {
+        withCurrentCache { cache in
+            if let session = cache.media { return session }
+            let session = APIClient.makeDefaultPublicMediaSession()
+            cache.media = session
+            return session
+        }
+    }
+
+    private static func withCurrentCache(_ body: (inout Cache) -> URLSession) -> URLSession {
+        cache.withLockUnchecked { cache in
+            #if DEBUG
+            // Tests swap the hook to route sessions through a mock protocol;
+            // sessions built under an earlier hook would bypass it.
+            let generation = UITestURLSessionHook.generation
+            if cache.hookGeneration != generation { cache = Cache(hookGeneration: generation) }
+            #endif
+            return body(&cache)
+        }
     }
 }
 

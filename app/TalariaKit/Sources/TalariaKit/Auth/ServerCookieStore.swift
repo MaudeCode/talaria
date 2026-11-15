@@ -75,7 +75,7 @@ public final class ServerCookieStore: @unchecked Sendable {
         URLSessionConfiguration.ephemeral.httpCookieStorage ?? HTTPCookieStorage()
     }
 
-    private static func scopeURL(for url: URL) -> URL {
+    static func scopeURL(for url: URL) -> URL {
         guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
             return url
         }
