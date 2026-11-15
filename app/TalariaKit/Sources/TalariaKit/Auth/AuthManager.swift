@@ -770,7 +770,7 @@ public final class AuthManager {
         // Same-profile recovery preserves navigation and composer state.
         if pendingReauthentication == server { authenticatedIdentityRevision += 1 }
         profileEntityCache.save([])
-        clearQuotaWidgetSnapshot()
+        clearWidgetSnapshots()
     }
 
     /// Records the server-authorized profile for `server`. A sign-in without a
@@ -821,7 +821,7 @@ public final class AuthManager {
         headerStore.replace(with: headers)
         persistCustomHeaders(for: serverURL)
         refreshServers()
-        clearQuotaWidgetSnapshot()
+        clearWidgetSnapshots()
         finishRecovery()
         state = .loggedIn(server: serverURL)
     }
@@ -853,7 +853,7 @@ public final class AuthManager {
         persistCustomHeaders(for: serverURL)
         refreshServers()
         if previousServerID != serverURL.absoluteString {
-            clearQuotaWidgetSnapshot()
+            clearWidgetSnapshots()
         }
         state = .loggedIn(server: serverURL)
         finishRecovery()
@@ -961,7 +961,7 @@ public final class AuthManager {
         // profiles, which would leak into Shortcuts / Siri if the new server's fetch is
         // delayed or fails. The new server's profiles reload on the next foreground fetch.
         profileEntityCache.save([])
-        clearQuotaWidgetSnapshot()
+        clearWidgetSnapshots()
         lastErrorMessage = nil
         finishRecovery()
         state = .loggedIn(server: serverURL)
@@ -1037,7 +1037,7 @@ public final class AuthManager {
         // server being removed, so they're stale whether we switch to another server (its
         // profiles reload on the next foreground fetch) or return to onboarding.
         profileEntityCache.save([])
-        clearQuotaWidgetSnapshot()
+        clearWidgetSnapshots()
 
         refreshServers()
 
@@ -1077,7 +1077,8 @@ public final class AuthManager {
         clearSessionCookies(for: server)
     }
 
-    private func clearQuotaWidgetSnapshot() {
+    private func clearWidgetSnapshots() {
+        NeedsYouSnapshotStore().clear()
         _ = ProviderQuotaWidgetRefreshCredentialStore.clear()
         guard ProviderQuotaWidgetSnapshotStore().clear() else { return }
         ProviderQuotaWidgetSnapshotStore.reloadTimelines()
@@ -1182,7 +1183,7 @@ public final class AuthManager {
         // Drop the App Intents profile picker cache (#339) so a signed-out user doesn't see
         // the previous server's profiles lingering in Shortcuts / Siri.
         profileEntityCache.save([])
-        clearQuotaWidgetSnapshot()
+        clearWidgetSnapshots()
     }
 
     // MARK: - Retained passwords and iCloud sync (TAL-91)

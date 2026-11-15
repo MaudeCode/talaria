@@ -245,9 +245,8 @@ public enum TalariaAggregateLiveActivityPresentation: Sendable {
         if state.activeCount == 0 && state.rows.allSatisfy({ ["completed", "failed", "cancelled"].contains($0.phase) }) {
             return outcomePhase(state)
         }
-        return state.rows.first(where: {
-            $0.phase == "waiting_for_approval" || $0.phase == "waiting_for_input"
-        })?.phase ?? state.rows.first(where: { $0.phase == "failed" })?.phase
+        return state.rows.first(where: { isWaiting($0.phase) })?.phase
+            ?? state.rows.first(where: { $0.phase == "failed" })?.phase
     }
 
     public static func colorHex(for phase: String) -> UInt32? {
@@ -264,6 +263,11 @@ public enum TalariaAggregateLiveActivityPresentation: Sendable {
     /// Work in progress, which keeps its hue on the dimmed Lock Screen (`LiveActivityPalette.tint(isWorking:)`).
     public static func isWorking(_ phase: String) -> Bool {
         phase == "starting" || phase == "running"
+    }
+
+    /// Waiting on the user: an approval or an answer.
+    public static func isWaiting(_ phase: String) -> Bool {
+        phase == "waiting_for_approval" || phase == "waiting_for_input"
     }
 
     public static func signalSymbol(for phase: String) -> String {

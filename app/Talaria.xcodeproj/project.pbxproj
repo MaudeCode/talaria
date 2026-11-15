@@ -25,6 +25,7 @@
 		26AB000000000000000388B1 /* AuxiliaryModelsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AB000000000000000388F1 /* AuxiliaryModelsSettingsView.swift */; };
 		26AB000000000000000000B2 /* ProvidersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AB000000000000000000F2 /* ProvidersView.swift */; };
 		A06100000000000000000003 /* ProviderQuotaWidgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000004 /* ProviderQuotaWidgetTests.swift */; };
+		E14790000000000000000014 /* NeedsYouWidgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14790000000000000000002 /* NeedsYouWidgetTests.swift */; };
 		26AB000000000000000000B4 /* ProvidersViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AB000000000000000000F4 /* ProvidersViewModelTests.swift */; };
 		759A00000000000000000003 /* UpdateSummaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 759A00000000000000000004 /* UpdateSummaryTests.swift */; };
 		211500000000000000000001 /* ScreenGalleryHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 211500000000000000000002 /* ScreenGalleryHostedTests.swift */; };
@@ -41,6 +42,7 @@
 		1A2B3C4D5E6F700000000345 /* AppIntentNewChatInProfileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000344 /* AppIntentNewChatInProfileTests.swift */; };
 		1A2B3C4D5E6F700000000003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000014 /* Assets.xcassets */; };
 		A09400000000000000000102 /* BrandAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A09400000000000000000101 /* BrandAssets.xcassets */; };
+		E14790000000000000000015 /* BrandAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A09400000000000000000101 /* BrandAssets.xcassets */; };
 		7A1350000000000000000001 /* Talaria.icon in Resources */ = {isa = PBXBuildFile; fileRef = 7A1350000000000000000002 /* Talaria.icon */; };
 		7A1350000000000000000003 /* TalariaDev.icon in Resources */ = {isa = PBXBuildFile; fileRef = 7A1350000000000000000004 /* TalariaDev.icon */; };
 		10CA110C0DE000000000B001 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 10CA110C0DE000000000B002 /* Localizable.xcstrings */; };
@@ -441,6 +443,9 @@
 		E14760000000000000000011 /* NewChatControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14760000000000000000001 /* NewChatControls.swift */; };
 		E14760000000000000000012 /* NewChatControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14760000000000000000001 /* NewChatControls.swift */; };
 		E00500000000000000000011 /* NewChatWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = E00500000000000000000001 /* NewChatWidget.swift */; };
+		E14790000000000000000011 /* NeedsYouWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14790000000000000000001 /* NeedsYouWidget.swift */; };
+		E14790000000000000000012 /* NeedsYouWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14790000000000000000001 /* NeedsYouWidget.swift */; };
+		E14790000000000000000013 /* SandalMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000214 /* SandalMark.swift */; };
 		E00500000000000000000012 /* ProfileEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000342 /* ProfileEntity.swift */; };
 		E14630000000000000000011 /* LiveActivityActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14630000000000000000001 /* LiveActivityActions.swift */; };
 		E14630000000000000000012 /* LiveActivityActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14630000000000000000001 /* LiveActivityActions.swift */; };
@@ -882,6 +887,7 @@
 		26AB000000000000000388F1 /* AuxiliaryModelsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuxiliaryModelsSettingsView.swift; sourceTree = "<group>"; };
 		26AB000000000000000000F2 /* ProvidersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvidersView.swift; sourceTree = "<group>"; };
 		A06100000000000000000004 /* ProviderQuotaWidgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetTests.swift; sourceTree = "<group>"; };
+		E14790000000000000000002 /* NeedsYouWidgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeedsYouWidgetTests.swift; sourceTree = "<group>"; };
 		26AB000000000000000000F4 /* ProvidersViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvidersViewModelTests.swift; sourceTree = "<group>"; };
 		759A00000000000000000004 /* UpdateSummaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateSummaryTests.swift; sourceTree = "<group>"; };
 		211500000000000000000002 /* ScreenGalleryHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenGalleryHostedTests.swift; sourceTree = "<group>"; };
@@ -915,6 +921,7 @@
 		D74A00000000000000000002 /* AgentRunIslandCompactTrailing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunIslandCompactTrailing.swift; sourceTree = "<group>"; };
 		E14760000000000000000001 /* NewChatControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewChatControls.swift; sourceTree = "<group>"; };
 		E00500000000000000000001 /* NewChatWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewChatWidget.swift; sourceTree = "<group>"; };
+		E14790000000000000000001 /* NeedsYouWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeedsYouWidget.swift; sourceTree = "<group>"; };
 		E14630000000000000000001 /* LiveActivityActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityActions.swift; sourceTree = "<group>"; };
 		E14630000000000000000002 /* TalariaAggregateRows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalariaAggregateRows.swift; sourceTree = "<group>"; };
 		E14630000000000000000003 /* LiveActivityApprovalResponder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityApprovalResponder.swift; sourceTree = "<group>"; };
@@ -1080,6 +1087,7 @@
 				D1461A000000000000000002 /* ComposerDropHostedTests.swift */,
 				A710739233F64F4FA4C2B711 /* ComposerVoiceDraftComposerTests.swift */,
 				A06100000000000000000004 /* ProviderQuotaWidgetTests.swift */,
+				E14790000000000000000002 /* NeedsYouWidgetTests.swift */,
 				26AB000000000000000000F4 /* ProvidersViewModelTests.swift */,
 				759A00000000000000000004 /* UpdateSummaryTests.swift */,
 				182A00000000000000000004 /* WhatsNewHostedTests.swift */,
@@ -1536,6 +1544,7 @@
 				E14630000000000000000001 /* LiveActivityActions.swift */,
 				E14760000000000000000001 /* NewChatControls.swift */,
 				E00500000000000000000001 /* NewChatWidget.swift */,
+				E14790000000000000000001 /* NeedsYouWidget.swift */,
 				E14630000000000000000002 /* TalariaAggregateRows.swift */,
 				A04500000000000000000022 /* Resources */,
 			);
@@ -1786,6 +1795,7 @@
 			files = (
 				1A2B3C4D5E6F700000000003 /* Assets.xcassets in Resources */,
 				A06300000000000000000003 /* ProviderIcons.xcassets in Resources */,
+				E14790000000000000000015 /* BrandAssets.xcassets in Resources */,
 				7A1350000000000000000001 /* Talaria.icon in Resources */,
 				7A1350000000000000000003 /* TalariaDev.icon in Resources */,
 				10CA110C0DE000000000B001 /* Localizable.xcstrings in Resources */,
@@ -2152,6 +2162,8 @@
 				E14760000000000000000011 /* NewChatControls.swift in Sources */,
 				E14630000000000000000013 /* TalariaAggregateRows.swift in Sources */,
 				E14630000000000000000015 /* AggregateStatusLabel.swift in Sources */,
+				E14790000000000000000012 /* NeedsYouWidget.swift in Sources */,
+				E14790000000000000000013 /* SandalMark.swift in Sources */,
 				E14630000000000000000016 /* LiveActivityApprovalResponder.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -2204,6 +2216,7 @@
 				D1461A000000000000000001 /* ComposerDropHostedTests.swift in Sources */,
 				A710739233F64F4FA4C2B701 /* ComposerVoiceDraftComposerTests.swift in Sources */,
 				A06100000000000000000003 /* ProviderQuotaWidgetTests.swift in Sources */,
+				E14790000000000000000014 /* NeedsYouWidgetTests.swift in Sources */,
 				26AB000000000000000000B4 /* ProvidersViewModelTests.swift in Sources */,
 				759A00000000000000000003 /* UpdateSummaryTests.swift in Sources */,
 				182A00000000000000000003 /* WhatsNewHostedTests.swift in Sources */,
@@ -2273,6 +2286,7 @@
 				E14630000000000000000012 /* LiveActivityActions.swift in Sources */,
 				E14760000000000000000012 /* NewChatControls.swift in Sources */,
 				E00500000000000000000011 /* NewChatWidget.swift in Sources */,
+				E14790000000000000000011 /* NeedsYouWidget.swift in Sources */,
 				E00500000000000000000012 /* ProfileEntity.swift in Sources */,
 				E14630000000000000000014 /* TalariaAggregateRows.swift in Sources */,
 			);

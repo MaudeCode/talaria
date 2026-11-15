@@ -197,6 +197,8 @@ public final class SessionListViewModel {
     private let server: URL
     private let cacheGeneration: Int
     private let responseCache: ResponseCache?
+    /// TAL-1479: the App's Needs you widget store; each list refresh also writes the server's waiting chats there.
+    private let needsYouStore: NeedsYouSnapshotStore?
     private let archiveUndoLifetime: Duration
     /// How long a chat archive stays undoable.
     public nonisolated static let defaultArchiveUndoLifetime: Duration = .seconds(5)
@@ -205,9 +207,11 @@ public final class SessionListViewModel {
         server: URL,
         client: APIClient? = nil,
         responseCache: ResponseCache? = nil,
+        needsYouStore: NeedsYouSnapshotStore? = nil,
         archiveUndoLifetime: Duration = defaultArchiveUndoLifetime
     ) {
         self.server = server
+        self.needsYouStore = needsYouStore
         self.archiveUndoLifetime = archiveUndoLifetime
         cacheGeneration = ServerCacheGeneration.current(for: server)
         self.responseCache = responseCache
@@ -503,6 +507,7 @@ public final class SessionListViewModel {
             }
             cachedDataReason = nil
             isShowingCachedPaint = false
+            refreshNeedsYou()
 
             if let modelContext {
                 do {
@@ -549,6 +554,16 @@ public final class SessionListViewModel {
             }
 
             return false
+        }
+    }
+
+    /// Off the list's refresh queue: a slow or older server that lacks the route leaves the last snapshot to go stale.
+    /// A sign-out or server reset while the read is in flight keeps its titles off the Lock Screen.
+    private func refreshNeedsYou() {
+        guard let needsYouStore else { return }
+        Task { [weak self, client, server] in
+            guard let summary = try? await client.activitySummary(), let self else { return }
+            writeCacheIfCurrent { needsYouStore.save(summary: summary, serverURL: server) }
         }
     }
 

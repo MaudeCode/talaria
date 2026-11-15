@@ -121,7 +121,7 @@ final class TalariaAggregateLiveActivityManager {
         }
         startObservers(client: client)
         try await client.configureDevice()
-        guard let aggregate = try await client.snapshot() else {
+        guard let aggregate = try await relaySnapshot(client) else {
             guard generation == operationGeneration else { return }
             prunePendingSeeds()
             if !pendingSeeds.isEmpty,
@@ -176,7 +176,7 @@ final class TalariaAggregateLiveActivityManager {
         guard !Activity<TalariaAggregateActivityAttributes>.activities.isEmpty else { return }
         let generation = operationGeneration
         let client = TalariaRelayClient(credentials: credentials)
-        let aggregate = try await client.snapshot()
+        let aggregate = try await relaySnapshot(client)
         guard generation == operationGeneration, activeDisconnectCount == 0,
               TalariaRelayConfigurationStore.load() == credentials else { return }
         if TalariaLiveActivityMode.current == .perSession, aggregate?.hasTerminalRows != true {
@@ -206,6 +206,13 @@ final class TalariaAggregateLiveActivityManager {
         stopObservers()
         await endAggregateActivities(client: client, preserveCompleted: preserveCompleted)
         if !preserveCompleted { try await client.revokeDevice() }
+    }
+
+    /// Every Relay aggregate read also feeds the Needs you widget (TAL-1479).
+    private func relaySnapshot(_ client: TalariaRelayClient) async throws -> TalariaAggregateActivityAttributes.ContentState? {
+        let aggregate = try await client.snapshot()
+        NeedsYouSnapshotStore().save(relay: aggregate)
+        return aggregate
     }
 
     private func startObservers(client: TalariaRelayClient) {

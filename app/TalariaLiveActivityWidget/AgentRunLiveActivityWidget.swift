@@ -13,6 +13,7 @@ struct TalariaLiveActivityWidgetBundle: WidgetBundle {
         NewChatControl()
         NewChatVoiceControl()
         NewChatWidget()
+        NeedsYouWidget()
     }
 }
 

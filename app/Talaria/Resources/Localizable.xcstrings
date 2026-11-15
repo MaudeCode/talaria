@@ -3422,6 +3422,28 @@
         }
       }
     },
+    "%lld chats need you" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld chat needs you"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld chats need you"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld chats need you." : {
       "localizations" : {
         "en" : {
@@ -8272,6 +8294,7 @@
       }
     },
     "+%lld" : {},
+    "+%lld more" : {},
     ", " : {},
     ", switching in progress" : {
       "localizations" : {
@@ -24317,6 +24340,7 @@
         }
       }
     },
+    "Chats waiting for your approval or answer." : {},
     "Check Result" : {
       "localizations" : {
         "ar" : {
@@ -72855,6 +72879,7 @@
         }
       }
     },
+    "Needs you" : {},
     "Never" : {
       "localizations" : {
         "ar" : {
@@ -79337,6 +79362,7 @@
         }
       }
     },
+    "Nothing needs you" : {},
     "Nothing running or awaiting delivery" : {
       "localizations" : {
         "ar" : {

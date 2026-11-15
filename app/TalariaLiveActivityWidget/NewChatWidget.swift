@@ -61,13 +61,7 @@ struct NewChatWidgetView: View {
         }
         .buttonStyle(.plain)
         .widgetURL(deepLink)
-        .containerBackground(for: .widget) {
-            switch family {
-            case .systemSmall: Color(uiColor: .systemBackground)
-            case .accessoryCircular: AccessoryWidgetBackground()
-            default: Color.clear
-            }
-        }
+        .widgetContainerBackground(for: family)
     }
 
     @ViewBuilder
