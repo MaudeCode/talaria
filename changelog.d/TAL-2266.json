@@ -1,0 +1,5 @@
+{
+  "entries": [
+    {"category":"Fixed","summary":"The Background Work badge in an open chat now counts delegations and background processes the Agent starts during a reply, without leaving and reopening the chat.","highlight":false,"components":["app","web"]}
+  ]
+}

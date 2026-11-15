@@ -12,7 +12,7 @@ import { ConnectorOperationSnapshotSchema, OWNER_EXPORT_MAX_BYTES, SessionNotice
 import type { SidecarLike, StreamFrame } from '../sidecar/client.js'
 import { redactNestedMessageContainers, publicToolFrame, redactString } from '../redact.js'
 import { str } from '../util.js'
-import { taskView, taskTitle, isTerminal, type BackgroundTaskStore, type Receipt } from './background-tasks.js'
+import { taskView, taskTitle, isTerminal, startsBackgroundWork, type BackgroundTaskStore, type Receipt } from './background-tasks.js'
 import type { BackgroundTask, BackgroundTaskResult, SideLaunch } from '@maudecode/talaria-web-contracts'
 import { PendingPrompts } from './pending.js'
 import { wrapExportHtml, renderSessionHtml, renderSessionMarkdown } from './export.js'
@@ -292,7 +292,8 @@ export class GatewaySessions {
             const event = frame.data as Row
             const data = (event.payload ?? {}) as Row
             // Preserve roster invalidation even when the completed side work was launched by another client.
-            if (event.session_id === target.sid && OWNER_WORK_EVENTS.has(str(event.type))) this.deps.events.publish('background_task', { profile: target.profile, sessionId: target.sid })
+            if (event.session_id === target.sid && (OWNER_WORK_EVENTS.has(str(event.type))
+                || event.type === 'tool.complete' && startsBackgroundWork(data.name, data.result))) this.deps.events.publish('background_task', { profile: target.profile, sessionId: target.sid })
             if (event.type === 'background.complete' || event.type === 'btw.complete') {
               const snap = observation.snapshot
               if (event.session_id !== target.sid || event.replay_epoch !== snap.replay_epoch

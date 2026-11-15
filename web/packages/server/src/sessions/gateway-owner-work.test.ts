@@ -223,4 +223,17 @@ describe('native owner background work (TAL-1336)', () => {
       await vi.waitFor(() => { expect(published).toHaveBeenCalledWith('background_task', expect.objectContaining({ sessionId: sid })) })
     } finally { watch.finish(); await watch.read }
   })
+
+  it('announces a background process the owner starts mid-turn (TAL-2266)', async () => {
+    const { observeOwner } = ownerHelpers(() => ({ s, sidecar }))
+    const published = vi.spyOn(s.deps.events, 'publish')
+    const watch = await observeOwner(snapshot({ running: true, pending: [] }))
+    const announced = () => published.mock.calls.filter(([reason]) => reason === 'background_task')
+    try {
+      published.mockClear()
+      watch.event('tool.complete', { tool_call_id: 'call-ls', name: 'terminal', args: { command: 'ls' }, result: JSON.stringify({ output: 'a', exit_code: 0 }), is_error: false })
+      watch.event('tool.complete', { tool_call_id: 'call-dev', name: 'terminal', args: { command: 'npm run dev', background: true }, result: JSON.stringify({ output: 'Background process started', session_id: 'proc_0123456789ab', pid: 7 }), is_error: false })
+      await vi.waitFor(() => { expect(announced()).toEqual([['background_task', expect.objectContaining({ sessionId: sid })]]) })
+    } finally { watch.finish(); await watch.read }
+  })
 })
