@@ -30,6 +30,19 @@ describe('pending prompt streams', () => {
     pending.submitClarify('s', { question: 'Legacy?' })
     expect(pending.clarifyPending('s').pending_count).toBe(1)
   })
+  it('streams the same head the pending routes serve, with its head_id and action_text (TAL-1469)', () => {
+    const pending = new PendingPrompts(new SessionEventBus())
+    const [approvals] = pending.subscribeApprovals('s1')
+    const [questions] = pending.subscribeClarifies('s1')
+    pending.submitApproval('s1', { approval_id: 'a', command: 'pwd' })
+    pending.submitClarify('s1', { clarify_id: 'q', question: 'Which branch?' })
+    expect(drain(approvals).at(-1)).toEqual(pending.approvalPending('s1'))
+    expect(pending.approvalPending('s1').pending?.action_text).toBe('pwd')
+    expect(String(pending.approvalPending('s1').pending?.head_id)).toMatch(/^[A-Za-z0-9_-]{22}$/)
+    expect(drain(questions).at(-1)).toEqual(pending.clarifyPending('s1'))
+    expect(String(pending.clarifyPending('s1').pending?.head_id)).toMatch(/^[A-Za-z0-9_-]{22}$/)
+  })
+
   it('keeps an approval subscriber attached after answering empties the queue (TAL-556)', () => {
     const pending = new PendingPrompts(new SessionEventBus())
     const [sub] = pending.subscribeApprovals('s1')
@@ -38,7 +51,9 @@ describe('pending prompt streams', () => {
     drain(sub)
 
     pending.submitApproval('s1', { approval_id: 'b', command: 'pwd' })
-    expect(drain(sub)).toEqual([{ pending: { approval_id: 'b', command: 'pwd' }, pending_count: 1 }])
+    const updates = drain(sub)
+    expect(updates).toHaveLength(1)
+    expect(updates[0]).toMatchObject({ pending: { approval_id: 'b', command: 'pwd' }, pending_count: 1 })
     pending.resolveApproval('s1', 'b')
     expect(drain(sub)).toEqual([{ pending: null, pending_count: 0 }])
 

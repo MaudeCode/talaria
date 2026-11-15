@@ -118,6 +118,45 @@ final class NotificationAnswerTests: XCTestCase {
         ])
     }
 
+    /// Reply is an optimistic update with rollback: the session's input rows leave "Input" before the server answers, and
+    /// a refused reply restores them with its error.
+    func testReplySettlesTheInputRowsAtOnceAndRestoresThemWhenRefused() async throws {
+        var run = AgentRunActivityStateReducer.waitingForClarification(
+            state: AgentRunActivityStateReducer.initialState(sessionID: "s1", sessionTitle: "Deploy")
+        )
+        let waiting = run
+        var aggregate = TalariaAggregateActivityAttributes.ContentState(
+            schemaVersion: 1, activeCount: 1, title: "Talaria", subtitle: "1 waiting", updatedAt: 0,
+            rows: [.init(publisherId: ApprovalAnswerFixture.publisher, publisherLabel: "Home", sessionId: "s1", title: "Deploy",
+                         phase: "waiting_for_input", status: "Input", updatedAt: 0, deepLink: "")]
+        )
+        let events = LockedTestValue<[String]>([])
+        let question = #"{"pending":{"clarify_id":"c1","steps":[{"qid":"q0","question":"Which branch?","choices":[],"multi_select":false}]}}"#
+        let responder = try replyResponder(display: .init(
+            runs: { [.init(id: "run", publisherID: ApprovalAnswerFixture.publisher, state: run)] },
+            updateRun: { _, state in run = state; events.value.append("run \(state.status.rawValue)") },
+            aggregates: { [.init(id: "all", state: aggregate)] },
+            updateAggregate: { _, state in aggregate = state; events.value.append("row \(state.rows[0].phase)") }
+        )) { request in
+            if request.url?.path == "/api/clarify/respond" { events.value.append("sent") }
+            return apiTestJSONResponse(request.url?.path == "/api/clarify/pending" ? question : #"{"ok":true}"#, for: request)
+        }
+        _ = postSpy()
+
+        let answered = await responder.reply(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s1", question: .clarify("c1"), text: "main")
+        XCTAssertEqual(answered, .answered)
+        XCTAssertEqual(events.value, ["run thinking", "row running", "sent"], "The rows left Input before the answer was sent")
+
+        run = waiting
+        aggregate.rows[0].phase = "waiting_for_input"
+        let refused = await responder.reply(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s1", question: .clarify("other"), text: "main")
+        XCTAssertEqual(refused, .refused("This question changed. Open Talaria to answer it."))
+        XCTAssertEqual(run.status, .waitingForClarification)
+        XCTAssertEqual(run.errorSummary, "This question changed. Open Talaria to answer it.")
+        XCTAssertEqual(aggregate.rows[0].phase, "waiting_for_input")
+        XCTAssertEqual(aggregate.answerError, "This question changed. Open Talaria to answer it.")
+    }
+
     /// The open chat's approval card goes on the refresh a successful banner answer posts.
     func testAllowOnTheBannerClearsTheOpenChatsApprovalCard() async throws {
         let window = try await hostFixtureChat(["--ui-test-chat-full"])
@@ -149,7 +188,10 @@ final class NotificationAnswerTests: XCTestCase {
         return posted
     }
 
-    private func replyResponder(_ handler: @escaping @Sendable (URLRequest) throws -> (HTTPURLResponse, Data)) throws -> LiveActivityApprovalResponder {
+    private func replyResponder(
+        display: LiveActivityApprovalResponder.Display = .init(runs: { [] }, updateRun: { _, _ in }, aggregates: { [] }, updateAggregate: { _, _ in }),
+        _ handler: @escaping @Sendable (URLRequest) throws -> (HTTPURLResponse, Data)
+    ) throws -> LiveActivityApprovalResponder {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockURLProtocol.self]
         configuration.httpAdditionalHeaders = [MockURLProtocol.scopeHeader: MockURLProtocol.register(handler)]
@@ -159,7 +201,7 @@ final class NotificationAnswerTests: XCTestCase {
         return LiveActivityApprovalResponder(
             makeClient: { _ in client }, activeServer: { ApprovalAnswerFixture.publisher },
             appLock: AppLockModel(defaults: try XCTUnwrap(UserDefaults(suiteName: lockName))),
-            display: .init(runs: { [] }, updateRun: { _, _ in }, aggregates: { [] }, updateAggregate: { _, _ in })
+            display: display
         )
     }
 }

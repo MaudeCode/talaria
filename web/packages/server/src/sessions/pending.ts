@@ -189,6 +189,12 @@ class Queue {
   readonly entries: Record<string, unknown>[] = []
   readonly commandIds = new Set<string>()
   readonly subscribers = new Set<PendingSubscriber>()
+  /** The head as every reader sees it: the pending route, the prompt streams and the chat stream (TAL-1469). */
+  constructor(private readonly present: (head: Record<string, unknown>) => Record<string, unknown>) {}
+
+  envelope(): { pending: Record<string, unknown> | null; pending_count: number } {
+    return { pending: this.entries[0] ? this.present(this.entries[0]) : null, pending_count: this.entries.length }
+  }
 }
 
 export class PendingPrompts {
@@ -202,7 +208,8 @@ export class PendingPrompts {
   private queue(map: Map<string, Queue>, sid: string): Queue {
     let q = map.get(sid)
     if (!q) {
-      q = new Queue()
+      // TAL-1463/TAL-1469: a head carries `head_id`, the identity Relay shows for it, and an approval its `action_text`.
+      q = new Queue(map === this.approvals ? (head) => approvalHead(sid, head) : (head) => clarifyHead(sid, head))
       map.set(sid, q)
     }
     return q
@@ -214,7 +221,7 @@ export class PendingPrompts {
   }
 
   private notify(q: Queue): void {
-    const payload = { pending: q.entries[0] ? { ...q.entries[0] } : null, pending_count: q.entries.length }
+    const payload = q.envelope()
     for (const sub of q.subscribers) {
       if (sub.queue.length >= 16) sub.queue.shift()
       sub.queue.push(payload)
@@ -242,19 +249,8 @@ export class PendingPrompts {
     return entry
   }
 
-  /**
-   * TAL-1463: the head carries `head_id`, the identity Relay shows for it, so a Live Activity answers only the approval it
-   * showed. TAL-1469: and `action_text`, the text a one-tap Allow sits beside.
-   */
   approvalPending(sid: string): { pending: Record<string, unknown> | null; pending_count: number } {
-    const q = this.approvals.get(sid)
-    const head = q?.entries[0]
-    const approvalId = str(head?.approval_id)
-    const actionText = head ? approvalActionText(head) : undefined
-    return {
-      pending: head ? { ...head, ...(approvalId ? { head_id: promptHeadId(sid, approvalId) } : {}), ...(actionText ? { action_text: actionText } : {}) } : null,
-      pending_count: q?.entries.length ?? 0,
-    }
+    return this.approvals.get(sid)?.envelope() ?? { pending: null, pending_count: 0 }
   }
 
   /** The targeted (or oldest) approval without removing it; `found` is false only for a stale id. */
@@ -365,12 +361,8 @@ export class PendingPrompts {
     return entry
   }
 
-  /** TAL-1469: the head carries `head_id`, the identity Relay publishes as `inputHeadId`, so a notification's Reply answers only it. */
   clarifyPending(sid: string): { pending: Record<string, unknown> | null; pending_count: number } {
-    const q = this.clarifies.get(sid)
-    const head = q?.entries[0]
-    const clarifyId = str(head?.clarify_id)
-    return { pending: head ? { ...head, ...(clarifyId ? { head_id: promptHeadId(sid, clarifyId) } : {}) } : null, pending_count: q?.entries.length ?? 0 }
+    return this.clarifies.get(sid)?.envelope() ?? { pending: null, pending_count: 0 }
   }
 
   /** Queue head plus depth: what the live chat stream carries on every head change (Python `_callback_head_payload_locked`). */
@@ -468,6 +460,19 @@ export function nextPendingItem(sub: PendingSubscriber, timeoutMs: number): Prom
 /** Stable for one approval or question across snapshots and restarts; the digest carries nothing the prompt says. */
 export function promptHeadId(sid: string, promptId: string): string {
   return createHash('sha256').update(`${sid}\0${promptId}`, 'utf8').digest('base64url').slice(0, 22)
+}
+
+/** An approval head with `head_id`, so a Live Activity or notification answers only it, and `action_text` (TAL-1469). */
+function approvalHead(sid: string, head: Record<string, unknown>): Record<string, unknown> {
+  const approvalId = str(head.approval_id)
+  const actionText = approvalActionText(head)
+  return { ...head, ...(approvalId ? { head_id: promptHeadId(sid, approvalId) } : {}), ...(actionText ? { action_text: actionText } : {}) }
+}
+
+/** A question head with `head_id`, the identity Relay publishes as `inputHeadId`, so a notification's Reply answers only it. */
+function clarifyHead(sid: string, head: Record<string, unknown>): Record<string, unknown> {
+  const clarifyId = str(head.clarify_id)
+  return { ...head, ...(clarifyId ? { head_id: promptHeadId(sid, clarifyId) } : {}) }
 }
 
 /** About two lines of a Live Activity caption; a longer text is never shortened beside Allow. */

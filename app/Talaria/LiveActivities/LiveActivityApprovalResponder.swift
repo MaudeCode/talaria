@@ -92,11 +92,30 @@ final class LiveActivityApprovalResponder {
 
     @discardableResult
     func respond(publisherID: String?, sessionID: String, approval: ShownApproval, choice: ApprovalChoice) async -> Outcome {
-        let publisher = origin(publisherID)
-        let runs = display.runs().filter {
-            $0.state.sessionID == sessionID && $0.state.status == .waitingForApproval && origin($0.publisherID) == publisher
+        await settle(.approval, publisherID: publisherID, sessionID: sessionID) {
+            await answer(publisherID: publisherID, sessionID: sessionID, approval: approval, choice: choice)
         }
-        let aggregates = display.aggregates().filter { $0.state.rows.contains { isWaiting($0, sessionID, publisher) } }
+    }
+
+    /// The prompt a session's rows wait on.
+    enum Prompt {
+        case approval, question
+
+        var runStatus: AgentRunActivityStatus { self == .approval ? .waitingForApproval : .waitingForClarification }
+        var rowPhase: String { self == .approval ? "waiting_for_approval" : "waiting_for_input" }
+    }
+
+    /// Optimistic update with rollback around `send`: the session's rows waiting on `prompt` leave that wait at once, and a
+    /// refusal restores them with its error.
+    private func settle(
+        _ prompt: Prompt, publisherID: String?, sessionID: String, send: () async -> Outcome
+    ) async -> Outcome {
+        let publisher = origin(publisherID)
+        let waits = { (row: TalariaAggregateActivityAttributes.ContentState.Row) in self.isWaiting(row, sessionID, publisher, prompt) }
+        let runs = display.runs().filter {
+            $0.state.sessionID == sessionID && $0.state.status == prompt.runStatus && origin($0.publisherID) == publisher
+        }
+        let aggregates = display.aggregates().filter { $0.state.rows.contains(where: waits) }
 
         var answeredRuns: [String: AgentRunActivityAttributes.ContentState] = [:]
         for run in runs {
@@ -107,13 +126,13 @@ final class LiveActivityApprovalResponder {
         for aggregate in aggregates {
             // Patch the latest state, so an answer made meanwhile keeps its own rows.
             guard var answered = currentAggregate(aggregate.id) else { continue }
-            for index in answered.rows.indices where isWaiting(answered.rows[index], sessionID, publisher) {
+            for index in answered.rows.indices where waits(answered.rows[index]) {
                 answered.rows[index] = Self.answered(answered.rows[index])
             }
             await writeAggregate(aggregate.id, answered)
         }
 
-        let outcome = await answer(publisherID: publisherID, sessionID: sessionID, approval: approval, choice: choice)
+        let outcome = await send()
         guard case let .refused(error) = outcome else { return outcome }
         // ActivityKit can still read back the state from before the answer; anything else is a newer snapshot.
         for run in runs
@@ -127,9 +146,8 @@ final class LiveActivityApprovalResponder {
             guard var current = currentAggregate(aggregate.id) else { continue }
             var restoredRow = false
             for index in current.rows.indices {
-                guard let original = aggregate.state.rows.first(where: {
-                    $0.id == current.rows[index].id && isWaiting($0, sessionID, publisher)
-                }), [Self.answered(original), original].contains(current.rows[index]) else { continue }
+                guard let original = aggregate.state.rows.first(where: { $0.id == current.rows[index].id && waits($0) }),
+                      [Self.answered(original), original].contains(current.rows[index]) else { continue }
                 current.rows[index] = original
                 restoredRow = true
             }
@@ -202,6 +220,12 @@ final class LiveActivityApprovalResponder {
     /// answer, while that question is still the pending one. Another question pending, none pending (the text would
     /// answer nothing it was written for), several steps or a password manager prompt are answered in the chat.
     func reply(publisherID: String?, sessionID: String, question: ShownQuestion, text: String) async -> Outcome {
+        await settle(.question, publisherID: publisherID, sessionID: sessionID) {
+            await sendReply(publisherID: publisherID, sessionID: sessionID, question: question, text: text)
+        }
+    }
+
+    private func sendReply(publisherID: String?, sessionID: String, question: ShownQuestion, text: String) async -> Outcome {
         guard !appLock.locksBackgroundWork() else { return .refused(String(localized: "Unlock Talaria in the app first.")) }
         guard let client = makeClient(publisherID) else { return .refused(String(localized: "Add a server in Talaria first.")) }
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -247,9 +271,9 @@ final class LiveActivityApprovalResponder {
     }
 
     private func isWaiting(
-        _ row: TalariaAggregateActivityAttributes.ContentState.Row, _ sessionID: String, _ publisher: String?
+        _ row: TalariaAggregateActivityAttributes.ContentState.Row, _ sessionID: String, _ publisher: String?, _ prompt: Prompt
     ) -> Bool {
-        row.sessionId == sessionID && row.phase == "waiting_for_approval" && origin(row.publisherId) == publisher
+        row.sessionId == sessionID && row.phase == prompt.rowPhase && origin(row.publisherId) == publisher
     }
 
     /// No publisher is the active server, as `makeClient` reads it: a run started without the relay and the relay's rows
