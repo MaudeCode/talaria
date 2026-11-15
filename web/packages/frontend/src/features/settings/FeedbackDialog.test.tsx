@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest'
 import { FeedbackSubmitSchema } from '@maudecode/talaria-web-contracts'
-import { deferred } from '../../test/fixtures'
+import { deferred, IME_ENTERS } from '../../test/fixtures'
 
 vi.mock('../../api/endpoints', () => ({ fetchSettings: vi.fn(() => Promise.resolve({})), fetchWhatsNew: vi.fn(() => Promise.resolve({ announcement: null, presentation: null, eligible: false, observation: null, acknowledgement: null })), submitFeedback: vi.fn(), fetchFeedbackDiagnostics: vi.fn(), fetchFeedbackOptions: vi.fn(), uploadFeedbackAttachment: vi.fn() }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn(), showRichToast: vi.fn(), dismissToast: vi.fn() }))
@@ -93,6 +93,49 @@ it('fetches the diagnostics only when the disclosure opens and shows the server 
   fireEvent(disclosure, new Event('toggle'))
   await waitFor(() => expect(document.querySelector('[data-feedback-diagnostics]')?.textContent).toBe('Web: 1.4.0\nRelay registered: no'))
   expect(diagnostics).toHaveBeenCalledTimes(1)
+})
+
+it.each(['ctrlKey', 'metaKey'] as const)('submits once with %s+Enter from any feedback form control', async (modifier) => {
+  const { submit, sentToast } = await setup()
+  submit.mockReturnValue(new Promise(() => undefined))
+  for (const control of [title, details, () => screen.getByRole('checkbox', { name: 'Include diagnostics' }), () => screen.getByRole('button', { name: 'Cancel' })]) {
+    open()
+    fill()
+    const before = submit.mock.calls.length
+    const uncancelled = fireEvent.keyDown(control(), { key: 'Enter', [modifier]: true })
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(before + 1))
+    expect(uncancelled).toBe(false)
+    await closed()
+    expect(submit).toHaveBeenLastCalledWith({ requestId: expect.any(String) as string, kind: 'feature', title: 'Composer loses text', body: 'After reconnecting the composer is empty.', includeDiagnostics: true, client: { platform: 'web' } })
+    expect(sentToast).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'feedback-sent', text: 'Feedback sent' }))
+  }
+})
+
+it.each(['ctrlKey', 'metaKey'] as const)('does not submit with %s+Enter when the title or details are blank', async (modifier) => {
+  const { submit } = await setup()
+  open()
+  fill()
+  for (const [field, other] of [[title, details], [details, title]] as const) {
+    fireEvent.change(field(), { target: { value: '   ' } })
+    fireEvent.keyDown(other(), { key: 'Enter', [modifier]: true })
+    expect(submit).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog', { name: 'Send feedback' })).toBeVisible()
+    fill()
+  }
+})
+
+it('leaves plain Enter in details to the browser and ignores IME Enter with either modifier', async () => {
+  const { submit } = await setup()
+  open()
+  fill()
+  expect(fireEvent.keyDown(details(), { key: 'Enter' })).toBe(true)
+  for (const [, ime] of IME_ENTERS) {
+    for (const modifier of ['ctrlKey', 'metaKey']) {
+      expect(fireEvent.keyDown(details(), { key: 'Enter', [modifier]: true, ...ime })).toBe(true)
+    }
+  }
+  expect(submit).not.toHaveBeenCalled()
+  expect(screen.getByRole('dialog', { name: 'Send feedback' })).toBeVisible()
 })
 
 it('closes and confirms before the response, then clears the draft once the server accepts it', async () => {
@@ -342,6 +385,11 @@ it('rolls back without sending when an attachment fails to upload, and Send wait
   expect(toast).toHaveBeenLastCalledWith('Upload failed: a.png', 4000, 'error')
   expect(screen.getByRole('button', { name: 'Retry a.png' })).toBeVisible()
   expect(send()).toBeDisabled()
+  for (const modifier of ['ctrlKey', 'metaKey']) {
+    fireEvent.keyDown(details(), { key: 'Enter', [modifier]: true })
+    expect(submit).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog', { name: 'Send feedback' })).toBeVisible()
+  }
   upload.mockResolvedValueOnce(staged(2))
   fireEvent.click(screen.getByRole('button', { name: 'Retry a.png' }))
   await screen.findByRole('button', { name: 'Enlarge a.png' })

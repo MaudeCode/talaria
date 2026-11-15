@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Send Web feedback with Ctrl+Enter or Cmd+Enter from any form control.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}
