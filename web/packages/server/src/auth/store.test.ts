@@ -194,6 +194,15 @@ describe('TAL-2209: sign-in changes never leave the server more open', () => {
     expect(store.verifySession(anonymous)).toBe(false)
   })
 
+  it('a revocation the disk refused rejects instead of reporting the sessions signed out', async () => {
+    let fail = true
+    const store = await makeStore({}, { persistWrite: (file, text) => { if (fail) return Promise.reject(new Error('disk gone')); writeFileSync(file, text); return Promise.resolve() } })
+    store.createSession()
+    await expect(store.revokeSessionsExcept(null)).rejects.toThrow('could not be signed out')
+    fail = false
+    await store.revokeSessionsExcept(null)
+  })
+
   it('registered passkeys keep auth on whatever the passkey flag says; no passkeys and the flag off leave auth off', async () => {
     for (const [env, cfg] of [[{ TALARIA_WEB_PASSKEY: '0' }, true], [{}, false]] as const) {
       const store = await makeStore(env)

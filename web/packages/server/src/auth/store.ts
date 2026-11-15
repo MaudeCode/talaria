@@ -132,7 +132,12 @@ export class AuthStore {
   private lastPrunedAt = Number.NEGATIVE_INFINITY
   persistWrite: (file: string, text: string) => Promise<void>
   // The in-memory tables are authoritative; disk is a write-behind copy so a slow fsync never blocks a request.
-  private readonly sessionsWriter = new WriteBehind(() => this.persistWrite(this.sessionsFile, JSON.stringify(this.sessions)).catch((error: unknown) => {
+  /** The newest sessions write's failure, cleared when a later write lands; a revocation that must be durable checks it. */
+  private sessionsWriteError: unknown = null
+  private readonly sessionsWriter = new WriteBehind(() => this.persistWrite(this.sessionsFile, JSON.stringify(this.sessions)).then(() => {
+    this.sessionsWriteError = null
+  }, (error: unknown) => {
+    this.sessionsWriteError = error
     this.warnPersistence('Auth session persistence failed', this.sessionsFile, error, 'keeping the in-process session table available')
   }))
   private readonly attemptsWriter = new WriteBehind(() => this.persistWrite(this.attemptsFile, JSON.stringify(this.attempts)).catch(() => {
@@ -539,7 +544,8 @@ export class AuthStore {
   }
 
   /**
-   * TAL-2209: a password set, change, or clear ends every session but the caller's, on disk before it resolves.
+   * TAL-2209: a password set, change, or clear ends every session but the caller's, on disk before it resolves; it
+   * rejects when the write fails, since a restart would otherwise revive the revoked cookies.
    * Only a cookie that verifies is kept, so a forged signature cannot shield the session it names.
    */
   async revokeSessionsExcept(cookieValue: string | null): Promise<void> {
@@ -547,6 +553,7 @@ export class AuthStore {
     for (const token of Object.keys(this.sessions)) if (token !== keep) Reflect.deleteProperty(this.sessions, token)
     this.persistSessions()
     await this.sessionsWriter.flush()
+    if (this.sessionsWriteError !== null) throw new Error('The other sessions could not be signed out on disk', { cause: this.sessionsWriteError })
   }
 
   /** A live session whose remaining lifetime has dropped below TTL minus min(TTL/10, 1h). */
