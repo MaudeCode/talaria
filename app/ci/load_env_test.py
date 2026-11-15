@@ -117,7 +117,7 @@ class LoadEnvTests(unittest.TestCase):
         legacy.write_text("EXPLICIT=legacy\n")
 
         values = self.values(
-            environment={"HERMES_WEBUI_ENV_FILE": str(legacy)},
+            environment={"TALARIA_WEB_ENV_FILE": str(legacy)},
             command=webui_command,
         )
 

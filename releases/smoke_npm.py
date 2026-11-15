@@ -54,20 +54,20 @@ def smoke(spec, timeout=60):
         package = prefix / "lib/node_modules" / PACKAGE
         port = free_port()
         # The isolated environment of web/packages/frontend/e2e/server.ts, with the package's own replay sidecar.
-        env = {key: value for key, value in os.environ.items() if not key.startswith("HERMES_")}
+        env = {key: value for key, value in os.environ.items() if not key.startswith(("HERMES_", "TALARIA_WEB_"))}
         env.update({
             "HOME": str(state),
-            "HERMES_WEBUI_HOST": "127.0.0.1",
-            "HERMES_WEBUI_PORT": str(port),
-            "HERMES_WEBUI_STATE_DIR": str(state),
-            "HERMES_WEBUI_DEFAULT_WORKSPACE": str(state / "workspace"),
+            "TALARIA_WEB_HOST": "127.0.0.1",
+            "TALARIA_WEB_PORT": str(port),
+            "TALARIA_WEB_STATE_DIR": str(state),
+            "TALARIA_WEB_DEFAULT_WORKSPACE": str(state / "workspace"),
             "HERMES_HOME": str(state),
             "HERMES_BASE_HOME": str(state),
             "HERMES_CONFIG_PATH": str(state / "config.yaml"),
-            "HERMES_WEBUI_CLAUDE_PROJECTS_DIR": str(state / "claude-projects"),
-            "HERMES_WEBUI_SKIP_ONBOARDING": "1",
-            "HERMES_WEBUI_TEST_NETWORK_BLOCK": "1",
-            "HERMES_WEBUI_SIDECAR_COMMAND": json.dumps([sys.executable, str(package / "sidecar/scripts/replay_sidecar.py")]),
+            "TALARIA_WEB_CLAUDE_PROJECTS_DIR": str(state / "claude-projects"),
+            "TALARIA_WEB_SKIP_ONBOARDING": "1",
+            "TALARIA_WEB_TEST_NETWORK_BLOCK": "1",
+            "TALARIA_WEB_SIDECAR_COMMAND": json.dumps([sys.executable, str(package / "sidecar/scripts/replay_sidecar.py")]),
             "AWS_EC2_METADATA_DISABLED": "true",
         })
         log = root / "server.log"

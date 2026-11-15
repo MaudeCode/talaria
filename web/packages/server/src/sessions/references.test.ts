@@ -191,8 +191,8 @@ describe('referenced creation under person isolation (TAL-48)', () => {
   it('never hands one person\'s referenced chat to another who replays its creation', async () => {
     const issuer = 'https://identity.invalid'
     const s = await bootTestServer({ sidecar: null, env: {
-      HERMES_WEBUI_PERSON_ISOLATION: '1', HERMES_WEBUI_OIDC_ISSUER: issuer, HERMES_WEBUI_OIDC_CLIENT_ID: 'synthetic-client',
-      HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'email_verified', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'true', HERMES_WEBUI_OIDC_OWNER_CLAIM: 'groups', HERMES_WEBUI_OIDC_OWNER_VALUES: 'admins',
+      TALARIA_WEB_PERSON_ISOLATION: '1', TALARIA_WEB_OIDC_ISSUER: issuer, TALARIA_WEB_OIDC_CLIENT_ID: 'synthetic-client',
+      TALARIA_WEB_OIDC_ALLOW_CLAIM: 'email_verified', TALARIA_WEB_OIDC_ALLOW_VALUES: 'true', TALARIA_WEB_OIDC_OWNER_CLAIM: 'groups', TALARIA_WEB_OIDC_OWNER_VALUES: 'admins',
     }, deps: (deps) => { deps.oidc.sessionBindingIsCurrent = () => Promise.resolve(true) } })
     try {
       const signIn = (subject: string) => {

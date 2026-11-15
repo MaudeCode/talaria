@@ -17,7 +17,7 @@ test.afterEach(() => { for (const path of owned.splice(0)) rmSync(path, { recurs
  * edited `notes.txt`; the sidecar suite covers the real store and restore.
  */
 test('the Checkpoints page lists, diffs and restores a workspace checkpoint', async ({ page, errors }, testInfo) => {
-  test.skip(!process.env.HERMES_WEBUI_SIDECAR_COMMAND?.includes('replay_sidecar'), 'needs the fixture replay sidecar')
+  test.skip(!process.env.TALARIA_WEB_SIDECAR_COMMAND?.includes('replay_sidecar'), 'needs the fixture replay sidecar')
   const workspace = realpathSync(mkdtempSync(join(tmpdir(), 'tal913-')))
   owned.push(workspace)
   writeFileSync(join(workspace, 'notes.txt'), 'edited by the agent\n')
@@ -75,7 +75,7 @@ test('native checkpoint reads show project provenance and partial output without
   const fixture = JSON.parse(readFileSync(new URL('../../server/src/test/fixtures/canonical-ownership.json', import.meta.url), 'utf8')) as { sessions: { cli: string }; schema: string[]; inserts: string[] }
   const comparison = JSON.parse(readFileSync(new URL('../../../../contracts/fixtures/native-checkpoint-diff.json', import.meta.url), 'utf8')) as { diff: string; comparison: { provenance: 'native_owner'; baseline: 'earliest_retained_project_checkpoint'; available: boolean; reason: 'no_baseline' | null; truncated: boolean } }
   const sidecar = new FakeSidecar()
-  const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' } })
+  const server = await bootTestServer({ sidecar, env: { TALARIA_WEB_SKIP_ONBOARDING: '1' } })
   const db = openStateDb(server.state)
   const sid = fixture.sessions.cli
   sidecar.respond('gateway.session', (_params, _emit, opts) => {

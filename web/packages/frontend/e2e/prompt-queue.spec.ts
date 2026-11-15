@@ -17,7 +17,7 @@ test('builds, edits, explicitly starts and pauses a real cross-chat queue across
   const gate = new Promise<void>((resolve) => { release = resolve })
   const started: string[] = []
   sidecar.respond('chat.start', async (params) => { started.push(params.session_id); await gate; return completed(params) })
-  const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' } })
+  const server = await bootTestServer({ sidecar, env: { TALARIA_WEB_SKIP_ONBOARDING: '1' } })
   try {
     const sessions = []
     for (const title of ['Review changes', 'Write checks']) {

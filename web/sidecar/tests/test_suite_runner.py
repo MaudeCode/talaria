@@ -34,7 +34,7 @@ def project(tmp_path):
 def run(project, workers, *args):
     return subprocess.run(
         [str(project / "scripts/test.sh"), *args],
-        env={**os.environ, "HERMES_WEBUI_AGENT_DIR": str(project), "TALARIA_SIDECAR_WORKERS": str(workers)},
+        env={**os.environ, "TALARIA_WEB_AGENT_DIR": str(project), "TALARIA_SIDECAR_WORKERS": str(workers)},
         capture_output=True, text=True, timeout=45,
     )
 
@@ -89,9 +89,9 @@ def test_layers_execute_each_case_once_and_fast_has_no_agent(project, release):
     (project / 'agent_dependency.json').write_text(json.dumps({'x-talaria': {'releaseTag': 'active'}}))
     (project / 'tests/test_layers.py').write_text(
         "import os, subprocess, sys\n"
-        "def test_fast(): assert 'HERMES_WEBUI_AGENT_DIR' not in os.environ\n"
+        "def test_fast(): assert 'TALARIA_WEB_AGENT_DIR' not in os.environ\n"
         "def test_process(): subprocess.run([sys.executable, '-c', 'pass'], check=True)\n"
-        "def test_compatibility(): assert os.environ['HERMES_WEBUI_AGENT_DIR']\n")
+        "def test_compatibility(): assert os.environ['TALARIA_WEB_AGENT_DIR']\n")
     (project / 'tests/process_inventory.json').write_text(json.dumps({'schemaVersion': 1, 'families': {
         'tests/test_layers.py::test_process': {'layer': 'process', 'reason': 'Proves a reviewed disposable child launch.', 'cases': ['']},
         'tests/test_layers.py::test_compatibility': {'layer': 'compatibility', 'reason': 'Proves compatibility workers receive the selected Agent environment.', 'cases': ['']},

@@ -19,7 +19,7 @@ test('renders a Meshy model inline and in the gallery through authenticated asse
   const { bootTestServer } = await import('../../server/dist/test/harness.js')
   const { FakeSidecar } = await import('../../server/dist/sidecar/fake.js')
   const sidecar = new FakeSidecar()
-  const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' } })
+  const server = await bootTestServer({ sidecar, env: { TALARIA_WEB_SKIP_ONBOARDING: '1' } })
   const shots = process.env.TAL1514_SHOTS
   const shot = async (name: string) => { await page.screenshot({ path: shots ? join(shots, `${name}-${testInfo.project.name}.png`) : testInfo.outputPath(`${name}.png`) }) }
   const root = join(server.state, 'plugin-data', 'agent-plugin-meshy-0')

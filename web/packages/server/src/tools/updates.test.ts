@@ -1901,7 +1901,7 @@ describe('Agent checkout updates', () => {
     mkdirSync(named, { recursive: true })
     const recordHome = isolated ? base : named
     write(join(recordHome, 'cron/manual_runs/job-original.json'), JSON.stringify(retained.manual))
-    const server = await bootTestServer({ sidecar: null, env: { HERMES_HOME: isolated ? named : base, HERMES_WEBUI_ISOLATED_PROFILE: isolated ? '1' : '0' } })
+    const server = await bootTestServer({ sidecar: null, env: { HERMES_HOME: isolated ? named : base, TALARIA_WEB_ISOLATED_PROFILE: isolated ? '1' : '0' } })
     try {
       const wired = (server.deps.updates as unknown as { deps: UpdateServiceDeps }).deps
       const homes = wired.agentHomes!()

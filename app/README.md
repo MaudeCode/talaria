@@ -55,7 +55,7 @@ Talaria is a native SwiftUI iPhone app for a self-hosted [Talaria Web](../web/RE
 
 Talaria is a client only; it does not host or provision a backend. You run [Talaria Web](../web/README.md) next to Hermes Agent on a machine you control.
 
-1. **Run the server.** Follow the [Talaria Web setup](../web/README.md): with Node 24 or newer, `npm install -g @maudecode/talaria-web`, set `HERMES_WEBUI_PASSWORD` in `~/.hermes/.env`, and run `talaria-web ctl start`.
+1. **Run the server.** Follow the [Talaria Web setup](../web/README.md): with Node 24 or newer, `npm install -g @maudecode/talaria-web`, set `TALARIA_WEB_PASSWORD` in `~/.hermes/.env`, and run `talaria-web ctl start`.
 2. **Make it reachable from your phone** (see below).
 3. **Connect.** Install Talaria, enter your server URL (for example `https://hermes.example.com`), and sign in with the password or the server's OIDC provider.
 

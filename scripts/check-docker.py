@@ -212,7 +212,7 @@ def smoke(variant, image, agent_image=None):
                 "docker", "run", "--rm", "--entrypoint", "/bin/sh", "-v", f"{data}:/fixture",
                 image, "-c", "chown 1001:1001 /fixture && chmod 777 /fixture",
             ], env=env, check=True)
-            environment = {"HERMES_WEBUI_STATE_DIR": "/app/data"}
+            environment = {"TALARIA_WEB_STATE_DIR": "/app/data"}
             mounts = [f"{data}:/app/data"]
             if variant == "explicit-uid":
                 environment.update(WANTED_UID="1024", WANTED_GID="1024")

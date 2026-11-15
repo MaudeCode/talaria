@@ -294,7 +294,7 @@ public final class ComposerVoiceInputController {
     }
 
     /// Client upload ceiling. The server's default multipart limit is 20 MiB
-    /// (`HERMES_WEBUI_MAX_UPLOAD_MB`) and rejects a larger `Content-Length` with 413,
+    /// (`TALARIA_WEB_MAX_UPLOAD_MB`) and rejects a larger `Content-Length` with 413,
     /// so leave room for the multipart envelope. A recording above this is never read
     /// into memory or uploaded; it goes to the on-device fallback instead.
     nonisolated static let maximumServerUploadBytes = PendingAttachment.maximumUploadBytes - 64 * 1_024

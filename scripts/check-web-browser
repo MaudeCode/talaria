@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Playwright end-to-end against the Node server. Without HERMES_WEBUI_AGENT_DIR
+# Playwright end-to-end against the Node server. Without TALARIA_WEB_AGENT_DIR
 # the server runs on the fixture replay sidecar (web/sidecar/scripts/replay_sidecar.py),
 # so the suite needs no Hermes Agent, model provider, or network.
 set -euo pipefail
@@ -45,12 +45,12 @@ if [[ -n "$with_deps" && -n "$apt_cache" ]]; then
 fi
 run_env=(env -i PATH="$(dirname "$node_bin"):$PATH" HOME="$state" TMPDIR="$state" \
   PLAYWRIGHT_BROWSERS_PATH="$PLAYWRIGHT_BROWSERS_PATH" HERMES_E2E_PORT="$port")
-if [[ -n "${HERMES_WEBUI_AGENT_DIR:-}" ]]; then
-  run_env+=("HERMES_WEBUI_AGENT_DIR=$HERMES_WEBUI_AGENT_DIR")
-  if [[ -n "${HERMES_WEBUI_PYTHON:-}" ]]; then run_env+=("HERMES_WEBUI_PYTHON=$HERMES_WEBUI_PYTHON"); fi
+if [[ -n "${TALARIA_WEB_AGENT_DIR:-}" ]]; then
+  run_env+=("TALARIA_WEB_AGENT_DIR=$TALARIA_WEB_AGENT_DIR")
+  if [[ -n "${TALARIA_WEB_PYTHON:-}" ]]; then run_env+=("TALARIA_WEB_PYTHON=$TALARIA_WEB_PYTHON"); fi
 else
   python_bin=$(command -v python3)
-  run_env+=("HERMES_WEBUI_SIDECAR_COMMAND=[\"$python_bin\", \"$root/web/sidecar/scripts/replay_sidecar.py\"]")
+  run_env+=("TALARIA_WEB_SIDECAR_COMMAND=[\"$python_bin\", \"$root/web/sidecar/scripts/replay_sidecar.py\"]")
 fi
 if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then run_env+=("LD_LIBRARY_PATH=$LD_LIBRARY_PATH"); fi
 "${run_env[@]}" npm run e2e -- "$@"

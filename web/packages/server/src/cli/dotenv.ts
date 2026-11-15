@@ -1,14 +1,14 @@
 /**
  * `.env` loading with the launcher precedence (Python `bootstrap.py` +
  * `ctl.sh`): the checkout `.env` applies unconditionally unless
- * `HERMES_WEBUI_PRESERVE_ENV` keeps values already in the environment; the
+ * `TALARIA_WEB_PRESERVE_ENV` keeps values already in the environment; the
  * Hermes home `.env` is a fallback for keys the environment lacks (provider
  * credentials referenced as `${VAR}` in config.yaml), limited to
- * `homeEnvKeyAllowed`. `HERMES_WEBUI_NO_DOTENV=1` skips both.
+ * `homeEnvKeyAllowed`. `TALARIA_WEB_NO_DOTENV=1` skips both.
  */
 import { join } from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
-import { resolveHermesHome } from '../config.js'
+import { LEGACY_WEB_ENV_PREFIX, migrateLegacyWebEnv, resolveHermesHome, type Env } from '../config.js'
 
 const READONLY = new Set(['UID', 'GID', 'EUID', 'EGID', 'PPID'])
 const KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
@@ -21,31 +21,31 @@ const KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
  */
 const HOME_ENV_KEYS: ReadonlySet<string> = new Set([
   'HERMES_MODEL',
-  'HERMES_WEBUI_BOT_NAME',
-  'HERMES_WEBUI_DEFAULT_MODEL',
-  'HERMES_WEBUI_PORT',
-  'HERMES_WEBUI_MAX_UPLOAD_MB',
-  'HERMES_WEBUI_MAX_EXTRACTED_MB',
-  'HERMES_WEBUI_MAX_SSE_CLIENTS',
-  'HERMES_WEBUI_FOLDER_ZIP_MAX_FILES',
-  'HERMES_WEBUI_FOLDER_ZIP_MAX_MB',
-  'HERMES_WEBUI_LOG_MAX_BYTES',
-  'HERMES_WEBUI_PROCESS_WAKEUP_MAX_TURNS',
-  'HERMES_WEBUI_SESSIONS_MAX',
-  'HERMES_WEBUI_SESSION_SAVE_MODE',
-  'HERMES_WEBUI_RUN_JOURNAL_ARCHIVE_MAX_BYTES',
-  'HERMES_WEBUI_RUN_JOURNAL_FSYNC',
-  'HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT',
-  'HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS',
-  'HERMES_WEBUI_RUN_JOURNAL_RETENTION_MAX_BYTES_PER_SESSION',
-  'HERMES_WEBUI_RUN_JOURNAL_RETENTION_MAX_RUNS_PER_SESSION',
+  'TALARIA_WEB_BOT_NAME',
+  'TALARIA_WEB_DEFAULT_MODEL',
+  'TALARIA_WEB_PORT',
+  'TALARIA_WEB_MAX_UPLOAD_MB',
+  'TALARIA_WEB_MAX_EXTRACTED_MB',
+  'TALARIA_WEB_MAX_SSE_CLIENTS',
+  'TALARIA_WEB_FOLDER_ZIP_MAX_FILES',
+  'TALARIA_WEB_FOLDER_ZIP_MAX_MB',
+  'TALARIA_WEB_LOG_MAX_BYTES',
+  'TALARIA_WEB_PROCESS_WAKEUP_MAX_TURNS',
+  'TALARIA_WEB_SESSIONS_MAX',
+  'TALARIA_WEB_SESSION_SAVE_MODE',
+  'TALARIA_WEB_RUN_JOURNAL_ARCHIVE_MAX_BYTES',
+  'TALARIA_WEB_RUN_JOURNAL_FSYNC',
+  'TALARIA_WEB_RUN_JOURNAL_KEEP_RECENT',
+  'TALARIA_WEB_RUN_JOURNAL_RETENTION_DAYS',
+  'TALARIA_WEB_RUN_JOURNAL_RETENTION_MAX_BYTES_PER_SESSION',
+  'TALARIA_WEB_RUN_JOURNAL_RETENTION_MAX_RUNS_PER_SESSION',
 ])
 const CREDENTIAL_KEY_RE = /_(?:KEY|TOKEN|SECRET)$/
 /**
  * A credential's name: what the agent-writable home `.env` may hand the server, and the only names an agent may ask the
  * user for (TAL-1969). Loader, shell and launch hooks (`BASH_ENV`, `NODE_OPTIONS`, `GIT_SSH_COMMAND`) never match.
  */
-export const credentialEnvName = (key: string): boolean => !key.startsWith('HERMES_WEBUI_') && CREDENTIAL_KEY_RE.test(key)
+export const credentialEnvName = (key: string): boolean => ![LEGACY_WEB_ENV_PREFIX, 'TALARIA_WEB_'].some((prefix) => key.startsWith(prefix)) && CREDENTIAL_KEY_RE.test(key)
 const homeEnvKeyAllowed = (key: string): boolean => HOME_ENV_KEYS.has(key) || credentialEnvName(key)
 
 function unescapeDouble(raw: string): string {
@@ -97,6 +97,7 @@ export function expandDotenv(values: Record<string, string>, env: Record<string,
 
 export interface DotenvOptions {
   env: Record<string, string | undefined>
+  normalizeEnv?: (source: Env) => void
   /** The checkout `.env` (a git checkout of `web/`); absent for npm installs. */
   repoEnvFile?: string | null
   /** `$HERMES_HOME/.env`, applied only for keys the environment lacks and `homeEnvKeyAllowed` accepts. */
@@ -107,12 +108,14 @@ export interface DotenvOptions {
 /** Apply both files into `env` (mutating) and return the keys that were set. */
 export function loadLauncherDotenv(opts: DotenvOptions): string[] {
   const { env } = opts
-  if (['1', 'true', 'yes', 'on'].includes((env.HERMES_WEBUI_NO_DOTENV ?? '').trim().toLowerCase())) return []
+  const normalize = opts.normalizeEnv ?? ((source: Env) => { migrateLegacyWebEnv(source) })
+  normalize(env)
+  if (['1', 'true', 'yes', 'on'].includes((env.TALARIA_WEB_NO_DOTENV ?? '').trim().toLowerCase())) return []
   const applied: string[] = []
-  const preserve = ['1', 'true', 'yes', 'on'].includes((env.HERMES_WEBUI_PRESERVE_ENV ?? '').trim().toLowerCase())
+  const preserve = ['1', 'true', 'yes', 'on'].includes((env.TALARIA_WEB_PRESERVE_ENV ?? '').trim().toLowerCase())
   const read = (path: string | null | undefined): Record<string, string> | null => {
     if (!path || !existsSync(path)) return null
-    try { return parseDotenv(readFileSync(path, 'utf8')) } catch (error) { opts.log?.(`[bootstrap] Warning: could not load ${path}: ${(error as Error).message}`); return null }
+    try { const values = parseDotenv(readFileSync(path, 'utf8')); normalize(values); return values } catch (error) { opts.log?.(`[bootstrap] Warning: could not load ${path}: ${(error as Error).message}`); return null }
   }
   const repo = read(opts.repoEnvFile)
   if (repo) for (const [k, v] of Object.entries(repo)) { if (preserve && env[k] !== undefined) continue; env[k] = v; applied.push(k) }
@@ -135,10 +138,10 @@ export function loadLauncherDotenv(opts: DotenvOptions): string[] {
  * first (it may define `HERMES_HOME`), then the Hermes home resolved from the
  * result, then `$HERMES_HOME/.env` as a fallback. One authoritative home.
  */
-export function loadStartupEnv(opts: { env: Record<string, string | undefined>; webRoot: string; home: string; log?: (line: string) => void }): { hermesHome: string } {
-  loadLauncherDotenv({ env: opts.env, repoEnvFile: join(opts.webRoot, '.env'), hermesEnvFile: null, ...(opts.log ? { log: opts.log } : {}) })
+export function loadStartupEnv(opts: { env: Record<string, string | undefined>; webRoot: string; home: string; log?: (line: string) => void; normalizeEnv?: (source: Env) => void }): { hermesHome: string } {
+  loadLauncherDotenv({ env: opts.env, repoEnvFile: join(opts.webRoot, '.env'), hermesEnvFile: null, ...(opts.log ? { log: opts.log } : {}), ...(opts.normalizeEnv ? { normalizeEnv: opts.normalizeEnv } : {}) })
   const hermesHome = resolveHermesHome(opts.env, opts.home)
-  const fromHome = loadLauncherDotenv({ env: opts.env, repoEnvFile: null, hermesEnvFile: join(hermesHome, '.env'), ...(opts.log ? { log: opts.log } : {}) })
+  const fromHome = loadLauncherDotenv({ env: opts.env, repoEnvFile: null, hermesEnvFile: join(hermesHome, '.env'), ...(opts.log ? { log: opts.log } : {}), ...(opts.normalizeEnv ? { normalizeEnv: opts.normalizeEnv } : {}) })
   // Values that came from the default profile's own `.env` are that profile's credentials, not process-wide ones. The
   // supervisor worker inherits both the values and this marker, so a second load must keep what the first recorded.
   opts.env[HOME_DOTENV_KEYS_VAR] = [...new Set([...homeDotenvKeys(opts.env), ...fromHome])].join(',')
@@ -146,7 +149,7 @@ export function loadStartupEnv(opts: { env: Record<string, string | undefined>; 
 }
 
 /** Names of the variables `loadStartupEnv` copied from `$HERMES_HOME/.env` (the default profile's file). */
-export const HOME_DOTENV_KEYS_VAR = 'HERMES_WEBUI_HOME_DOTENV_KEYS'
+export const HOME_DOTENV_KEYS_VAR = 'TALARIA_WEB_HOME_DOTENV_KEYS'
 
 export function homeDotenvKeys(env: Record<string, string | undefined>): Set<string> {
   return new Set((env[HOME_DOTENV_KEYS_VAR] ?? '').split(',').map((k) => k.trim()).filter(Boolean))

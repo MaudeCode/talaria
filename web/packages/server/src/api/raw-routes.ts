@@ -99,12 +99,12 @@ async function handleProcessCompleteAck(ctx: RequestContext): Promise<void> {
 }
 
 /**
- * Automated-test hooks: served only to a loopback peer while `HERMES_WEBUI_TEST_HOOKS=1` is set (loopback alone means
+ * Automated-test hooks: served only to a loopback peer while `TALARIA_WEB_TEST_HOOKS=1` is set (loopback alone means
  * nothing behind a same-host reverse proxy); anything else gets the plain 404.
  */
 function testHook(handler: RawHandler): RawHandler {
   return async (ctx) => {
-    if (!truthy(ctx.deps.config.env.HERMES_WEBUI_TEST_HOOKS) || !isLoopback(ctx.peer)) {
+    if (!truthy(ctx.deps.config.env.TALARIA_WEB_TEST_HOOKS) || !isLoopback(ctx.peer)) {
       await ctx.json({ error: 'not found' }, { status: 404 })
       return
     }
@@ -287,14 +287,14 @@ async function handleProfileAvatar(ctx: RequestContext): Promise<void> {
   await ctx.send({ status: 200, headers: { 'Content-Type': avatar.type, 'Cache-Control': 'private, max-age=300', 'Content-Security-Policy': "default-src 'none'; sandbox" }, body: avatar.bytes })
 }
 
-/** Python `_folder_zip_limits`: `HERMES_WEBUI_FOLDER_ZIP_MAX_MB` / `_MAX_FILES` are honoured as given (ZIP64 covers large archives). */
+/** Python `_folder_zip_limits`: `TALARIA_WEB_FOLDER_ZIP_MAX_MB` / `_MAX_FILES` are honoured as given (ZIP64 covers large archives). */
 export function folderZipMaxBytes(env: Record<string, string | undefined>): number {
-  const mb = Number.parseInt((env.HERMES_WEBUI_FOLDER_ZIP_MAX_MB ?? '1024').trim(), 10)
+  const mb = Number.parseInt((env.TALARIA_WEB_FOLDER_ZIP_MAX_MB ?? '1024').trim(), 10)
   return Math.max(1, Number.isFinite(mb) ? mb : 1024) * 1024 * 1024
 }
 
 export function folderZipMaxFiles(env: Record<string, string | undefined>): number {
-  const n = Number.parseInt((env.HERMES_WEBUI_FOLDER_ZIP_MAX_FILES ?? '50000').trim(), 10)
+  const n = Number.parseInt((env.TALARIA_WEB_FOLDER_ZIP_MAX_FILES ?? '50000').trim(), 10)
   return Math.max(1, Number.isFinite(n) ? n : 50000)
 }
 
@@ -359,11 +359,11 @@ async function handleFolderDownload(ctx: RequestContext): Promise<void> {
   const maxFiles = folderZipMaxFiles(ctx.deps.config.env)
   const { files, limit } = await collectFolder(target, workspaceRoot, maxBytes, maxFiles)
   if (limit === 'max_files') {
-    await ctx.json({ error: 'too many files', limit: maxFiles, configure: 'HERMES_WEBUI_FOLDER_ZIP_MAX_FILES' }, { status: 413 })
+    await ctx.json({ error: 'too many files', limit: maxFiles, configure: 'TALARIA_WEB_FOLDER_ZIP_MAX_FILES' }, { status: 413 })
     return
   }
   if (limit === 'max_bytes') {
-    await ctx.json({ error: 'folder too large', limit_bytes: maxBytes, configure: 'HERMES_WEBUI_FOLDER_ZIP_MAX_MB' }, { status: 413 })
+    await ctx.json({ error: 'folder too large', limit_bytes: maxBytes, configure: 'TALARIA_WEB_FOLDER_ZIP_MAX_MB' }, { status: 413 })
     return
   }
   const zipName = `${basename(target) || 'workspace'}.zip`

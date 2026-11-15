@@ -18,15 +18,15 @@ const LOG_DEFAULT_MAX_BYTES = 32 * 1024 * 1024
 /** The most of an oversized log `<log>.1` keeps, so a rotation costs the same however large the log grew. */
 const LOG_ROTATED_MAX_BYTES = 32 * 1024 * 1024
 
-/** Python `webui_log_paths`: an absolute `HERMES_WEBUI_LOG_FILE` wins, else the launcher's `bootstrap-<port>.log`. */
+/** Python `webui_log_paths`: an absolute `TALARIA_WEB_LOG_FILE` wins, else the launcher's `bootstrap-<port>.log`. */
 export function webuiLogPaths(env: Record<string, string | undefined>, stateDir: string, port: number): string[] {
-  const configured = (env.HERMES_WEBUI_LOG_FILE ?? '').trim()
+  const configured = (env.TALARIA_WEB_LOG_FILE ?? '').trim()
   if (configured.startsWith('/')) return [configured]
   return [join(stateDir, `bootstrap-${String(port)}.log`)]
 }
 
 export function webuiLogMaxBytes(env: Record<string, string | undefined>): number {
-  const raw = env.HERMES_WEBUI_LOG_MAX_BYTES
+  const raw = env.TALARIA_WEB_LOG_MAX_BYTES
   if (raw === undefined) return LOG_DEFAULT_MAX_BYTES
   const n = Number.parseInt(raw, 10)
   return Number.isFinite(n) ? n : LOG_DEFAULT_MAX_BYTES
@@ -148,7 +148,7 @@ export class HygieneTicker {
     this.retention = this.deps.journal.pruneSettled({ now, signal, ...(this.deps.sessions ? { protectedRuns: sessionRunReferences(this.deps.sessions) } : {}) })
       .then((result) => {
         if (result.pruned) this.deps.log(`[webui] run-journal retention archived ${String(result.pruned)} journals (${String(result.bytes_reclaimed)} live bytes)`)
-        if (result.archives_removed) this.deps.log(`[webui] run-journal retention removed ${String(result.archives_removed)} oldest archives to fit HERMES_WEBUI_RUN_JOURNAL_ARCHIVE_MAX_BYTES`)
+        if (result.archives_removed) this.deps.log(`[webui] run-journal retention removed ${String(result.archives_removed)} oldest archives to fit TALARIA_WEB_RUN_JOURNAL_ARCHIVE_MAX_BYTES`)
       })
       .catch((error: unknown) => { this.warn('run-journal retention', error) })
       .finally(() => { this.retention = null })

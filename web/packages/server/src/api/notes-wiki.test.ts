@@ -53,13 +53,13 @@ describe('notes and wiki routes', () => {
   })
   afterEach(() => {
     rmSync(tmp, { recursive: true, force: true })
-    Reflect.deleteProperty(s.deps.config.env, 'HERMES_WEBUI_EXTERNAL_NOTES_SOURCES')
+    Reflect.deleteProperty(s.deps.config.env, 'TALARIA_WEB_EXTERNAL_NOTES_SOURCES')
     Reflect.deleteProperty(s.deps.config.env, 'WIKI_PATH')
     configs.clear()
   })
 
   const enableJoplin = (env: Json = { JOPLIN_URL: joplinUrl, JOPLIN_TOKEN: 'secret-token' }): void => {
-    s.deps.config.env.HERMES_WEBUI_EXTERNAL_NOTES_SOURCES = '1'
+    s.deps.config.env.TALARIA_WEB_EXTERNAL_NOTES_SOURCES = '1'
     configs.set(s.state, { mcp_servers: { Joplin: { command: 'joplin-mcp', env } } })
     // config.yaml reads are memoised on the file's identity; a fresh body evicts them.
     writeFileSync(join(s.state, 'config.yaml'), `# ${String(Math.random())}\n`)

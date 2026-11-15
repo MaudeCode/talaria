@@ -13,7 +13,7 @@ describe('workspace preview route', () => {
   let sid: string
   let ws: string
   beforeAll(async () => {
-    s = await bootTestServer({ env: { HERMES_WEBUI_PASSWORD: PASSWORD } })
+    s = await bootTestServer({ env: { TALARIA_WEB_PASSWORD: PASSWORD } })
     const login = await s.get('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: PASSWORD }) })
     cookie = (login.headers.getSetCookie()[0] ?? '').split(';')[0] ?? ''
     ws = realpathSync(join(s.state, 'workspace'))

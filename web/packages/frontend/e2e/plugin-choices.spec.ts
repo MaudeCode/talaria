@@ -6,7 +6,7 @@ test.use({ serviceWorkers: 'block' })
 
 test('a dedicated plugin command asks through the existing clarification UI without a chat turn', async ({ page }, testInfo) => {
   const sidecar = new FakeSidecar()
-  const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' } })
+  const server = await bootTestServer({ sidecar, env: { TALARIA_WEB_SKIP_ONBOARDING: '1' } })
   const session = await server.deps.sessions.create({ title: 'Plugin command choices' })
   const sid = session.session_id
   let release!: () => void

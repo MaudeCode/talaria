@@ -221,7 +221,7 @@ export const coreRouter = os.router({
       if (cookieVal) await auth.revokeSession(cookieVal)
       const payload: { ok: true; trusted_logout_url?: string } = { ok: true }
       if (sessionInfo?.auth_type === 'trusted') {
-        const logoutUrl = (ctx.deps.config.env.HERMES_WEBUI_TRUSTED_AUTH_LOGOUT_URL ?? '').trim()
+        const logoutUrl = (ctx.deps.config.env.TALARIA_WEB_TRUSTED_AUTH_LOGOUT_URL ?? '').trim()
         if (logoutUrl) payload.trusted_logout_url = logoutUrl
       }
       ctx.queueCookie(clearAuthCookieHeader(ctx))
@@ -244,7 +244,7 @@ export const coreRouter = os.router({
     oidcNativeCancel: os.auth.oidcNativeCancel.handler(({ input, context }) => ({ ok: context.ctx.deps.oidc.cancelNative(input.flow_id, input.state) })),
     passkeyOptions: os.auth.passkeyOptions.handler(async ({ context }) => {
       const { ctx } = context
-      if (!ctx.deps.auth.passkeyFeatureFlagEnabled()) throw new HttpError(404, 'Passkey support is disabled. Set HERMES_WEBUI_PASSKEY=1 or webui_passkey_enabled: true to enable.')
+      if (!ctx.deps.auth.passkeyFeatureFlagEnabled()) throw new HttpError(404, 'Passkey support is disabled. Set TALARIA_WEB_PASSKEY=1 or webui_passkey_enabled: true to enable.')
       if (!(await ctx.deps.auth.isAuthEnabled())) throw new HttpError(400, 'Auth not enabled')
       const [rpId, origin] = passkeyRp(ctx)
       return { ok: true as const, publicKey: (await passkeyCall(async () => (await ctx.deps.passkeys.authenticationOptions(rpId, origin)))) }

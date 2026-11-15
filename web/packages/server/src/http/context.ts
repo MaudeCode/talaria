@@ -370,11 +370,11 @@ export class RequestContext {
 
   /** Python `_is_secure_context`: env override, direct TLS, opt-in forwarded proto. */
   isSecureContext(): boolean {
-    const env = (this.deps.config.env.HERMES_WEBUI_SECURE ?? '').trim().toLowerCase()
+    const env = (this.deps.config.env.TALARIA_WEB_SECURE ?? '').trim().toLowerCase()
     if (['1', 'true', 'yes'].includes(env)) return true
     if (['0', 'false', 'no'].includes(env)) return false
     if ((this.req.socket as TLSSocket).encrypted) return true
-    if (truthy(this.deps.config.env.HERMES_WEBUI_TRUST_FORWARDED_PROTO) && this.header('x-forwarded-proto') === 'https') return true
+    if (truthy(this.deps.config.env.TALARIA_WEB_TRUST_FORWARDED_PROTO) && this.header('x-forwarded-proto') === 'https') return true
     return false
   }
 
@@ -492,10 +492,10 @@ export class RequestContext {
     const env = this.deps.config.env
     const forwarded = forwardedLogFields(this.headerAll('x-forwarded-for'), this.peer, env)
     Object.assign(record, forwarded)
-    if ('forwarded_for_ignored' in forwarded && truthy(env.HERMES_WEBUI_TRUST_FORWARDED_FOR) && !rawPeerIsTrustedProxy(this.peer, env) &&
+    if ('forwarded_for_ignored' in forwarded && truthy(env.TALARIA_WEB_TRUST_FORWARDED_FOR) && !rawPeerIsTrustedProxy(this.peer, env) &&
       !untrustedForwardingWarned.has(this.deps)) {
       untrustedForwardingWarned.add(this.deps)
-      this.deps.log(`[webui] warning: ignoring X-Forwarded-For from ${JSON.stringify(this.peer.slice(0, 64))}, which is not in HERMES_WEBUI_TRUSTED_PROXY_CIDRS; ` +
+      this.deps.log(`[webui] warning: ignoring X-Forwarded-For from ${JSON.stringify(this.peer.slice(0, 64))}, which is not in TALARIA_WEB_TRUSTED_PROXY_CIDRS; ` +
         'add the proxy address there to log its clients. Requests that lose the header carry forwarded_for_ignored. Shown once.')
     }
     this.deps.log(`[webui] ${JSON.stringify(record)}`)

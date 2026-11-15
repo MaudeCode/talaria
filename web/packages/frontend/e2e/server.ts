@@ -54,23 +54,23 @@ export async function bootServer(baseUrl: string, extraEnv: Record<string, strin
   mkdirSync(join(state, 'claude-projects'))
   mkdirSync(join(state, 'sessions'))
   const env: Record<string, string> = {}
-  for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !k.startsWith('HERMES_')) env[k] = v
+  for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !k.startsWith('HERMES_') && !k.startsWith('TALARIA_WEB_')) env[k] = v
   // The isolated HERMES_HOME hides the developer's ~/.hermes Agent; playwright.config.ts defaults to the replay sidecar.
-  for (const key of ['HERMES_WEBUI_AGENT_DIR', 'HERMES_WEBUI_PYTHON', 'HERMES_WEBUI_SIDECAR_COMMAND']) if (process.env[key]) env[key] = process.env[key]
+  for (const key of ['TALARIA_WEB_AGENT_DIR', 'TALARIA_WEB_PYTHON', 'TALARIA_WEB_SIDECAR_COMMAND']) if (process.env[key]) env[key] = process.env[key]
   Object.assign(env, {
     // The tmpfs workspace must be inside the same disposable user home as the server.
     HOME: state,
-    HERMES_WEBUI_PORT: port,
-    HERMES_WEBUI_HOST: '127.0.0.1',
-    HERMES_WEBUI_STATE_DIR: state,
-    HERMES_WEBUI_DEFAULT_WORKSPACE: join(state, 'workspace'),
+    TALARIA_WEB_PORT: port,
+    TALARIA_WEB_HOST: '127.0.0.1',
+    TALARIA_WEB_STATE_DIR: state,
+    TALARIA_WEB_DEFAULT_WORKSPACE: join(state, 'workspace'),
     HERMES_HOME: state,
     HERMES_BASE_HOME: state,
     HERMES_CONFIG_PATH: join(state, 'config.yaml'),
     // Keep the developer's real ~/.claude/projects out of the imported-session list.
-    HERMES_WEBUI_CLAUDE_PROJECTS_DIR: join(state, 'claude-projects'),
-    HERMES_WEBUI_SKIP_ONBOARDING: '1',
-    HERMES_WEBUI_TEST_NETWORK_BLOCK: '1',
+    TALARIA_WEB_CLAUDE_PROJECTS_DIR: join(state, 'claude-projects'),
+    TALARIA_WEB_SKIP_ONBOARDING: '1',
+    TALARIA_WEB_TEST_NETWORK_BLOCK: '1',
     AWS_EC2_METADATA_DISABLED: 'true',
     // Native Agent trials use their preprovisioned interpreter and no scanner download/updater.
     HERMES_DISABLE_LAZY_INSTALLS: '1',

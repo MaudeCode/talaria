@@ -210,7 +210,7 @@ def stop_worker(timeout=None):
         + "import {discoverAgentPython} from " + json.dumps((server / 'sidecar/discover.js').as_uri()) + ";\n"
         + "import assert from 'node:assert/strict'; import {writeFileSync} from 'node:fs';\nconst a=" + json.dumps(args) + ";\n" + r'''
 const logs=[],phases=[];
-const env={...process.env,HERMES_HOME:a.home,HERMES_WEBUI_STATE_DIR:a.home+'/webui',HERMES_WEBUI_TEST_NETWORK_BLOCK:'1',HERMES_WEBUI_CLAUDE_PROJECTS_DIR:a.home+'/claude'};
+const env={...process.env,HERMES_HOME:a.home,TALARIA_WEB_STATE_DIR:a.home+'/webui',TALARIA_WEB_TEST_NETWORK_BLOCK:'1',TALARIA_WEB_CLAUDE_PROJECTS_DIR:a.home+'/claude'};
 let initial=true;
 const client=new SidecarClient({python:()=>{if(initial){initial=false;return a.old}return discoverAgentPython(env,a.root,a.home)},agentDir:a.root,sidecarDir:a.web+'/sidecar',hermesHome:a.home,env,log:l=>logs.push(l)});
 let deps;

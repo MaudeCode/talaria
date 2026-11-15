@@ -25,7 +25,7 @@ test('saves a requested secret to the profile .env without it reaching any other
       model: 'test-model', provider: 'test', compressed: false, agent_session_id: params.session_id, token_sent: true, pending_steer: '', live_tool_calls: [],
       messages: [...params.conversation_history, { role: 'user', content: params.user_message }, { role: 'assistant', content: 'Saved; reading the dashboards now.' }], final_response: 'Saved; reading the dashboards now.' }
   })
-  const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' } })
+  const server = await bootTestServer({ sidecar, env: { TALARIA_WEB_SKIP_ONBOARDING: '1' } })
   const shot = async (name: string) => { if (process.env.TAL1969_SHOTS) await page.screenshot({ path: `${process.env.TAL1969_SHOTS}/${name}-${testInfo.project.name}.png` }) }
   const bodies: { url: string; body: string }[] = []
   page.on('request', (request) => { const body = request.postData(); if (body) bodies.push({ url: request.url(), body }) })

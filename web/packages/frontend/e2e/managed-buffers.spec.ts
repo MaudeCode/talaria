@@ -13,7 +13,7 @@ test('Files uses the native managed source and reconciles a save without workspa
     if (action === 'save') text = content!
     return { supported: available, buffers: available ? [{ name: 'draft.txt', size: Buffer.byteLength(text), read_only: readOnly }] : [], content: text, size: Buffer.byteLength(text), read_only: readOnly, write_semantics: 'unconditional' }
   })
-  const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' } })
+  const server = await bootTestServer({ sidecar, env: { TALARIA_WEB_SKIP_ONBOARDING: '1' } })
   const evidence = process.env.TAL1367_EVIDENCE
   if (evidence) mkdirSync(evidence, { recursive: true })
   const shot = async (name: string) => { if (evidence) await page.screenshot({ path: `${evidence}/${name}-${info.project.name}.png` }) }

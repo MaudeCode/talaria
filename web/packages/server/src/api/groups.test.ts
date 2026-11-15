@@ -590,8 +590,8 @@ for (const authType of ['trusted', 'oidc'] as const) it(`requires owner authorit
   const sidecar = new FakeSidecar()
   groupFixture(sidecar)
   server = await bootTestServer({ sidecar, env: {
-    HERMES_WEBUI_TRUSTED_AUTH_HEADER: 'X-Remote-User', HERMES_WEBUI_GROUP_PROFILE_MAP: '{}',
-    HERMES_WEBUI_OIDC_ISSUER: 'https://identity.invalid', HERMES_WEBUI_OIDC_CLIENT_ID: 'synthetic-client',
+    TALARIA_WEB_TRUSTED_AUTH_HEADER: 'X-Remote-User', TALARIA_WEB_GROUP_PROFILE_MAP: '{}',
+    TALARIA_WEB_OIDC_ISSUER: 'https://identity.invalid', TALARIA_WEB_OIDC_CLIENT_ID: 'synthetic-client',
   }, deps: (deps) => {
     deps.profiles.list = () => Promise.resolve([{ name: 'default', is_default: true }, { name: 'helper' }])
     // External identity proof is the boundary; the request gate and owner policy remain real.

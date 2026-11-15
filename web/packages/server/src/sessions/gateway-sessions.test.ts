@@ -600,7 +600,7 @@ describe('canonical owner attachment', () => {
   it('authorizes the profile before contacting the export owner', async () => {
     expect((await s.get(`/api/session/export?session_id=${sid}`, { headers: { cookie: 'hermes_profile=work' } })).status).toBe(404)
     expect(sidecar.calls.filter((call) => call.method === 'gateway.session')).toEqual([])
-    const locked = await bootTestServer({ sidecar, env: { HERMES_WEBUI_PASSWORD: 'synthetic-export-password' } })
+    const locked = await bootTestServer({ sidecar, env: { TALARIA_WEB_PASSWORD: 'synthetic-export-password' } })
     try {
       expect((await locked.get(`/api/session/export?session_id=${sid}`)).status).toBe(401)
       expect(sidecar.calls.filter((call) => call.method === 'gateway.session')).toEqual([])
@@ -780,8 +780,8 @@ describe('diagnostic chats under person isolation (TAL-48)', () => {
     const issuer = 'https://identity.invalid'
     const sidecar = new FakeSidecar()
     const s = await bootTestServer({ sidecar, env: {
-      HERMES_WEBUI_PERSON_ISOLATION: '1', HERMES_WEBUI_OIDC_ISSUER: issuer, HERMES_WEBUI_OIDC_CLIENT_ID: 'synthetic-client',
-      HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'email_verified', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'true', HERMES_WEBUI_OIDC_OWNER_CLAIM: 'groups', HERMES_WEBUI_OIDC_OWNER_VALUES: 'admins',
+      TALARIA_WEB_PERSON_ISOLATION: '1', TALARIA_WEB_OIDC_ISSUER: issuer, TALARIA_WEB_OIDC_CLIENT_ID: 'synthetic-client',
+      TALARIA_WEB_OIDC_ALLOW_CLAIM: 'email_verified', TALARIA_WEB_OIDC_ALLOW_VALUES: 'true', TALARIA_WEB_OIDC_OWNER_CLAIM: 'groups', TALARIA_WEB_OIDC_OWNER_VALUES: 'admins',
     }, deps: (deps) => { deps.oidc.sessionBindingIsCurrent = () => Promise.resolve(true) } })
     const db = openStateDb(join(s.state, 'state.db'))
     try {

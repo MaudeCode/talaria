@@ -307,7 +307,7 @@ describe('agent session tools under person isolation (TAL-48)', () => {
   it('lists and manages only the calling session\'s person\'s sessions', async () => {
     const sidecar = new FakeSidecar()
     // Isolation applies only where sign-in tells people apart.
-    const s = await bootTestServer({ sidecar, env: { HERMES_WEBUI_PERSON_ISOLATION: '1', HERMES_WEBUI_PASSWORD: 'synthetic-password' } })
+    const s = await bootTestServer({ sidecar, env: { TALARIA_WEB_PERSON_ISOLATION: '1', TALARIA_WEB_PASSWORD: 'synthetic-password' } })
     try {
       const save = async (session_id: string, owner_person_id: string | null) => {
         await s.deps.sessionStore.save(new Session({ session_id, title: session_id, profile: 'default', owner_person_id, updated_at: 1_792_500_000, messages: [{ role: 'user', content: session_id, timestamp: 1_792_500_000 }] }, { workspace: s.state, model: null }))

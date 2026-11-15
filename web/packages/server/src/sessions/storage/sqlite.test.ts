@@ -11,7 +11,7 @@ import { SCHEMA_VERSION } from './sqlite-db.js'
 
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'talaria-sqlite-'))
-  const storage = new SqliteStorage({ path: join(dir, 'talaria.db'), sessionDir: join(dir, 'sessions'), env: { HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT: '0' }, stampingSince: () => 0 })
+  const storage = new SqliteStorage({ path: join(dir, 'talaria.db'), sessionDir: join(dir, 'sessions'), env: { TALARIA_WEB_RUN_JOURNAL_KEEP_RECENT: '0' }, stampingSince: () => 0 })
   const db = storage.db.db
   const exec = db.exec.bind(db)
   let failCommit = false

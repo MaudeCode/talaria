@@ -10,6 +10,27 @@ import { resolve } from 'node:path'
 import { resolvePathLikePython } from './workspace/paths.js'
 
 export type Env = Record<string, string | undefined>
+export const LEGACY_WEB_ENV_PREFIX = 'HERMES_WEBUI_'
+
+/** Normalize each startup environment source before its keys are read or filtered. Never log values. */
+export function migrateLegacyWebEnv(env: Env, warn?: (line: string) => void, loadEnv?: (normalize: (source: Env) => void) => void): string[] {
+  const used = new Map<string, string>()
+  const normalize = (source: Env): void => {
+    for (const [legacy, value] of Object.entries(source)) {
+      if (!legacy.startsWith(LEGACY_WEB_ENV_PREFIX) || value === undefined) continue
+      const current = `TALARIA_WEB_${legacy.slice(LEGACY_WEB_ENV_PREFIX.length)}`
+      const conflict = source[current] !== undefined && source[current] !== value
+      source[current] ??= value
+      if (conflict || !used.has(legacy)) used.set(legacy, `${legacy} -> ${current}${conflict ? ` (${current} wins)` : ''}`)
+      // Children inherit canonical names, avoiding repeated deprecation warnings at each respawn.
+      Reflect.deleteProperty(source, legacy)
+    }
+  }
+  normalize(env)
+  loadEnv?.(normalize)
+  if (used.size) warn?.(`[webui] WARNING: Deprecated environment variables: ${[...used.values()].join(', ')}. Use the TALARIA_WEB_ names.`)
+  return [...used.keys()]
+}
 
 export interface ServerConfig {
   host: string
@@ -117,7 +138,7 @@ export function resolveDefaultWorkspace(raw: string | null | undefined, opts: { 
     if (!candidates.includes(path)) candidates.push(path)
   }
   add(raw)
-  add(opts.env.HERMES_WEBUI_DEFAULT_WORKSPACE)
+  add(opts.env.TALARIA_WEB_DEFAULT_WORKSPACE)
   const homeWorkspace = resolve(home, 'workspace')
   const homeWork = resolve(home, 'work')
   if (existsSync(homeWorkspace)) add(homeWorkspace)
@@ -126,7 +147,7 @@ export function resolveDefaultWorkspace(raw: string | null | undefined, opts: { 
   add(resolve(opts.stateDir, 'workspace'))
   // TAL-2098: the canonical spelling the workspace list uses, so clients can match the two by string.
   for (const candidate of candidates) if (ensureWorkspaceDir(candidate)) return resolvePathLikePython(candidate, home)
-  throw new Error('Could not create or access any usable workspace directory. Set HERMES_WEBUI_DEFAULT_WORKSPACE to a writable path.')
+  throw new Error('Could not create or access any usable workspace directory. Set TALARIA_WEB_DEFAULT_WORKSPACE to a writable path.')
 }
 
 /** `TALARIA_STORAGE` values; `json` stays the default. */
@@ -150,18 +171,18 @@ export function loadConfig(opts: LoadConfigOptions): ServerConfig {
   const home = opts.home ?? homedir()
   const warn = opts.warn ?? ((line) => { console.error(`[webui] WARNING: ${line}`) })
   const hermesHome = resolveHermesHome(env, home)
-  const stateDir = resolve((env.HERMES_WEBUI_STATE_DIR ?? '').trim().replace(/^~(?=$|\/)/, home) || resolve(hermesHome, 'webui'))
-  const port = Number.parseInt(env.HERMES_WEBUI_PORT ?? '8787', 10)
-  if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error(`Invalid HERMES_WEBUI_PORT=${JSON.stringify(env.HERMES_WEBUI_PORT)}`)
+  const stateDir = resolve((env.TALARIA_WEB_STATE_DIR ?? '').trim().replace(/^~(?=$|\/)/, home) || resolve(hermesHome, 'webui'))
+  const port = Number.parseInt(env.TALARIA_WEB_PORT ?? '8787', 10)
+  if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error(`Invalid TALARIA_WEB_PORT=${JSON.stringify(env.TALARIA_WEB_PORT)}`)
   const staticRoot = resolve(opts.webRoot, 'static')
-  const maxUploadBytes = envMbBytes(env.HERMES_WEBUI_MAX_UPLOAD_MB, 20, warn, 'HERMES_WEBUI_MAX_UPLOAD_MB')
+  const maxUploadBytes = envMbBytes(env.TALARIA_WEB_MAX_UPLOAD_MB, 20, warn, 'TALARIA_WEB_MAX_UPLOAD_MB')
   // Python `_max_extracted_bytes`: a positive (fractional) MB value, else ten times the upload cap.
-  const extractedMb = Number((env.HERMES_WEBUI_MAX_EXTRACTED_MB ?? '').trim() || Number.NaN)
+  const extractedMb = Number((env.TALARIA_WEB_MAX_EXTRACTED_MB ?? '').trim() || Number.NaN)
   return {
-    host: env.HERMES_WEBUI_HOST ?? '127.0.0.1',
+    host: env.TALARIA_WEB_HOST ?? '127.0.0.1',
     port,
-    tlsCert: (env.HERMES_WEBUI_TLS_CERT ?? '').trim() || null,
-    tlsKey: (env.HERMES_WEBUI_TLS_KEY ?? '').trim() || null,
+    tlsCert: (env.TALARIA_WEB_TLS_CERT ?? '').trim() || null,
+    tlsKey: (env.TALARIA_WEB_TLS_KEY ?? '').trim() || null,
     hermesHome,
     storage,
     blobs: loadBlobConfig(env, stateDir, warn),
@@ -174,7 +195,7 @@ export function loadConfig(opts: LoadConfigOptions): ServerConfig {
     defaultWorkspace: resolveDefaultWorkspace(null, { env, stateDir, home }),
     maxUploadBytes,
     maxExtractedBytes: Number.isFinite(extractedMb) && extractedMb > 0 ? Math.floor(extractedMb * 1024 * 1024) : 10 * maxUploadBytes,
-    botName: env.HERMES_WEBUI_BOT_NAME ?? 'Hermes',
+    botName: env.TALARIA_WEB_BOT_NAME ?? 'Hermes',
     homeDir: home,
     env,
   }

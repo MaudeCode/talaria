@@ -35,7 +35,7 @@ it('uses the selected document backend for runtime reads and mutations without l
   const documents = memoryDocuments()
   await documents.put('settings', 'settings', { theme: 'light' }, null)
   const options: BootOptions = {
-    env: { HERMES_WEBUI_TEST_NETWORK_BLOCK: '1' },
+    env: { TALARIA_WEB_TEST_NETWORK_BLOCK: '1' },
     storage: (config) => {
       const json = new JsonStorage({ directory: config.sessionDir, now: () => 1000, stampingSince: () => 0 })
       return { kind: 'test-documents', sessions: json.sessions, journals: json.journals, documents, close: () => json.close() }

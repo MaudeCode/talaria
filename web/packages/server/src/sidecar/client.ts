@@ -141,22 +141,24 @@ const DEFAULT_BACKOFF = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000]
 const READY_GATE_TIMEOUT_MS = 30_000
 
 /** Web's own keys (login password, OIDC secret, release token) stay out of the sidecar and its tool processes; only these reach it. */
-const SIDECAR_WEB_KEYS = new Set(['HERMES_WEBUI_AGENT_DIR', 'HERMES_WEBUI_PYTHON'])
+const SIDECAR_WEB_KEYS = new Set(['TALARIA_WEB_AGENT_DIR', 'TALARIA_WEB_PYTHON'])
 const isWebOnlyKey = (key: string) =>
-  (key.startsWith('HERMES_WEBUI_') || key.startsWith('TALARIA_')) && !SIDECAR_WEB_KEYS.has(key) && !key.startsWith('TALARIA_SIDECAR_')
+  key.startsWith('TALARIA_') && !SIDECAR_WEB_KEYS.has(key) && !key.startsWith('TALARIA_SIDECAR_')
 
 /** The configured environment (credentials, proxies, CA bundles) flows through as it did in-process in Python, minus Web-only keys; the sidecar identity keys win. */
 export function sidecarSpawnEnv(opts: Pick<SidecarSpawnOptions, 'env' | 'hermesHome' | 'agentDir' | 'sidecarDir'>): Record<string, string> {
   const env = typeof opts.env === 'function' ? opts.env() : opts.env
   const home = env?.HOME ?? process.env.HOME ?? homedir()
-  const state = (env?.HERMES_WEBUI_STATE_DIR ?? '').trim().replace(/^~(?=$|\/)/, home)
+  const state = (env?.TALARIA_WEB_STATE_DIR ?? '').trim().replace(/^~(?=$|\/)/, home)
+  const stateDir = resolve(state || resolve(opts.hermesHome, 'webui'))
   return {
     PATH: process.env.PATH ?? '',
     HOME: process.env.HOME ?? '',
     ...Object.fromEntries(Object.entries(env ?? {}).filter(([key]) => !isWebOnlyKey(key))),
     ...AGENT_IMPORT_ENV,
     HERMES_HOME: opts.hermesHome,
-    TALARIA_SIDECAR_WEB_STATE_DIR: resolve(state || resolve(opts.hermesHome, 'webui')),
+    TALARIA_WEB_STATE_DIR: stateDir,
+    TALARIA_SIDECAR_WEB_STATE_DIR: stateDir,
     TALARIA_SIDECAR_AGENT_DIR: opts.agentDir,
     PYTHONPATH: env?.PYTHONPATH ? `${opts.sidecarDir}${delimiter}${env.PYTHONPATH}` : opts.sidecarDir,
     PYTHONUNBUFFERED: '1',

@@ -56,7 +56,7 @@ describe('login redirect sanitiser', () => {
 describe('password login: CSRF exemption and attempt persistence', () => {
   let s: TestServer
   const PASSWORD = 'correct horse battery'
-  beforeAll(async () => { s = await bootTestServer({ env: { HERMES_WEBUI_PASSWORD: PASSWORD, HERMES_WEBUI_MAX_SSE_CLIENTS: '2' } }) })
+  beforeAll(async () => { s = await bootTestServer({ env: { TALARIA_WEB_PASSWORD: PASSWORD, TALARIA_WEB_MAX_SSE_CLIENTS: '2' } }) })
   afterAll(() => s.close())
 
   it('the login route ignores a hostile Origin and needs no CSRF token', async () => {
@@ -95,10 +95,10 @@ describe('login limiter behind an opted-in trusted proxy', () => {
     for (let i = 0; i < 5; i += 1) expect(await send(headersFor(i))).toBe(401)
     return send(headersFor(5))
   }
-  beforeAll(async () => { s = await bootTestServer({ env: { HERMES_WEBUI_PASSWORD: PASSWORD, HERMES_WEBUI_PASSKEY: '1', HERMES_WEBUI_TRUST_FORWARDED_FOR: '1' } }) })
+  beforeAll(async () => { s = await bootTestServer({ env: { TALARIA_WEB_PASSWORD: PASSWORD, TALARIA_WEB_PASSKEY: '1', TALARIA_WEB_TRUST_FORWARDED_FOR: '1' } }) })
   afterEach(() => {
-    delete env().HERMES_WEBUI_TRUSTED_PROXY_CIDRS
-    env().HERMES_WEBUI_TRUST_FORWARDED_FOR = '1'
+    delete env().TALARIA_WEB_TRUSTED_PROXY_CIDRS
+    env().TALARIA_WEB_TRUST_FORWARDED_FOR = '1'
     for (const key of [PEER, ...Array.from({ length: 8 }, (_, i) => `203.0.113.${i}`)]) s.deps.auth.clearLoginAttempts(key)
   })
   afterAll(() => s.close())
@@ -108,33 +108,33 @@ describe('login limiter behind an opted-in trusted proxy', () => {
   })
 
   it.each([['password', login], ['passkey', passkey]] as const)('%s: a listed proxy whose X-Real-IP disagrees with X-Forwarded-For keys on the peer', async (_name, send) => {
-    env().HERMES_WEBUI_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
+    env().TALARIA_WEB_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
     expect(await sixthAfterFiveRotating(send, (i) => ({ 'x-forwarded-for': `203.0.113.${i}`, 'x-real-ip': '192.0.2.99' }))).toBe(429)
   })
 
   it.each([['password', login], ['passkey', passkey]] as const)('%s: X-Real-IP without an X-Forwarded-For chain keys on the peer', async (_name, send) => {
-    env().HERMES_WEBUI_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
+    env().TALARIA_WEB_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
     expect(await sixthAfterFiveRotating(send, (i) => ({ 'x-real-ip': `203.0.113.${i}` }))).toBe(429)
   })
 
   it.each([['password', login], ['passkey', passkey]] as const)('%s: an empty first X-Forwarded-For field with a rotating later field keys on the peer', async (_name, send) => {
-    env().HERMES_WEBUI_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
+    env().TALARIA_WEB_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
     expect(await sixthAfterFiveRotating(send, (i) => ({ 'x-forwarded-for': ['', `203.0.113.${i}`] }))).toBe(429)
   })
 
   it.each([['password', login], ['passkey', passkey]] as const)('%s: repeated X-Real-IP fields that disagree key on the peer', async (_name, send) => {
-    env().HERMES_WEBUI_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
+    env().TALARIA_WEB_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
     expect(await sixthAfterFiveRotating(send, (i) => ({ 'x-forwarded-for': `203.0.113.${i}`, 'x-real-ip': [`203.0.113.${i}`, '192.0.2.99'] }))).toBe(429)
   })
 
   it('password login: without the opt-in a listed proxy still keys on the peer', async () => {
-    delete env().HERMES_WEBUI_TRUST_FORWARDED_FOR
-    env().HERMES_WEBUI_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
+    delete env().TALARIA_WEB_TRUST_FORWARDED_FOR
+    env().TALARIA_WEB_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
     expect(await sixthAfterFiveRotating(login, (i) => ({ 'x-forwarded-for': `203.0.113.${i}` }))).toBe(429)
   })
 
   it('password login: a listed proxy with consistent evidence keeps a budget per client that a forged left-most hop does not reset', async () => {
-    env().HERMES_WEBUI_TRUSTED_PROXY_CIDRS = '127.0.0.1/32, ::1/128'
+    env().TALARIA_WEB_TRUSTED_PROXY_CIDRS = '127.0.0.1/32, ::1/128'
     for (let i = 0; i < 5; i += 1) expect(await login({ 'x-forwarded-for': `198.51.100.${i}, 203.0.113.1`, 'x-real-ip': '203.0.113.1' })).toBe(401)
     expect(await login({ 'x-forwarded-for': '198.51.100.9, 203.0.113.1', 'x-real-ip': '203.0.113.1' }, PASSWORD)).toBe(429)
     // Equivalent spellings of the same client share its budget.
@@ -146,7 +146,7 @@ describe('login limiter behind an opted-in trusted proxy', () => {
   })
 
   it('passkey login: a listed proxy keeps a budget per forwarded client', async () => {
-    env().HERMES_WEBUI_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
+    env().TALARIA_WEB_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
     for (let i = 0; i < 5; i += 1) expect(await passkey({ 'x-forwarded-for': '203.0.113.3' })).toBe(401)
     expect(await passkey({ 'x-forwarded-for': '198.51.100.9, 203.0.113.3' })).toBe(429)
     expect(await passkey({ 'x-forwarded-for': '203.0.113.4' })).toBe(401)
@@ -158,7 +158,7 @@ describe('login limiter behind an opted-in trusted proxy', () => {
     s.deps.nativeOidcLimiter = new WindowLimiter(60, 1)
     expect(await start({ 'x-forwarded-for': '203.0.113.5' })).not.toBe(429)
     expect(await start({ 'x-forwarded-for': '203.0.113.6' })).toBe(429)
-    env().HERMES_WEBUI_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
+    env().TALARIA_WEB_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
     s.deps.nativeOidcLimiter = new WindowLimiter(60, 1)
     expect(await start({ 'x-forwarded-for': '203.0.113.5' })).not.toBe(429)
     expect(await start({ 'x-forwarded-for': '203.0.113.6' })).not.toBe(429)
@@ -183,7 +183,7 @@ function rawPost(s: TestServer, path: string, body: unknown, headers: Record<str
 describe('auth persistence off the request path', () => {
   let s: TestServer
   const PASSWORD = 'correct horse battery'
-  beforeAll(async () => { s = await bootTestServer({ env: { HERMES_WEBUI_PASSWORD: PASSWORD } }) })
+  beforeAll(async () => { s = await bootTestServer({ env: { TALARIA_WEB_PASSWORD: PASSWORD } }) })
   afterAll(() => s.close())
 
   it('answers login, the new session, and unrelated requests while the sessions write is held pending', async () => {
@@ -241,7 +241,7 @@ describe('orderly shutdown lands write-behind auth state', () => {
   it.each(SIGNALS)('%s exits only after the pending session write lands', async (signal) => {
     const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never)
     const before = new Map(SIGNALS.map((name) => [name, process.listeners(name)]))
-    const s = await bootTestServer({ env: { HERMES_WEBUI_PASSWORD: 'correct horse battery' }, signals: true })
+    const s = await bootTestServer({ env: { TALARIA_WEB_PASSWORD: 'correct horse battery' }, signals: true })
     let open!: () => void
     const gate = new Promise<void>((resolve) => { open = resolve })
     const land = s.deps.auth.persistWrite
@@ -265,7 +265,7 @@ describe('orderly shutdown lands write-behind auth state', () => {
   it('a failed shutdown step still lands the pending session write, logs it, and exits non-zero', async () => {
     const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never)
     const before = new Map(SIGNALS.map((name) => [name, process.listeners(name)]))
-    const s = await bootTestServer({ env: { HERMES_WEBUI_PASSWORD: 'correct horse battery' }, signals: true })
+    const s = await bootTestServer({ env: { TALARIA_WEB_PASSWORD: 'correct horse battery' }, signals: true })
     vi.spyOn(s.deps.hygiene, 'stop').mockRejectedValue(new Error('synthetic sweep failure'))
     try {
       const token = AuthStore.tokenFromCookieValue(s.deps.auth.createSession()) ?? ''
@@ -287,7 +287,7 @@ describe('orderly shutdown lands write-behind auth state', () => {
 describe('authenticated stream budget', () => {
   let s: TestServer
   // Python keyed the per-client SSE budget by the reconciled trusted-auth username, else the peer address.
-  beforeAll(async () => { s = await bootTestServer({ env: { HERMES_WEBUI_TRUSTED_AUTH_HEADER: 'X-Test-Identity', HERMES_WEBUI_MAX_SSE_CLIENTS: '2' } }) })
+  beforeAll(async () => { s = await bootTestServer({ env: { TALARIA_WEB_TRUSTED_AUTH_HEADER: 'X-Test-Identity', TALARIA_WEB_MAX_SSE_CLIENTS: '2' } }) })
   afterAll(() => s.close())
 
   it('a third stream for one identity answers 503 while another identity still opens one', async () => {
@@ -311,7 +311,7 @@ describe('authenticated stream budget', () => {
 
 describe('anonymous stream budget', () => {
   let s: TestServer
-  beforeAll(async () => { s = await bootTestServer({ env: { HERMES_WEBUI_MAX_SSE_CLIENTS: '1' } }) })
+  beforeAll(async () => { s = await bootTestServer({ env: { TALARIA_WEB_MAX_SSE_CLIENTS: '1' } }) })
   afterAll(() => s.close())
 
   it('without an identity the cap keys on the client address', async () => {

@@ -303,14 +303,14 @@ def _site_packages_python(entry: str) -> tuple[str, Path] | None:
 
 def _check_site_packages_python() -> None:
     """Compiled Agent dependencies load lazily on the first chat; fail the handshake when ``sys.path`` holds
-    site-packages built for another Python (a stale ``HERMES_WEBUI_PYTHON`` after a PM environment update)."""
+    site-packages built for another Python (a stale ``TALARIA_WEB_PYTHON`` after a PM environment update)."""
     running = _python_abi(sys.version_info[0], sys.version_info[1], bool(sysconfig.get_config_var("Py_GIL_DISABLED")))
     for entry in sys.path:
         built = _site_packages_python(entry)
         if built is not None and built[0] != running:
             raise ImportError(
                 f"interpreter Python {running} cannot load Agent packages built for Python {built[0]} ({entry}); "
-                f"unset HERMES_WEBUI_PYTHON or point it at {built[1]}"
+                f"unset TALARIA_WEB_PYTHON or point it at {built[1]}"
             )
 
 

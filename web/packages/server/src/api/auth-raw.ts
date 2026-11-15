@@ -25,10 +25,10 @@ export function validatedRequestHost(raw: string | undefined): string | null {
   return port ? `${host}:${port}` : host
 }
 
-/** Python `_effective_request_host`: forwarded hosts count only with `HERMES_WEBUI_TRUST_FORWARDED_HOST` and when they agree. */
+/** Python `_effective_request_host`: forwarded hosts count only with `TALARIA_WEB_TRUST_FORWARDED_HOST` and when they agree. */
 export function effectiveRequestHost(ctx: RequestContext): string {
   const direct = validatedRequestHost(ctx.header('host')) ?? '127.0.0.1:8787'
-  if (!truthy(ctx.deps.config.env.HERMES_WEBUI_TRUST_FORWARDED_HOST)) return direct
+  if (!truthy(ctx.deps.config.env.TALARIA_WEB_TRUST_FORWARDED_HOST)) return direct
   const forwarded = [ctx.header('x-forwarded-host'), ctx.header('x-real-host')].map((v) => (v ?? '').trim()).filter(Boolean)
   if (!forwarded.length) return direct
   const normalized = forwarded.map(validatedRequestHost)

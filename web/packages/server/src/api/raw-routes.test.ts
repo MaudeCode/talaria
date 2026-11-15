@@ -160,7 +160,7 @@ describe('raw byte routes', () => {
     expect(zip.subarray(30, 30 + local).toString()).toMatch(/^[ab]\.txt$/)
     expect((await s.get(`/api/folder/download?session_id=${sid}&path=docs/a.txt`)).status).toBe(400)
     expect((await s.get(`/api/folder/download?session_id=${sid}&path=nope`)).status).toBe(404)
-    const capped = await bootTestServer({ env: { HERMES_WEBUI_FOLDER_ZIP_MAX_FILES: '1' } })
+    const capped = await bootTestServer({ env: { TALARIA_WEB_FOLDER_ZIP_MAX_FILES: '1' } })
     try {
       const cws = realpathSync(join(capped.state, 'workspace'))
       mkdirSync(join(cws, 'd'))
@@ -169,7 +169,7 @@ describe('raw byte routes', () => {
       const csid = await newSession(capped, cws)
       res = await capped.get(`/api/folder/download?session_id=${csid}&path=d`)
       expect(res.status).toBe(413)
-      expect(await json(res)).toEqual({ error: 'too many files', limit: 1, configure: 'HERMES_WEBUI_FOLDER_ZIP_MAX_FILES' })
+      expect(await json(res)).toEqual({ error: 'too many files', limit: 1, configure: 'TALARIA_WEB_FOLDER_ZIP_MAX_FILES' })
     } finally {
       await capped.close()
     }
@@ -198,9 +198,9 @@ describe('raw byte routes', () => {
   })
 
   it('honours the configured folder download limits as given, like Python', () => {
-    expect(folderZipMaxBytes({ HERMES_WEBUI_FOLDER_ZIP_MAX_MB: '999999' })).toBe(999999 * 1024 * 1024)
-    expect(folderZipMaxBytes({ HERMES_WEBUI_FOLDER_ZIP_MAX_MB: '512' })).toBe(512 * 1024 * 1024)
-    expect(folderZipMaxFiles({ HERMES_WEBUI_FOLDER_ZIP_MAX_FILES: '1000000' })).toBe(1000000)
+    expect(folderZipMaxBytes({ TALARIA_WEB_FOLDER_ZIP_MAX_MB: '999999' })).toBe(999999 * 1024 * 1024)
+    expect(folderZipMaxBytes({ TALARIA_WEB_FOLDER_ZIP_MAX_MB: '512' })).toBe(512 * 1024 * 1024)
+    expect(folderZipMaxFiles({ TALARIA_WEB_FOLDER_ZIP_MAX_FILES: '1000000' })).toBe(1000000)
     expect(folderZipMaxFiles({})).toBe(50000)
   })
 

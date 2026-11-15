@@ -58,7 +58,7 @@ def main():
 
     explicit_file = os.environ.get("TALARIA_ENV_FILE")
     if not explicit_file and command.name == "webui-json":
-        explicit_file = os.environ.get("HERMES_WEBUI_ENV_FILE")
+        explicit_file = os.environ.get("TALARIA_WEB_ENV_FILE")
     if explicit_file:
         files.append(Path(explicit_file).expanduser())
 

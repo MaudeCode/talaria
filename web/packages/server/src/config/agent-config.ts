@@ -525,7 +525,7 @@ export function configuredModelOptions(raw: unknown): { id: string; label: strin
 }
 
 export function effectiveDefaultModel(config: Config, env: Record<string, string | undefined>): string {
-  let model = (env.HERMES_WEBUI_DEFAULT_MODEL ?? '').trim()
+  let model = (env.TALARIA_WEB_DEFAULT_MODEL ?? '').trim()
   const modelCfg = config.model
   if (typeof modelCfg === 'string') model = modelCfg.trim()
   else if (isDict(modelCfg)) {

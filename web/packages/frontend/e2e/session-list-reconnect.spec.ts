@@ -66,7 +66,7 @@ test('a healthy sidebar skips polling and resyncs on reconnect', async ({ page }
 
 test('external Agent session updates reach the sidebar without polling', async ({ page }, testInfo) => {
   const fixture = JSON.parse(readFileSync(new URL('../../server/src/test/fixtures/canonical-ownership.json', import.meta.url), 'utf8')) as { sessions: { cli: string }; schema: string[]; inserts: string[] }
-  const server = await bootTestServer({ sidecar: new FakeSidecar(), env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' }, gatewayPollMs: 100 })
+  const server = await bootTestServer({ sidecar: new FakeSidecar(), env: { TALARIA_WEB_SKIP_ONBOARDING: '1' }, gatewayPollMs: 100 })
   const db = openStateDb(server.state)
   const sid = fixture.sessions.cli
   let listReads = 0

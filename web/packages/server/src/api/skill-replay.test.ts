@@ -14,7 +14,7 @@ const BASELINE = 'a'.repeat(64)
 const CANDIDATE = 'b'.repeat(64)
 const FIXTURES = ['1'.repeat(64), '2'.repeat(64)]
 const ROUTE = { provider: 'openrouter', model: 'vendor/model-a' }
-const TRUSTED = { HERMES_WEBUI_TRUSTED_AUTH_HEADER: 'X-Remote-User', HERMES_WEBUI_TRUSTED_GROUPS_HEADER: 'X-Remote-Groups', HERMES_WEBUI_GROUP_PROFILE_MAP: '{"ops":"work"}' }
+const TRUSTED = { TALARIA_WEB_TRUSTED_AUTH_HEADER: 'X-Remote-User', TALARIA_WEB_TRUSTED_GROUPS_HEADER: 'X-Remote-Groups', TALARIA_WEB_GROUP_PROFILE_MAP: '{"ops":"work"}' }
 const KIM = { 'X-Remote-User': 'kim' }
 
 function plan(overrides: Partial<SidecarResult<'skills.replay_plan'>> = {}): SidecarResult<'skills.replay_plan'> {
@@ -33,7 +33,7 @@ function answer(params: SidecarParams<'skills.replay_case'>, overrides: Partial<
 }
 
 async function boot(sidecar: FakeSidecar, state?: string): Promise<TestServer> {
-  const server = await bootTestServer({ sidecar, env: { ...TRUSTED, ...(state ? { HERMES_WEBUI_STATE_DIR: state, HERMES_HOME: state } : {}) } })
+  const server = await bootTestServer({ sidecar, env: { ...TRUSTED, ...(state ? { TALARIA_WEB_STATE_DIR: state, HERMES_HOME: state } : {}) } })
   servers.push(server)
   return server
 }

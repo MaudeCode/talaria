@@ -25,15 +25,15 @@ runs:
         export UV_PYTHON_INSTALL_DIR="$RUNNER_TEMP/release-managed-python"
         "$uv_bin" --no-config python install 3.13
         python_bin=$("$uv_bin" --no-config python find --managed-python --no-project 3.13)
-        echo "HERMES_WEBUI_TEST_PYTHON=$python_bin" >> "$GITHUB_ENV"
+        echo "TALARIA_WEB_TEST_PYTHON=$python_bin" >> "$GITHUB_ENV"
         echo "$(dirname "$uv_bin")" >> "$GITHUB_PATH"
     - shell: bash
       working-directory: ${{ github.workspace }}
       run: |
         set -euo pipefail
-        python_bin=${HERMES_WEBUI_TEST_PYTHON:-$(command -v python3)}
+        python_bin=${TALARIA_WEB_TEST_PYTHON:-$(command -v python3)}
         "$python_bin" -m venv "$RUNNER_TEMP/release-tools"
         "$RUNNER_TEMP/release-tools/bin/python" -m pip install --disable-pip-version-check -r releases/requirements.txt
         echo "RELEASE_PYTHON=$RUNNER_TEMP/release-tools/bin/python" >> "$GITHUB_ENV"
-        echo "HERMES_WEBUI_TEST_PYTHON=$python_bin" >> "$GITHUB_ENV"
+        echo "TALARIA_WEB_TEST_PYTHON=$python_bin" >> "$GITHUB_ENV"
         echo "$RUNNER_TEMP/release-tools/bin" >> "$GITHUB_PATH"

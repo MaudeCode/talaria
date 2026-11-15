@@ -84,7 +84,7 @@ export async function warnUnauthenticatedBind(host: string, boundAddress: string
   if (isLoopback(boundAddress) || await auth.isAuthEnabled()) return
   log(`[!!] WARNING: Binding to ${host} with NO PASSWORD SET.`)
   log('     Anyone on the network can access your filesystem and agent.')
-  log('     Set a password via Settings or HERMES_WEBUI_PASSWORD env var.')
+  log('     Set a password via Settings or TALARIA_WEB_PASSWORD env var.')
   log('     To suppress: bind to 127.0.0.1 or set a password.')
 }
 
@@ -94,11 +94,11 @@ export async function warnUnauthenticatedBind(host: string, boundAddress: string
  * a listed proxy, and a proxy on another host or a Docker bridge is ignored by both until it is listed.
  */
 export function warnForwardedForWithoutProxy(env: ServerConfig['env'], log: (line: string) => void): void {
-  if (!truthy(env.HERMES_WEBUI_TRUST_FORWARDED_FOR) || trustsProxyBeyondLoopback(env)) return
-  log('[!] HERMES_WEBUI_TRUST_FORWARDED_FOR is set, but HERMES_WEBUI_TRUSTED_PROXY_CIDRS lists no proxy outside this host.')
+  if (!truthy(env.TALARIA_WEB_TRUST_FORWARDED_FOR) || trustsProxyBeyondLoopback(env)) return
+  log('[!] TALARIA_WEB_TRUST_FORWARDED_FOR is set, but TALARIA_WEB_TRUSTED_PROXY_CIDRS lists no proxy outside this host.')
   log('    The request log trusts a proxy on this host through loopback; login, passkey, native OIDC start, and TTS limits')
-  log('    use its forwarded client only once it is listed (HERMES_WEBUI_TRUSTED_PROXY_CIDRS=127.0.0.1/32,::1/128).')
-  log('    A proxy on another host or a Docker bridge must be listed instead (for example HERMES_WEBUI_TRUSTED_PROXY_CIDRS=172.17.0.1);')
+  log('    use its forwarded client only once it is listed (TALARIA_WEB_TRUSTED_PROXY_CIDRS=127.0.0.1/32,::1/128).')
+  log('    A proxy on another host or a Docker bridge must be listed instead (for example TALARIA_WEB_TRUSTED_PROXY_CIDRS=172.17.0.1);')
   log('    until then its X-Forwarded-For is ignored and its requests are logged with forwarded_for_ignored.')
   log('    The proxy must append the client address to X-Forwarded-For (nginx: $proxy_add_x_forwarded_for).')
 }

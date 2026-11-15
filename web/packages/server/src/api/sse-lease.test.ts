@@ -145,7 +145,7 @@ describe('every feed with no natural end stops at its lease', () => {
 describe('a full budget', () => {
   let s: TestServer
   // Long enough that the refused request lands inside the lease.
-  beforeAll(async () => { s = await bootTestServer({ env: { HERMES_WEBUI_MAX_SSE_CLIENTS: '1' }, deps: (deps) => { deps.streamLeaseMs = 1_000 } }) })
+  beforeAll(async () => { s = await bootTestServer({ env: { TALARIA_WEB_MAX_SSE_CLIENTS: '1' }, deps: (deps) => { deps.streamLeaseMs = 1_000 } }) })
   afterAll(() => s.close())
 
   it('answers 503 while an abandoned connection holds the slot, then 200 once its lease ends', async () => {

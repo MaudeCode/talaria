@@ -15,7 +15,7 @@ const WIDTHS = [[382, 580], [385, 571], [669, 867], [951, 585]] as const
 test('a terminal the agent opened shows its card, and Open focuses the live pane with the command\'s output', async ({ page }, testInfo) => {
   const sidecar = new FakeSidecar()
   // `/bin/sh` keeps the developer's shell startup files out of the terminal.
-  const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1', SHELL: '/bin/sh' } })
+  const server = await bootTestServer({ sidecar, env: { TALARIA_WEB_SKIP_ONBOARDING: '1', SHELL: '/bin/sh' } })
   const sid = '20261109_090000_terminal'
   const now = Math.floor(Date.now() / 1000)
   const shot = async (name: string) => { if (process.env.TAL1974_SHOTS) await page.screenshot({ path: `${process.env.TAL1974_SHOTS}/${name}-${testInfo.project.name}.png` }) }
@@ -80,7 +80,7 @@ test('a terminal the agent opened shows its card, and Open focuses the live pane
 // stood, and starts no new shell in its place.
 test('Open on a terminal whose shell already exited shows its output closed and keeps it', async ({ page }) => {
   const sidecar = new FakeSidecar()
-  const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1', SHELL: '/bin/sh' } })
+  const server = await bootTestServer({ sidecar, env: { TALARIA_WEB_SKIP_ONBOARDING: '1', SHELL: '/bin/sh' } })
   const sid = '20261109_090000_exited'
   const now = Math.floor(Date.now() / 1000)
   try {

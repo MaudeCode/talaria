@@ -22,7 +22,7 @@ fetch('/api/sessions', { credentials: 'include' }).then((r) => { document.getEle
 // transcript renders each from the server's block, and the page runs in a sandbox with no cookie and no API.
 test('renders every show block kind, and the HTML frame reaches neither the session cookie nor /api', async ({ page, errors }, testInfo) => {
   const sidecar = new FakeSidecar()
-  const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' } })
+  const server = await bootTestServer({ sidecar, env: { TALARIA_WEB_SKIP_ONBOARDING: '1' } })
   const sid = '20261109_090000_showcase'
   const now = Math.floor(Date.now() / 1000)
   const shot = async (name: string) => { if (process.env.TAL1968_SHOTS) await page.screenshot({ path: `${process.env.TAL1968_SHOTS}/${name}-${testInfo.project.name}.png`, fullPage: true }) }
@@ -116,7 +116,7 @@ test('renders every show block kind, and the HTML frame reaches neither the sess
 // viewable file), names the file's size and type, survives a reload as it was, and notes a file changed after delivery.
 test('renders delivered files with Download, and notes one that changed after delivery', async ({ page }, testInfo) => {
   const sidecar = new FakeSidecar()
-  const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' } })
+  const server = await bootTestServer({ sidecar, env: { TALARIA_WEB_SKIP_ONBOARDING: '1' } })
   const sid = '20261109_090000_delivery'
   const now = Math.floor(Date.now() / 1000)
   const shot = async (name: string) => { if (process.env.TAL1968_SHOTS) await page.screenshot({ path: `${process.env.TAL1968_SHOTS}/deliver-${name}-${testInfo.project.name}.png`, fullPage: true }) }

@@ -30,7 +30,7 @@ export function installHermesAgent(sourceRevision: string, log: (line: string) =
 
 /** Python `_detect_supervisor`: the env var that marks a supervisor launch (launchd noise values excluded). */
 export function detectSupervisor(env: Record<string, string | undefined>): string | null {
-  if (truthy(env.HERMES_WEBUI_FOREGROUND)) return 'HERMES_WEBUI_FOREGROUND'
+  if (truthy(env.TALARIA_WEB_FOREGROUND)) return 'TALARIA_WEB_FOREGROUND'
   for (const name of SUPERVISOR_ENV_VARS) {
     const value = env[name] ?? ''
     if (!value) continue
@@ -101,7 +101,7 @@ export interface BootstrapArgs { port: number; host: string; noBrowser: boolean;
 
 /** Python `parse_args`: `[port] [--host H] [--no-browser] [--skip-agent-install] [--foreground]`. */
 export function parseBootstrapArgs(argv: string[], env: Record<string, string | undefined>): BootstrapArgs {
-  const args: BootstrapArgs = { port: Number.parseInt(env.HERMES_WEBUI_PORT ?? '8787', 10) || 8787, host: env.HERMES_WEBUI_HOST ?? '127.0.0.1', noBrowser: false, skipAgentInstall: false, foreground: false }
+  const args: BootstrapArgs = { port: Number.parseInt(env.TALARIA_WEB_PORT ?? '8787', 10) || 8787, host: env.TALARIA_WEB_HOST ?? '127.0.0.1', noBrowser: false, skipAgentInstall: false, foreground: false }
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i] ?? ''
     if (arg === '--host') { args.host = argv[i + 1] ?? args.host; i += 1 }
@@ -138,7 +138,7 @@ export async function runBootstrap(ctx: LaunchContext, args: BootstrapArgs, serv
   const discover = { env, hermesHome: ctx.hermesHome, webRoot: ctx.webRoot, home: ctx.home }
   let agentDir = discoverAgentDirForLaunch(discover)
   // A scripted sidecar (fixture replay, contract runners) needs no Agent: never run the installer for it.
-  const scriptedSidecar = Boolean((env.HERMES_WEBUI_SIDECAR_COMMAND ?? '').trim())
+  const scriptedSidecar = Boolean((env.TALARIA_WEB_SIDECAR_COMMAND ?? '').trim())
   if (!agentDir && !scriptedSidecar && !which('hermes', env)) {
     if (args.skipAgentInstall) throw new Error('Hermes Agent was not found and auto-install was disabled.')
     installHermesAgent(ctx.compatibleAgentRevision, log)
@@ -146,17 +146,17 @@ export async function runBootstrap(ctx: LaunchContext, args: BootstrapArgs, serv
   }
   // The Agent import is checked once, by the sidecar handshake (`launchSidecar` reports an import failure).
   if (!agentDir || !discoverAgentPython(env, agentDir, ctx.hermesHome)) {
-    log(scriptedSidecar ? '[bootstrap] Using the sidecar command from HERMES_WEBUI_SIDECAR_COMMAND; no Hermes Agent checkout required'
-      : '[bootstrap] [warn] Hermes Agent venv not found; chat stays unavailable until HERMES_WEBUI_AGENT_DIR points at an installed Agent')
+    log(scriptedSidecar ? '[bootstrap] Using the sidecar command from TALARIA_WEB_SIDECAR_COMMAND; no Hermes Agent checkout required'
+      : '[bootstrap] [warn] Hermes Agent venv not found; chat stays unavailable until TALARIA_WEB_AGENT_DIR points at an installed Agent')
   }
-  const stateDir = resolve((env.HERMES_WEBUI_STATE_DIR ?? '').trim().replace(/^~(?=$|\/)/, ctx.home) || join(ctx.hermesHome, 'webui'))
+  const stateDir = resolve((env.TALARIA_WEB_STATE_DIR ?? '').trim().replace(/^~(?=$|\/)/, ctx.home) || join(ctx.hermesHome, 'webui'))
   mkdirSync(stateDir, { recursive: true })
-  env.HERMES_WEBUI_HOST = args.host
-  env.HERMES_WEBUI_PORT = String(args.port)
-  env.HERMES_WEBUI_STATE_DIR ??= stateDir
-  if (agentDir) env.HERMES_WEBUI_AGENT_DIR = agentDir
+  env.TALARIA_WEB_HOST = args.host
+  env.TALARIA_WEB_PORT = String(args.port)
+  env.TALARIA_WEB_STATE_DIR ??= stateDir
+  if (agentDir) env.TALARIA_WEB_AGENT_DIR = agentDir
   // Only user-supplied Python overrides persist: each worker must rediscover the current PM generation.
-  const tls = Boolean((env.HERMES_WEBUI_TLS_CERT ?? '').trim()) && Boolean((env.HERMES_WEBUI_TLS_KEY ?? '').trim())
+  const tls = Boolean((env.TALARIA_WEB_TLS_CERT ?? '').trim()) && Boolean((env.TALARIA_WEB_TLS_KEY ?? '').trim())
   const scheme = tls ? 'https' : 'http'
   const foregroundReason = args.foreground ? '--foreground' : detectSupervisor(env)
   if (foregroundReason) {
@@ -168,12 +168,12 @@ export async function runBootstrap(ctx: LaunchContext, args: BootstrapArgs, serv
   log(`[bootstrap] Starting Talaria Web on ${scheme}://${hostAuthority(args.host, args.port)}`)
   const fd = openSync(logPath, 'a')
   // The worker re-applies the checkout `.env` before serving; the resolved host/port travel as explicit serve
-  // arguments so a `.env` HERMES_WEBUI_PORT cannot override what the user asked for on the command line.
+  // arguments so a `.env` TALARIA_WEB_PORT cannot override what the user asked for on the command line.
   const [cmd, ...cmdArgs] = [...ctx.serveCommand, '--host', args.host, String(args.port)]
-  const child = spawn(cmd ?? process.execPath, cmdArgs, { cwd: (env.HERMES_WEBUI_SERVER_CWD ?? '').trim() || agentDir || ctx.webRoot, env, stdio: ['ignore', fd, fd], detached: true })
+  const child = spawn(cmd ?? process.execPath, cmdArgs, { cwd: (env.TALARIA_WEB_SERVER_CWD ?? '').trim() || agentDir || ctx.webRoot, env, stdio: ['ignore', fd, fd], detached: true })
   child.unref()
   closeSync(fd)
-  const healthy = await waitForHealth(args.host, args.port, { tls, insecureOptIn: truthy(env.HERMES_WEBUI_TLS_INSECURE_PROBE), timeoutMs: 25_000, log })
+  const healthy = await waitForHealth(args.host, args.port, { tls, insecureOptIn: truthy(env.TALARIA_WEB_TLS_INSECURE_PROBE), timeoutMs: 25_000, log })
   if (!healthy) throw new Error(`Web UI did not become healthy at ${scheme}://${hostAuthority(args.host, args.port)}/health. Check the log at ${logPath}. Server PID: ${String(child.pid ?? '?')}`)
   // Loopback and wildcard binds open as `localhost`; any other IPv6 literal is bracketed like the health probe.
   const browserHost = ['127.0.0.1', 'localhost', '0.0.0.0', '::', '::1', '[::]', '[::1]'].includes(args.host) ? 'localhost' : args.host.includes(':') && !args.host.startsWith('[') ? `[${args.host}]` : args.host

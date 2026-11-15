@@ -13,7 +13,7 @@ test('native side work reaches the existing composer panels without adding a par
   const fixture = JSON.parse(readFileSync(new URL('../../server/src/test/fixtures/canonical-ownership.json', import.meta.url), 'utf8')) as { sessions: { cli: string }; schema: string[]; inserts: string[] }
   const sid = fixture.sessions.cli
   const sidecar = new FakeSidecar()
-  const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' } })
+  const server = await bootTestServer({ sidecar, env: { TALARIA_WEB_SKIP_ONBOARDING: '1' } })
   const db = openStateDb(server.state)
   const snap: GatewaySnapshot = { session_id: sid, stored_session_id: sid, messages: [{ role: 'user', content: 'Check the project' }, { role: 'assistant', content: 'The project is ready.' }],
     message_count: 2, running: false, authority_epoch: 1, replay_epoch: 'side-owner', last_sequence: 0, subscription_id: 'viewer', revision: 1, execution_generation: 0,

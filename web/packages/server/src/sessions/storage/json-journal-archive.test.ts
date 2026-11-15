@@ -412,7 +412,7 @@ describe('retention budgets and protection', () => {
     const before = fs.readdirSync(dir, { recursive: true }).sort()
     expect(await sweep(journal, { dryRun: true, maxRuns: 2 })).toMatchObject({ pruned: 5 })
     expect(await fixture(dir).pruneSettled({ now: Date.now() / 1000, retentionSeconds: 0, maxRuns: 1 })).toMatchObject({ pruned: 0 })
-    expect(await new JsonJournal(dir, { HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS: '0' }).pruneSettled()).toMatchObject({ pruned: 0 })
+    expect(await new JsonJournal(dir, { TALARIA_WEB_RUN_JOURNAL_RETENTION_DAYS: '0' }).pruneSettled()).toMatchObject({ pruned: 0 })
     expect(fs.readdirSync(dir, { recursive: true }).sort()).toEqual(before)
   })
 
@@ -465,18 +465,18 @@ describe('retention budgets and protection', () => {
 
   it('reads its caps once from the server environment, disabling any it cannot parse', () => {
     expect(retentionPolicy({})).toEqual({ retentionSeconds: 14 * DAY, keepRecent: 3, maxRuns: 40, maxBytes: 256 * 1024 * 1024, maxArchiveBytes: 2 * 1024 * 1024 * 1024 })
-    expect(retentionPolicy({ HERMES_WEBUI_RUN_JOURNAL_ARCHIVE_MAX_BYTES: '0' }).maxArchiveBytes, 'zero turns the archive budget off').toBe(0)
-    expect(retentionPolicy({ HERMES_WEBUI_RUN_JOURNAL_ARCHIVE_MAX_BYTES: '2GB' }).maxArchiveBytes, 'an invalid budget never removes archives').toBe(0)
-    expect(retentionPolicy({ HERMES_WEBUI_RUN_JOURNAL_ARCHIVE_MAX_BYTES: '1048576' }).maxArchiveBytes).toBe(1048576)
+    expect(retentionPolicy({ TALARIA_WEB_RUN_JOURNAL_ARCHIVE_MAX_BYTES: '0' }).maxArchiveBytes, 'zero turns the archive budget off').toBe(0)
+    expect(retentionPolicy({ TALARIA_WEB_RUN_JOURNAL_ARCHIVE_MAX_BYTES: '2GB' }).maxArchiveBytes, 'an invalid budget never removes archives').toBe(0)
+    expect(retentionPolicy({ TALARIA_WEB_RUN_JOURNAL_ARCHIVE_MAX_BYTES: '1048576' }).maxArchiveBytes).toBe(1048576)
     const caps = (runsValue: string, bytesValue: string) => {
-      const { maxRuns, maxBytes } = retentionPolicy({ HERMES_WEBUI_RUN_JOURNAL_RETENTION_MAX_RUNS_PER_SESSION: runsValue, HERMES_WEBUI_RUN_JOURNAL_RETENTION_MAX_BYTES_PER_SESSION: bytesValue })
+      const { maxRuns, maxBytes } = retentionPolicy({ TALARIA_WEB_RUN_JOURNAL_RETENTION_MAX_RUNS_PER_SESSION: runsValue, TALARIA_WEB_RUN_JOURNAL_RETENTION_MAX_BYTES_PER_SESSION: bytesValue })
       return [maxRuns, maxBytes]
     }
     expect(caps('7', ' 1024 ')).toEqual([7, 1024])
     expect(caps('0', '0'), 'zero disables each cap').toEqual([0, 0])
     for (const invalid of ['-1', '1.5', 'ten', '1e3', '100001']) expect(caps(invalid, invalid), invalid).toEqual([0, invalid === '100001' ? 100001 : 0])
     expect(caps('', '')).toEqual([40, 256 * 1024 * 1024])
-    expect(retentionPolicy({ HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS: '0', HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT: '5' })).toMatchObject({ retentionSeconds: 0, keepRecent: 5 })
+    expect(retentionPolicy({ TALARIA_WEB_RUN_JOURNAL_RETENTION_DAYS: '0', TALARIA_WEB_RUN_JOURNAL_KEEP_RECENT: '5' })).toMatchObject({ retentionSeconds: 0, keepRecent: 5 })
   })
 
   it('reads session references through the session backend', async () => {

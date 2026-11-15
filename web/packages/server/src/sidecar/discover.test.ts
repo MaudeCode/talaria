@@ -49,10 +49,10 @@ describe('Agent discovery', () => {
     // The sibling checkout wins only when the explicit and home candidates are absent.
     mkdirSync(join(home, 'repo', 'hermes-agent', 'hermes_cli'), { recursive: true })
     expect(discoverAgentDir({ ...opts, hermesHome: join(home, 'elsewhere') })).toBe(join(home, 'repo', 'hermes-agent'))
-    expect(discoverAgentDir({ ...opts, env: { HERMES_WEBUI_AGENT_DIR: join(home, 'repo', 'hermes-agent') } })).toBe(join(home, 'repo', 'hermes-agent'))
+    expect(discoverAgentDir({ ...opts, env: { TALARIA_WEB_AGENT_DIR: join(home, 'repo', 'hermes-agent') } })).toBe(join(home, 'repo', 'hermes-agent'))
   })
 
-  it('prefers HERMES_WEBUI_PYTHON, then the Agent venv interpreter', () => {
+  it('prefers TALARIA_WEB_PYTHON, then the Agent venv interpreter', () => {
     const agent = scratch()
     const env = { HOME: agent, HERMES_HOME: join(agent, 'state') }
     expect(discoverAgentPython(env, agent)).toBeNull()
@@ -62,7 +62,7 @@ describe('Agent discovery', () => {
     mkdirSync(join(agent, 'venv', 'bin'), { recursive: true })
     writeFileSync(join(agent, 'venv', 'bin', 'python'), '')
     expect(discoverAgentPython(env, agent)).toBe(join(agent, 'venv', 'bin', 'python'))
-    expect(discoverAgentPython({ HERMES_WEBUI_PYTHON: '/usr/bin/python3' }, agent)).toBe('/usr/bin/python3')
+    expect(discoverAgentPython({ TALARIA_WEB_PYTHON: '/usr/bin/python3' }, agent)).toBe('/usr/bin/python3')
     expect(discoverAgentPython({}, null)).toBeNull()
   })
 
@@ -74,21 +74,21 @@ describe('Agent discovery', () => {
     mkdirSync(join(f.agent, 'venv', 'bin'), { recursive: true })
     writeFileSync(join(f.agent, 'venv', 'bin', 'python'), '')
     expect(discoverAgentPython(f.env, f.agent)).toBe(f.python)
-    expect(discoverAgentPython({ ...f.env, HERMES_WEBUI_PYTHON: '/chosen/python' }, f.agent)).toBe('/chosen/python')
+    expect(discoverAgentPython({ ...f.env, TALARIA_WEB_PYTHON: '/chosen/python' }, f.agent)).toBe('/chosen/python')
   })
 
-  it('warns once when HERMES_WEBUI_PYTHON overrides a different PM interpreter and still honours it', () => {
+  it('warns once when TALARIA_WEB_PYTHON overrides a different PM interpreter and still honours it', () => {
     const f = pmInstall()
     const warnings: string[] = []
     const warn = (line: string) => { warnings.push(line) }
-    expect(discoverAgentPython({ ...f.env, HERMES_WEBUI_PYTHON: '/chosen/python' }, f.agent, undefined, warn)).toBe('/chosen/python')
+    expect(discoverAgentPython({ ...f.env, TALARIA_WEB_PYTHON: '/chosen/python' }, f.agent, undefined, warn)).toBe('/chosen/python')
     expect(warnings).toHaveLength(1)
     expect(warnings[0]).toContain('/chosen/python')
     expect(warnings[0]).toContain(f.python)
     warnings.length = 0
-    expect(discoverAgentPython({ ...f.env, HERMES_WEBUI_PYTHON: f.python }, f.agent, undefined, warn)).toBe(f.python)
+    expect(discoverAgentPython({ ...f.env, TALARIA_WEB_PYTHON: f.python }, f.agent, undefined, warn)).toBe(f.python)
     rmSync(join(f.install, 'facts.json'))
-    expect(discoverAgentPython({ ...f.env, HERMES_WEBUI_PYTHON: '/chosen/python' }, f.agent, undefined, warn)).toBe('/chosen/python')
+    expect(discoverAgentPython({ ...f.env, TALARIA_WEB_PYTHON: '/chosen/python' }, f.agent, undefined, warn)).toBe('/chosen/python')
     expect(warnings).toEqual([])
   })
 
@@ -164,8 +164,8 @@ describe('Agent discovery', () => {
     chmodSync(f.python, 0o755)
     const override = join(f.home, 'operator-python')
     writeFileSync(override, '#!/bin/sh\nexit 0\n', { mode: 0o755 })
-    const env: Record<string, string | undefined> = { ...f.env, HERMES_WEBUI_AGENT_DIR: f.agent }
-    if (explicit) env.HERMES_WEBUI_PYTHON = override
+    const env: Record<string, string | undefined> = { ...f.env, TALARIA_WEB_AGENT_DIR: f.agent }
+    if (explicit) env.TALARIA_WEB_PYTHON = override
     const next = join(f.install, 'environments', 'generation-two', 'venv')
     mkdirSync(join(next, 'bin'), { recursive: true })
     writeFileSync(join(next, 'pyvenv.cfg'), '')
@@ -203,7 +203,7 @@ describe('Agent discovery', () => {
     mkdirSync(join(webRoot, 'sidecar'), { recursive: true })
     const logs: string[] = []
     f.record(join(f.install, 'environments', 'initially-unavailable', 'venv'))
-    const client = launchSidecar({ env: { ...f.env, HERMES_WEBUI_AGENT_DIR: f.agent }, hermesHome: f.hermesHome, home: f.home, webRoot, log: (line) => { logs.push(line) } })
+    const client = launchSidecar({ env: { ...f.env, TALARIA_WEB_AGENT_DIR: f.agent }, hermesHome: f.hermesHome, home: f.home, webRoot, log: (line) => { logs.push(line) } })
     expect(client).not.toBeNull()
     if (!client) throw new Error('synthetic PM installation was not discovered')
     try {
@@ -232,9 +232,9 @@ describe('scripted sidecar command', () => {
   it('parses a JSON array or a whitespace command and rejects malformed values', async () => {
     const { scriptedSidecarCommand } = await import('./discover.js')
     expect(scriptedSidecarCommand({})).toBeNull()
-    expect(scriptedSidecarCommand({ HERMES_WEBUI_SIDECAR_COMMAND: ' ' })).toBeNull()
-    expect(scriptedSidecarCommand({ HERMES_WEBUI_SIDECAR_COMMAND: '["python3", "/x y/replay.py"]' })).toEqual(['python3', '/x y/replay.py'])
-    expect(scriptedSidecarCommand({ HERMES_WEBUI_SIDECAR_COMMAND: 'python3 replay.py --flag' })).toEqual(['python3', 'replay.py', '--flag'])
-    expect(() => scriptedSidecarCommand({ HERMES_WEBUI_SIDECAR_COMMAND: '[1]' })).toThrow('JSON array')
+    expect(scriptedSidecarCommand({ TALARIA_WEB_SIDECAR_COMMAND: ' ' })).toBeNull()
+    expect(scriptedSidecarCommand({ TALARIA_WEB_SIDECAR_COMMAND: '["python3", "/x y/replay.py"]' })).toEqual(['python3', '/x y/replay.py'])
+    expect(scriptedSidecarCommand({ TALARIA_WEB_SIDECAR_COMMAND: 'python3 replay.py --flag' })).toEqual(['python3', 'replay.py', '--flag'])
+    expect(() => scriptedSidecarCommand({ TALARIA_WEB_SIDECAR_COMMAND: '[1]' })).toThrow('JSON array')
   })
 })

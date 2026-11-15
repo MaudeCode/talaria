@@ -115,7 +115,7 @@ describe('archive extraction, workspace upload, and copy path', () => {
       return { path: join(params.profile_home, 'config.yaml'), exists: true, config: cfg }
     })
     // A 1 MB extraction cap keeps every bomb small enough to build in-test.
-    s = await bootTestServer({ sidecar, env: { HERMES_WEBUI_MAX_EXTRACTED_MB: '1' } })
+    s = await bootTestServer({ sidecar, env: { TALARIA_WEB_MAX_EXTRACTED_MB: '1' } })
     ws = realpathSync(join(s.state, 'workspace'))
     sid = await newSession()
     outside = realpathSync(mkdtempSync(join(tmpdir(), 'talaria-upload-outside-')))
@@ -421,14 +421,14 @@ describe('archive extraction, workspace upload, and copy path', () => {
 })
 
 describe('extracted-bytes cap', () => {
-  const cap = (env: Record<string, string>): number => loadConfig({ env: { HERMES_HOME: '/tmp/talaria-cap-test', HERMES_WEBUI_DEFAULT_WORKSPACE: tmpdir(), ...env }, webRoot: '/tmp', warn: () => undefined }).maxExtractedBytes
+  const cap = (env: Record<string, string>): number => loadConfig({ env: { HERMES_HOME: '/tmp/talaria-cap-test', TALARIA_WEB_DEFAULT_WORKSPACE: tmpdir(), ...env }, webRoot: '/tmp', warn: () => undefined }).maxExtractedBytes
   it('defaults to ten times the upload cap and tracks it', () => {
     expect(cap({})).toBe(200 * MB)
-    expect(cap({ HERMES_WEBUI_MAX_UPLOAD_MB: '7' })).toBe(70 * MB)
+    expect(cap({ TALARIA_WEB_MAX_UPLOAD_MB: '7' })).toBe(70 * MB)
   })
-  it('honours a positive HERMES_WEBUI_MAX_EXTRACTED_MB, fractional included, and ignores anything else', () => {
-    expect(cap({ HERMES_WEBUI_MAX_EXTRACTED_MB: '5' })).toBe(5 * MB)
-    expect(cap({ HERMES_WEBUI_MAX_EXTRACTED_MB: '0.5' })).toBe(MB / 2)
-    for (const bad of ['0', '-3', 'lots', 'Infinity']) expect(cap({ HERMES_WEBUI_MAX_EXTRACTED_MB: bad })).toBe(200 * MB)
+  it('honours a positive TALARIA_WEB_MAX_EXTRACTED_MB, fractional included, and ignores anything else', () => {
+    expect(cap({ TALARIA_WEB_MAX_EXTRACTED_MB: '5' })).toBe(5 * MB)
+    expect(cap({ TALARIA_WEB_MAX_EXTRACTED_MB: '0.5' })).toBe(MB / 2)
+    for (const bad of ['0', '-3', 'lots', 'Infinity']) expect(cap({ TALARIA_WEB_MAX_EXTRACTED_MB: bad })).toBe(200 * MB)
   })
 })

@@ -31,7 +31,7 @@ export interface LogCatalog { listed: readonly string[]; paths: Readonly<Record<
 /**
  * TAL-2139: the active profile's Agent and gateway logs, and, for the server owner (`server`), this server's own log
  * and the launcher's `bootstrap-<port>.log`. Bootstrap is listed only when it is a different file from the server's log
- * (`ctl` and `HERMES_WEBUI_LOG_FILE`); under the launcher both are the same file. `errors` stays readable, unlisted.
+ * (`ctl` and `TALARIA_WEB_LOG_FILE`); under the launcher both are the same file. `errors` stays readable, unlisted.
  */
 export function logCatalog(profileHome: string, server: { env: Record<string, string | undefined>; stateDir: string; port: number } | null): LogCatalog {
   const dir = resolve(profileHome, 'logs')
@@ -193,7 +193,7 @@ export interface AgentHealthDeps {
 
 /** Python `_remote_gateway_base_url`: an explicit remote gateway wins over local signals; health-path suffixes are stripped. */
 export function remoteGatewayBaseUrl(env: Record<string, string | undefined>): string | null {
-  for (const name of ['GATEWAY_HEALTH_URL', 'HERMES_GATEWAY_HEALTH_URL', 'HERMES_API_URL', 'HERMES_WEBUI_GATEWAY_BASE_URL']) {
+  for (const name of ['GATEWAY_HEALTH_URL', 'HERMES_GATEWAY_HEALTH_URL', 'HERMES_API_URL', 'TALARIA_WEB_GATEWAY_BASE_URL']) {
     const value = (env[name] ?? '').trim()
     if (!value) continue
     let base = value.replace(/\/+$/, '')
@@ -251,7 +251,7 @@ const gatewayProbes = new Map<string, SingleFlightEntry<Dict>>()
 export function forgetGatewayProbes(): void { gatewayProbes.clear() }
 
 async function runRemoteProbe(base: string, env: Record<string, string | undefined>, fetchImpl: typeof fetch): Promise<Dict> {
-  const apiKey = (env.HERMES_WEBUI_GATEWAY_API_KEY ?? env.API_SERVER_KEY ?? '').trim()
+  const apiKey = (env.TALARIA_WEB_GATEWAY_API_KEY ?? env.API_SERVER_KEY ?? '').trim()
   let lastStatus: number | null = null
   let lastError: string | null = null
   for (const path of REMOTE_PROBE_PATHS) {
@@ -396,8 +396,8 @@ export function gatewayRecordedAt(dir: string): number | null {
 /** Python `build_agent_health_payload` + `gateway_chat_config_status`: remote probe else local pid/state files, each behind a 5 s single-flight cache. */
 export async function agentHealth(deps: AgentHealthDeps): Promise<Dict> {
   const { env } = deps
-  const mode = (env.HERMES_WEBUI_CHAT_BACKEND ?? '').trim().toLowerCase() === 'gateway' ? 'gateway' : 'local'
-  const gatewayChat = { enabled: mode === 'gateway', backend: mode, base_url_configured: Boolean((env.HERMES_WEBUI_GATEWAY_BASE_URL ?? '').trim()), api_key_configured: Boolean((env.HERMES_WEBUI_GATEWAY_API_KEY ?? '').trim()) }
+  const mode = (env.TALARIA_WEB_CHAT_BACKEND ?? '').trim().toLowerCase() === 'gateway' ? 'gateway' : 'local'
+  const gatewayChat = { enabled: mode === 'gateway', backend: mode, base_url_configured: Boolean((env.TALARIA_WEB_GATEWAY_BASE_URL ?? '').trim()), api_key_configured: Boolean((env.TALARIA_WEB_GATEWAY_API_KEY ?? '').trim()) }
   const remote = remoteGatewayBaseUrl(env)
   const probe = remote !== null
     ? singleFlightRead(gatewayProbes, remote, GATEWAY_PROBE_CACHE_TTL_S, deps.now, () => runRemoteProbe(remote, env, deps.fetch()))
@@ -520,7 +520,7 @@ export async function dashboardStatus(config: Config, env: Record<string, string
     const [host, port, , base] = targets[0] ?? ['127.0.0.1', DASHBOARD_PORT, 'http', baseUrl('127.0.0.1', DASHBOARD_PORT)]
     return { running: true, enabled, host, port, url: browserUrl || base, browser_url: browserUrl || base }
   }
-  const bindHost = (env.HERMES_WEBUI_HOST ?? '127.0.0.1').trim().toLowerCase().replace(/[[\]]/g, '')
+  const bindHost = (env.TALARIA_WEB_HOST ?? '127.0.0.1').trim().toLowerCase().replace(/[[\]]/g, '')
   if (!LOOPBACK.has(bindHost)) return { running: false, enabled }
   for (const [host, port, , base] of targets) {
     try {

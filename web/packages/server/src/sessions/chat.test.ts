@@ -214,7 +214,7 @@ describe('chat turns through the sidecar', () => {
 
   it('retains the authenticated warning owner for server-initiated turns (TAL-1018)', async () => {
     const ownedSidecar = new FakeSidecar()
-    const owned = await bootTestServer({ sidecar: ownedSidecar, env: { HERMES_WEBUI_PASSWORD: 'synthetic-password' } })
+    const owned = await bootTestServer({ sidecar: ownedSidecar, env: { TALARIA_WEB_PASSWORD: 'synthetic-password' } })
     try {
       const cookie = (username: string): string => `${owned.deps.auth.cookieName()}=${owned.deps.auth.createSession({ authType: 'password', username })}`
       const alice = { cookie: cookie('alice') }

@@ -38,18 +38,18 @@ services:
       - WANTED_UID=${UID:-1000}
       - WANTED_GID=${GID:-1000}
       # Required: bind address and port
-      - HERMES_WEBUI_HOST=0.0.0.0
-      - HERMES_WEBUI_PORT=8787
+      - TALARIA_WEB_HOST=0.0.0.0
+      - TALARIA_WEB_PORT=8787
       - TALARIA_RELEASE_TOKEN=${TALARIA_RELEASE_TOKEN:-}
       # Where to store sessions, workspaces, and other state (default: ~/.hermes/webui)
-      - HERMES_WEBUI_STATE_DIR=/home/hermeswebui/.hermes/webui
+      - TALARIA_WEB_STATE_DIR=/home/hermeswebui/.hermes/webui
       # Default workspace directory shown on first launch
-#      - HERMES_WEBUI_DEFAULT_WORKSPACE=/workspace
-      # Optional: enable password auth. Set HERMES_WEBUI_PASSWORD in .env
+#      - TALARIA_WEB_DEFAULT_WORKSPACE=/workspace
+      # Optional: enable password auth. Set TALARIA_WEB_PASSWORD in .env
       # (required if you expose the port beyond 127.0.0.1).
-      - HERMES_WEBUI_PASSWORD=${HERMES_WEBUI_PASSWORD:-}
+      - TALARIA_WEB_PASSWORD=${TALARIA_WEB_PASSWORD:-}
       # Hostnames other than localhost and IP addresses this server answers to (others get 421).
-      - HERMES_WEBUI_ALLOWED_HOSTS=${HERMES_WEBUI_ALLOWED_HOSTS:-}
+      - TALARIA_WEB_ALLOWED_HOSTS=${TALARIA_WEB_ALLOWED_HOSTS:-}
       #
       # Bind-mount permission handling (fixes #1389, #1399):
       #   When you mount an EXISTING ~/.hermes directory (the common case),

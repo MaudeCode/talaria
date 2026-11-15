@@ -9,7 +9,7 @@ vi.mock('node:fs', async (original) => ({ ...await original<typeof fs>(), rename
 
 function fixture() {
   const stateDir = fs.mkdtempSync(join(tmpdir(), 'talaria-state-conformance-'))
-  const storage = new JsonStorage({ directory: join(stateDir, 'sessions'), stateDir, now: () => Date.now() / 1000, stampingSince: () => 0, env: { HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT: '0' } })
+  const storage = new JsonStorage({ directory: join(stateDir, 'sessions'), stateDir, now: () => Date.now() / 1000, stampingSince: () => 0, env: { TALARIA_WEB_RUN_JOURNAL_KEEP_RECENT: '0' } })
   return { storage, cleanup: async () => { await storage.close(); fs.rmSync(stateDir, { recursive: true, force: true }) } }
 }
 

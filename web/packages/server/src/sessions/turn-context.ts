@@ -34,7 +34,7 @@ function positiveInt(raw: unknown): number | null {
 /** Python `_process_wakeup_max_iterations`: automatic wakeup turns get a separate bounded tool-call budget. */
 export function processWakeupMaxIterations(configured: number | null, source: string, env: Record<string, string | undefined>): number | null {
   if (source.trim() !== 'process_wakeup') return configured
-  let cap = Number.parseInt(env.HERMES_WEBUI_PROCESS_WAKEUP_MAX_TURNS ?? '32', 10)
+  let cap = Number.parseInt(env.TALARIA_WEB_PROCESS_WAKEUP_MAX_TURNS ?? '32', 10)
   if (!Number.isFinite(cap)) cap = 32
   cap = Math.max(1, Math.min(cap, 128))
   return configured && configured > 0 ? Math.min(configured, cap) : cap

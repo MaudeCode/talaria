@@ -68,11 +68,11 @@ export function isCsrfExemptPath(path: string): boolean {
 
 export function profileCookieName(ctx: RequestContext): string {
   const env = ctx.deps.config.env
-  const name = (env.HERMES_WEBUI_PROFILE_COOKIE_NAME ?? '').trim()
+  const name = (env.TALARIA_WEB_PROFILE_COOKIE_NAME ?? '').trim()
   if (name) return name
   const legacy = (env.WEBUI_PROFILE_COOKIE_NAME ?? '').trim()
   if (legacy) {
-    ctx.deps.auth.warnOnce('legacy-profile-cookie', 'WEBUI_PROFILE_COOKIE_NAME is deprecated; use HERMES_WEBUI_PROFILE_COOKIE_NAME instead.')
+    ctx.deps.auth.warnOnce('legacy-profile-cookie', 'WEBUI_PROFILE_COOKIE_NAME is deprecated; use TALARIA_WEB_PROFILE_COOKIE_NAME instead.')
     return legacy
   }
   return PROFILE_COOKIE_NAME
@@ -127,27 +127,27 @@ function requestProfileMatchesBound(ctx: RequestContext, boundProfile: string | 
 // ── trusted-header auth ───────────────────────────────────────────────────
 
 function trustedAuthHeaderName(ctx: RequestContext): string | null {
-  const name = (ctx.deps.config.env.HERMES_WEBUI_TRUSTED_AUTH_HEADER ?? '').trim()
+  const name = (ctx.deps.config.env.TALARIA_WEB_TRUSTED_AUTH_HEADER ?? '').trim()
   if (!name) return null
   if (!COOKIE_NAME_RE.test(name)) {
-    ctx.deps.auth.warnOnce('trusted-auth-header', `Ignoring invalid HERMES_WEBUI_TRUSTED_AUTH_HEADER=${JSON.stringify(name)}; trusted-header auth rejects every request`)
+    ctx.deps.auth.warnOnce('trusted-auth-header', `Ignoring invalid TALARIA_WEB_TRUSTED_AUTH_HEADER=${JSON.stringify(name)}; trusted-header auth rejects every request`)
     return null
   }
   return name
 }
 
 export function trustedGroupProfileMap(ctx: RequestContext): Record<string, string> | null {
-  const raw = (ctx.deps.config.env.HERMES_WEBUI_GROUP_PROFILE_MAP ?? '').trim()
+  const raw = (ctx.deps.config.env.TALARIA_WEB_GROUP_PROFILE_MAP ?? '').trim()
   if (!raw) return null
   let data: unknown
   try {
     data = JSON.parse(raw)
   } catch {
-    ctx.deps.auth.warnOnce('trusted-group-map', 'Ignoring invalid HERMES_WEBUI_GROUP_PROFILE_MAP JSON; trusted-header auth falls back to default profile binding')
+    ctx.deps.auth.warnOnce('trusted-group-map', 'Ignoring invalid TALARIA_WEB_GROUP_PROFILE_MAP JSON; trusted-header auth falls back to default profile binding')
     return {}
   }
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    ctx.deps.auth.warnOnce('trusted-group-map-type', 'Ignoring non-dict HERMES_WEBUI_GROUP_PROFILE_MAP; trusted-header auth falls back to default profile binding')
+    ctx.deps.auth.warnOnce('trusted-group-map-type', 'Ignoring non-dict TALARIA_WEB_GROUP_PROFILE_MAP; trusted-header auth falls back to default profile binding')
     return {}
   }
   const mapping: Record<string, string> = {}
@@ -155,7 +155,7 @@ export function trustedGroupProfileMap(ctx: RequestContext): Record<string, stri
     const groupName = group.trim()
     const profileName = typeof profile === 'string' ? profile.trim() : typeof profile === 'number' ? String(profile) : ''
     if (!groupName || !profileName) {
-      ctx.deps.auth.warnOnce('trusted-group-map-entry', 'Ignoring invalid entry in HERMES_WEBUI_GROUP_PROFILE_MAP; trusted-header auth falls back to default profile binding')
+      ctx.deps.auth.warnOnce('trusted-group-map-entry', 'Ignoring invalid entry in TALARIA_WEB_GROUP_PROFILE_MAP; trusted-header auth falls back to default profile binding')
       continue
     }
     mapping[groupName] = profileName
@@ -165,12 +165,12 @@ export function trustedGroupProfileMap(ctx: RequestContext): Record<string, stri
 
 export function trustedGroupsHeaderValue(ctx: RequestContext): string[] {
   const env = ctx.deps.config.env
-  const headerName = (env.HERMES_WEBUI_TRUSTED_GROUPS_HEADER ?? '').trim()
+  const headerName = (env.TALARIA_WEB_TRUSTED_GROUPS_HEADER ?? '').trim()
   if (!headerName) return []
   const raw = ctx.headerAll(headerName).join(',')
   if (!raw) return []
   let normalized = raw.replace(/\n/g, ',')
-  if (truthy(env.HERMES_WEBUI_TRUSTED_GROUPS_PIPE_SEPARATOR)) normalized = normalized.replace(/\|/g, ',')
+  if (truthy(env.TALARIA_WEB_TRUSTED_GROUPS_PIPE_SEPARATOR)) normalized = normalized.replace(/\|/g, ',')
   return normalized.split(',').map((p) => p.trim()).filter(Boolean)
 }
 

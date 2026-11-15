@@ -141713,7 +141713,7 @@
             }
           },
           "400": {
-            "description": "No file, unsupported format, slip, member count over 10,000, or extracted bytes over `HERMES_WEBUI_MAX_EXTRACTED_MB`.",
+            "description": "No file, unsupported format, slip, member count over 10,000, or extracted bytes over `TALARIA_WEB_MAX_EXTRACTED_MB`.",
             "content": {
               "application/json": {}
             }

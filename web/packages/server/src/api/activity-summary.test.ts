@@ -8,7 +8,7 @@ import { bootTestServer, type TestServer } from '../test/harness.js'
 import type { ActivityState, ActivityStates } from '../sessions/notify/activity.js'
 
 const ISSUER = 'https://identity.invalid'
-const OIDC_ENV = { HERMES_WEBUI_OIDC_ISSUER: ISSUER, HERMES_WEBUI_OIDC_CLIENT_ID: 'synthetic-client', HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'email_verified', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'true', HERMES_WEBUI_OIDC_OWNER_CLAIM: 'groups', HERMES_WEBUI_OIDC_OWNER_VALUES: 'admins' }
+const OIDC_ENV = { TALARIA_WEB_OIDC_ISSUER: ISSUER, TALARIA_WEB_OIDC_CLIENT_ID: 'synthetic-client', TALARIA_WEB_OIDC_ALLOW_CLAIM: 'email_verified', TALARIA_WEB_OIDC_ALLOW_VALUES: 'true', TALARIA_WEB_OIDC_OWNER_CLAIM: 'groups', TALARIA_WEB_OIDC_OWNER_VALUES: 'admins' }
 const FIXTURE = JSON.parse(readFileSync(new URL('../../../../../contracts/fixtures/activity-summary.json', import.meta.url), 'utf8')) as unknown
 
 let s: TestServer | null = null
@@ -85,7 +85,7 @@ describe('person isolation', () => {
 
   it.each([true, false])('with isolation %s, hides a person\'s row from everyone else only while isolation is on', async (isolation) => {
     const rows = [row('legacy', 'running', 1_000)]
-    const server = await boot(rows, { ...OIDC_ENV, ...(isolation ? { HERMES_WEBUI_PERSON_ISOLATION: '1' } : {}) })
+    const server = await boot(rows, { ...OIDC_ENV, ...(isolation ? { TALARIA_WEB_PERSON_ISOLATION: '1' } : {}) })
     const alice = signIn(server, 'alice')
     const bob = signIn(server, 'bob')
     const owner = signIn(server, 'olive', true)

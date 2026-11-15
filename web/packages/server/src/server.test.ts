@@ -85,12 +85,12 @@ describe('unauthenticated bind warning at startup', () => {
   }
 
   it('warns when binding 0.0.0.0 with no auth method enabled', async () => {
-    expect(await bootLogs({ HERMES_WEBUI_HOST: '0.0.0.0' })).toContain('[!!] WARNING: Binding to 0.0.0.0 with NO PASSWORD SET.')
+    expect(await bootLogs({ TALARIA_WEB_HOST: '0.0.0.0' })).toContain('[!!] WARNING: Binding to 0.0.0.0 with NO PASSWORD SET.')
   })
 
   it('stays quiet on any loopback spelling or when a password is set', async () => {
-    for (const host of ['127.0.0.1', 'localhost', '0:0:0:0:0:0:0:1']) expect(await bootLogs({ HERMES_WEBUI_HOST: host }), host).not.toContain('NO PASSWORD SET')
-    expect(await bootLogs({ HERMES_WEBUI_HOST: '0.0.0.0', HERMES_WEBUI_PASSWORD: 'correct horse' })).not.toContain('NO PASSWORD SET')
+    for (const host of ['127.0.0.1', 'localhost', '0:0:0:0:0:0:0:1']) expect(await bootLogs({ TALARIA_WEB_HOST: host }), host).not.toContain('NO PASSWORD SET')
+    expect(await bootLogs({ TALARIA_WEB_HOST: '0.0.0.0', TALARIA_WEB_PASSWORD: 'correct horse' })).not.toContain('NO PASSWORD SET')
   })
 })
 
@@ -104,20 +104,20 @@ describe('forwarded-for proxy guidance at startup', () => {
 
   it('explains that loopback is trusted and other proxies must be listed when no outside proxy is configured', async () => {
     for (const cidrs of [undefined, '127.0.0.1/32', '127.0.0.0/8; ::1']) {
-      const logs = await bootLogs({ HERMES_WEBUI_TRUST_FORWARDED_FOR: '1', ...(cidrs ? { HERMES_WEBUI_TRUSTED_PROXY_CIDRS: cidrs } : {}) })
+      const logs = await bootLogs({ TALARIA_WEB_TRUST_FORWARDED_FOR: '1', ...(cidrs ? { TALARIA_WEB_TRUSTED_PROXY_CIDRS: cidrs } : {}) })
       expect(logs, String(cidrs)).toContain(GUIDANCE)
       expect(logs).toContain('The request log trusts a proxy on this host through loopback')
-      expect(logs).toContain('use its forwarded client only once it is listed (HERMES_WEBUI_TRUSTED_PROXY_CIDRS=127.0.0.1/32,::1/128)')
-      expect(logs).toContain('HERMES_WEBUI_TRUSTED_PROXY_CIDRS=172.17.0.1')
+      expect(logs).toContain('use its forwarded client only once it is listed (TALARIA_WEB_TRUSTED_PROXY_CIDRS=127.0.0.1/32,::1/128)')
+      expect(logs).toContain('TALARIA_WEB_TRUSTED_PROXY_CIDRS=172.17.0.1')
       expect(logs).toContain('$proxy_add_x_forwarded_for')
     }
   })
 
   it('stays quiet without the opt-in or once a proxy outside this host is listed', async () => {
     expect(await bootLogs({})).not.toContain(GUIDANCE)
-    expect(await bootLogs({ HERMES_WEBUI_TRUSTED_PROXY_CIDRS: '127.0.0.1/32' })).not.toContain(GUIDANCE)
+    expect(await bootLogs({ TALARIA_WEB_TRUSTED_PROXY_CIDRS: '127.0.0.1/32' })).not.toContain(GUIDANCE)
     for (const cidrs of ['172.17.0.1', '10.0.0.0/8', '127.0.0.1, 2001:db8::/32', '0.0.0.0/0']) {
-      expect(await bootLogs({ HERMES_WEBUI_TRUST_FORWARDED_FOR: '1', HERMES_WEBUI_TRUSTED_PROXY_CIDRS: cidrs }), cidrs).not.toContain(GUIDANCE)
+      expect(await bootLogs({ TALARIA_WEB_TRUST_FORWARDED_FOR: '1', TALARIA_WEB_TRUSTED_PROXY_CIDRS: cidrs }), cidrs).not.toContain(GUIDANCE)
     }
   })
 })

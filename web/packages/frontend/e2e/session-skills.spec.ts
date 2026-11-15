@@ -29,7 +29,7 @@ test('the Skills page lists a conversation’s skill loads and refreshes counts 
       agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [],
     }
   })
-  const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' } })
+  const server = await bootTestServer({ sidecar, env: { TALARIA_WEB_SKIP_ONBOARDING: '1' } })
   const turn = async (sid: string, names: string[]) => {
     loads = names
     const res = await page.request.post(`${server.base}/api/chat/start`, { data: { session_id: sid, message: `use ${names.join(', ')}` } })

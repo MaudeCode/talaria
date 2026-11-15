@@ -174,7 +174,7 @@ describe('password env var lock', () => {
   let cookie = ''
   let csrf = ''
   beforeAll(async () => {
-    s = await bootTestServer({ env: { HERMES_WEBUI_PASSWORD: 'env-secret-123' } })
+    s = await bootTestServer({ env: { TALARIA_WEB_PASSWORD: 'env-secret-123' } })
     const res = await s.get('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'env-secret-123' }) })
     expect(res.status).toBe(200)
     cookie = cookieHeader(res.headers.getSetCookie(), 'hermes_session') ?? ''
@@ -183,15 +183,15 @@ describe('password env var lock', () => {
   afterAll(() => s.close())
   const headers = (): Record<string, string> => ({ cookie, origin: s.base, host: s.base.replace('http://', ''), 'X-Hermes-CSRF-Token': csrf })
 
-  it('setting a password while HERMES_WEBUI_PASSWORD is set answers 409 naming the variable', async () => {
+  it('setting a password while TALARIA_WEB_PASSWORD is set answers 409 naming the variable', async () => {
     const res = await post(s, '/api/settings', { _set_password: 'another-secret' }, headers())
     expect(res.status).toBe(409)
-    expect(String((await json(res)).error)).toContain('HERMES_WEBUI_PASSWORD')
+    expect(String((await json(res)).error)).toContain('TALARIA_WEB_PASSWORD')
   })
 
   it('clearing the password is refused the same way', async () => {
     const res = await post(s, '/api/settings', { _clear_password: true }, headers())
     expect(res.status).toBe(409)
-    expect(String((await json(res)).error)).toContain('HERMES_WEBUI_PASSWORD')
+    expect(String((await json(res)).error)).toContain('TALARIA_WEB_PASSWORD')
   })
 })

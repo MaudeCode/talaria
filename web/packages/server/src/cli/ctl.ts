@@ -12,8 +12,8 @@ import { join, resolve } from 'node:path'
 import { createServer, connect as netConnect } from 'node:net'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
-import { loadLauncherDotenv, loadStartupEnv } from './dotenv.js'
-import { resolveHermesHome } from '../config.js'
+import { loadLauncherDotenv, loadStartupEnv, parseDotenv } from './dotenv.js'
+import { migrateLegacyWebEnv, resolveHermesHome } from '../config.js'
 import { str } from '../util.js'
 import { STOP_GRACE_MS } from './supervise.js'
 
@@ -64,7 +64,7 @@ function cksum(text: string): string {
 export function ctlPaths(ctx: CtlContext): CtlPaths {
   const env = ctx.env
   const hermesHome = resolveHermesHome(env, ctx.home)
-  const isolate = (env.HERMES_WEBUI_CTL_ISOLATE_WORKTREE ?? 'auto').trim()
+  const isolate = (env.TALARIA_WEB_CTL_ISOLATE_WORKTREE ?? 'auto').trim()
   let worktreeMode = isolate === '1'
   if (isolate !== '1' && isolate !== '0') {
     const gitDir = gitPath(ctx.webRoot, '--git-dir')
@@ -77,16 +77,16 @@ export function ctlPaths(ctx: CtlContext): CtlPaths {
     runtimeBase = join((env.XDG_RUNTIME_DIR ?? '').trim() || (env.TMPDIR ?? '').trim() || '/tmp', `hermes-webui-ctl-${String(userInfo().uid)}`)
     runtimeRoot = join(runtimeBase, cksum(ctx.webRoot))
   }
-  let logFile = (env.HERMES_WEBUI_LOG_FILE ?? '').trim() || join(runtimeRoot, 'webui.log')
+  let logFile = (env.TALARIA_WEB_LOG_FILE ?? '').trim() || join(runtimeRoot, 'webui.log')
   if (!logFile.startsWith('/')) logFile = resolve(logFile)
   return {
     hermesHome, runtimeRoot, runtimeBase, worktreeMode,
-    pidFile: (env.HERMES_WEBUI_PID_FILE ?? '').trim() || join(runtimeRoot, 'webui.pid'),
+    pidFile: (env.TALARIA_WEB_PID_FILE ?? '').trim() || join(runtimeRoot, 'webui.pid'),
     logFile,
-    stateFile: (env.HERMES_WEBUI_CTL_STATE_FILE ?? '').trim() || join(runtimeRoot, 'webui.ctl.env'),
-    stateDir: (env.HERMES_WEBUI_STATE_DIR ?? '').trim() || join(runtimeRoot, 'webui'),
+    stateFile: (env.TALARIA_WEB_CTL_STATE_FILE ?? '').trim() || join(runtimeRoot, 'webui.ctl.env'),
+    stateDir: (env.TALARIA_WEB_STATE_DIR ?? '').trim() || join(runtimeRoot, 'webui'),
     // An override names the only job to probe; otherwise the current default, then the label upgraded installs still carry.
-    launchdLabels: (env.HERMES_WEBUI_LAUNCHD_LABEL ?? '').trim() ? [(env.HERMES_WEBUI_LAUNCHD_LABEL ?? '').trim()] : ['dev.kil.talaria.web', 'com.parantoux.hermes-webui'],
+    launchdLabels: (env.TALARIA_WEB_LAUNCHD_LABEL ?? '').trim() ? [(env.TALARIA_WEB_LAUNCHD_LABEL ?? '').trim()] : ['dev.kil.talaria.web', 'com.parantoux.hermes-webui'],
   }
 }
 
@@ -257,7 +257,7 @@ function pidListensOnPort(env: Record<string, string | undefined>, pid: number, 
  * `pid: null` when `launchctl` did not answer for that label, so a running job cannot be ruled out.
  */
 export function launchdConflictPid(p: CtlPaths, env: Record<string, string | undefined>, wantPort: number): { pid: number | null; label: string } | null {
-  if (truthy(env.HERMES_WEBUI_CTL_ALLOW_LAUNCHD_CONFLICT)) return null
+  if (truthy(env.TALARIA_WEB_CTL_ALLOW_LAUNCHD_CONFLICT)) return null
   for (const label of p.launchdLabels) {
     const pid = launchdJobPid(env, label, wantPort)
     if (pid !== undefined) return { pid, label }
@@ -283,8 +283,13 @@ function launchdJobPid(env: Record<string, string | undefined>, label: string, w
 function systemdUnitPort(env: Record<string, string | undefined>, scope: string, unit: string): string | null {
   const unitEnv = hostTool(env, 'systemctl', [scope, 'show', '-p', 'Environment', '--value', unit])
   if (timedOut(unitEnv)) return null
-  const m1 = /HERMES_WEBUI_PORT=(\d+)/.exec(unitEnv.stdout || '')
-  if (m1) return m1[1] ?? ''
+  // systemctl quotes whole assignments; resolve aliases before comparing the unit's port.
+  const assignments = (unitEnv.stdout || '').match(/(?:[^\s"'\\]|\\.|"(?:\\.|[^"\\])*"|'[^']*')+/g) ?? []
+  const settings: Record<string, string> = {}
+  for (const assignment of assignments) Object.assign(settings, parseDotenv(assignment.replace(/^(['"])(.*)\1$/s, '$2')))
+  migrateLegacyWebEnv(settings)
+  const configuredPort = settings.TALARIA_WEB_PORT ?? ''
+  if (/^\d+$/.test(configuredPort)) return configuredPort
   const exec = hostTool(env, 'systemctl', [scope, 'show', '-p', 'ExecStart', '--value', unit])
   if (timedOut(exec)) return null
   const m2 = /--port[=\s](\d+)/.exec(exec.stdout || '')
@@ -293,8 +298,8 @@ function systemdUnitPort(env: Record<string, string | undefined>, scope: string,
 
 /** Python `_systemd_webui_conflict`: an active or auto-restarting unit that owns our port. */
 export function systemdConflict(env: Record<string, string | undefined>, wantPort: number): string | null {
-  if (truthy(env.HERMES_WEBUI_CTL_ALLOW_SYSTEMD_CONFLICT)) return null
-  const unit = (env.HERMES_WEBUI_SYSTEMD_UNIT ?? '').trim() || 'hermes-webui.service'
+  if (truthy(env.TALARIA_WEB_CTL_ALLOW_SYSTEMD_CONFLICT)) return null
+  const unit = (env.TALARIA_WEB_SYSTEMD_UNIT ?? '').trim() || 'hermes-webui.service'
   for (const scope of ['--system', '--user']) {
     const state = hostTool(env, 'systemctl', [scope, 'show', '-p', 'ActiveState', '--value', unit])
     if (timedOut(state)) return `unit ${unit} state is unknown (systemctl did not answer)`
@@ -332,9 +337,9 @@ function listenerDiag(env: Record<string, string | undefined>, port: number): st
 // ── argument parsing ─────────────────────────────────────────────────────
 
 export function parseLaunchBinding(argv: string[], env: Record<string, string | undefined>): { host: string; port: number; portExplicit: boolean; passthrough: string[] } {
-  let host = (env.HERMES_WEBUI_HOST ?? '').trim() || '127.0.0.1'
-  let port = Number.parseInt((env.HERMES_WEBUI_PORT ?? '').trim() || (env.HERMES_WEBUI_CTL_PORT_START ?? '').trim() || '8787', 10) || 8787
-  let portExplicit = Boolean((env.HERMES_WEBUI_PORT ?? '').trim())
+  let host = (env.TALARIA_WEB_HOST ?? '').trim() || '127.0.0.1'
+  let port = Number.parseInt((env.TALARIA_WEB_PORT ?? '').trim() || (env.TALARIA_WEB_CTL_PORT_START ?? '').trim() || '8787', 10) || 8787
+  let portExplicit = Boolean((env.TALARIA_WEB_PORT ?? '').trim())
   const passthrough: string[] = []
   let sawPort = false
   for (let i = 0; i < argv.length; i += 1) {
@@ -359,8 +364,8 @@ export async function startCmd(ctx: CtlContext, argv: string[]): Promise<number>
   loadStartupEnv({ env: ctx.env, webRoot: ctx.webRoot, home: ctx.home, log: ctx.warn })
   const p = ctlPaths(ctx)
   ensureHome(p)
-  ctx.env.HERMES_WEBUI_STATE_DIR = (ctx.env.HERMES_WEBUI_STATE_DIR ?? '').trim() || p.stateDir
-  mkdirSync(ctx.env.HERMES_WEBUI_STATE_DIR, { recursive: true })
+  ctx.env.TALARIA_WEB_STATE_DIR = (ctx.env.TALARIA_WEB_STATE_DIR ?? '').trim() || p.stateDir
+  mkdirSync(ctx.env.TALARIA_WEB_STATE_DIR, { recursive: true })
   const binding = parseLaunchBinding(argv, ctx.env)
   const existing = recordedDaemon(p, ctx)
   if (existing?.owned === null) return warnUnverified(ctx, existing.pid)
@@ -377,8 +382,8 @@ export async function startCmd(ctx: CtlContext, argv: string[]): Promise<number>
     for (; port <= 65535; port += 1) if (await portIsBindable(binding.host, port)) { found = true; break }
     if (!found) { ctx.warn('[ctl] No free WebUI port is available'); return 1 }
   }
-  ctx.env.HERMES_WEBUI_HOST = binding.host
-  ctx.env.HERMES_WEBUI_PORT = String(port)
+  ctx.env.TALARIA_WEB_HOST = binding.host
+  ctx.env.TALARIA_WEB_PORT = String(port)
   const launchd = launchdConflictPid(p, ctx.env, port)
   if (launchd !== null) {
     ctx.warn(launchd.pid === null
@@ -390,11 +395,11 @@ export async function startCmd(ctx: CtlContext, argv: string[]): Promise<number>
   const systemd = systemdConflict(ctx.env, port)
   if (systemd) {
     ctx.warn(`[ctl] Refusing to start a second Talaria Web: systemd ${systemd}.`)
-    ctx.warn(`[ctl] Manage that instance with systemctl instead, or disable the unit before using talaria-web ctl start. Set HERMES_WEBUI_CTL_ALLOW_SYSTEMD_CONFLICT=1 to override.`)
+    ctx.warn(`[ctl] Manage that instance with systemctl instead, or disable the unit before using talaria-web ctl start. Set TALARIA_WEB_CTL_ALLOW_SYSTEMD_CONFLICT=1 to override.`)
     return 2
   }
   const probeHost = probeTargetHost(binding.host)
-  if (!truthy(ctx.env.HERMES_WEBUI_CTL_ALLOW_PORT_CONFLICT) && (await portAnswersHttp(probeHost, port))) {
+  if (!truthy(ctx.env.TALARIA_WEB_CTL_ALLOW_PORT_CONFLICT) && (await portAnswersHttp(probeHost, port))) {
     ctx.warn(`[ctl] Refusing to start: a live server is already responding on ${probeHost}:${String(port)}.`)
     const diag = listenerDiag(ctx.env, port)
     if (diag) ctx.warn(`[ctl]   listener: ${diag}`)
@@ -405,14 +410,14 @@ export async function startCmd(ctx: CtlContext, argv: string[]): Promise<number>
   const fd = openSync(p.logFile, 'a')
   const [cmd, ...args] = ctx.serveCommand
   const child = spawn(cmd ?? process.execPath, [...args, '--foreground', '--no-browser', '--host', binding.host, String(port), ...binding.passthrough], {
-    cwd: ctx.webRoot, env: { ...ctx.env, HERMES_WEBUI_PRESERVE_ENV: '1', HERMES_WEBUI_LOG_FILE: p.logFile }, stdio: ['ignore', fd, fd], detached: true,
+    cwd: ctx.webRoot, env: { ...ctx.env, TALARIA_WEB_PRESERVE_ENV: '1', TALARIA_WEB_LOG_FILE: p.logFile }, stdio: ['ignore', fd, fd], detached: true,
   })
   closeSync(fd)
   const pid = child.pid ?? 0
   child.unref()
   writeFileSync(p.pidFile, `${String(pid)}\n`)
-  writeState(p, { PID: String(pid), REPO_ROOT: ctx.webRoot, NODE_EXE: cmd ?? process.execPath, HOST: binding.host, PORT: String(port), LOG_FILE: p.logFile, STATE_DIR: ctx.env.HERMES_WEBUI_STATE_DIR, STARTED_AT: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z') })
-  let grace = Number.parseInt((ctx.env.HERMES_WEBUI_START_GRACE ?? '').trim() || '3', 10)
+  writeState(p, { PID: String(pid), REPO_ROOT: ctx.webRoot, NODE_EXE: cmd ?? process.execPath, HOST: binding.host, PORT: String(port), LOG_FILE: p.logFile, STATE_DIR: ctx.env.TALARIA_WEB_STATE_DIR, STARTED_AT: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z') })
+  let grace = Number.parseInt((ctx.env.TALARIA_WEB_START_GRACE ?? '').trim() || '3', 10)
   if (!Number.isFinite(grace) || grace <= 0) grace = 3
   let healthy = false
   const failed = (): number => { ctx.warn(`[ctl] Talaria Web failed to stay running. Log: ${p.logFile}`); rmSync(p.pidFile, { force: true }); rmSync(p.stateFile, { force: true }); return 1 }
@@ -431,16 +436,16 @@ export async function startCmd(ctx: CtlContext, argv: string[]): Promise<number>
 }
 
 function printCoordinates(ctx: CtlContext, host: string, port: number): void {
-  const tls = Boolean((ctx.env.HERMES_WEBUI_TLS_CERT ?? '').trim()) && Boolean((ctx.env.HERMES_WEBUI_TLS_KEY ?? '').trim())
+  const tls = Boolean((ctx.env.TALARIA_WEB_TLS_CERT ?? '').trim()) && Boolean((ctx.env.TALARIA_WEB_TLS_KEY ?? '').trim())
   const scheme = tls ? 'https' : 'http'
-  ctx.log(`HERMES_WEBUI_PORT=${String(port)}`)
-  ctx.log(`HERMES_WEBUI_URL=${scheme}://${probeTargetHost(host)}:${String(port)}`)
+  ctx.log(`TALARIA_WEB_PORT=${String(port)}`)
+  ctx.log(`TALARIA_WEB_URL=${scheme}://${probeTargetHost(host)}:${String(port)}`)
 }
 
 async function warnIfUnmanaged(ctx: CtlContext, p: CtlPaths): Promise<void> {
   const state = readState(p)
-  const host = state.HOST ?? (ctx.env.HERMES_WEBUI_HOST ?? '').trim() ?? '127.0.0.1'
-  const port = Number.parseInt(state.PORT ?? (ctx.env.HERMES_WEBUI_PORT ?? '').trim() ?? '8787', 10) || 8787
+  const host = state.HOST ?? (ctx.env.TALARIA_WEB_HOST ?? '').trim() ?? '127.0.0.1'
+  const port = Number.parseInt(state.PORT ?? (ctx.env.TALARIA_WEB_PORT ?? '').trim() ?? '8787', 10) || 8787
   const probeHost = probeTargetHost(host || '127.0.0.1')
   if (await portAnswersHttp(probeHost, port)) {
     ctx.warn(`[ctl] Warning: an instance NOT managed by talaria-web ctl is still serving ${probeHost}:${String(port)}; not touching it.`)
@@ -484,8 +489,8 @@ export async function stopCmd(ctx: CtlContext): Promise<number> {
 /** The address a daemon recorded, else the configured one. */
 function boundAddress(ctx: CtlContext, p: CtlPaths): { host: string; port: number } {
   const state = readState(p)
-  const host = state.HOST ?? ((ctx.env.HERMES_WEBUI_HOST ?? '').trim() || '127.0.0.1')
-  return { host, port: Number.parseInt(state.PORT ?? ((ctx.env.HERMES_WEBUI_PORT ?? '').trim() || '8787'), 10) || 8787 }
+  const host = state.HOST ?? ((ctx.env.TALARIA_WEB_HOST ?? '').trim() || '127.0.0.1')
+  return { host, port: Number.parseInt(state.PORT ?? ((ctx.env.TALARIA_WEB_PORT ?? '').trim() || '8787'), 10) || 8787 }
 }
 
 /** `status`'s checks, for maintenance commands that need the server stopped: why it counts as running, or null. */
@@ -502,7 +507,7 @@ export async function statusCmd(ctx: CtlContext): Promise<number> {
   const p = ctlPaths(ctx)
   ensureHome(p)
   const { host, port } = boundAddress(ctx, p)
-  const tls = Boolean((ctx.env.HERMES_WEBUI_TLS_CERT ?? '').trim()) && Boolean((ctx.env.HERMES_WEBUI_TLS_KEY ?? '').trim())
+  const tls = Boolean((ctx.env.TALARIA_WEB_TLS_CERT ?? '').trim()) && Boolean((ctx.env.TALARIA_WEB_TLS_KEY ?? '').trim())
   const daemon = recordedDaemon(p, ctx)
   if (daemon?.owned === null) return warnUnverified(ctx, daemon.pid)
   if (daemon?.owned) {
@@ -559,12 +564,12 @@ export function logsCmd(ctx: CtlContext, argv: string[]): number {
 export function startRemoteCmd(ctx: CtlContext, argv: string[]): number {
   const p = ctlPaths(ctx)
   applyDotenv(ctx, p)
-  const proxy = (ctx.env.HERMES_WEBUI_DEV_PROXY ?? '').trim()
-  if (!proxy) { ctx.warn('[ctl] HERMES_WEBUI_DEV_PROXY must be set in .env for --remote.'); return 2 }
-  if (!/^https?:\/\//.test(proxy)) { ctx.warn('[ctl] HERMES_WEBUI_DEV_PROXY must start with http:// or https://.'); return 2 }
+  const proxy = (ctx.env.TALARIA_WEB_DEV_PROXY ?? '').trim()
+  if (!proxy) { ctx.warn('[ctl] TALARIA_WEB_DEV_PROXY must be set in .env for --remote.'); return 2 }
+  if (!/^https?:\/\//.test(proxy)) { ctx.warn('[ctl] TALARIA_WEB_DEV_PROXY must start with http:// or https://.'); return 2 }
   const frontend = join(ctx.webRoot, 'packages', 'frontend')
   if (!existsSync(join(ctx.webRoot, 'node_modules'))) { ctx.warn("[ctl] Frontend dependencies are missing. Run 'npm ci' in web/ first."); return 2 }
-  ctx.log('[ctl] Starting local frontend against HERMES_WEBUI_DEV_PROXY')
+  ctx.log('[ctl] Starting local frontend against TALARIA_WEB_DEV_PROXY')
   ctx.log('[ctl] Note: passkey-only authentication cannot be used from a loopback frontend.')
   ctx.log('[ctl] Press Ctrl-C to stop')
   try {

@@ -37,8 +37,8 @@ export function cspExtras(env: Env, warn: (line: string) => void = () => undefin
   let extras = validatedExtras.get(env)
   if (!extras) {
     extras = {
-      connect: extraSources(env.HERMES_WEBUI_CSP_CONNECT_EXTRA, EXTRA_CONNECT_RE, () => { warn('Ignoring invalid HERMES_WEBUI_CSP_CONNECT_EXTRA value') }),
-      frame: extraSources(env.HERMES_WEBUI_CSP_FRAME_EXTRA, EXTRA_FRAME_RE, () => { warn('Ignoring invalid HERMES_WEBUI_CSP_FRAME_EXTRA value') }),
+      connect: extraSources(env.TALARIA_WEB_CSP_CONNECT_EXTRA, EXTRA_CONNECT_RE, () => { warn('Ignoring invalid TALARIA_WEB_CSP_CONNECT_EXTRA value') }),
+      frame: extraSources(env.TALARIA_WEB_CSP_FRAME_EXTRA, EXTRA_FRAME_RE, () => { warn('Ignoring invalid TALARIA_WEB_CSP_FRAME_EXTRA value') }),
     }
     validatedExtras.set(env, extras)
   }

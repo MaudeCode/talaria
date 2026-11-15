@@ -187,7 +187,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   // `activeProfile()` reads the request scope so every domain (sessions, workspaces, drains) sees the same answer.
   // Python `_is_isolated_profile_mode`: the explicit startup opt-in AND a `.../profiles/<name>` shaped HERMES_HOME pin
   // the process to that one profile (no switching, listing, creating, deleting, or cross-profile reads).
-  const isolatedProfile = truthy(env.HERMES_WEBUI_ISOLATED_PROFILE) && basename(dirname(config.hermesHome)) === 'profiles' && existsSync(dirname(dirname(config.hermesHome))) ? basename(config.hermesHome) : null
+  const isolatedProfile = truthy(env.TALARIA_WEB_ISOLATED_PROFILE) && basename(dirname(config.hermesHome)) === 'profiles' && existsSync(dirname(dirname(config.hermesHome))) ? basename(config.hermesHome) : null
   const isolatedProfileMode = (): boolean => isolatedProfile !== null
   const isolatedProfileName = (): string => isolatedProfile ?? 'default'
   // Python `_resolve_base_hermes_home`: profiles live under the base home (HERMES_BASE_HOME, else HERMES_HOME unless it is
@@ -277,7 +277,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     home,
   })
   const cacheMax = (): number => {
-    const raw = Number.parseInt((env.HERMES_WEBUI_SESSIONS_MAX ?? '').trim(), 10)
+    const raw = Number.parseInt((env.TALARIA_WEB_SESSIONS_MAX ?? '').trim(), 10)
     return Number.isFinite(raw) && raw >= 1 ? raw : 100
   }
   const store = new SessionStore({
@@ -352,7 +352,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       return null
     }
   }
-  const legacySnapshotDir = (env.HERMES_WEBUI_MEDIA_SNAPSHOT_DIR ?? '').trim().replace(/^~(?=$|\/)/, home) || undefined
+  const legacySnapshotDir = (env.TALARIA_WEB_MEDIA_SNAPSHOT_DIR ?? '').trim().replace(/^~(?=$|\/)/, home) || undefined
   const mediaPolicy: MediaPolicyDeps = { home, hermesHome: config.hermesHome, stateDir: config.stateDir, legacySnapshotDir, activeWorkspace: mediaActiveWorkspace }
   const mediaAccess: MediaAccessDeps = { home: config.homeDir, hermesHome: config.hermesHome, extraRoots: env.MEDIA_ALLOWED_ROOTS ?? '', activeWorkspace: mediaActiveWorkspace, policy: mediaPolicy }
   // TAL-259: record when this server started stamping deliberate shrinks; older backups go to manual review.
@@ -550,7 +550,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     },
   })
   // Python `_MAX_SSE_CLIENTS_PER_IDENTITY`: eight concurrent streams per client identity unless overridden.
-  const streamSlots = new StreamSlots(() => { const raw = Number.parseInt((env.HERMES_WEBUI_MAX_SSE_CLIENTS ?? '').trim(), 10); return Number.isFinite(raw) && raw > 0 ? raw : 8 })
+  const streamSlots = new StreamSlots(() => { const raw = Number.parseInt((env.TALARIA_WEB_MAX_SSE_CLIENTS ?? '').trim(), 10); return Number.isFinite(raw) && raw > 0 ? raw : 8 })
   // eslint-disable-next-line prefer-const -- assigned after the turn runner exists
   let completions: CompletionDrain
   const presence = new PresenceLeases(now)
@@ -628,7 +628,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     now,
     log,
     redactEnabled: sessions.deps.redactEnabled,
-    saveMode: () => ((env.HERMES_WEBUI_SESSION_SAVE_MODE ?? '').trim().toLowerCase() === 'eager' ? 'eager' : 'deferred'),
+    saveMode: () => ((env.TALARIA_WEB_SESSION_SAVE_MODE ?? '').trim().toLowerCase() === 'eager' ? 'eager' : 'deferred'),
     toolsetsFor: (session) => session.enabled_toolsets,
     attachmentDir,
     blobs,
@@ -686,7 +686,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     workspaces: async () => ({ items: (await workspaces.load(activeProfile())), last: (await workspaces.lastWorkspace(activeProfile())) }),
     models: (h) => catalog.models(h),
     defaultWorkspace: () => config.defaultWorkspace,
-    defaultModel: () => (env.HERMES_WEBUI_DEFAULT_MODEL ?? '').trim(),
+    defaultModel: () => (env.TALARIA_WEB_DEFAULT_MODEL ?? '').trim(),
     log,
   })
   oidc = new OidcService({ env, operatorConfig: () => agentConfig.read(baseHome), profileHome, fetch: () => lazyFetch, pinned: () => ({ lookup: deps.dnsLookup, fetch: deps.pinnedFetch }), now, log })
@@ -1012,7 +1012,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     requestScope,
     isRootProfile,
     assistantName,
-    onboardingCompleted: () => truthy(env.HERMES_WEBUI_SKIP_ONBOARDING) || Boolean(settings.peek().onboarding_completed),
+    onboardingCompleted: () => truthy(env.TALARIA_WEB_SKIP_ONBOARDING) || Boolean(settings.peek().onboarding_completed),
     health: () => ({ sessions: store.sessions.size, activeStreams: activeStreamIds.size, activeRuns: registry.activeRuns.size, runs: [...registry.activeRuns.values()].map((r) => ({ phase: r.phase, started_at: r.started_at })), lastRunFinishedAt: registry.lastRunFinishedAt }),
     sessions,
     sessionStore: store,
@@ -1255,7 +1255,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     includeAgent: () => !pyBool(settings.peekValue('ignore_agent_updates')),
     summarizeAutomatically: () => settings.peekValue('check_for_updates') !== false && settings.peekValue('summarize_updates_automatically') !== false,
     autoApply: () => settings.peekValue('check_for_updates') !== false && settings.peekValue('auto_apply_updates') === true,
-    checkEnabled: () => !truthy(env.HERMES_WEBUI_TEST_NETWORK_BLOCK) && settings.peekValue('check_for_updates') !== false,
+    checkEnabled: () => !truthy(env.TALARIA_WEB_TEST_NETWORK_BLOCK) && settings.peekValue('check_for_updates') !== false,
     availableNotification: (target, view) => updateNotifications.updateAvailable(target, view),
     autoNotification: {
       begin: async () => (await updateNotifications.begin({ owner: '*', profile: 'default', serverOwner: true }, 'webui')).id,

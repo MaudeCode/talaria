@@ -19,12 +19,12 @@ HEALTHY = """
 import { existsSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 writeFileSync(process.env.SMOKE_TEST_PID_FILE, String(process.pid))
-const sidecar = JSON.parse(process.env.HERMES_WEBUI_SIDECAR_COMMAND).at(-1)
-const isolated = process.env.HERMES_HOME === process.env.HOME && process.env.HERMES_WEBUI_SKIP_ONBOARDING === '1' && existsSync(sidecar)
+const sidecar = JSON.parse(process.env.TALARIA_WEB_SIDECAR_COMMAND).at(-1)
+const isolated = process.env.HERMES_HOME === process.env.HOME && process.env.TALARIA_WEB_SKIP_ONBOARDING === '1' && existsSync(sidecar) && !process.env.TALARIA_WEB_PASSWORD
 createServer((request, response) => {
   response.writeHead(request.url === '/health' && isolated ? 200 : 500)
   response.end()
-}).listen(Number(process.env.HERMES_WEBUI_PORT), process.env.HERMES_WEBUI_HOST)
+}).listen(Number(process.env.TALARIA_WEB_PORT), process.env.TALARIA_WEB_HOST)
 """
 # What TAL-1010 shipped: a dependency the bin imports is missing, so it exits 1 at import.
 BROKEN = "import 'ws'\n"
@@ -57,7 +57,7 @@ class SmokeTests(unittest.TestCase):
     def smoke(self, tarball):
         pid_file = self.root / "server.pid"
         env = {**os.environ, "TMPDIR": str(self.scratch), "SMOKE_TEST_PID_FILE": str(pid_file),
-               "npm_config_cache": str(self.root / "npm-cache")}
+               "npm_config_cache": str(self.root / "npm-cache"), "TALARIA_WEB_PASSWORD": "host-setting-must-not-leak"}
         result = subprocess.run([sys.executable, str(SCRIPT), str(tarball)], env=env, capture_output=True, text=True, timeout=120)
         self.assertEqual([], list(self.scratch.glob("talaria-web-smoke-*")), "the check must remove its temporary directories")
         return result, pid_file

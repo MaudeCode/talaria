@@ -13,7 +13,7 @@ test('an answer omitted from Agent messages remains visible after settlement and
       model: 'test-model', provider: 'test', compressed: false, agent_session_id: params.session_id, token_sent: true, pending_steer: '', live_tool_calls: [],
       messages: [...params.conversation_history, { role: 'user', content: params.user_message }], final_response: 'Unique final answer' }
   })
-  const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' } })
+  const server = await bootTestServer({ sidecar, env: { TALARIA_WEB_SKIP_ONBOARDING: '1' } })
   try {
     const session = await server.deps.sessionStore.newSession()
     const start = await server.get('/api/chat/start', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session_id: session.session_id, message: 'Please answer this question.' }) })

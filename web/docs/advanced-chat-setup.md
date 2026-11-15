@@ -61,4 +61,4 @@ automatic generation when the auxiliary flag is off.
 
 ## Gateway-backed browser chat
 
-Dropped with TAL-245: browser chat always runs through the Agent sidecar. `HERMES_WEBUI_CHAT_BACKEND` no longer selects an execution path (the health card only reports its value) and `HERMES_WEBUI_GATEWAY_USE_RUNS_API` is not read; the gateway settings (`HERMES_WEBUI_GATEWAY_BASE_URL`, `HERMES_WEBUI_GATEWAY_API_KEY`) feed the health probe and the gateway status card.
+Dropped with TAL-245: browser chat always runs through the Agent sidecar. `TALARIA_WEB_CHAT_BACKEND` no longer selects an execution path (the health card only reports its value) and `TALARIA_WEB_GATEWAY_USE_RUNS_API` is not read; the gateway settings (`TALARIA_WEB_GATEWAY_BASE_URL`, `TALARIA_WEB_GATEWAY_API_KEY`) feed the health probe and the gateway status card.

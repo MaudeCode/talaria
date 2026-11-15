@@ -111,7 +111,7 @@ export class Onboarding {
   constructor(private readonly deps: OnboardingDeps) {}
 
   private skipRequested(): boolean {
-    return ['1', 'true', 'yes'].includes((this.deps.env.HERMES_WEBUI_SKIP_ONBOARDING ?? '').trim())
+    return ['1', 'true', 'yes'].includes((this.deps.env.TALARIA_WEB_SKIP_ONBOARDING ?? '').trim())
   }
 
   private runtimeStatus(cfg: Config, home: string, agent: ReturnType<OnboardingDeps['agentStatus']>): Dict {

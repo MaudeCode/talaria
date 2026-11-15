@@ -42,7 +42,7 @@ const DEMO_PLUGINS = [
 /** A server whose fake sidecar answers `gateway.groups` from the group fixture: one discussion, "Design review", between two profiles. */
 export async function discussionServer() {
   const sidecar = new FakeSidecar(), fixture = groupFixture(sidecar)
-  const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' }, deps: (deps) => {
+  const server = await bootTestServer({ sidecar, env: { TALARIA_WEB_SKIP_ONBOARDING: '1' }, deps: (deps) => {
     deps.profiles.list = () => Promise.resolve([{ name: 'default', is_default: true, display_name: 'Writer' }, { name: 'helper', display_name: 'Reviewer' }])
   } })
   return { sidecar, fixture, server }

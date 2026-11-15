@@ -22,7 +22,7 @@ test('shows a proposal on its tool card and applies it once approved', async ({ 
       model: 'test-model', provider: 'test', compressed: false, agent_session_id: params.session_id, token_sent: true, pending_steer: '', live_tool_calls: [],
       messages: [...params.conversation_history, { role: 'user', content: params.user_message }, { role: 'assistant', content: 'Noted.' }], final_response: 'Noted.' }
   })
-  const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' } })
+  const server = await bootTestServer({ sidecar, env: { TALARIA_WEB_SKIP_ONBOARDING: '1' } })
   const sid = '20261109_090000_propose'
   const now = Math.floor(Date.now() / 1000)
   const shot = async (name: string) => { if (process.env.TAL1967_SHOTS) await page.screenshot({ path: `${process.env.TAL1967_SHOTS}/${name}-${testInfo.project.name}.png`, fullPage: true }) }

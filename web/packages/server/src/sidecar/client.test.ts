@@ -26,8 +26,8 @@ vi.mock('node:child_process', async (importOriginal) => {
   return { ...actual, spawn }
 })
 
-const agentDir = process.env.HERMES_WEBUI_AGENT_DIR ?? resolve(homedir(), '.hermes/hermes-agent')
-const python = process.env.HERMES_WEBUI_PYTHON ?? resolve(agentDir, 'venv/bin/python')
+const agentDir = process.env.TALARIA_WEB_AGENT_DIR ?? resolve(homedir(), '.hermes/hermes-agent')
+const python = process.env.TALARIA_WEB_PYTHON ?? resolve(agentDir, 'venv/bin/python')
 const sidecarDir = resolve(import.meta.dirname, '../../../../sidecar')
 const agentAvailable = existsSync(resolve(agentDir, 'run_agent.py')) && existsSync(python)
 
@@ -246,25 +246,29 @@ describe('FakeSidecar', () => {
 
   it('binds the repair-intent directory before changing the sidecar working directory', () => {
     const base = { hermesHome: '/synthetic/hermes', agentDir: '/agent', sidecarDir: '/sidecar' }
-    expect(sidecarSpawnEnv({ ...base, env: { HERMES_WEBUI_STATE_DIR: 'relative-web-state' } }).TALARIA_SIDECAR_WEB_STATE_DIR).toBe(resolve('relative-web-state'))
-    expect(sidecarSpawnEnv({ ...base, env: { HOME: '/synthetic', HERMES_WEBUI_STATE_DIR: '~/web-state' } }).TALARIA_SIDECAR_WEB_STATE_DIR).toBe(resolve('/synthetic/web-state'))
-    expect(sidecarSpawnEnv(base).TALARIA_SIDECAR_WEB_STATE_DIR).toBe(resolve('/synthetic/hermes/webui'))
+    for (const [env, expected] of [
+      [{ TALARIA_WEB_STATE_DIR: 'relative-web-state' }, resolve('relative-web-state')],
+      [{ HOME: '/synthetic', TALARIA_WEB_STATE_DIR: '~/web-state' }, resolve('/synthetic/web-state')],
+      [{}, resolve('/synthetic/hermes/webui')],
+    ] as const) {
+      expect(sidecarSpawnEnv({ ...base, env })).toMatchObject({ TALARIA_WEB_STATE_DIR: expected, TALARIA_SIDECAR_WEB_STATE_DIR: expected })
+    }
   })
 
   it('keeps Web operator secrets out of the sidecar environment', () => {
     const env = sidecarSpawnEnv({
       env: {
-        HERMES_WEBUI_PASSWORD: 'synthetic-pw', HERMES_WEBUI_OIDC_CLIENT_SECRET: 'synthetic-oidc', HERMES_WEBUI_PASSKEY: 'synthetic-passkey',
-        HERMES_WEBUI_GATEWAY_API_KEY: 'synthetic-gateway', TALARIA_RELEASE_TOKEN: 'synthetic-release',
-        HERMES_WEBUI_AGENT_DIR: '/agent', HERMES_WEBUI_PYTHON: '/venv/bin/python', TALARIA_SIDECAR_LOG_LEVEL: 'debug',
+        TALARIA_WEB_PASSWORD: 'synthetic-pw', TALARIA_WEB_OIDC_CLIENT_SECRET: 'synthetic-oidc', TALARIA_WEB_PASSKEY: 'synthetic-passkey',
+        TALARIA_WEB_GATEWAY_API_KEY: 'synthetic-gateway', TALARIA_RELEASE_TOKEN: 'synthetic-release',
+        TALARIA_WEB_AGENT_DIR: '/agent', TALARIA_WEB_PYTHON: '/venv/bin/python', TALARIA_SIDECAR_LOG_LEVEL: 'debug',
         OPENAI_API_KEY: 'sk-synthetic', HTTPS_PROXY: 'http://proxy:3128',
       },
       hermesHome: '/h', agentDir: '/a', sidecarDir: '/s',
     })
-    for (const key of ['HERMES_WEBUI_PASSWORD', 'HERMES_WEBUI_OIDC_CLIENT_SECRET', 'HERMES_WEBUI_PASSKEY', 'HERMES_WEBUI_GATEWAY_API_KEY', 'TALARIA_RELEASE_TOKEN']) {
+    for (const key of ['TALARIA_WEB_PASSWORD', 'TALARIA_WEB_OIDC_CLIENT_SECRET', 'TALARIA_WEB_PASSKEY', 'TALARIA_WEB_GATEWAY_API_KEY', 'TALARIA_RELEASE_TOKEN']) {
       expect(env).not.toHaveProperty(key)
     }
-    expect(env).toMatchObject({ HERMES_WEBUI_AGENT_DIR: '/agent', HERMES_WEBUI_PYTHON: '/venv/bin/python', TALARIA_SIDECAR_LOG_LEVEL: 'debug', OPENAI_API_KEY: 'sk-synthetic', HTTPS_PROXY: 'http://proxy:3128' })
+    expect(env).toMatchObject({ TALARIA_WEB_AGENT_DIR: '/agent', TALARIA_WEB_PYTHON: '/venv/bin/python', TALARIA_SIDECAR_LOG_LEVEL: 'debug', OPENAI_API_KEY: 'sk-synthetic', HTTPS_PROXY: 'http://proxy:3128' })
   })
 
   it('disables Agent lazy installs even when the configured environment enables them', () => {
@@ -354,7 +358,7 @@ describe('SidecarClient support warning against the verified Agent window (TAL-9
   const startWith = async (root: string, overrides: Record<string, unknown>) => {
     const logs: string[] = []
     spawnBoundary.next = () => fakeChild({ pinned_revision: PIN, pinned_version: '0.21.4', ...overrides })
-    client = launchSidecar({ env: { HERMES_WEBUI_SIDECAR_COMMAND: '["fake-sidecar"]' }, hermesHome: root, webRoot: root, home: root, log: (l) => logs.push(l) })
+    client = launchSidecar({ env: { TALARIA_WEB_SIDECAR_COMMAND: '["fake-sidecar"]' }, hermesHome: root, webRoot: root, home: root, log: (l) => logs.push(l) })
     await client!.start()
     expect(client!.status).toBe('ready')
     return logs
@@ -367,10 +371,10 @@ describe('SidecarClient support warning against the verified Agent window (TAL-9
     writeFileSync(resolve(agent, 'run_agent.py'), '')
     const logs: string[] = []
     spawnBoundary.next = () => fakeChild({ compatible: false, import_error: "ModuleNotFoundError: No module named 'yaml'", python: '/agent/venv/bin/python' })
-    client = launchSidecar({ env: { HERMES_WEBUI_AGENT_DIR: agent, HERMES_WEBUI_PYTHON: '/agent/venv/bin/python' }, hermesHome: root, webRoot: root, home: root, log: (l) => logs.push(l) })
+    client = launchSidecar({ env: { TALARIA_WEB_AGENT_DIR: agent, TALARIA_WEB_PYTHON: '/agent/venv/bin/python' }, hermesHome: root, webRoot: root, home: root, log: (l) => logs.push(l) })
     await client!.start()
     expect(client!.status).toBe('incompatible')
-    expect(logs).toContain("[sidecar] Python environment at /agent/venv/bin/python cannot import Hermes Agent (ModuleNotFoundError: No module named 'yaml'). For an Agent installed by its package manager, unset HERMES_WEBUI_PYTHON; otherwise set it to the Agent venv interpreter.")
+    expect(logs).toContain("[sidecar] Python environment at /agent/venv/bin/python cannot import Hermes Agent (ModuleNotFoundError: No module named 'yaml'). For an Agent installed by its package manager, unset TALARIA_WEB_PYTHON; otherwise set it to the Agent venv interpreter.")
   })
 
   it('a window revision other than the pin logs no warning', async () => {

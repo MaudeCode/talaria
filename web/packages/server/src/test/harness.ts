@@ -81,7 +81,7 @@ export interface BootOptions {
 function usePostgres(env: Env): string {
   const url = env.TALARIA_STORAGE_URL ?? inject('talariaPostgresUrl')
   if (!url) throw new Error('TALARIA_STORAGE=postgres tests need the embedded Postgres from vitest globalSetup')
-  const schema = `t_${createHash('sha256').update(resolve(env.HERMES_WEBUI_STATE_DIR ?? '')).digest('hex').slice(0, 24)}`
+  const schema = `t_${createHash('sha256').update(resolve(env.TALARIA_WEB_STATE_DIR ?? '')).digest('hex').slice(0, 24)}`
   Object.assign(env, { TALARIA_STORAGE_URL: url, TALARIA_STORAGE_SCHEMA: env.TALARIA_STORAGE_SCHEMA ?? schema, TALARIA_STORAGE_POOL_MAX: env.TALARIA_STORAGE_POOL_MAX ?? '4' })
   return env.TALARIA_STORAGE_SCHEMA ?? schema
 }
@@ -93,12 +93,12 @@ export async function bootTestServer(opts: BootOptions = {}): Promise<TestServer
     PATH: process.env.PATH,
     HOME: process.env.HOME,
     HERMES_HOME: state,
-    HERMES_WEBUI_STATE_DIR: state,
-    HERMES_WEBUI_DEFAULT_WORKSPACE: join(state, 'workspace'),
+    TALARIA_WEB_STATE_DIR: state,
+    TALARIA_WEB_DEFAULT_WORKSPACE: join(state, 'workspace'),
     // Never scan the real ~/.claude/projects (TAL-551).
-    HERMES_WEBUI_CLAUDE_PROJECTS_DIR: join(state, 'claude-projects'),
-    HERMES_WEBUI_HOST: '127.0.0.1',
-    HERMES_WEBUI_PORT: '0',
+    TALARIA_WEB_CLAUDE_PROJECTS_DIR: join(state, 'claude-projects'),
+    TALARIA_WEB_HOST: '127.0.0.1',
+    TALARIA_WEB_PORT: '0',
     // CI runs the suite once per backend (TAL-1066).
     ...(process.env.TALARIA_STORAGE ? { TALARIA_STORAGE: process.env.TALARIA_STORAGE } : {}),
     ...opts.env,
@@ -155,7 +155,7 @@ export async function bootTestServer(opts: BootOptions = {}): Promise<TestServer
     close: async () => {
       await running.close()
       // A test that names its own state directory may boot it again, like a SQLite database inside it.
-      if (postgresSchema && env.HERMES_WEBUI_STATE_DIR === state) await dropTestSchema(env.TALARIA_STORAGE_URL ?? '', postgresSchema)
+      if (postgresSchema && env.TALARIA_WEB_STATE_DIR === state) await dropTestSchema(env.TALARIA_STORAGE_URL ?? '', postgresSchema)
       rmSync(state, { recursive: true, force: true })
     },
   }

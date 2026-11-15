@@ -6,8 +6,8 @@ import { expect, it, onTestFinished, vi } from 'vitest'
 import { SidecarClient } from '../sidecar/client.js'
 import { bootTestServer } from '../test/harness.js'
 
-const agentDir = process.env.HERMES_WEBUI_AGENT_DIR ?? ''
-const python = process.env.HERMES_WEBUI_PYTHON ?? join(agentDir, 'venv/bin/python')
+const agentDir = process.env.TALARIA_WEB_AGENT_DIR ?? ''
+const python = process.env.TALARIA_WEB_PYTHON ?? join(agentDir, 'venv/bin/python')
 const emitter = join(agentDir, 'hermes_state_common.py')
 const supported = existsSync(python) && existsSync(emitter) && readFileSync(emitter, 'utf8').includes('def emit_session_deleted')
 
@@ -34,7 +34,7 @@ def register(ctx):
   const client = new SidecarClient({ python, agentDir, sidecarDir: resolve(import.meta.dirname, '../../../../sidecar'), hermesHome: home, log: () => undefined })
   onTestFinished(() => client.close())
   await client.start()
-  const server = await bootTestServer({ sidecar: client, env: { HERMES_HOME: home, HERMES_WEBUI_STATE_DIR: join(home, 'webui') } })
+  const server = await bootTestServer({ sidecar: client, env: { HERMES_HOME: home, TALARIA_WEB_STATE_DIR: join(home, 'webui') } })
   onTestFinished(() => server.close())
   const session = await server.deps.sessionStore.newSession({ profile: 'archiving', workspace: join(home, 'workspace') })
   session.messages = [{ role: 'user', content: 'kept transcript' }]

@@ -29,7 +29,7 @@ describe('request-profile session visibility', () => {
   let work: Identity
   let sid = ''
   beforeAll(async () => {
-    s = await bootTestServer({ env: { HERMES_WEBUI_TRUSTED_AUTH_HEADER: 'X-Remote-User', HERMES_WEBUI_TRUSTED_GROUPS_HEADER: 'X-Remote-Groups', HERMES_WEBUI_GROUP_PROFILE_MAP: '{"ops":"work"}' } })
+    s = await bootTestServer({ env: { TALARIA_WEB_TRUSTED_AUTH_HEADER: 'X-Remote-User', TALARIA_WEB_TRUSTED_GROUPS_HEADER: 'X-Remote-Groups', TALARIA_WEB_GROUP_PROFILE_MAP: '{"ops":"work"}' } })
     root = await login(s, 'lee', 'dev')
     work = await login(s, 'kim', 'ops')
     const created = await post(s, root, '/api/session/new', {})
@@ -165,7 +165,7 @@ describe.each(['json', 'sqlite'])('a refused session request on %s storage', (ba
   let seeded = 0
 
   beforeAll(async () => {
-    s = await bootTestServer({ sidecar, env: { TALARIA_STORAGE: backend, HERMES_WEBUI_TRUSTED_AUTH_HEADER: 'X-Remote-User', HERMES_WEBUI_TRUSTED_GROUPS_HEADER: 'X-Remote-Groups', HERMES_WEBUI_GROUP_PROFILE_MAP: '{"ops":"work"}' } })
+    s = await bootTestServer({ sidecar, env: { TALARIA_STORAGE: backend, TALARIA_WEB_TRUSTED_AUTH_HEADER: 'X-Remote-User', TALARIA_WEB_TRUSTED_GROUPS_HEADER: 'X-Remote-Groups', TALARIA_WEB_GROUP_PROFILE_MAP: '{"ops":"work"}' } })
     root = await login(s, 'lee', 'dev')
     work = await login(s, 'kim', 'ops')
   })

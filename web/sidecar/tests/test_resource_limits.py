@@ -26,7 +26,7 @@ def startup(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "path", list(sys.path))
     monkeypatch.setenv("HERMES_EXEC_ASK", "1")
     monkeypatch.delenv("TALARIA_SIDECAR_AGENT_DIR", raising=False)
-    monkeypatch.setenv("HERMES_WEBUI_AGENT_DIR", str(agent_dir))
+    monkeypatch.setenv("TALARIA_WEB_AGENT_DIR", str(agent_dir))
     monkeypatch.setattr(main, "_claim_stdout", lambda: None)
     monkeypatch.setattr(main, "AgentRuntime", lambda home, agent_dir=None: SimpleNamespace(agent_dir=agent_dir, retire=lambda: None))
     monkeypatch.setattr(main, "build_methods", lambda runtime: {})

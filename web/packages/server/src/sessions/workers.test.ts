@@ -1274,8 +1274,8 @@ describe('hygiene tick', () => {
     expect(readFileSync(`${log}.1`, 'utf8')).toHaveLength(2048)
     expect(lines[0]).toContain('Rotated the WebUI log')
     expect(await rotateWebuiLog([log], 0, () => undefined)).toBe(false)
-    expect(webuiLogPaths({ HERMES_WEBUI_LOG_FILE: '/var/log/talaria.log' }, dir, 1)).toEqual(['/var/log/talaria.log'])
-    expect(webuiLogPaths({ HERMES_WEBUI_LOG_FILE: 'relative.log' }, dir, 8787)).toEqual([log])
+    expect(webuiLogPaths({ TALARIA_WEB_LOG_FILE: '/var/log/talaria.log' }, dir, 1)).toEqual(['/var/log/talaria.log'])
+    expect(webuiLogPaths({ TALARIA_WEB_LOG_FILE: 'relative.log' }, dir, 8787)).toEqual([log])
   })
 
   it('yields the event loop while rotating a far-oversized log and keeps only its newest 32 MiB', async () => {
@@ -1323,7 +1323,7 @@ describe('hygiene tick', () => {
     try {
       writeFileSync(join(dir, 'bootstrap-0.log'), 'x'.repeat(2048))
       const log: string[] = []
-      const ticker = new HygieneTicker({ env: { HERMES_WEBUI_LOG_MAX_BYTES: '1024' }, stateDir: dir, port: () => 0, journal: new JsonJournal(dir), now: () => 1000, log: (line) => { log.push(line) } })
+      const ticker = new HygieneTicker({ env: { TALARIA_WEB_LOG_MAX_BYTES: '1024' }, stateDir: dir, port: () => 0, journal: new JsonJournal(dir), now: () => 1000, log: (line) => { log.push(line) } })
       await Promise.all([ticker.tick(), ticker.tick()])
       await ticker.stop()
       expect(log.filter((line) => line.includes('Rotated the WebUI log'))).toHaveLength(1)
@@ -1579,7 +1579,7 @@ describe('run-journal retention sweep', () => {
     utimesSync(journal.pathFor('sess', 'a'), old, old)
     await writeRun(journal, 'small', 'only', { mtime: old })
     const before = tree(dir)
-    expect(await new JsonJournal(dir, { HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS: '0' }).pruneSettled({ now })).toEqual({ examined: 0, terminal: 0, pruned: 0, bytes_reclaimed: 0, archives_removed: 0 })
+    expect(await new JsonJournal(dir, { TALARIA_WEB_RUN_JOURNAL_RETENTION_DAYS: '0' }).pruneSettled({ now })).toEqual({ examined: 0, terminal: 0, pruned: 0, bytes_reclaimed: 0, archives_removed: 0 })
     const dry = await journal.pruneSettled({ now, keepRecent: 1, dryRun: true })
     expect(dry).toMatchObject({ examined: 5, terminal: 3, pruned: 2 })
     expect(tree(dir)).toEqual(before)
@@ -1754,7 +1754,7 @@ describe('agent health', () => {
       if (url.endsWith('/health/detailed')) return Promise.resolve(new Response('nope', { status: 404 }))
       return Promise.resolve(Response.json({ gateway_state: 'running' }))
     }
-    const deps = { env: { HERMES_API_URL: 'http://gw:8642/health', HERMES_WEBUI_GATEWAY_API_KEY: 'k' }, hermesHome: '/nonexistent', profileHome: () => '/nonexistent', fetch: () => f, now: () => now }
+    const deps = { env: { HERMES_API_URL: 'http://gw:8642/health', TALARIA_WEB_GATEWAY_API_KEY: 'k' }, hermesHome: '/nonexistent', profileHome: () => '/nonexistent', fetch: () => f, now: () => now }
     expect(remoteGatewayBaseUrl(deps.env)).toBe('http://gw:8642')
     const first = await agentHealth(deps)
     expect(first).toMatchObject({ alive: true, details: { state: 'alive', reason: 'remote_gateway', endpoint: 'http://gw:8642/health', status_code: 200, gateway_state: 'running' }, gateway_chat: { enabled: false, api_key_configured: true } })
@@ -2016,7 +2016,7 @@ describe('durable parent admission for delivered delegation notifications (TAL-1
       })
       release()
       await s.deps.turns.finished(str(disk.active_stream_id))
-      restart = await bootTestServer({ sidecar, env: { HERMES_HOME: s.state, HERMES_WEBUI_STATE_DIR: s.state, HERMES_WEBUI_DEFAULT_WORKSPACE: join(s.state, 'workspace') } })
+      restart = await bootTestServer({ sidecar, env: { HERMES_HOME: s.state, TALARIA_WEB_STATE_DIR: s.state, TALARIA_WEB_DEFAULT_WORKSPACE: join(s.state, 'workspace') } })
       await restart.deps.completions.processOne(event)
       expect(starts).toHaveLength(1)
     } finally {
@@ -2093,7 +2093,7 @@ describe('durable parent admission for delivered delegation notifications (TAL-1
       sidecar.respond('process.format_notification', () => ({ text: '[Result deleg_held]' }))
       sidecar.respond('process.claim_delivery', () => ({ claim_id: '' }))
       await s.deps.completions.processOne({ type: 'async_delegation', process_id: 'deleg_held', delegation_id: 'deleg_held', origin_ui_session_id: sid, consumed: false })
-      restart = await bootTestServer({ sidecar, env: { HERMES_HOME: s.state, HERMES_WEBUI_STATE_DIR: s.state, HERMES_WEBUI_DEFAULT_WORKSPACE: join(s.state, 'workspace') } })
+      restart = await bootTestServer({ sidecar, env: { HERMES_HOME: s.state, TALARIA_WEB_STATE_DIR: s.state, TALARIA_WEB_DEFAULT_WORKSPACE: join(s.state, 'workspace') } })
       await restart.deps.completions.drainOnce()
       await restart.deps.completions.drainDeferred(sid)
       expect((await restart.deps.turns.automaticTurnsHeld(sid))).toBe(true)

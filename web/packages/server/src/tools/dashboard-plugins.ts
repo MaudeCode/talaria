@@ -204,7 +204,7 @@ export class DashboardPlugins {
   }
 
   base(): string {
-    const raw = (this.deps.env.HERMES_WEBUI_PLUGINS_DIR ?? '').trim()
+    const raw = (this.deps.env.TALARIA_WEB_PLUGINS_DIR ?? '').trim()
     return resolve(raw || join(this.deps.hermesHome, 'plugins'))
   }
 

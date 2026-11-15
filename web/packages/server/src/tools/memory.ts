@@ -108,7 +108,7 @@ export async function readProjectContext(workspace: string | null, git: GitRunne
 }
 
 export function externalNotesEnabled(env: Record<string, string | undefined>, config: Config): boolean {
-  const envValue = env.HERMES_WEBUI_EXTERNAL_NOTES_SOURCES ?? ''
+  const envValue = env.TALARIA_WEB_EXTERNAL_NOTES_SOURCES ?? ''
   if (envValue) return truthy(envValue)
   return truthy(config.webui_external_notes_sources ?? config.external_notes_sources ?? config.notes_sources_drawer)
 }

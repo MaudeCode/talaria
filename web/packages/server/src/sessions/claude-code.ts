@@ -1,6 +1,6 @@
 /**
  * TAL-551: read-only Claude Code transcripts (Python `get_claude_code_sessions`). Each top-level `*.jsonl` in a
- * project directory under `~/.claude/projects` (or `HERMES_WEBUI_CLAUDE_PROJECTS_DIR`) is one imported session. The
+ * project directory under `~/.claude/projects` (or `TALARIA_WEB_CLAUDE_PROJECTS_DIR`) is one imported session. The
  * scan skips symlinks, oversized files, malformed lines and unreadable files, and caches each parse on the file's stat
  * signature, so a sidebar refresh re-reads only transcripts that changed. TAL-1735: the file list lasts `SCAN_TTL_MS`
  * unless a directory's signature changes, and a known id goes straight to its one file. All of it is async I/O.
@@ -28,7 +28,7 @@ interface Scan { files: Transcript[]; bySid: Map<string, Transcript>; dirs: Map<
 
 /** The projects directory: the env override (`~` expanded), else `<home>/.claude/projects`. */
 export function claudeCodeProjectsDir(env: Record<string, string | undefined>, home: string): string {
-  const override = (env.HERMES_WEBUI_CLAUDE_PROJECTS_DIR ?? '').trim()
+  const override = (env.TALARIA_WEB_CLAUDE_PROJECTS_DIR ?? '').trim()
   return override ? override.replace(/^~(?=$|\/)/, home) : join(home, '.claude', 'projects')
 }
 

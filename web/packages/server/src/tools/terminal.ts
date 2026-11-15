@@ -279,7 +279,7 @@ export class TerminalRegistry {
     const cols = Math.max(20, Math.min(requestedCols || 80, 240))
     const env: Record<string, string> = {}
     for (const [k, v] of Object.entries(this.deps.env)) if (SAFE_ENV_KEYS.has(k) && v !== undefined) env[k] = v
-    Object.assign(env, { TERM: 'xterm-256color', COLORTERM: 'truecolor', COLUMNS: String(requestedCols), LINES: String(requestedRows), PWD: cwd, HERMES_WEBUI_TERMINAL: '1' })
+    Object.assign(env, { TERM: 'xterm-256color', COLORTERM: 'truecolor', COLUMNS: String(requestedCols), LINES: String(requestedRows), PWD: cwd, TALARIA_WEB_TERMINAL: '1' })
     const shell = shellPath(this.deps.env)
     const proc = pty.spawn(shell, shellArgv(shell), { name: 'xterm-256color', cols, rows, cwd, env })
     const term = new TerminalSession(sid, cwd, proc, this.deps.now)

@@ -262,7 +262,7 @@ export class AuthStore {
     // Single flight: a burst of requests computes PBKDF2 once (Python's double-checked lock).
     let settled = false
     const pending = (async () => {
-      const envPw = (this.env.HERMES_WEBUI_PASSWORD ?? '').trim()
+      const envPw = (this.env.TALARIA_WEB_PASSWORD ?? '').trim()
       let stored: unknown
       try {
         stored = (await this.settings.readRaw({ strict: true })).password_hash
@@ -290,7 +290,7 @@ export class AuthStore {
   /** Python `_passkey_feature_flag_enabled`: env wins, else `webui_passkey_enabled` in the operator config. */
   /** The flag as configured: `null` while the operator config cannot be read (the last-known snapshot is cold). */
   passkeyFeatureFlagState(): boolean | null {
-    const raw = this.env.HERMES_WEBUI_PASSKEY ?? ''
+    const raw = this.env.TALARIA_WEB_PASSKEY ?? ''
     if (raw) return truthy(raw)
     const cfg = this.passkeyConfigFlag()
     if (cfg === null) return null
@@ -312,7 +312,7 @@ export class AuthStore {
   }
 
   isTrustedAuthEnabled(): boolean {
-    return Boolean((this.env.HERMES_WEBUI_TRUSTED_AUTH_HEADER ?? '').trim())
+    return Boolean((this.env.TALARIA_WEB_TRUSTED_AUTH_HEADER ?? '').trim())
   }
 
   async isAuthEnabled(): Promise<boolean> {
@@ -349,7 +349,7 @@ export class AuthStore {
   // ── TTL / cookie policy ───────────────────────────────────────────────────
 
   resolveSessionTtl(): number {
-    const envV = (this.env.HERMES_WEBUI_SESSION_TTL ?? '').trim()
+    const envV = (this.env.TALARIA_WEB_SESSION_TTL ?? '').trim()
     if (/^\d+$/.test(envV)) {
       const val = Number.parseInt(envV, 10)
       if (val >= 60 && val <= 86400 * 365) return val
@@ -360,7 +360,7 @@ export class AuthStore {
   }
 
   async resolveSessionSliding(): Promise<boolean> {
-    const value = (this.env.HERMES_WEBUI_SESSION_SLIDING ?? '').trim().toLowerCase()
+    const value = (this.env.TALARIA_WEB_SESSION_SLIDING ?? '').trim().toLowerCase()
     if (value) return ['1', 'true', 'yes', 'on'].includes(value)
     let webui: unknown
     try {
@@ -375,10 +375,10 @@ export class AuthStore {
   }
 
   cookieName(): string {
-    const name = (this.env.HERMES_WEBUI_COOKIE_NAME ?? '').trim()
+    const name = (this.env.TALARIA_WEB_COOKIE_NAME ?? '').trim()
     if (!name) return COOKIE_NAME
     if (COOKIE_NAME_RE.test(name)) return name
-    this.warnOnce('cookie-name', `Ignoring invalid HERMES_WEBUI_COOKIE_NAME=${JSON.stringify(name)}; falling back to ${JSON.stringify(COOKIE_NAME)} (name must be a valid RFC 6265 token)`)
+    this.warnOnce('cookie-name', `Ignoring invalid TALARIA_WEB_COOKIE_NAME=${JSON.stringify(name)}; falling back to ${JSON.stringify(COOKIE_NAME)} (name must be a valid RFC 6265 token)`)
     return COOKIE_NAME
   }
 

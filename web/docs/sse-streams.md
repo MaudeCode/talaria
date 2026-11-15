@@ -218,7 +218,7 @@ clients that display CLI/TUI/messaging sessions.
 - Handlers send `X-Accel-Buffering: no` so nginx-style proxies pass events
   through unbuffered.
 - Deployments behind buffering proxies that read-until-close (notably
-  Tornado-based `jupyter-server-proxy`) can set `HERMES_WEBUI_SSE_CHUNKED=1`
+  Tornado-based `jupyter-server-proxy`) can set `TALARIA_WEB_SSE_CHUNKED=1`
   to frame each event as an HTTP/1.1 chunk. The default wire format is
   unchanged when the flag is unset.
 

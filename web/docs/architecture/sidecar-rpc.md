@@ -613,16 +613,16 @@ application errors in `-32000..-32099`, one per error condition
 ## Lifecycle
 
 1. Server discovers the Agent directory and venv with the same rules as today
-   (`HERMES_WEBUI_AGENT_DIR`, `$HERMES_HOME/hermes-agent`, sibling checkout,
+   (`TALARIA_WEB_AGENT_DIR`, `$HERMES_HOME/hermes-agent`, sibling checkout,
    `~/hermes-agent`, `/opt/hermes`, `/usr/local/lib/hermes-agent`, then the `hermes`
    launcher on `PATH`, including unquoted `exec` wrappers). Interpreter precedence:
-   `HERMES_WEBUI_PYTHON`, the PM generation recorded in
+   `TALARIA_WEB_PYTHON`, the PM generation recorded in
    `<hermes-root>/installs/<sha256(realpath(agent))[:16]>/facts.json`, then
    `<agent>/venv` or `<agent>/.venv` when no PM selection exists. Named profiles
    share their root's records. A PM selection must resolve inside that install's
    `environments/` and contain `pyvenv.cfg` and a Python interpreter; a broken
    selection is rejected without falling back to older dependencies. An explicit
-   `HERMES_WEBUI_PYTHON` that differs from the PM selection still wins, with one
+   `TALARIA_WEB_PYTHON` that differs from the PM selection still wins, with one
    launch warning; the handshake reports `agent_incompatible` when `sys.path`
    holds site-packages built for another Python version.
    Bootstrap preserves user-supplied interpreter overrides but does not export

@@ -33,7 +33,7 @@ async function repoSession(s: TestServer): Promise<{ sid: string; ws: string }> 
 describe('workspace git over HTTP', () => {
   let s: TestServer
   beforeAll(async () => {
-    s = await bootTestServer({ env: { HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE: '1', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com' } })
+    s = await bootTestServer({ env: { TALARIA_WEB_WORKSPACE_GIT_DESTRUCTIVE: '1', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com' } })
     const ws = join(s.state, 'workspace')
     git(ws, 'init', '-q', '-b', 'main')
     writeFileSync(join(ws, 'README.md'), 'hello\n')
@@ -241,7 +241,7 @@ describe('slow git off the event loop', () => {
     // With `slow-rev-parse` present, `rev-parse` (the context lookup every mutation starts with) sleeps too.
     writeFileSync(join(shimDir, 'git'), `#!/bin/sh\nfor a in "$@"; do if [ "$a" = push ] || [ "$a" = pull ] || { [ "$a" = rev-parse ] && [ -e '${shimDir}/slow-rev-parse' ]; }; then touch '${marker}'; sleep 2; break; fi; done\nexec '${realGit}' "$@"\n`)
     chmodSync(join(shimDir, 'git'), 0o755)
-    const env = { HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE: '1', ...identity, PATH: `${shimDir}:${process.env.PATH ?? ''}` }
+    const env = { TALARIA_WEB_WORKSPACE_GIT_DESTRUCTIVE: '1', ...identity, PATH: `${shimDir}:${process.env.PATH ?? ''}` }
     // A short lock wait so contention answers `operation_in_progress` well before the slow push finishes.
     s = await bootTestServer({ env, deps: (d) => { d.git = new GitRunner({ ...d.git.deps, env: { ...env, HOME: process.env.HOME }, mutationLockTimeoutMs: 200 }) } })
     const ws = join(s.state, 'workspace')
@@ -426,7 +426,7 @@ describe.skipIf(process.platform === 'win32')('literal backslashes in POSIX path
   let s: TestServer
   let ws: string
   beforeAll(async () => {
-    s = await bootTestServer({ env: { HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE: '1', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com' } })
+    s = await bootTestServer({ env: { TALARIA_WEB_WORKSPACE_GIT_DESTRUCTIVE: '1', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com' } })
     ws = realpathSync(join(s.state, 'workspace'))
     git(ws, 'init', '-q', '-b', 'main')
     mkdirSync(join(ws, 'a'))
@@ -492,14 +492,14 @@ describe.skipIf(process.platform === 'win32')('literal backslashes in POSIX path
 })
 
 describe('destructive gate', () => {
-  it('rejects mutations with 403 until HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE=1', async () => {
+  it('rejects mutations with 403 until TALARIA_WEB_WORKSPACE_GIT_DESTRUCTIVE=1', async () => {
     const s = await bootTestServer()
     try {
       git(join(s.state, 'workspace'), 'init', '-q')
       const { sid } = await repoSession(s)
       const res = await post(s, '/api/git/stage', { session_id: sid, paths: ['x'] })
       expect(res.status).toBe(403)
-      expect(await json(res)).toEqual({ error: 'Destructive workspace Git operations are disabled. Set HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE=1 to enable them.', code: 'destructive_git_disabled' })
+      expect(await json(res)).toEqual({ error: 'Destructive workspace Git operations are disabled. Set TALARIA_WEB_WORKSPACE_GIT_DESTRUCTIVE=1 to enable them.', code: 'destructive_git_disabled' })
       // fetch is not destructive; without remotes git answers quietly.
       expect((await post(s, '/api/git/fetch', { session_id: sid })).status).toBe(200)
     } finally {

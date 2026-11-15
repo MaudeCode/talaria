@@ -136,7 +136,7 @@ services:
         condition: service_healthy
     ports:
       # Expose on localhost only. Remove 127.0.0.1: to expose on all interfaces
-      # (set HERMES_WEBUI_PASSWORD if doing so).
+      # (set TALARIA_WEB_PASSWORD if doing so).
       - "127.0.0.1:8787:8787"
     volumes:
       # Same hermes home as the agent — shares config, sessions, state
@@ -152,10 +152,10 @@ services:
       # across Linux, macOS, WSL2, and Docker Desktop on Windows.
       - ${HERMES_WORKSPACE:-${HOME}/workspace}:/workspace
     environment:
-      - HERMES_WEBUI_HOST=0.0.0.0
-      - HERMES_WEBUI_PORT=8787
+      - TALARIA_WEB_HOST=0.0.0.0
+      - TALARIA_WEB_PORT=8787
       - TALARIA_RELEASE_TOKEN=${TALARIA_RELEASE_TOKEN:-}
-      - HERMES_WEBUI_STATE_DIR=/home/hermeswebui/.hermes/webui
+      - TALARIA_WEB_STATE_DIR=/home/hermeswebui/.hermes/webui
       # Let the WebUI health/status checks reach the gateway container over
       # the compose network. Cron listing is local, but scheduled ticking and
       # the Tasks/System gateway pill need a reachable gateway URL (#4483).
@@ -168,12 +168,12 @@ services:
       - WANTED_GID=${GID:-1000}
       # Forward the API server key so the WebUI's gateway health probe can
       # authenticate (must match the agent's API_SERVER_KEY above).
-      - HERMES_WEBUI_GATEWAY_API_KEY=${API_SERVER_KEY:-}
-      # Optional: enable password auth. Set HERMES_WEBUI_PASSWORD in .env
+      - TALARIA_WEB_GATEWAY_API_KEY=${API_SERVER_KEY:-}
+      # Optional: enable password auth. Set TALARIA_WEB_PASSWORD in .env
       # (required if you expose the port beyond 127.0.0.1).
-      - HERMES_WEBUI_PASSWORD=${HERMES_WEBUI_PASSWORD:-}
+      - TALARIA_WEB_PASSWORD=${TALARIA_WEB_PASSWORD:-}
       # Hostnames other than localhost and IP addresses this server answers to (others get 421).
-      - HERMES_WEBUI_ALLOWED_HOSTS=${HERMES_WEBUI_ALLOWED_HOSTS:-}
+      - TALARIA_WEB_ALLOWED_HOSTS=${TALARIA_WEB_ALLOWED_HOSTS:-}
       # NOTE: When using bind-mount volumes shared across containers, ALL containers
       # that write to the same host directory must run as the same UID/GID.
       # If hermes-agent initialises the state dir as root (UID 0), hermes-webui
