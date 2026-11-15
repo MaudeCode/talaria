@@ -1,0 +1,22 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Ask Talaria, reply to the same chat, hear what needs you, and approve or deny commands with Siri on HomeView without setting up Shortcuts.",
+      "highlight": true,
+      "components": ["app"],
+      "announcement": {
+        "title": "Talaria on HomeView",
+        "description": "Ask Talaria, hear what needs you, and approve runs with Siri on HomeView.",
+        "icon": "voice"
+      }
+    },
+    {
+      "category": "Security",
+      "summary": "Continuing a chat with Siri requires authentication before accessing the conversation.",
+      "highlight": false,
+      "components": ["app"],
+      "announce": false
+    }
+  ]
+}

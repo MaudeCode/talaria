@@ -416,6 +416,11 @@ final class LocalizationCatalogTests: XCTestCase {
         let expectedPhrases = [
             "Ask ${applicationName}",
             "Ask ${applicationName} a question",
+            "Reply to ${applicationName}",
+            "What's ${applicationName} working on",
+            "Ask ${applicationName} what needs me",
+            "Approve in ${applicationName}",
+            "Deny in ${applicationName}",
             "New chat in ${applicationName}",
             "New ${applicationName} chat",
             "Start a new chat in ${applicationName}",
@@ -435,6 +440,9 @@ final class LocalizationCatalogTests: XCTestCase {
             for language in Self.shippedLanguages + ["en"] {
                 let localization = try XCTUnwrap(localizations[language] as? [String: Any], "[\(language)] \(phrase)")
                 XCTAssertTrue(hasNonEmptyValue(localization), "[\(language)] \(phrase) is empty")
+                let unit = try XCTUnwrap(localization["stringUnit"] as? [String: Any])
+                let value = try XCTUnwrap(unit["value"] as? String)
+                XCTAssertTrue(value.contains("${applicationName}"), "[\(language)] \(phrase)")
             }
         }
     }

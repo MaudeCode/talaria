@@ -5,6 +5,22 @@ Talaria's automated tests run in process: hosted presentation tests in `TalariaT
 The flows below need a signed build installed on a real device. Run the ones a release's
 changes touch before it ships.
 
+## HomeView
+
+Use a HomeView paired to the owner's iPhone, with Talaria configured and unlocked on the phone.
+HomeView has no simulator. Use a disposable test server and a harmless command for approval checks.
+No Shortcuts setup is needed for these phrases.
+
+| Check | Steps | Expected result |
+|---|---|---|
+| Widgets | Open the HomeView widget picker and add the small quota and Needs you widgets. | Both widgets are offered and render their current values; New Chat widgets are not offered. |
+| Long Ask | Say "Ask Talaria" and request a run that lasts longer than 60 seconds. | Siri returns the final answer after the run finishes, without opening the app or stopping at one minute. |
+| Reply | After Ask answers, say "Reply to Talaria" and give a follow-up that refers to that answer. | Siri speaks the reply from the same chat; the phone shows no second chat was created. |
+| Status | Leave a named test chat waiting for approval, then say "What's Talaria working on". Also try "Ask Talaria what needs me". | Siri names the waiting chat and summarizes running chats without opening the app. |
+| Approval | Say "Approve in Talaria", choose the harmless waiting command, and decline confirmation first. Repeat and confirm. With another harmless approval, say "Deny in Talaria" and confirm. | Siri reads the command and asks for confirmation. Declining sends no answer; confirming Approve allows only that command, and confirming Deny denies it. Neither phrase asks whether to allow or deny. |
+
+## Other phone flows
+
 | Flow | Check on the phone | In-process coverage |
 |---|---|---|
 | Cold launch on a slow network | Restore the last chat synchronously from cached summaries before network loads. With no cached match, keep an idle New Chat root after the list answers; keyboard stays down and no session is created. | TalariaKit `SessionListMutationTests`, `SessionNavigationStateTests`; `SessionListHostedTests.testRelaunchShowsTheLastChatsBeforeTheServerAnswers` |

@@ -73,20 +73,36 @@ final class AppIntentAskTalariaTests: XCTestCase {
         XCTAssertEqual(fixture.body(at: "/api/chat/start")?["profile"], "work")
     }
 
-    /// `AppShortcut` keeps its intent private, so the test reads it by reflection; the phrases are pinned by
-    /// `LocalizationCatalogTests.testAppShortcutPhrasesHaveDedicatedCatalogEntries`.
-    func testAppShortcutsListAskTalariaBesideTheNewChatShortcuts() {
-        func intentName(_ value: Any) -> String? {
+    /// AppShortcut keeps registration details private, so inspect the actual provider by reflection.
+    func testAppShortcutsRegisterEveryVoiceActionWithApplicationNameAndFixedApprovalAnswers() throws {
+        func intent(_ value: Any) -> (any AppIntent)? {
             for child in Mirror(reflecting: value).children {
-                if child.value is any AppIntent { return String(describing: type(of: child.value)) }
-                if let nested = intentName(child.value) { return nested }
+                if let intent = child.value as? any AppIntent { return intent }
+                if let nested = intent(child.value) { return nested }
             }
             return nil
         }
+        let shortcuts = TalariaShortcuts.appShortcuts
+        let intents = try shortcuts.map { try XCTUnwrap(intent($0)) }
+        XCTAssertEqual(shortcuts.count, 8)
         XCTAssertEqual(
-            TalariaShortcuts.appShortcuts.map { intentName($0) },
-            ["AskTalariaIntent", "NewChatIntent", "NewChatVoiceIntent", "NewChatInProfileIntent"]
+            intents.map { String(describing: type(of: $0)) }.sorted(),
+            ["AskTalariaIntent", "ReplyToTalariaIntent", "TalariaStatusIntent",
+             "RespondToApprovalByVoiceIntent", "RespondToApprovalByVoiceIntent",
+             "NewChatIntent", "NewChatVoiceIntent", "NewChatInProfileIntent"].sorted()
         )
+        XCTAssertEqual(
+            intents.compactMap { ($0 as? RespondToApprovalByVoiceIntent)?.answer },
+            [.allow, .deny],
+            "Approve and Deny must fix opposite answers instead of asking which answer to send."
+        )
+        for shortcut in shortcuts {
+            let phrases = try XCTUnwrap(Mirror(reflecting: shortcut).descendant("basePhraseTemplates") as? [String])
+            XCTAssertFalse(phrases.isEmpty)
+            for phrase in phrases {
+                XCTAssertTrue(phrase.contains("${applicationName}"), phrase)
+            }
+        }
     }
 
     // MARK: - TAL-2231

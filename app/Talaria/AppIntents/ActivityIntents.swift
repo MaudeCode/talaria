@@ -121,6 +121,10 @@ struct RespondToApprovalByVoiceIntent: AppIntent, ForegroundContinuableIntent {
 
     init() {}
 
+    init(answer: RespondToApprovalIntent.Answer) {
+        self.answer = answer
+    }
+
     init(approval: PendingApprovalEntity, answer: RespondToApprovalIntent.Answer) {
         self.approval = approval
         self.answer = answer

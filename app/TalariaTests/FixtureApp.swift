@@ -97,6 +97,9 @@ final class FixtureApp {
     func chat(_ session: SessionSummary, viewModel: ChatViewModel? = nil,
               asNavigationDestination: Bool = true, initialDraft: String = "",
               loadsInitialMessages: Bool = true) -> some View {
+        // Fixture streams run in process, so a real device's offline path must not block their restoration.
+        let viewModel = viewModel ?? ChatViewModel(session: session, server: UITestFixtureEnvironment.serverURL,
+                                                  client: client, networkPath: nil)
         let chat = ChatView(
             session: session,
             server: UITestFixtureEnvironment.serverURL,
