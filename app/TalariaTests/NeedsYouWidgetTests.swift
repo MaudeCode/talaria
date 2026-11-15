@@ -10,11 +10,11 @@ final class NeedsYouWidgetTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
     func testCircularShowsTheWaitingCount() {
-        XCTAssertEqual(view(rows: 0, family: .accessoryCircular).rows.count, 0)
+        XCTAssertEqual(view(rows: 0, family: .accessoryCircular).count, 0)
         XCTAssertEqual(view(rows: 0, family: .accessoryCircular).inlineText, "Nothing needs you")
-        XCTAssertEqual(view(rows: 1, family: .accessoryCircular).rows.count, 1)
+        XCTAssertEqual(view(rows: 1, family: .accessoryCircular).count, 1)
         XCTAssertEqual(view(rows: 1, family: .accessoryCircular).inlineText, "1 chat needs you")
-        XCTAssertEqual(view(rows: 12, family: .accessoryCircular).rows.count, 12)
+        XCTAssertEqual(view(rows: 12, family: .accessoryCircular).count, 12)
         XCTAssertEqual(view(rows: 12, family: .accessoryCircular).inlineText, "12 chats need you")
     }
 
@@ -22,6 +22,14 @@ final class NeedsYouWidgetTests: XCTestCase {
         XCTAssertNil(view(rows: 1, family: .accessoryRectangular).moreText(shown: 1))
         XCTAssertEqual(view(rows: 3, family: .accessoryRectangular).moreText(shown: 1), "+2 more")
         XCTAssertNil(view(rows: 3, family: .systemSmall).moreText(shown: NeedsYouWidgetView.smallRowLimit))
+    }
+
+    /// The server's count, not the rows it sent, is the total.
+    func testTheServersCountOutranksTheRowsItSent() {
+        let widget = view(rows: 2, waitingCount: 12, family: .systemSmall)
+        XCTAssertEqual(widget.count, 12)
+        XCTAssertEqual(widget.inlineText, "12 chats need you")
+        XCTAssertEqual(widget.moreText(shown: NeedsYouWidgetView.smallRowLimit), "+10 more")
     }
 
     func testAStaleSnapshotSaysWaiting() {
@@ -71,7 +79,7 @@ final class NeedsYouWidgetTests: XCTestCase {
         }
     }
 
-    private func view(rows count: Int, family: WidgetFamily, age: TimeInterval = 60) -> NeedsYouWidgetView {
+    private func view(rows count: Int, waitingCount: Int? = nil, family: WidgetFamily, age: TimeInterval = 60) -> NeedsYouWidgetView {
         let titles = ["Deploy fix", "Release notes", "Rotate keys"]
         let rows = (0..<count).map { index in
             NeedsYouSnapshot.Row(
@@ -80,7 +88,8 @@ final class NeedsYouWidgetTests: XCTestCase {
             )
         }
         return NeedsYouWidgetView(
-            snapshot: NeedsYouSnapshot(updatedAt: now.addingTimeInterval(-age), rows: rows), date: now, family: family
+            snapshot: NeedsYouSnapshot(updatedAt: now.addingTimeInterval(-age), rows: rows, waitingCount: waitingCount ?? count),
+            date: now, family: family
         )
     }
 }

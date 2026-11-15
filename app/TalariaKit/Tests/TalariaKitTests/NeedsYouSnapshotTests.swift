@@ -1,66 +1,86 @@
 import XCTest
 @testable import TalariaKit
 
-/// TAL-1479: the Needs you widget's snapshot, written from the Relay aggregate and from the session list's activity
-/// summary read.
+/// TAL-1479: the Needs you widget's snapshot, refreshed from the server's activity summary by the session list and
+/// the Relay refresh.
 @MainActor
 final class NeedsYouSnapshotTests: APIClientTestCase {
     private let server = URL(string: "https://example.test")!
 
-    /// Server order: two approvals then an answer, interleaved with running rows; neither titles nor ids sort that way.
-    private let serverRows: [(id: String, title: String, phase: String)] = [
-        ("s-9", "Zeta deploy", "waiting_for_approval"),
-        ("s-1", "Running build", "running"),
-        ("s-5", "Alpha review", "waiting_for_approval"),
-        ("s-2", "Mid question", "waiting_for_input"),
-        ("s-3", "Starting chat", "starting"),
-    ]
+    /// The server's waiting group, in an order neither titles nor ids sort to, and a count beyond the rows it sent.
+    private let summaryJSON = """
+    {"running_count":1,"waiting_count":12,
+     "rows":[\(row("s-9", "Zeta deploy", "waiting_for_approval")),\(row("s-1", "Running build", "running")),\(row("s-5", "Alpha review", "waiting_for_approval")),\(row("s-2", "Mid question", "waiting_for_input"))],
+     "waiting":[\(row("s-9", "Zeta deploy", "waiting_for_approval")),\(row("s-5", "Alpha review", "waiting_for_approval")),\(row("s-2", "Mid question", "waiting_for_input"))],
+     "running":[\(row("s-1", "Running build", "running"))],"approvals":[]}
+    """
 
-    func testRelayAndSessionListWritesProduceTheSameSnapshotInServerOrder() async throws {
-        let relayStore = makeStore()
-        let listStore = makeStore()
+    func testARefreshSavesTheServersWaitingGroupAndCountInItsOrder() async throws {
+        let store = makeStore()
         let date = Date(timeIntervalSince1970: 1_800_000_000)
+        let json = summaryJSON
+        let client = makeClient { apiTestJSONResponse(json, for: $0) }
 
-        let summary = try await summary(serverRows)
-        XCTAssertTrue(relayStore.save(relay: relayAggregate(serverRows), at: date))
-        XCTAssertTrue(listStore.save(summary: summary, serverURL: server, at: date))
+        let saved = await store.refresh(client: client, serverURL: server, at: date)
+        XCTAssertTrue(saved)
 
-        let relay = try XCTUnwrap(relayStore.load())
-        XCTAssertEqual(relay, listStore.load())
-        XCTAssertEqual(relay.rows.map(\.sessionID), ["s-9", "s-5", "s-2"])
-        XCTAssertEqual(relay.rows.map(\.title), ["Zeta deploy", "Alpha review", "Mid question"])
-        XCTAssertEqual(relay.rows.map(\.phase), ["waiting_for_approval", "waiting_for_approval", "waiting_for_input"])
-        XCTAssertEqual(relay.updatedAt, date)
-        XCTAssertEqual(relay.widgetURL, TalariaDeepLink.sessionURL(sessionID: "s-9", publisherID: "https://example.test"))
+        let snapshot = try XCTUnwrap(store.load())
+        XCTAssertEqual(snapshot.rows.map(\.sessionID), ["s-9", "s-5", "s-2"])
+        XCTAssertEqual(snapshot.rows.map(\.title), ["Zeta deploy", "Alpha review", "Mid question"])
+        XCTAssertEqual(snapshot.rows.map(\.phase), ["waiting_for_approval", "waiting_for_approval", "waiting_for_input"])
+        XCTAssertEqual(snapshot.waitingCount, 12)
+        XCTAssertEqual(snapshot.updatedAt, date)
+        XCTAssertEqual(snapshot.widgetURL, TalariaDeepLink.sessionURL(sessionID: "s-9", publisherID: "https://example.test"))
     }
 
-    func testARefreshWithNoWaitingRowsWritesAnEmptySnapshot() async throws {
+    func testARefreshWithNothingWaitingSavesAnEmptySnapshot() async throws {
         let store = makeStore()
-        let running = serverRows.filter { !$0.phase.hasPrefix("waiting") }
+        let json = summaryJSON
+        let saved = await store.refresh(client: makeClient { apiTestJSONResponse(json, for: $0) }, serverURL: server)
+        XCTAssertTrue(saved)
 
-        let summary = try await summary(running)
-        XCTAssertTrue(store.save(relay: relayAggregate(serverRows)))
-        XCTAssertTrue(store.save(summary: summary, serverURL: server))
+        let empty = #"{"running_count":0,"waiting_count":0,"rows":[],"waiting":[],"running":[],"approvals":[]}"#
+        let savedEmpty = await store.refresh(client: makeClient { apiTestJSONResponse(empty, for: $0) }, serverURL: server)
+        XCTAssertTrue(savedEmpty)
         XCTAssertEqual(store.load()?.rows, [])
-
-        XCTAssertTrue(store.save(relay: relayAggregate(serverRows)))
-        XCTAssertTrue(store.save(relay: nil))
-        XCTAssertEqual(store.load()?.rows, [])
+        XCTAssertEqual(store.load()?.waitingCount, 0)
     }
 
-    func testSessionListRefreshWritesTheServersWaitingChats() async throws {
+    /// A sign-out while the read is in flight clears the snapshot; the read that finishes after it must not restore it.
+    func testAReadOvertakenByAClearSavesNothing() async throws {
         let store = makeStore()
-        let summaryJSON = summaryJSON(serverRows)
+        let json = summaryJSON
         let client = makeClient { request in
-            apiTestJSONResponse(request.url?.path == "/api/activity/summary" ? summaryJSON : #"{"sessions":[]}"#, for: request)
+            store.clear()
+            return apiTestJSONResponse(json, for: request)
         }
-        let viewModel = SessionListViewModel(server: server, client: client, needsYouStore: store)
+
+        let saved = await store.refresh(client: client, serverURL: server)
+
+        XCTAssertFalse(saved)
+        XCTAssertNil(store.load())
+    }
+
+    func testSessionListRefreshSavesTheSameSnapshotAsTheRelayRefresh() async throws {
+        let listStore = makeStore()
+        let relayStore = makeStore()
+        let json = summaryJSON
+        let client = makeClient { request in
+            apiTestJSONResponse(request.url?.path == "/api/activity/summary" ? json : #"{"sessions":[]}"#, for: request)
+        }
+        let viewModel = SessionListViewModel(server: server, client: client, needsYouStore: listStore)
 
         let loaded = await viewModel.load()
         XCTAssertTrue(loaded)
-        for _ in 0..<200 where store.load() == nil { try await Task.sleep(for: .milliseconds(10)) }
+        for _ in 0..<200 where listStore.load() == nil { try await Task.sleep(for: .milliseconds(10)) }
+        let relaySaved = await relayStore.refresh(client: client, serverURL: server)
+        XCTAssertTrue(relaySaved)
 
-        XCTAssertEqual(store.load()?.rows.map(\.sessionID), ["s-9", "s-5", "s-2"])
+        let list = try XCTUnwrap(listStore.load())
+        let relay = try XCTUnwrap(relayStore.load())
+        XCTAssertEqual(list.rows, relay.rows)
+        XCTAssertEqual(list.waitingCount, relay.waitingCount)
+        XCTAssertEqual(list.rows.map(\.sessionID), ["s-9", "s-5", "s-2"])
     }
 
     private func makeStore() -> NeedsYouSnapshotStore {
@@ -68,28 +88,8 @@ final class NeedsYouSnapshotTests: APIClientTestCase {
         addTeardownBlock { UserDefaults().removePersistentDomain(forName: suite) }
         return NeedsYouSnapshotStore(defaults: UserDefaults(suiteName: suite))
     }
+}
 
-    private func relayAggregate(_ rows: [(id: String, title: String, phase: String)]) -> TalariaAggregateActivityAttributes.ContentState {
-        TalariaAggregateActivityAttributes.ContentState(
-            schemaVersion: 1, activeCount: rows.count, title: "Talaria", subtitle: "", updatedAt: 0,
-            rows: rows.map {
-                .init(
-                    publisherId: "https://example.test", publisherLabel: "example.test", sessionId: $0.id, title: $0.title,
-                    phase: $0.phase, status: "", updatedAt: 0, deepLink: "/sessions/\($0.id)"
-                )
-            }
-        )
-    }
-
-    private func summary(_ rows: [(id: String, title: String, phase: String)]) async throws -> ActivitySummary {
-        let json = summaryJSON(rows)
-        return try await makeClient { apiTestJSONResponse(json, for: $0) }.activitySummary()
-    }
-
-    private func summaryJSON(_ rows: [(id: String, title: String, phase: String)]) -> String {
-        let items = rows.map {
-            #"{"session_id":"\#($0.id)","title":"\#($0.title)","phase":"\#($0.phase)","started_at":1,"updated_at":2,"deep_link":"/sessions/\#($0.id)"}"#
-        }
-        return #"{"running_count":0,"waiting_count":0,"rows":[\#(items.joined(separator: ","))]}"#
-    }
+private func row(_ id: String, _ title: String, _ phase: String) -> String {
+    #"{"session_id":"\#(id)","title":"\#(title)","phase":"\#(phase)","started_at":1,"updated_at":2,"deep_link":"/sessions/\#(id)"}"#
 }

@@ -557,14 +557,10 @@ public final class SessionListViewModel {
         }
     }
 
-    /// Off the list's refresh queue: a slow or older server that lacks the route leaves the last snapshot to go stale.
-    /// A sign-out or server reset while the read is in flight keeps its titles off the Lock Screen.
+    /// Off the list's refresh queue, so a slow server never holds the list back.
     private func refreshNeedsYou() {
         guard let needsYouStore else { return }
-        Task { [weak self, client, server] in
-            guard let summary = try? await client.activitySummary(), let self else { return }
-            writeCacheIfCurrent { needsYouStore.save(summary: summary, serverURL: server) }
-        }
+        Task { [client, server] in await needsYouStore.refresh(client: client, serverURL: server) }
     }
 
     public func loadActiveProfile() async {

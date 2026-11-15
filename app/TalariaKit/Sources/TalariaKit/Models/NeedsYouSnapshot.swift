@@ -1,8 +1,9 @@
 import Foundation
 import WidgetKit
 
-/// TAL-1479: the chats waiting on the user, as the App last heard them from the server, for the Needs you widget.
-/// Rows keep the server's order and its titles and phases verbatim.
+/// TAL-1479: the chats waiting on the user, as the server's activity summary last listed them, for the Needs you
+/// widget. The rows are the server's `waiting` group in its order, titles and phases verbatim; the count is its
+/// `waiting_count`.
 public struct NeedsYouSnapshot: Codable, Equatable, Sendable {
     public struct Row: Codable, Equatable, Sendable, Identifiable {
         public let sessionID: String
@@ -19,19 +20,6 @@ public struct NeedsYouSnapshot: Codable, Equatable, Sendable {
             self.serverID = serverID
         }
 
-        /// A row from the Relay aggregate the Live Activity shows.
-        public init(_ row: TalariaAggregateActivityAttributes.ContentState.Row) {
-            self.init(sessionID: row.sessionId, title: row.title, phase: row.phase, serverID: row.publisherId)
-        }
-
-        /// A row from the server's activity summary (`GET /api/activity/summary`).
-        public init(_ row: ActivitySummary.Row, serverURL: URL) {
-            self.init(
-                sessionID: row.sessionId, title: row.title, phase: row.phase,
-                serverID: TalariaRelayClient.originURL(serverURL)?.absoluteString
-            )
-        }
-
         public var id: String { "\(serverID ?? ""):\(sessionID)" }
 
         public var deepLink: URL? { TalariaDeepLink.sessionURL(sessionID: sessionID, publisherID: serverID) }
@@ -42,10 +30,22 @@ public struct NeedsYouSnapshot: Codable, Equatable, Sendable {
 
     public let updatedAt: Date
     public let rows: [Row]
+    /// The server's count of waiting chats; it can exceed `rows`.
+    public let waitingCount: Int
 
-    public init(updatedAt: Date, rows: [Row]) {
+    public init(updatedAt: Date, rows: [Row], waitingCount: Int) {
         self.updatedAt = updatedAt
         self.rows = rows
+        self.waitingCount = waitingCount
+    }
+
+    public init(summary: ActivitySummary, serverURL: URL, updatedAt: Date) {
+        let serverID = TalariaRelayClient.originURL(serverURL)?.absoluteString
+        self.init(
+            updatedAt: updatedAt,
+            rows: summary.waiting.map { Row(sessionID: $0.sessionId, title: $0.title, phase: $0.phase, serverID: serverID) },
+            waitingCount: summary.waitingCount
+        )
     }
 
     public func isStale(at date: Date) -> Bool {
@@ -56,11 +56,15 @@ public struct NeedsYouSnapshot: Codable, Equatable, Sendable {
     public var widgetURL: URL? { rows.first?.deepLink ?? TalariaDeepLink.openAppURL }
 }
 
-/// The App writes the waiting chats here from the Relay aggregate refresh and the session list refresh; the widget
-/// reads them. Whichever write is newest wins.
+/// The App refreshes the waiting chats here from the session list refresh and the Relay aggregate refresh; the widget
+/// reads them.
 public struct NeedsYouSnapshotStore {
     public static let widgetKind = "NeedsYouWidget"
     static let storageKey = "needsYouSnapshot.v1"
+
+    /// Counts `clear()` calls, so a summary read that was in flight across a sign-out or server change is dropped.
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var clearCount = 0
 
     private let defaults: UserDefaults?
 
@@ -68,23 +72,15 @@ public struct NeedsYouSnapshotStore {
         self.defaults = defaults
     }
 
-    /// The Relay aggregate; nil (no aggregate) means nothing waits.
-    @discardableResult
-    public func save(relay aggregate: TalariaAggregateActivityAttributes.ContentState?, at date: Date = Date()) -> Bool {
-        save((aggregate?.rows ?? []).map(NeedsYouSnapshot.Row.init), at: date)
-    }
-
-    /// The active server's activity summary.
-    @discardableResult
-    public func save(summary: ActivitySummary, serverURL: URL, at date: Date = Date()) -> Bool {
-        save(summary.rows.map { NeedsYouSnapshot.Row($0, serverURL: serverURL) }, at: date)
-    }
-
-    /// Both sources list running rows too; the snapshot keeps the waiting ones in the server's order.
-    private func save(_ rows: [NeedsYouSnapshot.Row], at date: Date) -> Bool {
-        let waiting = rows.filter { TalariaAggregateLiveActivityPresentation.isWaiting($0.phase) }
-        guard let defaults,
-              let data = try? JSONEncoder().encode(NeedsYouSnapshot(updatedAt: date, rows: waiting))
+    /// Reads the server's activity summary and saves its waiting group. A failed read, or one an auth change
+    /// overtook, leaves the last snapshot to go stale.
+    @MainActor @discardableResult
+    public func refresh(client: APIClient, serverURL: URL, at date: @autoclosure () -> Date = Date()) async -> Bool {
+        let clears = Self.lock.withLock { Self.clearCount }
+        guard let summary = try? await client.activitySummary(),
+              Self.lock.withLock({ Self.clearCount }) == clears,
+              let defaults,
+              let data = try? JSONEncoder().encode(NeedsYouSnapshot(summary: summary, serverURL: serverURL, updatedAt: date()))
         else { return false }
         defaults.set(data, forKey: Self.storageKey)
         WidgetCenter.shared.reloadTimelines(ofKind: Self.widgetKind)
@@ -95,8 +91,9 @@ public struct NeedsYouSnapshotStore {
         defaults?.data(forKey: Self.storageKey).flatMap { try? JSONDecoder().decode(NeedsYouSnapshot.self, from: $0) }
     }
 
-    /// Sign-out and server removal take the chat titles off the Lock Screen.
+    /// Sign-out and server changes take the chat titles off the Lock Screen and void reads still in flight.
     public func clear() {
+        Self.lock.withLock { Self.clearCount += 1 }
         guard let defaults, defaults.object(forKey: Self.storageKey) != nil else { return }
         defaults.removeObject(forKey: Self.storageKey)
         WidgetCenter.shared.reloadTimelines(ofKind: Self.widgetKind)

@@ -82,9 +82,9 @@ struct NeedsYouWidgetView: View {
 
     private var circular: some View {
         VStack(spacing: 0) {
-            SandalMark(height: rows.isEmpty ? 24 : 13)
-            if !rows.isEmpty {
-                Text(rows.count, format: .number)
+            SandalMark(height: count == 0 ? 24 : 13)
+            if count > 0 {
+                Text(count, format: .number)
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(isStale ? .secondary : .primary)
                     .minimumScaleFactor(0.6)
@@ -120,13 +120,13 @@ struct NeedsYouWidgetView: View {
                 SandalMark(height: 14)
                 Text("Needs you").font(.headline)
                 Spacer(minLength: 0)
-                if !rows.isEmpty {
-                    Text(rows.count, format: .number)
+                if count > 0 {
+                    Text(count, format: .number)
                         .font(.headline)
                         .foregroundStyle(.secondary)
                 }
             }
-            if rows.isEmpty {
+            if count == 0 {
                 Text("Nothing needs you").font(.subheadline).foregroundStyle(.secondary)
             }
             ForEach(rows.prefix(Self.smallRowLimit)) { row in
@@ -155,18 +155,21 @@ struct NeedsYouWidgetView: View {
 
     var rows: [NeedsYouSnapshot.Row] { snapshot?.rows ?? [] }
 
+    /// The server's count, which can exceed the rows it sent.
+    var count: Int { snapshot?.waitingCount ?? 0 }
+
     var isStale: Bool { snapshot?.isStale(at: date) ?? false }
 
     var widgetURL: URL? { snapshot?.widgetURL ?? TalariaDeepLink.openAppURL }
 
     var inlineText: String {
-        if rows.isEmpty { return String(localized: "Nothing needs you") }
+        if count == 0 { return String(localized: "Nothing needs you") }
         if isStale { return String(localized: "Waiting") }
-        return String(localized: "\(rows.count) chats need you")
+        return String(localized: "\(count) chats need you")
     }
 
     func moreText(shown: Int) -> String? {
-        let more = rows.count - shown
+        let more = count - min(shown, rows.count)
         return more > 0 ? String(localized: "+\(more) more") : nil
     }
 }
@@ -190,6 +193,6 @@ private extension NeedsYouSnapshot {
         NeedsYouSnapshot(updatedAt: .now, rows: [
             Row(sessionID: "preview-deploy", title: "Deploy fix", phase: "waiting_for_approval", serverID: nil),
             Row(sessionID: "preview-question", title: "Release notes", phase: "waiting_for_input", serverID: nil),
-        ])
+        ], waitingCount: 2)
     }
 }
