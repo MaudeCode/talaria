@@ -447,7 +447,7 @@ describe('relay publisher failure handling', () => {
       expect(deletedViews(s)[0]!.through).toBe(clock * 1000)
       s.deps.relay.stop()
       restarted = await bootTestServer({
-        env: { HERMES_HOME: s.state, HERMES_WEBUI_STATE_DIR: s.state }, now: () => clock,
+        env: { HERMES_HOME: s.state, TALARIA_WEB_STATE_DIR: s.state }, now: () => clock,
         deps: (deps) => { deps.fetch = relay.fetch },
       })
       expect((await restarted.deps.relay.start())).toBe(true)
@@ -494,7 +494,7 @@ describe('relay publisher failure handling', () => {
       clock += 600
       relay.viewedStatus = 200
       restarted = await bootTestServer({
-        env: { HERMES_HOME: s.state, HERMES_WEBUI_STATE_DIR: s.state }, now: () => clock,
+        env: { HERMES_HOME: s.state, TALARIA_WEB_STATE_DIR: s.state }, now: () => clock,
         deps: (deps) => { deps.fetch = relay.fetch },
       })
       expect((await restarted.deps.relay.start())).toBe(true)
@@ -1210,7 +1210,7 @@ describe('plan and worker counts on activity rows (TAL-1422)', () => {
 
 describe('session-started events under person isolation (TAL-48)', () => {
   it('never announces a person\'s Agent-owned chat to the shared profile scope', async () => {
-    const s = await bootTestServer({ sidecar: new FakeSidecar(), env: { HERMES_WEBUI_PERSON_ISOLATION: '1' } })
+    const s = await bootTestServer({ sidecar: new FakeSidecar(), env: { TALARIA_WEB_PERSON_ISOLATION: '1' } })
     const relay = fakeRelay()
     s.deps.fetch = relay.fetch
     // Drive the real publisher explicitly; its background loop is covered by the running-server test above.

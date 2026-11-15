@@ -25,7 +25,7 @@ test('answers, defers, reviews and submits a decision review the agent opened', 
       model: 'test-model', provider: 'test', compressed: false, agent_session_id: params.session_id, token_sent: true, pending_steer: '', live_tool_calls: [],
       messages: [...params.conversation_history, { role: 'user', content: params.user_message }, { role: 'assistant', content: 'Reading the answers.' }], final_response: 'Reading the answers.' }
   })
-  const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' } })
+  const server = await bootTestServer({ sidecar, env: { TALARIA_WEB_SKIP_ONBOARDING: '1' } })
   const sid = '20261108_120000_decide'
   const now = Math.floor(Date.now() / 1000)
   const shot = shooter(page, testInfo)
@@ -95,7 +95,7 @@ test('answers, defers, reviews and submits a decision review the agent opened', 
 // TAL-1966: the profile's reviews outlive their chat on the Decisions page, reached from the sidebar's More.
 test('lists the profile\'s reviews on Decisions and opens a review and its chat', async ({ page }, testInfo) => {
   const sidecar = new FakeSidecar()
-  const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' } })
+  const server = await bootTestServer({ sidecar, env: { TALARIA_WEB_SKIP_ONBOARDING: '1' } })
   const shot = shooter(page, testInfo)
   const now = Math.floor(Date.now() / 1000)
   try {

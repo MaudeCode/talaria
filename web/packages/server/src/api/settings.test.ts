@@ -893,7 +893,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     // Simulates `loadStartupEnv`: the default profile's .env put OPENAI_API_KEY into the process environment.
     const env = s.deps.config.env
     env.OPENAI_API_KEY = 'sk-from-home-dotenv-1234'
-    env.HERMES_WEBUI_HOME_DOTENV_KEYS = 'OPENAI_API_KEY'
+    env.TALARIA_WEB_HOME_DOTENV_KEYS = 'OPENAI_API_KEY'
     writeEnvFile(join(s.state, '.env'), { OPENAI_API_KEY: 'sk-from-home-dotenv-1234' })
     mkdirSync(join(s.state, 'profiles', 'nokey'), { recursive: true })
     sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'default', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }, { name: 'nokey', path: join(s.state, 'profiles', 'nokey'), is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }] }))
@@ -915,7 +915,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       const before = sidecar.calls.length
       expect((await json(await post(s, '/api/providers/delete', { provider: 'openai' }))).action).toBe('removed')
       expect(env.OPENAI_API_KEY).toBeUndefined()
-      expect(env.HERMES_WEBUI_HOME_DOTENV_KEYS).toBe('')
+      expect(env.TALARIA_WEB_HOME_DOTENV_KEYS).toBe('')
       expect(sidecar.calls.slice(before).find((c) => c.method === 'runtime.env')?.params).toEqual({ unset: ['OPENAI_API_KEY'] })
       expect((await rows()).find((p) => p.id === 'openai')).toMatchObject({ has_key: false })
       // A process-environment key is not touched by a delete.
@@ -925,7 +925,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       const added = sidecar.calls.length
       expect((await json(await post(s, '/api/providers', { provider: 'openai', api_key: 'sk-added-later-1234' }))).action).toBe('updated')
       expect(env.OPENAI_API_KEY).toBe('sk-added-later-1234')
-      expect(env.HERMES_WEBUI_HOME_DOTENV_KEYS).toBe('OPENAI_API_KEY')
+      expect(env.TALARIA_WEB_HOME_DOTENV_KEYS).toBe('OPENAI_API_KEY')
       expect(sidecar.calls.slice(added).find((c) => c.method === 'runtime.env')?.params).toEqual({ set: { OPENAI_API_KEY: 'sk-added-later-1234' } })
       // The sidecar must confirm the change: a refused refresh fails the edit and leaves the file and runtime as they were.
       sidecar.respond('runtime.env', () => { throw new Error('sidecar busy') })
@@ -979,7 +979,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       sidecar.respond('runtime.env', () => ({ ok: true as const }))
       expect((await a).status).toBe(200)
       expect((await b).status).toBe(200)
-      expect(env.HERMES_WEBUI_HOME_DOTENV_KEYS?.split(',').sort()).toEqual(['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'OPENROUTER_API_KEY'])
+      expect(env.TALARIA_WEB_HOME_DOTENV_KEYS?.split(',').sort()).toEqual(['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'OPENROUTER_API_KEY'])
       delete env.ANTHROPIC_API_KEY
       delete env.OPENROUTER_API_KEY
       // ...while an explicitly supplied process value keeps precedence when its provider key is (re)written.
@@ -988,7 +988,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     } finally {
       delete env.OPENAI_API_KEY
       delete env.DEEPSEEK_API_KEY
-      delete env.HERMES_WEBUI_HOME_DOTENV_KEYS
+      delete env.TALARIA_WEB_HOME_DOTENV_KEYS
       sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'default', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }] }))
       s.deps.profiles.invalidate()
       s.deps.catalog.invalidate()
@@ -2037,7 +2037,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(sidecar.calls.slice(envCalls).find((c) => c.method === 'runtime.env')?.params).toEqual({ set: { OPENROUTER_API_KEY: 'sk-or-12345' } })
     expect(s.deps.config.env.OPENROUTER_API_KEY).toBe('sk-or-12345')
     delete s.deps.config.env.OPENROUTER_API_KEY
-    delete s.deps.config.env.HERMES_WEBUI_HOME_DOTENV_KEYS
+    delete s.deps.config.env.TALARIA_WEB_HOME_DOTENV_KEYS
     expect(configs.get(s.state)?.model).toEqual({ default: 'anthropic/claude-sonnet-4.6', provider: 'openrouter' })
     res = await post(s, '/api/onboarding/setup', { provider: 'custom', model: 'x' })
     expect(res.status).toBe(400)
@@ -2053,7 +2053,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
   })
 
   it('the auth-off local gate treats CGNAT/Tailscale peers as remote and private LANs as local', async () => {
-    s.deps.config.env.HERMES_WEBUI_TRUST_FORWARDED_FOR = '1'
+    s.deps.config.env.TALARIA_WEB_TRUST_FORWARDED_FOR = '1'
     try {
       // Past the gate, a probe without a URL answers invalid_url and a terminal start without a session answers 400.
       const gate = async (ip?: string): Promise<number[]> => {
@@ -2063,7 +2063,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       for (const ip of ['100.64.1.2', '100.100.100.100', '100.127.255.254', '::ffff:100.64.1.2', 'fd7a:115c:a1e0::1', '8.8.8.8']) expect(await gate(ip), ip).toEqual([403, 403])
       for (const ip of [undefined, '127.0.0.1', '::1', '192.168.1.10', '10.1.2.3', '172.16.0.1', '169.254.1.1', 'fd12::1', 'fe80::1', '::ffff:192.168.1.10']) expect(await gate(ip), String(ip)).toEqual([200, 400])
     } finally {
-      delete s.deps.config.env.HERMES_WEBUI_TRUST_FORWARDED_FOR
+      delete s.deps.config.env.TALARIA_WEB_TRUST_FORWARDED_FOR
     }
   })
 
@@ -2182,7 +2182,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect((await post(s, '/api/onboarding/oauth/cancel', {})).status).toBe(400)
 
     // The onboarding gate still applies to every OAuth route: a remote client without the opt-in is refused.
-    s.deps.config.env.HERMES_WEBUI_TRUST_FORWARDED_FOR = '1'
+    s.deps.config.env.TALARIA_WEB_TRUST_FORWARDED_FOR = '1'
     try {
       // A global address is remote.
       const remote = { 'x-forwarded-for': '8.8.8.8' }
@@ -2190,11 +2190,11 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       expect((await s.get('/api/onboarding/oauth/poll?flow_id=flow-ok', { headers: remote })).status).toBe(403)
       expect((await post(s, '/api/onboarding/oauth/cancel', { flow_id: 'flow-ok' }, remote)).status).toBe(403)
       expect(sidecar.calls.filter((c) => c.method === 'oauth.start')).toHaveLength(starts)
-      s.deps.config.env.HERMES_WEBUI_ONBOARDING_OPEN = '1'
+      s.deps.config.env.TALARIA_WEB_ONBOARDING_OPEN = '1'
       expect((await s.get('/api/onboarding/oauth/poll?flow_id=flow-ok', { headers: remote })).status).toBe(200)
     } finally {
-      delete s.deps.config.env.HERMES_WEBUI_TRUST_FORWARDED_FOR
-      delete s.deps.config.env.HERMES_WEBUI_ONBOARDING_OPEN
+      delete s.deps.config.env.TALARIA_WEB_TRUST_FORWARDED_FOR
+      delete s.deps.config.env.TALARIA_WEB_ONBOARDING_OPEN
     }
   })
 
@@ -2688,7 +2688,7 @@ describe('isolated profile mode', () => {
     mkdirSync(home, { recursive: true })
     const sidecar = new FakeSidecar()
     sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'default', path: base, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }, { name: 'other', path: join(base, 'profiles', 'other'), is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }] }))
-    s = await bootTestServer({ sidecar, env: { HERMES_WEBUI_ISOLATED_PROFILE: '1', HERMES_HOME: home } })
+    s = await bootTestServer({ sidecar, env: { TALARIA_WEB_ISOLATED_PROFILE: '1', HERMES_HOME: home } })
   })
   afterAll(async () => { await s.close(); rmSync(join(home, '..', '..'), { recursive: true, force: true }) })
 
@@ -2726,7 +2726,7 @@ describe('isolated profile mode', () => {
 describe('settings save response keeps the derived fields a load returns', () => {
   const DERIVED = ['password_env_var', 'webui_version', 'agent_version', 'update_channel', 'update_channels', 'update_channel_version'] as const
   it.each([{ password: '' }, { password: 'correct horse battery' }])('a single toggle save matches the next GET (env password: %j)', async ({ password }) => {
-    const s = await bootTestServer({ env: password ? { HERMES_WEBUI_PASSWORD: password } : {} })
+    const s = await bootTestServer({ env: password ? { TALARIA_WEB_PASSWORD: password } : {} })
     try {
       let headers: Record<string, string> = {}
       if (password) {
@@ -2832,7 +2832,7 @@ describe('Agent speed tiers (TAL-788)', () => {
 
 it('reserves the root-scoped Group Chat limits for an owner (TAL-1828)', async () => {
   const native = new FakeSidecar()
-  const server = await bootTestServer({ sidecar: native, env: { HERMES_WEBUI_PASSWORD: 'synthetic-test-password' } })
+  const server = await bootTestServer({ sidecar: native, env: { TALARIA_WEB_PASSWORD: 'synthetic-test-password' } })
   const configs = fakeConfigStore(native)
   writeFileSync(join(server.state, 'config.yaml'), '# owned config\n')
   configs.set(server.state, {})
@@ -2869,7 +2869,7 @@ it('addresses the root config.yaml the Agent reads for Group Chat limits, past H
 
 it('refuses delegation configuration and hides other profile identities for a bound non-owner (TAL-1499)', async () => {
   const native = new FakeSidecar()
-  const server = await bootTestServer({ sidecar: native, env: { HERMES_WEBUI_PASSWORD: 'synthetic-test-password' } })
+  const server = await bootTestServer({ sidecar: native, env: { TALARIA_WEB_PASSWORD: 'synthetic-test-password' } })
   const configs = fakeConfigStore(native)
   const path = join(server.state, 'config.yaml')
   writeFileSync(path, '# owned config\n')

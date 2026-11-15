@@ -10,9 +10,9 @@ provider, or the network. Run commands from `web/` unless noted.
 | Contracts | `npm run typecheck -w packages/contracts && npm run lint -w packages/contracts && npm test -w packages/contracts` | schema tests, sidecar fixtures, OpenAPI snapshot, monorepo `contracts/fixtures` (publisher snapshot signing, activity scenes) |
 | OpenAPI | `npm run openapi && git diff --exit-code -- ../contracts/web-api.openapi.json ../contracts/whats-new.schema.json` | the committed documents are the app↔web artifacts; the What's New schema also feeds the release-note generator |
 | Server | `npm run typecheck -w packages/server && npm run lint -w packages/server && npm test -w packages/server` | Vitest with the fake sidecar; ~330 tests |
-| Sidecar | `sidecar/scripts/test.sh` | pytest against `HERMES_WEBUI_AGENT_DIR`, else the active pinned Agent release, cached and reused as described below; never `~/.hermes` |
+| Sidecar | `sidecar/scripts/test.sh` | pytest against `TALARIA_WEB_AGENT_DIR`, else the active pinned Agent release, cached and reused as described below; never `~/.hermes` |
 | Frontend | `cd packages/frontend && npm run i18n:gate && npm run typecheck && npm run lint && npm test && npm run build:fast` | Vitest + in-memory contract server; the build must reproduce `static/dist` |
-| Browser | `../scripts/check-web-browser` (root) or `npm run e2e -w packages/frontend` | Playwright desktop + mobile against the built Node server; uses `sidecar/scripts/replay_sidecar.py` unless `HERMES_WEBUI_AGENT_DIR` is set |
+| Browser | `../scripts/check-web-browser` (root) or `npm run e2e -w packages/frontend` | Playwright desktop + mobile against the built Node server; uses `sidecar/scripts/replay_sidecar.py` unless `TALARIA_WEB_AGENT_DIR` is set |
 | Docker | `python3 scripts/check-docker.py` (root) | builds the image and smokes single/two/three-container, auto-UID, explicit-UID |
 | iOS contract | `app/scripts/validate-upstream-contract` | boots the Node server on the replay sidecar and runs the HTTP/SSE probe plus Swift decoders |
 | Everything | `scripts/check web` (root) | `scripts/check-web-server` + frontend gates + browser |
@@ -46,7 +46,7 @@ The remaining files keep the configured worker limit. All server test commands u
 ordering; no tests, fixture delays, latency limits, or timeouts are reduced.
 
 - `bootTestServer({ sidecar, env, deps, ... })` (`src/test/harness.ts`) starts a real HTTP server on an
-  ephemeral port with an isolated `HERMES_HOME` / `HERMES_WEBUI_STATE_DIR`. `s.get`, `s.sse(path, until)`,
+  ephemeral port with an isolated `HERMES_HOME` / `TALARIA_WEB_STATE_DIR`. `s.get`, `s.sse(path, until)`,
   and `s.rawStatus` drive it; `s.deps` exposes the runtime for stubs (`s.deps.fetch = ...`).
 - `FakeSidecar` (`src/sidecar/fake.ts`) answers recorded fixtures and accepts per-test responders:
   `sidecar.respond('chat.start', (params, emit) => { emit({ event: 'token', data: { text: 'hi' } }); return completed(...) })`.
@@ -57,7 +57,7 @@ ordering; no tests, fixture delays, latency limits, or timeouts are reduced.
 - Redaction work budgets use Node's `diagnostics_channel` channel `talaria.redaction.assignment-scan`.
   Each scan reports only `purpose` (`mask` or `restore`) and `characters` (input length), never transcript
   text or credentials. Tests subscribe for the synchronous call and unsubscribe in `finally`.
-- `HERMES_WEBUI_TEST_HOOKS=1` enables `GET /api/approval/inject_test` and `/api/clarify/inject_test` for
+- `TALARIA_WEB_TEST_HOOKS=1` enables `GET /api/approval/inject_test` and `/api/clarify/inject_test` for
   loopback clients: each queues a fake approval or clarify prompt that `respond` clears without the Agent.
 
 ## Sidecar tests
@@ -92,7 +92,7 @@ finds its own leaks, and runs after subprocess mocks unwind.
 
 ```bash
 # Both required kinds of coverage against the active pinned Agent, provisioned in
-# the shared cache when HERMES_WEBUI_AGENT_DIR is unset.
+# the shared cache when TALARIA_WEB_AGENT_DIR is unset.
 TALARIA_SIDECAR_WORKERS=4 sidecar/scripts/test.sh
 # No Agent or provisioning required for either of these owning-layer checks.
 sidecar/scripts/test.sh --layer=fast
@@ -181,7 +181,7 @@ terminal input, resize requests, and closing on desktop and mobile.
 
 `packages/frontend/src/**/*.test.ts(x)` run in jsdom against the in-memory contract server; `e2e/*.spec.ts`
 run Playwright against the built assets and the Node server started by `e2e/server.ts`
-(`HERMES_E2E_PORT`, `HERMES_WEBUI_AGENT_DIR`, `HERMES_WEBUI_SIDECAR_COMMAND` are honoured; without an Agent dir or
+(`HERMES_E2E_PORT`, `TALARIA_WEB_AGENT_DIR`, `TALARIA_WEB_SIDECAR_COMMAND` are honoured; without an Agent dir or
 sidecar command it uses the fixture replay sidecar). See
 `docs/architecture/frontend-migration.md` for the layout. An occupied e2e port (`HERMES_E2E_PORT`, default 8797, or
 the next port) fails the run; set `HERMES_E2E_PORT` to a free port. The run never reuses a running server.
@@ -228,7 +228,7 @@ function the compiler skips; a skipped function still builds, unmemoized. Lint m
 
 - UI changes: verify desktop, narrow, and mobile widths and attach before/after evidence to the PR.
 - Agent-backed flows that need a provider (real chat, TTS, STT, quotas): run against isolated state
-  (`HERMES_HOME=/tmp/talaria-home HERMES_WEBUI_STATE_DIR=/tmp/talaria-state talaria-web --foreground`).
+  (`HERMES_HOME=/tmp/talaria-home TALARIA_WEB_STATE_DIR=/tmp/talaria-state talaria-web --foreground`).
 - Docker: `python3 scripts/check-docker.py single` needs a Docker daemon.
   The two- and three-container variants also import the staged Agent and send a
   Web API chat through the sidecar to a loopback stub provider. Use
@@ -249,6 +249,6 @@ revision from `sidecar/agent_importer.json` before starting tests, one
 synthetic source/profile trees against the revision the selected Agent's catalog
 pins, and a separate case fails when that catalog pins an unreviewed revision.
 When supplying an Agent checkout directly to `sidecar/scripts/test.sh`, also
-provide `HERMES_WEBUI_IMPORTER_DIR` containing those checksum-verified
+provide `TALARIA_WEB_IMPORTER_DIR` containing those checksum-verified
 directories. The fast
 `tests/test_agent_imports.py` matrix needs neither Agent nor plugin bytes.

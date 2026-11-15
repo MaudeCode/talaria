@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # TLS-aware /health probe used by the Docker HEALTHCHECK.
 #
-# The server serves HTTPS when both HERMES_WEBUI_TLS_CERT and
-# HERMES_WEBUI_TLS_KEY are set (packages/server/src/config.ts). The probe must
+# The server serves HTTPS when both TALARIA_WEB_TLS_CERT and
+# TALARIA_WEB_TLS_KEY are set (packages/server/src/config.ts). The probe must
 # mirror that scheme, otherwise an http:// probe against an https listener (or
 # vice-versa) reports a healthy server as down.
 #
@@ -14,7 +14,7 @@
 #      present but unloadable (packages/server/src/server.ts). Probe HTTP last
 #      so that fallback is found instead of polling HTTPS forever.
 #
-# HERMES_WEBUI_TLS_INSECURE_PROBE=1 is an explicit opt-in that skips verified
+# TALARIA_WEB_TLS_INSECURE_PROBE=1 is an explicit opt-in that skips verified
 # HTTPS and goes straight to the unverified attempt. By contract this is
 # silent (the user already accepted the risk), so no warning is printed.
 #
@@ -27,11 +27,11 @@
 
 # Guard so the self-signed warning is printed at most once per process even
 # when the probe is retried in a wait loop.
-_HERMES_WEBUI_SELF_SIGNED_WARNED="${_HERMES_WEBUI_SELF_SIGNED_WARNED:-0}"
+_TALARIA_WEB_SELF_SIGNED_WARNED="${_TALARIA_WEB_SELF_SIGNED_WARNED:-0}"
 
 # Records the scheme that actually answered the most recent successful probe
 # ("https" or "http"). Defaults empty; set by hermes_webui_probe_health.
-_HERMES_WEBUI_PROBE_SCHEME="${_HERMES_WEBUI_PROBE_SCHEME:-}"
+_TALARIA_WEB_PROBE_SCHEME="${_TALARIA_WEB_PROBE_SCHEME:-}"
 
 _hermes_webui_truthy() {
   case "${1:-}" in
@@ -42,7 +42,7 @@ _hermes_webui_truthy() {
 
 # Echo "https" when TLS is configured (both cert and key present), else "http".
 hermes_webui_probe_scheme() {
-  if [[ -n "${HERMES_WEBUI_TLS_CERT:-}" && -n "${HERMES_WEBUI_TLS_KEY:-}" ]]; then
+  if [[ -n "${TALARIA_WEB_TLS_CERT:-}" && -n "${TALARIA_WEB_TLS_KEY:-}" ]]; then
     printf 'https'
   else
     printf 'http'
@@ -50,8 +50,8 @@ hermes_webui_probe_scheme() {
 }
 
 _hermes_webui_warn_self_signed() {
-  [[ "${_HERMES_WEBUI_SELF_SIGNED_WARNED}" == "1" ]] && return 0
-  _HERMES_WEBUI_SELF_SIGNED_WARNED=1
+  [[ "${_TALARIA_WEB_SELF_SIGNED_WARNED}" == "1" ]] && return 0
+  _TALARIA_WEB_SELF_SIGNED_WARNED=1
   printf '[warn] Health probe: TLS certificate at %s is self-signed or not trusted; proceeding without verification.\n' \
     "$1" >&2
 }
@@ -101,7 +101,7 @@ _hermes_webui_http_get() {
 # Prints the response body to stdout; warnings go to stderr.
 # Returns 0 if the server answered, 1 otherwise.
 #
-# Side effect: sets the global _HERMES_WEBUI_PROBE_SCHEME to the scheme that
+# Side effect: sets the global _TALARIA_WEB_PROBE_SCHEME to the scheme that
 # actually answered ("https" or "http"). Callers that print a ready/already-up
 # URL should prefer this over the configured scheme, because the server falls
 # back to plain HTTP when the cert/key are unloadable — so the configured
@@ -115,7 +115,7 @@ hermes_webui_probe_health() {
 
   if [[ "${scheme}" == "http" ]]; then
     if body="$(_hermes_webui_http_get "${http_url}" "${max_time}" "" "${direct}")"; then
-      _HERMES_WEBUI_PROBE_SCHEME="http"
+      _TALARIA_WEB_PROBE_SCHEME="http"
       printf '%s' "${body}"
       return 0
     fi
@@ -125,24 +125,24 @@ hermes_webui_probe_health() {
   # TLS configured: prefer HTTPS, then fall back to HTTP.
   local https_url="https://${host}:${port}${path}"
 
-  if _hermes_webui_truthy "${HERMES_WEBUI_TLS_INSECURE_PROBE:-}"; then
+  if _hermes_webui_truthy "${TALARIA_WEB_TLS_INSECURE_PROBE:-}"; then
     # Explicit opt-in: skip verification, stay silent by contract.
     if body="$(_hermes_webui_http_get "${https_url}" "${max_time}" "insecure" "${direct}")"; then
-      _HERMES_WEBUI_PROBE_SCHEME="https"
+      _TALARIA_WEB_PROBE_SCHEME="https"
       printf '%s' "${body}"
       return 0
     fi
   else
     # 1) Verified HTTPS.
     if body="$(_hermes_webui_http_get "${https_url}" "${max_time}" "" "${direct}")"; then
-      _HERMES_WEBUI_PROBE_SCHEME="https"
+      _TALARIA_WEB_PROBE_SCHEME="https"
       printf '%s' "${body}"
       return 0
     fi
     # 2) Self-signed fallback: verification failed, retry unverified + warn.
     if body="$(_hermes_webui_http_get "${https_url}" "${max_time}" "insecure" "${direct}")"; then
       _hermes_webui_warn_self_signed "${https_url}"
-      _HERMES_WEBUI_PROBE_SCHEME="https"
+      _TALARIA_WEB_PROBE_SCHEME="https"
       printf '%s' "${body}"
       return 0
     fi
@@ -150,7 +150,7 @@ hermes_webui_probe_health() {
 
   # 3) The server may have fallen back to plain HTTP (cert/key unloadable).
   if body="$(_hermes_webui_http_get "${http_url}" "${max_time}" "" "${direct}")"; then
-    _HERMES_WEBUI_PROBE_SCHEME="http"
+    _TALARIA_WEB_PROBE_SCHEME="http"
     printf '%s' "${body}"
     return 0
   fi

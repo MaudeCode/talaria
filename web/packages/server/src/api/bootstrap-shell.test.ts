@@ -67,7 +67,7 @@ describe('bootstrap shell on an open server', () => {
 describe('bootstrap shell behind password auth', () => {
   let s: TestServer
   const PASSWORD = 'correct horse battery staple'
-  beforeAll(async () => { s = await bootTestServer({ env: { HERMES_WEBUI_PASSWORD: PASSWORD }, sidecar: new FakeSidecar() }) })
+  beforeAll(async () => { s = await bootTestServer({ env: { TALARIA_WEB_PASSWORD: PASSWORD }, sidecar: new FakeSidecar() }) })
   afterAll(() => s.close())
 
   it('an unauthenticated request gets no shell', async () => {

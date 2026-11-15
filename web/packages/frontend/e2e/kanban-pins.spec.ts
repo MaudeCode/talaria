@@ -6,7 +6,7 @@ test.use({ serviceWorkers: 'block', video: 'on' })
 
 test('pinned boards persist through the real settings API and fit foldable viewports', async ({ page }, info) => {
   const sidecar = new FakeSidecar()
-  const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' } })
+  const server = await bootTestServer({ sidecar, env: { TALARIA_WEB_SKIP_ONBOARDING: '1' } })
   let current = 'default'
   const names = { default: 'Release planning', ops: 'Operations', research: 'Research and customer interviews' }
   sidecar.respond('kanban.boards', () => ({ current, read_only: false, boards: Object.entries(names).map(([slug, name]) => ({ slug, name, is_current: current === slug, counts: {}, total: 0 })) }))

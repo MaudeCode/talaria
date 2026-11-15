@@ -22,7 +22,7 @@ def receipt_runtime(tmp_path, monkeypatch):
     (root / '.git/refs/talaria/autostash/pending').mkdir(parents=True)
     (root / '.git/packed-refs').write_text('# synthetic refs\n')
     home.mkdir()
-    monkeypatch.setenv('HERMES_WEBUI_STATE_DIR', str(tmp_path / 'state'))
+    monkeypatch.setenv('TALARIA_WEB_STATE_DIR', str(tmp_path / 'state'))
     monkeypatch.delenv('TALARIA_SIDECAR_WEB_STATE_DIR', raising=False)
     clock = SimpleNamespace(now=100.0)
     monkeypatch.setattr(agent_mutation, 'time', SimpleNamespace(monotonic=lambda: clock.now))
@@ -325,7 +325,7 @@ def test_same_revision_agent_work_is_blocked_until_durable_web_repair_intent_is_
     root.mkdir(); home.mkdir()
     runtime = AgentRuntime(home, root)
     monkeypatch.setattr(runtime, 'is_stale', lambda: False)
-    monkeypatch.setenv('HERMES_WEBUI_STATE_DIR', str(state))
+    monkeypatch.setenv('TALARIA_WEB_STATE_DIR', str(state))
     from talaria_sidecar.agent_services import recovery_path
     marker = recovery_path(root, home) if obligation == 'service' else state / 'agent-dependency-sync' / hashlib.sha256(str(root.resolve()).encode()).hexdigest()
     marker.parent.mkdir(parents=True)
@@ -578,7 +578,7 @@ def test_load_rejects_agent_packages_built_for_another_python(tmp_path, monkeypa
         raise AssertionError("load() accepted Agent packages built for another Python")
     running = f"{sys.version_info[0]}.{sys.version_info[1]}"
     assert f"interpreter Python {running} cannot load Agent packages built for Python {other} ({site_packages})" in message
-    assert "unset HERMES_WEBUI_PYTHON" in message and str(venv / "bin" / "python") in message
+    assert "unset TALARIA_WEB_PYTHON" in message and str(venv / "bin" / "python") in message
     runtime = AgentRuntime(tmp_path / "home", None)
     try:
         runtime.load()

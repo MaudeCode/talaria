@@ -8,7 +8,7 @@ afterEach(async () => { await server?.close() })
 
 it('keeps member catalog reads display-only and refuses installation before calling the Agent', async () => {
   const sidecar = new FakeSidecar()
-  server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_TRUSTED_AUTH_HEADER: 'X-Remote-User', HERMES_WEBUI_TRUSTED_GROUPS_HEADER: 'X-Remote-Groups', HERMES_WEBUI_GROUP_PROFILE_MAP: '{"ops":"work"}' } })
+  server = await bootTestServer({ sidecar, env: { TALARIA_WEB_TRUSTED_AUTH_HEADER: 'X-Remote-User', TALARIA_WEB_TRUSTED_GROUPS_HEADER: 'X-Remote-Groups', TALARIA_WEB_GROUP_PROFILE_MAP: '{"ops":"work"}' } })
   const headers = { 'X-Remote-User': 'kim', 'X-Remote-Groups': 'ops', 'content-type': 'application/json' }
   const read = await server.get('/api/plugins/catalog', { headers })
   expect(read.status).toBe(200)

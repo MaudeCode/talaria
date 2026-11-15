@@ -12,7 +12,7 @@ export const PERSON_ISOLATION_VERSION = 1
 
 /** The operator opt-in; without it every session stays visible to every login exactly as before. */
 export function personIsolationEnabled(env: Env): boolean {
-  return truthy(env.HERMES_WEBUI_PERSON_ISOLATION)
+  return truthy(env.TALARIA_WEB_PERSON_ISOLATION)
 }
 
 /**

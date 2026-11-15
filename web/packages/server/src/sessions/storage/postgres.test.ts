@@ -15,7 +15,7 @@ let postgres: TestPostgres
 beforeAll(async () => { postgres = await startTestPostgres() }, 60_000)
 afterAll(async () => { await postgres.stop() })
 
-async function fixture(schema = testSchema(), env: Record<string, string | undefined> = { HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT: '0' }, logs: string[] = []) {
+async function fixture(schema = testSchema(), env: Record<string, string | undefined> = { TALARIA_WEB_RUN_JOURNAL_KEEP_RECENT: '0' }, logs: string[] = []) {
   const storage = await PostgresStorage.open({ url: postgres.url, schema, poolMax: 4, sessionDir: '/nonexistent/talaria-sessions', env, stampingSince: () => 0, log: (line) => logs.push(line) })
   let failCommit = false
   // Throws where COMMIT would run: everything the write staged is inside the open transaction.

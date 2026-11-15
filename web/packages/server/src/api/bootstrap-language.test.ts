@@ -48,7 +48,7 @@ describe('bootstrap language on an open server', () => {
 describe('bootstrap language behind password auth', () => {
   let s: TestServer
   const PASSWORD = 'correct horse battery staple'
-  beforeAll(async () => { s = await bootTestServer({ env: { HERMES_WEBUI_PASSWORD: PASSWORD } }) })
+  beforeAll(async () => { s = await bootTestServer({ env: { TALARIA_WEB_PASSWORD: PASSWORD } }) })
   afterAll(() => s.close())
 
   it('the sign-in page gets the browser preference without reading operator settings', async () => {

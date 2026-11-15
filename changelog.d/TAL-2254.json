@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Configure Talaria Web with TALARIA_WEB_ environment variables. Existing HERMES_WEBUI_ names remain deprecated aliases and warn at startup.",
+      "highlight": false,
+      "announce": false,
+      "components": ["web", "app"]
+    }
+  ]
+}

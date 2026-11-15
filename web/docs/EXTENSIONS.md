@@ -17,7 +17,7 @@ extensions written for the injected-script surface follow
 > injected-script surface, but an extension can still show misleading UI, call
 > its consented sidecar, and read what its capabilities expose. **Only enable
 > extensions from the vetted gallery or sources you trust.** If you set
-> `HERMES_WEBUI_EXTENSION_DIR` yourself, do not point it at a user-writable
+> `TALARIA_WEB_EXTENSION_DIR` yourself, do not point it at a user-writable
 > directory on a shared host.
 
 This is intentionally not a plugin marketplace or dependency system. It is a
@@ -147,15 +147,15 @@ app is started.
 
 ### Manual / advanced configuration (optional)
 
-`HERMES_WEBUI_EXTENSION_DIR` is **optional** and overrides the managed default.
+`TALARIA_WEB_EXTENSION_DIR` is **optional** and overrides the managed default.
 Set it when you want extensions to live in a specific directory you control
 (e.g. a checked-out bundle, or a path mounted into a container). When set it
 must point to an existing directory; WebUI never auto-creates an admin-specified
 path:
 
 ```bash
-export HERMES_WEBUI_EXTENSION_DIR=/path/to/my-extensions
-export HERMES_WEBUI_EXTENSION_MANIFEST=extensions.json   # relative to the directory (default)
+export TALARIA_WEB_EXTENSION_DIR=/path/to/my-extensions
+export TALARIA_WEB_EXTENSION_MANIFEST=extensions.json   # relative to the directory (default)
 talaria-web
 ```
 
@@ -163,8 +163,8 @@ The manifest lists entries with the fields shown in [Manifest shape](#manifest-s
 Paths are relative to the extension directory, must not traverse outside it,
 and dot-prefixed segments are rejected. A manifest entry may declare
 `"enabled": false` to stay listed but inactive; users can toggle installed
-entries from Settings, Extensions. `HERMES_WEBUI_EXTENSION_SCRIPT_URLS` and
-`HERMES_WEBUI_EXTENSION_STYLESHEET_URLS` are no longer honoured: there is no
+entries from Settings, Extensions. `TALARIA_WEB_EXTENSION_SCRIPT_URLS` and
+`TALARIA_WEB_EXTENSION_STYLESHEET_URLS` are no longer honoured: there is no
 injection surface. Move those assets into a panel document.
 
 ### Sidecar proxy authentication (`proxy_auth`)
@@ -270,14 +270,14 @@ ws://localhost:*
 
 The wildcard ports above cover any loopback port, including
 `http://127.0.0.1:17787`. For a trusted non-loopback origin that you explicitly
-control, append the exact origin with `HERMES_WEBUI_CSP_CONNECT_EXTRA` before
+control, append the exact origin with `TALARIA_WEB_CSP_CONNECT_EXTRA` before
 starting WebUI:
 
 ```bash
-HERMES_WEBUI_CSP_CONNECT_EXTRA=https://companion.example.internal HERMES_WEBUI_EXTENSION_DIR=/path/to/my-extension/static HERMES_WEBUI_EXTENSION_MANIFEST=extensions.json talaria-web
+TALARIA_WEB_CSP_CONNECT_EXTRA=https://companion.example.internal TALARIA_WEB_EXTENSION_DIR=/path/to/my-extension/static TALARIA_WEB_EXTENSION_MANIFEST=extensions.json talaria-web
 ```
 
-`HERMES_WEBUI_CSP_CONNECT_EXTRA` accepts space-separated `http(s)://` or
+`TALARIA_WEB_CSP_CONNECT_EXTRA` accepts space-separated `http(s)://` or
 `ws(s)://` origins only. It rejects paths, directive injection, and invalid port
 numbers. Avoid wildcard or remote origins unless you fully control the target.
 
@@ -311,7 +311,7 @@ operator to widen `frame-src`, opt-in, via an environment variable:
 
 ```bash
 # space-separated http(s) origins; optional *. subdomain wildcard and port.
-export HERMES_WEBUI_CSP_FRAME_EXTRA="https://grafana.example.com https://*.dash.example.com:8443"
+export TALARIA_WEB_CSP_FRAME_EXTRA="https://grafana.example.com https://*.dash.example.com:8443"
 ```
 
 Rules and guarantees:
@@ -320,7 +320,7 @@ Rules and guarantees:
   Entries may include a `*.` subdomain wildcard and a port or `*` port; a path,
   a `ws://`/`wss://` scheme, an invalid port, or any attempt to inject another
   directive is rejected and the whole value is ignored (with a logged warning).
-- This mirrors the existing `HERMES_WEBUI_CSP_CONNECT_EXTRA` knob (which widens
+- This mirrors the existing `TALARIA_WEB_CSP_CONNECT_EXTRA` knob (which widens
   `connect-src` for `fetch`/WebSocket); the two are independent.
 - It only governs what the WebUI page may **embed**. It does **not** touch
   `frame-ancestors`, which stays `'none'` — so widening `frame-src` never lets
@@ -334,7 +334,7 @@ policy.
 
 ## Static file serving
 
-When `HERMES_WEBUI_EXTENSION_DIR` points at an existing directory, files under
+When `TALARIA_WEB_EXTENSION_DIR` points at an existing directory, files under
 that directory are available below `/extensions/`:
 
 ```text
@@ -369,7 +369,7 @@ with `Origin: null` before authentication.
 
 For shared or remotely exposed installations:
 
-- keep `HERMES_WEBUI_PASSWORD` enabled
+- keep `TALARIA_WEB_PASSWORD` enabled
 - bind to loopback unless you intentionally expose the service
 - review extension code before enabling it
 - prefer small, auditable extension files
@@ -466,7 +466,7 @@ sanitized manifest extension entries with valid IDs, and `counts.user_disabled`
 counts installed manifest entries currently suppressed by the WebUI-managed
 override. `manifest.entry_count` counts the loaded top-level manifest object and
 effectively enabled extension entries, not every extension object in the file. The endpoint and Settings panel do **not**
-return `HERMES_WEBUI_EXTENSION_DIR`, resolved manifest paths, raw environment
+return `TALARIA_WEB_EXTENSION_DIR`, resolved manifest paths, raw environment
 values, rejected URL strings, rejected sidecar origins, rejected health paths, or
 the override state-file path.
 

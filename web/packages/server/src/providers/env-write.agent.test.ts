@@ -6,8 +6,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { SidecarClient } from '../sidecar/client.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 
-const agentDir = process.env.HERMES_WEBUI_AGENT_DIR ?? resolve(homedir(), '.hermes/hermes-agent')
-const python = process.env.HERMES_WEBUI_PYTHON ?? [resolve(agentDir, 'venv/bin/python'), resolve(agentDir, '.venv/bin/python')].find((p) => existsSync(p)) ?? ''
+const agentDir = process.env.TALARIA_WEB_AGENT_DIR ?? resolve(homedir(), '.hermes/hermes-agent')
+const python = process.env.TALARIA_WEB_PYTHON ?? [resolve(agentDir, 'venv/bin/python'), resolve(agentDir, '.venv/bin/python')].find((p) => existsSync(p)) ?? ''
 const sidecarDir = resolve(import.meta.dirname, '../../../../sidecar')
 const agentAvailable = existsSync(resolve(agentDir, 'run_agent.py')) && existsSync(python)
 // Agents before v0.21.6 have no `.env` lock for a concurrent write to wait on.
@@ -40,7 +40,7 @@ describe.skipIf(!agentLocksEnv)('provider key writes against the pinned Agent (T
     writeFileSync(join(home, '.env'), 'EXISTING=1\n', { mode: 0o600 })
     client = new SidecarClient({ python, agentDir, sidecarDir, hermesHome: home, log: () => undefined })
     await client.start()
-    s = await bootTestServer({ sidecar: client, env: { HERMES_HOME: home, HERMES_WEBUI_STATE_DIR: home } })
+    s = await bootTestServer({ sidecar: client, env: { HERMES_HOME: home, TALARIA_WEB_STATE_DIR: home } })
 
     const ready = join(home, 'agent-ready')
     const go = join(home, 'agent-go')

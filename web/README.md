@@ -43,14 +43,14 @@ talaria-web
 ```
 
 `talaria-web` loads `.env` (checkout `.env`, then `$HERMES_HOME/.env`), discovers the Agent
-(`HERMES_WEBUI_AGENT_DIR`, `$HERMES_HOME/hermes-agent`, a sibling `hermes-agent` checkout, `~/hermes-agent`,
+(`TALARIA_WEB_AGENT_DIR`, `$HERMES_HOME/hermes-agent`, a sibling `hermes-agent` checkout, `~/hermes-agent`,
 `/opt/hermes`, `/usr/local/lib/hermes-agent`, or the `hermes` launcher on `PATH`), verifies the sidecar can
 import the Agent on that venv, offers to install the pinned stable Agent release when none is found
 (POSIX; skip with `--skip-agent-install`), starts the server detached, waits for `/health`, prints the
 URL, and opens the browser. Under launchd, systemd, supervisord, or with `--foreground`, it stays attached instead.
 `$HERMES_HOME/.env` is agent-writable, so the server only takes credentials from it (names ending in `_KEY`,
 `_TOKEN`, or `_SECRET`), `HERMES_MODEL`, and a few tuning knobs (port, upload and session limits, bot name, default
-model); it warns about the rest. Set other `HERMES_WEBUI_*` settings, `HERMES_HOME`, or interpreter hooks such as
+model); it warns about the rest. Set other `TALARIA_WEB_*` settings, `HERMES_HOME`, or interpreter hooks such as
 `NODE_OPTIONS` in the process environment or the checkout `.env`. The Agent still reads the whole file itself.
 
 ```text
@@ -92,13 +92,13 @@ talaria-web ctl stop
 
 `ctl start` refuses to double-start next to a running launchd job or systemd unit for the same port, warns
 about a foreign process answering on the port, and respects `.env` plus inline overrides such as
-`HERMES_WEBUI_HOST=0.0.0.0 talaria-web ctl start`. In a linked git worktree it keeps PID, log, and state
-separate per worktree and picks the first free port from `HERMES_WEBUI_CTL_PORT_START`.
+`TALARIA_WEB_HOST=0.0.0.0 talaria-web ctl start`. In a linked git worktree it keeps PID, log, and state
+separate per worktree and picks the first free port from `TALARIA_WEB_CTL_PORT_START`.
 
-For frontend development against a deployed instance, set `HERMES_WEBUI_DEV_PROXY=http://webui-host:8787`
+For frontend development against a deployed instance, set `TALARIA_WEB_DEV_PROXY=http://webui-host:8787`
 in `.env` and run `talaria-web ctl start --remote`: it starts only the Vite dev server with hot reload and
 proxies API and static requests to that instance. Unless that URL uses an IP address, list its hostname in the instance's
-`HERMES_WEBUI_ALLOWED_HOSTS`. See [docs/supervisor.md](docs/supervisor.md) for
+`TALARIA_WEB_ALLOWED_HOSTS`. See [docs/supervisor.md](docs/supervisor.md) for
 launchd, systemd, and supervisord units and [docs/wsl-autostart.md](docs/wsl-autostart.md) for WSL2.
 
 ## Configuration
@@ -106,58 +106,60 @@ launchd, systemd, and supervisord units and [docs/wsl-autostart.md](docs/wsl-aut
 Everything is optional; discovery fills in what you leave blank. Copy `.env.example` to `.env` for a
 commented template.
 
+`HERMES_WEBUI_*` variables remain supported as deprecated aliases for `TALARIA_WEB_*` at server startup, including in `.env` files. When both forms occur in the same source, the new name wins, including an explicitly empty value. Existing checkout-file and process-environment precedence still applies. Startup logs one warning naming the aliases and their replacements, without their values.
+
 | Variable | Default | Description |
 |---|---|---|
-| `HERMES_WEBUI_AGENT_DIR` | auto-discovered | Hermes Agent checkout the sidecar runs against |
-| `HERMES_WEBUI_PYTHON` | Agent venv | Interpreter override for installs without a PM environment; leave it unset for PM installs. Otherwise the PM generation recorded under the Hermes root's `installs/`, then `<agent>/venv` or `.venv` for older installs |
-| `HERMES_WEBUI_HOST` | `127.0.0.1` | Bind address (`0.0.0.0` for all IPv4, `::` for all IPv6) |
-| `HERMES_WEBUI_PORT` | `8787` | Port |
+| `TALARIA_WEB_AGENT_DIR` | auto-discovered | Hermes Agent checkout the sidecar runs against |
+| `TALARIA_WEB_PYTHON` | Agent venv | Interpreter override for installs without a PM environment; leave it unset for PM installs. Otherwise the PM generation recorded under the Hermes root's `installs/`, then `<agent>/venv` or `.venv` for older installs |
+| `TALARIA_WEB_HOST` | `127.0.0.1` | Bind address (`0.0.0.0` for all IPv4, `::` for all IPv6) |
+| `TALARIA_WEB_PORT` | `8787` | Port |
 | `HERMES_HOME` | `~/.hermes` | Hermes state base directory |
 | `HERMES_DATA_DIR_SUFFIX` | empty | Literal suffix for the default Agent home, e.g. `-desktop` selects `~/.hermes-desktop` or `%LOCALAPPDATA%\hermes-desktop` on Windows; ignored when `HERMES_HOME` is explicit |
 | `HERMES_CONFIG_PATH` | `$HERMES_HOME/config.yaml` | Hermes config file; the sidecar reads and writes this exact path (a symlink is updated through its target) |
-| `HERMES_WEBUI_STATE_DIR` | `$HERMES_HOME/webui` | Sessions, settings, auth records, journals, shares |
-| `HERMES_WEBUI_DEFAULT_WORKSPACE` | `~/workspace` | Default workspace |
-| `HERMES_WEBUI_CLAUDE_PROJECTS_DIR` | `~/.claude/projects` | Claude Code transcripts listed read-only when **Show Claude Code sessions** is on |
-| `HERMES_WEBUI_DEFAULT_MODEL` | provider default | Optional model override |
-| `HERMES_WEBUI_PASSWORD` | unset | Enables password authentication (required when binding beyond loopback) |
-| `HERMES_WEBUI_PASSKEY` | unset | Passkey availability flag |
-| `HERMES_WEBUI_TLS_CERT` / `HERMES_WEBUI_TLS_KEY` | unset | Serve HTTPS directly (TLS 1.2+) |
-| `HERMES_WEBUI_TRUSTED_PROXY_CIDRS`, `HERMES_WEBUI_TRUST_FORWARDED_FOR`, `HERMES_WEBUI_TRUST_FORWARDED_HOST`, `HERMES_WEBUI_TRUST_FORWARDED_PROTO` | unset | Reverse-proxy trust |
-| `HERMES_WEBUI_ALLOWED_ORIGINS` | unset | Extra browser origins accepted by the same-origin check; their hostnames also pass the Host check |
-| `HERMES_WEBUI_ALLOWED_HOSTS` | unset | Comma-separated hostnames the server answers to besides `localhost`, IP addresses and `HERMES_WEBUI_HOST`; any other `Host` gets `421` (DNS-rebinding guard). List your public name behind a reverse proxy or Tailscale Serve |
-| `HERMES_WEBUI_CSP_CONNECT_EXTRA` / `HERMES_WEBUI_CSP_FRAME_EXTRA` | unset | Extra CSP `connect-src` / `frame-src` origins |
-| `HERMES_WEBUI_TRUSTED_AUTH_HEADER`, `HERMES_WEBUI_TRUSTED_GROUPS_HEADER`, `HERMES_WEBUI_GROUP_PROFILE_MAP`, `HERMES_WEBUI_TRUSTED_AUTH_LOGOUT_URL` | unset | Trusted-header authentication behind an authenticating proxy |
-| `HERMES_WEBUI_OIDC_OWNER_CLAIM` / `HERMES_WEBUI_OIDC_OWNER_VALUES` | unset | OIDC owner policy for operator-only routes |
-| `HERMES_WEBUI_OIDC_TOKEN_AUTH_METHOD` | `auto` | OIDC token-endpoint client authentication: `client_secret_basic`, `client_secret_post`, or `auto` (form body unless discovery advertises only Basic); also `webui_oidc.token_auth_method` |
-| `HERMES_WEBUI_PERSON_ISOLATION` | unset | With OIDC sign-in, each person sees only the sessions they created. Sessions no person owns (from before, a non-OIDC login, or the Agent) reach owners only. A person's sessions are not published to Talaria Relay, whose enrollment is per profile. Profile memory, skills, files and scheduled tasks stay shared; bind people to separate profiles for those |
-| `HERMES_WEBUI_SESSION_TTL`, `HERMES_WEBUI_SESSION_SLIDING`, `HERMES_WEBUI_SECURE`, `HERMES_WEBUI_COOKIE_NAME`, `HERMES_WEBUI_PROFILE_COOKIE_NAME` | 30 d, on, auto | Login cookie policy |
-| `HERMES_WEBUI_GATEWAY_BASE_URL` / `HERMES_WEBUI_GATEWAY_API_KEY` | `http://127.0.0.1:8642` | Hermes gateway API used by health probes and the gateway chat backend |
-| `HERMES_WEBUI_MAX_UPLOAD_MB`, `HERMES_WEBUI_FOLDER_ZIP_MAX_MB`, `HERMES_WEBUI_FOLDER_ZIP_MAX_FILES` | 20, 1024, 50000 | Upload and folder-download limits; the folder archive is plain ZIP32, so the last two are clamped to 4000 MB and 65535 entries |
-| `HERMES_WEBUI_MAX_EXTRACTED_MB` | 10 × upload limit | Total bytes one archive upload may extract (zip, tar, gzip, bzip2, xz); archives also stop at 10,000 files |
-| `HERMES_WEBUI_MAX_SSE_CLIENTS` | 8 per client | Concurrent stream cap per client identity |
-| `HERMES_WEBUI_EXTENSION_DIR`, `HERMES_WEBUI_EXTENSION_MANIFEST` | unset | Local extensions ([docs](docs/EXTENSIONS.md)) |
-| `HERMES_WEBUI_PLUGINS_DIR` | `$HERMES_HOME/plugins` | Dashboard plugins (`<name>/dashboard/manifest.json`), each off until enabled under `dashboard_plugins` in settings.json ([docs](docs/architecture/extension-migration-guide.md#8-dashboard-plugins)) |
-| `HERMES_WEBUI_EXTERNAL_NOTES_SOURCES` | unset | Notes drawer sources; Joplin search and preview read `JOPLIN_URL` (default `http://127.0.0.1:41184`) and `JOPLIN_TOKEN` from the `joplin` MCP server's `env`, then the environment |
+| `TALARIA_WEB_STATE_DIR` | `$HERMES_HOME/webui` | Sessions, settings, auth records, journals, shares |
+| `TALARIA_WEB_DEFAULT_WORKSPACE` | `~/workspace` | Default workspace |
+| `TALARIA_WEB_CLAUDE_PROJECTS_DIR` | `~/.claude/projects` | Claude Code transcripts listed read-only when **Show Claude Code sessions** is on |
+| `TALARIA_WEB_DEFAULT_MODEL` | provider default | Optional model override |
+| `TALARIA_WEB_PASSWORD` | unset | Enables password authentication (required when binding beyond loopback) |
+| `TALARIA_WEB_PASSKEY` | unset | Passkey availability flag |
+| `TALARIA_WEB_TLS_CERT` / `TALARIA_WEB_TLS_KEY` | unset | Serve HTTPS directly (TLS 1.2+) |
+| `TALARIA_WEB_TRUSTED_PROXY_CIDRS`, `TALARIA_WEB_TRUST_FORWARDED_FOR`, `TALARIA_WEB_TRUST_FORWARDED_HOST`, `TALARIA_WEB_TRUST_FORWARDED_PROTO` | unset | Reverse-proxy trust |
+| `TALARIA_WEB_ALLOWED_ORIGINS` | unset | Extra browser origins accepted by the same-origin check; their hostnames also pass the Host check |
+| `TALARIA_WEB_ALLOWED_HOSTS` | unset | Comma-separated hostnames the server answers to besides `localhost`, IP addresses and `TALARIA_WEB_HOST`; any other `Host` gets `421` (DNS-rebinding guard). List your public name behind a reverse proxy or Tailscale Serve |
+| `TALARIA_WEB_CSP_CONNECT_EXTRA` / `TALARIA_WEB_CSP_FRAME_EXTRA` | unset | Extra CSP `connect-src` / `frame-src` origins |
+| `TALARIA_WEB_TRUSTED_AUTH_HEADER`, `TALARIA_WEB_TRUSTED_GROUPS_HEADER`, `TALARIA_WEB_GROUP_PROFILE_MAP`, `TALARIA_WEB_TRUSTED_AUTH_LOGOUT_URL` | unset | Trusted-header authentication behind an authenticating proxy |
+| `TALARIA_WEB_OIDC_OWNER_CLAIM` / `TALARIA_WEB_OIDC_OWNER_VALUES` | unset | OIDC owner policy for operator-only routes |
+| `TALARIA_WEB_OIDC_TOKEN_AUTH_METHOD` | `auto` | OIDC token-endpoint client authentication: `client_secret_basic`, `client_secret_post`, or `auto` (form body unless discovery advertises only Basic); also `webui_oidc.token_auth_method` |
+| `TALARIA_WEB_PERSON_ISOLATION` | unset | With OIDC sign-in, each person sees only the sessions they created. Sessions no person owns (from before, a non-OIDC login, or the Agent) reach owners only. A person's sessions are not published to Talaria Relay, whose enrollment is per profile. Profile memory, skills, files and scheduled tasks stay shared; bind people to separate profiles for those |
+| `TALARIA_WEB_SESSION_TTL`, `TALARIA_WEB_SESSION_SLIDING`, `TALARIA_WEB_SECURE`, `TALARIA_WEB_COOKIE_NAME`, `TALARIA_WEB_PROFILE_COOKIE_NAME` | 30 d, on, auto | Login cookie policy |
+| `TALARIA_WEB_GATEWAY_BASE_URL` / `TALARIA_WEB_GATEWAY_API_KEY` | `http://127.0.0.1:8642` | Hermes gateway API used by health probes and the gateway chat backend |
+| `TALARIA_WEB_MAX_UPLOAD_MB`, `TALARIA_WEB_FOLDER_ZIP_MAX_MB`, `TALARIA_WEB_FOLDER_ZIP_MAX_FILES` | 20, 1024, 50000 | Upload and folder-download limits; the folder archive is plain ZIP32, so the last two are clamped to 4000 MB and 65535 entries |
+| `TALARIA_WEB_MAX_EXTRACTED_MB` | 10 × upload limit | Total bytes one archive upload may extract (zip, tar, gzip, bzip2, xz); archives also stop at 10,000 files |
+| `TALARIA_WEB_MAX_SSE_CLIENTS` | 8 per client | Concurrent stream cap per client identity |
+| `TALARIA_WEB_EXTENSION_DIR`, `TALARIA_WEB_EXTENSION_MANIFEST` | unset | Local extensions ([docs](docs/EXTENSIONS.md)) |
+| `TALARIA_WEB_PLUGINS_DIR` | `$HERMES_HOME/plugins` | Dashboard plugins (`<name>/dashboard/manifest.json`), each off until enabled under `dashboard_plugins` in settings.json ([docs](docs/architecture/extension-migration-guide.md#8-dashboard-plugins)) |
+| `TALARIA_WEB_EXTERNAL_NOTES_SOURCES` | unset | Notes drawer sources; Joplin search and preview read `JOPLIN_URL` (default `http://127.0.0.1:41184`) and `JOPLIN_TOKEN` from the `joplin` MCP server's `env`, then the environment |
 | `WIKI_PATH` | `~/wiki` | LLM wiki root for `/api/wiki/*`; also read from the profile `.env`, then `skills.config.wiki.path` or `wiki.path` in config.yaml |
-| `HERMES_WEBUI_LOG_FILE`, `HERMES_WEBUI_LOG_MAX_BYTES` | detached log, 32 MiB | Size-bounded server log |
-| `HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS`, `HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT`, `HERMES_WEBUI_RUN_JOURNAL_RETENTION_MAX_RUNS_PER_SESSION`, `HERMES_WEBUI_RUN_JOURNAL_RETENTION_MAX_BYTES_PER_SESSION`, `HERMES_WEBUI_RUN_JOURNAL_ARCHIVE_MAX_BYTES`, `HERMES_WEBUI_RUN_JOURNAL_FSYNC` | 14, 3, 40, 256 MiB, 2 GiB, auto | Run journal archival |
-| `HERMES_WEBUI_SESSIONS_MAX` | 100 | Session cache size (prefer `webui.sessions_cache_max` in `config.yaml`) |
-| `HERMES_WEBUI_FOREGROUND` | auto | Force attached mode (supervisors are auto-detected) |
-| `HERMES_WEBUI_PRESERVE_ENV`, `HERMES_WEBUI_NO_DOTENV` | unset | `.env` precedence controls |
-| `HERMES_WEBUI_SIDECAR_COMMAND` | unset | Replace the sidecar spawn command (test fixtures only) |
+| `TALARIA_WEB_LOG_FILE`, `TALARIA_WEB_LOG_MAX_BYTES` | detached log, 32 MiB | Size-bounded server log |
+| `TALARIA_WEB_RUN_JOURNAL_RETENTION_DAYS`, `TALARIA_WEB_RUN_JOURNAL_KEEP_RECENT`, `TALARIA_WEB_RUN_JOURNAL_RETENTION_MAX_RUNS_PER_SESSION`, `TALARIA_WEB_RUN_JOURNAL_RETENTION_MAX_BYTES_PER_SESSION`, `TALARIA_WEB_RUN_JOURNAL_ARCHIVE_MAX_BYTES`, `TALARIA_WEB_RUN_JOURNAL_FSYNC` | 14, 3, 40, 256 MiB, 2 GiB, auto | Run journal archival |
+| `TALARIA_WEB_SESSIONS_MAX` | 100 | Session cache size (prefer `webui.sessions_cache_max` in `config.yaml`) |
+| `TALARIA_WEB_FOREGROUND` | auto | Force attached mode (supervisors are auto-detected) |
+| `TALARIA_WEB_PRESERVE_ENV`, `TALARIA_WEB_NO_DOTENV` | unset | `.env` precedence controls |
+| `TALARIA_WEB_SIDECAR_COMMAND` | unset | Replace the sidecar spawn command (test fixtures only) |
 | `TALARIA_RELEASE_TOKEN` | unset | GitHub token with Contents read for private release lookups ([docs](docs/talaria-updates.md)) |
 
 Public authentication request bodies are limited to 64 KiB, including chunked requests;
 larger bodies receive HTTP 413. Authenticated routes retain their existing limits.
-Access logs include `forwarded_for` only when `HERMES_WEBUI_TRUST_FORWARDED_FOR` is enabled,
+Access logs include `forwarded_for` only when `TALARIA_WEB_TRUST_FORWARDED_FOR` is enabled,
 the connection comes from a trusted proxy (loopback included), and `X-Forwarded-For` resolves
 to a valid, normalized client address; `X-Real-IP` is never used. A forwarded header that is
 not recorded sets `forwarded_for_ignored: true` instead. See
 [Behind a reverse proxy](docs/remote-access.md#behind-a-reverse-proxy).
 
 Login, passkey, native OIDC start, and TTS limits key on a forwarded client only when
-`HERMES_WEBUI_TRUST_FORWARDED_FOR` is enabled and the proxy's socket address is listed in
-`HERMES_WEBUI_TRUSTED_PROXY_CIDRS`; loopback is not trusted implicitly for these limits. A
+`TALARIA_WEB_TRUST_FORWARDED_FOR` is enabled and the proxy's socket address is listed in
+`TALARIA_WEB_TRUSTED_PROXY_CIDRS`; loopback is not trusted implicitly for these limits. A
 same-host proxy lists `127.0.0.1/32` (and `::1/128`), which trusts every local client the
 same way, SSH tunnels included. The proxy must append the client to `X-Forwarded-For` and
 overwrite any `X-Real-IP` it sends. A missing chain, an empty field, or an `X-Real-IP`
@@ -324,8 +326,8 @@ An unavailable or incompatible route reports an error without saving. SOUL and p
 
 ### Remote access
 
-Bind to loopback and use an SSH tunnel or Tailscale, or set `HERMES_WEBUI_HOST=0.0.0.0` with
-`HERMES_WEBUI_PASSWORD`. See [docs/remote-access.md](docs/remote-access.md).
+Bind to loopback and use an SSH tunnel or Tailscale, or set `TALARIA_WEB_HOST=0.0.0.0` with
+`TALARIA_WEB_PASSWORD`. See [docs/remote-access.md](docs/remote-access.md).
 
 ## Docker
 
@@ -384,7 +386,7 @@ links back to System settings.
 ## MCP server
 
 `talaria-web-mcp` exposes the same seven session tools as before over the Model Context Protocol, talking to
-a running Web instance through its HTTP API (`TALARIA_WEB_URL`, `HERMES_WEBUI_PASSWORD`).
+a running Web instance through its HTTP API (`TALARIA_WEB_URL`, `TALARIA_WEB_PASSWORD`).
 
 ## Development
 

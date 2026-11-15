@@ -400,7 +400,7 @@ describe('open server (no auth)', () => {
 describe('password auth', () => {
   let s: TestServer
   const PASSWORD = 'correct horse battery staple'
-  beforeAll(async () => { s = await bootTestServer({ env: { HERMES_WEBUI_PASSWORD: PASSWORD } }) })
+  beforeAll(async () => { s = await bootTestServer({ env: { TALARIA_WEB_PASSWORD: PASSWORD } }) })
   afterAll(() => s.close())
 
   const host = () => s.base.replace('http://', '')
@@ -512,7 +512,7 @@ describe('password auth', () => {
 describe('trusted-header auth', () => {
   let s: TestServer
   beforeAll(async () => {
-    s = await bootTestServer({ env: { HERMES_WEBUI_TRUSTED_AUTH_HEADER: 'X-Remote-User', HERMES_WEBUI_TRUSTED_GROUPS_HEADER: 'X-Remote-Groups', HERMES_WEBUI_GROUP_PROFILE_MAP: '{"ops":"work"}', HERMES_WEBUI_TRUSTED_AUTH_LOGOUT_URL: 'https://sso.example/logout' } })
+    s = await bootTestServer({ env: { TALARIA_WEB_TRUSTED_AUTH_HEADER: 'X-Remote-User', TALARIA_WEB_TRUSTED_GROUPS_HEADER: 'X-Remote-Groups', TALARIA_WEB_GROUP_PROFILE_MAP: '{"ops":"work"}', TALARIA_WEB_TRUSTED_AUTH_LOGOUT_URL: 'https://sso.example/logout' } })
   })
   afterAll(() => s.close())
 
@@ -561,11 +561,11 @@ describe('trusted-header auth on an isolated profile instance', () => {
     mkdirSync(home, { recursive: true })
   })
   afterAll(() => { rmSync(base, { recursive: true, force: true }) })
-  const boot = (env: Record<string, string> = {}) => bootTestServer({ env: { HERMES_WEBUI_ISOLATED_PROFILE: '1', HERMES_HOME: home, HERMES_WEBUI_TRUSTED_AUTH_HEADER: 'X-Remote-User', HERMES_WEBUI_TRUSTED_GROUPS_HEADER: 'X-Remote-Groups', ...env } })
+  const boot = (env: Record<string, string> = {}) => bootTestServer({ env: { TALARIA_WEB_ISOLATED_PROFILE: '1', HERMES_HOME: home, TALARIA_WEB_TRUSTED_AUTH_HEADER: 'X-Remote-User', TALARIA_WEB_TRUSTED_GROUPS_HEADER: 'X-Remote-Groups', ...env } })
 
   // `/api/crons` answers 503 without a sidecar; admission only means the gate let the request through.
   it('refuses a session bound to another profile on every API route and admits the pinned profile', async () => {
-    const s = await boot({ HERMES_WEBUI_GROUP_PROFILE_MAP: '{"alice-team":"alice","bob-team":"bob"}' })
+    const s = await boot({ TALARIA_WEB_GROUP_PROFILE_MAP: '{"alice-team":"alice","bob-team":"bob"}' })
     try {
       for (const groups of ['bob-team', 'strangers']) {
         const headers = { 'X-Remote-User': 'mallory', 'X-Remote-Groups': groups }
@@ -602,7 +602,7 @@ describe('trusted-header auth on an isolated profile instance', () => {
 describe('pre-auth request hardening', () => {
   let s: TestServer
   const password = 'synthetic-login-password'
-  beforeAll(async () => { s = await bootTestServer({ env: { HERMES_WEBUI_PASSWORD: password } }) })
+  beforeAll(async () => { s = await bootTestServer({ env: { TALARIA_WEB_PASSWORD: password } }) })
   afterAll(() => s.close())
 
   const postBody = (path: string, bytes: number, chunked: boolean, headers: Record<string, string> = {}): Promise<{ status: number; body: string; cookies: string[] }> => new Promise((resolve, reject) => {
@@ -676,16 +676,16 @@ describe('pre-auth request hardening', () => {
       new RequestContext(req, new ServerResponse(req), s.deps).logRequest(200)
       return JSON.parse(s.logs.at(-1)!.slice('[webui] '.length)) as Record<string, unknown>
     }
-    env.HERMES_WEBUI_TRUST_FORWARDED_FOR = '1'
-    env.HERMES_WEBUI_TRUSTED_PROXY_CIDRS = '10.0.0.0/8'
+    env.TALARIA_WEB_TRUST_FORWARDED_FOR = '1'
+    env.TALARIA_WEB_TRUSTED_PROXY_CIDRS = '10.0.0.0/8'
     try {
       // A proxy relays a client-supplied X-Real-IP unchanged, so it never names the logged client.
       expect(record({ 'x-real-ip': '203.0.113.77' })).not.toHaveProperty('forwarded_for')
       // A zone id is free-form header text, so a scoped hop never becomes the logged client.
       expect(record({ 'x-forwarded-for': 'fe80::1%syntheticmarker' })).not.toHaveProperty('forwarded_for')
     } finally {
-      delete env.HERMES_WEBUI_TRUST_FORWARDED_FOR
-      delete env.HERMES_WEBUI_TRUSTED_PROXY_CIDRS
+      delete env.TALARIA_WEB_TRUST_FORWARDED_FOR
+      delete env.TALARIA_WEB_TRUSTED_PROXY_CIDRS
     }
   })
 
@@ -713,8 +713,8 @@ describe('pre-auth request hardening', () => {
 
     // Opt-in off: a forwarded header is never trusted, but the record says it was dropped.
     expect(fields(record('127.0.0.1', '203.0.113.9'))).toEqual(ignored)
-    env.HERMES_WEBUI_TRUST_FORWARDED_FOR = '1'
-    env.HERMES_WEBUI_TRUSTED_PROXY_CIDRS = '10.0.0.0/8'
+    env.TALARIA_WEB_TRUST_FORWARDED_FOR = '1'
+    env.TALARIA_WEB_TRUSTED_PROXY_CIDRS = '10.0.0.0/8'
     try {
       expect(fields(record('10.0.0.1', undefined, '203.0.113.77'))).toEqual({})
       expect(fields(record('10.0.0.1', 'bad', '203.0.113.77'))).toEqual(ignored)
@@ -750,7 +750,7 @@ describe('pre-auth request hardening', () => {
       // One warning per process for an untrusted proxy, however many first requests arrive together.
       await Promise.all(['198.51.100.2', '198.51.100.3', '198.51.100.4'].map(async (peer) => { await Promise.resolve(); record(peer, oversized) }))
       record('198.51.100.5', '203.0.113.9')
-      const warnings = lines.filter((line) => line.includes('HERMES_WEBUI_TRUSTED_PROXY_CIDRS'))
+      const warnings = lines.filter((line) => line.includes('TALARIA_WEB_TRUSTED_PROXY_CIDRS'))
       expect(warnings).toHaveLength(1)
       expect(warnings[0]).toContain('198.51.100.1')
       // Hostile header text never reaches a warning or a record.
@@ -761,8 +761,8 @@ describe('pre-auth request hardening', () => {
         expect(line).not.toContain('203.0.113.77')
       }
     } finally {
-      delete env.HERMES_WEBUI_TRUST_FORWARDED_FOR
-      delete env.HERMES_WEBUI_TRUSTED_PROXY_CIDRS
+      delete env.TALARIA_WEB_TRUST_FORWARDED_FOR
+      delete env.TALARIA_WEB_TRUSTED_PROXY_CIDRS
     }
   })
 })
@@ -809,10 +809,10 @@ describe('per-request costs (TAL-1727)', () => {
   })
 
   it('validates the CSP extras once per app and sends the same policy bytes', async () => {
-    const s = await bootTestServer({ env: { HERMES_WEBUI_CSP_CONNECT_EXTRA: 'https://api.example:8443 wss://*.relay.example', HERMES_WEBUI_CSP_FRAME_EXTRA: 'not-a-source' } })
+    const s = await bootTestServer({ env: { TALARIA_WEB_CSP_CONNECT_EXTRA: 'https://api.example:8443 wss://*.relay.example', TALARIA_WEB_CSP_FRAME_EXTRA: 'not-a-source' } })
     try {
       const responses = [await s.get('/health'), await s.get('/health'), await s.get('/api/sessions')]
-      expect(s.logs.filter((line) => line.includes('Ignoring invalid HERMES_WEBUI_CSP_FRAME_EXTRA'))).toHaveLength(1)
+      expect(s.logs.filter((line) => line.includes('Ignoring invalid TALARIA_WEB_CSP_FRAME_EXTRA'))).toHaveLength(1)
       const policy = (frameAncestors: string) => `default-src 'self' https://*.cloudflareaccess.com; object-src 'none'; frame-ancestors ${frameAncestors}; script-src 'self' https://static.cloudflareinsights.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self' data:; media-src 'self' data: blob:; connect-src 'self' http://127.0.0.1:* http://localhost:* http://ipc.localhost https://127.0.0.1:* https://localhost:* ws://127.0.0.1:* ws://localhost:* blob: https://api.example:8443 wss://*.relay.example; frame-src 'self'; manifest-src 'self' https://*.cloudflareaccess.com; base-uri 'self'; form-action 'self'`
       for (const res of responses) {
         expect(res.headers.get('content-security-policy')).toBe(policy("'none'"))

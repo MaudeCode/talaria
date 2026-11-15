@@ -1,8 +1,8 @@
 """Sidecar test harness: spawn ``python -m talaria_sidecar`` on the Agent venv.
 
 Every test owns a disposable HERMES_HOME. The Agent checkout is
-``HERMES_WEBUI_AGENT_DIR`` (``scripts/test.sh`` supplies the cached pinned release
-when unset); the interpreter is ``HERMES_WEBUI_PYTHON``, else the checkout's venv.
+``TALARIA_WEB_AGENT_DIR`` (``scripts/test.sh`` supplies the cached pinned release
+when unset); the interpreter is ``TALARIA_WEB_PYTHON``, else the checkout's venv.
 Tests never touch ``~/.hermes``, nor test against its Agent.
 """
 
@@ -34,7 +34,7 @@ pytest_plugins = ['suite_runner']
 
 
 def configured_agent_dir() -> pathlib.Path | None:
-    raw = os.environ.get("HERMES_WEBUI_AGENT_DIR", "")
+    raw = os.environ.get("TALARIA_WEB_AGENT_DIR", "")
     if raw and (pathlib.Path(raw).expanduser() / "run_agent.py").exists():
         return pathlib.Path(raw).expanduser().resolve()
     return None
@@ -43,8 +43,8 @@ def configured_agent_dir() -> pathlib.Path | None:
 def discover_python(agent_dir: pathlib.Path | None) -> str | None:
     if os.environ.get('TALARIA_TEST_LAYER') == 'process':
         return sys.executable
-    if os.environ.get("HERMES_WEBUI_PYTHON"):
-        return os.environ["HERMES_WEBUI_PYTHON"]
+    if os.environ.get("TALARIA_WEB_PYTHON"):
+        return os.environ["TALARIA_WEB_PYTHON"]
     if agent_dir:
         for venv in ("venv", ".venv"):
             candidate = agent_dir / venv / "bin" / "python"

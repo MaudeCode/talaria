@@ -22,7 +22,7 @@ it('passes exact selections and profile scope to the backend and redacts display
   sidecar.respond('skills.revisions', () => ({ ...fixture,
     selected: { revision: fixture.selected!.revision, content: 'api_key = synthetic-private-key-value' },
     comparison: { ...fixture.comparison!, diff: '+api_key = synthetic-private-key-value' } }))
-  server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_TRUSTED_AUTH_HEADER: 'X-Remote-User', HERMES_WEBUI_TRUSTED_GROUPS_HEADER: 'X-Remote-Groups', HERMES_WEBUI_GROUP_PROFILE_MAP: '{"ops":"work"}' } })
+  server = await bootTestServer({ sidecar, env: { TALARIA_WEB_TRUSTED_AUTH_HEADER: 'X-Remote-User', TALARIA_WEB_TRUSTED_GROUPS_HEADER: 'X-Remote-Groups', TALARIA_WEB_GROUP_PROFILE_MAP: '{"ops":"work"}' } })
   const selection = `revision=${fixture.selected!.revision}&compare_to=${fixture.comparison!.from_revision}`
   const response = await server.get(`/api/skills/revisions?name=demo&${selection}`, { headers: { 'X-Remote-User': 'kim', 'X-Remote-Groups': 'ops' } })
   expect(response.status).toBe(200)

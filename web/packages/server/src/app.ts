@@ -409,9 +409,9 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
     const shown = JSON.stringify(rejected.slice(0, 253))
     if (warnedHosts.size < 32 && !warnedHosts.has(rejected)) {
       warnedHosts.add(rejected)
-      deps.log(`[webui] WARNING: rejected a request for host ${shown}; add it to HERMES_WEBUI_ALLOWED_HOSTS if this server should answer to it`)
+      deps.log(`[webui] WARNING: rejected a request for host ${shown}; add it to TALARIA_WEB_ALLOWED_HOSTS if this server should answer to it`)
     }
-    await ctx.rawJson(421, { error: `This server does not answer to host ${shown}. Add it to HERMES_WEBUI_ALLOWED_HOSTS to allow it.` })
+    await ctx.rawJson(421, { error: `This server does not answer to host ${shown}. Add it to TALARIA_WEB_ALLOWED_HOSTS to allow it.` })
     return true
   }
 

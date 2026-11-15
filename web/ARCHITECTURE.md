@@ -217,7 +217,7 @@ in `sessions/storage/search-text.ts` define search semantics for every adapter.
 
 Chat attachments go through a separate `BlobStore` port (`sessions/storage/blobs.ts`), selected by
 `TALARIA_BLOB_STORAGE` independently of `TALARIA_STORAGE`. Keys are `attachments/<sanitized sid>/<name>`. The
-default `local` adapter is the attachment directory (`<stateDir>/attachments` or `HERMES_WEBUI_ATTACHMENT_DIR`)
+default `local` adapter is the attachment directory (`<stateDir>/attachments` or `TALARIA_WEB_ATTACHMENT_DIR`)
 with its anchored exclusive creates; its etag is the inode/size/change-time signature upload receipts always
 compared. The `s3` adapter (`blobs-s3.ts`) stores objects in an S3-compatible bucket and materializes each one
 under `<stateDir>/blob-cache/attachments/...` through `localPath`: concurrent calls share one download, the bytes

@@ -4,9 +4,9 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 [[ "${_TALARIA_ENV_LOADED:-}" == 1 ]] || exec "$repo_root/scripts/load-env" "$repo_root/scripts/webui-json" "$@"
 
-: "${HERMES_WEBUI_BASE_URL:?Set HERMES_WEBUI_BASE_URL (e.g. https://your-server.example) in .env.local or the environment.}"
-base_url="$HERMES_WEBUI_BASE_URL"
-: "${HERMES_WEBUI_PASSWORD:?Set HERMES_WEBUI_PASSWORD in .env.local or the environment.}"
+: "${TALARIA_WEB_BASE_URL:?Set TALARIA_WEB_BASE_URL (e.g. https://your-server.example) in .env.local or the environment.}"
+base_url="$TALARIA_WEB_BASE_URL"
+: "${TALARIA_WEB_PASSWORD:?Set TALARIA_WEB_PASSWORD in .env.local or the environment.}"
 
 usage() {
   cat >&2 <<'USAGE'
@@ -25,7 +25,7 @@ login_body() {
   python3 - <<'PY'
 import json
 import os
-print(json.dumps({"password": os.environ["HERMES_WEBUI_PASSWORD"]}))
+print(json.dumps({"password": os.environ["TALARIA_WEB_PASSWORD"]}))
 PY
 }
 

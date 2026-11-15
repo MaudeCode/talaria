@@ -29,7 +29,7 @@ it('TAL-1493: exposes owner-only discovery, preview and explicit receipt applica
 
 it('refuses member discovery and import before any sidecar call', async () => {
   const sidecar = new FakeSidecar()
-  server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_TRUSTED_AUTH_HEADER: 'X-Remote-User', HERMES_WEBUI_TRUSTED_GROUPS_HEADER: 'X-Remote-Groups', HERMES_WEBUI_GROUP_PROFILE_MAP: '{"ops":"work"}' } })
+  server = await bootTestServer({ sidecar, env: { TALARIA_WEB_TRUSTED_AUTH_HEADER: 'X-Remote-User', TALARIA_WEB_TRUSTED_GROUPS_HEADER: 'X-Remote-Groups', TALARIA_WEB_GROUP_PROFILE_MAP: '{"ops":"work"}' } })
   const headers = { 'X-Remote-User': 'kim', 'X-Remote-Groups': 'ops', 'content-type': 'application/json' }
   for (const [path, body] of [['/api/profile/import', null], ['/api/profile/import/result?receipt=foreign', null], ['/api/profile/import/preview', { agent: 'cursor' }], ['/api/profile/import/apply', { receipt: 'foreign' }]] as const) {
     expect((await server.get(path, { headers, ...(body ? { method: 'POST', body: JSON.stringify(body) } : {}) })).status).toBe(403)

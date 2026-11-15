@@ -80,7 +80,7 @@ describe('isolation flag semantics', () => {
 
   it('every truthy flag spelling plus the profile shape isolates', async () => {
     for (const value of ['1', 'true', 'TRUE', 'yes', 'on']) {
-      const { s } = await boot({ HERMES_WEBUI_ISOLATED_PROFILE: value })
+      const { s } = await boot({ TALARIA_WEB_ISOLATED_PROFILE: value })
       expect(s.deps.isolatedProfileMode(), value).toBe(true)
       expect(s.deps.activeProfile()).toBe('webui')
     }
@@ -88,14 +88,14 @@ describe('isolation flag semantics', () => {
 
   it('the flag with a base home stays off', async () => {
     const sidecar = new FakeSidecar()
-    const s = await bootTestServer({ sidecar, env: { HERMES_WEBUI_ISOLATED_PROFILE: '1' } })
+    const s = await bootTestServer({ sidecar, env: { TALARIA_WEB_ISOLATED_PROFILE: '1' } })
     opened.push(s)
     expect(s.deps.isolatedProfileMode()).toBe(false)
   })
 
   it('falsey flag values keep isolation off even with the profile shape', async () => {
     for (const value of ['', '0', 'false', 'no', 'off', '  ']) {
-      const { s } = await boot({ HERMES_WEBUI_ISOLATED_PROFILE: value })
+      const { s } = await boot({ TALARIA_WEB_ISOLATED_PROFILE: value })
       expect(s.deps.isolatedProfileMode(), JSON.stringify(value)).toBe(false)
     }
   })
@@ -104,15 +104,15 @@ describe('isolation flag semantics', () => {
     const { base, home } = profileShapedHome('tenant')
     bases.push(base)
     mkdirSync(join(base, 'web'))
-    writeFileSync(join(home, '.env'), 'HERMES_WEBUI_ISOLATED_PROFILE=0\nORDINARY_KEY=loaded\n')
-    const env: Record<string, string | undefined> = { HERMES_HOME: home, HERMES_WEBUI_ISOLATED_PROFILE: '1' }
+    writeFileSync(join(home, '.env'), 'TALARIA_WEB_ISOLATED_PROFILE=0\nORDINARY_KEY=loaded\n')
+    const env: Record<string, string | undefined> = { HERMES_HOME: home, TALARIA_WEB_ISOLATED_PROFILE: '1' }
     loadStartupEnv({ env, webRoot: join(base, 'web'), home: base })
-    expect(env.HERMES_WEBUI_ISOLATED_PROFILE).toBe('1')
+    expect(env.TALARIA_WEB_ISOLATED_PROFILE).toBe('1')
     expect(env.ORDINARY_KEY).toBe('loaded')
   })
 
   it('HERMES_BASE_HOME alongside the pinned home keeps isolation on', async () => {
-    const { s } = await boot({ HERMES_WEBUI_ISOLATED_PROFILE: '1' }, 'webui', undefined, (base) => ({ HERMES_BASE_HOME: base }))
+    const { s } = await boot({ TALARIA_WEB_ISOLATED_PROFILE: '1' }, 'webui', undefined, (base) => ({ HERMES_BASE_HOME: base }))
     expect(s.deps.isolatedProfileMode()).toBe(true)
   })
 
@@ -122,44 +122,44 @@ describe('isolation flag semantics', () => {
   })
 
   it('a pinned profiles/default home stays pinned for the default name', async () => {
-    const { s, home } = await boot({ HERMES_WEBUI_ISOLATED_PROFILE: '1' }, 'default')
+    const { s, home } = await boot({ TALARIA_WEB_ISOLATED_PROFILE: '1' }, 'default')
     expect(s.deps.activeProfile()).toBe('default')
     expect(s.deps.profileHome('default')).toBe(home)
   })
 
   it('explicit default resolution answers the pinned home', async () => {
-    const { s, home } = await boot({ HERMES_WEBUI_ISOLATED_PROFILE: '1' }, 'default')
+    const { s, home } = await boot({ TALARIA_WEB_ISOLATED_PROFILE: '1' }, 'default')
     expect(s.deps.profileHome('default')).toBe(home)
     expect(s.deps.profileHome('')).toBe(home)
   })
 
   it('the resolver never falls back to the base home in isolated mode', async () => {
-    const { s, home, base } = await boot({ HERMES_WEBUI_ISOLATED_PROFILE: '1' }, 'default')
+    const { s, home, base } = await boot({ TALARIA_WEB_ISOLATED_PROFILE: '1' }, 'default')
     expect(s.deps.profileHome('default')).toBe(home)
     expect(s.deps.profileHome('default')).not.toBe(base)
   })
 
   it('a foreign profile name resolves to the pinned home', async () => {
-    const { s, home } = await boot({ HERMES_WEBUI_ISOLATED_PROFILE: '1' })
+    const { s, home } = await boot({ TALARIA_WEB_ISOLATED_PROFILE: '1' })
     expect(s.deps.profileHome('other')).toBe(home)
     expect(s.deps.profileHome('default')).toBe(home)
   })
 
   it('the isolated list carries one row whose path is the pinned home', async () => {
-    const { s, home } = await boot({ HERMES_WEBUI_ISOLATED_PROFILE: '1' }, 'default', [row('default', { is_default: true }), row('default')])
+    const { s, home } = await boot({ TALARIA_WEB_ISOLATED_PROFILE: '1' }, 'default', [row('default', { is_default: true }), row('default')])
     const profiles = (await json(await s.get('/api/profiles'))).profiles as Json[]
     expect(profiles).toHaveLength(1)
     expect(profiles[0]).toMatchObject({ name: 'default', path: home })
   })
 
   it('switching to the pinned profile passes the guard', async () => {
-    const { s } = await boot({ HERMES_WEBUI_ISOLATED_PROFILE: '1' })
+    const { s } = await boot({ TALARIA_WEB_ISOLATED_PROFILE: '1' })
     expect((await post(s, '/api/profile/switch', { name: 'webui' })).status).toBe(200)
     expect((await post(s, '/api/profile/switch', { name: 'other' })).status).toBe(403)
   })
 
   it('switching to default in a pinned profiles/default home reads the pinned config', async () => {
-    const { s, home } = await boot({ HERMES_WEBUI_ISOLATED_PROFILE: '1' }, 'default')
+    const { s, home } = await boot({ TALARIA_WEB_ISOLATED_PROFILE: '1' }, 'default')
     const res = await post(s, '/api/profile/switch', { name: 'default' })
     expect(res.status).toBe(200)
     expect(realpathSync(String((await json(res)).default_workspace))).toBe(realpathSync(home))

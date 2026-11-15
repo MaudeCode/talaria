@@ -95,7 +95,7 @@ describe('request_secret (TAL-1969)', () => {
   })
 
   it('refuses a malformed or reserved name before any prompt', async () => {
-    for (const [name, refused] of [['foo_key', 'env_name_invalid'], ['AB', 'env_name_invalid'], ['HERMES_API_KEY', 'env_name_reserved'], ['TERMINAL_SSH_KEY', 'env_name_reserved'], ['API_SERVER_KEY', 'env_name_reserved'], ['HERMES_WEBUI_SECRET', 'env_name_reserved'],
+    for (const [name, refused] of [['foo_key', 'env_name_invalid'], ['AB', 'env_name_invalid'], ['HERMES_API_KEY', 'env_name_reserved'], ['TERMINAL_SSH_KEY', 'env_name_reserved'], ['API_SERVER_KEY', 'env_name_reserved'], ['TALARIA_WEB_SECRET', 'env_name_reserved'],
       // Only a credential's name: never a loader, shell or launch hook, a path, a password prompt or an access list.
       ['BASH_ENV', 'env_name_reserved'], ['NODE_OPTIONS', 'env_name_reserved'], ['GIT_SSH_COMMAND', 'env_name_reserved'], ['PATH', 'env_name_reserved'], ['SUDO_PASSWORD', 'env_name_reserved'], ['TELEGRAM_ALLOWED_USERS', 'env_name_reserved']] as const) {
       // A name the server accepted would show a prompt that times out; a refused one never prompts.
@@ -138,7 +138,7 @@ describe('request_secret (TAL-1969)', () => {
 describe('request_secret for a non-owner (TAL-1969)', () => {
   it('shows the prompt without its field and refuses the answer', async () => {
     const sidecar = new FakeSidecar()
-    const s = await bootTestServer({ sidecar, env: { HERMES_WEBUI_PASSWORD: 'synthetic-test-password' } })
+    const s = await bootTestServer({ sidecar, env: { TALARIA_WEB_PASSWORD: 'synthetic-test-password' } })
     sidecar.respond('runtime.env', () => ({ ok: true }))
     const login = (boundProfile?: string) => {
       const value = s.deps.auth.createSession({ authType: 'password', ...(boundProfile ? { boundProfile } : {}) })

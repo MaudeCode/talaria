@@ -30,53 +30,53 @@ describe('.env loading', () => {
   })
   it('applies the checkout file unconditionally (unless preserved) and the Hermes file only as a fallback', () => {
     const dir = scratch()
-    writeFileSync(join(dir, 'repo.env'), 'HERMES_WEBUI_PORT=9999\nONLY_REPO_KEY=r\n')
-    writeFileSync(join(dir, 'hermes.env'), 'HERMES_WEBUI_PORT=1\nONLY_HERMES_KEY=h\nONLY_REPO_KEY=h\n')
-    const env: Record<string, string | undefined> = { HERMES_WEBUI_PORT: '8787' }
-    expect(loadLauncherDotenv({ env, repoEnvFile: join(dir, 'repo.env'), hermesEnvFile: join(dir, 'hermes.env') }).sort()).toEqual(['HERMES_WEBUI_PORT', 'ONLY_HERMES_KEY', 'ONLY_REPO_KEY'])
-    expect(env).toEqual({ HERMES_WEBUI_PORT: '9999', ONLY_REPO_KEY: 'r', ONLY_HERMES_KEY: 'h' })
-    const preserved: Record<string, string | undefined> = { HERMES_WEBUI_PORT: '8787', HERMES_WEBUI_PRESERVE_ENV: '1' }
+    writeFileSync(join(dir, 'repo.env'), 'TALARIA_WEB_PORT=9999\nONLY_REPO_KEY=r\n')
+    writeFileSync(join(dir, 'hermes.env'), 'TALARIA_WEB_PORT=1\nONLY_HERMES_KEY=h\nONLY_REPO_KEY=h\n')
+    const env: Record<string, string | undefined> = { TALARIA_WEB_PORT: '8787' }
+    expect(loadLauncherDotenv({ env, repoEnvFile: join(dir, 'repo.env'), hermesEnvFile: join(dir, 'hermes.env') }).sort()).toEqual(['ONLY_HERMES_KEY', 'ONLY_REPO_KEY', 'TALARIA_WEB_PORT'])
+    expect(env).toEqual({ TALARIA_WEB_PORT: '9999', ONLY_REPO_KEY: 'r', ONLY_HERMES_KEY: 'h' })
+    const preserved: Record<string, string | undefined> = { TALARIA_WEB_PORT: '8787', TALARIA_WEB_PRESERVE_ENV: '1' }
     loadLauncherDotenv({ env: preserved, repoEnvFile: join(dir, 'repo.env'), hermesEnvFile: null })
-    expect(preserved.HERMES_WEBUI_PORT).toBe('8787')
-    const off: Record<string, string | undefined> = { HERMES_WEBUI_NO_DOTENV: '1' }
+    expect(preserved.TALARIA_WEB_PORT).toBe('8787')
+    const off: Record<string, string | undefined> = { TALARIA_WEB_NO_DOTENV: '1' }
     expect(loadLauncherDotenv({ env: off, repoEnvFile: join(dir, 'repo.env'), hermesEnvFile: null })).toEqual([])
   })
   it('takes only credentials, the model, and Web tuning keys from the Hermes home .env, warning about the rest', () => {
     const dir = scratch()
     const protectedKeys = [
-      'HERMES_WEBUI_ISOLATED_PROFILE', 'HERMES_WEBUI_PASSWORD', 'HERMES_WEBUI_PASSKEY', 'HERMES_WEBUI_COOKIE_NAME', 'HERMES_WEBUI_SECURE',
-      'HERMES_WEBUI_SESSION_TTL', 'HERMES_WEBUI_SESSION_SLIDING', 'HERMES_WEBUI_TRUSTED_AUTH_HEADER', 'HERMES_WEBUI_TRUSTED_GROUPS_HEADER',
-      'HERMES_WEBUI_GROUP_PROFILE_MAP', 'HERMES_WEBUI_TRUSTED_AUTH_LOGOUT_URL', 'HERMES_WEBUI_TRUSTED_PROXY_CIDRS', 'HERMES_WEBUI_OIDC_ISSUER',
-      'HERMES_WEBUI_OIDC_CLIENT_ID', 'HERMES_WEBUI_OIDC_CLIENT_SECRET', 'HERMES_WEBUI_OIDC_REDIRECT_URI', 'HERMES_WEBUI_OIDC_SCOPES',
-      'HERMES_WEBUI_OIDC_ALLOW_CLAIM', 'HERMES_WEBUI_OIDC_ALLOW_VALUES', 'HERMES_WEBUI_OIDC_TRUSTED_PRIVATE_HOSTS', 'HERMES_WEBUI_OIDC_PROFILE_CLAIM',
-      'HERMES_WEBUI_OIDC_PROFILE_MAP', 'HERMES_WEBUI_OIDC_OWNER_CLAIM', 'HERMES_WEBUI_OIDC_OWNER_VALUES',
+      'TALARIA_WEB_ISOLATED_PROFILE', 'TALARIA_WEB_PASSWORD', 'TALARIA_WEB_PASSKEY', 'TALARIA_WEB_COOKIE_NAME', 'TALARIA_WEB_SECURE',
+      'TALARIA_WEB_SESSION_TTL', 'TALARIA_WEB_SESSION_SLIDING', 'TALARIA_WEB_TRUSTED_AUTH_HEADER', 'TALARIA_WEB_TRUSTED_GROUPS_HEADER',
+      'TALARIA_WEB_GROUP_PROFILE_MAP', 'TALARIA_WEB_TRUSTED_AUTH_LOGOUT_URL', 'TALARIA_WEB_TRUSTED_PROXY_CIDRS', 'TALARIA_WEB_OIDC_ISSUER',
+      'TALARIA_WEB_OIDC_CLIENT_ID', 'TALARIA_WEB_OIDC_CLIENT_SECRET', 'TALARIA_WEB_OIDC_REDIRECT_URI', 'TALARIA_WEB_OIDC_SCOPES',
+      'TALARIA_WEB_OIDC_ALLOW_CLAIM', 'TALARIA_WEB_OIDC_ALLOW_VALUES', 'TALARIA_WEB_OIDC_TRUSTED_PRIVATE_HOSTS', 'TALARIA_WEB_OIDC_PROFILE_CLAIM',
+      'TALARIA_WEB_OIDC_PROFILE_MAP', 'TALARIA_WEB_OIDC_OWNER_CLAIM', 'TALARIA_WEB_OIDC_OWNER_VALUES',
       // With auth disabled, ONBOARDING_OPEN opens remote onboarding, the terminal, and first-password setup.
-      'HERMES_WEBUI_ONBOARDING_OPEN', 'HERMES_WEBUI_ALLOWED_ORIGINS', 'HERMES_WEBUI_TRUST_FORWARDED_FOR', 'HERMES_WEBUI_TRUST_FORWARDED_HOST',
-      'HERMES_WEBUI_TRUST_FORWARDED_PROTO', 'HERMES_WEBUI_TRUSTED_GROUPS_PIPE_SEPARATOR',
+      'TALARIA_WEB_ONBOARDING_OPEN', 'TALARIA_WEB_ALLOWED_ORIGINS', 'TALARIA_WEB_TRUST_FORWARDED_FOR', 'TALARIA_WEB_TRUST_FORWARDED_HOST',
+      'TALARIA_WEB_TRUST_FORWARDED_PROTO', 'TALARIA_WEB_TRUSTED_GROUPS_PIPE_SEPARATOR',
       // Keys that pick or load the code the server, the sidecar, the terminal, git, or the browser runs.
-      'HERMES_WEBUI_SIDECAR_COMMAND', 'HERMES_WEBUI_PYTHON', 'HERMES_WEBUI_AGENT_DIR', 'HERMES_WEBUI_SERVER_CWD', 'HERMES_WEBUI_EXTENSION_DIR',
-      'HERMES_WEBUI_EXTENSION_MANIFEST', 'HERMES_WEBUI_EXTENSION_SCRIPT_URLS', 'HERMES_WEBUI_EXTENSION_STYLESHEET_URLS', 'HERMES_WEBUI_CSP_CONNECT_EXTRA',
-      'HERMES_WEBUI_CSP_FRAME_EXTRA', 'NODE_OPTIONS', 'NODE_PATH', 'PYTHONPATH', 'PYTHONHOME', 'PYTHONSTARTUP', 'BASH_ENV', 'LD_PRELOAD', 'LD_AUDIT',
+      'TALARIA_WEB_SIDECAR_COMMAND', 'TALARIA_WEB_PYTHON', 'TALARIA_WEB_AGENT_DIR', 'TALARIA_WEB_SERVER_CWD', 'TALARIA_WEB_EXTENSION_DIR',
+      'TALARIA_WEB_EXTENSION_MANIFEST', 'TALARIA_WEB_EXTENSION_SCRIPT_URLS', 'TALARIA_WEB_EXTENSION_STYLESHEET_URLS', 'TALARIA_WEB_CSP_CONNECT_EXTRA',
+      'TALARIA_WEB_CSP_FRAME_EXTRA', 'NODE_OPTIONS', 'NODE_PATH', 'PYTHONPATH', 'PYTHONHOME', 'PYTHONSTARTUP', 'BASH_ENV', 'LD_PRELOAD', 'LD_AUDIT',
       'DYLD_INSERT_LIBRARIES', 'GIT_SSH_COMMAND', 'GIT_SSH', 'GIT_EXEC_PATH', 'GIT_ASKPASS', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM',
       // Where the server listens, keeps its state and password hash, and finds the home, config, and Web root; any
       // Web key not on the tuning allowlist (here one the server does not read yet) fails closed.
-      'HERMES_WEBUI_HOST', 'HERMES_WEBUI_STATE_DIR', 'HERMES_WEBUI_TLS_CERT', 'HERMES_WEBUI_TALARIA_RELAY_URL', 'HERMES_WEBUI_HOME_DOTENV_KEYS',
-      'HERMES_WEBUI_SOME_FUTURE_KEY', 'HERMES_HOME', 'HERMES_BASE_HOME', 'HERMES_CONFIG_PATH', 'TALARIA_WEB_ROOT',
+      'TALARIA_WEB_HOST', 'TALARIA_WEB_STATE_DIR', 'TALARIA_WEB_TLS_CERT', 'TALARIA_WEB_TALARIA_RELAY_URL', 'TALARIA_WEB_HOME_DOTENV_KEYS',
+      'TALARIA_WEB_SOME_FUTURE_KEY', 'HERMES_HOME', 'HERMES_BASE_HOME', 'HERMES_CONFIG_PATH', 'TALARIA_WEB_ROOT',
       // Anything else the server reads (the terminal shell, extra media roots, endpoints) or may read later.
       'SHELL', 'MEDIA_ALLOWED_ROOTS', 'TERMINAL_CWD', 'OPENAI_BASE_URL', 'SOME_AGENT_SETTING',
     ]
-    const allowed = { OPENAI_API_KEY: 'sk-profile', TELEGRAM_BOT_TOKEN: 't', AWS_SECRET: 's', HERMES_MODEL: 'm', HERMES_WEBUI_MAX_UPLOAD_MB: '50', HERMES_WEBUI_MAX_EXTRACTED_MB: '500' }
+    const allowed = { OPENAI_API_KEY: 'sk-profile', TELEGRAM_BOT_TOKEN: 't', AWS_SECRET: 's', HERMES_MODEL: 'm', TALARIA_WEB_MAX_UPLOAD_MB: '50', TALARIA_WEB_MAX_EXTRACTED_MB: '500' }
     writeFileSync(join(dir, 'hermes.env'), [...protectedKeys.map((k) => `${k}=from-profile`), ...Object.entries(allowed).map(([k, v]) => `${k}=${v}`)].join('\n'))
-    const env: Record<string, string | undefined> = { HERMES_WEBUI_ISOLATED_PROFILE: '1' }
+    const env: Record<string, string | undefined> = { TALARIA_WEB_ISOLATED_PROFILE: '1' }
     const logs: string[] = []
     expect(loadLauncherDotenv({ env, repoEnvFile: null, hermesEnvFile: join(dir, 'hermes.env'), log: (line) => logs.push(line) })).toEqual(Object.keys(allowed))
-    expect(env).toEqual({ HERMES_WEBUI_ISOLATED_PROFILE: '1', ...allowed })
+    expect(env).toEqual({ TALARIA_WEB_ISOLATED_PROFILE: '1', ...allowed })
     for (const key of protectedKeys) expect(logs.some((line) => line.includes(key))).toBe(true)
     // The checkout .env is deployment config, so it may still set them.
-    writeFileSync(join(dir, 'repo.env'), 'HERMES_WEBUI_PASSWORD=operator\n')
+    writeFileSync(join(dir, 'repo.env'), 'TALARIA_WEB_PASSWORD=operator\n')
     const operator: Record<string, string | undefined> = {}
     loadLauncherDotenv({ env: operator, repoEnvFile: join(dir, 'repo.env'), hermesEnvFile: null })
-    expect(operator.HERMES_WEBUI_PASSWORD).toBe('operator')
+    expect(operator.TALARIA_WEB_PASSWORD).toBe('operator')
   })
 })
 
@@ -89,7 +89,7 @@ describe('startup environment order', () => {
     writeFileSync(join(dir, 'h', '.env'), 'FROM_HERMES_TOKEN=h\nFROM_REPO=ignored\n')
     const env: Record<string, string | undefined> = {}
     expect(loadStartupEnv({ env, webRoot: join(dir, 'web'), home: dir })).toEqual({ hermesHome: join(dir, 'h') })
-    expect(env).toEqual({ HERMES_HOME: join(dir, 'h'), FROM_REPO: 'r', FROM_HERMES_TOKEN: 'h', HERMES_WEBUI_HOME_DOTENV_KEYS: 'FROM_HERMES_TOKEN' })
+    expect(env).toEqual({ HERMES_HOME: join(dir, 'h'), FROM_REPO: 'r', FROM_HERMES_TOKEN: 'h', TALARIA_WEB_HOME_DOTENV_KEYS: 'FROM_HERMES_TOKEN' })
     // Only the Hermes home's own keys are recorded as the default profile's; the checkout .env is deployment config.
     expect([...homeDotenvKeys(env)]).toEqual(['FROM_HERMES_TOKEN'])
     // The supervisor worker inherits the values and loads again: nothing is new to apply, but the marker must survive.
@@ -102,14 +102,14 @@ describe('serve argument precedence', () => {
   it('explicit serve arguments win over the checkout .env host and port', () => {
     const dir = scratch()
     mkdirSync(join(dir, 'web'))
-    writeFileSync(join(dir, 'web', '.env'), 'HERMES_WEBUI_PORT=9999\nHERMES_WEBUI_HOST=0.0.0.0\n')
+    writeFileSync(join(dir, 'web', '.env'), 'TALARIA_WEB_PORT=9999\nTALARIA_WEB_HOST=0.0.0.0\n')
     const env: Record<string, string | undefined> = {}
     loadStartupEnv({ env, webRoot: join(dir, 'web'), home: dir })
     const args = parseBootstrapArgs(['8123', '--host', '127.0.0.1'], env)
-    env.HERMES_WEBUI_HOST = args.host
-    env.HERMES_WEBUI_PORT = String(args.port)
-    expect(env).toMatchObject({ HERMES_WEBUI_PORT: '8123', HERMES_WEBUI_HOST: '127.0.0.1' })
-    const defaults = parseBootstrapArgs([], { HERMES_WEBUI_PORT: '9999', HERMES_WEBUI_HOST: '0.0.0.0' })
+    env.TALARIA_WEB_HOST = args.host
+    env.TALARIA_WEB_PORT = String(args.port)
+    expect(env).toMatchObject({ TALARIA_WEB_PORT: '8123', TALARIA_WEB_HOST: '127.0.0.1' })
+    const defaults = parseBootstrapArgs([], { TALARIA_WEB_PORT: '9999', TALARIA_WEB_HOST: '0.0.0.0' })
     expect([defaults.port, defaults.host]).toEqual([9999, '0.0.0.0'])
   })
 })
@@ -124,7 +124,7 @@ describe('launcher', () => {
       // A stand-in interpreter that would succeed if it were run.
       const python = join(home, 'python')
       writeFileSync(python, '#!/bin/sh\nexit 0\n', { mode: 0o755 })
-      const env: Record<string, string | undefined> = { PATH: process.env.PATH, HOME: home, HERMES_HOME: join(home, '.hermes'), HERMES_WEBUI_AGENT_DIR: agent, HERMES_WEBUI_PYTHON: python, HERMES_WEBUI_STATE_DIR: join(home, 'state') }
+      const env: Record<string, string | undefined> = { PATH: process.env.PATH, HOME: home, HERMES_HOME: join(home, '.hermes'), TALARIA_WEB_AGENT_DIR: agent, TALARIA_WEB_PYTHON: python, TALARIA_WEB_STATE_DIR: join(home, 'state') }
       const serve = vi.fn(() => Promise.resolve())
       vi.mocked(spawnSync).mockClear()
       const code = await runBootstrap({ env, webRoot: join(home, 'web'), hermesHome: join(home, '.hermes'), home, compatibleAgentRevision: 'x', serveCommand: [], log: () => undefined }, { port: 8787, host: '127.0.0.1', noBrowser: true, skipAgentInstall: true, foreground: true }, serve)
@@ -137,12 +137,12 @@ describe('launcher', () => {
   it('a detached launch passes the resolved host and port to the worker so a checkout .env cannot override them', async () => {
     const home = scratch()
     mkdirSync(join(home, 'web'), { recursive: true })
-    writeFileSync(join(home, 'web', '.env'), 'HERMES_WEBUI_PORT=1\n')
+    writeFileSync(join(home, 'web', '.env'), 'TALARIA_WEB_PORT=1\n')
     const port = await freePort()
     // The stand-in worker binds the port it is told on the command line and answers /health.
     const script = `const http=require('node:http');const port=Number(process.argv[process.argv.indexOf('--host')+2]);http.createServer((req,res)=>{res.setHeader('content-type','application/json');res.end(JSON.stringify({status:'ok'}))}).listen(port,'127.0.0.1');setInterval(()=>{},1000);setTimeout(()=>process.exit(0),8000)`
     const logs: string[] = []
-    const env: Record<string, string | undefined> = { PATH: process.env.PATH, HOME: home, HERMES_HOME: join(home, '.hermes'), HERMES_WEBUI_SIDECAR_COMMAND: 'x', HERMES_WEBUI_STATE_DIR: join(home, 'state') }
+    const env: Record<string, string | undefined> = { PATH: process.env.PATH, HOME: home, HERMES_HOME: join(home, '.hermes'), TALARIA_WEB_SIDECAR_COMMAND: 'x', TALARIA_WEB_STATE_DIR: join(home, 'state') }
     const code = await runBootstrap({ env, webRoot: join(home, 'web'), hermesHome: join(home, '.hermes'), home, compatibleAgentRevision: 'x', serveCommand: [process.execPath, '-e', script, '--'], log: (l) => logs.push(l) }, { port, host: '127.0.0.1', noBrowser: true, skipAgentInstall: true, foreground: false }, () => Promise.resolve())
     expect(code).toBe(0)
     expect(logs.some((l) => l.includes(`127.0.0.1:${String(port)}`))).toBe(true)
@@ -154,7 +154,7 @@ describe('launcher', () => {
     const port = await freePort()
     const script = `const http=require('node:http');const port=Number(process.argv[process.argv.indexOf('--host')+2]);http.createServer((req,res)=>{res.setHeader('content-type','application/json');res.end(JSON.stringify({status:'ok'}))}).listen(port,'::');setInterval(()=>{},1000);setTimeout(()=>process.exit(0),8000)`
     const logs: string[] = []
-    const env: Record<string, string | undefined> = { PATH: process.env.PATH, HOME: home, HERMES_HOME: join(home, '.hermes'), HERMES_WEBUI_SIDECAR_COMMAND: 'x', HERMES_WEBUI_STATE_DIR: join(home, 'state') }
+    const env: Record<string, string | undefined> = { PATH: process.env.PATH, HOME: home, HERMES_HOME: join(home, '.hermes'), TALARIA_WEB_SIDECAR_COMMAND: 'x', TALARIA_WEB_STATE_DIR: join(home, 'state') }
     const code = await runBootstrap({ env, webRoot: join(home, 'web'), hermesHome: join(home, '.hermes'), home, compatibleAgentRevision: 'x', serveCommand: [process.execPath, '-e', script, '--'], log: (l) => logs.push(l) }, { port, host: '::', noBrowser: true, skipAgentInstall: true, foreground: false }, () => Promise.resolve())
     expect(code).toBe(0)
     const ready = logs.find((l) => l.includes('Web UI is ready'))
@@ -166,7 +166,7 @@ describe('launcher', () => {
     const home = scratch()
     mkdirSync(join(home, 'web'), { recursive: true })
     const logs: string[] = []
-    const env: Record<string, string | undefined> = { PATH: process.env.PATH, HOME: home, HERMES_HOME: join(home, '.hermes'), HERMES_WEBUI_SIDECAR_COMMAND: 'x', HERMES_WEBUI_STATE_DIR: join(home, 'state') }
+    const env: Record<string, string | undefined> = { PATH: process.env.PATH, HOME: home, HERMES_HOME: join(home, '.hermes'), TALARIA_WEB_SIDECAR_COMMAND: 'x', TALARIA_WEB_STATE_DIR: join(home, 'state') }
     const code = await runBootstrap({ env, webRoot: join(home, 'web'), hermesHome: join(home, '.hermes'), home, compatibleAgentRevision: 'x', serveCommand: [process.execPath, '-e', '', '--'], log: (l) => logs.push(l) }, { port: 8787, host: '::', noBrowser: true, skipAgentInstall: true, foreground: true }, () => Promise.resolve())
     expect(code).toBe(0)
     expect(logs.some((l) => l.includes('http://[::]:8787') && l.includes('foreground'))).toBe(true)
@@ -175,13 +175,13 @@ describe('launcher', () => {
 
   it('parses the bootstrap arguments and detects supervisors like bootstrap.py', () => {
     expect(parseBootstrapArgs(['9000', '--host', '0.0.0.0', '--no-browser', '--foreground'], {})).toEqual({ port: 9000, host: '0.0.0.0', noBrowser: true, skipAgentInstall: false, foreground: true })
-    expect(parseBootstrapArgs([], { HERMES_WEBUI_PORT: '8790', HERMES_WEBUI_HOST: '::' })).toMatchObject({ port: 8790, host: '::' })
+    expect(parseBootstrapArgs([], { TALARIA_WEB_PORT: '8790', TALARIA_WEB_HOST: '::' })).toMatchObject({ port: 8790, host: '::' })
     expect(() => parseBootstrapArgs(['--bogus'], {})).toThrow('unknown argument')
     expect(detectSupervisor({ INVOCATION_ID: 'abc' })).toBe('INVOCATION_ID')
     expect(detectSupervisor({ XPC_SERVICE_NAME: '0' })).toBeNull()
     expect(detectSupervisor({ XPC_SERVICE_NAME: 'application.com.apple.Terminal.X' })).toBeNull()
     expect(detectSupervisor({ XPC_SERVICE_NAME: 'com.example.hermes' })).toBe('XPC_SERVICE_NAME')
-    expect(detectSupervisor({ HERMES_WEBUI_FOREGROUND: 'yes' })).toBe('HERMES_WEBUI_FOREGROUND')
+    expect(detectSupervisor({ TALARIA_WEB_FOREGROUND: 'yes' })).toBe('TALARIA_WEB_FOREGROUND')
     expect(detectSupervisor({})).toBeNull()
   })
   it('recovers the Agent checkout from the hermes launcher wrapper', () => {
@@ -229,7 +229,7 @@ describe('ctl', () => {
     mkdirSync(join(home, 'bin'), { recursive: true })
     stubHostTool(home, 'launchctl', 'exit 113')
     for (const tool of ['lsof', 'ss', 'systemctl']) stubHostTool(home, tool, 'exit 1')
-    return { env: { PATH: `${join(home, 'bin')}:${process.env.PATH ?? ''}`, HOME: home, HERMES_HOME: join(home, '.hermes'), HERMES_WEBUI_CTL_ISOLATE_WORKTREE: '0', ...extraEnv }, webRoot, home, serveCommand, log: (l) => out.push(l), warn: (l) => err.push(l), out, err }
+    return { env: { PATH: `${join(home, 'bin')}:${process.env.PATH ?? ''}`, HOME: home, HERMES_HOME: join(home, '.hermes'), TALARIA_WEB_CTL_ISOLATE_WORKTREE: '0', ...extraEnv }, webRoot, home, serveCommand, log: (l) => out.push(l), warn: (l) => err.push(l), out, err }
   }
 
   it('resolves the ctl files under the Hermes home and parses the launch binding', () => {
@@ -237,10 +237,10 @@ describe('ctl', () => {
     const ctx = makeCtx(home, ['node'])
     const p = ctlPaths(ctx)
     expect(p).toMatchObject({ hermesHome: join(home, '.hermes'), pidFile: join(home, '.hermes', 'webui.pid'), logFile: join(home, '.hermes', 'webui.log'), stateFile: join(home, '.hermes', 'webui.ctl.env'), stateDir: join(home, '.hermes', 'webui'), worktreeMode: false, launchdLabels: ['dev.kil.talaria.web', 'com.parantoux.hermes-webui'] })
-    expect(ctlPaths(makeCtx(home, ['node'], { HERMES_WEBUI_LOG_FILE: 'rel.log' })).logFile.startsWith('/')).toBe(true)
-    expect(ctlPaths(makeCtx(home, ['node'], { HERMES_WEBUI_LAUNCHD_LABEL: 'com.example.custom' })).launchdLabels).toEqual(['com.example.custom'])
+    expect(ctlPaths(makeCtx(home, ['node'], { TALARIA_WEB_LOG_FILE: 'rel.log' })).logFile.startsWith('/')).toBe(true)
+    expect(ctlPaths(makeCtx(home, ['node'], { TALARIA_WEB_LAUNCHD_LABEL: 'com.example.custom' })).launchdLabels).toEqual(['com.example.custom'])
     expect(parseLaunchBinding(['9001', '--host', '0.0.0.0', '--skip-agent-install', 'x'], {})).toEqual({ host: '0.0.0.0', port: 9001, portExplicit: true, passthrough: ['--skip-agent-install', 'x'] })
-    expect(parseLaunchBinding([], { HERMES_WEBUI_CTL_PORT_START: '9100' })).toMatchObject({ port: 9100, portExplicit: false })
+    expect(parseLaunchBinding([], { TALARIA_WEB_CTL_PORT_START: '9100' })).toMatchObject({ port: 9100, portExplicit: false })
   })
 
   it.each([undefined, '-desktop'])('starts a daemon, reports status, refuses a duplicate, and stops it with suffix %s', async (suffix) => {
@@ -257,11 +257,11 @@ describe('ctl', () => {
     stops.push(async () => { await runCtl(ctx, ['stop']) })
     expect(code).toBe(0)
     expect(ctx.out.some((l) => l.startsWith('[ctl] Started Talaria Web (PID'))).toBe(true)
-    expect(ctx.out).toContain(`HERMES_WEBUI_PORT=${String(port)}`)
+    expect(ctx.out).toContain(`TALARIA_WEB_PORT=${String(port)}`)
     const p = ctlPaths(ctx)
     const expectedHome = join(home, `.hermes${suffix ?? ''}`)
     expect(p).toMatchObject({ hermesHome: expectedHome, runtimeRoot: expectedHome, pidFile: join(expectedHome, 'webui.pid'), logFile: join(expectedHome, 'webui.log'), stateFile: join(expectedHome, 'webui.ctl.env'), stateDir: join(expectedHome, 'webui') })
-    expect(ctx.env.HERMES_WEBUI_STATE_DIR).toBe(join(expectedHome, 'webui'))
+    expect(ctx.env.TALARIA_WEB_STATE_DIR).toBe(join(expectedHome, 'webui'))
     expect(existsSync(p.pidFile)).toBe(true)
     const state = readState(p)
     expect(state).toMatchObject({ REPO_ROOT: ctx.webRoot, HOST: '127.0.0.1', PORT: String(port), LOG_FILE: p.logFile, STATE_DIR: p.stateDir })
@@ -333,7 +333,7 @@ describe('ctl', () => {
     expect(await runCtl(ctx, ['start', String(s.running.port)])).toBe(2)
     expect(ctx.err[0]).toContain('a live server is already responding on 127.0.0.1:')
     expect(existsSync(ctlPaths(ctx).pidFile)).toBe(false)
-    ctx.env.HERMES_WEBUI_PORT = String(s.running.port)
+    ctx.env.TALARIA_WEB_PORT = String(s.running.port)
     expect(await runCtl(ctx, ['stop'])).toBe(0)
     expect(ctx.err.some((l) => l.includes('NOT managed by talaria-web ctl'))).toBe(true)
     ctx.out.length = 0
@@ -380,7 +380,7 @@ describe('ctl', () => {
     ['systemctl unit port', 'systemctl', 'case "$*" in *ActiveState*) echo activating; exit 0;; esac\nexec sleep 60'],
   ])('refuses to start when a hung %s probe cannot rule out a supervised instance', async (_probe, tool, body) => {
     const home = scratch()
-    const ctx = makeCtx(home, fakeServe('setInterval(()=>{},1000)'), { HERMES_WEBUI_START_GRACE: '1' })
+    const ctx = makeCtx(home, fakeServe('setInterval(()=>{},1000)'), { TALARIA_WEB_START_GRACE: '1' })
     stops.push(async () => { await runCtl(ctx, ['stop']) })
     stubHostTool(home, tool, body)
     expect(await runCtl(ctx, ['start', String(await freePort())])).toBe(2)
@@ -390,7 +390,7 @@ describe('ctl', () => {
 
   it('keeps the conservative launchd guard on the default port when lsof hangs and ss is unavailable', () => {
     const home = scratch()
-    const ctx = makeCtx(home, ['node'], { HERMES_WEBUI_LAUNCHD_LABEL: 'com.example.webui' })
+    const ctx = makeCtx(home, ['node'], { TALARIA_WEB_LAUNCHD_LABEL: 'com.example.webui' })
     stubHostTool(home, 'launchctl', `printf '\\tpid = ${String(process.pid)}\\n'`)
     stubHostTool(home, 'lsof', 'exec sleep 60')
     expect(launchdConflictPid(ctlPaths(ctx), ctx.env, 8787)).toEqual({ pid: process.pid, label: 'com.example.webui' })
@@ -405,7 +405,7 @@ describe('ctl', () => {
     // pid listening on that port.
     const port = 18787
     const ctx = makeCtx(home, ['node'])
-    const custom = makeCtx(home, ['node'], { HERMES_WEBUI_LAUNCHD_LABEL: 'com.example.custom' })
+    const custom = makeCtx(home, ['node'], { TALARIA_WEB_LAUNCHD_LABEL: 'com.example.custom' })
     stubHostTool(home, 'launchctl', `case "$2" in */com.parantoux.hermes-webui) printf '\\tpid = ${String(process.pid)}\\n'; exit 0;; esac\nexit 113`)
     stubHostTool(home, 'lsof', `case " $* " in *" -p ${String(process.pid)} -iTCP:${String(port)} "*) exit 0;; esac\nexit 1`)
     expect(launchdConflictPid(ctlPaths(ctx), ctx.env, port)).toEqual({ pid: process.pid, label: 'com.parantoux.hermes-webui' })
@@ -414,7 +414,7 @@ describe('ctl', () => {
 
   it('reports a server that dies during the startup grace window', async () => {
     const home = scratch()
-    const ctx = makeCtx(home, fakeServe('process.exit(3)'), { HERMES_WEBUI_START_GRACE: '1' })
+    const ctx = makeCtx(home, fakeServe('process.exit(3)'), { TALARIA_WEB_START_GRACE: '1' })
     expect(await runCtl(ctx, ['start', String(await freePort())])).toBe(1)
     expect(ctx.err[0]).toContain('failed to stay running')
     expect(existsSync(ctlPaths(ctx).pidFile)).toBe(false)

@@ -935,7 +935,7 @@ describe('legacy Desktop sidecars without a provable owner row (TAL-1562)', () =
     const base = realpathSync(mkdtempSync(join(tmpdir(), 'talaria-isolated-desktop-')))
     const home = join(base, 'profiles', 'alice')
     createStateDb(join(home, 'state.db')).close()
-    const s = await bootTestServer({ env: { HERMES_WEBUI_ISOLATED_PROFILE: '1', HERMES_HOME: home } })
+    const s = await bootTestServer({ env: { TALARIA_WEB_ISOLATED_PROFILE: '1', HERMES_HOME: home } })
     try {
       const own = await desktop(s, 'tal1562-isolated-own', { profile: 'alice' })
       const foreign = await desktop(s, 'tal1562-isolated-foreign', { profile: 'bob' })
@@ -1942,8 +1942,8 @@ describe('gateway session feeds under person isolation (TAL-48)', () => {
   it('names only sessions the signed-in person may see, initially and live', async () => {
     const issuer = 'https://identity.invalid'
     const s = await bootTestServer({ gatewayPollMs: 100, env: {
-      HERMES_WEBUI_PERSON_ISOLATION: '1', HERMES_WEBUI_OIDC_ISSUER: issuer, HERMES_WEBUI_OIDC_CLIENT_ID: 'synthetic-client',
-      HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'email_verified', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'true', HERMES_WEBUI_OIDC_OWNER_CLAIM: 'groups', HERMES_WEBUI_OIDC_OWNER_VALUES: 'admins',
+      TALARIA_WEB_PERSON_ISOLATION: '1', TALARIA_WEB_OIDC_ISSUER: issuer, TALARIA_WEB_OIDC_CLIENT_ID: 'synthetic-client',
+      TALARIA_WEB_OIDC_ALLOW_CLAIM: 'email_verified', TALARIA_WEB_OIDC_ALLOW_VALUES: 'true', TALARIA_WEB_OIDC_OWNER_CLAIM: 'groups', TALARIA_WEB_OIDC_OWNER_VALUES: 'admins',
     }, deps: (deps) => { deps.oidc.sessionBindingIsCurrent = () => Promise.resolve(true) } })
     const db = createStateDb(join(s.state, 'state.db'))
     try {
@@ -1980,8 +1980,8 @@ describe('lineage continuations under person isolation (TAL-48)', () => {
   it('give a compressed Web chat\'s Agent tip to the chat\'s person, not to other server owners', async () => {
     const issuer = 'https://identity.invalid'
     const s = await bootTestServer({ gatewayPollMs: 100, env: {
-      HERMES_WEBUI_PERSON_ISOLATION: '1', HERMES_WEBUI_OIDC_ISSUER: issuer, HERMES_WEBUI_OIDC_CLIENT_ID: 'synthetic-client',
-      HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'email_verified', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'true', HERMES_WEBUI_OIDC_OWNER_CLAIM: 'groups', HERMES_WEBUI_OIDC_OWNER_VALUES: 'admins',
+      TALARIA_WEB_PERSON_ISOLATION: '1', TALARIA_WEB_OIDC_ISSUER: issuer, TALARIA_WEB_OIDC_CLIENT_ID: 'synthetic-client',
+      TALARIA_WEB_OIDC_ALLOW_CLAIM: 'email_verified', TALARIA_WEB_OIDC_ALLOW_VALUES: 'true', TALARIA_WEB_OIDC_OWNER_CLAIM: 'groups', TALARIA_WEB_OIDC_OWNER_VALUES: 'admins',
     }, deps: (deps) => { deps.oidc.sessionBindingIsCurrent = () => Promise.resolve(true) } })
     const db = createStateDb(join(s.state, 'state.db'))
     try {
@@ -2025,8 +2025,8 @@ describe('delegated subagents under person isolation (TAL-48)', () => {
   it('belong to the person whose chat delegated them, through nested delegations', async () => {
     const issuer = 'https://identity.invalid'
     const s = await bootTestServer({ env: {
-      HERMES_WEBUI_PERSON_ISOLATION: '1', HERMES_WEBUI_OIDC_ISSUER: issuer, HERMES_WEBUI_OIDC_CLIENT_ID: 'synthetic-client',
-      HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'email_verified', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'true', HERMES_WEBUI_OIDC_OWNER_CLAIM: 'groups', HERMES_WEBUI_OIDC_OWNER_VALUES: 'admins',
+      TALARIA_WEB_PERSON_ISOLATION: '1', TALARIA_WEB_OIDC_ISSUER: issuer, TALARIA_WEB_OIDC_CLIENT_ID: 'synthetic-client',
+      TALARIA_WEB_OIDC_ALLOW_CLAIM: 'email_verified', TALARIA_WEB_OIDC_ALLOW_VALUES: 'true', TALARIA_WEB_OIDC_OWNER_CLAIM: 'groups', TALARIA_WEB_OIDC_OWNER_VALUES: 'admins',
     }, deps: (deps) => { deps.oidc.sessionBindingIsCurrent = () => Promise.resolve(true) } })
     const db = createStateDb(join(s.state, 'state.db'))
     try {

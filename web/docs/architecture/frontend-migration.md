@@ -64,7 +64,7 @@ native `frontend-build` stage, so installs serve the UI without a frontend toolc
   compile, route generation, `tsc --noEmit`, Oxlint, Vite production build with
   `base: './'`, dist finalisation, and the service worker build, writing
   `static/dist/`. `npm run build:fast` skips the gates. Source maps are off unless
-  `HERMES_WEBUI_SOURCEMAP=1`.
+  `TALARIA_WEB_SOURCEMAP=1`.
 - Determinism: Vite's content hashes are stable for identical inputs; the build
   strips timestamps and sorts precache entries.
 - The server serves the shell from `static/dist/index.html` for the SPA allowlist
@@ -87,7 +87,7 @@ native `frontend-build` stage, so installs serve the UI without a frontend toolc
 
 ### Development server
 
-`HERMES_WEBUI_DEV_PROXY=http://127.0.0.1:8797 npm run dev -- --host 0.0.0.0 --port 8798` (from `packages/frontend/`) serves
+`TALARIA_WEB_DEV_PROXY=http://127.0.0.1:8797 npm run dev -- --host 0.0.0.0 --port 8798` (from `packages/frontend/`) serves
 the app from source with hot module replacement. The Vite dev server forwards `api/`, `static/`, `extensions/`,
 `plugins/`, and `dashboard-plugins/` requests at any mount depth to the server named in the variable, which
 keeps state, sessions and auth; everything else is served by Vite. The dev document has no server-injected `<base>`,
@@ -96,7 +96,7 @@ so `freezeAppRoot` treats the origin root as the mount in development (`import.m
 origin because WebAuthn credentials remain bound to the deployed hostname; password authentication remains usable.
 
 From `web/`, `talaria-web ctl start --remote` is the attached wrapper for
-this mode. It reads `HERMES_WEBUI_DEV_PROXY` from the ignored `.env`, binds the
+this mode. It reads `TALARIA_WEB_DEV_PROXY` from the ignored `.env`, binds the
 local frontend to loopback, and forwards any remaining arguments to Vite.
 
 ## 4. Routing contract
@@ -224,7 +224,7 @@ request's negotiated `Accept-Language` locale, or `en`), `auth` (the
 `/api/auth/status` payload), `onboarding` (`needs_onboarding`), `profile`
 (active profile summary), `features` (dashboard link availability, terminal
 remote backend, extension platform enabled). It replaces the inline
-`window.__HERMES_CONFIG__`, `__HERMES_WEBUI_BUNDLE_VERSION__`, and
+`window.__HERMES_CONFIG__`, `__TALARIA_WEB_BUNDLE_VERSION__`, and
 `__HERMES_EXTENSION_CONFIG__` globals. It is served without authentication
 because it contains no secrets before login; the CSRF token is included only
 for an authenticated session cookie. An authenticated payload also carries

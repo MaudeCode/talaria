@@ -123,14 +123,14 @@ if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then loader_environment=("LD_LIBRARY_PATH=$L
     PATH="$(dirname "$node_bin"):$(dirname "$python_bin"):/usr/bin:/bin" \
     HOME="$run_dir/home" \
     HERMES_HOME="$hermes_home" \
-    HERMES_WEBUI_STATE_DIR="$state_dir" \
-    HERMES_WEBUI_DEFAULT_WORKSPACE="$workspace_dir" \
-    HERMES_WEBUI_HOST=127.0.0.1 \
-    HERMES_WEBUI_PORT="$port" \
-    HERMES_WEBUI_PASSWORD="$password" \
-    HERMES_WEBUI_SKIP_ONBOARDING=1 \
-    HERMES_WEBUI_TEST_NETWORK_BLOCK=1 \
-    HERMES_WEBUI_SIDECAR_COMMAND="[\"$python_bin\", \"$upstream_dir/sidecar/scripts/replay_sidecar.py\"]" \
+    TALARIA_WEB_STATE_DIR="$state_dir" \
+    TALARIA_WEB_DEFAULT_WORKSPACE="$workspace_dir" \
+    TALARIA_WEB_HOST=127.0.0.1 \
+    TALARIA_WEB_PORT="$port" \
+    TALARIA_WEB_PASSWORD="$password" \
+    TALARIA_WEB_SKIP_ONBOARDING=1 \
+    TALARIA_WEB_TEST_NETWORK_BLOCK=1 \
+    TALARIA_WEB_SIDECAR_COMMAND="[\"$python_bin\", \"$upstream_dir/sidecar/scripts/replay_sidecar.py\"]" \
     TALARIA_WEB_WORKER=1 \
     node packages/server/dist/bin/talaria-web.js serve
 ) >"$run_dir/server.log" 2>&1 &

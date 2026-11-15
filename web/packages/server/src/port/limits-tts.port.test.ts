@@ -228,7 +228,7 @@ describe('TTS validation, limits, and engines', () => {
 
 describe('TTS limiter behind an opted-in trusted proxy', () => {
   let s: TestServer
-  beforeAll(async () => { ({ s } = await bootTts({ HERMES_WEBUI_TRUST_FORWARDED_FOR: '1' })) })
+  beforeAll(async () => { ({ s } = await bootTts({ TALARIA_WEB_TRUST_FORWARDED_FOR: '1' })) })
   afterAll(() => s.close())
 
   const tts = async (headers: Record<string, string>): Promise<number> => (await post(s, '/api/tts', { text: 'hi', engine: 'openai' }, headers)).status
@@ -240,7 +240,7 @@ describe('TTS limiter behind an opted-in trusted proxy', () => {
   })
 
   it('a listed proxy gives different forwarded clients separate limiter keys', async () => {
-    s.deps.config.env.HERMES_WEBUI_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
+    s.deps.config.env.TALARIA_WEB_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
     try {
       s.deps.ttsLimiter = new WindowLimiter(60, 1)
       expect(await tts({ 'x-forwarded-for': '203.0.113.1' })).toBe(200)
@@ -249,7 +249,7 @@ describe('TTS limiter behind an opted-in trusted proxy', () => {
       expect(await tts({ 'x-forwarded-for': '203.0.113.3', 'x-real-ip': '192.0.2.99' })).toBe(200)
       expect(await tts({ 'x-forwarded-for': '203.0.113.4', 'x-real-ip': '192.0.2.99' })).toBe(429)
     } finally {
-      delete s.deps.config.env.HERMES_WEBUI_TRUSTED_PROXY_CIDRS
+      delete s.deps.config.env.TALARIA_WEB_TRUSTED_PROXY_CIDRS
     }
   })
 })

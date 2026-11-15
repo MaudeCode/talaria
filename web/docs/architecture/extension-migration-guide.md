@@ -108,7 +108,7 @@ The tab page at the manifest's `tab.path` (default `/<name>`) serves
 `dist/index.html`, the plugin's `static/index.html`, or a shell that mounts
 `dist/index.js` into `#pluginPageContainer`; a path the app or the server
 already owns is refused. `/plugins/plugin.css` serves the shared stylesheet
-from the plugins directory (`HERMES_WEBUI_PLUGINS_DIR`, default
+from the plugins directory (`TALARIA_WEB_PLUGINS_DIR`, default
 `$HERMES_HOME/plugins`).
 
 ## 9. Things that no longer exist
@@ -116,7 +116,7 @@ from the plugins directory (`HERMES_WEBUI_PLUGINS_DIR`, default
 - Styling or scripting the core page; reading `S`, `INFLIGHT`, or other globals.
 - Calling `/api/*` with the user's session from extension code. Use the
   capabilities; propose a new method if one is missing.
-- `HERMES_WEBUI_EXTENSION_SCRIPT_URLS` / `_STYLESHEET_URLS` injection. The
+- `TALARIA_WEB_EXTENSION_SCRIPT_URLS` / `_STYLESHEET_URLS` injection. The
   variables are ignored; move the assets into a panel.
 
 ## 10. Checklist
@@ -134,7 +134,7 @@ from the plugins directory (`HERMES_WEBUI_PLUGINS_DIR`, default
 
 Agent dashboards are a separate `agent-plugin` source in the same Extensions
 list and sandboxed panel host. Discovery, enablement and native HTTP belong to
-the selected profile's Agent; legacy `HERMES_WEBUI_PLUGINS_DIR` entries retain
+the selected profile's Agent; legacy `TALARIA_WEB_PLUGINS_DIR` entries retain
 their existing server-level settings. Reading a dashboard never enables it or
 changes `plugins.isolation`. Native APIs always execute in that profile's Agent
 plugin host, including when its other plugins use in-process isolation.

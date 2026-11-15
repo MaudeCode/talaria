@@ -86,14 +86,14 @@ function retentionCap(raw: string | undefined, fallback: number, limit: number):
 
 /** The run-journal retention policy, read once from the server environment. */
 export function retentionPolicy(env: Record<string, string | undefined>): RetentionPolicy {
-  const days = Number.parseFloat(env.HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS ?? '14')
-  const keep = Number.parseInt(env.HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT ?? '3', 10)
+  const days = Number.parseFloat(env.TALARIA_WEB_RUN_JOURNAL_RETENTION_DAYS ?? '14')
+  const keep = Number.parseInt(env.TALARIA_WEB_RUN_JOURNAL_KEEP_RECENT ?? '3', 10)
   return {
     retentionSeconds: Number.isFinite(days) ? Math.max(0, days) * 86400 : 14 * 86400,
     keepRecent: Number.isFinite(keep) ? Math.max(0, keep) : 3,
-    maxRuns: retentionCap(env.HERMES_WEBUI_RUN_JOURNAL_RETENTION_MAX_RUNS_PER_SESSION, RETENTION_MAX_RUNS_DEFAULT, RETENTION_MAX_RUNS_LIMIT),
-    maxBytes: retentionCap(env.HERMES_WEBUI_RUN_JOURNAL_RETENTION_MAX_BYTES_PER_SESSION, RETENTION_MAX_BYTES_DEFAULT, RETENTION_MAX_BYTES_LIMIT),
-    maxArchiveBytes: retentionCap(env.HERMES_WEBUI_RUN_JOURNAL_ARCHIVE_MAX_BYTES, ARCHIVE_MAX_BYTES_DEFAULT, Number.MAX_SAFE_INTEGER),
+    maxRuns: retentionCap(env.TALARIA_WEB_RUN_JOURNAL_RETENTION_MAX_RUNS_PER_SESSION, RETENTION_MAX_RUNS_DEFAULT, RETENTION_MAX_RUNS_LIMIT),
+    maxBytes: retentionCap(env.TALARIA_WEB_RUN_JOURNAL_RETENTION_MAX_BYTES_PER_SESSION, RETENTION_MAX_BYTES_DEFAULT, RETENTION_MAX_BYTES_LIMIT),
+    maxArchiveBytes: retentionCap(env.TALARIA_WEB_RUN_JOURNAL_ARCHIVE_MAX_BYTES, ARCHIVE_MAX_BYTES_DEFAULT, Number.MAX_SAFE_INTEGER),
   }
 }
 

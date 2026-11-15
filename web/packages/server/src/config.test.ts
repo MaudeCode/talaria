@@ -1,13 +1,79 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { loadConfig, platformDefaultHermesHome } from './config.js'
+import { loadConfig, migrateLegacyWebEnv, platformDefaultHermesHome, type Env } from './config.js'
 import { loadStartupEnv } from './cli/dotenv.js'
 
 let home: string
 beforeEach(() => { home = mkdtempSync(resolve(tmpdir(), 'talaria-config-')) })
 afterEach(() => { vi.restoreAllMocks(); rmSync(home, { recursive: true, force: true }) })
+
+it('reads listener and child-process settings from the Talaria Web environment', () => {
+  const env = { TALARIA_WEB_HOST: '127.0.0.2', TALARIA_WEB_PORT: '9876', TALARIA_WEB_STATE_DIR: resolve(home, 'state') }
+  const config = loadConfig({ home, webRoot: home, env })
+  expect(config.host).toBe('127.0.0.2')
+  expect(config.port).toBe(9876)
+  expect(config.stateDir).toBe(env.TALARIA_WEB_STATE_DIR)
+})
+
+it('normalizes legacy startup settings once, preserving explicit new values and reporting names without secrets', () => {
+  for (const current of [undefined, 'new-secret', '']) {
+    const env: Env = { HERMES_WEBUI_PASSWORD: 'old-secret', TALARIA_WEB_PASSWORD: current, HERMES_HOME: home, TALARIA_SIDECAR_LOG_LEVEL: 'INFO' }
+    const warn = vi.fn()
+    const used = migrateLegacyWebEnv(env, warn)
+    expect(env.TALARIA_WEB_PASSWORD).toBe(current ?? 'old-secret')
+    expect(used).toEqual(['HERMES_WEBUI_PASSWORD'])
+    expect(env.HERMES_HOME).toBe(home)
+    expect(env.TALARIA_SIDECAR_LOG_LEVEL).toBe('INFO')
+    expect(warn).toHaveBeenCalledExactlyOnceWith(`[webui] WARNING: Deprecated environment variables: HERMES_WEBUI_PASSWORD -> TALARIA_WEB_PASSWORD${current === undefined ? '' : ' (TALARIA_WEB_PASSWORD wins)'}. Use the TALARIA_WEB_ names.`)
+    // Canonical inherited settings do not warn again in supervisor/sidecar children.
+    warn.mockClear()
+    expect(migrateLegacyWebEnv(env, warn)).toEqual([])
+    expect(warn).not.toHaveBeenCalled()
+  }
+  for (const env of [{}, { TALARIA_WEB_PASSWORD: 'new-secret' }]) {
+    const before = { ...env }
+    const warn = vi.fn()
+    expect(migrateLegacyWebEnv(env, warn)).toEqual([])
+    expect(env).toEqual(before)
+    expect(warn).not.toHaveBeenCalled()
+  }
+})
+
+it('normalizes dotenv sources before precedence controls and home credential filtering, with one startup warning', () => {
+  const webRoot = resolve(home, 'web')
+  const agentHome = resolve(home, 'agent-home')
+  mkdirSync(webRoot)
+  mkdirSync(agentHome)
+  writeFileSync(resolve(webRoot, '.env'), 'HERMES_WEBUI_PORT=9999\nHERMES_WEBUI_ALLOWED_HOSTS=talaria.test\n')
+  writeFileSync(resolve(agentHome, '.env'), 'HERMES_WEBUI_OIDC_CLIENT_SECRET=untrusted-secret\nHERMES_WEBUI_MAX_UPLOAD_MB=50\n')
+  const env: Env = { HERMES_HOME: agentHome, HERMES_WEBUI_PORT: '8787', HERMES_WEBUI_PRESERVE_ENV: '1' }
+  const warn = vi.fn()
+  migrateLegacyWebEnv(env, warn, (normalizeEnv) => { loadStartupEnv({ env, webRoot, home, normalizeEnv }) })
+  expect(env.TALARIA_WEB_PORT).toBe('8787')
+  expect(env.TALARIA_WEB_ALLOWED_HOSTS).toBe('talaria.test')
+  expect(env.TALARIA_WEB_MAX_UPLOAD_MB).toBe('50')
+  expect(env.TALARIA_WEB_OIDC_CLIENT_SECRET).toBeUndefined()
+  expect(env.HERMES_WEBUI_OIDC_CLIENT_SECRET).toBeUndefined()
+  expect(warn).toHaveBeenCalledOnce()
+  const line = warn.mock.calls[0]![0] as string
+  expect(line).toContain('HERMES_WEBUI_ALLOWED_HOSTS -> TALARIA_WEB_ALLOWED_HOSTS')
+  expect(line).toContain('HERMES_WEBUI_MAX_UPLOAD_MB -> TALARIA_WEB_MAX_UPLOAD_MB')
+  expect(line).not.toContain('untrusted-secret')
+})
+
+it('normalizes the container shell environment without evaluating setting values as commands', () => {
+  const marker = resolve(home, 'executed')
+  const password = `quote' and "double"\n$(touch ${marker})`
+  const script = resolve(import.meta.dirname, '../../../scripts/lib/normalize-web-env.sh')
+  const output = execFileSync('bash', ['-c', 'source "$1"; node -e \'console.log(JSON.stringify({port:process.env.TALARIA_WEB_PORT,password:process.env.TALARIA_WEB_PASSWORD,legacy:process.env.HERMES_WEBUI_PASSWORD}))\'', 'bash', script], {
+    env: { PATH: process.env.PATH, HOME: home, HERMES_WEBUI_PORT: '9797', HERMES_WEBUI_PASSWORD: password }, encoding: 'utf8',
+  })
+  expect(JSON.parse(output)).toEqual({ port: '9797', password })
+  expect(existsSync(marker)).toBe(false)
+})
 
 it('selects JSON session storage by default, and each backend explicitly', () => {
   expect(loadConfig({ home, webRoot: home, env: {} }).storage).toBe('json')

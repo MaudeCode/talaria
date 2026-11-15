@@ -104,7 +104,7 @@ it('loads password-authenticated dashboard assets without cookies while keeping 
   const fake = new FakeSidecar()
   fake.respond('plugins.dashboard_list', () => ({ supported: true, plugins: [{ name: 'board', label: 'Board', version: '', description: '', enabled: true, panel: 'dist/index.html', has_api: true }] }))
   fake.respond('plugins.dashboard_asset', ({ path }) => ({ status: 200, body: Buffer.from(path.endsWith('.js') ? 'window.dashboardLoaded = true' : '<script src="app.js"></script>').toString('base64'), content_type: path.endsWith('.js') ? 'application/javascript' : 'text/html' }))
-  s = await bootTestServer({ sidecar: fake, env: { HERMES_WEBUI_PASSWORD: password } })
+  s = await bootTestServer({ sidecar: fake, env: { TALARIA_WEB_PASSWORD: password } })
   const cookie = await loginCookie(s)
   const manifests = await (await s.get('/api/extensions/manifests', { headers: { cookie } })).json() as { manifests: { id: string; source: string; panel: string }[] }
   const row = manifests.manifests.find((m) => m.source === 'agent-plugin')!
@@ -143,7 +143,7 @@ it.each([false, true])('revokes source and destination grants and a delayed resp
   const fake = new FakeSidecar()
   fake.respond('plugins.dashboard_list', () => ({ supported: true, plugins: [{ name: 'board', label: 'Board', version: '', description: '', enabled: true, panel: 'dist/index.html', has_api: true }] }))
   fake.respond('plugins.dashboard_asset', () => ({ status: 200, body: Buffer.from('profile asset').toString('base64'), content_type: 'text/html' }))
-  s = await bootTestServer({ sidecar: fake, env: authenticated ? { HERMES_WEBUI_PASSWORD: password } : {} })
+  s = await bootTestServer({ sidecar: fake, env: authenticated ? { TALARIA_WEB_PASSWORD: password } : {} })
   mkdirSync(s.deps.profileHome('beta'), { recursive: true })
   const cookie = authenticated ? await loginCookie(s) : ''
   const session = cookie.slice(cookie.indexOf('=') + 1)

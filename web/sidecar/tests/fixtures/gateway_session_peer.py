@@ -14,7 +14,7 @@ import threading
 import time
 
 STARTED = time.monotonic()
-agent = Path(os.environ["HERMES_WEBUI_AGENT_DIR"])
+agent = Path(os.environ["TALARIA_WEB_AGENT_DIR"])
 sys.path[:0] = [str(agent), str(agent / "tests/gateway/fixtures"), str(Path(__file__).resolve().parents[1])]
 from peer_phases import POLL_SECONDS, Phases, report_modes
 
@@ -456,9 +456,9 @@ async def probe_voice_stop(home, peer, desc):
         args = dict(home=str(home), web=str(web), agent=str(agent), python=sys.executable, sid=sid)
         script.write_text(imports + '\nconst a=' + json.dumps(args) + ';\n' + r'''
 const logs=[];
-const env={...process.env,PYTHONPATH:a.web+'/sidecar',HERMES_HOME:a.home,HERMES_WEBUI_STATE_DIR:a.home+'/webui',
-  HERMES_WEBUI_DEFAULT_WORKSPACE:a.home,HERMES_WEBUI_CLAUDE_PROJECTS_DIR:a.home+'/claude',
-  HERMES_WEBUI_HOST:'127.0.0.1',HERMES_WEBUI_PORT:'0'};
+const env={...process.env,PYTHONPATH:a.web+'/sidecar',HERMES_HOME:a.home,TALARIA_WEB_STATE_DIR:a.home+'/webui',
+  TALARIA_WEB_DEFAULT_WORKSPACE:a.home,TALARIA_WEB_CLAUDE_PROJECTS_DIR:a.home+'/claude',
+  TALARIA_WEB_HOST:'127.0.0.1',TALARIA_WEB_PORT:'0'};
 const client=new SidecarClient({python:a.python,agentDir:a.agent,sidecarDir:a.web+'/sidecar',hermesHome:a.home,env,log:l=>logs.push(l)});
 let running;
 try {

@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { bootTestServer, type SseFrame, type TestServer } from '../test/harness.js'
 
 const ISSUER = 'https://identity.invalid'
-const OIDC_ENV = { HERMES_WEBUI_OIDC_ISSUER: ISSUER, HERMES_WEBUI_OIDC_CLIENT_ID: 'synthetic-client', HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'email_verified', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'true', HERMES_WEBUI_OIDC_OWNER_CLAIM: 'groups', HERMES_WEBUI_OIDC_OWNER_VALUES: 'admins' }
+const OIDC_ENV = { TALARIA_WEB_OIDC_ISSUER: ISSUER, TALARIA_WEB_OIDC_CLIENT_ID: 'synthetic-client', TALARIA_WEB_OIDC_ALLOW_CLAIM: 'email_verified', TALARIA_WEB_OIDC_ALLOW_VALUES: 'true', TALARIA_WEB_OIDC_OWNER_CLAIM: 'groups', TALARIA_WEB_OIDC_OWNER_VALUES: 'admins' }
 
 interface Client { headers: Record<string, string>; cookie: string }
 interface AuthStatusBody { person_isolation?: { version: number; enabled: boolean }; person?: { id: string; display_name: string } | null }
@@ -17,7 +17,7 @@ afterEach(async () => { await s?.close(); s = null })
 
 async function boot(isolation: boolean): Promise<TestServer> {
   s = await bootTestServer({
-    env: { ...OIDC_ENV, ...(isolation ? { HERMES_WEBUI_PERSON_ISOLATION: '1' } : {}) },
+    env: { ...OIDC_ENV, ...(isolation ? { TALARIA_WEB_PERSON_ISOLATION: '1' } : {}) },
     // The identity provider's proof is the boundary; the gate, owner policy and session access stay real.
     deps: (deps) => { deps.oidc.sessionBindingIsCurrent = () => Promise.resolve(true) },
   })

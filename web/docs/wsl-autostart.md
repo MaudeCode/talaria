@@ -17,20 +17,20 @@ executable (`chmod +x ~/.local/bin/talaria-web-autostart`):
 # Start Talaria Web once: a lock, a /health check, and a pid file prevent duplicates.
 set -euo pipefail
 
-PORT="${HERMES_WEBUI_PORT:-8787}"
-LOG_DIR="${HERMES_WEBUI_LOG_DIR:-$HOME/.hermes/webui/logs}"
+PORT="${TALARIA_WEB_PORT:-8787}"
+LOG_DIR="${TALARIA_WEB_LOG_DIR:-$HOME/.hermes/webui/logs}"
 PID_FILE="$LOG_DIR/talaria-web.pid"
 LOG="$LOG_DIR/talaria-web.log"
-export HERMES_WEBUI_HOST="${HERMES_WEBUI_HOST:-127.0.0.1}" HERMES_WEBUI_PORT="$PORT"
+export TALARIA_WEB_HOST="${TALARIA_WEB_HOST:-127.0.0.1}" TALARIA_WEB_PORT="$PORT"
 # Lets the server size-bound the log it writes to.
-export HERMES_WEBUI_LOG_FILE="$LOG"
+export TALARIA_WEB_LOG_FILE="$LOG"
 
 mkdir -p "$LOG_DIR" && chmod 700 "$LOG_DIR"
 note() { printf '[%s] %s\n' "$(date '+%F %T')" "$*" >>"$LOG_DIR/autostart.log"; }
 probe() { curl -fsSk --max-time 3 "$1://127.0.0.1:$PORT/health" >/dev/null 2>&1; }
 # With TLS configured, try HTTPS first; the server falls back to HTTP when the cert or key cannot load.
 healthy() {
-  if [[ -n "${HERMES_WEBUI_TLS_CERT:-}" && -n "${HERMES_WEBUI_TLS_KEY:-}" ]] && probe https; then return 0; fi
+  if [[ -n "${TALARIA_WEB_TLS_CERT:-}" && -n "${TALARIA_WEB_TLS_KEY:-}" ]] && probe https; then return 0; fi
   probe http
 }
 alive() { [[ -s "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; }
@@ -52,10 +52,10 @@ It honours these variables:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `HERMES_WEBUI_HOST` | `127.0.0.1` | Bind address passed to `talaria-web` |
-| `HERMES_WEBUI_PORT` | `8787` | Server and health-check port |
-| `HERMES_WEBUI_LOG_DIR` | `$HOME/.hermes/webui/logs` | `autostart.log`, `talaria-web.log`, and the pid file |
-| `HERMES_WEBUI_TLS_CERT`, `HERMES_WEBUI_TLS_KEY` | unset | When both are set, the health check tries HTTPS, then HTTP (the server's fallback when the cert or key cannot load) |
+| `TALARIA_WEB_HOST` | `127.0.0.1` | Bind address passed to `talaria-web` |
+| `TALARIA_WEB_PORT` | `8787` | Server and health-check port |
+| `TALARIA_WEB_LOG_DIR` | `$HOME/.hermes/webui/logs` | `autostart.log`, `talaria-web.log`, and the pid file |
+| `TALARIA_WEB_TLS_CERT`, `TALARIA_WEB_TLS_KEY` | unset | When both are set, the health check tries HTTPS, then HTTP (the server's fallback when the cert or key cannot load) |
 
 Run it once by hand to check it:
 
@@ -112,7 +112,7 @@ tail -n 80 "$HOME/.hermes/webui/logs/talaria-web.log"
 |---|---|---|
 | Task exists but the server is not reachable | Wrong distro, or `talaria-web` not on the login `PATH` | Re-register with `-d <distro>`; check `bash -lc 'command -v talaria-web'` |
 | Server starts only after opening WSL | You used option 1 | Install the scheduled task |
-| Health check fails but the pid exists | Still booting, or a different port | Check `HERMES_WEBUI_PORT` and `talaria-web.log` |
+| Health check fails but the pid exists | Still booting, or a different port | Check `TALARIA_WEB_PORT` and `talaria-web.log` |
 
 For WSL2 with systemd, `talaria-web ctl` and the `systemd --user` pattern in
 [`supervisor.md`](supervisor.md) are an alternative.

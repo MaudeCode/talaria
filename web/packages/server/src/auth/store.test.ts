@@ -182,31 +182,31 @@ describe('sessions', () => {
 describe('TTL, cookie name, and sliding policy', () => {
   it('resolves the TTL env > settings > default with the [60s, 1y] clamp', async () => {
     expect((await makeStore()).resolveSessionTtl()).toBe(SESSION_TTL)
-    expect((await makeStore({ HERMES_WEBUI_SESSION_TTL: '3600' })).resolveSessionTtl()).toBe(3600)
-    expect((await makeStore({ HERMES_WEBUI_SESSION_TTL: '59' })).resolveSessionTtl()).toBe(SESSION_TTL)
-    expect((await makeStore({ HERMES_WEBUI_SESSION_TTL: String(86400 * 366) })).resolveSessionTtl()).toBe(SESSION_TTL)
-    expect((await makeStore({ HERMES_WEBUI_SESSION_TTL: 'abc' })).resolveSessionTtl()).toBe(SESSION_TTL)
+    expect((await makeStore({ TALARIA_WEB_SESSION_TTL: '3600' })).resolveSessionTtl()).toBe(3600)
+    expect((await makeStore({ TALARIA_WEB_SESSION_TTL: '59' })).resolveSessionTtl()).toBe(SESSION_TTL)
+    expect((await makeStore({ TALARIA_WEB_SESSION_TTL: String(86400 * 366) })).resolveSessionTtl()).toBe(SESSION_TTL)
+    expect((await makeStore({ TALARIA_WEB_SESSION_TTL: 'abc' })).resolveSessionTtl()).toBe(SESSION_TTL)
     writeFileSync(join(dir, 'settings.json'), JSON.stringify({ session_ttl_seconds: 7200 }))
     expect((await makeStore()).resolveSessionTtl()).toBe(7200)
-    expect((await makeStore({ HERMES_WEBUI_SESSION_TTL: '600' })).resolveSessionTtl()).toBe(600)
+    expect((await makeStore({ TALARIA_WEB_SESSION_TTL: '600' })).resolveSessionTtl()).toBe(600)
     const store = (await makeStore())
     const token = AuthStore.tokenFromCookieValue(store.createSession())!
     expect(store.sessionTable[token]).toBe(now + 7200)
   })
 
-  it('honours a valid HERMES_WEBUI_COOKIE_NAME and falls back on invalid tokens', async () => {
+  it('honours a valid TALARIA_WEB_COOKIE_NAME and falls back on invalid tokens', async () => {
     expect((await makeStore()).cookieName()).toBe('hermes_session')
-    expect((await makeStore({ HERMES_WEBUI_COOKIE_NAME: 'my_session' })).cookieName()).toBe('my_session')
-    expect((await makeStore({ HERMES_WEBUI_COOKIE_NAME: 'bad name;' })).cookieName()).toBe('hermes_session')
-    expect((await makeStore({ HERMES_WEBUI_COOKIE_NAME: '  ' })).cookieName()).toBe('hermes_session')
+    expect((await makeStore({ TALARIA_WEB_COOKIE_NAME: 'my_session' })).cookieName()).toBe('my_session')
+    expect((await makeStore({ TALARIA_WEB_COOKIE_NAME: 'bad name;' })).cookieName()).toBe('hermes_session')
+    expect((await makeStore({ TALARIA_WEB_COOKIE_NAME: '  ' })).cookieName()).toBe('hermes_session')
   })
 
   it('sliding renewal follows env > settings.webui.session_sliding, and never renews when the policy is unreadable', async () => {
     expect((await (await makeStore()).resolveSessionSliding())).toBe(true)
-    expect((await (await makeStore({ HERMES_WEBUI_SESSION_SLIDING: '0' })).resolveSessionSliding())).toBe(false)
+    expect((await (await makeStore({ TALARIA_WEB_SESSION_SLIDING: '0' })).resolveSessionSliding())).toBe(false)
     writeFileSync(join(dir, 'settings.json'), JSON.stringify({ webui: { session_sliding: false } }))
     expect((await (await makeStore()).resolveSessionSliding())).toBe(false)
-    expect((await (await makeStore({ HERMES_WEBUI_SESSION_SLIDING: 'yes' })).resolveSessionSliding())).toBe(true)
+    expect((await (await makeStore({ TALARIA_WEB_SESSION_SLIDING: 'yes' })).resolveSessionSliding())).toBe(true)
     writeFileSync(join(dir, 'settings.json'), '{broken')
     expect((await (await makeStore()).resolveSessionSliding())).toBe(false)
   })
@@ -251,7 +251,7 @@ describe('password hash and login rate', () => {
   it('env password wins over settings and the hash is cached until invalidated', async () => {
     writeFileSync(join(dir, 'settings.json'), JSON.stringify({ password_hash: 'from-settings' }))
     expect(await (await makeStore()).getPasswordHash()).toBe('from-settings')
-    const store = (await makeStore({ HERMES_WEBUI_PASSWORD: PASSWORD }))
+    const store = (await makeStore({ TALARIA_WEB_PASSWORD: PASSWORD }))
     expect(await store.getPasswordHash()).toBe(PY.hash)
     expect(await store.isAuthEnabled()).toBe(true)
     expect(await store.verifyPassword(PASSWORD)).toBe(true)

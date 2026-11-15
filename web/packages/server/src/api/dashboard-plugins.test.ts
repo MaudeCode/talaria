@@ -47,7 +47,7 @@ describe('dashboard plugin routes', () => {
   const enable = (prefs: Record<string, boolean>): Promise<unknown> => s.deps.settings.save({ dashboard_plugins: prefs })
 
   beforeAll(async () => {
-    s = await bootTestServer({ env: { HERMES_WEBUI_EXTENSION_DIR: extensionDir } })
+    s = await bootTestServer({ env: { TALARIA_WEB_EXTENSION_DIR: extensionDir } })
     mkdirSync(join(extensionDir, 'demo'))
     writeFileSync(join(extensionDir, 'demo', 'index.html'), '<!doctype html><title>demo</title>')
     put('plugin.css', '.shared{}')

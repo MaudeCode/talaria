@@ -39,7 +39,7 @@ before running commands or inspecting logs.
 
 Follow that checklist's safety rules:
 
-- use isolated `HERMES_HOME` and `HERMES_WEBUI_STATE_DIR` for trials unless the
+- use isolated `HERMES_HOME` and `TALARIA_WEB_STATE_DIR` for trials unless the
   human explicitly asks to use real state
 - do not delete or overwrite a real `~/.hermes` directory without explicit
   approval
@@ -56,7 +56,7 @@ Follow that checklist's safety rules:
   subsystem before editing.
 - Run checks with the npm workspace commands in `TESTING.md` (`npm test -w packages/server`,
   `npm run e2e -w packages/frontend`, `sidecar/scripts/test.sh`). The sidecar suite
-  uses the active pinned Agent release from a shared cache; `HERMES_WEBUI_AGENT_DIR` points it at a checkout.
+  uses the active pinned Agent release from a shared cache; `TALARIA_WEB_AGENT_DIR` points it at a checkout.
 - The server is TypeScript on Node 24 and never imports Hermes Agent code; everything
   that needs Agent Python goes through the stdlib-only sidecar (`sidecar/talaria_sidecar`)
   and its versioned RPC in `packages/contracts`. Do not fork, patch, or vendor the Agent.
@@ -155,8 +155,8 @@ Prefer isolated trial state for experiments:
 
 ```bash
 HERMES_HOME=/tmp/talaria-web-agent-home \
-HERMES_WEBUI_STATE_DIR=/tmp/talaria-web-agent-state \
-HERMES_WEBUI_PORT=8789 \
+TALARIA_WEB_STATE_DIR=/tmp/talaria-web-agent-state \
+TALARIA_WEB_PORT=8789 \
 node packages/server/dist/bin/talaria-web.js --foreground --no-browser
 ```
 

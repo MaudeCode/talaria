@@ -8,7 +8,7 @@ import sys
 import threading
 import time
 
-agent = Path(os.environ["HERMES_WEBUI_AGENT_DIR"])
+agent = Path(os.environ["TALARIA_WEB_AGENT_DIR"])
 sys.path[:0] = [str(agent), str(agent / "tests/gateway/fixtures"), str(Path(__file__).resolve().parents[1])]
 from local_recovery_probe import Model, child_env, daemon
 from authority_controls_peer import ModelPeer as ApprovalModel

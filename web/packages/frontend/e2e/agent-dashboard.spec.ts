@@ -6,7 +6,7 @@ import { E2E_PASSWORD } from './global-setup'
 
 // The ordinary browser suite uses replay fixtures; the native path is run explicitly on the cached Agent.
 for (const authenticated of [false, true]) test(`profile Agent dashboard uses the sandboxed frame and API, ${authenticated ? 'password authenticated' : 'open'}`, async ({ page }, info) => {
-  test.skip(!process.env.HERMES_WEBUI_AGENT_DIR, 'native Agent fixture run only')
+  test.skip(!process.env.TALARIA_WEB_AGENT_DIR, 'native Agent fixture run only')
   test.setTimeout(120_000)
   const state = serverState(authenticated ? 'authenticated' : 'open')
   const config = join(state, 'config.yaml')

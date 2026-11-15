@@ -188,9 +188,9 @@ describe('supervisor worker environment', () => {
     mkdirSync(webRoot)
     const dotenv = join(home, '.env')
     writeFileSync(dotenv, 'SYNTHETIC_HOME_TOKEN=old\nSYNTHETIC_OPERATOR_TOKEN=from-file\n')
-    const env: NodeJS.ProcessEnv = { ...process.env, HERMES_HOME: home, HERMES_WEBUI_NO_DOTENV: '0', SYNTHETIC_OPERATOR_TOKEN: 'operator' }
+    const env: NodeJS.ProcessEnv = { ...process.env, HERMES_HOME: home, TALARIA_WEB_NO_DOTENV: '0', SYNTHETIC_OPERATOR_TOKEN: 'operator' }
     delete env.SYNTHETIC_HOME_TOKEN
-    delete env.HERMES_WEBUI_HOME_DOTENV_KEYS
+    delete env.TALARIA_WEB_HOME_DOTENV_KEYS
     loadStartupEnv({ env, webRoot, home: root })
     const script = `
       const fs = require('node:fs');
@@ -319,9 +319,9 @@ describe('supervisor loss', () => {
   function isolatedEnv(root: string): NodeJS.ProcessEnv {
     // Disposable state, no network update checks, and a scripted sidecar that exits at once: no Agent is involved.
     return {
-      PATH: process.env.PATH, HOME: root, HERMES_HOME: join(root, 'agent-home'), HERMES_WEBUI_STATE_DIR: join(root, 'state'),
-      HERMES_WEBUI_DEFAULT_WORKSPACE: join(root, 'workspace'), HERMES_WEBUI_CLAUDE_PROJECTS_DIR: join(root, 'claude-projects'),
-      HERMES_WEBUI_NO_DOTENV: '1', HERMES_WEBUI_TEST_NETWORK_BLOCK: '1', HERMES_WEBUI_SIDECAR_COMMAND: JSON.stringify([process.execPath, '-e', '']),
+      PATH: process.env.PATH, HOME: root, HERMES_HOME: join(root, 'agent-home'), TALARIA_WEB_STATE_DIR: join(root, 'state'),
+      TALARIA_WEB_DEFAULT_WORKSPACE: join(root, 'workspace'), TALARIA_WEB_CLAUDE_PROJECTS_DIR: join(root, 'claude-projects'),
+      TALARIA_WEB_NO_DOTENV: '1', TALARIA_WEB_TEST_NETWORK_BLOCK: '1', TALARIA_WEB_SIDECAR_COMMAND: JSON.stringify([process.execPath, '-e', '']),
     }
   }
 

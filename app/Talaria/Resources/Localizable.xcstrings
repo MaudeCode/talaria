@@ -155190,108 +155190,108 @@
         }
       }
     },
-    "Writes disabled on server. Enable HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE=1 on the server to use this." : {
+    "Writes disabled on server. Enable TALARIA_WEB_WORKSPACE_GIT_DESTRUCTIVE=1 on the server to use this." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "يكتب تعطيل على الخادم. قم بتمكين HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE=1 على الخادم لاستخدام هذا."
+            "value" : "يكتب تعطيل على الخادم. قم بتمكين TALARIA_WEB_WORKSPACE_GIT_DESTRUCTIVE=1 على الخادم لاستخدام هذا."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Schreibvorgänge auf dem Server deaktiviert. Aktivieren Sie HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE=1 auf dem Server, um dies zu verwenden."
+            "value" : "Schreibvorgänge auf dem Server deaktiviert. Aktivieren Sie TALARIA_WEB_WORKSPACE_GIT_DESTRUCTIVE=1 auf dem Server, um dies zu verwenden."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Escrituras deshabilitadas en el servidor. Habilite HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE=1 en el servidor para usar esto."
+            "value" : "Escrituras deshabilitadas en el servidor. Habilite TALARIA_WEB_WORKSPACE_GIT_DESTRUCTIVE=1 en el servidor para usar esto."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Écritures désactivées sur le serveur. Activez HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE=1 sur le serveur pour l'utiliser."
+            "value" : "Écritures désactivées sur le serveur. Activez TALARIA_WEB_WORKSPACE_GIT_DESTRUCTIVE=1 sur le serveur pour l'utiliser."
           }
         },
         "he" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "כתיבה מושבתת בשרת. אפשר HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE=1 בשרת כדי להשתמש בזה."
+            "value" : "כתיבה מושבתת בשרת. אפשר TALARIA_WEB_WORKSPACE_GIT_DESTRUCTIVE=1 בשרת כדי להשתמש בזה."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Scritture disabilitate sul server. Abilita HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE=1 sul server per usarlo."
+            "value" : "Scritture disabilitate sul server. Abilita TALARIA_WEB_WORKSPACE_GIT_DESTRUCTIVE=1 sul server per usarlo."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "サーバー上で書き込みが無効になっています。これを使用するには、サーバーで HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE=1 を有効にします。"
+            "value" : "サーバー上で書き込みが無効になっています。これを使用するには、サーバーで TALARIA_WEB_WORKSPACE_GIT_DESTRUCTIVE=1 を有効にします。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "서버에서 쓰기가 비활성화되었습니다. 이를 사용하려면 서버에서 HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE=1을 활성화하세요."
+            "value" : "서버에서 쓰기가 비활성화되었습니다. 이를 사용하려면 서버에서 TALARIA_WEB_WORKSPACE_GIT_DESTRUCTIVE=1을 활성화하세요."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Schrijven uitgeschakeld op de server. Schakel HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE=1 in op de server om dit te gebruiken."
+            "value" : "Schrijven uitgeschakeld op de server. Schakel TALARIA_WEB_WORKSPACE_GIT_DESTRUCTIVE=1 in op de server om dit te gebruiken."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Zapisy na serwerze wyłączone. Aby z tego skorzystać, włącz HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE=1 na serwerze."
+            "value" : "Zapisy na serwerze wyłączone. Aby z tego skorzystać, włącz TALARIA_WEB_WORKSPACE_GIT_DESTRUCTIVE=1 na serwerze."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Gravações desabilitadas no servidor. Habilite HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE=1 no servidor para usar isso."
+            "value" : "Gravações desabilitadas no servidor. Habilite TALARIA_WEB_WORKSPACE_GIT_DESTRUCTIVE=1 no servidor para usar isso."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Запись отключена на сервере. Чтобы использовать это, включите HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE=1 на сервере."
+            "value" : "Запись отключена на сервере. Чтобы использовать это, включите TALARIA_WEB_WORKSPACE_GIT_DESTRUCTIVE=1 на сервере."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Sunucuda yazma devre dışı bırakıldı. Bunu kullanmak için sunucuda HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE=1'i etkinleştirin."
+            "value" : "Sunucuda yazma devre dışı bırakıldı. Bunu kullanmak için sunucuda TALARIA_WEB_WORKSPACE_GIT_DESTRUCTIVE=1'i etkinleştirin."
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "سرور پر لکھنا غیر فعال ہے۔ اسے استعمال کرنے کے لیے HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE=1 کو سرور پر فعال کریں۔"
+            "value" : "سرور پر لکھنا غیر فعال ہے۔ اسے استعمال کرنے کے لیے TALARIA_WEB_WORKSPACE_GIT_DESTRUCTIVE=1 کو سرور پر فعال کریں۔"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "在服务器上禁用写入。在服务器上启用 HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE=1 以使用此功能。"
+            "value" : "在服务器上禁用写入。在服务器上启用 TALARIA_WEB_WORKSPACE_GIT_DESTRUCTIVE=1 以使用此功能。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "在伺服器上禁用寫入。在伺服器上啟用 HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE=1 以使用此功能。"
+            "value" : "在伺服器上禁用寫入。在伺服器上啟用 TALARIA_WEB_WORKSPACE_GIT_DESTRUCTIVE=1 以使用此功能。"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "在伺服器上禁用寫入。在伺服器上啟用 HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE=1 以使用此功能。"
+            "value" : "在伺服器上禁用寫入。在伺服器上啟用 TALARIA_WEB_WORKSPACE_GIT_DESTRUCTIVE=1 以使用此功能。"
           }
         }
       }

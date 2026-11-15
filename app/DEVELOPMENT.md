@@ -216,7 +216,7 @@ An explicitly requested file must exist.
 Precedence is: exported process environment, `TALARIA_ENV_FILE`, `.env.local`,
 `.env`, then each script's built-in default. This keeps values supplied by CI or
 the invoking shell authoritative. `scripts/webui-json` also accepts
-`HERMES_WEBUI_ENV_FILE` as a compatibility alias when `TALARIA_ENV_FILE` is not
+`TALARIA_WEB_ENV_FILE` as a compatibility alias when `TALARIA_ENV_FILE` is not
 set.
 
 Environment files support blank lines, comments, `KEY=value`,
@@ -240,7 +240,7 @@ Recognized variables:
 - `TALARIA_DEVICE_DISCOVERY_ATTEMPTS` and `TALARIA_DEVICE_DISCOVERY_INTERVAL` —
   bounded retry budget for physical iPhone discovery.
 - `TALARIA_SWIFT_FILE_SIZE_LIMIT` — warning threshold for `scripts/check-swift-file-sizes`.
-- `HERMES_WEBUI_BASE_URL` and `HERMES_WEBUI_PASSWORD` — server credentials for `scripts/webui-json`.
+- `TALARIA_WEB_BASE_URL` and `TALARIA_WEB_PASSWORD` — server credentials for `scripts/webui-json`.
 
 ## Talaria Dev
 

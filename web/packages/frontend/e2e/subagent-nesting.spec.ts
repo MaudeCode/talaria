@@ -8,7 +8,7 @@ test.use({ serviceWorkers: 'block' })
 
 // TAL-1151: the server links each subagent session to its parent; the sidebar nests it there, in the parent's tab and project.
 test('nests subagent sessions under the chat that started them', async ({ page }, testInfo) => {
-  const server = await bootTestServer({ sidecar: new FakeSidecar(), env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' } })
+  const server = await bootTestServer({ sidecar: new FakeSidecar(), env: { TALARIA_WEB_SKIP_ONBOARDING: '1' } })
   const db = openStateDb(server.state)
   const now = Math.floor(Date.now() / 1000)
   try {

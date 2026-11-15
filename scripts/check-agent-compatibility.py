@@ -11,7 +11,7 @@ Provisions the Agent checkout and its venv on the newest Python its lockfile all
 Supported releases, the active pin among them, are cached under ``$XDG_CACHE_HOME/talaria/agents/<tag>`` and
 reused; each run deletes cached releases that left the support record. Candidates and canaries use a
 temporary directory removed at exit. It runs the Agent probe, the sidecar pytest suite on that interpreter,
-an optional extra command with ``HERMES_WEBUI_AGENT_DIR``/``HERMES_WEBUI_PYTHON`` set (``--command``, whose
+an optional extra command with ``TALARIA_WEB_AGENT_DIR``/``TALARIA_WEB_PYTHON`` set (``--command``, whose
 exit status the run returns; ``web/sidecar/scripts/test.sh`` re-runs itself this way), and verifies the
 release image (unless ``--skip-docker``) beside the suite. ``--shard N/M`` runs only the suite's Nth of M case sets,
 and ``--receipt PATH`` records the result, pass or fail, with the pytest JUnit report beside it and, for a shard, the
@@ -219,7 +219,7 @@ def verify_image(identity, sha, observations, compression, *, retained_cron):
             "docker", "run", "--rm", "--name", name, "--network", "none", "--read-only",
             "--tmpfs", "/tmp", "--tmpfs", "/opt/data", "--entrypoint", "/opt/hermes/.venv/bin/python",
             "-e", "HOME=/tmp/home", "-e", "HERMES_HOME=/tmp/home/hermes", "-e", "PYTHONPATH=/web/sidecar:/opt/hermes",
-            "-e", "HERMES_WEBUI_AGENT_DIR=/opt/hermes",
+            "-e", "TALARIA_WEB_AGENT_DIR=/opt/hermes",
             "-e", "TALARIA_AGENT_UPGRADE_PROBE=" + ("1" if retained_cron else "0"),
             "-e", "TALARIA_AGENT_SSH_EXPECTED=" + json.dumps(observations),
             "-e", "TALARIA_AGENT_COMPRESSION_EXPECTED=" + json.dumps(compression),
@@ -336,7 +336,7 @@ def check(args, kind, identity, receipt, junit):
             (state / name).mkdir()
         env = {"PATH": os.environ["PATH"], "HOME": str(state / "home"), "TMPDIR": str(state / "tmp"),
                "UV_CACHE_DIR": str(state / "uv-cache"), "HERMES_HOME": str(state / "home/hermes"),
-               "HERMES_WEBUI_STATE_DIR": str(state / "home/webui"), "PIP_CONFIG_FILE": os.devnull,
+               "TALARIA_WEB_STATE_DIR": str(state / "home/webui"), "PIP_CONFIG_FILE": os.devnull,
                "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0"}
         for key in ("LD_LIBRARY_PATH", "PLAYWRIGHT_BROWSERS_PATH", "TALARIA_SIDECAR_WORKERS", "TALARIA_SIDECAR_TOTAL_WORKERS"):
             if key in os.environ:
@@ -346,9 +346,9 @@ def check(args, kind, identity, receipt, junit):
             agent_python = agent / ".venv/bin/python"
             receipt["python"] = subprocess.check_output([str(agent_python), "-c", "import platform; print(platform.python_version())"],
                                                         env=env, text=True).strip()
-            env.update(HERMES_WEBUI_AGENT_DIR=str(agent), HERMES_WEBUI_PYTHON=str(agent_python), HERMES_WEBUI_TEST_PYTHON=sys.executable)
+            env.update(TALARIA_WEB_AGENT_DIR=str(agent), TALARIA_WEB_PYTHON=str(agent_python), TALARIA_WEB_TEST_PYTHON=sys.executable)
             if not args.skip_sidecar_tests or args.command:
-                env['HERMES_WEBUI_IMPORTER_DIR'] = str(provision_importer(state / 'agent-importers'))
+                env['TALARIA_WEB_IMPORTER_DIR'] = str(provision_importer(state / 'agent-importers'))
             # The retained formats first shipped in 0.22.1; promotion must not bypass their probe.
             retained_cron = kind in ("candidate", "canary") or tuple(map(int, identity["version"].split("."))) >= (0, 22, 1)
             phase("Agent probe")
@@ -388,7 +388,7 @@ def probe_agent(agent, identity, env, receipt):
         report = state / "agent-probe.json"
         probe_env = {**env, "HOME": str(state), "HERMES_HOME": str(state / "hermes"),
                      "TALARIA_AGENT_PROBE_REPORT": str(report), "PYTHONPATH": str(ROOT / "web/sidecar"),
-                     "HERMES_WEBUI_AGENT_DIR": str(agent)}
+                     "TALARIA_WEB_AGENT_DIR": str(agent)}
         try:
             subprocess.run([str(agent / ".venv/bin/python"), str(ROOT / "releases/agent_probe.py"),
                             *([identity["version"]] if "version" in identity else [])], cwd=agent, env=probe_env, check=True)

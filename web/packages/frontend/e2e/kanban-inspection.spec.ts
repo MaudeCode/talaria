@@ -11,7 +11,7 @@ test('timeline and accessible relationships share the server projection and exis
   const fixture = JSON.parse(readFileSync(new URL('../../../../contracts/fixtures/kanban-inspection.json', import.meta.url), 'utf8')) as { snapshot: z.infer<typeof KanbanInspectionSnapshotSchema> }
   const snapshot = structuredClone(fixture.snapshot)
   const sidecar = new FakeSidecar()
-  const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' } })
+  const server = await bootTestServer({ sidecar, env: { TALARIA_WEB_SKIP_ONBOARDING: '1' } })
   const archived = new Set<string>()
   let currentBoard = 'default'
   const heldLink = Promise.withResolvers<undefined>(), heldUnlink = Promise.withResolvers<undefined>(), heldArchive = Promise.withResolvers<undefined>()

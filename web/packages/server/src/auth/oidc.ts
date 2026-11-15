@@ -1,7 +1,7 @@
 /**
  * OIDC login (browser code flow and the native app handoff), byte-compatible
  * with Python `api/auth_oidc.py`: operator config (`webui_oidc` in the base
- * home config.yaml or `HERMES_WEBUI_OIDC_*`), PKCE S256, discovery/JWKS caches,
+ * home config.yaml or `TALARIA_WEB_OIDC_*`), PKCE S256, discovery/JWKS caches,
  * RS/ES JWT verification through `node:crypto`, allow/owner/profile policies,
  * and the session fingerprint = sha256(canonical policy JSON).
  */
@@ -185,11 +185,11 @@ export class OidcService {
       if (error instanceof ConfigUnavailable) this.deps.log('[oidc] operator config unavailable; failing closed until it is readable')
     }
     const pick = (name: string, envName: string): unknown => (env[envName] ?? raw[name])
-    const scopesRaw = textList(pick('scopes', 'HERMES_WEBUI_OIDC_SCOPES'))
+    const scopesRaw = textList(pick('scopes', 'TALARIA_WEB_OIDC_SCOPES'))
     const scopes = scopesRaw.length ? [...new Set(scopesRaw.includes('openid') ? scopesRaw : ['openid', ...scopesRaw])] : [...DEFAULT_SCOPES]
-    const [profileMap, profileMapError, profileMapConfigured] = this.normalizeProfileMap(pick('profile_map', 'HERMES_WEBUI_OIDC_PROFILE_MAP'))
-    const ownerClaimRaw = env.HERMES_WEBUI_OIDC_OWNER_CLAIM ?? ('owner_claim' in raw ? raw.owner_claim : undefined)
-    const ownerValuesRaw = env.HERMES_WEBUI_OIDC_OWNER_VALUES ?? ('owner_values' in raw ? raw.owner_values : undefined)
+    const [profileMap, profileMapError, profileMapConfigured] = this.normalizeProfileMap(pick('profile_map', 'TALARIA_WEB_OIDC_PROFILE_MAP'))
+    const ownerClaimRaw = env.TALARIA_WEB_OIDC_OWNER_CLAIM ?? ('owner_claim' in raw ? raw.owner_claim : undefined)
+    const ownerValuesRaw = env.TALARIA_WEB_OIDC_OWNER_VALUES ?? ('owner_values' in raw ? raw.owner_values : undefined)
     const ownerConfigured = ownerClaimRaw !== undefined || ownerValuesRaw !== undefined
     let ownerClaim = ''
     let ownerValues: string[] = []
@@ -202,16 +202,16 @@ export class OidcService {
       if (!ownerClaim || !ownerValues.length || UNRESOLVED_RE.test(ownerClaim)) { ownerValues = []; ownerError = OWNER_POLICY_ERROR }
       if (ownerError && !this.warnedOwnerPolicy) { this.warnedOwnerPolicy = true; this.deps.log(`[oidc] ${ownerError}`) }
     }
-    const rawProfileClaim = str(pick('profile_claim', 'HERMES_WEBUI_OIDC_PROFILE_CLAIM') || 'sub').trim()
+    const rawProfileClaim = str(pick('profile_claim', 'TALARIA_WEB_OIDC_PROFILE_CLAIM') || 'sub').trim()
     const profileClaim = UNRESOLVED_RE.test(rawProfileClaim) ? '' : rawProfileClaim
-    const allowClaim = str(pick('allow_claim', 'HERMES_WEBUI_OIDC_ALLOW_CLAIM')).trim()
+    const allowClaim = str(pick('allow_claim', 'TALARIA_WEB_OIDC_ALLOW_CLAIM')).trim()
     const cfg: OidcConfig = {
-      issuer: str(pick('issuer', 'HERMES_WEBUI_OIDC_ISSUER')).trim(), client_id: str(pick('client_id', 'HERMES_WEBUI_OIDC_CLIENT_ID')).trim(), client_secret: str(pick('client_secret', 'HERMES_WEBUI_OIDC_CLIENT_SECRET')).trim(),
-      redirect_uri: str(pick('redirect_uri', 'HERMES_WEBUI_OIDC_REDIRECT_URI')).trim(), scopes, allow_claim: UNRESOLVED_RE.test(allowClaim) ? '' : allowClaim, allow_values: allowValues(pick('allow_values', 'HERMES_WEBUI_OIDC_ALLOW_VALUES')),
-      trusted_private_hosts: this.trustedHosts(pick('trusted_private_hosts', 'HERMES_WEBUI_OIDC_TRUSTED_PRIVATE_HOSTS')), profile_claim: profileClaim, profile_map: profileMap, profile_map_configured: profileMapConfigured,
+      issuer: str(pick('issuer', 'TALARIA_WEB_OIDC_ISSUER')).trim(), client_id: str(pick('client_id', 'TALARIA_WEB_OIDC_CLIENT_ID')).trim(), client_secret: str(pick('client_secret', 'TALARIA_WEB_OIDC_CLIENT_SECRET')).trim(),
+      redirect_uri: str(pick('redirect_uri', 'TALARIA_WEB_OIDC_REDIRECT_URI')).trim(), scopes, allow_claim: UNRESOLVED_RE.test(allowClaim) ? '' : allowClaim, allow_values: allowValues(pick('allow_values', 'TALARIA_WEB_OIDC_ALLOW_VALUES')),
+      trusted_private_hosts: this.trustedHosts(pick('trusted_private_hosts', 'TALARIA_WEB_OIDC_TRUSTED_PRIVATE_HOSTS')), profile_claim: profileClaim, profile_map: profileMap, profile_map_configured: profileMapConfigured,
       profile_map_error: profileMapError ?? (profileClaim ? null : 'webui_oidc.profile_claim could not be resolved; it still contains an unexpanded ${...} reference'),
       owner_claim: ownerClaim, owner_values: ownerValues, owner_policy_configured: ownerConfigured, owner_policy_error: ownerError, config_read_failed: readFailed,
-      token_auth_method: this.tokenAuthMethod(pick('token_auth_method', 'HERMES_WEBUI_OIDC_TOKEN_AUTH_METHOD')),
+      token_auth_method: this.tokenAuthMethod(pick('token_auth_method', 'TALARIA_WEB_OIDC_TOKEN_AUTH_METHOD')),
     }
     this.lastConfig = cfg
     this.lastConfigAt = this.deps.now()

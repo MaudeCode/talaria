@@ -15,7 +15,7 @@ import threading
 import time
 
 STARTED = time.monotonic()
-agent = Path(os.environ["HERMES_WEBUI_AGENT_DIR"])
+agent = Path(os.environ["TALARIA_WEB_AGENT_DIR"])
 sys.path[:0] = [str(agent), str(agent / "tests/gateway/fixtures"), str(Path(__file__).resolve().parents[1])]
 from peer_phases import POLL_SECONDS, Phases, report_modes
 

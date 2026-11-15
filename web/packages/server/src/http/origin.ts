@@ -36,11 +36,11 @@ export function portsMatch(originScheme: string, originPort: string | null, allo
 
 export function allowedPublicOrigins(env: Env, warn: (line: string) => void = () => undefined): Set<string> {
   const out = new Set<string>()
-  for (const raw of (env.HERMES_WEBUI_ALLOWED_ORIGINS ?? '').split(',')) {
+  for (const raw of (env.TALARIA_WEB_ALLOWED_ORIGINS ?? '').split(',')) {
     const value = raw.trim().replace(/\/+$/, '').toLowerCase()
     if (!value) continue
     if (!value.startsWith('http://') && !value.startsWith('https://')) {
-      warn(`HERMES_WEBUI_ALLOWED_ORIGINS entry ${JSON.stringify(value)} is missing the scheme (expected https://hostname or http://hostname). Entry ignored.`)
+      warn(`TALARIA_WEB_ALLOWED_ORIGINS entry ${JSON.stringify(value)} is missing the scheme (expected https://hostname or http://hostname). Entry ignored.`)
       continue
     }
     out.add(value)
@@ -84,7 +84,7 @@ export function checkSameOriginBrowserRequest(h: ProvenanceHeaders, env: Env, op
   const originValue = m[0].replace(/\/+$/, '').toLowerCase()
   if (allowedPublicOrigins(env).has(originValue)) return null
   const allowedHosts = [host].map((s) => s.trim()).filter(Boolean)
-  if (['1', 'true', 'yes', 'on'].includes((env.HERMES_WEBUI_TRUST_FORWARDED_HOST ?? '').trim().toLowerCase())) {
+  if (['1', 'true', 'yes', 'on'].includes((env.TALARIA_WEB_TRUST_FORWARDED_HOST ?? '').trim().toLowerCase())) {
     for (const value of [h.forwardedHost ?? '', h.realHost ?? '']) if (value.trim()) allowedHosts.push(value.trim())
   }
   for (const allowed of allowedHosts) {
@@ -100,13 +100,13 @@ function hostName(value: string): string {
   return normalizeHostPort(value)[0].replace(/\.$/, '')
 }
 
-/** Names this server answers to besides IP literals: loopback, the bind host, allowed origins and HERMES_WEBUI_ALLOWED_HOSTS. */
+/** Names this server answers to besides IP literals: loopback, the bind host, allowed origins and TALARIA_WEB_ALLOWED_HOSTS. */
 function allowedHostNames(env: Env, bindHost: string): Set<string> {
   const names = new Set(['localhost', hostName(bindHost)])
   for (const origin of allowedPublicOrigins(env)) {
     try { names.add(hostName(new URL(origin).host)) } catch { /* not a URL: matches nothing */ }
   }
-  for (const entry of (env.HERMES_WEBUI_ALLOWED_HOSTS ?? '').split(',')) names.add(hostName(entry))
+  for (const entry of (env.TALARIA_WEB_ALLOWED_HOSTS ?? '').split(',')) names.add(hostName(entry))
   names.delete('')
   return names
 }
@@ -123,14 +123,14 @@ export interface RequestHostHeaders {
  * The rejected hostname when the request names a host this server does not answer to, else null. DNS rebinding needs a
  * DNS name, so IP literals always pass. The raw `Host` is always checked: a rebound page reaching the listener directly
  * shares a same-host proxy's peer address and can send any forwarded header. From a proxy listed in
- * HERMES_WEBUI_TRUSTED_PROXY_CIDRS with HERMES_WEBUI_TRUST_FORWARDED_HOST on, the forwarded host the CSRF check trusts
+ * TALARIA_WEB_TRUSTED_PROXY_CIDRS with TALARIA_WEB_TRUST_FORWARDED_HOST on, the forwarded host the CSRF check trusts
  * must pass too. A request without `Host` (HTTP/1.0) passes only without browser provenance; it is rejected as `''`.
  */
 export function unexpectedRequestHost(h: RequestHostHeaders, peer: string, env: Env, bindHost: string): string | null {
   const raw = (h.host ?? '').trim()
   if (!raw && h.browser) return ''
   const hosts = raw ? [raw] : []
-  if (truthy(env.HERMES_WEBUI_TRUST_FORWARDED_HOST) && rawPeerIsTrustedProxy(peer, env, { implicitLoopback: false })) {
+  if (truthy(env.TALARIA_WEB_TRUST_FORWARDED_HOST) && rawPeerIsTrustedProxy(peer, env, { implicitLoopback: false })) {
     const forwarded = (h.forwardedHost ?? '').split(',')[0]?.trim() || (h.realHost ?? '').trim()
     if (forwarded) hosts.push(forwarded)
   }
@@ -167,10 +167,10 @@ export interface ProxyTrust {
 
 interface ProxyCidr { addr: string; bits: number; type: 'ipv4' | 'ipv6' }
 
-/** The valid `HERMES_WEBUI_TRUSTED_PROXY_CIDRS` entries; a bare address is a full-length prefix, malformed entries are skipped. */
+/** The valid `TALARIA_WEB_TRUSTED_PROXY_CIDRS` entries; a bare address is a full-length prefix, malformed entries are skipped. */
 function proxyCidrEntries(env: Env): ProxyCidr[] {
   const out: ProxyCidr[] = []
-  for (const rawToken of (env.HERMES_WEBUI_TRUSTED_PROXY_CIDRS ?? '').replace(/;/g, ',').split(',')) {
+  for (const rawToken of (env.TALARIA_WEB_TRUSTED_PROXY_CIDRS ?? '').replace(/;/g, ',').split(',')) {
     const token = rawToken.trim()
     if (!token) continue
     const [addr = '', prefix] = token.split('/')
@@ -197,7 +197,7 @@ export function trustedProxyNetworks(env: Env, { implicitLoopback = true }: Prox
   return list
 }
 
-/** Whether `HERMES_WEBUI_TRUSTED_PROXY_CIDRS` trusts any proxy beyond the loopback networks. */
+/** Whether `TALARIA_WEB_TRUSTED_PROXY_CIDRS` trusts any proxy beyond the loopback networks. */
 export function trustsProxyBeyondLoopback(env: Env): boolean {
   return proxyCidrEntries(env).some(({ addr, bits, type }) => {
     if (type === 'ipv4') return !(addr.startsWith('127.') && bits >= 8)
@@ -267,7 +267,7 @@ export function forwardedClientIp(xff: string[], realIp: string | undefined, pee
  * TTS). Stricter than `forwardedClientIp`, whose implicit loopback and
  * X-Real-IP trust the onboarding and local-origin gates keep. Forwarded
  * identity counts only with the opt-in, a raw peer listed in
- * HERMES_WEBUI_TRUSTED_PROXY_CIDRS (loopback included, for the peer and every
+ * TALARIA_WEB_TRUSTED_PROXY_CIDRS (loopback included, for the peer and every
  * skipped hop alike), a non-empty
  * X-Forwarded-For chain with no empty field, and every X-Real-IP field naming
  * the same address. Anything else keys on the socket peer, so a client cannot
@@ -275,7 +275,7 @@ export function forwardedClientIp(xff: string[], realIp: string | undefined, pee
  */
 export function throttleClientIp(xff: string[], realIp: string[], peer: string, env: Env): string {
   const explicit = { implicitLoopback: false }
-  if (!truthy(env.HERMES_WEBUI_TRUST_FORWARDED_FOR) || !rawPeerIsTrustedProxy(peer, env, explicit)) return peer
+  if (!truthy(env.TALARIA_WEB_TRUST_FORWARDED_FOR) || !rawPeerIsTrustedProxy(peer, env, explicit)) return peer
   if (!xff.length || xff.some((field) => field.split(',').some((hop) => !hop.trim()))) return peer
   const forwarded = forwardedClientIp(xff, undefined, peer, env, explicit)
   const client = forwarded === null ? null : canonicalIp(forwarded)
@@ -292,7 +292,7 @@ export type ForwardedLogFields = { forwarded_for: string } | { forwarded_for_ign
  */
 export function forwardedLogFields(xff: string[], peer: string, env: Env): ForwardedLogFields {
   if (!xff.some((v) => v.trim())) return {}
-  if (truthy(env.HERMES_WEBUI_TRUST_FORWARDED_FOR) && rawPeerIsTrustedProxy(peer, env)) {
+  if (truthy(env.TALARIA_WEB_TRUST_FORWARDED_FOR) && rawPeerIsTrustedProxy(peer, env)) {
     const client = canonicalIp(forwardedClientIp(xff, undefined, peer, env) ?? '')
     if (client && client !== canonicalIp(peer)) return { forwarded_for: client }
   }

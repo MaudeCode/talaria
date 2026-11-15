@@ -1538,7 +1538,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
   })
 
   it('gateway actions are owner-only; status is not (TAL-266)', async () => {
-    const t = await bootTestServer({ env: { HERMES_WEBUI_TRUSTED_AUTH_HEADER: 'X-Remote-User', HERMES_WEBUI_TRUSTED_GROUPS_HEADER: 'X-Remote-Groups', HERMES_WEBUI_GROUP_PROFILE_MAP: '{"ops":"work"}' } })
+    const t = await bootTestServer({ env: { TALARIA_WEB_TRUSTED_AUTH_HEADER: 'X-Remote-User', TALARIA_WEB_TRUSTED_GROUPS_HEADER: 'X-Remote-Groups', TALARIA_WEB_GROUP_PROFILE_MAP: '{"ops":"work"}' } })
     try {
       const headers = { 'X-Remote-User': 'kim', 'X-Remote-Groups': 'ops', 'content-type': 'application/json' }
       for (const action of ['start', 'stop', 'restart']) {
@@ -1973,8 +1973,8 @@ describe('agent health chat readiness', () => {
 })
 
 describe('transcribe upload limit', () => {
-  it('rejects a transcribe upload above HERMES_WEBUI_MAX_UPLOAD_MB with 413', async () => {
-    const s = await bootTestServer({ sidecar: new FakeSidecar(), env: { HERMES_WEBUI_MAX_UPLOAD_MB: '1' } })
+  it('rejects a transcribe upload above TALARIA_WEB_MAX_UPLOAD_MB with 413', async () => {
+    const s = await bootTestServer({ sidecar: new FakeSidecar(), env: { TALARIA_WEB_MAX_UPLOAD_MB: '1' } })
     try {
       const boundary = 'abc'
       const head = Buffer.from([`--${boundary}`, 'Content-Disposition: form-data; name="file"; filename="clip.webm"', 'Content-Type: audio/webm', '', ''].join('\r\n'))

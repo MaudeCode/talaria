@@ -156,7 +156,7 @@ describe('default workspace behind a symlink (TAL-2098)', () => {
     mkdirSync(real)
     const link = join(dir, 'link')
     symlinkSync(real, link)
-    const s = await bootTestServer({ env: { HERMES_WEBUI_DEFAULT_WORKSPACE: link } })
+    const s = await bootTestServer({ env: { TALARIA_WEB_DEFAULT_WORKSPACE: link } })
     try {
       const settings = await (await s.get('/api/settings')).json() as { default_workspace: string }
       const listed = await (await s.get('/api/workspaces')).json() as { workspaces: { path: string }[] }
@@ -182,7 +182,7 @@ describe('workspace list row fields (TAL-2141)', () => {
     mkdirSync(real)
     mkdirSync(gone, { recursive: true })
     symlinkSync(real, link)
-    const s = await bootTestServer({ env: { HOME: home, HERMES_WEBUI_DEFAULT_WORKSPACE: link } })
+    const s = await bootTestServer({ env: { HOME: home, TALARIA_WEB_DEFAULT_WORKSPACE: link } })
     try {
       expect((await post(s, '/api/workspaces/add', { path: gone })).status).toBe(200)
       for (let i = 0; i < 2; i++) {

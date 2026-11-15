@@ -9,7 +9,7 @@ test.use({ serviceWorkers: 'block', video: 'on' })
 
 test('reviews memory compaction, keeps a refused review, and applies a fresh preview', async ({ page, errors }, info) => {
   const sidecar = new FakeSidecar()
-  const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' }, deps: (deps) => { deps.fetch = () => Promise.reject(new Error('Network forbidden in compaction validation')) } })
+  const server = await bootTestServer({ sidecar, env: { TALARIA_WEB_SKIP_ONBOARDING: '1' }, deps: (deps) => { deps.fetch = () => Promise.reject(new Error('Network forbidden in compaction validation')) } })
   sidecar.respond('write_approval.pending', () => ({ supported: true, enabled: false, items: [] }))
   const file = join(server.state, 'memories/MEMORY.md')
   const source = 'Prefers concise answers.\n§\nPrefers brief answers.\n§\nUses TypeScript for Web projects.'

@@ -35,7 +35,7 @@ for name in ("run_agent", "hermes_cli.runtime_provider", "agent.auxiliary_client
              "agent.context_compressor", "agent.turn_context", "agent.turn_context_compaction",
              "tools.file_tools", "tools.approval", "tools.terminal_tool"):
     module = importlib.import_module(name)
-    if agent := os.environ.get("HERMES_WEBUI_AGENT_DIR"):
+    if agent := os.environ.get("TALARIA_WEB_AGENT_DIR"):
         assert Path(module.__file__).resolve().is_relative_to(Path(agent).resolve()), (name, module.__file__)
 for module, names in {
     "update_lock": ("UpdateLock",),
@@ -48,7 +48,7 @@ for module, names in {
 }.items():
     native = importlib.import_module("hermes_cli." + module)
     assert all(callable(getattr(native, name, None)) for name in names), f"Agent native update protocol missing in {module}"
-    if agent := os.environ.get("HERMES_WEBUI_AGENT_DIR"):
+    if agent := os.environ.get("TALARIA_WEB_AGENT_DIR"):
         assert Path(native.__file__).resolve().is_relative_to(Path(agent).resolve()), (module, native.__file__)
 import sqlite3
 

@@ -21,7 +21,7 @@ async function outlineServer(page: Page, { questions = QUESTIONS, on = true } = 
     usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: 0 }, context: {},
     model: 'test-model', provider: 'test', compressed: false, agent_session_id: params.session_id, token_sent: true, pending_steer: '', live_tool_calls: [],
     messages: [...params.conversation_history, { role: 'user', content: params.user_message }, { role: 'assistant', content: 'Noted.' }], final_response: 'Noted.' } })
-  const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' } })
+  const server = await bootTestServer({ sidecar, env: { TALARIA_WEB_SKIP_ONBOARDING: '1' } })
   const workspace = join(server.state, 'workspace')
   mkdirSync(workspace, { recursive: true })
   const now = Math.floor(Date.now() / 1000)

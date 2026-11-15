@@ -13,7 +13,7 @@ test('native plan restores, follows another viewer, reconnects and clears throug
   const fixture = JSON.parse(readFileSync(new URL('../../../../contracts/fixtures/web-native-todos.json', import.meta.url), 'utf8')) as { owner: NonNullable<GatewaySnapshot['todo_state']> }
   const sid = ownership.sessions.cli
   const sidecar = new FakeSidecar()
-  const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' } })
+  const server = await bootTestServer({ sidecar, env: { TALARIA_WEB_SKIP_ONBOARDING: '1' } })
   const db = openStateDb(server.state)
   let emit: ((frame: Omit<StreamFrame, 'seq'>) => void) | undefined
   let aborted = false

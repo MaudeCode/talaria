@@ -338,7 +338,7 @@ export interface MediaPolicyDeps<T = string | null | Promise<string | null>> {
   home: string
   hermesHome: string
   stateDir: string
-  /** `HERMES_WEBUI_MEDIA_SNAPSHOT_DIR` from the Python server: its leftover snapshot copies stay internal. */
+  /** `TALARIA_WEB_MEDIA_SNAPSHOT_DIR` from the Python server: its leftover snapshot copies stay internal. */
   legacySnapshotDir?: string | undefined
   /** The active workspace when local IO is supported, else null. */
   activeWorkspace: () => T

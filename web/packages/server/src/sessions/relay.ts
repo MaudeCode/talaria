@@ -795,7 +795,7 @@ export class RelayService implements NotificationChannel {
   }
 
   private feedbackOrigin(config: RelayConfig | null): string {
-    return config?.url ?? (this.deps.env.HERMES_WEBUI_TALARIA_RELAY_URL ?? DEFAULT_RELAY_URL).trim().replace(/\/+$/, '')
+    return config?.url ?? (this.deps.env.TALARIA_WEB_TALARIA_RELAY_URL ?? DEFAULT_RELAY_URL).trim().replace(/\/+$/, '')
   }
 
   /** Feedback shares publisher identity, signing, response bounds and transport with enrollment. */
@@ -858,7 +858,7 @@ export class RelayService implements NotificationChannel {
     } catch (error) {
       throw new RelayPairingError((error as Error).message, 400)
     }
-    const allowed = (this.deps.env.HERMES_WEBUI_TALARIA_RELAY_URL ?? DEFAULT_RELAY_URL).trim().replace(/\/+$/, '')
+    const allowed = (this.deps.env.TALARIA_WEB_TALARIA_RELAY_URL ?? DEFAULT_RELAY_URL).trim().replace(/\/+$/, '')
     if (relayUrl !== allowed) throw new RelayPairingError('Untrusted Talaria Relay origin', 400)
     if (invitation.length < 1 || invitation.length > 256 || (label as string).length < 1 || (label as string).length > 80) throw new RelayPairingError('Invalid relay pairing fields', 400)
     const profile = rawProfile.trim()

@@ -277,9 +277,9 @@ function lstatExists(path: string): boolean {
   try { lstatSync(path); return true } catch { return false }
 }
 
-/** `HERMES_WEBUI_ATTACHMENT_DIR`, else `<stateDir>/attachments`: the local adapter's directory. */
+/** `TALARIA_WEB_ATTACHMENT_DIR`, else `<stateDir>/attachments`: the local adapter's directory. */
 export function localAttachmentRoot(env: Record<string, string | undefined>, stateDir: string, home: string): string {
-  const override = (env.HERMES_WEBUI_ATTACHMENT_DIR ?? '').trim()
+  const override = (env.TALARIA_WEB_ATTACHMENT_DIR ?? '').trim()
   return resolvePathLikePython(override ? override.replace(/^~(?=$|\/)/, home) : join(stateDir, 'attachments'))
 }
 

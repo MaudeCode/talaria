@@ -31,7 +31,7 @@ def run_owner_peer(request, tmp_path, script, modes, timeout=200):
     """One peer run on a real disposable owner. Its report must account for every requested mode: a mode this release
     does not support is reported as skipped, and one the peer dropped fails here. The JUnit report keeps what each run
     did and where its time went, so a passing CI run shows them too."""
-    env = isolated_env(tmp_path / "hermes", HERMES_WEBUI_AGENT_DIR=str(AGENT_DIR), HERMES_WEBUI_PYTHON=str(AGENT_PYTHON),
+    env = isolated_env(tmp_path / "hermes", TALARIA_WEB_AGENT_DIR=str(AGENT_DIR), TALARIA_WEB_PYTHON=str(AGENT_PYTHON),
                        PYTHONPATH=f"{SIDECAR_ROOT}:{Path(pytest.__file__).parent.parent}")
     try:
         result = subprocess.run([AGENT_PYTHON, str(Path(__file__).parent / "fixtures" / script), *modes],
@@ -534,7 +534,7 @@ def test_real_owner_todo_producer_matches_snapshot_and_replay(native_owner_stub,
     fixture_path = SIDECAR_ROOT.parent.parent / "contracts/fixtures/web-native-todos.json"
     result = subprocess.run([AGENT_PYTHON, str(Path(__file__).parent / "fixtures/gateway_todo_producer.py"),
                              str(AGENT_DIR), str(fixture_path)],
-                            env=isolated_env(tmp_path / "producer", HERMES_WEBUI_AGENT_DIR=str(AGENT_DIR)),
+                            env=isolated_env(tmp_path / "producer", TALARIA_WEB_AGENT_DIR=str(AGENT_DIR)),
                             capture_output=True, text=True, timeout=30, check=False)
     assert result.returncode == 0, result.stdout + result.stderr
     produced = json.loads(result.stdout)
@@ -578,7 +578,7 @@ def test_watch_forwards_native_progress_and_deduplicates_replay_overlap(native_o
 
 @requires_agent
 def test_real_cron_refusal_matches_public_consumer_fixture(tmp_path):
-    env = isolated_env(tmp_path / "hermes", HERMES_WEBUI_AGENT_DIR=str(AGENT_DIR))
+    env = isolated_env(tmp_path / "hermes", TALARIA_WEB_AGENT_DIR=str(AGENT_DIR))
     result = subprocess.run([AGENT_PYTHON, str(Path(__file__).parent / "fixtures/gateway_cron_refusal.py")],
                             env=env, capture_output=True, text=True, timeout=60, check=False)
     assert result.returncode == 0, result.stdout + result.stderr
@@ -681,7 +681,7 @@ def test_real_plugin_notice_producer_replays_without_turn_stamp(native_owner_stu
     if not (AGENT_DIR / "gateway/plugin_messages.py").exists():
         pytest.skip("this supported Agent has no plugin post/edit API")
     fixture_path = SIDECAR_ROOT.parent.parent / "contracts/fixtures/web-native-notices.json"
-    env = isolated_env(tmp_path / "producer", HERMES_WEBUI_AGENT_DIR=str(AGENT_DIR))
+    env = isolated_env(tmp_path / "producer", TALARIA_WEB_AGENT_DIR=str(AGENT_DIR))
     result = subprocess.run([AGENT_PYTHON, str(Path(__file__).parent / "fixtures/gateway_notice_producer.py"),
                              str(AGENT_DIR), str(fixture_path)], env=env, capture_output=True, text=True, timeout=30, check=False)
     assert result.returncode == 0, result.stdout + result.stderr
@@ -836,7 +836,7 @@ def test_captured_command_refuses_stale_or_wrong_owner(native_owner_stub, bounda
 def test_supported_owner_captured_command_policy(tmp_path):
     if not (AGENT_DIR / "gateway/session_shell.py").exists():
         pytest.skip("this supported Agent has no captured shell command")
-    env = isolated_env(tmp_path / "hermes", HERMES_WEBUI_AGENT_DIR=str(AGENT_DIR))
+    env = isolated_env(tmp_path / "hermes", TALARIA_WEB_AGENT_DIR=str(AGENT_DIR))
     result = subprocess.run([AGENT_PYTHON, str(Path(__file__).parent / "fixtures/gateway_shell_policy.py"),
                              str(AGENT_DIR), str(tmp_path / "workspaces")], env=env,
                             capture_output=True, text=True, timeout=60, check=False)

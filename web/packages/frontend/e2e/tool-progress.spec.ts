@@ -12,7 +12,7 @@ test('native MCP progress updates one running row, survives reload, and clears o
   const fixture = JSON.parse(readFileSync(new URL('../../server/src/test/fixtures/canonical-ownership.json', import.meta.url), 'utf8')) as { sessions: { cli: string }; schema: string[]; inserts: string[] }
   const sid = fixture.sessions.cli
   const sidecar = new FakeSidecar()
-  const server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' } })
+  const server = await bootTestServer({ sidecar, env: { TALARIA_WEB_SKIP_ONBOARDING: '1' } })
   const db = openStateDb(server.state)
   let emit: ((frame: Omit<StreamFrame, 'seq'>) => void) | undefined
   let snap: GatewaySnapshot = { session_id: sid, stored_session_id: sid, messages: [{ role: 'user', content: 'Index the project files', message_id: 'native-input' }],

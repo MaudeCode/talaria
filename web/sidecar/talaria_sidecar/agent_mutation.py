@@ -205,7 +205,7 @@ def recovery_receipts(runtime, *, watch=False, discovery_cache=None):
     if root is None:
         return [], None
     root = root.resolve()
-    state = os.environ.get('TALARIA_SIDECAR_WEB_STATE_DIR') or os.environ.get('HERMES_WEBUI_STATE_DIR', '').strip() or str(home / 'webui')
+    state = os.environ.get('TALARIA_SIDECAR_WEB_STATE_DIR') or os.environ.get('TALARIA_WEB_STATE_DIR', '').strip() or str(home / 'webui')
     marker = Path(state).expanduser() / 'agent-dependency-sync' / hashlib.sha256(str(root).encode()).hexdigest()
     key = hashlib.sha256(os.path.normcase(str(root)).encode()).hexdigest()[:12]
     native = home / ('.hermes-update-paused-gateways.' + key + '.json')

@@ -24,7 +24,7 @@ afterEach(async () => {
   for (const schema of schemas.splice(0)) await dropTestSchema(postgres.url, schema)
 })
 function tempDir(): string { const dir = mkdtempSync(join(tmpdir(), 'talaria-storage-copy-')); dirs.push(dir); return dir }
-const env = { HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT: '0' }
+const env = { TALARIA_WEB_RUN_JOURNAL_KEEP_RECENT: '0' }
 function jsonStore(stateDir: string): JsonStorage { const store = new JsonStorage({ directory: join(stateDir, 'sessions'), stateDir, env, now: () => Date.now() / 1000, stampingSince: () => 0 }); stores.push(store); return store }
 function sqliteStore(stateDir: string): SqliteStorage { const store = new SqliteStorage({ path: join(stateDir, 'talaria.db'), sessionDir: join(stateDir, 'sessions'), env, stampingSince: () => 0 }); stores.push(store); return store }
 async function postgresStore(schema = testSchema()): Promise<PostgresStorage> {
@@ -175,7 +175,7 @@ async function cli(home: string, port: number, argv: string[], extra: Record<str
   const err: string[] = []
   const webRoot = join(home, 'web')
   mkdirSync(webRoot, { recursive: true })
-  const code = await runStorage({ env: { HERMES_HOME: home, HERMES_WEBUI_STATE_DIR: join(home, 'webui'), HERMES_WEBUI_PORT: String(port), HERMES_WEBUI_CTL_ISOLATE_WORKTREE: '0', PATH: process.env.PATH, ...extra }, webRoot, home, log: (line) => out.push(line), warn: (line) => err.push(line) }, argv)
+  const code = await runStorage({ env: { HERMES_HOME: home, TALARIA_WEB_STATE_DIR: join(home, 'webui'), TALARIA_WEB_PORT: String(port), TALARIA_WEB_CTL_ISOLATE_WORKTREE: '0', PATH: process.env.PATH, ...extra }, webRoot, home, log: (line) => out.push(line), warn: (line) => err.push(line) }, argv)
   return { code, out: out.join('\n'), err: err.join('\n') }
 }
 const listen = (server: Server): Promise<number> => new Promise((resolve) => { server.listen(0, '127.0.0.1', () => { resolve((server.address() as AddressInfo).port) }) })

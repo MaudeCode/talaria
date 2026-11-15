@@ -8,7 +8,7 @@ afterEach(async () => { await server?.close() })
 
 it.each(['profile', 'principal'] as const)('bounds commands by %s before dispatch and releases the budget', async (boundary) => {
   const sidecar = new FakeSidecar()
-  const s = server = await bootTestServer({ sidecar, env: { HERMES_WEBUI_TRUSTED_AUTH_HEADER: 'X-Remote-User', HERMES_WEBUI_TRUSTED_GROUPS_HEADER: 'X-Remote-Groups', HERMES_WEBUI_GROUP_PROFILE_MAP: '{"ops":"work"}' } })
+  const s = server = await bootTestServer({ sidecar, env: { TALARIA_WEB_TRUSTED_AUTH_HEADER: 'X-Remote-User', TALARIA_WEB_TRUSTED_GROUPS_HEADER: 'X-Remote-Groups', TALARIA_WEB_GROUP_PROFILE_MAP: '{"ops":"work"}' } })
   const identities: Record<string, Record<string, string>> = {}
   for (const [key, user, group] of [['kimWork', 'kim', 'ops'], ['kimRoot', 'kim', 'dev'], ['leeWork', 'lee', 'ops'], ['leeRoot', 'lee', 'dev']]) {
     const response = await s.get('/api/auth/status', { headers: { 'X-Remote-User': user!, 'X-Remote-Groups': group! } })

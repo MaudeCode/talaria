@@ -8,7 +8,7 @@ import sys
 from types import SimpleNamespace
 from unittest.mock import patch
 
-agent = Path(os.environ['HERMES_WEBUI_AGENT_DIR']).resolve()
+agent = Path(os.environ['TALARIA_WEB_AGENT_DIR']).resolve()
 sys.path.insert(0, str(agent))
 try:
     contracts = import_module('tui_gateway.contracts')

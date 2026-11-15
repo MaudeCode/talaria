@@ -41,7 +41,7 @@ so it works well as a daily-driver agent interface from your phone.
 2. Keep the WebUI bound to localhost and enable password auth:
 
 ```bash
-HERMES_WEBUI_PASSWORD=your-secret talaria-web
+TALARIA_WEB_PASSWORD=your-secret talaria-web
 ```
 
 3. Publish the local WebUI port through Tailscale Serve:
@@ -53,7 +53,7 @@ tailscale serve --bg 8787
 4. Allow the MagicDNS hostname Tailscale prints, then restart WebUI:
 
 ```bash
-HERMES_WEBUI_ALLOWED_HOSTS=<machine>.<tailnet>.ts.net HERMES_WEBUI_PASSWORD=your-secret talaria-web
+TALARIA_WEB_ALLOWED_HOSTS=<machine>.<tailnet>.ts.net TALARIA_WEB_PASSWORD=your-secret talaria-web
 ```
 
 5. Open the HTTPS MagicDNS URL in your phone's browser.
@@ -81,7 +81,7 @@ permitted. Because this binds WebUI beyond loopback, always enable password
 auth:
 
 ```bash
-HERMES_WEBUI_HOST=0.0.0.0 HERMES_WEBUI_PASSWORD=your-secret talaria-web
+TALARIA_WEB_HOST=0.0.0.0 TALARIA_WEB_PASSWORD=your-secret talaria-web
 ```
 
 Then open `http://<server-tailscale-ip>:8787` in your phone's browser (find
@@ -92,38 +92,38 @@ That's it. Traffic is encrypted end-to-end by WireGuard, and password auth
 protects the UI at the application level. You can add it to your home screen
 for an app-like experience.
 
-> **Tip:** If using Docker, set `HERMES_WEBUI_HOST=0.0.0.0` in your
+> **Tip:** If using Docker, set `TALARIA_WEB_HOST=0.0.0.0` in your
 > `docker-compose.yml` environment (already the default) and set
-> `HERMES_WEBUI_PASSWORD`.
+> `TALARIA_WEB_PASSWORD`.
 
 ## Behind a reverse proxy
 
 ### Allowed hostnames
 
-WebUI answers only to `localhost`, IP addresses, the `HERMES_WEBUI_HOST` name,
-the hostnames in `HERMES_WEBUI_ALLOWED_ORIGINS`, and the comma-separated names
-in `HERMES_WEBUI_ALLOWED_HOSTS`. A request whose `Host` header names anything
+WebUI answers only to `localhost`, IP addresses, the `TALARIA_WEB_HOST` name,
+the hostnames in `TALARIA_WEB_ALLOWED_ORIGINS`, and the comma-separated names
+in `TALARIA_WEB_ALLOWED_HOSTS`. A request whose `Host` header names anything
 else gets `421 Misdirected Request` before authentication runs, and the first
 rejection of each name logs a warning. This stops a web page from reaching the
 server through DNS rebinding, where the attacker's own hostname resolves to
 this machine. Matching ignores case and the port.
 
-Behind a proxy, list the public hostname: `HERMES_WEBUI_ALLOWED_HOSTS=webui.example.com`.
+Behind a proxy, list the public hostname: `TALARIA_WEB_ALLOWED_HOSTS=webui.example.com`.
 The `Host` header WebUI receives is always checked, so a proxy that rewrites it
 to an internal name such as a Docker service needs that name listed too
-(`HERMES_WEBUI_ALLOWED_HOSTS=webui.example.com,talaria`). With
-`HERMES_WEBUI_TRUST_FORWARDED_HOST=1` and the proxy's address listed in
-`HERMES_WEBUI_TRUSTED_PROXY_CIDRS` (loopback is not trusted implicitly here, so
+(`TALARIA_WEB_ALLOWED_HOSTS=webui.example.com,talaria`). With
+`TALARIA_WEB_TRUST_FORWARDED_HOST=1` and the proxy's address listed in
+`TALARIA_WEB_TRUSTED_PROXY_CIDRS` (loopback is not trusted implicitly here, so
 a same-host proxy lists `127.0.0.1/32`), the `X-Forwarded-Host` name must be
 allowed as well.
 
 ### Client address
 
-Set `HERMES_WEBUI_TRUST_FORWARDED_FOR=1` to use the client address from
+Set `TALARIA_WEB_TRUST_FORWARDED_FOR=1` to use the client address from
 `X-Forwarded-For`. It applies only when the connection comes from a trusted
 proxy. The request log and the local-origin onboarding gate trust loopback
 implicitly. Login, passkey, native OIDC start, and TTS limits use a forwarded
-client only from a proxy listed in `HERMES_WEBUI_TRUSTED_PROXY_CIDRS`, so a
+client only from a proxy listed in `TALARIA_WEB_TRUSTED_PROXY_CIDRS`, so a
 same-host proxy lists `127.0.0.1/32` (and `::1/128`). A proxy on another host
 or a Docker bridge must be listed too (for example `172.17.0.1` or
 `10.0.0.0/8`). When the opt-in is set and no proxy outside this host is listed,

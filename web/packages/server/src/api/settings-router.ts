@@ -87,7 +87,7 @@ const ipIsLoopbackOrPrivate = (addr: string): boolean => isLoopback(addr.trim())
 /** Python `_onboarding_request_is_local`: forwarded headers count only behind a trusted proxy with the opt-in. */
 export function onboardingRequestIsLocal(ctx: RequestContext): boolean {
   const env = ctx.deps.config.env
-  const trustForwarded = truthy(env.HERMES_WEBUI_TRUST_FORWARDED_FOR)
+  const trustForwarded = truthy(env.TALARIA_WEB_TRUST_FORWARDED_FOR)
   const peerTrusted = rawPeerIsTrustedProxy(ctx.peer, env)
   if (trustForwarded && peerTrusted) {
     const client = forwardedClientIp(ctx.headerAll('x-forwarded-for'), ctx.header('x-real-ip'), ctx.peer, env)
@@ -102,7 +102,7 @@ export function onboardingRequestIsLocal(ctx: RequestContext): boolean {
 /** Python `_onboarding_gate_allows`. */
 export async function onboardingGateAllows(ctx: RequestContext, authEnabled?: boolean): Promise<boolean> {
   const enabled = authEnabled ?? (await ctx.deps.auth.isAuthEnabled())
-  if (enabled || truthy(ctx.deps.config.env.HERMES_WEBUI_ONBOARDING_OPEN)) return true
+  if (enabled || truthy(ctx.deps.config.env.TALARIA_WEB_ONBOARDING_OPEN)) return true
   return onboardingRequestIsLocal(ctx)
 }
 
@@ -145,7 +145,7 @@ export async function settingsPayload(ctx: RequestContext): Promise<Dict> {
 async function derivedFields(ctx: RequestContext, into: Dict): Promise<void> {
   const deps = ctx.deps
   Object.assign(into, composerControlCount(into), navigationCounts(into))
-  into.password_env_var = Boolean((deps.config.env.HERMES_WEBUI_PASSWORD ?? '').trim())
+  into.password_env_var = Boolean((deps.config.env.TALARIA_WEB_PASSWORD ?? '').trim())
   // TAL-2143: Settings › Access shows the normalized host count on its closed Trusted link hosts row.
   into.trusted_link_hosts_count = Array.isArray(into.trusted_link_hosts) ? into.trusted_link_hosts.length : 0
   into.webui_version = deps.version
@@ -246,8 +246,8 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
   if ((requestedPassword || requestedClear) && !(await canManageServer(ctx))) throw new HttpError(403, 'An owner session is required to manage owner authentication credentials')
   const currentPassword = body._current_password
   Reflect.deleteProperty(body, '_current_password')
-  if ((requestedPassword || requestedClear) && (deps.config.env.HERMES_WEBUI_PASSWORD ?? '').trim()) {
-    throw new HttpError(409, 'HERMES_WEBUI_PASSWORD env var is set — it overrides the settings password. Unset the env var and restart the server before changing the password here.')
+  if ((requestedPassword || requestedClear) && (deps.config.env.TALARIA_WEB_PASSWORD ?? '').trim()) {
+    throw new HttpError(409, 'TALARIA_WEB_PASSWORD env var is set — it overrides the settings password. Unset the env var and restart the server before changing the password here.')
   }
   const maxTokensProvided = 'max_tokens' in body
   const maxTokensValue = body.max_tokens
@@ -270,14 +270,14 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
   // Only saveGroupDiscussionLimits writes the baseline.
   Reflect.deleteProperty(body, 'group_discussion_restart_baseline')
   if (requestedPassword && !authEnabledBefore && !(await onboardingGateAllows(ctx, authEnabledBefore))) {
-    throw new HttpError(403, 'First password setup is only available from local networks when auth is not enabled. To bootstrap this on a remote server, set HERMES_WEBUI_ONBOARDING_OPEN=1.')
+    throw new HttpError(403, 'First password setup is only available from local networks when auth is not enabled. To bootstrap this on a remote server, set TALARIA_WEB_ONBOARDING_OPEN=1.')
   }
   if (authEnabledBefore && passwordAuthBefore && (requestedPassword || requestedClear)) {
     if (typeof currentPassword !== 'string' || !currentPassword) throw new HttpError(403, 'Current password is required to change or disable authentication.')
     if (!(await auth.verifyPassword(currentPassword))) throw new HttpError(403, 'Current password is incorrect.')
   }
   if (requestedPasswordless) {
-    if (!auth.passkeyFeatureFlagEnabled()) throw new HttpError(409, 'Passkey support is disabled. Enable HERMES_WEBUI_PASSKEY before going passwordless.')
+    if (!auth.passkeyFeatureFlagEnabled()) throw new HttpError(409, 'Passkey support is disabled. Enable TALARIA_WEB_PASSKEY before going passwordless.')
     if (!await auth.passkeysEnabled()) throw new HttpError(409, 'Register a passkey before going passwordless.')
   }
   const cfgHome = home(ctx)
@@ -354,7 +354,7 @@ const chatReasoningStatus = (ctx: RequestContext, config: Dict, chat: Session) =
   return reasoningStatus(config, effortsResolver(ctx), { model, provider, effort: chat.reasoning_effort })
 }
 
-const OAUTH_GATE_DENIED = 'Onboarding OAuth is only available from local networks when auth is not enabled. To bypass this on a remote server, set HERMES_WEBUI_ONBOARDING_OPEN=1.'
+const OAUTH_GATE_DENIED = 'Onboarding OAuth is only available from local networks when auth is not enabled. To bypass this on a remote server, set TALARIA_WEB_ONBOARDING_OPEN=1.'
 
 /**
  * TAL-398: a device-code sign-in runs in the Agent sidecar, which writes the credential to the profile's own auth store;
@@ -666,17 +666,17 @@ export const settingsRouter = os.router({
   onboarding: {
     status: os.onboarding.status.handler(({ context: { ctx } }) => run(async () => (await ctx.deps.onboarding.status()) as never)),
     setup: os.onboarding.setup.handler(({ input, context: { ctx } }) => run(async () => {
-      if (!(await onboardingGateAllows(ctx))) throw new HttpError(403, 'Onboarding setup is only available from local networks when auth is not enabled. To bypass this on a remote server, set HERMES_WEBUI_ONBOARDING_OPEN=1.')
+      if (!(await onboardingGateAllows(ctx))) throw new HttpError(403, 'Onboarding setup is only available from local networks when auth is not enabled. To bypass this on a remote server, set TALARIA_WEB_ONBOARDING_OPEN=1.')
       const result = await ctx.deps.onboarding.setup(input)
       ctx.deps.catalog.invalidate()
       return result
     })),
     complete: os.onboarding.complete.handler(({ context: { ctx } }) => run(async () => {
-      if (!(await onboardingGateAllows(ctx))) throw new HttpError(403, 'Onboarding is only available from local networks when auth is not enabled. To bypass this on a remote server, set HERMES_WEBUI_ONBOARDING_OPEN=1.')
+      if (!(await onboardingGateAllows(ctx))) throw new HttpError(403, 'Onboarding is only available from local networks when auth is not enabled. To bypass this on a remote server, set TALARIA_WEB_ONBOARDING_OPEN=1.')
       return (await ctx.deps.onboarding.complete()) as never
     })),
     probe: os.onboarding.probe.handler(({ input, context: { ctx } }) => run(async () => {
-      if (!(await onboardingGateAllows(ctx))) throw new HttpError(403, 'Onboarding probe is only available from local networks when auth is not enabled. To bypass this on a remote server, set HERMES_WEBUI_ONBOARDING_OPEN=1.')
+      if (!(await onboardingGateAllows(ctx))) throw new HttpError(403, 'Onboarding probe is only available from local networks when auth is not enabled. To bypass this on a remote server, set TALARIA_WEB_ONBOARDING_OPEN=1.')
       try {
         return await ctx.deps.onboarding.probe(str(input.base_url), str(input.api_key).trim() || null)
       } catch (error) {

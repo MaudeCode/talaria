@@ -33,7 +33,7 @@ function setup(url: string | null, probe: { state: Probe | Error; start_command?
   const answering = { now: false as boolean | Error }
   const logs: string[] = []
   const deps: GatewayLifecycleDeps = {
-    env: url === null ? {} : { HERMES_WEBUI_GATEWAY_BASE_URL: url },
+    env: url === null ? {} : { TALARIA_WEB_GATEWAY_BASE_URL: url },
     stateDir: state,
     sidecar: () => sidecar,
     answering: () => answering.now instanceof Error ? Promise.reject(answering.now) : Promise.resolve(answering.now),
@@ -130,9 +130,9 @@ describe('gatewayLifecycle', () => {
     const t = setup('http://127.0.0.1:8642')
     await t.check()
     t.probe.state = 'stopped'
-    t.deps.env = { HERMES_WEBUI_GATEWAY_BASE_URL: 'http://127.0.0.1:9000' }
+    t.deps.env = { TALARIA_WEB_GATEWAY_BASE_URL: 'http://127.0.0.1:9000' }
     expect(await t.check()).toEqual(UNPROVEN)
-    t.deps.env = { HERMES_WEBUI_GATEWAY_BASE_URL: 'http://127.0.0.1:8642' }
+    t.deps.env = { TALARIA_WEB_GATEWAY_BASE_URL: 'http://127.0.0.1:8642' }
     expect(await t.check()).toEqual(UNPROVEN)
   })
 

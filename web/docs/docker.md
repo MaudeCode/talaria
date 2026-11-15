@@ -204,7 +204,7 @@ docker compose -f docker-compose.two-container.yml up -d --force-recreate
 ```
 
 The compose file forwards the same value to the WebUI as
-`HERMES_WEBUI_GATEWAY_API_KEY`, so the health probe authenticates automatically.
+`TALARIA_WEB_GATEWAY_API_KEY`, so the health probe authenticates automatically.
 
 The three-container layout adds the dashboard but is otherwise the same shape. If you must stay single-container, you can run `hermes gateway` inside the container as a long-lived background process, but the compose split is sturdier.
 
@@ -216,25 +216,25 @@ services:
   hermes-webui:
     environment:
       - HERMES_API_URL=http://hermes-agent:8642
-      # HERMES_WEBUI_GATEWAY_BASE_URL=http://hermes-agent:8642 also works.
+      # TALARIA_WEB_GATEWAY_BASE_URL=http://hermes-agent:8642 also works.
 ```
 
 Do not copy only `API_SERVER_ENABLED=true` / `API_SERVER_HOST=0.0.0.0` into the
 agent service as a standalone fix. If you intentionally enable the agent API
 server, the agent also requires a real `API_SERVER_KEY` (at least 8 characters),
-and the WebUI still needs `HERMES_API_URL` or `HERMES_WEBUI_GATEWAY_BASE_URL` to
+and the WebUI still needs `HERMES_API_URL` or `TALARIA_WEB_GATEWAY_BASE_URL` to
 reach that service from its container.
 
 **Verify**: Once the gateway is up, the System Settings pill should turn green and the Tasks banner disappear. From the host:
 
 ```bash
-export GATEWAY_BASE_URL="${HERMES_API_URL:-${HERMES_WEBUI_GATEWAY_BASE_URL:-http://hermes-agent:8642}}"
+export GATEWAY_BASE_URL="${HERMES_API_URL:-${TALARIA_WEB_GATEWAY_BASE_URL:-http://hermes-agent:8642}}"
 docker compose -f docker-compose.two-container.yml exec hermes-agent hermes gateway status
 curl -sS "${GATEWAY_BASE_URL%/}/health/detailed" | jq '.gateway_state, .state'
 ```
 
 If the service name differs in your compose file, `docker compose -f docker-compose.two-container.yml ps` lists the running services.
-For container-to-container diagnostics, set one of `HERMES_API_URL` or `HERMES_WEBUI_GATEWAY_BASE_URL` in the WebUI environment, then restart WebUI.
+For container-to-container diagnostics, set one of `HERMES_API_URL` or `TALARIA_WEB_GATEWAY_BASE_URL` in the WebUI environment, then restart WebUI.
 
 With one of these URLs set, Settings shows that gateway's health but offers its
 restart only when Talaria controls it: the URL is loopback and the active
@@ -366,7 +366,7 @@ Then configure the URL as `http://host.docker.internal:<port>`. Also ensure the 
 Without an explicit `WANTED_UID`/`WANTED_GID`, `docker_init.bash` takes the
 owner of the first match:
 
-1. `$HERMES_WEBUI_STATE_DIR` (default `/app/data`), a bind mount in a
+1. `$TALARIA_WEB_STATE_DIR` (default `/app/data`), a bind mount in a
    single-container deploy, so its owner is the host identity to match
 2. `/home/hermeswebui/.hermes`, `$HERMES_HOME`, `/opt/data`, the shared
    hermes-home volume in multi-container setups

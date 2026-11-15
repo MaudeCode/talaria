@@ -33,7 +33,7 @@ async function boot(url: string, opts: { home?: string; answering?: () => boolea
   const fetchStub: typeof fetch = () => answering() ? Promise.resolve(new Response(JSON.stringify({ gateway_state: 'running' }), { status: 200 })) : Promise.reject(new TypeError('connect ECONNREFUSED'))
   const home = opts.home ?? mkdtempSync(join(tmpdir(), 'talaria-gateway-lifecycle-'))
   if (!opts.home) dirs.push(home)
-  const s = await bootTestServer({ sidecar, env: { HERMES_API_URL: url, HERMES_HOME: home, HERMES_WEBUI_STATE_DIR: home }, deps: (deps) => { deps.fetch = fetchStub } })
+  const s = await bootTestServer({ sidecar, env: { HERMES_API_URL: url, HERMES_HOME: home, TALARIA_WEB_STATE_DIR: home }, deps: (deps) => { deps.fetch = fetchStub } })
   servers.push(s)
   const dispatched = () => sidecar.calls.filter((call) => LIFECYCLE_CALLS.has(call.method)).map((call) => call.method)
   return { s, sidecar, home, dispatched }

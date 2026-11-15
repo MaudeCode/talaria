@@ -169,7 +169,7 @@ describe('session recovery routes', () => {
   })
 
   it('is owner-only', async () => {
-    const t = await bootTestServer({ env: { HERMES_WEBUI_TRUSTED_AUTH_HEADER: 'X-Remote-User', HERMES_WEBUI_TRUSTED_GROUPS_HEADER: 'X-Remote-Groups', HERMES_WEBUI_GROUP_PROFILE_MAP: '{"ops":"work"}' } })
+    const t = await bootTestServer({ env: { TALARIA_WEB_TRUSTED_AUTH_HEADER: 'X-Remote-User', TALARIA_WEB_TRUSTED_GROUPS_HEADER: 'X-Remote-Groups', TALARIA_WEB_GROUP_PROFILE_MAP: '{"ops":"work"}' } })
     try {
       const headers = { 'X-Remote-User': 'kim', 'X-Remote-Groups': 'ops' }
       for (const res of [await t.get('/api/session/recovery/audit', { headers }), await post(t, '/api/session/recovery/repair-safe', {}, headers)]) {

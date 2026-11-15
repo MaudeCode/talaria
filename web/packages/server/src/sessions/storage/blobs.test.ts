@@ -58,7 +58,7 @@ it.each(['missing', 'startup alias', 'symlink loop'])('keeps the startup share a
   writeFileSync(join(original, 'allowed.png'), attachmentImage)
   writeFileSync(join(workspace, 'workspace.png'), png)
   if (kind !== 'missing') symlinkSync(kind === 'startup alias' ? original : configured, configured)
-  const s = await bootTestServer({ env: { HERMES_WEBUI_ATTACHMENT_DIR: configured, HERMES_WEBUI_DEFAULT_WORKSPACE: workspace } })
+  const s = await bootTestServer({ env: { TALARIA_WEB_ATTACHMENT_DIR: configured, TALARIA_WEB_DEFAULT_WORKSPACE: workspace } })
   try {
     const startupRoot = s.deps.blobs.attachmentRoot()
     if (kind !== 'symlink loop') {

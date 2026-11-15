@@ -70,7 +70,7 @@ export class PostgresJournal implements JournalBackend {
     return writer
   }
   async writer(sessionId: string, runId: string): Promise<PostgresJournalWriter> {
-    const mode = (this.env.HERMES_WEBUI_RUN_JOURNAL_FSYNC ?? 'terminal-only').trim().toLowerCase()
+    const mode = (this.env.TALARIA_WEB_RUN_JOURNAL_FSYNC ?? 'terminal-only').trim().toLowerCase()
     return await this.open(sessionId, runId, { durability: mode === 'eager' ? 'eager' : 'terminal-only' })
   }
   async close(): Promise<void> {

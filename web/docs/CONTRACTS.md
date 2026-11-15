@@ -143,7 +143,7 @@ Before opening or updating a PR, verify the body against the root PR template
 - Contract-affecting PRs include `Contract Routing`; intentional contract
   changes also include `Contract Change`.
 - Onboarding or setup validation used isolated `HERMES_HOME` and
-  `HERMES_WEBUI_STATE_DIR` unless the operator explicitly asked for real
+  `TALARIA_WEB_STATE_DIR` unless the operator explicitly asked for real
   state.
 - Docs are updated or explicitly not needed, and the change has a
   `changelog.d/TAL-<number>.json` fragment (see the root `AGENTS.md`).

@@ -23,7 +23,7 @@ describe('legacy chat and test-hook endpoints', () => {
   let sidecar: FakeSidecar
   beforeAll(async () => {
     sidecar = new FakeSidecar()
-    s = await bootTestServer({ sidecar, env: { HERMES_WEBUI_TEST_HOOKS: '1' } })
+    s = await bootTestServer({ sidecar, env: { TALARIA_WEB_TEST_HOOKS: '1' } })
     sidecar.respond('aux.complete', () => { throw new SidecarError('no aux model', { condition: 'aux_unconfigured' }) })
   })
   afterAll(() => s.close())
@@ -179,14 +179,14 @@ describe('legacy chat and test-hook endpoints', () => {
 
   it('hides the inject hooks without the flag or from a non-loopback peer', async () => {
     const env = s.deps.config.env as Record<string, string | undefined>
-    env.HERMES_WEBUI_TEST_HOOKS = ''
+    env.TALARIA_WEB_TEST_HOOKS = ''
     try {
       for (const path of ['/api/approval/inject_test', '/api/clarify/inject_test']) {
         const res = await s.get(`${path}?session_id=hidden`)
         expect(res.status).toBe(404)
         expect(await json(res)).toEqual({ error: 'not found' })
       }
-    } finally { env.HERMES_WEBUI_TEST_HOOKS = '1' }
+    } finally { env.TALARIA_WEB_TEST_HOOKS = '1' }
     expect(s.deps.pending.approvalPending('hidden').pending).toBeNull()
     for (const peer of ['10.0.0.5', '192.168.1.20', '::ffff:10.0.0.5']) {
       let answer: [unknown, number | undefined] | null = null

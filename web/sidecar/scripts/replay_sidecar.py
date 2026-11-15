@@ -3,7 +3,7 @@
 
 The App contract runner and other consumers that need Web's HTTP surface but no
 Hermes Agent point the server at this script with
-``HERMES_WEBUI_SIDECAR_COMMAND='["python3", "<web>/sidecar/scripts/replay_sidecar.py"]'``.
+``TALARIA_WEB_SIDECAR_COMMAND='["python3", "<web>/sidecar/scripts/replay_sidecar.py"]'``.
 Every recorded method answers with its first fixture (placeholders resolved to the
 disposable home); ``chat.start`` emits one ``approval`` frame for
 ``pattern_key`` ``talaria_contract_fixture`` so the approval SSE stream can be
@@ -44,7 +44,7 @@ _CLARIFICATION_ANSWERED = threading.Event()
 
 def _substitutions() -> list[tuple[str, str]]:
     home = os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes")
-    agent = os.environ.get("TALARIA_SIDECAR_AGENT_DIR") or os.environ.get("HERMES_WEBUI_AGENT_DIR") or str(SIDECAR_ROOT)
+    agent = os.environ.get("TALARIA_SIDECAR_AGENT_DIR") or os.environ.get("TALARIA_WEB_AGENT_DIR") or str(SIDECAR_ROOT)
     return [("<profile>", home), ("<home>", home), ("<user-home>", str(Path(home).parent)), ("<agent>", agent), ("<python>", sys.executable)]
 
 

@@ -19,7 +19,7 @@ def test_agent_catalog_ships_a_reviewed_importer(tmp_path):
 
 @requires_agent
 def test_reviewed_native_importer_contract(tmp_path):
-    plugin = os.environ.get('HERMES_WEBUI_IMPORTER_DIR')
+    plugin = os.environ.get('TALARIA_WEB_IMPORTER_DIR')
     assert plugin and any(Path(plugin).glob('*/importer.py')), 'Run via check-agent-compatibility.py to provision reviewed plugin bytes'
     result = subprocess.run([AGENT_PYTHON, str(Path(__file__).with_name('probe_agent_imports.py')), str(AGENT_DIR), plugin],
                             env=isolated_env(tmp_path / 'hermes'), capture_output=True, text=True, timeout=60)

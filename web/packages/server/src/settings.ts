@@ -706,7 +706,7 @@ export class SettingsStore {
     const record = await this.documents.get('settings', 'settings').catch(() => null)
     if (!record) return
     const startup = await this.load()
-    if (!this.env.HERMES_WEBUI_DEFAULT_WORKSPACE) {
+    if (!this.env.TALARIA_WEB_DEFAULT_WORKSPACE) {
       this.defaultWorkspace = resolveDefaultWorkspace(typeof startup.default_workspace === 'string' ? startup.default_workspace : null, { env: this.env, stateDir: this.stateDir })
     }
     delete startup.default_model

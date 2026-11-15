@@ -77,7 +77,7 @@ describe('OIDC browser login', () => {
   const now = () => Date.now() / 1000
   beforeAll(async () => {
     s = await bootTestServer({
-      env: { HERMES_WEBUI_OIDC_ISSUER: ISSUER, HERMES_WEBUI_OIDC_CLIENT_ID: 'web-client', HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'groups', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'admins', HERMES_WEBUI_OIDC_TRUSTED_PRIVATE_HOSTS: 'idp.example', HERMES_WEBUI_OIDC_OWNER_CLAIM: 'groups', HERMES_WEBUI_OIDC_OWNER_VALUES: 'owners' },
+      env: { TALARIA_WEB_OIDC_ISSUER: ISSUER, TALARIA_WEB_OIDC_CLIENT_ID: 'web-client', TALARIA_WEB_OIDC_ALLOW_CLAIM: 'groups', TALARIA_WEB_OIDC_ALLOW_VALUES: 'admins', TALARIA_WEB_OIDC_TRUSTED_PRIVATE_HOSTS: 'idp.example', TALARIA_WEB_OIDC_OWNER_CLAIM: 'groups', TALARIA_WEB_OIDC_OWNER_VALUES: 'owners' },
     })
     idp = fakeIdp(now)
     s.deps.fetch = idp.fetch
@@ -138,15 +138,15 @@ describe('OIDC browser login', () => {
     expect(saved.status).toBe(200)
     expect(await json(saved)).toMatchObject({ trusted_link_hosts: ['docs.example.com'], api_redact_enabled: false })
     // A policy change invalidates the stored binding on the next request.
-    s.deps.config.env.HERMES_WEBUI_OIDC_OWNER_VALUES = 'someone-else'
+    s.deps.config.env.TALARIA_WEB_OIDC_OWNER_VALUES = 'someone-else'
     await new Promise((r) => setTimeout(r, 5100))
     expect((await json(await s.get('/api/auth/status', { headers: { cookie } }))).logged_in).toBe(false)
-    s.deps.config.env.HERMES_WEBUI_OIDC_OWNER_VALUES = 'owners'
+    s.deps.config.env.TALARIA_WEB_OIDC_OWNER_VALUES = 'owners'
   }, 15_000)
 
   it('isolates notification history and mutations between OIDC owners sharing an email and profile', async () => {
     const isolated = await bootTestServer({
-      env: { HERMES_WEBUI_OIDC_ISSUER: ISSUER, HERMES_WEBUI_OIDC_CLIENT_ID: 'web-client', HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'groups', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'admins', HERMES_WEBUI_OIDC_TRUSTED_PRIVATE_HOSTS: 'idp.example', HERMES_WEBUI_OIDC_OWNER_CLAIM: 'groups', HERMES_WEBUI_OIDC_OWNER_VALUES: 'owners' },
+      env: { TALARIA_WEB_OIDC_ISSUER: ISSUER, TALARIA_WEB_OIDC_CLIENT_ID: 'web-client', TALARIA_WEB_OIDC_ALLOW_CLAIM: 'groups', TALARIA_WEB_OIDC_ALLOW_VALUES: 'admins', TALARIA_WEB_OIDC_TRUSTED_PRIVATE_HOSTS: 'idp.example', TALARIA_WEB_OIDC_OWNER_CLAIM: 'groups', TALARIA_WEB_OIDC_OWNER_VALUES: 'owners' },
     })
     const isolatedIdp = fakeIdp(now)
     isolated.deps.fetch = isolatedIdp.fetch
@@ -258,7 +258,7 @@ describe('OIDC browser login', () => {
 // TAL-1075: the server resolves where a browser goes after sign-in, applying a subpath mount exactly once.
 describe('sign-in destination at a subpath mount', () => {
   let s: TestServer
-  beforeAll(async () => { s = await bootTestServer({ env: { HERMES_WEBUI_PASSWORD: 'synthetic-pw' } }) })
+  beforeAll(async () => { s = await bootTestServer({ env: { TALARIA_WEB_PASSWORD: 'synthetic-pw' } }) })
   afterAll(() => s.close())
 
   const destination = async (body: Json): Promise<unknown> => {
@@ -338,7 +338,7 @@ describe('passkeys', () => {
   let origin: string
   const authenticator = new FakeAuthenticator()
   beforeAll(async () => {
-    s = await bootTestServer({ env: { HERMES_WEBUI_PASSKEY: '1' } })
+    s = await bootTestServer({ env: { TALARIA_WEB_PASSKEY: '1' } })
     origin = s.base
   })
   afterAll(() => s.close())
@@ -432,7 +432,7 @@ describe('passkeys', () => {
 
 describe('malformed passkey registration', () => {
   let s: TestServer
-  beforeAll(async () => { s = await bootTestServer({ env: { HERMES_WEBUI_PASSKEY: '1' } }) })
+  beforeAll(async () => { s = await bootTestServer({ env: { TALARIA_WEB_PASSKEY: '1' } }) })
   afterAll(() => s.close())
 
   it.each([
@@ -495,7 +495,7 @@ describe('OIDC profile binding', () => {
   const now = () => Date.now() / 1000
   beforeAll(async () => {
     s = await bootTestServer({
-      env: { HERMES_WEBUI_OIDC_ISSUER: ISSUER, HERMES_WEBUI_OIDC_CLIENT_ID: 'web-client', HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'groups', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'admins', HERMES_WEBUI_OIDC_TRUSTED_PRIVATE_HOSTS: 'idp.example', HERMES_WEBUI_OIDC_PROFILE_CLAIM: 'email', HERMES_WEBUI_OIDC_PROFILE_MAP: '{"kim@example.com":"work","ghost@example.com":"ghost"}' },
+      env: { TALARIA_WEB_OIDC_ISSUER: ISSUER, TALARIA_WEB_OIDC_CLIENT_ID: 'web-client', TALARIA_WEB_OIDC_ALLOW_CLAIM: 'groups', TALARIA_WEB_OIDC_ALLOW_VALUES: 'admins', TALARIA_WEB_OIDC_TRUSTED_PRIVATE_HOSTS: 'idp.example', TALARIA_WEB_OIDC_PROFILE_CLAIM: 'email', TALARIA_WEB_OIDC_PROFILE_MAP: '{"kim@example.com":"work","ghost@example.com":"ghost"}' },
     })
     idp = fakeIdp(now)
     s.deps.fetch = idp.fetch
@@ -543,11 +543,11 @@ describe('OIDC profile binding', () => {
 })
 
 describe('OIDC enablement', () => {
-  const OIDC_ENV = { HERMES_WEBUI_OIDC_ISSUER: ISSUER, HERMES_WEBUI_OIDC_CLIENT_ID: 'web-client', HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'groups', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'admins', HERMES_WEBUI_OIDC_TRUSTED_PRIVATE_HOSTS: 'idp.example' }
+  const OIDC_ENV = { TALARIA_WEB_OIDC_ISSUER: ISSUER, TALARIA_WEB_OIDC_CLIENT_ID: 'web-client', TALARIA_WEB_OIDC_ALLOW_CLAIM: 'groups', TALARIA_WEB_OIDC_ALLOW_VALUES: 'admins', TALARIA_WEB_OIDC_TRUSTED_PRIVATE_HOSTS: 'idp.example' }
   const modes: Record<string, { env: Record<string, string>; setup?: (s: TestServer) => void }> = {
-    password: { env: { HERMES_WEBUI_PASSWORD: 'hunter22' } },
-    passkey: { env: { HERMES_WEBUI_PASSKEY: '1' }, setup: (s) => { s.deps.auth.passkeysEnabled = () => Promise.resolve(true) } },
-    'trusted header': { env: { HERMES_WEBUI_TRUSTED_AUTH_HEADER: 'X-Remote-User' } },
+    password: { env: { TALARIA_WEB_PASSWORD: 'hunter22' } },
+    passkey: { env: { TALARIA_WEB_PASSKEY: '1' }, setup: (s) => { s.deps.auth.passkeysEnabled = () => Promise.resolve(true) } },
+    'trusted header': { env: { TALARIA_WEB_TRUSTED_AUTH_HEADER: 'X-Remote-User' } },
   }
   const firstAuth: Record<string, (s: TestServer) => Promise<Json>> = {
     'auth/status': async (s) => json(await s.get('/api/auth/status')),
@@ -566,7 +566,7 @@ describe('OIDC enablement', () => {
   }
 
   it('password auth with OIDC still gates the API and starts SSO', async () => {
-    const s = await bootTestServer({ env: { ...OIDC_ENV, HERMES_WEBUI_PASSWORD: 'hunter22' } })
+    const s = await bootTestServer({ env: { ...OIDC_ENV, TALARIA_WEB_PASSWORD: 'hunter22' } })
     try {
       s.deps.fetch = fakeIdp(() => Date.now() / 1000).fetch
       expect(await json(await s.get('/api/auth/status'))).toMatchObject({ password_auth_enabled: true, oidc_enabled: true })
@@ -578,7 +578,7 @@ describe('OIDC enablement', () => {
   })
 
   it('first native start on a cold password+OIDC server binds to the configured redirect origin', async () => {
-    const s = await bootTestServer({ env: { ...OIDC_ENV, HERMES_WEBUI_PASSWORD: 'hunter22', HERMES_WEBUI_OIDC_REDIRECT_URI: 'https://talaria.example/api/auth/oidc/callback' } })
+    const s = await bootTestServer({ env: { ...OIDC_ENV, TALARIA_WEB_PASSWORD: 'hunter22', TALARIA_WEB_OIDC_REDIRECT_URI: 'https://talaria.example/api/auth/oidc/callback' } })
     try {
       s.deps.fetch = fakeIdp(() => Date.now() / 1000).fetch
       const started = await json(await post(s, '/api/auth/oidc/native/start', { callback_url: 'talaria://oidc-callback', state: b64u(randomBytes(24)), code_challenge: b64u(randomBytes(32)), code_challenge_method: 'S256' }))
@@ -606,14 +606,14 @@ describe('OIDC enablement', () => {
   })
 
   it('password-only auth keeps the OIDC flags false', async () => {
-    const s = await bootTestServer({ env: { HERMES_WEBUI_PASSWORD: 'hunter22' } })
+    const s = await bootTestServer({ env: { TALARIA_WEB_PASSWORD: 'hunter22' } })
     try {
       expect(await json(await s.get('/api/auth/status'))).toMatchObject({ auth_enabled: true, password_auth_enabled: true, oidc_enabled: false, oidc_native_handoff_enabled: false })
     } finally { await s.close() }
   })
 
   it('issuer and client id alone do not enable OIDC', async () => {
-    const s = await bootTestServer({ env: { HERMES_WEBUI_OIDC_ISSUER: ISSUER, HERMES_WEBUI_OIDC_CLIENT_ID: 'web-client' } })
+    const s = await bootTestServer({ env: { TALARIA_WEB_OIDC_ISSUER: ISSUER, TALARIA_WEB_OIDC_CLIENT_ID: 'web-client' } })
     try {
       expect(await json(await s.get('/api/auth/status'))).toMatchObject({ oidc_enabled: false })
     } finally { await s.close() }
@@ -622,7 +622,7 @@ describe('OIDC enablement', () => {
 
 describe('OIDC outbound vetting', () => {
   const now = () => Date.now() / 1000
-  const env = { HERMES_WEBUI_OIDC_ISSUER: ISSUER, HERMES_WEBUI_OIDC_CLIENT_ID: 'web-client', HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'groups', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'admins' }
+  const env = { TALARIA_WEB_OIDC_ISSUER: ISSUER, TALARIA_WEB_OIDC_CLIENT_ID: 'web-client', TALARIA_WEB_OIDC_ALLOW_CLAIM: 'groups', TALARIA_WEB_OIDC_ALLOW_VALUES: 'admins' }
 
   it.each([204, 205, 304])('rejects bodyless discovery status %s through the existing request error', async (status) => {
     const s = await bootTestServer({ env })
@@ -835,7 +835,7 @@ describe('OIDC operator config availability', () => {
 
   it('an unreadable operator config withholds SSO while the gate stays closed, and offers it once the config resolves', async () => {
     let clock = 1_700_000_000
-    const env = { HERMES_WEBUI_OIDC_ISSUER: ISSUER, HERMES_WEBUI_OIDC_CLIENT_ID: 'web-client', HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'groups', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'admins', HERMES_WEBUI_OIDC_TRUSTED_PRIVATE_HOSTS: 'idp.example' }
+    const env = { TALARIA_WEB_OIDC_ISSUER: ISSUER, TALARIA_WEB_OIDC_CLIENT_ID: 'web-client', TALARIA_WEB_OIDC_ALLOW_CLAIM: 'groups', TALARIA_WEB_OIDC_ALLOW_VALUES: 'admins', TALARIA_WEB_OIDC_TRUSTED_PRIVATE_HOSTS: 'idp.example' }
     const s = await bootTestServer({ env, now: () => clock, deps: (deps) => { writeFileSync(join(deps.config.hermesHome, 'config.yaml'), 'webui_oidc: {}\n') } })
     try {
       s.deps.fetch = fakeIdp(() => Date.now() / 1000).fetch
@@ -933,7 +933,7 @@ describe('OIDC operator config availability', () => {
 
 // ── OIDC token endpoint client authentication ─────────────────────────────
 
-const OIDC_BASE_ENV = { HERMES_WEBUI_OIDC_ISSUER: ISSUER, HERMES_WEBUI_OIDC_CLIENT_ID: 'web-client', HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'groups', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'admins', HERMES_WEBUI_OIDC_TRUSTED_PRIVATE_HOSTS: 'idp.example' }
+const OIDC_BASE_ENV = { TALARIA_WEB_OIDC_ISSUER: ISSUER, TALARIA_WEB_OIDC_CLIENT_ID: 'web-client', TALARIA_WEB_OIDC_ALLOW_CLAIM: 'groups', TALARIA_WEB_OIDC_ALLOW_VALUES: 'admins', TALARIA_WEB_OIDC_TRUSTED_PRIVATE_HOSTS: 'idp.example' }
 const BASIC_ONLY = { token_endpoint_auth_methods_supported: ['none', 'client_secret_basic'] }
 /** `Basic base64(id:secret)` over credentials already form-urlencoded by hand, so the expectation never reuses the encoder under test. */
 const basicOf = (encodedId: string, encodedSecret: string): string => `Basic ${Buffer.from(`${encodedId}:${encodedSecret}`, 'ascii').toString('base64')}`
@@ -944,7 +944,7 @@ describe('OIDC browser and native login against a client_secret_basic-only provi
   const now = () => Date.now() / 1000
   const expected = basicOf('web-client', 'synthetic+s3cr%3Aet%2B%2F%25%C3%A9')
   beforeAll(async () => {
-    s = await bootTestServer({ env: { ...OIDC_BASE_ENV, HERMES_WEBUI_OIDC_CLIENT_SECRET: 'synthetic s3cr:et+/%é' } })
+    s = await bootTestServer({ env: { ...OIDC_BASE_ENV, TALARIA_WEB_OIDC_CLIENT_SECRET: 'synthetic s3cr:et+/%é' } })
     idp = fakeIdp(now, { discovery: BASIC_ONLY, basic: expected })
     s.deps.fetch = idp.fetch
   })
@@ -982,7 +982,7 @@ describe('OIDC browser and native login against a client_secret_basic-only provi
   })
 
   it('sends Basic to an untrusted issuer only over the pinned connection and refuses a token redirect', async () => {
-    const env = { ...OIDC_BASE_ENV, HERMES_WEBUI_OIDC_TRUSTED_PRIVATE_HOSTS: '', HERMES_WEBUI_OIDC_CLIENT_SECRET: 'synthetic s3cr:et+/%é' }
+    const env = { ...OIDC_BASE_ENV, TALARIA_WEB_OIDC_TRUSTED_PRIVATE_HOSTS: '', TALARIA_WEB_OIDC_CLIENT_SECRET: 'synthetic s3cr:et+/%é' }
     const u = await bootTestServer({ env })
     try {
       const provider = fakeIdp(now, { discovery: BASIC_ONLY, basic: expected })
@@ -1023,7 +1023,7 @@ describe('OIDC token endpoint authentication method', () => {
     idp.claimsFor = (nonce) => ({ iss: ISSUER, aud: clientId, sub: 'user-1', groups: ['admins'], exp: now() + 300, nonce })
     const logs: string[] = []
     const oidc = new OidcService({
-      env: { ...OIDC_BASE_ENV, HERMES_WEBUI_OIDC_CLIENT_ID: clientId, ...opts.env }, operatorConfig: () => Promise.resolve(opts.operator ?? {}), profileHome: () => '',
+      env: { ...OIDC_BASE_ENV, TALARIA_WEB_OIDC_CLIENT_ID: clientId, ...opts.env }, operatorConfig: () => Promise.resolve(opts.operator ?? {}), profileHome: () => '',
       fetch: () => idp.fetch, pinned: () => { throw new Error('trusted host uses plain fetch') }, now, log: (line) => { logs.push(line) },
     })
     const { state, code } = providerCode(await oidc.authorizationRedirect(BASE, null, null))
@@ -1031,7 +1031,7 @@ describe('OIDC token endpoint authentication method', () => {
     expect(idp.tokens).toHaveLength(1)
     return { form: idp.tokens[0] ?? {}, authorization: idp.tokenAuth[0] ?? null, logs }
   }
-  const SECRET = { HERMES_WEBUI_OIDC_CLIENT_SECRET: 'synthetic-secret' }
+  const SECRET = { TALARIA_WEB_OIDC_CLIENT_SECRET: 'synthetic-secret' }
   const BASIC = basicOf('web-client', 'synthetic-secret')
 
   it.each<[string, Json, 'post' | 'basic']>([
@@ -1060,15 +1060,15 @@ describe('OIDC token endpoint authentication method', () => {
   })
 
   it('an explicit method overrides discovery in both directions', async () => {
-    const basic = await exchange({ env: { ...SECRET, HERMES_WEBUI_OIDC_TOKEN_AUTH_METHOD: 'client_secret_basic' }, discovery: { token_endpoint_auth_methods_supported: ['client_secret_post'] } })
+    const basic = await exchange({ env: { ...SECRET, TALARIA_WEB_OIDC_TOKEN_AUTH_METHOD: 'client_secret_basic' }, discovery: { token_endpoint_auth_methods_supported: ['client_secret_post'] } })
     expect(basic.authorization).toBe(BASIC)
     expect(basic.form).not.toHaveProperty('client_secret')
-    const postRun = await exchange({ env: { ...SECRET, HERMES_WEBUI_OIDC_TOKEN_AUTH_METHOD: 'client_secret_post' }, discovery: BASIC_ONLY })
+    const postRun = await exchange({ env: { ...SECRET, TALARIA_WEB_OIDC_TOKEN_AUTH_METHOD: 'client_secret_post' }, discovery: BASIC_ONLY })
     expect(postRun.authorization).toBeNull()
     expect(postRun.form).toMatchObject({ client_id: 'web-client', client_secret: 'synthetic-secret' })
   })
 
-  it.each([['auto', {}], ['explicit Basic', { HERMES_WEBUI_OIDC_TOKEN_AUTH_METHOD: 'client_secret_basic' }]])('a public client (%s) keeps PKCE-only form authentication', async (_case, env) => {
+  it.each([['auto', {}], ['explicit Basic', { TALARIA_WEB_OIDC_TOKEN_AUTH_METHOD: 'client_secret_basic' }]])('a public client (%s) keeps PKCE-only form authentication', async (_case, env) => {
     const run = await exchange({ env, discovery: BASIC_ONLY })
     expect(run.authorization).toBeNull()
     expect(run.form).toMatchObject({ client_id: 'web-client' })
@@ -1076,7 +1076,7 @@ describe('OIDC token endpoint authentication method', () => {
   })
 
   it('form-urlencodes the id and the secret separately before base64', async () => {
-    const run = await exchange({ clientId: 'a b:c+d/e%f é', env: { HERMES_WEBUI_OIDC_CLIENT_SECRET: 'p w:q+r/s%t ü', HERMES_WEBUI_OIDC_TOKEN_AUTH_METHOD: 'client_secret_basic' } })
+    const run = await exchange({ clientId: 'a b:c+d/e%f é', env: { TALARIA_WEB_OIDC_CLIENT_SECRET: 'p w:q+r/s%t ü', TALARIA_WEB_OIDC_TOKEN_AUTH_METHOD: 'client_secret_basic' } })
     expect(run.authorization).toBe(basicOf('a+b%3Ac%2Bd%2Fe%25f+%C3%A9', 'p+w%3Aq%2Br%2Fs%25t+%C3%BC'))
     expect(run.form).not.toHaveProperty('client_secret')
     expect(run.form).not.toHaveProperty('client_id')
@@ -1086,27 +1086,27 @@ describe('OIDC token endpoint authentication method', () => {
     const operator = { webui_oidc: { token_auth_method: ' Client_Secret_BASIC ' } }
     const discovery = { token_endpoint_auth_methods_supported: ['client_secret_post'] }
     expect((await exchange({ env: SECRET, operator, discovery })).authorization).toBe(BASIC)
-    expect((await exchange({ env: { ...SECRET, HERMES_WEBUI_OIDC_TOKEN_AUTH_METHOD: 'client_secret_post' }, operator, discovery })).authorization).toBeNull()
+    expect((await exchange({ env: { ...SECRET, TALARIA_WEB_OIDC_TOKEN_AUTH_METHOD: 'client_secret_post' }, operator, discovery })).authorization).toBeNull()
   })
 
   it('an unsupported method falls back to auto', async () => {
-    const run = await exchange({ env: { ...SECRET, HERMES_WEBUI_OIDC_TOKEN_AUTH_METHOD: 'private_key_jwt' }, discovery: BASIC_ONLY })
+    const run = await exchange({ env: { ...SECRET, TALARIA_WEB_OIDC_TOKEN_AUTH_METHOD: 'private_key_jwt' }, discovery: BASIC_ONLY })
     expect(run.authorization).toBe(BASIC)
   })
 
   it('warns once per distinct unsupported value across config reloads, bounded, without credentials', async () => {
     let clock = 1_700_000_000
     const logs: string[] = []
-    const env: Record<string, string> = { ...OIDC_BASE_ENV, ...SECRET, HERMES_WEBUI_OIDC_TOKEN_AUTH_METHOD: 'synthetic-secret-typo' }
+    const env: Record<string, string> = { ...OIDC_BASE_ENV, ...SECRET, TALARIA_WEB_OIDC_TOKEN_AUTH_METHOD: 'synthetic-secret-typo' }
     const oidc = new OidcService({ env, operatorConfig: () => Promise.resolve({}), profileHome: () => '', fetch: () => fetch, pinned: () => { throw new Error('unused') }, now: () => clock, log: (line) => { logs.push(line) } })
     const reload = async (): Promise<void> => { clock += 10; await oidc.resolve() }
     for (let i = 0; i < 5; i += 1) await reload()
     const warnings = (): string[] => logs.filter((l) => l.includes('token_auth_method'))
     expect(warnings()).toHaveLength(1)
-    env.HERMES_WEBUI_OIDC_TOKEN_AUTH_METHOD = 'another-typo'
+    env.TALARIA_WEB_OIDC_TOKEN_AUTH_METHOD = 'another-typo'
     await reload(); await reload()
     expect(warnings()).toHaveLength(2)
-    for (let i = 0; i < 64; i += 1) { env.HERMES_WEBUI_OIDC_TOKEN_AUTH_METHOD = `typo-${String(i)}`; await reload() }
+    for (let i = 0; i < 64; i += 1) { env.TALARIA_WEB_OIDC_TOKEN_AUTH_METHOD = `typo-${String(i)}`; await reload() }
     expect(warnings()).toHaveLength(32)
     expect(logs.join('\n')).not.toMatch(/synthetic-secret|typo/)
   })

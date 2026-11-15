@@ -201,7 +201,7 @@ describe('Web Push and login sessions', () => {
   const PASSWORD = 'synthetic-push-pw'
   let s: TestServer
   beforeAll(async () => {
-    s = await bootTestServer({ env: { HERMES_WEBUI_PASSWORD: PASSWORD } })
+    s = await bootTestServer({ env: { TALARIA_WEB_PASSWORD: PASSWORD } })
     stubPushService(s)
   })
   afterAll(() => s.close())
@@ -258,8 +258,8 @@ describe('Web Push under person isolation (TAL-48)', () => {
   it('alerts only the person whose session needs them', async () => {
     const issuer = 'https://identity.invalid'
     const server = await bootTestServer({ env: {
-      HERMES_WEBUI_PERSON_ISOLATION: '1', HERMES_WEBUI_OIDC_ISSUER: issuer, HERMES_WEBUI_OIDC_CLIENT_ID: 'synthetic-client',
-      HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'email_verified', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'true', HERMES_WEBUI_OIDC_OWNER_CLAIM: 'groups', HERMES_WEBUI_OIDC_OWNER_VALUES: 'admins',
+      TALARIA_WEB_PERSON_ISOLATION: '1', TALARIA_WEB_OIDC_ISSUER: issuer, TALARIA_WEB_OIDC_CLIENT_ID: 'synthetic-client',
+      TALARIA_WEB_OIDC_ALLOW_CLAIM: 'email_verified', TALARIA_WEB_OIDC_ALLOW_VALUES: 'true', TALARIA_WEB_OIDC_OWNER_CLAIM: 'groups', TALARIA_WEB_OIDC_OWNER_VALUES: 'admins',
     }, deps: (deps) => { deps.oidc.sessionBindingIsCurrent = () => Promise.resolve(true) } })
     try {
       const push = stubPushService(server)

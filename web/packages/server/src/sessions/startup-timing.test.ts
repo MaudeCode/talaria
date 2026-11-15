@@ -157,8 +157,8 @@ it('carries one trace across an HTTP admission and real Python RPC stdio with se
   let sidecarTerminal!: () => void
   const sidecarFinished = new Promise<void>((resolve) => { sidecarTerminal = resolve })
   const client = new SidecarClient({
-    python: process.env.HERMES_WEBUI_TEST_PYTHON ?? 'python3',
-    command: [process.env.HERMES_WEBUI_TEST_PYTHON ?? 'python3', resolve(import.meta.dirname, 'fixtures/startup-timing.py'), resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar')],
+    python: process.env.TALARIA_WEB_TEST_PYTHON ?? 'python3',
+    command: [process.env.TALARIA_WEB_TEST_PYTHON ?? 'python3', resolve(import.meta.dirname, 'fixtures/startup-timing.py'), resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar')],
     agentDir: state, hermesHome: state, sidecarDir: resolve(import.meta.dirname, '../../../../sidecar'), log: (line) => {
       logs.push(line)
       if (line.includes('"event":"chat_start_timing"') && line.includes('"stage":"terminal"')) sidecarTerminal()

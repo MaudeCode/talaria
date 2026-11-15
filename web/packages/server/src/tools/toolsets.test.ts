@@ -64,7 +64,7 @@ it('scopes a non-owner catalog request to the bound profile and refuses foreign 
     homes.push(params.profile_home)
     return { toolsets: [], selected_toolsets: [], using_defaults: true, default_toolsets: [] }
   })
-  const s = await bootTestServer({ sidecar, env: { HERMES_WEBUI_TRUSTED_AUTH_HEADER: 'X-Remote-User', HERMES_WEBUI_TRUSTED_GROUPS_HEADER: 'X-Remote-Groups', HERMES_WEBUI_GROUP_PROFILE_MAP: '{"team":"work"}' } })
+  const s = await bootTestServer({ sidecar, env: { TALARIA_WEB_TRUSTED_AUTH_HEADER: 'X-Remote-User', TALARIA_WEB_TRUSTED_GROUPS_HEADER: 'X-Remote-Groups', TALARIA_WEB_GROUP_PROFILE_MAP: '{"team":"work"}' } })
   try {
     const foreign = (await s.deps.sessionStore.newSession({ profile: 'default' }))
     const headers = { 'content-type': 'application/json', 'X-Remote-User': 'catalog-user', 'X-Remote-Groups': 'team' }

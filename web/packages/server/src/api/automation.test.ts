@@ -857,7 +857,7 @@ describe('crons, kanban, extensions, terminal', () => {
     expect(body).toMatchObject({ ok: true, session_id: sid, running: true })
     const proc = pty.spawned.at(-1)!
     // Winsize is clamped; the shell's environment carries the requested size, as in Python.
-    expect(pty.opts.at(-1)).toMatchObject({ rows: 80, cols: 20, env: { TERM: 'xterm-256color', HERMES_WEBUI_TERMINAL: '1', LINES: '500', COLUMNS: '10' } })
+    expect(pty.opts.at(-1)).toMatchObject({ rows: 80, cols: 20, env: { TERM: 'xterm-256color', TALARIA_WEB_TERMINAL: '1', LINES: '500', COLUMNS: '10' } })
     expect((pty.opts.at(-1)?.env as Json).SECRET).toBeUndefined()
     res = await post(s, '/api/terminal/input', { session_id: sid, data: 'ls\n' })
     expect(await json(res)).toEqual({ ok: true })
@@ -918,15 +918,15 @@ describe('crons, kanban, extensions, terminal', () => {
     expect(res.status).toBe(404)
     expect(await json(res)).toEqual(gone)
     const env = s.deps.config.env
-    env.HERMES_WEBUI_TRUST_FORWARDED_FOR = '1'
-    env.HERMES_WEBUI_TRUSTED_PROXY_CIDRS = '127.0.0.0/8,::1/128'
+    env.TALARIA_WEB_TRUST_FORWARDED_FOR = '1'
+    env.TALARIA_WEB_TRUSTED_PROXY_CIDRS = '127.0.0.0/8,::1/128'
     try {
       res = await read('', sid, { 'x-forwarded-for': '203.0.113.9' })
       expect(res.status).toBe(403)
       expect((await json(res)).error).toBe(TERMINAL_GATE_DENIED)
     } finally {
-      delete env.HERMES_WEBUI_TRUST_FORWARDED_FOR
-      delete env.HERMES_WEBUI_TRUSTED_PROXY_CIDRS
+      delete env.TALARIA_WEB_TRUST_FORWARDED_FOR
+      delete env.TALARIA_WEB_TRUSTED_PROXY_CIDRS
     }
     const replaced = id
     id = String((await json(await post(s, '/api/terminal/start', { session_id: sid }))).terminal_id)
@@ -1200,14 +1200,14 @@ describe('extension state file limits (parity)', () => {
     const ids = Array.from({ length: 520 }, (_, i) => `ext-${String(i)}`)
     writeFileSync(join(root, 'manifest.json'), JSON.stringify({ extensions: ids.map((id) => ({ id, name: id, scripts: [`${id}.js`] })) }))
     writeFileSync(join(stateDir, 'extension-overrides.json'), JSON.stringify({ version: 1, disabled_extensions: ids, sidecar_proxy_consents: Object.fromEntries(ids.map((id) => [id, 'http://127.0.0.1:4567'])) }))
-    const service = new ExtensionService({ documents: new JsonDocuments(stateDir), env: { HERMES_WEBUI_EXTENSION_DIR: root, HERMES_WEBUI_EXTENSION_MANIFEST: 'manifest.json' }, stateDir, isAuthEnabled: () => Promise.resolve(false), fetch, log: () => undefined })
+    const service = new ExtensionService({ documents: new JsonDocuments(stateDir), env: { TALARIA_WEB_EXTENSION_DIR: root, TALARIA_WEB_EXTENSION_MANIFEST: 'manifest.json' }, stateDir, isAuthEnabled: () => Promise.resolve(false), fetch, log: () => undefined })
     try {
       const status = await service.status()
       expect((status.counts as Json).user_disabled).toBe(512)
       expect((status.extensions as Json[]).find((e) => e.id === 'ext-512')).toMatchObject({ user_disabled: false })
       expect(status.warnings).toEqual(expect.arrayContaining([{ code: 'extension_state_truncated', source: 'extension_state' }]))
       expect(service.enabledSync()).toBe(true)
-      const bare = new ExtensionService({ documents: new JsonDocuments(stateDir), env: { HERMES_WEBUI_EXTENSION_DIR: root }, stateDir, isAuthEnabled: () => Promise.resolve(false), fetch, log: () => undefined })
+      const bare = new ExtensionService({ documents: new JsonDocuments(stateDir), env: { TALARIA_WEB_EXTENSION_DIR: root }, stateDir, isAuthEnabled: () => Promise.resolve(false), fetch, log: () => undefined })
       expect(bare.enabledSync()).toBe(true)
       // `urlsplit` semantics for loopback origins: no path (not even `/`), verbatim port, literal hosts only.
       expect(normalizeLoopbackOrigin('http://127.0.0.1:8080/')).toBeNull()
@@ -1228,7 +1228,7 @@ describe('extension manifest toggle decision (TAL-685)', () => {
     writeFileSync(join(root, 'manifest.json'), JSON.stringify({ extensions: [
       { id: 'live', name: 'Live' }, { id: 'off', name: 'Off', enabled: false },
     ] }))
-    const service = new ExtensionService({ documents: new JsonDocuments(stateDir), env: { HERMES_WEBUI_EXTENSION_DIR: root, HERMES_WEBUI_EXTENSION_MANIFEST: 'manifest.json' }, stateDir, isAuthEnabled: () => Promise.resolve(false), fetch, log: () => undefined })
+    const service = new ExtensionService({ documents: new JsonDocuments(stateDir), env: { TALARIA_WEB_EXTENSION_DIR: root, TALARIA_WEB_EXTENSION_MANIFEST: 'manifest.json' }, stateDir, isAuthEnabled: () => Promise.resolve(false), fetch, log: () => undefined })
     try {
       expect((await service.manifests()).manifests.map((m) => [m.id, m.can_toggle])).toEqual([['live', true], ['off', false]])
     } finally {
@@ -1251,7 +1251,7 @@ describe('Settings › Extensions gallery and filters (TAL-2142)', () => {
     mkdirSync(root)
     writeFileSync(join(root, 'manifest.json'), JSON.stringify({ extensions: [{ id: 'fav', name: 'Model Favorites' }] }))
     const registryFetch: typeof fetch = () => Promise.resolve(new Response(JSON.stringify({ extensions: [PINS, FAV, { name: 'No id' }, { id: '  ' }] }), { status: 200 }))
-    const service = new ExtensionService({ documents: new JsonDocuments(stateDir), env: { HERMES_WEBUI_EXTENSION_DIR: root, HERMES_WEBUI_EXTENSION_MANIFEST: 'manifest.json' }, stateDir, isAuthEnabled: () => Promise.resolve(false), fetch: registryFetch, log: () => undefined })
+    const service = new ExtensionService({ documents: new JsonDocuments(stateDir), env: { TALARIA_WEB_EXTENSION_DIR: root, TALARIA_WEB_EXTENSION_MANIFEST: 'manifest.json' }, stateDir, isAuthEnabled: () => Promise.resolve(false), fetch: registryFetch, log: () => undefined })
     try {
       const all = await service.registry()
       expect(all.total).toBe(2)
@@ -1276,7 +1276,7 @@ describe('Settings › Extensions gallery and filters (TAL-2142)', () => {
       { id: 'off', name: 'Quiet', description: 'Turned off', panel: 'o/index.html', enabled: false },
       { id: 'notes', name: 'Notes', description: 'Scratch pad', panel: 'n/index.html' },
     ] }))
-    const s = await bootTestServer({ env: { HERMES_WEBUI_EXTENSION_DIR: root, HERMES_WEBUI_EXTENSION_MANIFEST: 'manifest.json' } })
+    const s = await bootTestServer({ env: { TALARIA_WEB_EXTENSION_DIR: root, TALARIA_WEB_EXTENSION_MANIFEST: 'manifest.json' } })
     try {
       const ids = (body: Json): string[] => (body.manifests as Json[]).map((m) => String(m.id))
       const all = await json(await s.get('/api/extensions/manifests'))
@@ -1302,7 +1302,7 @@ describe('extension directory rows in /api/extensions/manifests (TAL-704)', () =
       { id: 'legacy', name: 'Legacy', scripts: ['legacy.js'], stylesheets: ['legacy.css'] },
       { id: 'shared', name: 'Shared', panel: './shared/index.html' },
     ] }))
-    const s = await bootTestServer({ env: { HERMES_WEBUI_EXTENSION_DIR: root, HERMES_WEBUI_EXTENSION_MANIFEST: 'manifest.json' } })
+    const s = await bootTestServer({ env: { TALARIA_WEB_EXTENSION_DIR: root, TALARIA_WEB_EXTENSION_MANIFEST: 'manifest.json' } })
     // A stale gallery install record for the same id never makes a configured entry a gallery row (no Uninstall).
     writeFileSync(join(s.state, 'extension-install-manifest.json'), JSON.stringify({ version: 1, installed: { shared: { version: '1', files: ['index.html'], installed_at: '' } } }))
     try {
@@ -1384,7 +1384,7 @@ describe('sanitized theme, tts, and sidecar in /api/extensions/manifests rows (T
       { id: 'headless', name: 'Headless', scripts: ['old.js'], theme: { key: 'default', name: 'Default Too', tokens: { '--bg': '#000' } } },
       { id: 'token', name: 'Token', panel: 't/index.html', sidecar: { type: 'loopback', origin: 'http://127.0.0.1:4568', proxy_auth: 'token-v1' } },
     ] }))
-    const s = await bootTestServer({ env: { HERMES_WEBUI_EXTENSION_DIR: root, HERMES_WEBUI_EXTENSION_MANIFEST: 'manifest.json' } })
+    const s = await bootTestServer({ env: { TALARIA_WEB_EXTENSION_DIR: root, TALARIA_WEB_EXTENSION_MANIFEST: 'manifest.json' } })
     try {
       const row = async (id: string): Promise<Json | undefined> => ((await json(await s.get('/api/extensions/manifests'))).manifests as Json[]).find((m) => m.id === id)
       expect(await row('deck')).toMatchObject({
@@ -1439,7 +1439,7 @@ describe('extension state transactions (review round 41)', () => {
     writeFileSync(join(root, 'manifest.json'), JSON.stringify({ extensions: [{ id: 'ext-one', name: 'Ext One', sidecar: { type: 'loopback', origin: 'http://127.0.0.1:4567' } }] }))
     let releaseAuth: (v: boolean) => void = () => undefined
     const gate = new Promise<boolean>((r) => { releaseAuth = r })
-    const service = new ExtensionService({ documents: new JsonDocuments(stateDir), env: { HERMES_WEBUI_EXTENSION_DIR: root, HERMES_WEBUI_EXTENSION_MANIFEST: 'manifest.json' }, stateDir, isAuthEnabled: () => gate, fetch, log: () => undefined })
+    const service = new ExtensionService({ documents: new JsonDocuments(stateDir), env: { TALARIA_WEB_EXTENSION_DIR: root, TALARIA_WEB_EXTENSION_MANIFEST: 'manifest.json' }, stateDir, isAuthEnabled: () => gate, fetch, log: () => undefined })
     try {
       const consent = service.setConsent('ext-one', true)
       const toggle = service.setEnabled('ext-one', false)

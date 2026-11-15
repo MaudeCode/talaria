@@ -82,8 +82,8 @@ describe('request-scoped session gate reads', () => {
 })
 
 // Like env-write.agent.test.ts, exercise HTTP with the real sidecar and disposable Agent state.
-const agentDir = process.env.HERMES_WEBUI_AGENT_DIR ?? ''
-const python = process.env.HERMES_WEBUI_PYTHON ?? join(agentDir, '.venv/bin/python')
+const agentDir = process.env.TALARIA_WEB_AGENT_DIR ?? ''
+const python = process.env.TALARIA_WEB_PYTHON ?? join(agentDir, '.venv/bin/python')
 const ledgerAvailable = Boolean(agentDir) && existsSync(join(agentDir, 'hermes_state_mutation_retirement.py')) && existsSync(python)
 
 describe.skipIf(!ledgerAvailable)('session deletion against the runtime-ledger Agent (TAL-1034, TAL-1036)', () => {
@@ -112,7 +112,7 @@ with SessionDB(Path(sys.argv[2]) / 'state.db') as db:
     expect(seed.status, seed.stderr).toBe(0)
     client = new SidecarClient({ python, agentDir, sidecarDir: resolve(import.meta.dirname, '../../../../sidecar'), hermesHome: home, log: () => undefined })
     await client.start()
-    s = await bootTestServer({ sidecar: client, env: { HERMES_HOME: home, HERMES_WEBUI_STATE_DIR: join(home, 'webui') } })
+    s = await bootTestServer({ sidecar: client, env: { HERMES_HOME: home, TALARIA_WEB_STATE_DIR: join(home, 'webui') } })
     await s.deps.sessionStore.save(new Session({ session_id: 'cli-settled', source_tag: 'webui', messages: [{ role: 'user', content: 'retirement regression' }] }, { workspace: home, model: null }))
     await s.deps.settings.save({ show_cli_sessions: true })
     const savedPath = sessionPath(s.deps.sessionStore, 'cli-settled')

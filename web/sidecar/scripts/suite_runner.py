@@ -441,8 +441,8 @@ def run(args):
                    "PYTHONPATH": str(Path(__file__).parent) + os.pathsep + os.environ.get("PYTHONPATH", ""),
                    "TALARIA_PYTEST_MANIFEST": str(job / "manifest.json")}
             if layer in ('fast', 'process'):
-                env.pop('HERMES_WEBUI_AGENT_DIR', None)
-                env.pop('HERMES_WEBUI_PYTHON', None)
+                env.pop('TALARIA_WEB_AGENT_DIR', None)
+                env.pop('TALARIA_WEB_PYTHON', None)
             env['TALARIA_TEST_LAYER'] = layer or 'collection'
             env['TALARIA_POLICY_CHECK_ALL'] = '1' if complete else '0'
             env.pop(SELECTION, None)

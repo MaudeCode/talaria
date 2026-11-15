@@ -15,6 +15,11 @@ ok_exit() {
   exit 0
 }
 
+# Normalize before volume discovery or defaults can shadow a legacy setting.
+source /apptoo/scripts/lib/normalize-web-env.sh || error_exit "Could not normalize Talaria Web environment"
+export TALARIA_WEB_HOST="${TALARIA_WEB_HOST-0.0.0.0}"
+export TALARIA_WEB_PORT="${TALARIA_WEB_PORT-8787}"
+
 ## Environment variables loaded when passing environment variables from user to user
 # Ignore list: variables to ignore when loading environment variables from user to user
 export ENV_IGNORELIST="HOME PWD USER SHLVL TERM OLDPWD SHELL _ SUDO_COMMAND HOSTNAME LOGNAME MAIL SUDO_GID SUDO_UID SUDO_USER CHECK_NV_CUDNN_VERSION VIRTUAL_ENV VIRTUAL_ENV_PROMPT ENV_IGNORELIST ENV_OBFUSCATE_PART"
@@ -81,7 +86,7 @@ if [ "$_wanted_uid_source" != "explicit" ] && { [ -z "${WANTED_UID+x}" ] || [ "$
   # deploy it is a bind mount by definition, so its owner is the host identity
   # the container has to match — then the hermes-home shared volume, which
   # covers two-container Zeabur/Compose setups (#668)
-  for _probe_dir in "${HERMES_WEBUI_STATE_DIR:-/app/data}" "/home/hermeswebui/.hermes" "$HERMES_HOME" "/opt/data"; do
+  for _probe_dir in "${TALARIA_WEB_STATE_DIR:-/app/data}" "/home/hermeswebui/.hermes" "$HERMES_HOME" "/opt/data"; do
     if [ -d "$_probe_dir" ]; then
       _detected_uid=$(stat -c '%u' "$_probe_dir" 2>/dev/null || echo "")
       if [ -n "$_detected_uid" ] && [ "$_detected_uid" != "0" ]; then
@@ -121,7 +126,7 @@ fi
 # Auto-detect GID from mounted volumes to match (#569, #668, #7027)
 if [ "$_wanted_gid_source" != "explicit" ] && { [ -z "${WANTED_GID+x}" ] || [ "${WANTED_GID}" = "1024" ]; }; then
   # Priority 1: configured state dir first, then the hermes-home shared volume
-  for _probe_dir in "${HERMES_WEBUI_STATE_DIR:-/app/data}" "/home/hermeswebui/.hermes" "$HERMES_HOME" "/opt/data"; do
+  for _probe_dir in "${TALARIA_WEB_STATE_DIR:-/app/data}" "/home/hermeswebui/.hermes" "$HERMES_HOME" "/opt/data"; do
     if [ -d "$_probe_dir" ]; then
       _detected_gid=$(stat -c '%g' "$_probe_dir" 2>/dev/null || echo "")
       if [ -n "$_detected_gid" ] && [ "$_detected_gid" != "0" ]; then
@@ -355,12 +360,12 @@ if [ "A${whoami}" == "Aroot" ]; then
   chown hermeswebui:hermeswebui /app || error_exit "Failed to set owner of /app to hermeswebui user"
   rsync -av --chown=hermeswebui:hermeswebui /apptoo/ /app/ || error_exit "Failed to sync /apptoo to /app with correct ownership"
 
-  if [ -z "${HERMES_WEBUI_DEFAULT_WORKSPACE+x}" ]; then export HERMES_WEBUI_DEFAULT_WORKSPACE="/workspace"; fi
-  if [ ! -d "$HERMES_WEBUI_DEFAULT_WORKSPACE" ]; then
-    mkdir -p "$HERMES_WEBUI_DEFAULT_WORKSPACE" || error_exit "Failed to create default workspace at $HERMES_WEBUI_DEFAULT_WORKSPACE"
+  if [ -z "${TALARIA_WEB_DEFAULT_WORKSPACE+x}" ]; then export TALARIA_WEB_DEFAULT_WORKSPACE="/workspace"; fi
+  if [ ! -d "$TALARIA_WEB_DEFAULT_WORKSPACE" ]; then
+    mkdir -p "$TALARIA_WEB_DEFAULT_WORKSPACE" || error_exit "Failed to create default workspace at $TALARIA_WEB_DEFAULT_WORKSPACE"
   fi
-  if [ ! -d "$HERMES_WEBUI_DEFAULT_WORKSPACE" ]; then error_exit "HERMES_WEBUI_DEFAULT_WORKSPACE directory does not exist at $HERMES_WEBUI_DEFAULT_WORKSPACE"; fi
-  chown hermeswebui:hermeswebui "$HERMES_WEBUI_DEFAULT_WORKSPACE" 2>/dev/null || echo "!! WARNING: Could not chown $HERMES_WEBUI_DEFAULT_WORKSPACE (continuing)"
+  if [ ! -d "$TALARIA_WEB_DEFAULT_WORKSPACE" ]; then error_exit "TALARIA_WEB_DEFAULT_WORKSPACE directory does not exist at $TALARIA_WEB_DEFAULT_WORKSPACE"; fi
+  chown hermeswebui:hermeswebui "$TALARIA_WEB_DEFAULT_WORKSPACE" 2>/dev/null || echo "!! WARNING: Could not chown $TALARIA_WEB_DEFAULT_WORKSPACE (continuing)"
 
   export UV_CACHE_DIR=${UV_CACHE_DIR:-/uv_cache}
   mkdir -p "${UV_CACHE_DIR}" || error_exit "Failed to create ${UV_CACHE_DIR} directory"
@@ -445,29 +450,29 @@ rm -f $it || error_exit "Failed to delete test file in /app"
 
 echo ""; echo "== Checking required environment variables for hermes-webui"
 
-echo ""; echo "-- HERMES_WEBUI_STATE_DIR: Where to store sessions, workspaces, and other state (default: ~/.hermes/webui)"
-if [ -z "${HERMES_WEBUI_STATE_DIR+x}" ]; then error_exit "HERMES_WEBUI_STATE_DIR not set"; fi; 
-echo "-- HERMES_WEBUI_STATE_DIR: $HERMES_WEBUI_STATE_DIR"
-if [ ! -d "$HERMES_WEBUI_STATE_DIR" ]; then mkdir -p $HERMES_WEBUI_STATE_DIR || error_exit "Failed to create state directory at $HERMES_WEBUI_STATE_DIR"; fi
-if [ ! -d "$HERMES_WEBUI_STATE_DIR" ]; then error_exit "HERMES_WEBUI_STATE_DIR directory does not exist at $HERMES_WEBUI_STATE_DIR"; fi
-it="$HERMES_WEBUI_STATE_DIR/.testfile"; touch $it || error_exit "Failed to verify state directory at $HERMES_WEBUI_STATE_DIR"
-rm -f $it || error_exit "Failed to delete test file in $HERMES_WEBUI_STATE_DIR"
+echo ""; echo "-- TALARIA_WEB_STATE_DIR: Where to store sessions, workspaces, and other state (default: ~/.hermes/webui)"
+if [ -z "${TALARIA_WEB_STATE_DIR+x}" ]; then error_exit "TALARIA_WEB_STATE_DIR not set"; fi;
+echo "-- TALARIA_WEB_STATE_DIR: $TALARIA_WEB_STATE_DIR"
+if [ ! -d "$TALARIA_WEB_STATE_DIR" ]; then mkdir -p $TALARIA_WEB_STATE_DIR || error_exit "Failed to create state directory at $TALARIA_WEB_STATE_DIR"; fi
+if [ ! -d "$TALARIA_WEB_STATE_DIR" ]; then error_exit "TALARIA_WEB_STATE_DIR directory does not exist at $TALARIA_WEB_STATE_DIR"; fi
+it="$TALARIA_WEB_STATE_DIR/.testfile"; touch $it || error_exit "Failed to verify state directory at $TALARIA_WEB_STATE_DIR"
+rm -f $it || error_exit "Failed to delete test file in $TALARIA_WEB_STATE_DIR"
 
-echo ""; echo "-- HERMES_WEBUI_DEFAULT_WORKSPACE: Default workspace directory shown on first launch"
-if [ -z "${HERMES_WEBUI_DEFAULT_WORKSPACE+x}" ]; then echo "HERMES_WEBUI_DEFAULT_WORKSPACE not set, setting to /workspace"; export HERMES_WEBUI_DEFAULT_WORKSPACE="/workspace"; fi;
-echo "-- HERMES_WEBUI_DEFAULT_WORKSPACE: $HERMES_WEBUI_DEFAULT_WORKSPACE"
+echo ""; echo "-- TALARIA_WEB_DEFAULT_WORKSPACE: Default workspace directory shown on first launch"
+if [ -z "${TALARIA_WEB_DEFAULT_WORKSPACE+x}" ]; then echo "TALARIA_WEB_DEFAULT_WORKSPACE not set, setting to /workspace"; export TALARIA_WEB_DEFAULT_WORKSPACE="/workspace"; fi;
+echo "-- TALARIA_WEB_DEFAULT_WORKSPACE: $TALARIA_WEB_DEFAULT_WORKSPACE"
 # The root init phase creates/chowns missing bind-mount directories before
 # dropping privileges. After that, the runtime user only verifies access.
-if [ ! -d "$HERMES_WEBUI_DEFAULT_WORKSPACE" ]; then
-  mkdir -p "$HERMES_WEBUI_DEFAULT_WORKSPACE" || error_exit "Failed to create default workspace at $HERMES_WEBUI_DEFAULT_WORKSPACE"
+if [ ! -d "$TALARIA_WEB_DEFAULT_WORKSPACE" ]; then
+  mkdir -p "$TALARIA_WEB_DEFAULT_WORKSPACE" || error_exit "Failed to create default workspace at $TALARIA_WEB_DEFAULT_WORKSPACE"
 fi
-if [ ! -d "$HERMES_WEBUI_DEFAULT_WORKSPACE" ]; then error_exit "HERMES_WEBUI_DEFAULT_WORKSPACE directory does not exist at $HERMES_WEBUI_DEFAULT_WORKSPACE"; fi
+if [ ! -d "$TALARIA_WEB_DEFAULT_WORKSPACE" ]; then error_exit "TALARIA_WEB_DEFAULT_WORKSPACE directory does not exist at $TALARIA_WEB_DEFAULT_WORKSPACE"; fi
 # Only write-test if the workspace is writable. Read-only bind-mounts (:ro)
 # are valid — the workspace is used for browsing, not writing by the server.
-if [ -w "$HERMES_WEBUI_DEFAULT_WORKSPACE" ]; then
-  it="$HERMES_WEBUI_DEFAULT_WORKSPACE/.testfile"; touch $it && rm -f $it || echo "!! WARNING: Could not write to $HERMES_WEBUI_DEFAULT_WORKSPACE (continuing)"
+if [ -w "$TALARIA_WEB_DEFAULT_WORKSPACE" ]; then
+  it="$TALARIA_WEB_DEFAULT_WORKSPACE/.testfile"; touch $it && rm -f $it || echo "!! WARNING: Could not write to $TALARIA_WEB_DEFAULT_WORKSPACE (continuing)"
 else
-  echo "-- HERMES_WEBUI_DEFAULT_WORKSPACE is read-only — skipping write check (read-only workspace is supported)"
+  echo "-- TALARIA_WEB_DEFAULT_WORKSPACE is read-only — skipping write check (read-only workspace is supported)"
 fi
 
 echo ""; echo "==================="
@@ -494,7 +499,7 @@ cd /app
 _stage_src="/app/hermes-agent-src"
 if [ -f "$_stage_src/venv/.deps_installed" ]; then
   echo ""; echo "== Agent virtual environment already installed — skipping (fast restart)"
-  export HERMES_WEBUI_AGENT_DIR="$_stage_src"
+  export TALARIA_WEB_AGENT_DIR="$_stage_src"
 else
   echo ""; echo "== Staging the Hermes Agent source and installing its dependencies"
   _agent_paths=(
@@ -576,7 +581,7 @@ else
     uv pip install --project "$_stage_src" --python "$_stage_src/venv/bin/python" -e "$_stage_src[all]" \
       || error_exit "Failed to install hermes-agent's requirements"
     touch "$_stage_src/venv/.deps_installed"
-    export HERMES_WEBUI_AGENT_DIR="$_stage_src"
+    export TALARIA_WEB_AGENT_DIR="$_stage_src"
   else
     echo ""
     echo "!! WARNING: hermes-agent source not found."

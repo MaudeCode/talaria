@@ -450,7 +450,7 @@ describe('save', () => {
     // TAL-2098: stored in the canonical spelling the workspace list uses (`dir` sits under macOS's symlinked /var).
     expect(s.defaultWorkspace).toBe(join(realpathSync(dir), 'gone', 'x'))
     expect(onDisk().default_workspace).toBe(join(realpathSync(dir), 'gone', 'x'))
-    const env = store({ HERMES_WEBUI_DEFAULT_WORKSPACE: join(dir, 'env-ws') })
+    const env = store({ TALARIA_WEB_DEFAULT_WORKSPACE: join(dir, 'env-ws') })
     env.defaultWorkspace = join(dir, 'env-ws')
     await env.applyStartupWorkspace()
     expect(onDisk().default_workspace).toBe(join(dir, 'env-ws'))

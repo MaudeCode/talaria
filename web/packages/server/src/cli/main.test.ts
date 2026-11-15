@@ -18,7 +18,7 @@ const trial = vi.hoisted(() => ({
   unanswered: [] as string[],
 }))
 
-vi.mock('./dotenv.js', () => ({ loadStartupEnv: vi.fn() }))
+vi.mock('./dotenv.js', () => ({ loadStartupEnv: vi.fn(() => ({ hermesHome: trial.state })) }))
 // Signals and IPC loss come from a private emitter: the test process's own channel and handlers stay untouched.
 vi.mock('./supervise.js', async (original) => {
   const supervise = await original<typeof import('./supervise.js')>()
@@ -58,10 +58,10 @@ vi.mock('node:child_process', async (original) => {
 vi.mock('../config.js', async (original) => {
   const config = await original<typeof import('../config.js')>()
   return { ...config, loadConfig: (opts: Parameters<typeof config.loadConfig>[0]) => config.loadConfig({ ...opts, env: {
-    HOME: trial.state, HERMES_HOME: trial.state, HERMES_WEBUI_STATE_DIR: trial.state,
-    HERMES_WEBUI_DEFAULT_WORKSPACE: join(trial.state, 'workspace'),
-    HERMES_WEBUI_CLAUDE_PROJECTS_DIR: join(trial.state, 'claude-projects'),
-    HERMES_WEBUI_HOST: '127.0.0.1', HERMES_WEBUI_PORT: '0',
+    HOME: trial.state, HERMES_HOME: trial.state, TALARIA_WEB_STATE_DIR: trial.state,
+    TALARIA_WEB_DEFAULT_WORKSPACE: join(trial.state, 'workspace'),
+    TALARIA_WEB_CLAUDE_PROJECTS_DIR: join(trial.state, 'claude-projects'),
+    TALARIA_WEB_HOST: '127.0.0.1', TALARIA_WEB_PORT: '0',
   } }) }
 })
 vi.mock('../runtime.js', async (original) => {
@@ -113,8 +113,8 @@ it('serves auth within 500 ms and refuses chat while a five-second handshake is 
   const emitter: import('node:events').EventEmitter = process
   const listeners = events.map((event) => new Set(emitter.listeners(event)))
   vi.stubEnv('TALARIA_WEB_WORKER', '1')
-  vi.stubEnv('HERMES_WEBUI_HOST', '127.0.0.1')
-  vi.stubEnv('HERMES_WEBUI_PORT', '8787')
+  vi.stubEnv('TALARIA_WEB_HOST', '127.0.0.1')
+  vi.stubEnv('TALARIA_WEB_PORT', '8787')
   let deadline: ReturnType<typeof setTimeout> | undefined
   let failure: unknown
   const started = performance.now()

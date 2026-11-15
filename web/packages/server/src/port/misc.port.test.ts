@@ -692,7 +692,7 @@ describe('upstream probe caps', () => {
   it('the remote gateway health probe stops reading past its body cap', async () => {
     const home = mkdtempSync(join(tmpdir(), 'talaria-gw-'))
     try {
-      const result = await agentHealth({ env: { HERMES_WEBUI_CHAT_BACKEND: 'gateway', HERMES_WEBUI_GATEWAY_URL: 'https://gw.example' }, hermesHome: home, profileHome: () => home, fetch: () => () => Promise.resolve(endless()), now: () => Date.now() / 1000 })
+      const result = await agentHealth({ env: { TALARIA_WEB_CHAT_BACKEND: 'gateway', TALARIA_WEB_GATEWAY_URL: 'https://gw.example' }, hermesHome: home, profileHome: () => home, fetch: () => () => Promise.resolve(endless()), now: () => Date.now() / 1000 })
       expect(JSON.stringify(result)).not.toContain('gateway_state')
     } finally { rmSync(home, { recursive: true, force: true }) }
   })

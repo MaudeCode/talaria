@@ -84,7 +84,7 @@ beforeEach(async () => {
   await new Promise<void>((resolve) => { relay.listen(0, '127.0.0.1', resolve) })
   url = `http://127.0.0.1:${(relay.address() as import('node:net').AddressInfo).port}`
   sidecar = new FakeSidecar()
-  s = await bootTestServer({ env: { HOME: '/synthetic-home', HERMES_WEBUI_TALARIA_RELAY_URL: url }, sidecar })
+  s = await bootTestServer({ env: { HOME: '/synthetic-home', TALARIA_WEB_TALARIA_RELAY_URL: url }, sidecar })
   vi.spyOn(s.deps.catalog, 'providers').mockResolvedValue({ providers: [{ id: 'openai', has_key: true, api_key: 'provider-secret', base_url: 'https://private.example', account_id: 'private-account' }, { id: 'disabled', has_key: false }], active_provider: 'openai', availability: { status: 'available', authoritative: true } } as never)
 })
 afterEach(async () => { vi.restoreAllMocks(); await s.close(); await new Promise<void>((resolve, reject) => { relay.close((e) => { if (e) reject(e); else resolve() }) }) })
@@ -198,7 +198,7 @@ it('enforces the total Relay byte limit and authenticates both routes', async ()
   expect((await submit({ ...input(), body: '界'.repeat(8000), client: { platform: 'web' } })).status).toBe(200)
   // JSON escaping makes otherwise field-valid input exceed the Relay's byte envelope.
   expect((await submit({ ...input(), body: '\u0000'.repeat(8000) })).status).toBe(400)
-  const protectedServer = await bootTestServer({ env: { HOME: '/synthetic-home', HERMES_WEBUI_PASSWORD: 'synthetic-password-only' } })
+  const protectedServer = await bootTestServer({ env: { HOME: '/synthetic-home', TALARIA_WEB_PASSWORD: 'synthetic-password-only' } })
   try {
     expect((await protectedServer.get('/api/feedback/diagnostics')).status).toBe(401)
     expect((await protectedServer.get('/api/feedback/submit', { method: 'POST', body: JSON.stringify(input()), headers: { 'Content-Type': 'application/json' } })).status).toBe(401)
@@ -480,7 +480,7 @@ it('expires unreferenced staged files after an hour', async () => {
 })
 
 it('authenticates attachment staging and options', async () => {
-  const protectedServer = await bootTestServer({ env: { HOME: '/synthetic-home', HERMES_WEBUI_PASSWORD: 'synthetic-password-only' } })
+  const protectedServer = await bootTestServer({ env: { HOME: '/synthetic-home', TALARIA_WEB_PASSWORD: 'synthetic-password-only' } })
   try {
     expect((await protectedServer.get('/api/feedback/options')).status).toBe(401)
     const form = new FormData()

@@ -1,8 +1,8 @@
 /**
  * Hermes Agent discovery for the sidecar spawn (Python `bootstrap.py` rules):
- * `HERMES_WEBUI_AGENT_DIR`, `$HERMES_HOME/hermes-agent`, a sibling checkout of
+ * `TALARIA_WEB_AGENT_DIR`, `$HERMES_HOME/hermes-agent`, a sibling checkout of
  * this repository, `~/hermes-agent`, `/opt/hermes`, `/usr/local/lib/hermes-agent`;
- * the interpreter is `HERMES_WEBUI_PYTHON`, the PM generation, or `venv`/`.venv`.
+ * the interpreter is `TALARIA_WEB_PYTHON`, the PM generation, or `venv`/`.venv`.
  */
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
@@ -29,7 +29,7 @@ function isAgentCheckout(dir: string): boolean {
 }
 
 export function agentCandidates(opts: DiscoverOptions): string[] {
-  const explicit = (opts.env.HERMES_WEBUI_AGENT_DIR ?? '').trim().replace(/^~(?=$|\/)/, opts.home)
+  const explicit = (opts.env.TALARIA_WEB_AGENT_DIR ?? '').trim().replace(/^~(?=$|\/)/, opts.home)
   return [
     explicit,
     join(opts.hermesHome, 'hermes-agent'),
@@ -138,13 +138,13 @@ function sameInterpreter(a: string, b: string): boolean {
   return canonical(a) === canonical(b)
 }
 
-/** `warn` reports an explicit `HERMES_WEBUI_PYTHON` that overrides a different PM-recorded interpreter; the override still wins. */
+/** `warn` reports an explicit `TALARIA_WEB_PYTHON` that overrides a different PM-recorded interpreter; the override still wins. */
 export function discoverAgentPython(env: Record<string, string | undefined>, agentDir: string | null, hermesHome?: string, warn?: (line: string) => void): string | null {
-  const explicit = (env.HERMES_WEBUI_PYTHON ?? '').trim()
+  const explicit = (env.TALARIA_WEB_PYTHON ?? '').trim()
   const recorded = agentDir ? recordedPython(dependencyRoot(env, hermesHome), agentDir) : undefined
   if (explicit) {
     if (warn && typeof recorded === 'string' && !sameInterpreter(explicit, recorded)) {
-      warn(`[sidecar] [warn] HERMES_WEBUI_PYTHON=${explicit} overrides the Agent's package-manager interpreter ${recorded}; unset HERMES_WEBUI_PYTHON unless this install has no package-manager environment`)
+      warn(`[sidecar] [warn] TALARIA_WEB_PYTHON=${explicit} overrides the Agent's package-manager interpreter ${recorded}; unset TALARIA_WEB_PYTHON unless this install has no package-manager environment`)
     }
     return explicit
   }
@@ -160,13 +160,13 @@ export interface LaunchOptions extends DiscoverOptions {
   log: (line: string) => void
 }
 
-/** `HERMES_WEBUI_SIDECAR_COMMAND`: a JSON array (or whitespace-separated command) that replaces `<python> -m talaria_sidecar`, e.g. the fixture replay sidecar. */
+/** `TALARIA_WEB_SIDECAR_COMMAND`: a JSON array (or whitespace-separated command) that replaces `<python> -m talaria_sidecar`, e.g. the fixture replay sidecar. */
 export function scriptedSidecarCommand(env: Record<string, string | undefined>): string[] | null {
-  const raw = (env.HERMES_WEBUI_SIDECAR_COMMAND ?? '').trim()
+  const raw = (env.TALARIA_WEB_SIDECAR_COMMAND ?? '').trim()
   if (!raw) return null
   if (raw.startsWith('[')) {
     const parsed = JSON.parse(raw) as unknown
-    if (!Array.isArray(parsed) || !parsed.length || !parsed.every((v) => typeof v === 'string')) throw new Error('HERMES_WEBUI_SIDECAR_COMMAND must be a JSON array of strings')
+    if (!Array.isArray(parsed) || !parsed.length || !parsed.every((v) => typeof v === 'string')) throw new Error('TALARIA_WEB_SIDECAR_COMMAND must be a JSON array of strings')
     return parsed
   }
   return raw.split(/\s+/)
@@ -188,14 +188,14 @@ export function launchSidecar(opts: LaunchOptions): SidecarClient | null {
   }
   const agentDir = discoverAgentDirForLaunch(opts)
   if (!agentDir) {
-    opts.log(`[sidecar] Hermes Agent not found (looked in ${agentCandidates(opts).join(', ')}); set HERMES_WEBUI_AGENT_DIR to enable chat`)
+    opts.log(`[sidecar] Hermes Agent not found (looked in ${agentCandidates(opts).join(', ')}); set TALARIA_WEB_AGENT_DIR to enable chat`)
     return null
   }
   const client = new SidecarClient({ python: () => discoverAgentPython(opts.env, agentDir, opts.hermesHome, opts.log), agentDir, sidecarDir: join(opts.webRoot, 'sidecar'), hermesHome: opts.hermesHome, env: () => stringEnv(opts.env), log: opts.log, supportedAgents: supportedAgents(opts.webRoot) })
   // The handshake is the only Agent import check: its first result names a broken interpreter for the operator.
   const stop = client.onHandshake((describe) => {
     stop()
-    if (describe.import_error) opts.log(`[sidecar] Python environment at ${describe.python} cannot import Hermes Agent (${describe.import_error}). For an Agent installed by its package manager, unset HERMES_WEBUI_PYTHON; otherwise set it to the Agent venv interpreter.`)
+    if (describe.import_error) opts.log(`[sidecar] Python environment at ${describe.python} cannot import Hermes Agent (${describe.import_error}). For an Agent installed by its package manager, unset TALARIA_WEB_PYTHON; otherwise set it to the Agent venv interpreter.`)
   })
   opts.log(`[sidecar] starting for agent ${agentDir}`)
   return client

@@ -12,11 +12,11 @@ Pass ``--foreground`` to ``talaria-web``:
 talaria-web --foreground --no-browser
 ```
 
-Or set ``HERMES_WEBUI_FOREGROUND=1`` in the environment. The Web UI will
+Or set ``TALARIA_WEB_FOREGROUND=1`` in the environment. The Web UI will
 auto-detect launchd / systemd / supervisord even without the flag, but being
 explicit is safer.
 
-**Important (launchd on macOS):** if the ``dev.kil.talaria.web`` LaunchAgent is enabled, treat launchd as the single source of truth for the Talaria Web lifecycle. Do **not** also run ``talaria-web ctl start`` or ``talaria-web`` against the same state dir/port, or you can create a second Talaria Web instance and trigger port-8787 restart churn. ``talaria-web ctl start`` refuses to start next to a running launchd job with that label; if your plist uses a different label, set ``HERMES_WEBUI_LAUNCHD_LABEL`` to it.
+**Important (launchd on macOS):** if the ``dev.kil.talaria.web`` LaunchAgent is enabled, treat launchd as the single source of truth for the Talaria Web lifecycle. Do **not** also run ``talaria-web ctl start`` or ``talaria-web`` against the same state dir/port, or you can create a second Talaria Web instance and trigger port-8787 restart churn. ``talaria-web ctl start`` refuses to start next to a running launchd job with that label; if your plist uses a different label, set ``TALARIA_WEB_LAUNCHD_LABEL`` to it.
 
 ## Why ``--foreground`` matters
 
@@ -110,7 +110,7 @@ supervisor can reap its worker before it is killed itself.
     <string>/Users/yourname/.hermes/webui/launchd-stderr.log</string>
 <!-- Both of these are size-bounded by the server itself: it resolves its own
      stdout/stderr descriptors and copy-truncates either file past 32 MiB
-     (HERMES_WEBUI_LOG_MAX_BYTES; 0 disables), keeping the newest 32 MiB in
+     (TALARIA_WEB_LOG_MAX_BYTES; 0 disables), keeping the newest 32 MiB in
      <log>.1. No newsyslog entry is required,
      though one is harmless. -->
 
@@ -176,7 +176,7 @@ journalctl --user -u hermes-webui.service -f
 ```
 
 ``talaria-web ctl start`` refuses to start next to an active ``hermes-webui.service``
-on the same port; set ``HERMES_WEBUI_SYSTEMD_UNIT`` if your unit has another name.
+on the same port; set ``TALARIA_WEB_SYSTEMD_UNIT`` if your unit has another name.
 
 systemd sets ``INVOCATION_ID`` and ``JOURNAL_STREAM`` (when stdio is wired to
 the journal), both of which auto-promote to foreground mode.
@@ -221,7 +221,7 @@ These trigger ``--foreground`` behavior even when the flag is not passed:
 | ``NOTIFY_SOCKET`` | systemd ``Type=notify`` / s6 | sd_notify-style notification socket |
 | ``XPC_SERVICE_NAME`` | launchd | Set to the plist Label — narrowed to ``com.<rdns>.<svc>`` form (see below) |
 | ``SUPERVISOR_ENABLED`` | supervisord | Always set under supervisord |
-| ``HERMES_WEBUI_FOREGROUND`` | you | Explicit opt-in; accepts ``1`` / ``true`` / ``yes`` / ``on`` |
+| ``TALARIA_WEB_FOREGROUND`` | you | Explicit opt-in; accepts ``1`` / ``true`` / ``yes`` / ``on`` |
 
 ### XPC_SERVICE_NAME noise filter
 
@@ -239,13 +239,13 @@ the most common installation path. We narrow detection to launchd
 **Label-style** names (typically reverse-DNS like ``com.example.foo``).
 Real launchd plists always use this form. If you ever see
 ``XPC_SERVICE_NAME=0`` in your service environment, the auto-detect will
-ignore it — set ``HERMES_WEBUI_FOREGROUND=1`` or pass ``--foreground``
+ignore it — set ``TALARIA_WEB_FOREGROUND=1`` or pass ``--foreground``
 explicitly to be safe.
 
 ### Supervisors that are NOT auto-detected
 
 The following set no env var that we can reliably detect. Pass
-``--foreground`` (or ``HERMES_WEBUI_FOREGROUND=1``) explicitly:
+``--foreground`` (or ``TALARIA_WEB_FOREGROUND=1``) explicitly:
 
 - **runit** (without sd_notify) — pure runit chains
 - **daemontools** / ``svc``
@@ -255,7 +255,7 @@ The following set no env var that we can reliably detect. Pass
 - **Custom shell-script supervisors** that fork-and-wait
 
 If your supervisor isn't in the auto-detect list and you see the orphan-PID
-respawn loop, set ``HERMES_WEBUI_FOREGROUND=1`` in the service environment.
+respawn loop, set ``TALARIA_WEB_FOREGROUND=1`` in the service environment.
 
 ## Diagnostic recipe
 

@@ -9,15 +9,15 @@ If your symptom isn't listed and the diagnostics don't narrow it down, keep the 
 ## `421` "This server does not answer to host …"
 
 **Symptom.** After an update, the page or API answers `421` with an error naming
-`HERMES_WEBUI_ALLOWED_HOSTS`, usually behind a reverse proxy, Tailscale Serve,
+`TALARIA_WEB_ALLOWED_HOSTS`, usually behind a reverse proxy, Tailscale Serve,
 or a LAN hostname. The server log shows `rejected a request for host "…"`.
 
-**Why.** WebUI answers only to `localhost`, IP addresses, `HERMES_WEBUI_HOST`,
-the `HERMES_WEBUI_ALLOWED_ORIGINS` hostnames and `HERMES_WEBUI_ALLOWED_HOSTS`.
+**Why.** WebUI answers only to `localhost`, IP addresses, `TALARIA_WEB_HOST`,
+the `TALARIA_WEB_ALLOWED_ORIGINS` hostnames and `TALARIA_WEB_ALLOWED_HOSTS`.
 Any other `Host` header is refused so a web page cannot reach the server through
 DNS rebinding.
 
-**Fix.** Add the hostname from the log to `HERMES_WEBUI_ALLOWED_HOSTS`
+**Fix.** Add the hostname from the log to `TALARIA_WEB_ALLOWED_HOSTS`
 (comma-separated, port optional) and restart WebUI. If the proxy rewrites `Host`
 to an internal name, allow that name too; see
 [remote-access.md](remote-access.md#allowed-hostnames).
@@ -62,20 +62,20 @@ routes answer `503` with `{"condition": "sidecar_unavailable"}` (or `agent_incom
 found, the venv is missing, or the sidecar cannot import `run_agent`, the server keeps serving the UI and
 fails those routes closed. Common causes:
 
-1. **No Agent checkout in a discovered location.** Discovery tries `HERMES_WEBUI_AGENT_DIR`,
+1. **No Agent checkout in a discovered location.** Discovery tries `TALARIA_WEB_AGENT_DIR`,
    `$HERMES_HOME/hermes-agent`, a sibling `hermes-agent` checkout, `~/hermes-agent`, `/opt/hermes`,
    `/usr/local/lib/hermes-agent`, and the `hermes` launcher on `PATH`.
 2. **Checkout without a venv.** The sidecar runs on the package-manager (PM) environment recorded under
-   `$HERMES_HOME/installs/`, else on `<agent>/venv` or `<agent>/.venv`; `HERMES_WEBUI_PYTHON`
+   `$HERMES_HOME/installs/`, else on `<agent>/venv` or `<agent>/.venv`; `TALARIA_WEB_PYTHON`
    overrides the interpreter.
-3. **`HERMES_WEBUI_AGENT_DIR` pointing at the wrong directory.** The override beats discovery.
+3. **`TALARIA_WEB_AGENT_DIR` pointing at the wrong directory.** The override beats discovery.
 4. **Agent revision drift.** The handshake compares the loaded Agent with `sidecar/agent_dependency.json`;
    `agent_incompatible` means the checkout is not the tested revision, `agent_runtime_stale` means the
    checkout changed while the server was running.
-5. **Stale `HERMES_WEBUI_PYTHON` pin.** An Agent update can move its dependencies to a new PM environment on a
+5. **Stale `TALARIA_WEB_PYTHON` pin.** An Agent update can move its dependencies to a new PM environment on a
    newer Python. A pin to the old venv then reports `agent_incompatible` with `interpreter Python X.Y cannot
    load Agent packages built for Python X.Z`, and the server log warns that the pin overrides the PM
-   interpreter. Unset `HERMES_WEBUI_PYTHON`.
+   interpreter. Unset `TALARIA_WEB_PYTHON`.
 
 ### Step 1 — read what the launcher resolved
 
@@ -89,22 +89,22 @@ locations that were probed.
 ### Step 2 — point at the right checkout and venv
 
 ```bash
-export HERMES_WEBUI_AGENT_DIR=/absolute/path/to/hermes-agent
+export TALARIA_WEB_AGENT_DIR=/absolute/path/to/hermes-agent
 talaria-web ctl restart
 ```
 
-Leave `HERMES_WEBUI_PYTHON` unset for an Agent installed by its package manager; discovery follows the current
+Leave `TALARIA_WEB_PYTHON` unset for an Agent installed by its package manager; discovery follows the current
 PM environment across Agent updates. Set it only for a checkout without a PM environment:
 
 ```bash
-export HERMES_WEBUI_PYTHON=/absolute/path/to/hermes-agent/venv/bin/python
+export TALARIA_WEB_PYTHON=/absolute/path/to/hermes-agent/venv/bin/python
 ```
 
 ### Step 3 — verify the sidecar can import the Agent
 
 ```bash
 cd /path/to/talaria/web
-HERMES_WEBUI_AGENT_DIR=/absolute/path/to/hermes-agent sidecar/scripts/test.sh tests/test_runtime.py
+TALARIA_WEB_AGENT_DIR=/absolute/path/to/hermes-agent sidecar/scripts/test.sh tests/test_runtime.py
 ```
 
 The runtime tests spawn the sidecar exactly as the server does and report the import error verbatim.
@@ -133,7 +133,7 @@ is the startup lines from step 1, the `/health` payload, and your OS, Node, and 
 
 **Diagnostic.**
 
-The on-disk locations below assume the default `~/.hermes/webui` state directory. If you override it via `HERMES_WEBUI_STATE_DIR`, substitute that path for `~/.hermes/webui` in every step.
+The on-disk locations below assume the default `~/.hermes/webui` state directory. If you override it via `TALARIA_WEB_STATE_DIR`, substitute that path for `~/.hermes/webui` in every step.
 
 1. Identify the affected session id and stream id from the marker. The marker JSON lives at `~/.hermes/webui/sessions/<sid>.json`; after the fix it shows them on the `_journal_retry_stream_id` key. Pre-fix sessions only carry the legacy wording, with no retry meta.
 2. Check whether the run-journal contains real events:
@@ -188,7 +188,7 @@ returns `cursor_pruned`, which tells the caller to reload the settled transcript
 
 Archives use far less disk than the live journals they replace. They have no
 age limit; instead the instance keeps at most
-`HERMES_WEBUI_RUN_JOURNAL_ARCHIVE_MAX_BYTES` of them, 2 GiB by default. Past
+`TALARIA_WEB_RUN_JOURNAL_ARCHIVE_MAX_BYTES` of them, 2 GiB by default. Past
 that budget each sweep removes the oldest archives first. A removed run keeps
 its summary and reads like a run an earlier release pruned. An archive whose
 run still has a live journal, or that has no readable summary, is kept. Set the
@@ -203,17 +203,17 @@ session over budget. A session whose state cannot be read is skipped.
 
 The policy can be adjusted with:
 
-- `HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS`, default `14`; set `0` to disable
+- `TALARIA_WEB_RUN_JOURNAL_RETENTION_DAYS`, default `14`; set `0` to disable
   retention, budgets included.
-- `HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT`, default `3`; the minimum number of
+- `TALARIA_WEB_RUN_JOURNAL_KEEP_RECENT`, default `3`; the minimum number of
   terminal journals kept live per session.
-- `HERMES_WEBUI_RUN_JOURNAL_RETENTION_MAX_RUNS_PER_SESSION`, default `40`; the
+- `TALARIA_WEB_RUN_JOURNAL_RETENTION_MAX_RUNS_PER_SESSION`, default `40`; the
   live journal count budget per session. `0` disables it.
-- `HERMES_WEBUI_RUN_JOURNAL_RETENTION_MAX_BYTES_PER_SESSION`, default
+- `TALARIA_WEB_RUN_JOURNAL_RETENTION_MAX_BYTES_PER_SESSION`, default
   `268435456` (256 MiB); the live journal byte budget per session. `0` disables
   it.
 
-- `HERMES_WEBUI_RUN_JOURNAL_ARCHIVE_MAX_BYTES`, default `2147483648` (2 GiB);
+- `TALARIA_WEB_RUN_JOURNAL_ARCHIVE_MAX_BYTES`, default `2147483648` (2 GiB);
   the instance-wide budget for archived journals. `0` disables it.
 
 A budget that is not a whole number (or, for the per-session budgets, is above
@@ -226,7 +226,7 @@ Changing these values does not affect active/nonterminal run recovery.
 
 ## The `bootstrap-<port>.log` file keeps growing
 
-The launcher redirects the detached server's stdout and stderr to `<state dir>/bootstrap-<port>.log`; `talaria-web ctl` writes to `webui.log` under the Hermes home instead (override with an absolute `HERMES_WEBUI_LOG_FILE`). Neither file rotates: truncate or rotate it with your usual tooling (logrotate, `truncate -s 0`), which is safe while the server runs.
+The launcher redirects the detached server's stdout and stderr to `<state dir>/bootstrap-<port>.log`; `talaria-web ctl` writes to `webui.log` under the Hermes home instead (override with an absolute `TALARIA_WEB_LOG_FILE`). Neither file rotates: truncate or rotate it with your usual tooling (logrotate, `truncate -s 0`), which is safe while the server runs.
 
 ## "Context compression exhausted" after a long-running turn
 
@@ -352,7 +352,7 @@ changing the Agent checkout.
 
 ## 404 after login when password auth is enabled
 
-**Symptom.** After enabling password authentication (`HERMES_WEBUI_PASSWORD`), logging in redirects to `/sessions` and the browser shows a `404 not found` error instead of the chat interface.
+**Symptom.** After enabling password authentication (`TALARIA_WEB_PASSWORD`), logging in redirects to `/sessions` and the browser shows a `404 not found` error instead of the chat interface.
 
 **Why.** The server-side redirect after login targets `/sessions` (plural), but that path was missing from the explicit SPA-shell allowlist in `handle_get()`. Without auth the bug is invisible because the SPA handles `/sessions` client-side and the server route is never hit — only the server-side post-login redirect exposes it.
 

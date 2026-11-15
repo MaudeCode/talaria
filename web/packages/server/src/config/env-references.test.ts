@@ -52,7 +52,7 @@ describe('config.yaml env references', () => {
     ['still unresolved after the Agent expanded it', unresolved],
     ['unresolvable because the Agent could not be imported', null],
   ])('a reference %s counts as unset', async (_name, resolved) => {
-    const { server } = await boot(unresolved, resolved, { HERMES_WEBUI_DEFAULT_MODEL: 'global-model' })
+    const { server } = await boot(unresolved, resolved, { TALARIA_WEB_DEFAULT_MODEL: 'global-model' })
     expect((await json(await server.get('/api/models'))).default_model).toBe('global-model')
     expect((await json(await server.get('/api/settings'))).default_model).toBe('')
     const session = (await json(await post(server, '/api/session/new', {}))).session as Json

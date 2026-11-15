@@ -15,7 +15,7 @@ const PROFILES = {
 async function phoneServer(profiles: { name: string; is_default?: boolean }[]) {
   const sidecar = new FakeSidecar()
   groupFixture(sidecar)
-  return bootTestServer({ sidecar, env: { HERMES_WEBUI_SKIP_ONBOARDING: '1' }, deps: (deps) => { deps.profiles.list = () => Promise.resolve(profiles) } })
+  return bootTestServer({ sidecar, env: { TALARIA_WEB_SKIP_ONBOARDING: '1' }, deps: (deps) => { deps.profiles.list = () => Promise.resolve(profiles) } })
 }
 
 async function expectNoOverlap(page: Page, where: string) {

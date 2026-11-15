@@ -46,8 +46,8 @@ For a clean local trial, use an isolated Hermes home and WebUI state directory:
 ```bash
 mkdir -p ~/hermes-onboarding-test
 HERMES_HOME=~/hermes-onboarding-test/.hermes \
-HERMES_WEBUI_STATE_DIR=~/hermes-onboarding-test/webui \
-HERMES_WEBUI_PORT=8789 \
+TALARIA_WEB_STATE_DIR=~/hermes-onboarding-test/webui \
+TALARIA_WEB_PORT=8789 \
 talaria-web
 ```
 
@@ -58,11 +58,11 @@ pass/fail criteria in
 [`docs/onboarding-agent-checklist.md`](onboarding-agent-checklist.md).
 
 If your repo has a `.env` file, remember that the bootstrap loads it. Remove or
-adjust any `HERMES_HOME`, `HERMES_WEBUI_STATE_DIR`, or `HERMES_WEBUI_PORT`
+adjust any `HERMES_HOME`, `TALARIA_WEB_STATE_DIR`, or `TALARIA_WEB_PORT`
 entries there before using the isolated command above.
 
 For managed hosting or fully preconfigured images, set
-`HERMES_WEBUI_SKIP_ONBOARDING=1` to bypass the wizard.
+`TALARIA_WEB_SKIP_ONBOARDING=1` to bypass the wizard.
 
 ## What the wizard checks
 
@@ -118,7 +118,7 @@ refresh or reopening the page. Older Agents retain generic sign-in success.
 The wizard continues after approval for other providers. The Agent saves the credential
 to the profile's own `auth.json`; WebUI keeps no copy. The sign-in routes use the
 same local-network gate as the rest of onboarding (or
-`HERMES_WEBUI_ONBOARDING_OPEN=1`). Qwen and Anthropic Claude Code still sign in
+`TALARIA_WEB_ONBOARDING_OPEN=1`). Qwen and Anthropic Claude Code still sign in
 from a terminal with `hermes auth`, then refresh WebUI.
 
 ### Provider plugins
@@ -265,7 +265,7 @@ State normally lives outside the repository. By default:
 - Hermes Agent state: Windows `%LOCALAPPDATA%\hermes`; POSIX `~/.hermes`
 - WebUI state: `$HERMES_HOME/webui` (Windows default `%LOCALAPPDATA%\hermes\webui`, POSIX default `~/.hermes/webui`)
 
-Override these with `HERMES_HOME` and `HERMES_WEBUI_STATE_DIR` when you need an
+Override these with `HERMES_HOME` and `TALARIA_WEB_STATE_DIR` when you need an
 isolated test install.
 
 ## Collecting diagnostics

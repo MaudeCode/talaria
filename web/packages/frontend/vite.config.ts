@@ -11,9 +11,9 @@ import { paraglideLocaleSplit } from './src/i18n/localeSplit'
 // (workbox injectManifest) after the app build, because the Start builder does
 // not run vite-plugin-pwa's closeBundle for the client environment. Relative base keeps hashed asset URLs valid
 // under any subpath mount; the shell's <base href> is filled per request.
-// `HERMES_WEBUI_DEV_PROXY=http://host:port npm run dev` serves the app from source with HMR and forwards
+// `TALARIA_WEB_DEV_PROXY=http://host:port npm run dev` serves the app from source with HMR and forwards
 // server-owned API, static, extension, and plugin paths to the configured WebUI.
-const devProxy = process.env.HERMES_WEBUI_DEV_PROXY
+const devProxy = process.env.TALARIA_WEB_DEV_PROXY
 const SERVER_OWNED = '(?:api|static|extensions|plugins|dashboard-plugins)'
 const PROXY_ROUTE = `^(?!/(?:src|@|node_modules)/)(?:/[^/]+)*/${SERVER_OWNED}(?:/|$)`
 const PROXIED = new RegExp(`^(?:/[^/]+)*?(?=/${SERVER_OWNED}(?:/|$))`)
@@ -59,7 +59,7 @@ export default defineConfig({
   ],
   build: {
     chunkSizeWarningLimit: 500,
-    sourcemap: process.env.HERMES_WEBUI_SOURCEMAP === '1',
+    sourcemap: process.env.TALARIA_WEB_SOURCEMAP === '1',
     // The bundle's dependency notices ship beside it, since minification strips their headers (TAL-389).
     license: { fileName: 'THIRD_PARTY_LICENSES.md' },
     manifest: true,

@@ -53,7 +53,7 @@ node --version
 Check whether repo-local environment overrides will affect bootstrap:
 
 ```bash
-test -f .env && grep -n 'HERMES_HOME\|HERMES_WEBUI_STATE_DIR\|HERMES_WEBUI_PORT\|HERMES_WEBUI_HOST' .env
+test -f .env && grep -n 'HERMES_HOME\|TALARIA_WEB_STATE_DIR\|TALARIA_WEB_PORT\|TALARIA_WEB_HOST' .env
 ```
 
 If `.env` exists, do not print the full file. Inspect only the specific
@@ -69,8 +69,8 @@ profiles, credentials, and cron state.
 ```bash
 mkdir -p ~/hermes-onboarding-test
 HERMES_HOME=~/hermes-onboarding-test/.hermes \
-HERMES_WEBUI_STATE_DIR=~/hermes-onboarding-test/webui \
-HERMES_WEBUI_PORT=8789 \
+TALARIA_WEB_STATE_DIR=~/hermes-onboarding-test/webui \
+TALARIA_WEB_PORT=8789 \
 talaria-web --foreground --no-browser
 ```
 
@@ -136,14 +136,14 @@ A local onboarding trial passes when:
 - `/api/onboarding/status` returns JSON.
 - The wizard appears when `completed` is false.
 - The wizard stays out of the way when `completed` is true or
-  `HERMES_WEBUI_SKIP_ONBOARDING=1` is intentionally set.
+  `TALARIA_WEB_SKIP_ONBOARDING=1` is intentionally set.
 - `system.hermes_found` and `system.imports_ok` match the expected bootstrap
   state.
 - `system.provider_ready` and `system.chat_ready` become true after the human
   completes a provider path that should support chat.
 - `system.config_path` and `system.env_path` point inside the intended isolated
   `HERMES_HOME` during a trial.
-- WebUI files are written under the intended `HERMES_WEBUI_STATE_DIR`.
+- WebUI files are written under the intended `TALARIA_WEB_STATE_DIR`.
 
 If the human chooses a provider that must be completed in the CLI, passing can
 mean the wizard correctly points them to `hermes model` or `hermes auth` rather

@@ -1,7 +1,7 @@
 /**
  * `talaria-web-mcp`: the seven project/session tools of Python `mcp_server.py`,
  * served over MCP. Every tool goes through the Web HTTP API (no in-process
- * state reads): a password from `HERMES_WEBUI_PASSWORD` logs in once and the
+ * state reads): a password from `TALARIA_WEB_PASSWORD` logs in once and the
  * session cookie is reused; `--profile` pins the profile cookie. With auth on,
  * the server only honours a profile cookie signed to the session, so the
  * client obtains it from `/api/profile/switch` after login instead of

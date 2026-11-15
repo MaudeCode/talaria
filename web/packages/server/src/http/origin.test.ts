@@ -27,7 +27,7 @@ describe('same-origin browser check', () => {
     expect(checkSameOriginBrowserRequest({ host }, {})).toBeNull()
     expect(checkSameOriginBrowserRequest({ host }, {}, { requireProvenance: true })).toBe('origin_mismatch')
     expect(checkSameOriginBrowserRequest({ origin: 'https://evil.example', host }, {})).toBe('origin_mismatch')
-    expect(checkSameOriginBrowserRequest({ origin: 'https://app.example:8000', host }, { HERMES_WEBUI_ALLOWED_ORIGINS: 'https://app.example:8000/' })).toBeNull()
+    expect(checkSameOriginBrowserRequest({ origin: 'https://app.example:8000', host }, { TALARIA_WEB_ALLOWED_ORIGINS: 'https://app.example:8000/' })).toBeNull()
     expect(checkSameOriginBrowserRequest({ secFetchSite: 'cross-site', host }, {})).toBe('origin_mismatch')
     expect(checkSameOriginBrowserRequest({ secFetchSite: 'none', host }, {})).toBeNull()
     expect(checkSameOriginBrowserRequest({ secFetchSite: 'same-origin', host }, {})).toBeNull()
@@ -37,12 +37,12 @@ describe('same-origin browser check', () => {
   it('trusts forwarded hosts only with the opt-in', () => {
     const h = { origin: 'https://ui.example', host, forwardedHost: 'ui.example' }
     expect(checkSameOriginBrowserRequest(h, {})).toBe('origin_mismatch')
-    expect(checkSameOriginBrowserRequest(h, { HERMES_WEBUI_TRUST_FORWARDED_HOST: '1' })).toBeNull()
+    expect(checkSameOriginBrowserRequest(h, { TALARIA_WEB_TRUST_FORWARDED_HOST: '1' })).toBeNull()
   })
 
   it('drops allowlist entries without a scheme', () => {
     const warnings: string[] = []
-    expect([...allowedPublicOrigins({ HERMES_WEBUI_ALLOWED_ORIGINS: 'app.example, https://ok.example/' }, (l) => warnings.push(l))]).toEqual(['https://ok.example'])
+    expect([...allowedPublicOrigins({ TALARIA_WEB_ALLOWED_ORIGINS: 'app.example, https://ok.example/' }, (l) => warnings.push(l))]).toEqual(['https://ok.example'])
     expect(warnings).toHaveLength(1)
   })
 })
@@ -53,14 +53,14 @@ describe('trusted proxies and client IPs', () => {
     expect(rawPeerIsTrustedProxy('::1', {})).toBe(true)
     expect(rawPeerIsTrustedProxy('::ffff:127.0.0.1', {})).toBe(true)
     expect(rawPeerIsTrustedProxy('10.0.0.5', {})).toBe(false)
-    expect(rawPeerIsTrustedProxy('10.0.0.5', { HERMES_WEBUI_TRUSTED_PROXY_CIDRS: '10.0.0.0/8; bogus/99' })).toBe(true)
-    expect(rawPeerIsTrustedProxy('::ffff:10.9.9.9', { HERMES_WEBUI_TRUSTED_PROXY_CIDRS: '10.0.0.0/8' })).toBe(true)
-    expect(rawPeerIsTrustedProxy('10.0.0.5', { HERMES_WEBUI_TRUSTED_PROXY_CIDRS: 'not-a-cidr' })).toBe(false)
+    expect(rawPeerIsTrustedProxy('10.0.0.5', { TALARIA_WEB_TRUSTED_PROXY_CIDRS: '10.0.0.0/8; bogus/99' })).toBe(true)
+    expect(rawPeerIsTrustedProxy('::ffff:10.9.9.9', { TALARIA_WEB_TRUSTED_PROXY_CIDRS: '10.0.0.0/8' })).toBe(true)
+    expect(rawPeerIsTrustedProxy('10.0.0.5', { TALARIA_WEB_TRUSTED_PROXY_CIDRS: 'not-a-cidr' })).toBe(false)
     expect(rawPeerIsTrustedProxy('', {})).toBe(false)
   })
 
   it('walks X-Forwarded-For right to left and fails closed on malformed chains', () => {
-    const env = { HERMES_WEBUI_TRUSTED_PROXY_CIDRS: '10.0.0.0/8' }
+    const env = { TALARIA_WEB_TRUSTED_PROXY_CIDRS: '10.0.0.0/8' }
     expect(forwardedClientIp(['203.0.113.9, 10.0.0.2'], undefined, '10.0.0.1', env)).toBe('203.0.113.9')
     expect(forwardedClientIp(['203.0.113.9', '10.0.0.2'], undefined, '10.0.0.1', env)).toBe('203.0.113.9')
     expect(forwardedClientIp(['10.0.0.3, 10.0.0.2'], undefined, '10.0.0.1', env)).toBe('10.0.0.1')
@@ -75,11 +75,11 @@ describe('trusted proxies and client IPs', () => {
   it('trusts only listed peers when implicit loopback trust is off', () => {
     const explicit = { implicitLoopback: false }
     for (const peer of ['127.0.0.1', '::1', '::ffff:127.0.0.1']) expect(rawPeerIsTrustedProxy(peer, {}, explicit), peer).toBe(false)
-    expect(rawPeerIsTrustedProxy('127.0.0.1', { HERMES_WEBUI_TRUSTED_PROXY_CIDRS: '127.0.0.1/32' }, explicit)).toBe(true)
-    expect(rawPeerIsTrustedProxy('::ffff:127.0.0.1', { HERMES_WEBUI_TRUSTED_PROXY_CIDRS: '127.0.0.1' }, explicit)).toBe(true)
-    expect(rawPeerIsTrustedProxy('::1', { HERMES_WEBUI_TRUSTED_PROXY_CIDRS: '127.0.0.1/32' }, explicit)).toBe(false)
-    expect(rawPeerIsTrustedProxy('::1', { HERMES_WEBUI_TRUSTED_PROXY_CIDRS: '::1/128' }, explicit)).toBe(true)
-    for (const cidrs of ['', ' , ;', 'not-a-cidr', '127.0.0.1/33', '127.0.0.1/x']) expect(rawPeerIsTrustedProxy('127.0.0.1', { HERMES_WEBUI_TRUSTED_PROXY_CIDRS: cidrs }, explicit), cidrs).toBe(false)
+    expect(rawPeerIsTrustedProxy('127.0.0.1', { TALARIA_WEB_TRUSTED_PROXY_CIDRS: '127.0.0.1/32' }, explicit)).toBe(true)
+    expect(rawPeerIsTrustedProxy('::ffff:127.0.0.1', { TALARIA_WEB_TRUSTED_PROXY_CIDRS: '127.0.0.1' }, explicit)).toBe(true)
+    expect(rawPeerIsTrustedProxy('::1', { TALARIA_WEB_TRUSTED_PROXY_CIDRS: '127.0.0.1/32' }, explicit)).toBe(false)
+    expect(rawPeerIsTrustedProxy('::1', { TALARIA_WEB_TRUSTED_PROXY_CIDRS: '::1/128' }, explicit)).toBe(true)
+    for (const cidrs of ['', ' , ;', 'not-a-cidr', '127.0.0.1/33', '127.0.0.1/x']) expect(rawPeerIsTrustedProxy('127.0.0.1', { TALARIA_WEB_TRUSTED_PROXY_CIDRS: cidrs }, explicit), cidrs).toBe(false)
   })
 
   it('spells each address one way', () => {
@@ -93,14 +93,14 @@ describe('trusted proxies and client IPs', () => {
   })
 
   it('keys throttles on a forwarded client only behind an explicitly listed proxy with consistent evidence', () => {
-    const listed = { HERMES_WEBUI_TRUST_FORWARDED_FOR: '1', HERMES_WEBUI_TRUSTED_PROXY_CIDRS: '10.0.0.0/8, 127.0.0.1/32' }
+    const listed = { TALARIA_WEB_TRUST_FORWARDED_FOR: '1', TALARIA_WEB_TRUSTED_PROXY_CIDRS: '10.0.0.0/8, 127.0.0.1/32' }
     const key = (xff: string[], realIp: string[] = [], peer = '10.0.0.1', env: Record<string, string> = listed): string => throttleClientIp(xff, realIp, peer, env)
     // Opt-in off, implicit loopback, unlisted and direct public peers, and empty or invalid CIDRs key on the peer.
-    expect(key(['203.0.113.9'], [], '10.0.0.1', { HERMES_WEBUI_TRUSTED_PROXY_CIDRS: '10.0.0.0/8' })).toBe('10.0.0.1')
-    expect(key(['203.0.113.9'], [], '127.0.0.1', { HERMES_WEBUI_TRUST_FORWARDED_FOR: '1' })).toBe('127.0.0.1')
+    expect(key(['203.0.113.9'], [], '10.0.0.1', { TALARIA_WEB_TRUSTED_PROXY_CIDRS: '10.0.0.0/8' })).toBe('10.0.0.1')
+    expect(key(['203.0.113.9'], [], '127.0.0.1', { TALARIA_WEB_TRUST_FORWARDED_FOR: '1' })).toBe('127.0.0.1')
     expect(key(['203.0.113.9'], [], '::1', listed)).toBe('::1')
     expect(key(['203.0.113.9'], [], '198.51.100.4')).toBe('198.51.100.4')
-    for (const cidrs of ['', 'bogus', '10.0.0.0/99']) expect(key(['203.0.113.9'], [], '10.0.0.1', { HERMES_WEBUI_TRUST_FORWARDED_FOR: '1', HERMES_WEBUI_TRUSTED_PROXY_CIDRS: cidrs }), cidrs).toBe('10.0.0.1')
+    for (const cidrs of ['', 'bogus', '10.0.0.0/99']) expect(key(['203.0.113.9'], [], '10.0.0.1', { TALARIA_WEB_TRUST_FORWARDED_FOR: '1', TALARIA_WEB_TRUSTED_PROXY_CIDRS: cidrs }), cidrs).toBe('10.0.0.1')
     // A listed peer, IPv4-mapped included, resolves the right-most untrusted hop.
     expect(key(['203.0.113.9'])).toBe('203.0.113.9')
     expect(key(['203.0.113.9'], [], '::ffff:10.0.0.1')).toBe('203.0.113.9')
@@ -110,7 +110,7 @@ describe('trusted proxies and client IPs', () => {
     expect(key(['198.51.100.7', '203.0.113.9'])).toBe('203.0.113.9')
     expect(key(['10.0.0.3, 10.0.0.2'])).toBe('10.0.0.1')
     // Only listed hops are skipped: an unlisted loopback hop is the client, not a proxy.
-    const lanOnly = { HERMES_WEBUI_TRUST_FORWARDED_FOR: '1', HERMES_WEBUI_TRUSTED_PROXY_CIDRS: '10.0.0.0/8' }
+    const lanOnly = { TALARIA_WEB_TRUST_FORWARDED_FOR: '1', TALARIA_WEB_TRUSTED_PROXY_CIDRS: '10.0.0.0/8' }
     expect(key(['198.51.100.7, 127.0.0.1'], [], '10.0.0.1', lanOnly)).toBe('127.0.0.1')
     expect(key(['198.51.100.7, ::1'], [], '10.0.0.1', lanOnly)).toBe('::1')
     expect(key(['198.51.100.7, 127.0.0.1'])).toBe('198.51.100.7')
@@ -143,10 +143,10 @@ describe('trusted proxies and client IPs', () => {
 
   it('tells loopback-only proxy lists from ones that trust another host', () => {
     for (const cidrs of [undefined, '', '127.0.0.1/32', '127.0.0.0/8; ::1', '::ffff:127.0.0.1', 'bogus/99']) {
-      expect(trustsProxyBeyondLoopback({ HERMES_WEBUI_TRUSTED_PROXY_CIDRS: cidrs }), String(cidrs)).toBe(false)
+      expect(trustsProxyBeyondLoopback({ TALARIA_WEB_TRUSTED_PROXY_CIDRS: cidrs }), String(cidrs)).toBe(false)
     }
     for (const cidrs of ['172.17.0.1', '127.0.0.1, 10.0.0.0/8', '0.0.0.0/0', '::/0', '2001:db8::/32', '127.0.0.0/7']) {
-      expect(trustsProxyBeyondLoopback({ HERMES_WEBUI_TRUSTED_PROXY_CIDRS: cidrs }), cidrs).toBe(true)
+      expect(trustsProxyBeyondLoopback({ TALARIA_WEB_TRUSTED_PROXY_CIDRS: cidrs }), cidrs).toBe(true)
     }
   })
 })
@@ -166,12 +166,12 @@ describe('CSP', () => {
   it('accepts valid extra connect and frame sources and rejects injection, paths, ws frames, and bad ports', () => {
     const warnings: string[] = []
     const warn = (l: string) => warnings.push(l)
-    expect(cspExtras({ HERMES_WEBUI_CSP_CONNECT_EXTRA: 'https://api.example:8443 wss://*.relay.example' }, warn).connect).toBe(' https://api.example:8443 wss://*.relay.example')
-    expect(cspExtras({ HERMES_WEBUI_CSP_FRAME_EXTRA: 'https://dash.example' }, warn).frame).toBe(' https://dash.example')
-    expect(cspExtras({ HERMES_WEBUI_CSP_CONNECT_EXTRA: "https://x.example; script-src 'unsafe-inline'" }, warn).connect).toBe('')
-    expect(cspExtras({ HERMES_WEBUI_CSP_CONNECT_EXTRA: 'https://x.example/path' }, warn).connect).toBe('')
-    expect(cspExtras({ HERMES_WEBUI_CSP_CONNECT_EXTRA: 'https://x.example:70000' }, warn).connect).toBe('')
-    expect(cspExtras({ HERMES_WEBUI_CSP_FRAME_EXTRA: 'wss://x.example' }, warn).frame).toBe('')
+    expect(cspExtras({ TALARIA_WEB_CSP_CONNECT_EXTRA: 'https://api.example:8443 wss://*.relay.example' }, warn).connect).toBe(' https://api.example:8443 wss://*.relay.example')
+    expect(cspExtras({ TALARIA_WEB_CSP_FRAME_EXTRA: 'https://dash.example' }, warn).frame).toBe(' https://dash.example')
+    expect(cspExtras({ TALARIA_WEB_CSP_CONNECT_EXTRA: "https://x.example; script-src 'unsafe-inline'" }, warn).connect).toBe('')
+    expect(cspExtras({ TALARIA_WEB_CSP_CONNECT_EXTRA: 'https://x.example/path' }, warn).connect).toBe('')
+    expect(cspExtras({ TALARIA_WEB_CSP_CONNECT_EXTRA: 'https://x.example:70000' }, warn).connect).toBe('')
+    expect(cspExtras({ TALARIA_WEB_CSP_FRAME_EXTRA: 'wss://x.example' }, warn).frame).toBe('')
     expect(warnings).toHaveLength(4)
   })
 })

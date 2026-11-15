@@ -145,7 +145,7 @@ export class JsonJournal implements JournalBackend {
   async recoveryEvents(): Promise<Map<string, Record<string, unknown>[]>> { return readTurnJournalEvents(this.sessionDir) }
 
   private fsyncMode(): 'eager' | 'terminal-only' {
-    const mode = (this.env.HERMES_WEBUI_RUN_JOURNAL_FSYNC ?? 'terminal-only').trim().toLowerCase()
+    const mode = (this.env.TALARIA_WEB_RUN_JOURNAL_FSYNC ?? 'terminal-only').trim().toLowerCase()
     return mode === 'eager' ? 'eager' : 'terminal-only'
   }
 
@@ -395,9 +395,9 @@ export class JsonJournal implements JournalBackend {
 
   /**
    * Python `prune_settled_run_journals`: archive settled journals as verified gzip under `<session>/_archive/` and remove
-   * their live bytes. A run is due when it is older than `HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS` (14), or while its
+   * their live bytes. A run is due when it is older than `TALARIA_WEB_RUN_JOURNAL_RETENTION_DAYS` (14), or while its
    * session holds more live journals or bytes than the soft `..._MAX_RUNS_PER_SESSION` (40) and
-   * `..._MAX_BYTES_PER_SESSION` (256 MiB) budgets, oldest first. The `HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT` (3) newest
+   * `..._MAX_BYTES_PER_SESSION` (256 MiB) budgets, oldest first. The `TALARIA_WEB_RUN_JOURNAL_KEEP_RECENT` (3) newest
    * terminal journals, nonterminal journals, live writers and runs the session still names stay live even past a budget.
    * Each archived run also leaves the `.summary.json` the previous Stable reads once the live journal is gone.
    *

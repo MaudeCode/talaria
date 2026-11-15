@@ -295,7 +295,7 @@ export class ExtensionService {
   private readonly revisions = new Map<string, string | null>()
 
   root(): string | null {
-    const raw = (this.deps.env.HERMES_WEBUI_EXTENSION_DIR ?? '').trim()
+    const raw = (this.deps.env.TALARIA_WEB_EXTENSION_DIR ?? '').trim()
     if (raw) {
       const r = resolve(raw.replace(/^~(?=$|\/)/, this.deps.env.HOME ?? ''))
       return existsSync(r) && statSync(r).isDirectory() ? r : null
@@ -304,7 +304,7 @@ export class ExtensionService {
   }
 
   private writableRoot(): string | null {
-    if ((this.deps.env.HERMES_WEBUI_EXTENSION_DIR ?? '').trim()) return this.root()
+    if ((this.deps.env.TALARIA_WEB_EXTENSION_DIR ?? '').trim()) return this.root()
     try { mkdirSync(this.defaultRoot, { recursive: true }); return lstatSync(this.defaultRoot).isSymbolicLink() ? null : resolve(this.defaultRoot) } catch { return null }
   }
 
@@ -381,7 +381,7 @@ export class ExtensionService {
   }
 
   private manifestPath(root: string): [string | null, string] {
-    const raw = (this.deps.env.HERMES_WEBUI_EXTENSION_MANIFEST ?? '').trim()
+    const raw = (this.deps.env.TALARIA_WEB_EXTENSION_MANIFEST ?? '').trim()
     if (!raw) return [null, 'not_configured']
     if (raw.startsWith('/') || raw.startsWith('~')) return [null, 'invalid_path']
     const rel = fullyUnquote(raw)
@@ -589,11 +589,11 @@ export class ExtensionService {
   /** The status payload plus the manifest and sidecar records it was built from, so `manifests()` reads the same load. */
   private async snapshot(): Promise<{ status: Dict; manifest: unknown; assetBase: string; sidecarsById: Map<string, Dict> }> {
     const d: Diagnostics = { warnings: [] }
-    const envDir = (this.deps.env.HERMES_WEBUI_EXTENSION_DIR ?? '').trim()
+    const envDir = (this.deps.env.TALARIA_WEB_EXTENSION_DIR ?? '').trim()
     const root = this.root()
     const state = (await this.loadState(d))
     const disabled = new Set(state.disabled_extensions)
-    const manifestConfigured = Boolean((this.deps.env.HERMES_WEBUI_EXTENSION_MANIFEST ?? '').trim())
+    const manifestConfigured = Boolean((this.deps.env.TALARIA_WEB_EXTENSION_MANIFEST ?? '').trim())
     if (envDir && !root) warn(d, 'extension_dir_unavailable', 'extension_dir')
     if (!root) {
       return { manifest: null, assetBase: '', sidecarsById: new Map(), status: { enabled: false, extension_dir_configured: true, extension_dir_valid: false, script_urls: [], stylesheet_urls: [], sidecars: [], counts: { script_urls: 0, stylesheet_urls: 0, sidecars: 0, manifest_extensions: 0, user_disabled: 0 }, manifest: { configured: manifestConfigured, loaded: false, status: manifestConfigured ? 'extension_disabled' : 'not_configured', entry_count: 0, script_count: 0, stylesheet_count: 0, sidecar_count: 0 }, extensions: [], warnings: d.warnings } }
@@ -602,8 +602,8 @@ export class ExtensionService {
     const consentIds = new Set(Object.keys(state.sidecar_proxy_consents))
     const ext = manifest !== null ? this.extensionState(manifest, disabled, d, consentIds) : { extensions: [], knownIds: new Set<string>(), manifestDisabled: new Set<string>() }
     const urls = manifest !== null ? await this.manifestUrls(manifest, status, disabled, state, d) : { scripts: [], stylesheets: [], sidecars: [], sidecarsById: new Map<string, Dict>() }
-    const scriptUrls = this.envUrls('HERMES_WEBUI_EXTENSION_SCRIPT_URLS', urls.scripts.length ? urls.scripts : null, d)
-    const stylesheetUrls = this.envUrls('HERMES_WEBUI_EXTENSION_STYLESHEET_URLS', urls.stylesheets.length ? urls.stylesheets : null, d)
+    const scriptUrls = this.envUrls('TALARIA_WEB_EXTENSION_SCRIPT_URLS', urls.scripts.length ? urls.scripts : null, d)
+    const stylesheetUrls = this.envUrls('TALARIA_WEB_EXTENSION_STYLESHEET_URLS', urls.stylesheets.length ? urls.stylesheets : null, d)
     const publicStatus = Object.fromEntries(Object.entries(status).filter(([k]) => !k.startsWith('_')))
     return { manifest, assetBase: str(status._asset_base), sidecarsById: urls.sidecarsById, status: {
       enabled: true, extension_dir_configured: true, extension_dir_valid: true, script_urls: scriptUrls, stylesheet_urls: stylesheetUrls, sidecars: urls.sidecars,
