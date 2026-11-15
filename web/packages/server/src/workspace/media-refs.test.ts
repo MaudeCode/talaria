@@ -78,7 +78,9 @@ describe('projectMediaRefs (TAL-186)', () => {
   it('leaves code, HTML comments and escaped syntax literal, and asks for no media', () => {
     const r = resolver()
     const literal = [
-      'Use `![x](/tmp/inline.png)` and `MEDIA:/tmp/inline.png` and `open file:///tmp/inline.csv`',
+      'Use `![x](/tmp/inline.png)` and `see MEDIA:/tmp/inline.png` and `open file:///tmp/inline.csv`',
+      // TAL-2029: only a whole single-backtick tag is a directive.
+      'Use `MEDIA:` or `MEDIA:<path>` or ``MEDIA:/tmp/double.png``',
       '```swift\nlet path = "MEDIA:/tmp/inside.png"\n![z](/tmp/fenced.png)\n```',
       '~~~\nfile:///tmp/fenced.png\n~~~',
       // TAL-186 review: an indented code block, and a code span across lines.
@@ -112,6 +114,13 @@ describe('projectMediaRefs (TAL-186)', () => {
     }
     // A bare reference ends at `]`, so the bracketed IPv6 loopback resolves only as an image destination.
     expect(display('![i](file://[::1]/tmp/a.png)')).toBe(`![i](${A})`)
+  })
+
+  it('delivers a whole MEDIA: tag the agent wrapped in backticks (TAL-2029)', () => {
+    const projected = projectMediaRefs('Here: `MEDIA:/srv/file.pdf` and ` MEDIA:/tmp/a.png `.', resolver())
+    expect(projected?.text).toBe(`Here: [file.pdf](${url('/srv/file.pdf')}) and ![a.png](${A}).`)
+    expect(projected?.media.map((m) => m.kind)).toEqual(['pdf', 'image'])
+    expect(display('`MEDIA:/etc/x.pdf`')).toBeNull()
   })
 
   it('leaves a reference the allow-list refuses as written, with no media item', () => {

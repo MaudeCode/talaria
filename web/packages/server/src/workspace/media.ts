@@ -266,8 +266,9 @@ function scanMediaRefs(rows: Session['messages']): Set<string> {
     const text = messageContentText((message as { content?: unknown }).content)
     if (!text.includes('MEDIA:')) continue
     for (const m of text.matchAll(MEDIA_TOKEN_RE)) {
-      const ref = m[1] ?? ''
-      if (!ref.includes('://')) refs.add(ref)
+      // TAL-2029: `` `MEDIA:/path` `` grants the path inside the backticks.
+      const ref = (m[1] ?? '').replace(/`+$/, '')
+      if (ref && !ref.includes('://')) refs.add(ref)
     }
   }
   return refs
