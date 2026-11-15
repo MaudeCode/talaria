@@ -1128,7 +1128,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
                             "pace_critical_burn_rate_percent": .number(150), "pace_minimum_elapsed_hours": .number(4)
                         ]),
                         "agent_approvals": .bool(true), "max_tokens": .number(8192), "compression_prepare_ahead": .bool(true),
-                        "auto_title_refresh_every": .string("10"), "check_for_updates": .bool(true), "auto_apply_updates": .bool(false),
+                        "auto_title_refresh_every": .string("10"), "check_for_updates": .bool(true), "auto_apply_updates": .bool(false), "continue_interrupted_chats": .bool(false),
                         "summarize_updates_automatically": .bool(true), "update_channel": .string("stable"),
                         "update_channels": .array([.string("stable"), .string("nightly"), .string("experimental")]),
                         "agent_update_channel": .string("stable"), "ignore_agent_updates": .bool(false)

@@ -64,6 +64,7 @@ public enum SettingsIndex: String, CaseIterable, Identifiable, Sendable {
     case workspacesAddWorkspace = "settings-workspaces-add-workspace"
     case systemCheckForUpdates = "settings-system-check-updates"
     case systemApplyWebUpdatesAutomatically = "settings-system-auto-apply"
+    case systemContinueInterruptedChats = "settings-system-continue-interrupted"
     case systemSummarizeUpdates = "settings-system-summarize"
     case systemWebChannel = "settings-system-web-channel"
     case systemAgentChannel = "settings-system-agent-channel"
@@ -275,6 +276,7 @@ public enum SettingsIndex: String, CaseIterable, Identifiable, Sendable {
         case .workspacesAddWorkspace: .init(category: .workspaces, section: "Workspaces", title: "Add Workspace", scope: .server)
         case .systemCheckForUpdates: .init(category: .system, section: "Updates", title: "Check for Updates", scope: .server)
         case .systemApplyWebUpdatesAutomatically: .init(category: .system, section: "Updates", title: "Apply Web Updates Automatically", scope: .server)
+        case .systemContinueInterruptedChats: .init(category: .system, section: "Updates", title: "Continue Interrupted Chats", scope: .server)
         case .systemSummarizeUpdates: .init(category: .system, section: "Updates", title: "Summarize Updates", scope: .server)
         case .systemWebChannel: .init(category: .system, section: "Updates", title: "Web Channel", scope: .server)
         case .systemAgentChannel: .init(category: .system, section: "Updates", title: "Agent Channel", scope: .server)

@@ -2,8 +2,10 @@
  * TAL-1990: the local chats an Update anyway interrupted continue once Talaria Web is back. Before anything is replaced,
  * the update records each saved chat under the state dir; the server that next owns them (the restarted one on the
  * target revision, or the same one when the install failed) starts one `update_continuation` turn per entry. Each entry
- * is removed before its turn starts, so a crash mid-resume never replays a turn blind.
+ * is removed before its turn starts, so a crash mid-resume never replays a turn blind. TAL-2270: with
+ * `continue_interrupted_chats` on, a Web shutdown's drain appends the chats it interrupted to the same record.
  */
+import { randomUUID } from 'node:crypto'
 import { readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { atomicWriteText } from '../fs/atomic.js'
@@ -16,8 +18,11 @@ export const UPDATE_CONTINUATION_PROMPT = 'Continue where you left off.'
 export const UPDATE_CONTINUATION_SOURCE = 'update_continuation'
 const RECORD_FILE = 'update-continuation.json'
 
-/** One interrupted chat: its session, profile and the interrupted turn (its stream id). */
-export interface ContinuationRun { session_id: string; profile: string | null; stream_id: string }
+/**
+ * One interrupted chat: its session, profile and the interrupted turn (its stream id). TAL-2270: `restart` marks a chat a
+ * Web shutdown or restart interrupted; it continues on whatever revision starts next, unlike an update's entries.
+ */
+export interface ContinuationRun { session_id: string; profile: string | null; stream_id: string; restart?: true }
 export interface ContinuationRecord { update_id: string; target_revision: string; target_version: string; runs: ContinuationRun[] }
 
 const recordPath = (stateDir: string): string => join(stateDir, RECORD_FILE)
@@ -36,7 +41,15 @@ export function readContinuation(stateDir: string): ContinuationRecord | null {
   const r = raw as Partial<ContinuationRecord> | null
   if (!r || !Array.isArray(r.runs)) { clearContinuation(stateDir); return null }
   const runs = r.runs.filter((run): run is ContinuationRun => Boolean(run) && typeof run.session_id === 'string' && typeof run.stream_id === 'string')
-  return { update_id: str(r.update_id), target_revision: str(r.target_revision), target_version: str(r.target_version), runs: runs.map((run) => ({ ...run, profile: typeof run.profile === 'string' ? run.profile : null })) }
+  return { update_id: str(r.update_id), target_revision: str(r.target_revision), target_version: str(r.target_version), runs: runs.map(({ restart, ...run }) => ({ ...run, profile: typeof run.profile === 'string' ? run.profile : null, ...(restart === true ? { restart } : {}) })) }
+}
+
+/** TAL-2270: adds a shutdown's interrupted chats to the pending record, keeping the entries (and update binding) it holds. */
+export function appendContinuation(stateDir: string, runs: readonly ContinuationRun[]): void {
+  if (!runs.length) return
+  const record = readContinuation(stateDir) ?? { update_id: randomUUID(), target_revision: '', target_version: '', runs: [] }
+  const known = new Set(record.runs.map((run) => run.stream_id))
+  writeContinuation(stateDir, { ...record, runs: [...record.runs, ...runs.filter((run) => !known.has(run.stream_id))] })
 }
 
 export function clearContinuation(stateDir: string): void {
@@ -71,7 +84,7 @@ export interface ContinueChatDeps {
   /** The session, or null when it no longer exists. */
   session: (sessionId: string) => Promise<Session | null>
   readOnlyReason: (session: Session) => Promise<string | null>
-  startTurn: (session: Session) => Promise<Pick<AdmissionResult, '_status' | 'error' | 'held' | 'active_stream_id'>>
+  startTurn: (session: Session, run: ContinuationRun) => Promise<Pick<AdmissionResult, '_status' | 'error' | 'held' | 'active_stream_id'>>
   log: (line: string) => void
 }
 
@@ -83,21 +96,22 @@ export interface ContinueChatDeps {
  */
 export async function continueChat(run: ContinuationRun, entry: ContinuationEntry, deps: ContinueChatDeps): Promise<ContinueOutcome> {
   try { await deps.ensureRuntime() } catch { return 'not_ready' }
+  const cause = run.restart ? 'restart' : 'update'
   const skip = (reason: string): 'done' => {
     entry.claim()
-    deps.log(`[updates] not continuing chat ${run.session_id} after the update: ${reason}`)
+    deps.log(`[updates] not continuing chat ${run.session_id} after the ${cause}: ${reason}`)
     return 'done'
   }
   const session = await deps.session(run.session_id)
   if (!session) return skip('it was deleted')
   if (await deps.readOnlyReason(session)) return skip('it is read-only')
   if (session.active_stream_id || str(withTurnIds(session.messages).at(-1)?._turn_id) !== run.stream_id) return skip('it has a newer turn')
-  if (turnTerminalState(session.messages, run.stream_id) !== 'interrupted') return skip('its turn finished before the update stopped it')
+  if (turnTerminalState(session.messages, run.stream_id) !== 'interrupted') return skip(`its turn finished before the ${cause} stopped it`)
   entry.claim()
-  const started = await deps.startTurn(session)
-  if (started._status === undefined) { deps.log(`[updates] continuing chat ${run.session_id} after the update`); return 'done' }
+  const started = await deps.startTurn(session, run)
+  if (started._status === undefined) { deps.log(`[updates] continuing chat ${run.session_id} after the ${cause}`); return 'done' }
   const lasting = started.held === true || started._status === 403 || Boolean(started.active_stream_id)
-  deps.log(`[updates] could not continue chat ${run.session_id} after the update${lasting ? '' : ' yet'}: ${str(started.error)}`)
+  deps.log(`[updates] could not continue chat ${run.session_id} after the ${cause}${lasting ? '' : ' yet'}: ${str(started.error)}`)
   if (lasting) return 'done'
   entry.restore()
   return 'retry'

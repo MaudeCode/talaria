@@ -2712,6 +2712,7 @@
 	"settings_label_composer_yolo": "YOLO mode notice",
 	"settings_label_compression_prepare_ahead": "Prepare compaction in the background",
 	"settings_label_confirm_external_links": "Confirm before opening external links",
+	"settings_label_continue_interrupted_chats": "Continue interrupted chats after a restart",
 	"settings_label_conversation_outline": "Conversation outline",
 	"settings_label_cron_sessions": "Scheduled tasks",
 	"settings_label_dashboard_mode": "Official Hermes Dashboard",
@@ -3135,6 +3136,7 @@
 			}
 		}
 	],
+	"system_continue_interrupted_hint": "When Talaria Web stops or restarts during a reply, that chat picks up where it left off once Web is back.",
 	"system_finish_named": "Finish applying this {name} release",
 	"system_finish_update": "Finish update",
 	"system_gateway_external": "This gateway runs outside Talaria. Start, stop, or restart it where it runs.",

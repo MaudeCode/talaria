@@ -84,6 +84,7 @@ export function settingsDefaults(opts: { defaultWorkspace: string; botName: stri
     update_channel: 'stable',
     agent_update_channel: 'stable',
     ignore_agent_updates: false,
+    continue_interrupted_chats: false,
     tts_enabled: false,
     tts_auto_read: false,
     tts_engine: 'browser',
@@ -599,7 +600,7 @@ export class SettingsStore {
       }
       for (const [k, rawValue] of Object.entries(settings)) {
         let v: unknown = rawValue
-        if (['auto_apply_updates', 'summarize_updates_automatically'].includes(k) && typeof v !== 'boolean') continue
+        if (['auto_apply_updates', 'summarize_updates_automatically', 'continue_interrupted_chats'].includes(k) && typeof v !== 'boolean') continue
         if (k === 'kanban_pinned_boards' && opts.profile !== undefined) {
           const parsed = KanbanPinnedBoardsSchema.safeParse(v)
           if (parsed.success) current[KANBAN_PINS_BY_PROFILE_KEY] = { ...settingsByProfile(current, KANBAN_PINS_BY_PROFILE_KEY), [opts.profile]: [...new Set(parsed.data)] }

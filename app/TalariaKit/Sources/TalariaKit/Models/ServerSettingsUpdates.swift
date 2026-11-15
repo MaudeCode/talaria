@@ -23,12 +23,14 @@ public struct SettingsResponse: Decodable, Equatable, Sendable {
     public internal(set) var updateChannel: String?
     public internal(set) var agentUpdateChannel: String?
     public internal(set) var ignoreAgentUpdates: Bool?
+    /// TAL-2270: continue chats a Web shutdown interrupted on the next start; nil from an older server.
+    public internal(set) var continueInterruptedChats: Bool?
     public let updateChannels: [String]?
     public let hasMaxTokens: Bool
 
     private enum CodingKeys: String, CodingKey {
         case agentApprovals, compressionPrepareAhead, autoTitleRefreshEvery, autoApplyUpdates
-        case summarizeUpdatesAutomatically, updateChannel, agentUpdateChannel, ignoreAgentUpdates, updateChannels
+        case summarizeUpdatesAutomatically, updateChannel, agentUpdateChannel, ignoreAgentUpdates, updateChannels, continueInterruptedChats
         case botName
         case webuiVersion
         case agentVersion
@@ -53,6 +55,7 @@ public struct SettingsResponse: Decodable, Equatable, Sendable {
         updateChannel = container.decodeLossyStringIfPresent(forKey: .updateChannel)
         agentUpdateChannel = container.decodeLossyStringIfPresent(forKey: .agentUpdateChannel)
         ignoreAgentUpdates = container.decodeLossyBoolIfPresent(forKey: .ignoreAgentUpdates)
+        continueInterruptedChats = container.decodeLossyBoolIfPresent(forKey: .continueInterruptedChats)
         updateChannels = try? container.decodeIfPresent([String].self, forKey: .updateChannels)
         hasMaxTokens = container.contains(.maxTokens)
         botName = container.decodeLossyStringIfPresent(forKey: .botName)

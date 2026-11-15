@@ -159,7 +159,7 @@ final class ServerSettingsStoreTests: XCTestCase {
     }
 
     func testSettingsDecodeAllMissingNullAndFutureFieldsTolerantly() throws {
-        let full = #"{"agent_approvals":false,"compression_prepare_ahead":true,"max_tokens":null,"auto_title_refresh_every":"20","check_for_updates":true,"auto_apply_updates":false,"summarize_updates_automatically":true,"update_channel":"nightly","update_channels":["experimental","stable","nightly"],"agent_update_channel":"experimental","ignore_agent_updates":false,"future":{}}"#
+        let full = #"{"agent_approvals":false,"compression_prepare_ahead":true,"max_tokens":null,"auto_title_refresh_every":"20","check_for_updates":true,"auto_apply_updates":false,"summarize_updates_automatically":true,"update_channel":"nightly","update_channels":["experimental","stable","nightly"],"agent_update_channel":"experimental","ignore_agent_updates":false,"continue_interrupted_chats":true,"future":{}}"#
         let settings = try APIClient.responseDecoder().decode(SettingsResponse.self, from: Data(full.utf8))
         XCTAssertEqual(settings.agentApprovals, false)
         XCTAssertEqual(settings.compressionPrepareAhead, true)
@@ -171,6 +171,7 @@ final class ServerSettingsStoreTests: XCTestCase {
         XCTAssertEqual(settings.updateChannels, ["experimental", "stable", "nightly"])
         XCTAssertEqual(settings.agentUpdateChannel, "experimental")
         XCTAssertEqual(settings.ignoreAgentUpdates, false)
+        XCTAssertEqual(settings.continueInterruptedChats, true)
         XCTAssertNil(settings.maxTokens)
         XCTAssertTrue(settings.hasMaxTokens)
         let allFields = try JSONDecoder().decode([String: JSONValue].self, from: Data(full.utf8))

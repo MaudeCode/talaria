@@ -279,11 +279,12 @@ describe('save', () => {
     expect((await s.save({ summarize_updates_automatically: false })).summarize_updates_automatically).toBe(false)
     expect((await store().load()).summarize_updates_automatically).toBe(false)
   })
-  it('requires an explicit boolean opt-in for automatic application', async () => {
+  // TAL-2270: continuing interrupted chats starts turns on its own, so it is an explicit opt-in too.
+  it.each(['auto_apply_updates', 'continue_interrupted_chats'])('requires an explicit boolean opt-in for %s', async (key) => {
     const s = store()
-    for (const value of ['false', 'true', 1, {}, []]) expect((await s.save({ auto_apply_updates: value })).auto_apply_updates).toBe(false)
-    expect((await s.save({ auto_apply_updates: true })).auto_apply_updates).toBe(true)
-    expect((await store().load()).auto_apply_updates).toBe(true)
+    for (const value of ['false', 'true', 1, {}, []]) expect((await s.save({ [key]: value }))[key]).toBe(false)
+    expect((await s.save({ [key]: true }))[key]).toBe(true)
+    expect((await store().load())[key]).toBe(true)
   })
   it('keeps virtualize_transcript on after a reload by writing its opt-in marker (TAL-1178)', async () => {
     const s = store()

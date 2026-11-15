@@ -1,0 +1,5 @@
+{
+  "entries": [
+    {"category":"Added","summary":"An optional setting continues chats that a Talaria Web restart interrupted once Web is back, and the interrupted reply now shows as a Talaria activity that says whether the chat will continue.","highlight":false,"components":["app","web"],"announcement":{"title":"Chats survive Web restarts","description":"Turn on Continue interrupted chats to pick up replies a Talaria Web restart cut off.","icon":"reliability"}}
+  ]
+}

@@ -88,7 +88,7 @@ const PLACEMENT: Record<string, string> = {
   notifications_enabled: 'notifications', sound_enabled: 'notifications', '#completionSound': 'notifications',
   agent_approvals: 'tools',
   sync_to_insights: 'access', api_redact_enabled: 'access', confirm_external_links: 'access', trusted_link_hosts: 'access', auth_disabled_acknowledged: 'access',
-  update_channel: 'system', agent_update_channel: 'system', ignore_agent_updates: 'system', check_for_updates: 'system', auto_apply_updates: 'system',
+  update_channel: 'system', agent_update_channel: 'system', ignore_agent_updates: 'system', check_for_updates: 'system', auto_apply_updates: 'system', continue_interrupted_chats: 'system',
   summarize_updates_automatically: 'system', '[data-group="health"]': 'system', '[data-group="server"]': 'system',
 }
 const isControl = (key: string) => key.startsWith('#') || key.startsWith('[')

@@ -28,7 +28,7 @@ import { supportedAgents, validateReleaseInfo } from '../release.js'
 import { str } from '../util.js'
 import { atomicWriteText } from '../fs/atomic.js'
 import { readUpdateRollback, rollbackPaths } from './update-rollback.js'
-import { claimContinuation, clearContinuation, readContinuation, restoreContinuation, writeContinuation, type ContinuationEntry, type ContinuationRun, type ContinueOutcome } from './update-continuation.js'
+import { claimContinuation, readContinuation, restoreContinuation, writeContinuation, type ContinuationEntry, type ContinuationRun, type ContinueOutcome } from './update-continuation.js'
 import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
 
 export const REPOSITORY = 'MaudeCode/talaria'
@@ -2117,10 +2117,13 @@ export class UpdateService {
     const record = readContinuation(stateDir)
     if (!record) return
     const running = str(this.deps.identity.release().sourceRevision)
-    if (record.update_id !== this.recordedUpdate && running !== record.target_revision) {
-      for (const run of record.runs) this.deps.log(`[updates] not continuing chat ${run.session_id} after the update: Talaria Web is not running the updated release`)
-      clearContinuation(stateDir)
-      return
+    // TAL-2270: a shutdown's entries (`restart`) continue on any revision; an update's only on its target.
+    if (record.update_id !== this.recordedUpdate && running !== record.target_revision && record.runs.some((run) => !run.restart)) {
+      for (const run of record.runs) if (!run.restart) {
+        this.deps.log(`[updates] not continuing chat ${run.session_id} after the update: Talaria Web is not running the updated release`)
+        claimContinuation(stateDir, run.stream_id)
+      }
+      return this.continueRecorded(stateDir, continueChat)
     }
     let refused = false
     for (const run of record.runs) {
