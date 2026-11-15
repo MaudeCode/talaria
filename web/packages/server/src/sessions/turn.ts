@@ -34,6 +34,7 @@ import { dict, findPersonality, type Config, type PersonalityRow } from '../conf
 import { ReasoningTitleTracker, reasoningDisclosureKey, reasoningEventPayload } from './reasoning-titles.js'
 import { UNSETTLED_TODO_KEY, parseTodoToolResult, type PlanProgress } from './todo.js'
 import type { UpdateNotificationStore } from '../tools/update-notifications.js'
+import type { ContinuationRun } from '../tools/update-continuation.js'
 import { SessionNotices } from './notices.js'
 import { SessionGoals } from './goals.js'
 import { turnTerminalState } from './anchor.js'
@@ -83,13 +84,13 @@ export interface DrainOptions { waitMs: number; settleMs: number }
 export interface DrainResult { completed: number; interrupted: number; unresolved: string[] }
 
 /** TAL-2270: one chat a shutdown saved as interrupted, for continuation on the next start. */
-export interface InterruptedChat { session_id: string; stream_id: string }
+export type InterruptedChat = Pick<ContinuationRun, 'session_id' | 'stream_id'>
 
 export interface TurnRunnerDeps {
   /** TAL-2270: whether a shutdown's drain records the chats it interrupts so they continue on the next start. */
   continueInterruptedChats?: () => boolean
   /** TAL-2270: records them; called once per drain, before storage closes. */
-  recordInterruptedChats?: (chats: InterruptedChat[]) => void
+  recordInterruptedChats?: (chats: InterruptedChat[]) => Promise<void>
   notifications: UpdateNotificationStore
   /** Authenticated request owner; null for automatic turns, which retain the session owner. */
   notificationOwner: () => string | null
@@ -464,7 +465,7 @@ export class TurnRunner {
     const continuing = this.deps.continueInterruptedChats?.() === true
     const { stops, interrupted, chats } = await this.stopAsInterrupted(() => [...this.workers.keys(), ...this.admissions.keys()], settleMs, continuing ? SHUTDOWN_CONTINUES_NOTICE : SHUTDOWN_NOTICE)
     if (continuing && chats.length) {
-      try { this.deps.recordInterruptedChats?.(chats) } catch (error) { this.deps.log(`[webui] shutdown: could not record interrupted chats for continuation: ${(error as Error).message}`) }
+      try { await this.deps.recordInterruptedChats?.(chats) } catch (error) { this.deps.log(`[webui] shutdown: could not record interrupted chats for continuation: ${(error as Error).message}`) }
     }
     // An admission still persisting at the deadline never got a worker to stop; it stays unresolved and never launches.
     this.drainFinished = true
@@ -507,7 +508,8 @@ export class TurnRunner {
       for (const streamId of candidates()) {
         if (stops.has(streamId) || !this.workers.has(streamId)) continue
         this.drainOutcomes.set(streamId, 'pending')
-        const sessionId = this.registry.ownerSessionId(streamId) ?? this.registry.activeRuns.get(streamId)?.session_id
+        // A user's Stop already under way keeps its cancelled outcome; only the server's own stops are recorded.
+        const sessionId = this.registry.cancelled.has(streamId) ? null : this.registry.sessionOf(streamId)
         if (sessionId) sessions.set(streamId, sessionId)
         stops.set(streamId, this.stop(streamId, notice).then((r) => r.cancelled, (error: unknown) => {
           this.deps.log(`[webui] shutdown: interrupting ${streamId} failed: ${(error as Error).message}`)
@@ -2162,7 +2164,7 @@ export class TurnRunner {
     if (ownerCancelled !== null && ownerCancelled !== undefined) return { cancelled: ownerCancelled, withdrawn: [] }
     // TAL-899: the user's Stop holds automatic turns, even one that lands after `done`, unless a newer turn already
     // took the session: a late or retried Stop for a turn the user followed holds nothing.
-    const owner = this.registry.ownerSessionId(streamId) ?? this.registry.activeRuns.get(streamId)?.session_id
+    const owner = this.registry.sessionOf(streamId)
     if (owner && this.registry.writebackOwners.get(owner) === streamId) {
       this.stopHeld.add(owner)
       try {
@@ -2185,7 +2187,7 @@ export class TurnRunner {
     // Python popped the run before its title work: a cancel that lands after `done` (while the title prompts still run)
     // is not a cancellation, so it neither journals a `cancel` frame nor marks the completed run interrupted.
     if (!run && this.settledStreams.has(streamId)) { this.noteDrainOutcome(streamId, 'saved', false); return { cancelled: false, withdrawn: [] } }
-    const sessionId = this.registry.ownerSessionId(streamId) ?? run?.session_id ?? null
+    const sessionId = this.registry.sessionOf(streamId)
     if (shutdown && !this.registry.cancelled.has(streamId)) this.shutdownStops.set(streamId, shutdown)
     this.registry.cancelled.add(streamId)
     if (run) { run.phase = 'cancelling'; run.cancelled_at = this.deps.now() }

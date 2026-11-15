@@ -2712,7 +2712,7 @@
 	"settings_label_composer_yolo": "YOLO mode notice",
 	"settings_label_compression_prepare_ahead": "Prepare compaction in the background",
 	"settings_label_confirm_external_links": "Confirm before opening external links",
-	"settings_label_continue_interrupted_chats": "Continue interrupted chats after a restart",
+	"settings_label_continue_interrupted_chats": "Continue interrupted chats",
 	"settings_label_conversation_outline": "Conversation outline",
 	"settings_label_cron_sessions": "Scheduled tasks",
 	"settings_label_dashboard_mode": "Official Hermes Dashboard",

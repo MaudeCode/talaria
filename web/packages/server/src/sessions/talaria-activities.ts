@@ -9,7 +9,8 @@ import { str } from '../util.js'
  * Producer inventory: decisions/proposals use sendTalariaMessage; session tools use peerAgentActivity.
  * Turn admission owns their direct start/steer receipts. GatewaySessions binds native input receipts separately
  * because native chats have no Web Session document. Background completion and Web-update continuations retain
- * their existing source/turn receipts. Groups project their native event identity without sending a model turn.
+ * their existing source/turn receipts; a Web restart's continuation and the interrupted row a shutdown or next-open
+ * recovery saves are activity (TAL-2270). Groups project their native event identity without sending a model turn.
  * Session clear records display-only lifecycle notices. Agent display_kind notices, native deliveries, Agent goal
  * prompts and user-authored approval-denial instructions retain their original provenance. Unmarked historical
  * prose is never upgraded. New producers supply a kind and safe summary here, without a new client branch.

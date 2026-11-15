@@ -190,6 +190,11 @@ export class StreamRegistry {
     return this.owners.get(streamId) ?? null
   }
 
+  /** The session a stream belongs to: its visible owner, else its active run's. */
+  sessionOf(streamId: string): string | null {
+    return this.ownerSessionId(streamId) ?? this.activeRuns.get(streamId)?.session_id ?? null
+  }
+
   registerActiveRun(run: ActiveRun): void {
     this.activeRuns.set(run.stream_id, run)
   }

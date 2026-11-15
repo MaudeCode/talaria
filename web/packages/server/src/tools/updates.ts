@@ -2074,7 +2074,9 @@ export class UpdateService {
         try {
           if (!this.deps.stateDir) throw new Error('the Web state directory is unknown')
           const updateId = randomUUID()
-          writeContinuation(this.deps.stateDir, { update_id: updateId, target_revision: target.sourceRevision, target_version: target.version, runs: continued })
+          // TAL-2270: a restart's entries still waiting keep their place; they continue on any revision.
+          const waiting = readContinuation(this.deps.stateDir)?.runs.filter((run) => run.restart) ?? []
+          writeContinuation(this.deps.stateDir, { update_id: updateId, target_revision: target.sourceRevision, target_version: target.version, runs: [...waiting, ...continued] })
           this.recordedUpdate = updateId
           recorded.continuation = true
         } catch (error) {

@@ -27,6 +27,14 @@ entry is removed before its turn starts, so another restart mid-resume never rep
 was deleted, is read-only or already has a newer turn, and every chat is skipped when the restarted server is not on
 the update's release (a rollback or a failed start). When the install fails and no restart follows, the same server
 continues the chats right away.
+
+Any other stop or restart (`talaria-web ctl restart`, launchd, systemd, Compose, or the Agent restarting Web from a
+tool call) gives running chats the shutdown budget to finish, then saves the rest as interrupted. The saved row is a
+Talaria activity (`web_interrupted`) that says Web stopped, or restarted for an update, and whether the chat continues. With **Continue
+interrupted chats** on (Settings › Updates, owner only, off by default; `continue_interrupted_chats`),
+the shutdown adds each saved chat to the same record, marked `restart`, and the next server continues it on whatever
+release it runs, as a `restart_continuation` activity ("Continued after Web restart") with the same prompt and skip
+rules (TAL-2270).
 Only a direct global npm installation (`npm install -g @maudecode/talaria-web`) updates itself. Stable installs the
 exact package in the newest completed release set; Experimental installs the verified artifact that CI publishes to
 `ghcr.io/maudecode/talaria-web-experimental` for each passing `main` commit that changes Web or shared contracts.

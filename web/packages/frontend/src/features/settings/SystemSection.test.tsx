@@ -370,7 +370,7 @@ describe('SystemSection "Check now"', () => {
   // TAL-2270: continuing interrupted chats is off until the owner turns it on, like automatic updates.
   it.each([
     ['auto_apply_updates', /install web updates automatically/i],
-    ['continue_interrupted_chats', /continue interrupted chats after a restart/i],
+    ['continue_interrupted_chats', /continue interrupted chats/i],
   ] as const)('persists the opt-in %s switch', async (key, name) => {
     settingsState.check_for_updates = true
     vi.mocked(api.saveSettings).mockResolvedValue({ ...settingsState, [key]: true })

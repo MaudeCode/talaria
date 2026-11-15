@@ -1010,6 +1010,19 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
       expect(record(t.stateDir)).toBeNull()
     })
 
+    it('keeps a restart\'s waiting entries when Update anyway records its own, and continues both after it (TAL-2270)', async () => {
+      const t = blockedByChats(['r1'])
+      writeContinuation(t.stateDir, { update_id: 'restart', target_revision: '', target_version: '', runs: [{ session_id: 'chat-waiting', profile: null, stream_id: 'waiting', restart: true }] })
+      await t.svc.check(true, false, 'stable')
+      expect(await t.svc.apply('webui', null, undefined, { operator: 'operator-a', interruptToken: (await t.offer()).token })).toMatchObject({ ok: true, restart_scheduled: true })
+      const saved = record(t.stateDir)!
+      expect(saved.runs.map((run) => run.stream_id)).toEqual(['waiting', 'r1'])
+      const continued: string[] = []
+      await booted(t.stateDir, saved.target_revision, continuing(continued)).resumeContinuations()
+      expect(continued).toEqual(['chat-waiting', 'chat-r1'])
+      expect(record(t.stateDir)).toBeNull()
+    })
+
     it('fails before installing when the interrupted chats cannot be recorded, with the chats saved and admission reopened (TAL-1990)', async () => {
       const t = blockedByChats()
       await t.svc.check(true, false, 'stable')

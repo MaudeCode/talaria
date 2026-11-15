@@ -425,13 +425,14 @@ describe('chats a shutdown interrupted continue on the next start when the owner
   const record = (state: string): { runs: { session_id: string; restart?: boolean }[] } | null => { try { return JSON.parse(readFileSync(recordPath(state), 'utf8')) as never } catch { return null } }
   const interruptedRow = (server: TestServer, sid: string): Row | undefined => durable(server, sid).messages.find((m) => m._terminal_state === 'interrupted')
 
-  it('saves the interrupted row as a Talaria activity and records nothing while the setting is off', async () => {
+  it('keeps the stopped wording and records nothing while the setting is off', async () => {
     const { sidecar, release } = heldSidecar()
     const server = await bootTestServer({ sidecar, drain: { waitMs: 0, settleMs: 5_000 } })
     try {
-      const { sid } = await startTurn(server, 'hello')
+      const { sid, streamId } = await startTurn(server, 'hello')
       await server.running.close()
       expect(interruptedRow(server, sid)).toMatchObject({ content: '**Interrupted:** Talaria Web stopped before this reply finished.' })
+      expect((await terminalEvents(server, sid, streamId)).map((e) => (e.payload as { hint?: string }).hint)).toEqual(['The partial reply was saved. Send a new message to continue.'])
       expect(record(server.state)).toBeNull()
     } finally { release() }
   })

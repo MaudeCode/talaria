@@ -17,10 +17,11 @@ final class ServerSettingsStoreTests: XCTestCase {
     }
 
     private enum Choice: CaseIterable {
-        case approval, channel, maximum, noLimit, botName
+        case approval, channel, maximum, noLimit, botName, continueChats
         var key: String {
             switch self {
             case .botName: "bot_name"
+            case .continueChats: "continue_interrupted_chats"
             case .approval: "agent_approvals"
             case .channel: "update_channel"
             case .maximum, .noLimit: "max_tokens"
@@ -29,6 +30,7 @@ final class ServerSettingsStoreTests: XCTestCase {
         var chosen: JSONValue {
             switch self {
             case .botName: .string("Assistant")
+            case .continueChats: .bool(true)
             case .approval: .bool(false)
             case .channel: .string("nightly")
             case .maximum: .number(4096)
@@ -39,6 +41,7 @@ final class ServerSettingsStoreTests: XCTestCase {
         func value(_ store: ServerSettingsStore) -> JSONValue {
             switch self {
             case .botName: .string(store.settings?.botName ?? "")
+            case .continueChats: .bool(store.settings?.continueInterruptedChats ?? false)
             case .approval: .bool(store.settings?.agentApprovals ?? false)
             case .channel: .string(store.settings?.updateChannel ?? "")
             case .maximum, .noLimit: store.settings?.maxTokens.map { .number(Double($0)) } ?? .null
@@ -48,6 +51,7 @@ final class ServerSettingsStoreTests: XCTestCase {
         func write(_ store: ServerSettingsStore) -> Task<Void, Never> {
             switch self {
             case .botName: store.setBotName("Assistant")
+            case .continueChats: store.setContinueInterruptedChats(true)
             case .approval: store.setAgentApprovals(false)
             case .channel: store.setUpdateChannel("nightly")
             case .maximum: store.setMaxTokensText("4096")!
