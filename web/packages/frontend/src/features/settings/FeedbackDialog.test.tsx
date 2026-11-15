@@ -105,32 +105,34 @@ it('fetches the diagnostics only when the disclosure opens and shows the server 
   expect(diagnostics).toHaveBeenCalledTimes(1)
 })
 
-it.each(['ctrlKey', 'metaKey'] as const)('submits once with %s+Enter from any feedback form control', async (modifier) => {
+it.each(['ctrlKey', 'metaKey'] as const)('submits once with %s+Enter and no title from any feedback form control', async (modifier) => {
   const { submit, sentToast } = await setup()
   submit.mockReturnValue(new Promise(() => undefined))
   for (const control of [title, details, () => screen.getByRole('checkbox', { name: 'Include diagnostics' }), () => screen.getByRole('button', { name: 'Cancel' })]) {
     open()
     fill()
+    fireEvent.change(title(), { target: { value: '' } })
     const before = submit.mock.calls.length
     const uncancelled = fireEvent.keyDown(control(), { key: 'Enter', [modifier]: true })
     await waitFor(() => expect(submit).toHaveBeenCalledTimes(before + 1))
     expect(uncancelled).toBe(false)
     await closed()
-    expect(submit).toHaveBeenLastCalledWith({ requestId: expect.any(String) as string, kind: 'feature', title: 'Composer loses text', body: 'After reconnecting the composer is empty.', includeDiagnostics: true, client: { platform: 'web' } })
+    expect(submit).toHaveBeenLastCalledWith({ requestId: expect.any(String) as string, kind: 'feature', title: '', body: 'After reconnecting the composer is empty.', includeDiagnostics: true, client: { platform: 'web' } })
     expect(sentToast).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'feedback-sent', text: 'Feedback sent' }))
   }
 })
 
-it.each(['ctrlKey', 'metaKey'] as const)('does not submit with %s+Enter when the title or details are blank', async (modifier) => {
+it.each(['ctrlKey', 'metaKey'] as const)('does not submit with %s+Enter when details are blank', async (modifier) => {
   const { submit } = await setup()
   open()
   fill()
-  for (const [field, other] of [[title, details], [details, title]] as const) {
-    fireEvent.change(field(), { target: { value: '   ' } })
-    fireEvent.keyDown(other(), { key: 'Enter', [modifier]: true })
-    expect(submit).not.toHaveBeenCalled()
-    expect(screen.getByRole('dialog', { name: 'Send feedback' })).toBeVisible()
-    fill()
+  for (const value of ['', ' \n ']) {
+    fireEvent.change(details(), { target: { value } })
+    for (const control of [title, details]) {
+      fireEvent.keyDown(control(), { key: 'Enter', [modifier]: true })
+      expect(submit).not.toHaveBeenCalled()
+      expect(screen.getByRole('dialog', { name: 'Send feedback' })).toBeVisible()
+    }
   }
 })
 
