@@ -14,14 +14,11 @@ const stored = (page: Page, key: string) => page.evaluate((k) => localStorage.ge
 /** The destinations and footer controls in DOM order, which is also the tab order. */
 const controls = (page: Page) => page.locator('nav[aria-label="Primary navigation"]').locator('a[aria-label]:visible, button[aria-label]:visible').evaluateAll((nodes) => nodes.filter((node) => !node.closest('#panelChat, #panelSettings')).map((node) => node.getAttribute('aria-label')))
 const desktopOnly = (name: string) => { test.skip(name !== 'desktop', 'the tiled column is desktop chrome') }
-const feedbackSettings = async (page: Page, enabled: boolean) => {
-  // Each reload must read this test's mocked settings rather than a previous document's query snapshot.
-  await page.addInitScript(() => localStorage.removeItem('hermes-boot:queries'))
-  await page.route('**/api/settings', async (route) => {
-    const response = await route.fetch()
-    await route.fulfill({ response, json: { ...await response.json(), show_sidebar_feedback: enabled } })
-  })
-}
+// A reload restores the boot snapshot as stale, so it asks the server again and reads this route (TAL-2271).
+const feedbackSettings = (page: Page, enabled: boolean) => page.route('**/api/settings', async (route) => {
+  const response = await route.fetch()
+  await route.fulfill({ response, json: { ...await response.json(), show_sidebar_feedback: enabled } })
+})
 /** Clicks the edge tab and measures every animation frame until the motion has settled. */
 const framesOfToggle = (page: Page) => page.evaluate(async () => {
   const aside = document.querySelector('aside.sidebar') as HTMLElement

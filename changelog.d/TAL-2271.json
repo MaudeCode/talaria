@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Reloading right after a settings change shows the saved value instead of the one from before the change.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

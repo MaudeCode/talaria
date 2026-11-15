@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
-import { dehydrate, type QueryClient } from '@tanstack/react-query'
+import { QueryObserver, dehydrate, type QueryClient } from '@tanstack/react-query'
 import { createQueryClient, resetIdentityCache } from './queryClient'
 import { ProjectsSchema } from '../contracts'
 import { readPersisted, removePersistedByPrefix, writePersisted } from '../lib/persisted'
@@ -134,6 +134,23 @@ describe('boot snapshot writer', () => {
 })
 
 describe('boot snapshot restore', () => {
+  it('TAL-2271: a reload right after a write still asks the server; the restored entry only paints until it answers', async () => {
+    writePersisted('hermes-boot-generation', 'current')
+    const writer = createQueryClient()
+    writer.setQueryData(['projects'], projects('Snapshot'))
+    window.dispatchEvent(new Event('pagehide'))
+
+    // Well inside the 15 s staleTime: before the fix the restored entry counted as fresh and no request went out.
+    vi.advanceTimersByTime(1_000)
+    const restored = createQueryClient()
+    const queryFn = vi.fn(() => Promise.resolve(projects('Server')))
+    const unsubscribe = new QueryObserver(restored, { queryKey: ['projects'], queryFn }).subscribe(vi.fn())
+    await vi.advanceTimersByTimeAsync(0)
+    unsubscribe()
+    expect(queryFn).toHaveBeenCalledTimes(1)
+    expect(restored.getQueryData(['projects'])).toMatchObject({ projects: [{ name: 'Server' }] })
+  })
+
   it('TAL-2099: a reset after a snapshot restore drops the restored data, as a profile switch needs', async () => {
     writePersisted('hermes-boot-generation', 'current')
     const writer = createQueryClient()
