@@ -75,7 +75,7 @@ final class FeedbackHostedTests: XCTestCase {
         _ = try await requireElement(in: window, label: "Add Photo or Video")
         let text = "  Copied text & punctuation!  "
         UIPasteboard.general.string = text
-        let title = try XCTUnwrap(window.firstView(ofType: UITextField.self) { $0.placeholder == "Title" })
+        let title = try XCTUnwrap(window.firstView(ofType: UITextField.self) { $0.placeholder == "Title (optional)" })
         title.becomeFirstResponder()
         title.paste(nil)
         let titlePasted = await awaitCondition { model.draft.title == text }
