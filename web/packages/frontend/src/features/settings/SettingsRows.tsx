@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
-import { Check, ChevronDown, ChevronRight, type LucideIcon } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
-import { FieldRow, Switch, TextInput } from '../../ui/Field'
+import { FieldRow, Switch, TextInput, type RowIconSource } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { IconButton } from '../../ui/Button'
 import { Segmented } from '../../ui/Segmented'
@@ -10,7 +10,7 @@ import { useSettingField } from './useSettingField'
 import { partialSetting } from '../../app/queries'
 
 /** What every server-setting row takes; `id` defaults to `settings-<settingKey>`, `icon` (TAL-2131) is drawn before the label. */
-interface SettingProps { label: string; hint?: string; settingKey: string; id?: string; disabled?: boolean; icon?: LucideIcon }
+interface SettingProps { label: string; hint?: string; settingKey: string; id?: string; disabled?: boolean; icon?: RowIconSource }
 const rowId = (id: string | undefined, settingKey: string) => id ?? `settings-${settingKey}`
 const trimmed = (draft: string) => draft.trim()
 

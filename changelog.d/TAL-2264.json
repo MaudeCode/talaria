@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "System settings show the Talaria logo beside Web updates and health.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

@@ -413,6 +413,30 @@ describe('SystemSection update paths', () => {
   beforeEach(() => { settingsState = { ...SERVER_FIELDS, bot_name: 'Hermes', check_for_updates: true, update_channel: 'stable', agent_update_channel: 'stable' }; vi.mocked(api.applyUpdates).mockReset(); vi.mocked(api.fetchUpdatesSummary).mockReset() })
   const path = (name: string) => screen.getByRole('region', { name })
 
+  it('uses decorative Talaria logos for Web updates and health while keeping the Agent icons (TAL-2264)', async () => {
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: current, agent: current })
+    renderSystem()
+    const health = await screen.findByRole('region', { name: 'Health' })
+    for (const name of ['Talaria Web', 'Hermes Agent']) {
+      const heading = within(path(name)).getByText(name, { exact: true })
+      const healthRow = within(health).getByText(name, { exact: true }).parentElement!.parentElement!
+      for (const row of [heading, healthRow]) {
+        const icon = row.querySelector('[data-row-icon]')
+        expect(icon).toHaveAttribute('aria-hidden', 'true')
+        expect(icon).toHaveClass('shrink-0', 'text-muted')
+        if (name === 'Talaria Web') {
+          expect(icon).toHaveStyle({ width: '18px', height: '18px' })
+          expect((icon as HTMLElement).style.backgroundColor.toLowerCase()).toBe('currentcolor')
+          expect((icon as HTMLElement).style.maskImage).toContain('/static/brand/brandmark.svg')
+        } else {
+          expect(icon).toHaveClass('lucide-bot')
+          expect(icon).toHaveAttribute('width', '18')
+          expect(icon).toHaveAttribute('stroke-width', '1.75')
+        }
+      }
+    }
+  })
+
   it('names the Stable Agent release instead of a Git commit distance', async () => {
     vi.mocked(api.fetchUpdatesCheck).mockResolvedValue(UpdatesCheckSchema.parse({ webui: current, agent: target('release_ready', { behind: 4914, release_based: true, current_version: 'v2026.9.21', latest_version: 'v2026.10.1', can_apply: true, target_version: 'v2026.10.1' }) }))
     renderSystem()

@@ -5,12 +5,16 @@ import { CircleHelp, type LucideIcon } from 'lucide-react'
 import { m } from '../paraglide/messages.js'
 import { cn } from './cn'
 import { POPUP_MOTION } from './popupMotion'
+import { Brandmark } from '../shell/Brandmark'
+
+/** The shared row icon accepts line icons and the existing Talaria brandmark. */
+export type RowIconSource = LucideIcon | 'talaria'
 
 /**
- * A labelled control. `icon` (TAL-2131, §12) is a lucide symbol drawn 18px in muted colour before the label; `detail`
+ * A labelled control. `icon` (TAL-2131, §12) is drawn 18px in muted colour before the label; `detail`
  * (TAL-2146, §7) is the row's one-line second line, such as a `StatusDot` and its state.
  */
-export function FieldRow({ label, hint, htmlFor, children, inline, wrap, icon: Icon, indent, detail }: { label: ReactNode; hint?: ReactNode; htmlFor?: string | undefined; children: ReactNode; inline?: boolean; /** An inline control too wide to sit beside its label moves under it, at the right. */ wrap?: boolean; icon?: LucideIcon | undefined; /** TAL-2159: a sub-option of the row above, its label under that row's label. */ indent?: boolean | undefined; detail?: ReactNode }) {
+export function FieldRow({ label, hint, htmlFor, children, inline, wrap, icon: Icon, indent, detail }: { label: ReactNode; hint?: ReactNode; htmlFor?: string | undefined; children: ReactNode; inline?: boolean; /** An inline control too wide to sit beside its label moves under it, at the right. */ wrap?: boolean; icon?: RowIconSource | undefined; /** TAL-2159: a sub-option of the row above, its label under that row's label. */ indent?: boolean | undefined; detail?: ReactNode }) {
   const text = <>
     <label htmlFor={htmlFor} className="text-sm text-text">{label}</label>
     {hint && <HelpTip label={typeof label === 'string' ? m.field_help_about({ label }) : m.field_help()}>{hint}</HelpTip>}
@@ -27,7 +31,8 @@ export function FieldRow({ label, hint, htmlFor, children, inline, wrap, icon: I
 }
 
 /** TAL-2131: the 18px muted icon before a Settings row's name. */
-export function RowIcon({ icon: Icon }: { icon: LucideIcon }) {
+export function RowIcon({ icon: Icon }: { icon: RowIconSource }) {
+  if (Icon === 'talaria') return <Brandmark size={18} data-row-icon="" className="shrink-0 text-muted" />
   return <Icon size={18} strokeWidth={1.75} aria-hidden="true" data-row-icon="" className="shrink-0 text-muted" />
 }
 

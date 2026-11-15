@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bot, ChevronDown, ChevronUp, CircleArrowUp, Download, LayoutDashboard, MessagesSquare, Pause, Power, RefreshCw, Repeat, RotateCw, Sparkles, type LucideIcon } from 'lucide-react'
+import { Bot, ChevronDown, ChevronUp, CircleArrowUp, Download, MessagesSquare, Pause, Power, RefreshCw, Repeat, RotateCw, Sparkles } from 'lucide-react'
 import type { WebUpdateChannel } from '@maudecode/talaria-web-contracts'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -13,7 +13,7 @@ import { ConfirmDialog, Dialog, DialogFooter } from '../../ui/Dialog'
 import { ErrorState, LoadingState } from '../../ui/States'
 import { Figure, SectionHeader } from '../../ui/List'
 import { StatusDot, type DotState } from '../../ui/Badge'
-import { RowIcon } from '../../ui/Field'
+import { RowIcon, type RowIconSource } from '../../ui/Field'
 import { HubHeadActions } from '../../shell/hubHeadSlots'
 import { useLocale } from '../../i18n/useLocale'
 import { formatPercent, resetTime } from '../../i18n/units'
@@ -145,7 +145,7 @@ export function SystemSection() {
       <SettingsGroup id="software" title={m.system_software()} hint={m.system_updates_intro()}>
         {/* Two paths side by side once the column is 601px wide, stacked in a narrower one (a phone, a split view). */}
         <div className="@container"><div className="grid gap-x-10 gap-y-8 py-3 @min-[601px]:grid-cols-2">
-          <UpdatePath id="systemWebPath" title={WEB} icon={LayoutDashboard} installed={webInstalled} status={webStatus}
+          <UpdatePath id="systemWebPath" title={WEB} icon="talaria" installed={webInstalled} status={webStatus}
             channel={<Select id="settingsUpdateChannel" aria-label={m.settings_label_web_update_channel()} disabled={!canManage} value={channel} onValueChange={setChannel}>
               {webChannels.map((c) => <option key={c} value={c}>{CHANNEL_LABELS[c]()}</option>)}
             </Select>}
@@ -174,7 +174,7 @@ export function SystemSection() {
       </SettingsGroup>
       <GroupDiscussionsGroup />
       <SettingsGroup id="health" title={m.settings_group_health()}>
-        <SettingRow label={WEB} icon={LayoutDashboard}><StatusDot state={webHealth.state}>{webHealth.text}</StatusDot></SettingRow>
+        <SettingRow label={WEB} icon="talaria"><StatusDot state={webHealth.state}>{webHealth.text}</StatusDot></SettingRow>
         <SettingRow label={AGENT} icon={Bot}><StatusDot state={agentHealth.state}>{agentHealth.text}</StatusDot></SettingRow>
         {disk !== undefined ? (
           <div className="flex flex-col gap-2 py-3" data-disk="">
@@ -301,7 +301,7 @@ function SupportLine({ support }: { support: Support | null }) {
  * fold into one node between them; opening it is this device's choice.
  */
 function UpdatePath({ id, title, icon, installed, installedNote, status, channel, action, folded = [], install, support, manualLink, summary }: {
-  id: string; title: string; icon: LucideIcon; installed: string; installedNote?: string | null; status: PathStatus; channel: ReactNode; action: ReactNode
+  id: string; title: string; icon: RowIconSource; installed: string; installedNote?: string | null; status: PathStatus; channel: ReactNode; action: ReactNode
   folded?: UpdateVersion[] | undefined; install: (version: UpdateVersion) => ReactNode; support?: Support | null; manualLink?: unknown; summary?: ReactNode
 }) {
   const [open, setOpen] = useState(false)
