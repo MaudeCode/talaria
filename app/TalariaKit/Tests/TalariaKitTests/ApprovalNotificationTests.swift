@@ -159,8 +159,17 @@ final class ApprovalNotificationTests: XCTestCase {
         XCTAssertTrue(scheduler.requests.isEmpty)
     }
 
-    /// TAL-1469: Allow sits only beside the whole text of what the approval runs, as on a Live Activity (TAL-1463); an
-    /// approval whose text is too long to show whole, or that refuses Allow once, offers Deny alone.
+    /// TAL-1469: the pending routes' `action_text` and question `head_id` reach the App through its response decoder.
+    func testPendingRoutesDecodeTheAllowTextAndQuestionHead() throws {
+        let decoder = APIClient.responseDecoder()
+        let approval = try decoder.decode(ApprovalPendingResponse.self, from: Data(#"{"pending":{"approval_id":"a1","command":"ls -la","action_text":"ls -la"},"pending_count":1}"#.utf8))
+        XCTAssertEqual(approval.pending?.actionText, "ls -la")
+        let question = try decoder.decode(ClarificationPendingResponse.self, from: Data(#"{"pending":{"clarify_id":"c1","head_id":"head-c1","steps":[]},"pending_count":1}"#.utf8))
+        XCTAssertEqual(question.pending?.headId, "head-c1")
+    }
+
+    /// TAL-1469: Allow sits only beside the server's `action_text`, the whole text of what the approval runs, as on a Live
+    /// Activity (TAL-1463); an approval the server gives none offers Deny alone, whatever its command says.
     @MainActor
     func testApprovalAlertOffersAllowOnlyBesideTheWholeTextAndReachesTheTapRoute() async throws {
         let scheduler = ApprovalNotificationSpy(status: .authorized)
@@ -175,16 +184,11 @@ final class ApprovalNotificationTests: XCTestCase {
         XCTAssertNotNil(content.sound)
         XCTAssertEqual(content.categoryIdentifier, "talaria.approval.allow")
         XCTAssertEqual(content.userInfo as? [String: String], request.userInfo)
-        for pending in [
-            // A command too long to show is never replaced by its shorter description beside Allow.
-            PendingApproval(approvalId: "long", command: String(repeating: "x", count: 81), description: "short"),
-            PendingApproval(approvalId: "owner", command: "ls", allowedChoices: [.deny]),
-        ] {
-            await service.observe(ApprovalPromptState(sessionID: "session-abc", pending: pending, pendingCount: 1), server: server)?.value
-            let content = try XCTUnwrap(scheduler.requests.last).content
-            XCTAssertEqual(content.body, "An agent run is waiting for your approval.")
-            XCTAssertEqual(content.categoryIdentifier, "talaria.approval", "Deny only")
-        }
+        let unoffered = ApprovalPromptState(sessionID: "session-abc", pending: PendingApproval(approvalId: "no-action", command: "ls"), pendingCount: 1)
+        await service.observe(unoffered, server: server)?.value
+        let denyOnly = try XCTUnwrap(scheduler.requests.last).content
+        XCTAssertEqual(denyOnly.body, "An agent run is waiting for your approval.")
+        XCTAssertEqual(denyOnly.categoryIdentifier, "talaria.approval", "Deny only")
         XCTAssertTrue(SessionNotificationRefresh.namesASession(userInfo: content.userInfo))
         let url = try XCTUnwrap(TalariaDeepLink.sessionURL(
             sessionID: try XCTUnwrap(content.userInfo[SessionNotificationRefresh.sessionIDKey] as? String),
@@ -193,7 +197,7 @@ final class ApprovalNotificationTests: XCTestCase {
         XCTAssertEqual(TalariaDeepLink.publisherID(from: url), "https://approval-alert.test")
         await service.observe(prompt(nil), server: server)?.value
         await service.observe(prompt(""), server: server)?.value
-        XCTAssertEqual(scheduler.requests.count, 3, "Never derive an alert identity from command text.")
+        XCTAssertEqual(scheduler.requests.count, 2, "Never derive an alert identity from command text.")
     }
 
 
@@ -209,7 +213,7 @@ final class ApprovalNotificationTests: XCTestCase {
         await service.observe(question("clarify-2"), server: server)?.value
         XCTAssertEqual(scheduler.requests.map(\.kind), [.question, .approval, .question])
         let request = try XCTUnwrap(scheduler.requests.first)
-        XCTAssertEqual(request.userInfo, ["sessionId": "session-abc", "publisherId": "https://approval-alert.test"])
+        XCTAssertEqual(request.userInfo, ["sessionId": "session-abc", "publisherId": "https://approval-alert.test", "clarifyId": "clarify-1"])
         XCTAssertEqual(request.content.title, "Question waiting")
         XCTAssertEqual(request.content.body, "An agent run is waiting for your answer.")
         XCTAssertEqual(request.content.categoryIdentifier, "talaria.input", "Reply answers it from the banner (TAL-1469)")
@@ -286,7 +290,8 @@ final class ApprovalNotificationTests: XCTestCase {
     private var server: URL { URL(string: "https://approval-alert.test/private/path")! }
     private func prompt(_ id: String?, sessionID: String = "session-abc") -> ApprovalPromptState {
         ApprovalPromptState(sessionID: sessionID,
-            pending: PendingApproval(approvalId: id, command: "private command /private/path", description: "private transcript"),
+            pending: PendingApproval(approvalId: id, command: "private command /private/path", description: "private transcript",
+                                     actionText: "private command /private/path"),
             pendingCount: 2)
     }
     private func clarification(_ id: String) -> ClarificationPendingResponse {

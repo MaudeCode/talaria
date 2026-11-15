@@ -6,7 +6,7 @@
 import { randomBytes } from 'node:crypto'
 import type { ActivitySummary, AgentNotifyLevel, DecisionReviewRef, SessionActivityPhase } from '@maudecode/talaria-web-contracts'
 import { settledActivityPhase, type BackgroundActivity } from '../background-tasks.js'
-import { approvalHeadId, type PendingPrompts } from '../pending.js'
+import { promptHeadId, type PendingPrompts } from '../pending.js'
 import type { SessionPrefixIndex } from '../prefix-index.js'
 import type { PresenceLeases } from '../relay.js'
 import type { Session } from '../session.js'
@@ -69,6 +69,8 @@ export interface ActivityState {
   approvalHeadId?: string
   /** TAL-2232: that approval's own id, which only an authenticated Web client receives; the Relay gets the digest. */
   approvalId?: string
+  /** TAL-1469: the question at the head of the queue while the session waits for input, as the same kind of digest. */
+  inputHeadId?: string
   /** TAL-1966: the session's newest decision review by creation and its title; its alert opens the review. */
   decisionReviewId?: string
   decisionReviewTitle?: string
@@ -80,7 +82,7 @@ export interface ActivityState {
 
 /** The fields of a row every channel shows. The Relay adds its transport fields; the activity summary renames a few. */
 export function activityRowFields(row: ActivityState) {
-  return { sessionId: row.sessionId, streamId: row.streamId, ...(row.activityPhase ? { activityPhase: row.activityPhase } : {}), title: row.title, phase: row.phase, startedAt: row.startedAt, updatedAt: row.updatedAt, ...(row.activityAt === undefined ? {} : { toolCount: row.toolCount, activityAt: row.activityAt }), ...(row.workerCount === undefined ? {} : { planCompleted: row.planCompleted, planTotal: row.planTotal, workerCount: row.workerCount }), deepLink: row.deepLink, origin: row.origin, ...(row.approvalHeadId ? { approvalHeadId: row.approvalHeadId } : {}), ...(row.decisionReviewId ? { decisionReviewId: row.decisionReviewId, decisionReviewTitle: row.decisionReviewTitle ?? '' } : {}), ...(row.agentNotices ? { agentNotices: row.agentNotices } : {}) }
+  return { sessionId: row.sessionId, streamId: row.streamId, ...(row.activityPhase ? { activityPhase: row.activityPhase } : {}), title: row.title, phase: row.phase, startedAt: row.startedAt, updatedAt: row.updatedAt, ...(row.activityAt === undefined ? {} : { toolCount: row.toolCount, activityAt: row.activityAt }), ...(row.workerCount === undefined ? {} : { planCompleted: row.planCompleted, planTotal: row.planTotal, workerCount: row.workerCount }), deepLink: row.deepLink, origin: row.origin, ...(row.approvalHeadId ? { approvalHeadId: row.approvalHeadId } : {}), ...(row.inputHeadId ? { inputHeadId: row.inputHeadId } : {}), ...(row.decisionReviewId ? { decisionReviewId: row.decisionReviewId, decisionReviewTitle: row.decisionReviewTitle ?? '' } : {}), ...(row.agentNotices ? { agentNotices: row.agentNotices } : {}) }
 }
 
 /** TAL-2232: the summary's phases by display rank: waiting for an approval, then for input, then running or starting. */
@@ -254,7 +256,8 @@ export class ActivityStates {
       let phase = run.relay_phase ?? 'running'
       const approval = this.deps.pending.approvalPending(sid).pending
       if (!(TERMINAL_PHASES as readonly string[]).includes(phase) && approval) phase = 'waiting_for_approval'
-      if (phase === 'running' && this.deps.pending.clarifyPending(sid).pending) phase = 'waiting_for_input'
+      const clarify = this.deps.pending.clarifyPending(sid).pending
+      if (phase === 'running' && clarify) phase = 'waiting_for_input'
       if (phase === 'running' && run.phase.endsWith('starting')) phase = 'starting'
       const snapshot = await this.deps.background?.snapshot(sid, session.profile, { ...(run.relay_phase ? { excludeStreamId: run.stream_id, terminalPhase: run.relay_phase as SessionActivityPhase } : {}) })
       if ([...this.deps.registry.activeRuns.values()].some((current) => current.session_id === sid && current.stream_id !== run.stream_id && current.started_at >= run.started_at)) { retry(); continue }
@@ -265,6 +268,7 @@ export class ActivityStates {
       // A finished run keeps the instant it ended, so a viewer who saw that turn covers it whenever the snapshot is built.
       const updatedAt = Math.floor((run.terminal_at ?? this.deps.now()) * 1000)
       const approvalId = phase === 'waiting_for_approval' ? str(approval?.approval_id) : ''
+      const clarifyId = phase === 'waiting_for_input' ? str(clarify?.clarify_id) : ''
       // TAL-874: a run's first phase dates from its start, a later one from when a build first saw it (a finished run's
       // from its end); a rebuild of an unchanged run keeps it. A row with no tracked run reports neither field.
       let activity: Pick<ActivityState, 'toolCount' | 'activityAt'> = {}
@@ -277,7 +281,7 @@ export class ActivityStates {
       const work: Pick<ActivityState, 'planCompleted' | 'planTotal' | 'workerCount'> = snapshot ? { planCompleted: plan?.completed ?? 0, planTotal: plan?.total ?? 0, workerCount: snapshot.worker_count } : {}
       const review = this.deps.decisionReview?.(sid)
       const notices = this.notices.get(sid)?.shown.map((shown) => shown.notice) ?? []
-      states.push({ sessionId: sid, streamId: run.stream_id || null, ...(snapshot ? { activityPhase: snapshot.activity_phase } : {}), title: (session.title || 'Untitled').slice(0, 120), phase, startedAt: Math.floor((run.started_at || this.deps.now()) * 1000), updatedAt, ...activity, ...work, deepLink: `/sessions/${encodeURIComponent(sid)}`, alertEligible, origin: run.origin ?? 'user', ...(approvalId ? { approvalHeadId: approvalHeadId(sid, approvalId), approvalId } : {}), ...(review ? { decisionReviewId: review.review_id, decisionReviewTitle: review.title } : {}), ...(notices.length ? { agentNotices: notices } : {}), ownerPersonId: session.owner_person_id })
+      states.push({ sessionId: sid, streamId: run.stream_id || null, ...(snapshot ? { activityPhase: snapshot.activity_phase } : {}), title: (session.title || 'Untitled').slice(0, 120), phase, startedAt: Math.floor((run.started_at || this.deps.now()) * 1000), updatedAt, ...activity, ...work, deepLink: `/sessions/${encodeURIComponent(sid)}`, alertEligible, origin: run.origin ?? 'user', ...(approvalId ? { approvalHeadId: promptHeadId(sid, approvalId), approvalId } : {}), ...(clarifyId ? { inputHeadId: promptHeadId(sid, clarifyId) } : {}), ...(review ? { decisionReviewId: review.review_id, decisionReviewTitle: review.title } : {}), ...(notices.length ? { agentNotices: notices } : {}), ownerPersonId: session.owner_person_id })
     }
     if (incomplete) this.incompleteProfiles.add(profile)
     else this.incompleteProfiles.delete(profile)

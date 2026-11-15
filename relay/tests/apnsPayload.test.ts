@@ -207,23 +207,28 @@ describe("ActivityKit payloads", () => {
     });
   });
 
-  it("TAL-1469: lets only an approval it names or an input request be answered from the banner", () => {
+  it("TAL-1469: lets only the approval or question an alert names be answered from the banner", () => {
     const notification = (state: SessionState) => makeNotification({
       token: "device-token",
       bundleId: "dev.kil.talaria",
       environment: "sandbox",
       alert: alertForState(state, defaultNotificationPreferences)!,
-      row: { ...aggregate.rows[0]!, phase: activityPhase(state), approvalHeadId: state.approvalHeadId },
+      row: { ...aggregate.rows[0]!, phase: activityPhase(state) },
       threadId: "chat-1",
     });
     const approval = notification({ ...attentionState, phase: "waiting_for_approval", approvalHeadId: "head-1" });
     expect(approval.payload.aps).toMatchObject({ category: "talaria.approval" });
     expect(approval.payload).toMatchObject({ approvalHeadId: "head-1" });
-    expect(notification({ ...attentionState, phase: "waiting_for_input" }).payload.aps).toMatchObject({ category: "talaria.input" });
-    // Deny answers only the approval the banner names; an older publisher's unnamed approval opens the chat.
-    const unnamed = notification({ ...attentionState, phase: "waiting_for_approval" });
-    expect(unnamed.payload.aps).not.toHaveProperty("category");
-    expect(unnamed.payload).not.toHaveProperty("approvalHeadId");
+    const input = notification({ ...attentionState, phase: "waiting_for_input", inputHeadId: "question-1" });
+    expect(input.payload.aps).toMatchObject({ category: "talaria.input" });
+    expect(input.payload).toMatchObject({ inputHeadId: "question-1" });
+    expect(input.payload).not.toHaveProperty("approvalHeadId");
+    // Deny and Reply answer only the request the banner names; an older publisher's unnamed one opens the chat.
+    for (const phase of ["waiting_for_approval", "waiting_for_input"] as const) {
+      const unnamed = notification({ ...attentionState, phase });
+      expect(unnamed.payload.aps).not.toHaveProperty("category");
+      expect(Object.keys(unnamed.payload)).toEqual(["aps", "publisherId", "sessionId", "deepLink"]);
+    }
     for (const phase of ["completed", "failed"] as const) {
       expect(notification({ ...attentionState, phase }).payload.aps).not.toHaveProperty("category");
     }

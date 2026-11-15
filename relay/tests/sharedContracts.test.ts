@@ -290,9 +290,11 @@ it("alerts a Web publisher's approval queue head with only the shared localized 
     expect(payload.approvalHeadId).toBe(snapshot.states[0]!.approvalHeadId);
     expect(notifications[0]!.request.payloadJson).not.toContain("Contract fixture");
     // The head is bounded and opaque; anything else rejects the whole snapshot.
-    for (const approvalHeadId of ["", "x".repeat(65), "has/slash", 7]) {
-      const invalid = { ...snapshot, states: [{ ...snapshot.states[0], approvalHeadId }] };
-      expect((await signedPut(path, JSON.stringify(invalid))).status).toBe(400);
+    for (const head of ["", "x".repeat(65), "has/slash", 7]) {
+      for (const field of ["approvalHeadId", "inputHeadId"]) {
+        const invalid = { ...snapshot, states: [{ ...snapshot.states[0], [field]: head }] };
+        expect((await signedPut(path, JSON.stringify(invalid))).status).toBe(400);
+      }
     }
   } finally {
     clock.mockRestore();

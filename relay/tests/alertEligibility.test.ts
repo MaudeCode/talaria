@@ -127,7 +127,20 @@ describe("publisher alert eligibility", () => {
     await withoutActivity.mutation(internal.publishers.acceptSnapshot, { ...publish, nonce: "n1", receivedAt: now + 1, snapshotId: "s1", states: mixed });
     await runScheduledRecomputes(withoutActivity);
     expect(await jobs(withoutActivity)).toEqual([
-      expect.objectContaining({ kind: "notification", aps: { alert: { title: "session-2", body: "Input needed on Home" }, sound: "default", "thread-id": expect.any(String), "interruption-level": "time-sensitive", category: "talaria.input" } }),
+      expect.objectContaining({ kind: "notification", aps: { alert: { title: "session-2", body: "Input needed on Home" }, sound: "default", "thread-id": expect.any(String), "interruption-level": "time-sensitive" } }),
+    ]);
+  });
+
+  it("TAL-1469: a published question head reaches the input notification, so its Reply answers only that question", async () => {
+    const backend = await seed({ pushToken: "push-token", activity: false });
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      ...publish, nonce: "n1", receivedAt: now + 1, snapshotId: "s1",
+      states: [{ ...snapshotState("session-1", 2, "waiting_for_input"), inputHeadId: "question-head-1" }],
+    });
+    await runScheduledRecomputes(backend);
+    const rows = await backend.run(async (ctx) => ctx.db.query("deliveryJobs").collect());
+    expect(rows.map((job) => JSON.parse(job.request.payloadJson))).toEqual([
+      expect.objectContaining({ aps: expect.objectContaining({ category: "talaria.input" }), inputHeadId: "question-head-1" }),
     ]);
   });
 

@@ -41,6 +41,20 @@ final class LiveActivityApprovalResponder {
         }
     }
 
+    /// TAL-1469: the question a notification's Reply answers: the one a Relay push named (its `head_id`) or a local alert
+    /// named (its `clarify_id`). Nothing else pending is answered.
+    enum ShownQuestion: Equatable, Sendable {
+        case head(String)
+        case clarify(String)
+
+        func matches(_ pending: PendingClarification) -> Bool {
+            switch self {
+            case let .head(id): pending.headId == id
+            case let .clarify(id): pending.clarifyId == id
+            }
+        }
+    }
+
     /// What `RespondToApprovalIntent` and `RespondToApprovalByVoiceIntent` answer through; tests substitute a fixture
     /// client and display.
     static var shared = LiveActivityApprovalResponder(
@@ -184,10 +198,10 @@ final class LiveActivityApprovalResponder {
         }
     }
 
-    /// TAL-1469: a banner's Reply. It answers the pending question when that is a single question and no secret, typed the
-    /// way the chat's own card sends a typed answer; with no question pending, it sends the text as a message. A question
-    /// with several steps or a password manager prompt is answered in the chat.
-    func reply(publisherID: String?, sessionID: String, text: String) async -> Outcome {
+    /// TAL-1469: a banner's Reply answers the question the banner named, typed the way the chat's own card sends a typed
+    /// answer, while that question is still the pending one. Another question pending, none pending (the text would
+    /// answer nothing it was written for), several steps or a password manager prompt are answered in the chat.
+    func reply(publisherID: String?, sessionID: String, question: ShownQuestion, text: String) async -> Outcome {
         guard !appLock.locksBackgroundWork() else { return .refused(String(localized: "Unlock Talaria in the app first.")) }
         guard let client = makeClient(publisherID) else { return .refused(String(localized: "Add a server in Talaria first.")) }
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -198,17 +212,8 @@ final class LiveActivityApprovalResponder {
         } catch {
             return .refused(error.localizedDescription)
         }
-        guard let pending else {
-            do {
-                let started = try await client.startChat(sessionID: sessionID, message: text, workspace: nil, model: nil)
-                guard started.streamId?.isEmpty == false else {
-                    return .refused(started.error ?? String(localized: "The server did not return a stream ID."))
-                }
-                return .answered
-            } catch {
-                // An unknown outcome is never sent again: the chat shows whether the message arrived.
-                return .refused(error.localizedDescription)
-            }
+        guard let pending, question.matches(pending) else {
+            return .refused(String(localized: "This question changed. Open Talaria to answer it."))
         }
         guard pending.vault == nil, let steps = pending.steps, let step = steps.first, steps.count == 1 else {
             return .refused(String(localized: "Open Talaria to answer this one."))

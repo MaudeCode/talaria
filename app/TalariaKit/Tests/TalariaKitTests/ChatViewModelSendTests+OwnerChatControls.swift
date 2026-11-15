@@ -569,7 +569,7 @@ extension ChatViewModelSendTests {
         await viewModel.loadMessages()
         await viewModel.reconnectStreamIfNeeded()
 
-        stream.emit(SSEEventDecoder.decode(eventType: "approval", data: #"{"approval_id":"owner-approval","head_id":"owner-head","command":"ls","pending_count":1}"#))
+        stream.emit(SSEEventDecoder.decode(eventType: "approval", data: #"{"approval_id":"owner-approval","head_id":"owner-head","command":"ls","action_text":"ls","pending_count":1}"#))
         XCTAssertEqual(activity.updates.last, .waitingForApproval(headID: "owner-head", text: "ls"), "TAL-1463: the activity names the approval it shows")
         stream.emit(SSEEventDecoder.decode(eventType: "approval_cleared", data: #"{"session_id":"session-abc","pending_count":0}"#))
         XCTAssertNotEqual(activity.updates.last, .waitingForApproval(headID: "owner-head", text: "ls"), "The settled approval is not announced as a wait")

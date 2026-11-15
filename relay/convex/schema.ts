@@ -188,6 +188,8 @@ export default defineSchema({
     alertEligible: v.optional(v.boolean()),
     // The latest approval queue head this run made visible; it outlives the approval phase within the run.
     approvalHeadId: v.optional(v.string()),
+    // TAL-1469: the question queue head while the session waits for input, so a notification's Reply answers only it.
+    inputHeadId: v.optional(v.string()),
     // TAL-1966: the session's newest decision review by creation; a review the state did not hold before alerts once.
     decisionReviewId: v.optional(v.string()),
     decisionReviewTitle: v.optional(v.string()),

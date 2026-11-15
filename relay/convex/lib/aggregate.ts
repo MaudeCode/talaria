@@ -220,14 +220,14 @@ export function alertForState(
         // Generic copy: an approval alert never carries the session title or anything the approval names.
         ? {
           title: approvalAlertTitleKey, body: approvalAlertBodyKey, localized: true, interruptionLevel: "time-sensitive",
-          ...(next.approvalHeadId ? { category: "talaria.approval" as const } : {}),
+          ...(next.approvalHeadId ? { category: "talaria.approval" as const, headId: next.approvalHeadId } : {}),
         }
         : null;
     case "waiting_for_input":
       return preferences.notifyOnInput
         ? {
           title: next.title, body: `Input needed on ${next.publisherLabel}`, interruptionLevel: "time-sensitive",
-          category: "talaria.input",
+          ...(next.inputHeadId ? { category: "talaria.input" as const, headId: next.inputHeadId } : {}),
         }
         : null;
     case "completed":

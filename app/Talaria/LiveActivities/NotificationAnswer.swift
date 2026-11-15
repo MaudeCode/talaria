@@ -5,10 +5,10 @@ import UserNotifications
 /// TAL-1469: Allow, Deny or Reply chosen on a Talaria banner, answered without opening the app through the Live
 /// Activity's responder, so its rows update the same way. The answer names only the request the banner showed.
 struct NotificationAnswer: Equatable, Sendable {
+    /// The approval or question the banner named; nil when it named none, and nothing is answered then.
     enum Request: Equatable, Sendable {
-        /// nil when the banner named no approval; nothing is answered then.
         case approval(LiveActivityApprovalResponder.ShownApproval?, ApprovalChoice)
-        case reply(String)
+        case reply(LiveActivityApprovalResponder.ShownQuestion?, String)
     }
 
     let request: Request
@@ -21,12 +21,14 @@ struct NotificationAnswer: Equatable, Sendable {
             (userInfo[key] as? String).flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
         }
         guard let sessionID = value(SessionNotificationRefresh.sessionIDKey) else { return nil }
-        let shown = value(PendingActionNotificationCategory.approvalHeadIDKey).map(LiveActivityApprovalResponder.ShownApproval.head)
+        let approval = value(PendingActionNotificationCategory.approvalHeadIDKey).map(LiveActivityApprovalResponder.ShownApproval.head)
             ?? value(PendingActionNotificationCategory.approvalIDKey).map { .approval($0) }
+        let question = value(PendingActionNotificationCategory.inputHeadIDKey).map(LiveActivityApprovalResponder.ShownQuestion.head)
+            ?? value(PendingActionNotificationCategory.clarifyIDKey).map(LiveActivityApprovalResponder.ShownQuestion.clarify)
         switch actionIdentifier {
-        case PendingActionNotificationCategory.allowAction: request = .approval(shown, .once)
-        case PendingActionNotificationCategory.denyAction: request = .approval(shown, .deny)
-        case PendingActionNotificationCategory.replyAction: request = .reply(userText ?? "")
+        case PendingActionNotificationCategory.allowAction: request = .approval(approval, .once)
+        case PendingActionNotificationCategory.denyAction: request = .approval(approval, .deny)
+        case PendingActionNotificationCategory.replyAction: request = .reply(question, userText ?? "")
         default: return nil
         }
         self.sessionID = sessionID
@@ -46,10 +48,10 @@ struct NotificationAnswer: Equatable, Sendable {
         switch request {
         case let .approval(shown?, choice):
             outcome = await responder.respond(publisherID: publisherID, sessionID: sessionID, approval: shown, choice: choice)
-        case .approval(nil, _):
+        case let .reply(question?, text):
+            outcome = await responder.reply(publisherID: publisherID, sessionID: sessionID, question: question, text: text)
+        case .approval(nil, _), .reply(nil, _):
             outcome = .refused(String(localized: "Open Talaria to answer this one."))
-        case let .reply(text):
-            outcome = await responder.reply(publisherID: publisherID, sessionID: sessionID, text: text)
         }
         guard case let .refused(reason) = outcome else {
             NotificationCenter.default.post(name: .talariaSessionNotificationArrived, object: nil)

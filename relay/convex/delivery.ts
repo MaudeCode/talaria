@@ -106,6 +106,7 @@ function asSessionState(state: DataModel["sessionStates"]["document"]): SessionS
     origin: state.origin,
     alertEligible: state.alertEligible,
     approvalHeadId: state.approvalHeadId,
+    inputHeadId: state.inputHeadId,
     decisionReviewId: state.decisionReviewId,
     decisionReviewTitle: state.decisionReviewTitle,
     agentNotices: state.agentNotices,

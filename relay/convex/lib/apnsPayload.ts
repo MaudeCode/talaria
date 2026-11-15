@@ -193,8 +193,10 @@ export function makeNotification(input: {
       publisherId: input.row.publisherId,
       sessionId: input.row.sessionId,
       deepLink: input.alert.deepLink ?? input.row.deepLink,
-      // TAL-1469: the approval the banner's Deny answers; the App refuses it once another approval heads the queue.
-      ...(input.alert.category === "talaria.approval" && input.row.approvalHeadId ? { approvalHeadId: input.row.approvalHeadId } : {}),
+      // TAL-1469: the request the banner's Deny or Reply answers; the App refuses it once another heads the queue.
+      ...(input.alert.category && input.alert.headId
+        ? { [input.alert.category === "talaria.approval" ? "approvalHeadId" : "inputHeadId"]: input.alert.headId }
+        : {}),
     },
   };
 }

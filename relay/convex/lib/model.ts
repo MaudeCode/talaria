@@ -46,6 +46,8 @@ export interface SessionState {
   origin?: TurnOrigin;
   alertEligible?: boolean;
   approvalHeadId?: string;
+  /** TAL-1469: the question queue head while the session waits for input, an opaque digest like `approvalHeadId`. */
+  inputHeadId?: string;
   decisionReviewId?: string;
   decisionReviewTitle?: string;
   agentNotices?: AgentNotify[];
@@ -78,6 +80,8 @@ export interface PublishedSessionState {
   origin?: TurnOrigin;
   alertEligible?: boolean;
   approvalHeadId?: string;
+  /** TAL-1469: the question queue head while the session waits for input, an opaque digest like `approvalHeadId`. */
+  inputHeadId?: string;
   decisionReviewId?: string;
   decisionReviewTitle?: string;
   agentNotices?: AgentNotify[];
@@ -138,9 +142,10 @@ export interface ActivityAlert {
   deepLink?: string;
   // TAL-1970: the agent notice this alert announces; it is queued once per notice and device.
   agentNotifyId?: string;
-  // TAL-1469: the App's notification category whose banner actions answer the request: Deny for an approval the alert
-  // names by its queue head (the alert never shows what the approval runs, so it offers no Allow), Reply for input.
+  // TAL-1469: the App's notification category whose banner actions answer the request the alert names by its queue head
+  // (`headId`): Deny for an approval (the alert never shows what it runs, so it offers no Allow), Reply for a question.
   category?: "talaria.approval" | "talaria.input";
+  headId?: string;
 }
 
 export const defaultNotificationPreferences: NotificationPreferences = {

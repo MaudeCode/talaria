@@ -74,41 +74,48 @@ final class NotificationAnswerTests: XCTestCase {
         )
     }
 
-    func testReplyAnswersASingleQuestionOrSendsAMessage() async throws {
-        let pending = LockedTestValue(#"{"pending":{"clarify_id":"c1","steps":[{"qid":"q0","question":"Which branch?","choices":["main"],"multi_select":false}]}}"#)
+    /// Reply answers only the question its banner named, while that question is still the one pending.
+    func testReplyAnswersOnlyTheQuestionItsBannerNamed() async throws {
+        let question = #"{"pending":{"clarify_id":"c1","head_id":"head-c1","steps":[{"qid":"q0","question":"Which branch?","choices":["main"],"multi_select":false}]}}"#
+        let pending = LockedTestValue(question)
         let sent = LockedTestValue<[String]>([])
         let responder = try replyResponder { request in
             switch request.url?.path {
             case "/api/clarify/pending": return apiTestJSONResponse(pending.value, for: request)
-            case "/api/clarify/respond", "/api/chat/start":
-                sent.value.append("\(request.url!.path) \(String(decoding: apiTestBodyData(from: request) ?? Data(), as: UTF8.self))")
-                return apiTestJSONResponse(#"{"ok":true,"stream_id":"stream-1"}"#, for: request)
+            case "/api/clarify/respond":
+                sent.value.append(String(decoding: apiTestBodyData(from: request) ?? Data(), as: UTF8.self))
+                return apiTestJSONResponse(#"{"ok":true}"#, for: request)
             default:
                 XCTFail("Unexpected request \(request.url?.path ?? "")")
                 throw URLError(.badURL)
             }
         }
         let posted = postSpy()
-        func reply(_ text: String) async throws {
-            try await XCTUnwrap(NotificationAnswer(actionIdentifier: "reply", userText: text, userInfo: ["sessionId": "s1"]))
+        func reply(_ text: String, naming key: String, _ id: String) async throws {
+            try await XCTUnwrap(NotificationAnswer(actionIdentifier: "reply", userText: text, userInfo: ["sessionId": "s1", key: id]))
                 .respond(with: responder)
         }
 
-        try await reply(" release ")
+        try await reply(" release ", naming: "clarifyId", "c1")
+        try await reply("main", naming: "inputHeadId", "head-c1")
+        // Another question pending, none pending, or several steps: nothing is sent.
+        try await reply("release", naming: "inputHeadId", "head-other")
         pending.value = "{}"
-        try await reply("Also run the tests")
-        // Several questions or a secret are answered in the chat.
-        pending.value = #"{"pending":{"clarify_id":"c2","steps":[{"qid":"a","question":"A","choices":[],"multi_select":false},{"qid":"b","question":"B","choices":[],"multi_select":false}]}}"#
-        try await reply("both")
+        try await reply("release", naming: "clarifyId", "c1")
+        pending.value = #"{"pending":{"clarify_id":"c2","head_id":"head-c2","steps":[{"qid":"a","question":"A","choices":[],"multi_select":false},{"qid":"b","question":"B","choices":[],"multi_select":false}]}}"#
+        try await reply("both", naming: "clarifyId", "c2")
+        // A banner that names no question answers nothing.
+        try await XCTUnwrap(NotificationAnswer(actionIdentifier: "reply", userText: "hi", userInfo: ["sessionId": "s1"])).respond(with: responder)
 
-        XCTAssertEqual(sent.value.count, 2)
-        let answer = try XCTUnwrap(sent.value.first)
-        XCTAssertTrue(answer.hasPrefix("/api/clarify/respond "))
-        XCTAssertTrue(answer.contains(#""answers":{"q0":"release"}"#), answer)
-        XCTAssertTrue(answer.contains(#""clarify_id":"c1""#), answer)
-        XCTAssertTrue(sent.value[1].hasPrefix("/api/chat/start "))
-        XCTAssertTrue(sent.value[1].contains(#""message":"Also run the tests""#), sent.value[1])
-        XCTAssertEqual(posted.value.map(\.content.body), ["Open Talaria to answer this one."])
+        XCTAssertEqual(sent.value.count, 2, "\(sent.value)")
+        for (body, answer) in zip(sent.value, ["release", "main"]) {
+            XCTAssertTrue(body.contains(#""answers":{"q0":"\#(answer)"}"#), body)
+            XCTAssertTrue(body.contains(#""clarify_id":"c1""#), body)
+        }
+        XCTAssertEqual(posted.value.map(\.content.body), [
+            "This question changed. Open Talaria to answer it.", "This question changed. Open Talaria to answer it.",
+            "Open Talaria to answer this one.", "Open Talaria to answer this one.",
+        ])
     }
 
     /// The open chat's approval card goes on the refresh a successful banner answer posts.

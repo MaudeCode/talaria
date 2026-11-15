@@ -242,12 +242,19 @@ export class PendingPrompts {
     return entry
   }
 
-  /** TAL-1463: the head carries `head_id`, the identity Relay shows for it, so a Live Activity answers only the approval it showed. */
+  /**
+   * TAL-1463: the head carries `head_id`, the identity Relay shows for it, so a Live Activity answers only the approval it
+   * showed. TAL-1469: and `action_text`, the text a one-tap Allow sits beside.
+   */
   approvalPending(sid: string): { pending: Record<string, unknown> | null; pending_count: number } {
     const q = this.approvals.get(sid)
     const head = q?.entries[0]
     const approvalId = str(head?.approval_id)
-    return { pending: head ? { ...head, ...(approvalId ? { head_id: approvalHeadId(sid, approvalId) } : {}) } : null, pending_count: q?.entries.length ?? 0 }
+    const actionText = head ? approvalActionText(head) : undefined
+    return {
+      pending: head ? { ...head, ...(approvalId ? { head_id: promptHeadId(sid, approvalId) } : {}), ...(actionText ? { action_text: actionText } : {}) } : null,
+      pending_count: q?.entries.length ?? 0,
+    }
   }
 
   /** The targeted (or oldest) approval without removing it; `found` is false only for a stale id. */
@@ -358,9 +365,12 @@ export class PendingPrompts {
     return entry
   }
 
+  /** TAL-1469: the head carries `head_id`, the identity Relay publishes as `inputHeadId`, so a notification's Reply answers only it. */
   clarifyPending(sid: string): { pending: Record<string, unknown> | null; pending_count: number } {
     const q = this.clarifies.get(sid)
-    return { pending: q?.entries[0] ? { ...q.entries[0] } : null, pending_count: q?.entries.length ?? 0 }
+    const head = q?.entries[0]
+    const clarifyId = str(head?.clarify_id)
+    return { pending: head ? { ...head, ...(clarifyId ? { head_id: promptHeadId(sid, clarifyId) } : {}) } : null, pending_count: q?.entries.length ?? 0 }
   }
 
   /** Queue head plus depth: what the live chat stream carries on every head change (Python `_callback_head_payload_locked`). */
@@ -455,7 +465,22 @@ export function nextPendingItem(sub: PendingSubscriber, timeoutMs: number): Prom
   })
 }
 
-/** Stable for one approval across snapshots and restarts; the digest carries nothing the approval says. */
-export function approvalHeadId(sid: string, approvalId: string): string {
-  return createHash('sha256').update(`${sid}\0${approvalId}`, 'utf8').digest('base64url').slice(0, 22)
+/** Stable for one approval or question across snapshots and restarts; the digest carries nothing the prompt says. */
+export function promptHeadId(sid: string, promptId: string): string {
+  return createHash('sha256').update(`${sid}\0${promptId}`, 'utf8').digest('base64url').slice(0, 22)
+}
+
+/** About two lines of a Live Activity caption; a longer text is never shortened beside Allow. */
+export const APPROVAL_ACTION_TEXT_LIMIT = 80
+
+/**
+ * TAL-1469: what an approval runs, on one line, for a one-tap Allow to sit beside: its command, else its description.
+ * Absent when the approval names neither, when that text is longer than `APPROVAL_ACTION_TEXT_LIMIT` (a description never
+ * stands in for a command too long to show), or when the approval does not accept `once`.
+ */
+export function approvalActionText(entry: Record<string, unknown>): string | undefined {
+  const allowed = entry.allowed_choices
+  if (Array.isArray(allowed) && !allowed.includes('once')) return undefined
+  const text = [entry.command, entry.description].map((value) => typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '').find(Boolean)
+  return text && Array.from(text).length <= APPROVAL_ACTION_TEXT_LIMIT ? text : undefined
 }

@@ -137300,6 +137300,112 @@
         }
       }
     },
+    "This question changed. Open Talaria to answer it." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تغيّر هذا السؤال. افتح Talaria للإجابة عنه."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Frage hat sich geändert. Öffne Talaria, um sie zu beantworten."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta pregunta cambió. Abre Talaria para responderla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette question a changé. Ouvrez Talaria pour y répondre."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "השאלה הזו השתנתה. פתח את Talaria כדי לענות עליה."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questa domanda è cambiata. Apri Talaria per rispondere."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この質問は変更されました。Talariaを開いて回答してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 질문이 바뀌었습니다. Talaria를 열어 답하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deze vraag is gewijzigd. Open Talaria om te antwoorden."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "To pytanie się zmieniło. Otwórz Talaria, aby odpowiedzieć."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta pergunta mudou. Abra o Talaria para responder."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Этот вопрос изменился. Откройте Talaria, чтобы ответить."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu soru değişti. Yanıtlamak için Talaria'yı açın."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "یہ سوال بدل گیا ہے۔ جواب دینے کے لیے Talaria کھولیں۔"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此問題已變更。開啟 Talaria 以回答。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此问题已更改。打开 Talaria 回答。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此問題已變更。開啟 Talaria 以回答。"
+          }
+        }
+      }
+    },
     "This removes local uncommitted changes and deletes untracked files. This cannot be undone." : {},
     "This removes local uncommitted changes. This cannot be undone." : {},
     "This removes the scheduled task from the Hermes server." : {
