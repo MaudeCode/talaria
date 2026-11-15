@@ -6,7 +6,7 @@
 import { closeSync, constants, fchmodSync, fstatSync, openSync } from 'node:fs'
 import { join } from 'node:path'
 import { truthy, type ServerConfig } from './config.js'
-import { isLoopback, trustsProxyBeyondLoopback } from './http/origin.js'
+import { isLoopback, listsTrustedProxy, trustsProxyBeyondLoopback } from './http/origin.js'
 
 export const STARTUP_WAIT_SECONDS = 10
 export const STARTUP_WAIT_SLOT_COUNT = 8
@@ -101,4 +101,10 @@ export function warnForwardedForWithoutProxy(env: ServerConfig['env'], log: (lin
   log('    A proxy on another host or a Docker bridge must be listed instead (for example TALARIA_WEB_TRUSTED_PROXY_CIDRS=172.17.0.1);')
   log('    until then its X-Forwarded-For is ignored and its requests are logged with forwarded_for_ignored.')
   log('    The proxy must append the client address to X-Forwarded-For (nginx: $proxy_add_x_forwarded_for).')
+}
+
+/** Trusted-header sign-in counts the identity header only from a listed proxy (TAL-2203); with none listed it rejects every request. */
+export function warnTrustedHeaderWithoutProxy(env: ServerConfig['env'], auth: { isTrustedAuthEnabled: () => boolean; warnOnce: (key: string, message: string) => void }): void {
+  if (!auth.isTrustedAuthEnabled() || listsTrustedProxy(env)) return
+  auth.warnOnce('trusted-auth-proxy', 'TALARIA_WEB_TRUSTED_AUTH_HEADER is set, but TALARIA_WEB_TRUSTED_PROXY_CIDRS lists no proxy; trusted-header sign-in rejects every request until the auth proxy\'s address is listed there (a proxy on this host: TALARIA_WEB_TRUSTED_PROXY_CIDRS=127.0.0.1/32,::1/128)')
 }

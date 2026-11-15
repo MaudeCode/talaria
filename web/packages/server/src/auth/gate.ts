@@ -167,7 +167,8 @@ export function trustedGroupsHeaderValue(ctx: RequestContext): string[] {
   const env = ctx.deps.config.env
   const headerName = (env.TALARIA_WEB_TRUSTED_GROUPS_HEADER ?? '').trim()
   if (!headerName) return []
-  const raw = ctx.headerAll(headerName).join(',')
+  // Only the last field: the one the proxy nearest this server wrote. A proxy that appends keeps client-sent fields before it.
+  const raw = ctx.req.headersDistinct[headerName.toLowerCase()]?.at(-1) ?? ''
   if (!raw) return []
   let normalized = raw.replace(/\n/g, ',')
   if (truthy(env.TALARIA_WEB_TRUSTED_GROUPS_PIPE_SEPARATOR)) normalized = normalized.replace(/\|/g, ',')
@@ -227,7 +228,8 @@ export async function ensureTrustedAuthSession(ctx: RequestContext): Promise<Ses
     return remember(ctx, null)
   }
   if (!auth.isTrustedAuthEnabled()) return reject()
-  if (!rawPeerIsTrustedProxy(ctx.peer, ctx.deps.config.env)) return reject()
+  // Identity needs a listed proxy: a loopback peer may be another local process or a relay that skipped the auth proxy.
+  if (!rawPeerIsTrustedProxy(ctx.peer, ctx.deps.config.env, { implicitLoopback: false })) return reject()
   const username = trustedAuthUsername(ctx)
   if (!username) return reject()
   const boundProfile = trustedAuthBoundProfile(ctx)

@@ -197,6 +197,11 @@ export function trustedProxyNetworks(env: Env, { implicitLoopback = true }: Prox
   return list
 }
 
+/** Whether `TALARIA_WEB_TRUSTED_PROXY_CIDRS` lists any valid proxy. */
+export function listsTrustedProxy(env: Env): boolean {
+  return proxyCidrEntries(env).length > 0
+}
+
 /** Whether `TALARIA_WEB_TRUSTED_PROXY_CIDRS` trusts any proxy beyond the loopback networks. */
 export function trustsProxyBeyondLoopback(env: Env): boolean {
   return proxyCidrEntries(env).some(({ addr, bits, type }) => {

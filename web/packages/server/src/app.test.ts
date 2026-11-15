@@ -548,6 +548,61 @@ describe('trusted-header auth', () => {
     const out =await s.get('/api/auth/logout', { method: 'POST', headers: { cookie: session!, 'X-Remote-User': 'kim', 'X-Remote-Groups': 'ops' } })
     expect(await out.json()).toEqual({ ok: true, trusted_logout_url: 'https://sso.example/logout' })
   })
+
+  // TAL-2203: loopback is not implicitly a proxy for identity; a local process or relay could name itself any user.
+  describe('proxy list', () => {
+    const env = (): Record<string, string | undefined> => s.deps.config.env
+    let listed: string | undefined
+    beforeAll(() => { listed = env().TALARIA_WEB_TRUSTED_PROXY_CIDRS })
+    afterAll(() => { env().TALARIA_WEB_TRUSTED_PROXY_CIDRS = listed })
+    const headers = { 'X-Remote-User': 'admin' }
+
+    it('an unlisted loopback peer gets no session from the header', async () => {
+      env().TALARIA_WEB_TRUSTED_PROXY_CIDRS = ''
+      const res = await s.get('/api/bootstrap', { headers })
+      expect(res.headers.getSetCookie().some((c) => c.startsWith('hermes_session='))).toBe(false)
+      expect(BootstrapSchema.parse(await res.json())).toMatchObject({ csrf_token: '', auth: { logged_in: false } })
+      expect((await s.get('/api/sessions', { headers })).status).toBe(401)
+    })
+
+    it('a listed loopback proxy signs in', async () => {
+      env().TALARIA_WEB_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
+      const boot = BootstrapSchema.parse(await (await s.get('/api/bootstrap', { headers })).json())
+      expect(boot.auth).toMatchObject({ logged_in: true, auth_type: 'trusted', user: 'admin' })
+    })
+
+    it('a peer outside the list loses its existing trusted session', async () => {
+      env().TALARIA_WEB_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
+      const session = cookieHeader((await s.get('/api/auth/status', { headers })).headers.getSetCookie(), 'hermes_session')!
+      const value = session.slice('hermes_session='.length)
+      expect(s.deps.auth.getSessionInfo(value)).toMatchObject({ auth_type: 'trusted', username: 'admin' })
+      env().TALARIA_WEB_TRUSTED_PROXY_CIDRS = '10.0.0.0/8'
+      expect(AuthStatusSchema.parse(await (await s.get('/api/auth/status', { headers: { ...headers, cookie: session } })).json()).logged_in).toBe(false)
+      expect(s.deps.auth.getSessionInfo(value)).toBeNull()
+    })
+
+    it('only the last groups header field, the one the nearest proxy wrote, maps to a profile', async () => {
+      env().TALARIA_WEB_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
+      const body = await new Promise<string>((done, fail) => {
+        const req = request(`${s.base}/api/auth/status`, { headers: { 'x-remote-user': 'kim', 'x-remote-groups': ['ops', 'dev'] } }, (res) => {
+          let text = ''
+          res.setEncoding('utf8').on('data', (chunk: string) => { text += chunk }).on('end', () => { done(text) })
+        })
+        req.on('error', fail).end()
+      })
+      expect(AuthStatusSchema.parse(JSON.parse(body))).toMatchObject({ logged_in: true, user: 'kim', bound_profile: 'default' })
+    })
+  })
+
+  it('warns once at startup when no proxy is listed for the identity header', async () => {
+    const warning = (logs: string[]) => logs.filter((line) => line.includes('TALARIA_WEB_TRUSTED_AUTH_HEADER is set') && line.includes('TALARIA_WEB_TRUSTED_PROXY_CIDRS'))
+    expect(warning(s.logs)).toEqual([])
+    const unlisted = await bootTestServer({ env: { TALARIA_WEB_TRUSTED_AUTH_HEADER: 'X-Remote-User', TALARIA_WEB_TRUSTED_PROXY_CIDRS: '' } })
+    try {
+      await unlisted.get('/api/bootstrap', { headers: { 'X-Remote-User': 'kim' } })
+      expect(warning(unlisted.logs)).toHaveLength(1)
+    } finally { await unlisted.close() }
+  })
 })
 
 describe('trusted-header auth on an isolated profile instance', () => {

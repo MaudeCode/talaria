@@ -155,4 +155,33 @@ and the limits above count a request against the proxy's own budget when its
 `X-Real-IP` names a different client. Configure the proxy to overwrite it
 (`proxy_set_header X-Real-IP $remote_addr;`).
 
+### Trusted-header sign-in
+
+With `TALARIA_WEB_TRUSTED_AUTH_HEADER` set, an authenticating proxy names the
+signed-in user in that header, and `TALARIA_WEB_TRUSTED_GROUPS_HEADER` can carry
+the groups that `TALARIA_WEB_GROUP_PROFILE_MAP` binds to profiles. The header
+counts only on a connection from a proxy listed in
+`TALARIA_WEB_TRUSTED_PROXY_CIDRS`; loopback is not trusted implicitly, because
+another local process or a relay such as `ssh -L`, `cloudflared`, or
+`tailscale serve` could otherwise name any user. A same-host proxy lists
+`127.0.0.1/32` (and `::1/128`); a proxy on another host or a Docker bridge lists
+its own address. Until a proxy is listed, trusted-header sign-in rejects every
+request, and startup logs a warning naming the variable.
+
+The proxy must overwrite both headers on every request, never append to or pass
+through a client's value; only the last groups header field is read. In nginx,
+`proxy_set_header` replaces the client's header:
+
+```nginx
+auth_request_set $auth_user $upstream_http_remote_user;
+auth_request_set $auth_groups $upstream_http_remote_groups;
+proxy_set_header X-Remote-User $auth_user;
+proxy_set_header X-Remote-Groups $auth_groups;
+```
+
+In Caddy, `forward_auth ... { copy_headers Remote-User Remote-Groups }` and
+`header_up X-Remote-User {http.auth.user.id}` replace the header; never use
+`header_up +X-Remote-User`, which appends. When you do not map groups, remove the
+groups header (`header_up -X-Remote-Groups`).
+
 ---
