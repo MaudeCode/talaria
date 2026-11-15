@@ -10,7 +10,7 @@ import {
 } from "../convex/lib/apnsPayload";
 import { alertForState, makeAggregate } from "../convex/lib/aggregate";
 import type { ActivityAggregate, ActivityAlert, SessionState } from "../convex/lib/model";
-import { defaultNotificationPreferences } from "../convex/lib/model";
+import { activityPhase, defaultNotificationPreferences } from "../convex/lib/model";
 
 const attentionState: SessionState = {
   publisherId: "publisher-1",
@@ -205,6 +205,28 @@ describe("ActivityKit payloads", () => {
       sessionId: "session-1",
       deepLink: "/sessions/session-1",
     });
+  });
+
+  it("TAL-1469: lets only an approval it names or an input request be answered from the banner", () => {
+    const notification = (state: SessionState) => makeNotification({
+      token: "device-token",
+      bundleId: "dev.kil.talaria",
+      environment: "sandbox",
+      alert: alertForState(state, defaultNotificationPreferences)!,
+      row: { ...aggregate.rows[0]!, phase: activityPhase(state), approvalHeadId: state.approvalHeadId },
+      threadId: "chat-1",
+    });
+    const approval = notification({ ...attentionState, phase: "waiting_for_approval", approvalHeadId: "head-1" });
+    expect(approval.payload.aps).toMatchObject({ category: "talaria.approval" });
+    expect(approval.payload).toMatchObject({ approvalHeadId: "head-1" });
+    expect(notification({ ...attentionState, phase: "waiting_for_input" }).payload.aps).toMatchObject({ category: "talaria.input" });
+    // Deny answers only the approval the banner names; an older publisher's unnamed approval opens the chat.
+    const unnamed = notification({ ...attentionState, phase: "waiting_for_approval" });
+    expect(unnamed.payload.aps).not.toHaveProperty("category");
+    expect(unnamed.payload).not.toHaveProperty("approvalHeadId");
+    for (const phase of ["completed", "failed"] as const) {
+      expect(notification({ ...attentionState, phase }).payload.aps).not.toHaveProperty("category");
+    }
   });
 
   it("marks attention notifications Time Sensitive and leaves other alerts at the default level", () => {

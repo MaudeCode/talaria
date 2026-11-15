@@ -6,6 +6,44 @@ public enum ApprovalNotifications {
     public static let isEnabledKey = "approvalNotifications.isEnabled"
 }
 
+/// TAL-1469: what a Relay push or local alert for a waiting request offers on its banner. Allow sits only beside the whole
+/// text of what it approves (TAL-1463), so an approval alert that does not show it offers Deny alone; Relay's never does.
+/// An input request offers Reply. Each answer names the request the alert showed, and the App answers nothing else.
+public enum PendingActionNotificationCategory {
+    /// Deny only: the alert names its approval but not what it runs. Relay sets it as `aps.category`.
+    public static let approval = "talaria.approval"
+    /// Allow and Deny: the alert's body is the whole text of what the approval runs.
+    public static let approvalShowingAction = "talaria.approval.allow"
+    /// Reply. Relay sets it as `aps.category`.
+    public static let input = "talaria.input"
+
+    public static let allowAction = "allow"
+    public static let denyAction = "deny"
+    public static let replyAction = "reply"
+
+    /// The approval a Relay push names: its queue head, as on a Live Activity.
+    public static let approvalHeadIDKey = "approvalHeadId"
+    /// The approval a local alert names: its id.
+    public static let approvalIDKey = "approvalId"
+
+    /// Registered at launch. Every answer acts on the user's server, so a locked device authenticates first.
+    public static var all: Set<UNNotificationCategory> {
+        let allow = UNNotificationAction(identifier: allowAction, title: String(localized: "Allow"), options: [.authenticationRequired])
+        let deny = UNNotificationAction(
+            identifier: denyAction, title: String(localized: "Deny"), options: [.authenticationRequired, .destructive]
+        )
+        let reply = UNTextInputNotificationAction(
+            identifier: replyAction, title: String(localized: "Reply"), options: [.authenticationRequired],
+            textInputButtonTitle: String(localized: "Send"), textInputPlaceholder: ""
+        )
+        return [
+            UNNotificationCategory(identifier: approval, actions: [deny], intentIdentifiers: []),
+            UNNotificationCategory(identifier: approvalShowingAction, actions: [allow, deny], intentIdentifiers: []),
+            UNNotificationCategory(identifier: input, actions: [reply], intentIdentifiers: []),
+        ]
+    }
+}
+
 struct PendingActionNotificationRequest: Equatable {
     enum Kind: Hashable {
         case approval
@@ -15,10 +53,15 @@ struct PendingActionNotificationRequest: Equatable {
     let kind: Kind
     let sessionID: String
     let publisherID: String?
+    /// The approval Deny answers; an approval alert without one offers no actions.
+    var approvalID: String? = nil
+    /// The whole text of what the approval runs, when the alert shows it and Allow may answer it.
+    var approvalAction: String? = nil
 
     var userInfo: [String: String] {
         var info = [SessionNotificationRefresh.sessionIDKey: sessionID]
         if let publisherID { info[SessionNotificationRefresh.publisherIDKey] = publisherID }
+        if kind == .approval, let approvalID { info[PendingActionNotificationCategory.approvalIDKey] = approvalID }
         return info
     }
 
@@ -27,10 +70,15 @@ struct PendingActionNotificationRequest: Equatable {
         switch kind {
         case .approval:
             content.title = String(localized: "Approval required")
-            content.body = String(localized: "An agent run is waiting for your approval.")
+            content.body = approvalAction ?? String(localized: "An agent run is waiting for your approval.")
+            if approvalID != nil {
+                content.categoryIdentifier = approvalAction == nil
+                    ? PendingActionNotificationCategory.approval : PendingActionNotificationCategory.approvalShowingAction
+            }
         case .question:
             content.title = String(localized: "Question waiting")
             content.body = String(localized: "An agent run is waiting for your answer.")
+            content.categoryIdentifier = PendingActionNotificationCategory.input
         }
         content.sound = .default
         content.userInfo = userInfo
@@ -88,7 +136,14 @@ final class PendingActionNotificationService {
 
     @discardableResult
     func observe(_ prompt: ApprovalPromptState, server: URL) -> Task<Void, Never>? {
-        observe(.approval, id: prompt.pending.approvalId, sessionID: prompt.sessionID, server: server)
+        let pending = prompt.pending
+        // What the approval runs, as Siri reads it back: its command, else its description. Nil when it is too long to
+        // show whole, so Allow never sits beside a shortened text or a description standing in for a hidden command.
+        let action = [pending.command, pending.description]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+            .flatMap { pending.allows(.once) ? AgentRunActivitySanitizer.approvalText($0) : nil }
+        return observe(.approval, id: pending.approvalId, sessionID: prompt.sessionID, server: server, approvalAction: action)
     }
 
     @discardableResult
@@ -97,7 +152,7 @@ final class PendingActionNotificationService {
     }
 
     private func observe(
-        _ kind: PendingActionNotificationRequest.Kind, id: String?, sessionID: String, server: URL
+        _ kind: PendingActionNotificationRequest.Kind, id: String?, sessionID: String, server: URL, approvalAction: String? = nil
     ) -> Task<Void, Never>? {
         guard let id, !id.isEmpty, !sessionID.isEmpty,
               observed.insert(Identity(server: server, sessionID: sessionID, kind: kind, id: id)).inserted
@@ -112,7 +167,8 @@ final class PendingActionNotificationService {
                 authorizationStatus: status, sceneIsActive: sceneIsActive()
             ) else { return }
             await scheduler.schedule(PendingActionNotificationRequest(
-                kind: kind, sessionID: sessionID, publisherID: TalariaRelayClient.originURL(server)?.absoluteString
+                kind: kind, sessionID: sessionID, publisherID: TalariaRelayClient.originURL(server)?.absoluteString,
+                approvalID: kind == .approval ? id : nil, approvalAction: approvalAction
             ))
         }
     }

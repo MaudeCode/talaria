@@ -11,6 +11,7 @@ final class TalariaAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        UNUserNotificationCenter.current().setNotificationCategories(PendingActionNotificationCategory.all)
         if UserDefaults.standard.bool(forKey: TalariaRelayNotifications.isEnabledKey)
             || UserDefaults.standard.bool(forKey: ResponseCompletionNotifications.isEnabledKey) {
             application.registerForRemoteNotifications()
@@ -60,22 +61,35 @@ final class TalariaAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        let url = SessionNotificationRefresh.sessionURL(userInfo: response.notification.request.content.userInfo)
+        let userInfo = response.notification.request.content.userInfo
+        let url = SessionNotificationRefresh.sessionURL(userInfo: userInfo)
+        let answer = NotificationAnswer(
+            actionIdentifier: response.actionIdentifier, userText: (response as? UNTextInputNotificationResponse)?.userText,
+            userInfo: userInfo
+        )
         // UIKit snapshots the app when this handler runs and asserts it is on main (TAL-2224).
         nonisolated(unsafe) let completionHandler = completionHandler
         Task { @MainActor in
-            await Self.completeTap(opening: url, completion: completionHandler)
+            await Self.completeTap(opening: url, answering: answer, completion: completionHandler)
         }
     }
 
-    /// Opens the tapped notification's session, then completes the tap on the main actor.
+    /// Opens the tapped notification's session, then completes the tap on the main actor. Allow, Deny and Reply answer
+    /// in the background instead and open nothing (TAL-1469).
     @MainActor static func completeTap(
         opening url: URL?,
+        answering answer: NotificationAnswer? = nil,
         with open: @MainActor (URL) async -> Void = { _ = await UIApplication.shared.open($0) },
         completion: () -> Void
     ) async {
-        if let url { await open(url) }
+        guard let answer else {
+            if let url { await open(url) }
+            return completion()
+        }
+        let task = UIApplication.shared.beginBackgroundTask(withName: "Answer from notification")
+        await answer.respond()
         completion()
+        if task != .invalid { UIApplication.shared.endBackgroundTask(task) }
     }
 }
 

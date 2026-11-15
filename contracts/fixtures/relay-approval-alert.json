@@ -23,6 +23,7 @@
       }
     ]
   },
+  "notificationCategory": "talaria.approval",
   "notificationAlert": {
     "title-loc-key": "Approval required",
     "loc-key": "An agent run is waiting for your approval."

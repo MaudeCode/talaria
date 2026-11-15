@@ -285,6 +285,12 @@ final class ChatPendingActionCoordinator {
         }
     }
 
+    func refreshPendingPrompts() async {
+        guard let sessionID = delegate?.pendingActionSessionID else { return }
+        await refreshApprovalPending(sessionID: sessionID)
+        await refreshClarificationPending(sessionID: sessionID)
+    }
+
     func startMonitoring() {
         connectionRunDidStart()
         startApprovalMonitoring()

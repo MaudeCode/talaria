@@ -184,6 +184,54 @@ final class LiveActivityApprovalResponder {
         }
     }
 
+    /// TAL-1469: a banner's Reply. It answers the pending question when that is a single question and no secret, typed the
+    /// way the chat's own card sends a typed answer; with no question pending, it sends the text as a message. A question
+    /// with several steps or a password manager prompt is answered in the chat.
+    func reply(publisherID: String?, sessionID: String, text: String) async -> Outcome {
+        guard !appLock.locksBackgroundWork() else { return .refused(String(localized: "Unlock Talaria in the app first.")) }
+        guard let client = makeClient(publisherID) else { return .refused(String(localized: "Add a server in Talaria first.")) }
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return .refused(String(localized: "Enter a response before submitting.")) }
+        let pending: PendingClarification?
+        do {
+            pending = try await client.clarifyPending(sessionID: sessionID).pending.flatMap { $0.isEmpty ? nil : $0 }
+        } catch {
+            return .refused(error.localizedDescription)
+        }
+        guard let pending else {
+            do {
+                let started = try await client.startChat(sessionID: sessionID, message: text, workspace: nil, model: nil)
+                guard started.streamId?.isEmpty == false else {
+                    return .refused(started.error ?? String(localized: "The server did not return a stream ID."))
+                }
+                return .answered
+            } catch {
+                // An unknown outcome is never sent again: the chat shows whether the message arrived.
+                return .refused(error.localizedDescription)
+            }
+        }
+        guard pending.vault == nil, let steps = pending.steps, let step = steps.first, steps.count == 1 else {
+            return .refused(String(localized: "Open Talaria to answer this one."))
+        }
+        do {
+            _ = try await client.respondClarification(
+                sessionID: sessionID, clarifyID: pending.clarifyId,
+                answers: [step.qid: step.multiSelect ? .array([.string(text)]) : .string(text)]
+            )
+            return .answered
+        } catch let error as APIError where error.indicatesExpiredPendingPrompt {
+            return .refused(error.localizedDescription)
+        } catch {
+            // An unknown outcome keeps the answer only once this question is no longer the pending one.
+            if !APIError.isDefinitiveWriteFailure(error),
+               let current = try? await client.clarifyPending(sessionID: sessionID),
+               current.pending.map({ $0.isEmpty || $0.clarifyId != pending.clarifyId }) ?? true {
+                return .answered
+            }
+            return .refused(error.localizedDescription)
+        }
+    }
+
     private static func answered(
         _ row: TalariaAggregateActivityAttributes.ContentState.Row
     ) -> TalariaAggregateActivityAttributes.ContentState.Row {

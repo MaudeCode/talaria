@@ -138,6 +138,9 @@ export interface ActivityAlert {
   deepLink?: string;
   // TAL-1970: the agent notice this alert announces; it is queued once per notice and device.
   agentNotifyId?: string;
+  // TAL-1469: the App's notification category whose banner actions answer the request: Deny for an approval the alert
+  // names by its queue head (the alert never shows what the approval runs, so it offers no Allow), Reply for input.
+  category?: "talaria.approval" | "talaria.input";
 }
 
 export const defaultNotificationPreferences: NotificationPreferences = {

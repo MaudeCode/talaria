@@ -789,6 +789,10 @@ struct ChatView: View {
         .onChange(of: scenePhase) {
                 handleScenePhaseChange(scenePhase)
             }
+            // A banner's Allow, Deny or Reply answered this chat's prompt outside it (TAL-1469).
+            .onReceive(NotificationCenter.default.publisher(for: .talariaSessionNotificationArrived)) { _ in
+                Task { await viewModel.refreshPendingPrompts() }
+            }
             .onChange(of: viewModel.activeStreamID) { endedStreamID, _ in
                 handleActiveStreamChange(endedStreamID: endedStreamID)
             }

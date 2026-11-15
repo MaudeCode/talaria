@@ -461,6 +461,8 @@
 		E14630000000000000000014 /* TalariaAggregateRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14630000000000000000002 /* TalariaAggregateRows.swift */; };
 		E14630000000000000000015 /* AggregateStatusLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000213 /* AggregateStatusLabel.swift */; };
 		E14630000000000000000016 /* LiveActivityApprovalResponder.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14630000000000000000003 /* LiveActivityApprovalResponder.swift */; };
+		E14690000000000000000001 /* NotificationAnswer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14690000000000000000002 /* NotificationAnswer.swift */; };
+		E14690000000000000000003 /* NotificationAnswerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14690000000000000000004 /* NotificationAnswerTests.swift */; };
 		D74A00000000000000000019 /* VisualReference.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000003 /* VisualReference.swift */; };
 		D74A00000000000000000020 /* LiveActivityVisualReferenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000004 /* LiveActivityVisualReferenceTests.swift */; };
 		D74A00000000000000000021 /* AppScreenVisualReferenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000005 /* AppScreenVisualReferenceTests.swift */; };
@@ -934,6 +936,8 @@
 		E14630000000000000000001 /* LiveActivityActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityActions.swift; sourceTree = "<group>"; };
 		E14630000000000000000002 /* TalariaAggregateRows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalariaAggregateRows.swift; sourceTree = "<group>"; };
 		E14630000000000000000003 /* LiveActivityApprovalResponder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityApprovalResponder.swift; sourceTree = "<group>"; };
+		E14690000000000000000002 /* NotificationAnswer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationAnswer.swift; sourceTree = "<group>"; };
+		E14690000000000000000004 /* NotificationAnswerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationAnswerTests.swift; sourceTree = "<group>"; };
 		D74A00000000000000000003 /* VisualReference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisualReference.swift; sourceTree = "<group>"; };
 		D74A00000000000000000004 /* LiveActivityVisualReferenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityVisualReferenceTests.swift; sourceTree = "<group>"; };
 		D74A00000000000000000005 /* AppScreenVisualReferenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppScreenVisualReferenceTests.swift; sourceTree = "<group>"; };
@@ -1108,6 +1112,7 @@
 				C1TAL1890000000000000001 /* ChatCodeBlockCopyConfirmationTests.swift */,
 				C1TAL1396000000000000001 /* ChatCodeBlockStreamingTests.swift */,
 				A04500000000000000000018 /* LiveActivityTests.swift */,
+				E14690000000000000000004 /* NotificationAnswerTests.swift */,
 				1A2B3C4D5E6F700000000340 /* AppIntentNewChatTests.swift */,
 				1A2B3C4D5E6F7000000014A0 /* AppIntentAskTalariaTests.swift */,
 				C1TAL2233000000000000002 /* AppIntentActivityTests.swift */,
@@ -1510,6 +1515,7 @@
 			children = (
 				A04500000000000000000012 /* AgentLiveActivityManager.swift */,
 				E14630000000000000000003 /* LiveActivityApprovalResponder.swift */,
+				E14690000000000000000002 /* NotificationAnswer.swift */,
 				C100B0000000000000000101 /* PerSessionRelayActivityRegistration.swift */,
 				C107E000000000000000012 /* TalariaAggregateLiveActivityManager.swift */,
 				9EC8D639E3A5818B98398993 /* LiveActivityReconciler+App.swift */,
@@ -2182,6 +2188,7 @@
 				E22300000000000000000006 /* ProviderQuotaWidgetSourceView.swift in Sources */,
 				E22300000000000000000007 /* ProviderQuotaWidgetView.swift in Sources */,
 				E14630000000000000000016 /* LiveActivityApprovalResponder.swift in Sources */,
+				E14690000000000000000001 /* NotificationAnswer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2245,6 +2252,7 @@
 				C1TAL1890000000000000002 /* ChatCodeBlockCopyConfirmationTests.swift in Sources */,
 				C1TAL1396000000000000002 /* ChatCodeBlockStreamingTests.swift in Sources */,
 				A04500000000000000000008 /* LiveActivityTests.swift in Sources */,
+				E14690000000000000000003 /* NotificationAnswerTests.swift in Sources */,
 				1A2B3C4D5E6F700000000341 /* AppIntentNewChatTests.swift in Sources */,
 				1A2B3C4D5E6F7000000014A1 /* AppIntentAskTalariaTests.swift in Sources */,
 				C1TAL2233000000000000003 /* AppIntentActivityTests.swift in Sources */,

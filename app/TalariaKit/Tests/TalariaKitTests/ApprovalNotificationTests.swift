@@ -159,20 +159,32 @@ final class ApprovalNotificationTests: XCTestCase {
         XCTAssertTrue(scheduler.requests.isEmpty)
     }
 
+    /// TAL-1469: Allow sits only beside the whole text of what the approval runs, as on a Live Activity (TAL-1463); an
+    /// approval whose text is too long to show whole, or that refuses Allow once, offers Deny alone.
     @MainActor
-    func testSanitizedContentAndPayloadReachExistingTapRoute() async throws {
+    func testApprovalAlertOffersAllowOnlyBesideTheWholeTextAndReachesTheTapRoute() async throws {
         let scheduler = ApprovalNotificationSpy(status: .authorized)
         let service = PendingActionNotificationService(scheduler: scheduler, preferenceEnabled: { true },
             sceneIsActive: { false }, relayOwnsAlerts: { _ in false })
         await service.observe(prompt("stable-id"), server: server)?.value
         let request = try XCTUnwrap(scheduler.requests.first)
-        XCTAssertEqual(request.userInfo, ["sessionId": "session-abc", "publisherId": "https://approval-alert.test"])
+        XCTAssertEqual(request.userInfo, ["sessionId": "session-abc", "publisherId": "https://approval-alert.test", "approvalId": "stable-id"])
         let content = request.content
         XCTAssertEqual(content.title, "Approval required")
-        XCTAssertEqual(content.body, "An agent run is waiting for your approval.")
+        XCTAssertEqual(content.body, "private command /private/path")
         XCTAssertNotNil(content.sound)
-        XCTAssertEqual(content.categoryIdentifier, "")
+        XCTAssertEqual(content.categoryIdentifier, "talaria.approval.allow")
         XCTAssertEqual(content.userInfo as? [String: String], request.userInfo)
+        for pending in [
+            // A command too long to show is never replaced by its shorter description beside Allow.
+            PendingApproval(approvalId: "long", command: String(repeating: "x", count: 81), description: "short"),
+            PendingApproval(approvalId: "owner", command: "ls", allowedChoices: [.deny]),
+        ] {
+            await service.observe(ApprovalPromptState(sessionID: "session-abc", pending: pending, pendingCount: 1), server: server)?.value
+            let content = try XCTUnwrap(scheduler.requests.last).content
+            XCTAssertEqual(content.body, "An agent run is waiting for your approval.")
+            XCTAssertEqual(content.categoryIdentifier, "talaria.approval", "Deny only")
+        }
         XCTAssertTrue(SessionNotificationRefresh.namesASession(userInfo: content.userInfo))
         let url = try XCTUnwrap(TalariaDeepLink.sessionURL(
             sessionID: try XCTUnwrap(content.userInfo[SessionNotificationRefresh.sessionIDKey] as? String),
@@ -181,7 +193,7 @@ final class ApprovalNotificationTests: XCTestCase {
         XCTAssertEqual(TalariaDeepLink.publisherID(from: url), "https://approval-alert.test")
         await service.observe(prompt(nil), server: server)?.value
         await service.observe(prompt(""), server: server)?.value
-        XCTAssertEqual(scheduler.requests.count, 1, "Never derive an alert identity from command text.")
+        XCTAssertEqual(scheduler.requests.count, 3, "Never derive an alert identity from command text.")
     }
 
 
@@ -200,6 +212,7 @@ final class ApprovalNotificationTests: XCTestCase {
         XCTAssertEqual(request.userInfo, ["sessionId": "session-abc", "publisherId": "https://approval-alert.test"])
         XCTAssertEqual(request.content.title, "Question waiting")
         XCTAssertEqual(request.content.body, "An agent run is waiting for your answer.")
+        XCTAssertEqual(request.content.categoryIdentifier, "talaria.input", "Reply answers it from the banner (TAL-1469)")
         XCTAssertEqual(request.content.userInfo as? [String: String], request.userInfo)
     }
 
@@ -214,6 +227,8 @@ final class ApprovalNotificationTests: XCTestCase {
         let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent(
             "contracts/fixtures/relay-approval-alert.json"))) as? [String: Any])
         let alert = try XCTUnwrap(fixture["notificationAlert"] as? [String: String])
+        // TAL-1469: Relay names the App's Deny-only category, since its alert never shows what the approval runs.
+        XCTAssertEqual(fixture["notificationCategory"] as? String, "talaria.approval")
         // The payload relay/convex/lib/apnsPayload.ts `makeNotification` sends for an approval head.
         let push: [AnyHashable: Any] = [
             "aps": ["alert": alert, "sound": "default", "interruption-level": "time-sensitive"],

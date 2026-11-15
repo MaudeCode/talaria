@@ -1314,7 +1314,7 @@ final class ProvidersViewModelTests: APIClientTestCase {
 }
 
 /// Decodes UserNotifications objects that have no public initializer from fixed key values.
-private final class NotificationArchive: NSCoder {
+final class NotificationArchive: NSCoder {
     private let values: [String: Any]
     init(_ values: [String: Any]) { self.values = values }
     override var allowsKeyedCoding: Bool { true }
