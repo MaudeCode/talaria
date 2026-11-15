@@ -66,19 +66,26 @@ public struct NeedsYouSnapshotStore {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var clearCount = 0
 
+    /// The clear count now. A caller that learns of waiting chats from an earlier request passes the count it read
+    /// before that request, so a sign-out or server switch in between voids its refresh too.
+    public static var generation: Int { lock.withLock { clearCount } }
+
     private let defaults: UserDefaults?
 
     public init(defaults: UserDefaults? = UserDefaults(suiteName: ProviderQuotaWidgetSnapshotStore.appGroupIdentifier)) {
         self.defaults = defaults
     }
 
-    /// Reads the server's activity summary and saves its waiting group. A failed read, or one an auth change
-    /// overtook, leaves the last snapshot to go stale.
+    /// Reads the server's activity summary and saves its waiting group. A failed read, or one a clear overtook since
+    /// `generation`, leaves the last snapshot to go stale.
     @MainActor @discardableResult
-    public func refresh(client: APIClient, serverURL: URL, at date: @autoclosure () -> Date = Date()) async -> Bool {
-        let clears = Self.lock.withLock { Self.clearCount }
-        guard let summary = try? await client.activitySummary(),
-              Self.lock.withLock({ Self.clearCount }) == clears,
+    public func refresh(
+        client: APIClient, serverURL: URL, since generation: Int = Self.generation,
+        at date: @autoclosure () -> Date = Date()
+    ) async -> Bool {
+        guard Self.generation == generation,
+              let summary = try? await client.activitySummary(),
+              Self.generation == generation,
               let defaults,
               let data = try? JSONEncoder().encode(NeedsYouSnapshot(summary: summary, serverURL: serverURL, updatedAt: date()))
         else { return false }

@@ -61,6 +61,29 @@ final class NeedsYouSnapshotTests: APIClientTestCase {
         XCTAssertNil(store.load())
     }
 
+    /// A server switch while the list request is in flight clears the snapshot; that list must not refresh it after.
+    func testAListLoadOvertakenByAClearRefreshesNothing() async throws {
+        let store = makeStore()
+        let json = summaryJSON
+        let summaryRead = LockedTestValue(false)
+        let client = makeClient { request in
+            if request.url?.path == "/api/activity/summary" {
+                summaryRead.value = true
+                return apiTestJSONResponse(json, for: request)
+            }
+            store.clear()
+            return apiTestJSONResponse(#"{"sessions":[]}"#, for: request)
+        }
+        let viewModel = SessionListViewModel(server: server, client: client, needsYouStore: store)
+
+        let loaded = await viewModel.load()
+        XCTAssertTrue(loaded)
+        for _ in 0..<50 where !summaryRead.value { try await Task.sleep(for: .milliseconds(10)) }
+
+        XCTAssertNil(store.load())
+        XCTAssertFalse(summaryRead.value)
+    }
+
     func testSessionListRefreshSavesTheSameSnapshotAsTheRelayRefresh() async throws {
         let listStore = makeStore()
         let relayStore = makeStore()

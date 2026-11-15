@@ -480,6 +480,7 @@ public final class SessionListViewModel {
         // Resolved before the request, so a list in flight across a profile switch cannot cache for the new profile.
         let agentStorageEntry = responseCache?.entry(ResponseCache.Kind.agentStorage)
         do {
+            let needsYouGeneration = NeedsYouSnapshotStore.generation
             let response = try await client.sessions(visibility: .showAll)
             guard generation == loadGeneration else { return true }
             let visibleSessions = (response.sessions ?? [])
@@ -507,7 +508,7 @@ public final class SessionListViewModel {
             }
             cachedDataReason = nil
             isShowingCachedPaint = false
-            refreshNeedsYou()
+            refreshNeedsYou(since: needsYouGeneration)
 
             if let modelContext {
                 do {
@@ -557,10 +558,11 @@ public final class SessionListViewModel {
         }
     }
 
-    /// Off the list's refresh queue, so a slow server never holds the list back.
-    private func refreshNeedsYou() {
+    /// Off the list's refresh queue, so a slow server never holds the list back. `generation` is read before the
+    /// list request, so a server switch while it was in flight voids the refresh.
+    private func refreshNeedsYou(since generation: Int) {
         guard let needsYouStore else { return }
-        Task { [client, server] in await needsYouStore.refresh(client: client, serverURL: server) }
+        Task { [client, server] in await needsYouStore.refresh(client: client, serverURL: server, since: generation) }
     }
 
     public func loadActiveProfile() async {
