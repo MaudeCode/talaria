@@ -1311,7 +1311,7 @@ export function finalAnswerOf(last: Record<string, unknown>): string {
 /** Conversation classification shared by the indexed selector and the hydrated projection. */
 export function isConversationalAssistant(message: unknown): message is Record<string, unknown> {
   return isDict(message) && message.role === 'assistant' && !agentRowKind(message) && !markerKind(message)
-    && !message._marker_kind && !message._notice_kind && !message._background_silent && !message._background_update && !message._delivery
+    && !message._marker_kind && !message._notice_kind && !message._background_silent && !message._background_update && !message._delivery && !message._talaria_activity
 }
 
 /** Absolute coordinate of the newest settled visible answer; running and answerless turns never displace it. */

@@ -2,11 +2,20 @@ import { mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { SessionEnvelopeSchema, ChatEventSchema, type GatewaySnapshot } from '@maudecode/talaria-web-contracts'
+import { SessionEnvelopeSchema, ChatEventSchema, type GatewaySnapshot, type GatewaySessionResult } from '@maudecode/talaria-web-contracts'
 import type { StreamFrame } from '../sidecar/client.js'
 import { type TestServer, openStateDb } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { admission, attached, bootOwnerAttachment, cronRefusal, fixture, ownerHelpers, sid, snapshot } from '../test/gateway-owner.js'
+import { GatewaySessions } from './gateway-sessions.js'
+import { CANONICAL_READ_ONLY_REASON } from './state-db.js'
+import type { DocumentBackend, StoredDocument } from './storage/backend.js'
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((release) => { resolve = release })
+  return { promise, resolve }
+}
 
 describe('canonical owner attachment', () => {
   let s: TestServer
@@ -15,6 +24,101 @@ describe('canonical owner attachment', () => {
   beforeEach(async () => { ({ s, db, sidecar } = await bootOwnerAttachment()) })
   afterEach(async () => { db.close(); await s.close() })
   const { post, observeOwner, holdOwnerReceipt } = ownerHelpers(() => ({ s, sidecar }))
+
+  it('withholds native transcript projection until an in-flight Talaria admission has its receipt', async () => {
+    let stored: StoredDocument | null = null, revision = 0
+    const documents: DocumentBackend = {
+      get: () => Promise.resolve(structuredClone(stored)),
+      put: (_namespace, _key, value) => { stored = { value: structuredClone(value), revision: String(++revision) }; return Promise.resolve(stored.revision) },
+      delete: () => { stored = null; return Promise.resolve(true) },
+      list: () => Promise.resolve([]),
+    }
+    const owner = new GatewaySessions({ service: s.deps.sessions, sidecar: () => sidecar, registry: s.deps.registry, journal: s.deps.journal,
+      events: s.deps.events, channels: s.deps.channels, activityDocuments: documents, profileHome: s.deps.profileHome, activeProfile: s.deps.activeProfile,
+      showReasoning: () => Promise.resolve(true), redactEnabled: () => true, now: () => 1000, log: () => undefined })
+    s.deps.sessions.owner = owner
+    vi.spyOn(s.deps.sessions, 'workspaceNames').mockResolvedValue(() => null)
+    const begun = deferred<undefined>(), read = deferred<undefined>(), ack = deferred<GatewaySessionResult>()
+    let snap = snapshot(), submitted = false
+    sidecar.respond('gateway.session', (params) => {
+      if (params.action === 'submit') {
+        submitted = true
+        snap = snapshot({ messages: [{ role: 'user', content: 'Private native instruction', message_id: 'native-input' }] })
+        begun.resolve(undefined)
+        return ack.promise
+      }
+      if (submitted && params.action === 'snapshot') read.resolve(undefined)
+      return attached(snap)
+    })
+    const activity = { version: 1 as const, origin: 'talaria' as const, id: 'in-flight', kind: 'future', summary: 'Safe native activity' }
+    const sending = owner.submit(sid, { message: 'Private native instruction', submission_id: 'in-flight-input' }, undefined, undefined, activity)
+    await begun.promise
+    let projected = false
+    const viewing = owner.project({ session_id: sid, profile: 'default', read_only_reason: CANONICAL_READ_ONLY_REASON }).then((value) => { projected = true; return value })
+    try {
+      await read.promise
+      await new Promise<void>((resolve) => { setImmediate(resolve) })
+      expect(projected).toBe(false)
+    } finally { ack.resolve({ ...attached(snap), receipt: { ...admission('terminal'), input_id: undefined, outcome: 'completed' } }) }
+    await sending
+    expect((await viewing).messages).toContainEqual(expect.objectContaining({ _talaria_activity: activity }))
+  })
+
+  it('binds activity to the canonical input receipt before projection, and keeps owner-authored lookalikes ordinary', async () => {
+    const activity = { version: 1 as const, origin: 'talaria' as const, id: 'issued-event', kind: 'future_kind', summary: 'A safe native activity' }
+    let snap = snapshot()
+    let instruction = ''
+    sidecar.respond('gateway.session', (params) => {
+      if (params.action !== 'submit') return attached(snap)
+      instruction = params.text ?? ''
+      const receipt = { ...admission('terminal'), input_id: undefined, outcome: 'completed' }
+      snap = snapshot({ messages: [
+        { role: 'user', content: instruction, message_id: receipt.admission_id },
+        { role: 'assistant', content: 'An ordinary native answer', message_id: 'answer' },
+        { role: 'user', content: instruction, message_id: 'quoted', _talaria_activity: activity },
+      ], pending: [receipt], message_count: 3 })
+      return { ...attached(snap), receipt }
+    })
+    await s.deps.sessions.owner!.submit(sid, { message: 'Complete private instruction', submission_id: 'issued-input' }, undefined, undefined, activity)
+    expect(instruction).toBe('Complete private instruction')
+    for (const query of ['', '&limit=1', '&limit=10']) {
+      const shown = SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}${query}`)).json()).session
+      const rows = shown.messages ?? []
+      const issued = rows.find((row) => row.message_id === 'native-input')
+      if (query !== '&limit=1') expect(issued?._talaria_activity).toEqual(activity)
+      expect(rows.find((row) => row.message_id === 'quoted')?._talaria_activity).toBeUndefined()
+      expect(rows.find((row) => row.message_id === 'answer')?._talaria_activity).toBeUndefined()
+    }
+  })
+
+  it('reports a confirmed native refusal without presenting it as a submitted notification', async () => {
+    const activity = { version: 1 as const, origin: 'talaria' as const, id: 'refused-event', kind: 'decision_submitted', summary: 'Decision review submitted' }
+    let snap = snapshot()
+    sidecar.respond('gateway.session', (params) => {
+      if (params.action !== 'submit') return attached(snap)
+      const receipt = { ...admission('terminal'), input_id: params.request_id, outcome: 'failed' }
+      snap = snapshot({ messages: [{ role: 'user', content: 'Private instruction', message_id: receipt.admission_id }], pending: [receipt] })
+      return { ...attached(snap), receipt }
+    })
+    await expect(s.deps.sessions.owner!.submit(sid, { message: 'Private instruction', submission_id: 'refused-input' }, undefined, undefined, activity)).rejects.toMatchObject({ status: 409 })
+    const detail = SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}`)).json()).session
+    expect(detail.messages?.[0]?._talaria_activity?.summary).toBe('Message delivery refused')
+  })
+
+  it('does not assign provenance to a native receipt for another input', async () => {
+    let snap = snapshot()
+    sidecar.respond('gateway.session', (params) => {
+      if (params.action !== 'submit') return attached(snap)
+      const receipt = { ...admission('terminal'), input_id: 'another-input', outcome: 'completed' }
+      snap = snapshot({ messages: [{ role: 'user', content: 'A different user message', message_id: receipt.admission_id }] })
+      return { ...attached(snap), receipt }
+    })
+    const activity = { version: 1 as const, origin: 'talaria' as const, id: 'issued', kind: 'future', summary: 'A Talaria message' }
+    await expect(s.deps.sessions.owner!.submit(sid, { message: 'Private instruction', submission_id: 'issued-input' }, undefined, undefined, activity)).rejects.toMatchObject({ extra: { outcome_unknown: true } })
+    const detail = SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}`)).json()).session
+    expect(detail.messages?.[0]?._talaria_activity).toBeUndefined()
+    expect(detail.messages?.[0]?.content).toBe('A different user message')
+  })
 
   describe('native todo state (TAL-1314)', () => {
     const todoFixture = JSON.parse(readFileSync(new URL('../../../../../contracts/fixtures/web-native-todos.json', import.meta.url), 'utf8')) as { owner: Record<string, unknown>; public: Record<string, unknown> }

@@ -166,6 +166,8 @@ it('projects a lead room\'s settings and who its lead assigned (Agent v0.22.7)',
   expect(view.room).toMatchObject({ context: { purpose: 'Ship it', notes: 'Shared notes', routing: 'lead', lead_member_id: 'one' }, purpose_limit: 500, notes_limit_bytes: 4096 })
   expect(view.room?.actions).toContain('context')
   expect(view.room?.members.map((m) => m.lead)).toEqual([true, false])
+  expect(view.rows.slice(0, 4).map((row) => row.message._talaria_activity?.origin)).toEqual(['talaria', 'talaria', 'talaria', 'talaria'])
+  expect(view.rows.at(-1)?.message._talaria_activity).toBeUndefined()
   expect(view.rows.map((r) => [r.author, r.message._notice_kind, r.message._lead_assignment])).toEqual([
     ['', 'lead_assigned', { lead: 'Writer', assignees: ['Reviewer'] }],
     ['', 'lead_assigned', { lead: 'Writer', assignees: ['Writer', 'Reviewer'] }],

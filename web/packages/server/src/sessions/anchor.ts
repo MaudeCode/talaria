@@ -1,4 +1,5 @@
 import { reasoningProjection } from './reasoning-display.js'
+import { TalariaActivitySchema, type TalariaActivity } from '@maudecode/talaria-web-contracts'
 import { reasoningDisclosureKey } from './reasoning-titles.js'
 /**
  * Anchor activity scenes: the compacted worklog the browser settles onto an
@@ -175,6 +176,7 @@ export interface SceneTool { progress?: ToolProgress | null; id: string; name: s
 export interface SceneSteering { steer_id: string; consumed: boolean; submitted_at: number | null; consumed_at: number | null; phase_duration?: number | null }
 /** The one scene row shape both clients render: every decoding decision is made here. */
 export interface SceneRow {
+  talaria_activity?: TalariaActivity
   row_id: string
   order_index: number
   role: 'prose' | 'reasoning' | 'tool' | 'steering'
@@ -235,7 +237,8 @@ export function normalizeSceneRows(value: unknown): SceneRow[] {
     } else if (row.role === 'steering' && str(row.text).trim()) {
       // Already-normalized rows (built or re-read scenes) keep their fields: normalizing is idempotent.
       const consumed = row.status === 'consumed' || steering.consumed === true
-      put({ ...base, role: 'steering', text: str(row.text), steering: { steer_id: steerId || rowId, consumed, submitted_at: finite(payload.created_at) ?? finite(steering.submitted_at), consumed_at: consumed ? finite(payload.consumed_at) ?? finite(steering.consumed_at) ?? createdAt : null, phase_duration: finite(steering.phase_duration) } })
+      const activity = TalariaActivitySchema.safeParse(row.talaria_activity ?? payload.talaria_activity).data
+      put({ ...base, role: 'steering', text: activity?.summary ?? str(row.text), ...(activity ? { talaria_activity: activity } : {}), steering: { steer_id: steerId || rowId, consumed, submitted_at: finite(payload.created_at) ?? finite(steering.submitted_at), consumed_at: consumed ? finite(payload.consumed_at) ?? finite(steering.consumed_at) ?? createdAt : null, phase_duration: finite(steering.phase_duration) } })
     } else if (row.role === 'tool') {
       const status = str(row.status).toLowerCase()
       const done = typeof tool.done === 'boolean' ? tool.done : status !== 'running'
@@ -374,7 +377,8 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
       // A persisted steer sits at its causal place; it ends one work phase and starts the next.
       const steerId = str(steer.steer_id) || `i${String(index)}`
       const createdAt = finite(m.timestamp)
-      push({ row_id: `steering:${steerId}`, role: 'steering', text: messageText(m.content), ...(createdAt === null ? {} : { created_at: createdAt }),
+      const activity = TalariaActivitySchema.safeParse(m._talaria_activity).data
+      push({ row_id: `steering:${steerId}`, role: 'steering', text: activity?.summary ?? messageText(m.content), ...(activity ? { talaria_activity: activity } : {}), ...(createdAt === null ? {} : { created_at: createdAt }),
         steering: { steer_id: steerId, consumed: true, submitted_at: finite(steer.submitted_at), consumed_at: finite(steer.consumed_at), phase_duration: finite(steer.phase_duration) } })
       continue
     }

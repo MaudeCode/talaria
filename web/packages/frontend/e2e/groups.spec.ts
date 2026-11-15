@@ -7,6 +7,8 @@ import { SpaShell } from '../../server/dist/spa.js'
 
 test.use({ serviceWorkers: 'block', video: process.env.TALARIA_GROUP_ROUTING_EVIDENCE || process.env.TALARIA_GROUP_REPLY_EVIDENCE ? 'on' : 'off' })
 
+const activityNotices = (page: Page) => page.locator('.msg-row[data-role=activity][data-origin=talaria]')
+
 test('live discussion activity shows tools, elapsed time, stalled members and the owning round', async ({ page }, info) => {
   const { fixture, server } = await discussionServer()
   const now = 1_800_000_000
@@ -339,7 +341,11 @@ test('shows a stalled room\'s wake failure and retries it optimistically, restor
     fixture.append('message.user', 'Review this')
     fixture.stall('Members could not be woken: profile helper not found')
     await page.goto(`${server.base}/groups?room=discussion`)
-    await expect(page.locator('.msg-row[data-role=notice]')).toHaveText('Members could not be woken: profile helper not found')
+    const notice = activityNotices(page)
+    await expect(notice.locator('summary')).toHaveText('Could not wake group members')
+    await expect(notice.getByText('Members could not be woken: profile helper not found', { exact: true })).not.toBeVisible()
+    await notice.locator('summary').click()
+    await expect(notice.getByText('Members could not be woken: profile helper not found', { exact: true })).toBeVisible()
     const retry = page.getByRole('button', { name: 'Retry', exact: true })
     await expect(retry).toBeVisible()
     if (process.env.TALARIA_GROUP_EVIDENCE) { mkdirSync(process.env.TALARIA_GROUP_EVIDENCE, { recursive: true }); await page.screenshot({ path: `${process.env.TALARIA_GROUP_EVIDENCE}/stalled-${info.project.name}.png` }) }
@@ -382,7 +388,7 @@ test('saves a room\'s settings before the Agent answers and shows who its lead a
     fixture.assignment('one', ['two'])
     fixture.assignment('one', ['one'], true)
     await page.goto(`${server.base}/groups?room=discussion`)
-    const notices = page.locator('.msg-row[data-role=notice]')
+    const notices = activityNotices(page)
     await expect(notices).toHaveText(['Writer gave this to Reviewer', 'Writer took this'])
     await expect(notices.locator('.text-warning')).toHaveCount(0)
     const strip = page.getByRole('list', { name: 'Members' })
@@ -443,7 +449,7 @@ test.describe('automatic routing', () => {
       fixture.gateway('room.routed', { member_ids: ['two'], everyone: false, fallback: false })
       fixture.gateway('room.routed', { member_ids: [], everyone: true, fallback: true })
       await page.reload()
-      const notices = page.locator('.msg-row[data-role=notice]')
+      const notices = activityNotices(page)
       await expect(notices).toHaveText(['Picked Reviewer'])
       await expect(notices.locator('.text-warning')).toHaveCount(0)
       await shot('picked')
@@ -563,7 +569,7 @@ test('shows a discussion paused at its cap and continues it optimistically, rest
     fixture.append('message.member', 'First take')
     fixture.activity(ask, 'thread')
     await page.goto(`${server.base}/groups?room=discussion`)
-    const notice = page.locator('.msg-row[data-role=notice]')
+    const notice = activityNotices(page)
     await expect(notice).toHaveText('Paused at the round limit')
     await expect(page.locator('.composer-notice')).toContainText('Paused at the round limit · 5 left')
     const resume = page.getByRole('button', { name: 'Continue', exact: true })

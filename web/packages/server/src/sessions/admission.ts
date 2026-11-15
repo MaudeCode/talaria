@@ -11,6 +11,8 @@ import { isGenericContinuationIntent, type StartTurnOptions, type TurnRunner } f
 import { str } from '../util.js'
 import { SidecarError } from '../sidecar/client.js'
 import { commandCatalog, unsupportedPromptMessage } from '../tools/commands.js'
+import type { TalariaActivity } from '@maudecode/talaria-web-contracts'
+import { talariaActivity } from './talaria-activities.js'
 const PROFILE_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
 
 export type QueueAdmissionFence = Pick<PromptQueueCard, 'project_id' | 'backend' | 'authority_epoch'> & { profile: string }
@@ -118,7 +120,7 @@ export async function expandPromptBuiltin(deps: AppDeps, s: Session, msg: string
   return expanded.message
 }
 
-export async function startSessionChat(deps: AppDeps, body: Record<string, unknown>, settle: Pick<StartTurnOptions, 'onDone' | 'onFailed'> = {}, timing?: StartupTiming, fence?: QueueAdmissionFence): Promise<Record<string, unknown>> {
+export async function startSessionChat(deps: AppDeps, body: Record<string, unknown>, settle: Pick<StartTurnOptions, 'onDone' | 'onFailed' | 'talariaActivity'> = {}, timing?: StartupTiming, fence?: QueueAdmissionFence): Promise<Record<string, unknown>> {
   const measure = <T>(name: Parameters<NonNullable<typeof timing>['measure']>[0], fn: () => Promise<T> | T): Promise<T> => timing ? timing.measure(name, fn) : Promise.resolve(fn())
   requireField(body, 'session_id')
   timing?.identify(str(body.session_id))
@@ -133,7 +135,7 @@ export async function startSessionChat(deps: AppDeps, body: Record<string, unkno
   if (owner && (await measure('owner_routing', () => owner.isOwned(sid)))) {
     if (!(await deps.sessions.sessionIdVisible(sid))) throw new HttpFailure(404, 'Session not found')
     if (fence?.backend === 'direct') throw new HttpFailure(409, 'Queue target authority changed')
-    const response = (await owner.submit(sid, body, timing, fence))!
+    const response = (await owner.submit(sid, settle.talariaActivity ? { ...body, submission_id: `talaria-${settle.talariaActivity.id}` } : body, timing, fence, settle.talariaActivity))!
     timing?.finish('ok')
     return response
   }
@@ -194,7 +196,7 @@ export async function startSessionChat(deps: AppDeps, body: Record<string, unkno
  * `chat.steer` for a visible session: queue `text` as a pending steer on its running turn (TAL-424). A steer sent while
  * a background turn runs starts the user's turn through `start` instead (TAL-460).
  */
-export async function steerSessionChat(deps: AppDeps, sid: string, text: string, displayText: string, steerId: string, start: (body: Record<string, unknown>) => Promise<Record<string, unknown>>): Promise<SteerResponse> {
+export async function steerSessionChat(deps: AppDeps, sid: string, text: string, displayText: string, steerId: string, start: (body: Record<string, unknown>) => Promise<Record<string, unknown>>, activity?: TalariaActivity): Promise<SteerResponse> {
   await requireSupportedChatCommand(deps, text.trim())
   const active = deps.registry.activeRunStreamForSession(sid)
   if (active && deps.registry.activeRuns.get(active)?.origin === 'background') {
@@ -205,7 +207,7 @@ export async function steerSessionChat(deps: AppDeps, sid: string, text: string,
   let target: Session | null = null
   try { target = (await deps.sessionStore.get(sid, { metadataOnly: true })) } catch { target = null }
   const prompt = target ? await expandPromptBuiltin(deps, target, text, undefined) : null
-  return (await deps.turns.steer(sid, prompt ?? text, displayText || (prompt === null ? '' : text), steerId)) as SteerResponse
+  return (await deps.turns.steer(sid, prompt ?? text, displayText || (prompt === null ? '' : text), steerId, activity)) as SteerResponse
 }
 
 /** `chat.cancel` for a visible stream: Stop its turn and answer with the steers it withdrew and the session's phase. */
@@ -219,13 +221,23 @@ export async function cancelSessionStream(deps: AppDeps, streamId: string, sid: 
  * TAL-1165: the agent tool `session_send`. A running target gets `message` as a pending steer, the composer's queue; an
  * idle one starts a turn. A running turn that refuses the steer is the tool's error, never a second turn.
  */
-export async function sendSessionMessage(deps: AppDeps, sid: string, message: string): Promise<SidecarServerResultInput<'server.session_send'>> {
+export async function sendSessionMessage(deps: AppDeps, sid: string, message: string, activity?: TalariaActivity): Promise<SidecarServerResultInput<'server.session_send'>> {
+  if (activity && await deps.sessions.owner?.isOwned(sid)) {
+    const started = await startSessionChat(deps, { session_id: sid, message }, { talariaActivity: activity })
+    return { outcome: 'started', stream_id: started.stream_id ? str(started.stream_id) : null, steer_id: null }
+  }
   if (deps.registry.activeRunStreamForSession(sid)) {
-    const steered = await steerSessionChat(deps, sid, message, '', `steer-${randomUUID()}`, (body) => startSessionChat(deps, body))
+    const steered = await steerSessionChat(deps, sid, message, '', `steer-${randomUUID()}`, (body) => startSessionChat(deps, body, { talariaActivity: activity }), activity)
     if (steered.started_turn) return { outcome: 'started', stream_id: steered.stream_id ?? null, steer_id: null }
     if (steered.accepted) return { outcome: 'queued', stream_id: steered.stream_id ?? null, steer_id: steered.steer_id ?? null }
+    if (steered.outcome_unknown === true) throw new HttpFailure(409, 'The message may have reached the agent. Reconcile the session before sending it again.', { code: 'send_unconfirmed', outcome_unknown: true })
     if (deps.registry.activeRunStreamForSession(sid)) throw new HttpFailure(409, `the session's running turn did not take the message (${steered.fallback ?? 'refused'})`, { code: 'steer_refused' })
   }
-  const started = await startSessionChat(deps, { session_id: sid, message })
+  const started = await startSessionChat(deps, { session_id: sid, message }, { talariaActivity: activity })
   return { outcome: 'started', stream_id: started.stream_id ? str(started.stream_id) : null, steer_id: null }
+}
+
+/** Talaria producers enter here; peer-agent session_send deliberately uses sendSessionMessage. */
+export function sendTalariaMessage(deps: AppDeps, sid: string, instruction: string, kind: string, summary: string, target?: TalariaActivity['target']): Promise<SidecarServerResultInput<'server.session_send'>> {
+  return sendSessionMessage(deps, sid, instruction, talariaActivity(kind, summary, target))
 }

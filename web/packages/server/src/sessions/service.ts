@@ -33,6 +33,8 @@ import { anchorMessageKey, anchorSummary, CompressionJobs, insertCompactionRow, 
 import { chatReadiness, runtimeFailureDetails, SidecarError, type SidecarLike } from '../sidecar/client.js'
 import { agentSteerText, ApiMessageSummary, isConversationalAssistant, messageText, splitDisplayText, appendStateDbIdentityRows, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isCompactionRow, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, normalizeUserDisplay, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, withDataUseRequirements, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withheldPromptText, withheldRowForModel, newestSettledReply, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, isDict as isMessageDict, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
+import { inheritedTalariaActivities, pruneTalariaActivities, recordTalariaActivity, talariaActivity, withTalariaActivities } from './talaria-activities.js'
+import { redactNestedMessageContainers } from '../redact.js'
 import { markedStateDbGeneration, stateDbIdentityKeys, stampStateDbGeneration, stateDbMessageRepresented } from './state-db-identity.js'
 import { isOrphanPrunableSource } from './source-kind.js'
 import { settledActivityPhase, withBackgroundLinks, type Receipt } from './background-tasks.js'
@@ -994,7 +996,7 @@ export class SessionService {
 
   /** All transcript transports use the same live-run and durable-pending evidence. */
   async backgroundUpdates<T>(s: Session, messages: T[], reviewRows?: (turnId: string) => Message[]): Promise<T[]> {
-    return withBackgroundUpdates(messages, s, { activeTurnId: this.deps.runtime.activeRunStream(s.session_id), pendingDelegations: (await this.deps.backgroundPending?.(s.session_id)) ?? new Set(), ...(reviewRows ? { reviewRows } : {}) })
+    return withTalariaActivities(withBackgroundUpdates(messages, s, { activeTurnId: this.deps.runtime.activeRunStream(s.session_id), pendingDelegations: (await this.deps.backgroundPending?.(s.session_id)) ?? new Set(), ...(reviewRows ? { reviewRows } : {}) }), s)
   }
 
   /** TAL-372: each delegation row of a turn's scene carries the status of the work it started. */
@@ -1047,7 +1049,9 @@ export class SessionService {
 
   /** Python `public_session_projection(s.__dict__)`: every persisted field, redacted (session export). */
   async publicSessionDocument(s: Session): Promise<Record<string, unknown>> {
-    return this.publicProjection(redactSessionData(s.toDocument(), this.deps.redactEnabled()), s.profile)
+    const document = s.toDocument()
+    if (document.talaria_activities) document.talaria_activities = redactNestedMessageContainers(document.talaria_activities, this.deps.redactEnabled())
+    return this.publicProjection(redactSessionData(document, this.deps.redactEnabled()), s.profile)
   }
 
   /** How hydrated scenes show for a profile: its reasoning visibility and the Worklog default (TAL-2149). */
@@ -2950,7 +2954,11 @@ export class SessionService {
       const read = await this.stateDbRead(s)
       const hadMessages = s.messages.length > 0
       truncateSessionAtKeep(s, 0, this.deps.now())
-      s.messages = messages.map((content) => ({ role: 'local_notice', content, _notice_kind: 'session_finalize', timestamp: this.deps.now() }))
+      s.messages = messages.map((content) => {
+        const message_id = randomUUID()
+        recordTalariaActivity(s, `message:${message_id}`, { ...talariaActivity('session_closed', 'Session closed'), details: content })
+        return { role: 'local_notice', message_id, content, _notice_kind: 'session_finalize', timestamp: this.deps.now() }
+      })
       s.tool_calls = []
       if (s.parent_session_id) {
         let parentIsSnapshot = false
@@ -3058,7 +3066,7 @@ export class SessionService {
         ...watermark, context_messages: copyJson(session.context_messages),
         gateway_routing: copyJson(session.gateway_routing), gateway_routing_history: copyJson(session.gateway_routing_history), llm_title_generated: session.llm_title_generated,
         manual_title: session.manual_title, composer_draft: copyJson(session.composer_draft), context_engine: session.context_engine, context_engine_state: copyJson(session.context_engine_state),
-        ...inheritedSkillUses(session, true), created_at: now, updated_at: now,
+        ...inheritedSkillUses(session, true), ...inheritedTalariaActivities(session, session.messages), created_at: now, updated_at: now,
       },
       { workspace: session.workspace, model: session.model },
     )
@@ -3102,7 +3110,7 @@ export class SessionService {
         parent_session_id: source.session_id, session_source: 'fork',
         // TAL-1649: only a fork of the whole history carries the conversation's skill counts; a partial one cannot tell
         // which of them its retained rows made.
-        ...inheritedSkillUses(source, forked.length > 0 && forked.length >= sourceMessages.length),
+        ...inheritedSkillUses(source, forked.length > 0 && forked.length >= sourceMessages.length), ...inheritedTalariaActivities(source, forked),
       },
       { workspace: source.workspace, model: source.model },
     )
@@ -3261,6 +3269,7 @@ export class SessionService {
       throw error
     }
     for (const id of removedIds) {
+      await this.owner?.forgetActivities(id, eventProfile)
       await this.deps.runtime.evictAgent(id, true)
       try { await this.deps.blobs.deletePrefix(attachmentPrefix(id)) } catch (error) { this.deps.log(`[webui] could not delete attachments of ${id}: ${(error as Error).message}`) }
       // Python `delete_run_journal` (#3802): a deleted session leaves no replayable run journal behind.
@@ -3783,6 +3792,7 @@ function truncationOpts(s: Session): { truncationWatermark: unknown; compressedW
  * cut deleted was committed before it ran, so it is stamped at or before `cutAt`.
  */
 function setTruncationBoundary(session: Session, messages: unknown[], opts: { compressed: boolean; cutAt: number | null }): void {
+  if (!opts.compressed) pruneTalariaActivities(session, messages)
   session.truncation_watermark = truncationWatermarkFor(messages)
   session.truncation_boundary = session.truncation_watermark
   session.truncation_watermark_compressed = opts.compressed

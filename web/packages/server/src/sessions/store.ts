@@ -4,6 +4,7 @@ import { sanitizeSessionRow } from './list.js'
 import type { DraftStore } from './drafts.js'
 import type { SessionEventBus } from './events.js'
 import { withBackgroundDisplayKinds } from './background-updates.js'
+import { withTalariaActivities } from './talaria-activities.js'
 import { anchorSceneIndexFromRecords, collapseAdjacentDuplicatePartials, isSafeSessionId, Session, type SessionDefaults, type SessionInit, type Message } from './session.js'
 import { RevisionConflict, type StorageBackend, type StorageIssue, type StoredSession, type SessionChange, type MessageMatch } from './storage/backend.js'
 import { sessionSearchMatches, sessionSearchMessageText } from './storage/search-text.js'
@@ -349,7 +350,7 @@ export class SessionStore {
     if (opts.touchUpdatedAt ?? true) session.updated_at = this.deps.now()
     if (markerCurrent) session.state_db_seen_stamp = session.updated_at
     if (cutCurrent) session.truncation_cut_stamp = session.updated_at
-    session.messages = withBackgroundDisplayKinds(session.messages, session)
+    session.messages = withTalariaActivities(withBackgroundDisplayKinds(session.messages, session), session)
     if (!session.messages.length && (session.active_stream_id || session.pending_user_message)) {
       const stored = await this.backend.readDocument(sid, { metadataOnly: true })
       if ((stored?.messageCount ?? 0) > 0) {

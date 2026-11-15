@@ -11,6 +11,8 @@ extension ChatViewModelSendTests {
         var cancel = #"{"ok":true,"cancelled":true}"#
         /// The session load's `pending_steers` JSON; nil omits the key.
         var pendingSteers: String? = "[]"
+        var messagesJSON = #"[{"role":"user","content":"Initial request","message_id":"user-1"}]"#
+        var streamingJSON = #""active_stream_id":"stream-123","is_streaming":true"#
     }
 
     private func runningViewModel(
@@ -34,7 +36,7 @@ extension ChatViewModelSendTests {
             case "/api/chat/cancel":
                 return apiTestJSONResponse(log.cancel, for: request)
             case "/api/session":
-                return apiTestJSONResponse(#"{"session":{"session_id":"session-abc","active_stream_id":"stream-123","is_streaming":true,"messages":[{"role":"user","content":"Initial request","message_id":"user-1"}]\#(log.pendingSteers.map { #","pending_steers":\#($0)"# } ?? "")}}"#, for: request)
+                return apiTestJSONResponse(#"{"session":{"session_id":"session-abc",\#(log.streamingJSON),"messages":\#(log.messagesJSON)\#(log.pendingSteers.map { #","pending_steers":\#($0)"# } ?? "")}}"#, for: request)
             case "/api/chat/steer/withdraw":
                 return apiTestJSONResponse(log.withdraw.isEmpty ? #"{"withdrawn":false}"# : log.withdraw.removeFirst(), for: request)
             case "/api/chat/steer/send-now":
@@ -47,6 +49,39 @@ extension ChatViewModelSendTests {
 
     private func steer(_ id: String, _ text: String, state: PendingSteer.State = .pending, sendNow: Bool = true) -> PendingSteer {
         PendingSteer(steerId: id, text: text, submittedAt: 5, state: state, actions: PendingSteer.Actions(edit: state == .pending, cancel: state == .pending, sendNow: state == .pending && sendNow))
+    }
+
+    func testActivitySteerReplayKeepsOneBrandedRowAndDoesNotSplitTheFollowingReply() async throws {
+        let streamClient = SpySSEStreamingClient()
+        let log = RequestLog()
+        let viewModel = try runningViewModel(log, streamClient: streamClient)
+        let started = await viewModel.sendMessage("Initial request")
+        XCTAssertTrue(started)
+        let event = try JSONDecoder().decode(SteeringStreamEvent.self, from: Data(#"{"steer_id":"activity-steer","text":"Message from Reviewer","talaria_activity":{"version":1,"origin":"peer_agent","id":"peer-event","kind":"peer_message","summary":"Message from Reviewer","details":"Check the result.","sender":{"session_id":"reviewer","name":"Reviewer"}}}"#.utf8))
+        streamClient.emit(.token("Before the steer"))
+        streamClient.emit(.steerConsumed(event))
+        streamClient.emit(.token("After"))
+        streamClient.emit(.steerConsumed(event))
+        streamClient.emit(.token(" the steer"))
+        streamClient.emit(.done(DoneStreamEvent()))
+        let activity = viewModel.messages.filter { $0.messageId == "activity-steer" }
+        XCTAssertEqual(activity.count, 1)
+        XCTAssertEqual(activity.first?.talariaActivity?.sender?.sessionId, "reviewer")
+        XCTAssertEqual(activity.first?.talariaActivity?.details, "Check the result.")
+        XCTAssertTrue(viewModel.messages.contains { $0.role == "assistant" && $0.content == "After the steer" })
+        XCTAssertNil(viewModel.pendingSteerActions["activity-steer"])
+        // A terminal snapshot carries the persisted event id and _steer, without the device-local hint name.
+        log.streamingJSON = #""active_stream_id":null,"is_streaming":false"#
+        log.messagesJSON = #"[{"role":"user","content":"Message from Reviewer","message_id":"peer-event","_steer":{"steer_id":"activity-steer"},"_display":"in_scene","_talaria_activity":{"version":1,"origin":"peer_agent","id":"peer-event","kind":"peer_message","summary":"Message from Reviewer","details":"Check the result.","sender":{"session_id":"reviewer","name":"Reviewer"}}}]"#
+        await viewModel.refreshSession()
+        let count = viewModel.messages.count
+        XCTAssertFalse(viewModel.streamCoordinatorConsumeSteeringHint(event))
+        XCTAssertEqual(viewModel.messages.count, count)
+        let reopened = try runningViewModel(log, streamClient: SpySSEStreamingClient())
+        await reopened.refreshSession()
+        let reopenedCount = reopened.messages.count
+        XCTAssertFalse(reopened.streamCoordinatorConsumeSteeringHint(event))
+        XCTAssertEqual(reopened.messages.count, reopenedCount)
     }
 
     func testAPendingSteerFromAnotherDeviceShowsWithTheServersActionsUntilClosed() async throws {

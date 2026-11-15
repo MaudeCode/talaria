@@ -192,6 +192,7 @@ public struct ReasoningStreamEvent: Decodable, Equatable, Sendable {
 }
 
 public struct SteeringStreamEvent: Decodable, Equatable, Sendable {
+    public let talariaActivity: TalariaActivity?
     let sessionId: String?
     let streamId: String?
     public let steerId: String?
@@ -201,6 +202,7 @@ public struct SteeringStreamEvent: Decodable, Equatable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case sessionId = "session_id"
+        case talariaActivity = "talaria_activity"
         case streamId = "stream_id"
         case steerId = "steer_id"
         case text
@@ -214,7 +216,8 @@ public struct SteeringStreamEvent: Decodable, Equatable, Sendable {
         steerId: String? = nil,
         text: String,
         createdAt: Double? = nil,
-        consumedAt: Double? = nil
+        consumedAt: Double? = nil,
+        talariaActivity: TalariaActivity? = nil
     ) {
         self.sessionId = sessionId
         self.streamId = streamId
@@ -222,6 +225,7 @@ public struct SteeringStreamEvent: Decodable, Equatable, Sendable {
         self.text = text
         self.createdAt = createdAt
         self.consumedAt = consumedAt
+        self.talariaActivity = talariaActivity
     }
 
     public init(from decoder: Decoder) throws {
@@ -232,6 +236,7 @@ public struct SteeringStreamEvent: Decodable, Equatable, Sendable {
         text = container.decodeLossyStringIfPresent(forKey: .text) ?? ""
         createdAt = container.decodeLossyDoubleIfPresent(forKey: .createdAt)
         consumedAt = container.decodeLossyDoubleIfPresent(forKey: .consumedAt)
+        talariaActivity = DecisionReview.decode(TalariaActivity.self, from: try? container.decodeIfPresent(JSONValue.self, forKey: .talariaActivity))
     }
 }
 

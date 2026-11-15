@@ -8,6 +8,7 @@ import { applyPlanGauge } from './session.js'
  */
 import { StartupTiming, timingOutcome } from '../startup-timing.js'
 import { randomUUID } from 'node:crypto'
+import { recordTalariaActivity } from './talaria-activities.js'
 import { closeSync, fstatSync, readFileSync } from 'node:fs'
 import { openAnchoredFd } from '../workspace/fs.js'
 import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
@@ -133,7 +134,8 @@ export interface TurnRunnerDeps {
  * A steer the Agent has not taken yet (TAL-424: owned by the server, shown to every client). `sending_now`: a Send now
  * put it back on the Agent's queue while tools yield; `can_redirect`: the Agent can deliver it now at all.
  */
-interface SteerRecord { steer_id: string; session_id: string; stream_id: string; text: string; display_text: string; created_at: number; state: 'pending' | 'sending_now'; can_redirect: boolean }
+interface SteerRecord { steer_id: string; session_id: string; stream_id: string; text: string; display_text: string; created_at: number; state: 'pending' | 'sending_now'; can_redirect: boolean; talariaActivity?: import('@maudecode/talaria-web-contracts').TalariaActivity }
+interface FollowUpMessage { text: string; activity?: import('@maudecode/talaria-web-contracts').TalariaActivity | undefined }
 /**
  * A steer the Agent took, with where it landed: after the last tool that had completed when it was consumed.
  * `redirected`: delivered by Send now as the Agent's own correction row, which becomes this steer's row.
@@ -153,6 +155,7 @@ export interface StartTurnOptions {
   modelProvider: string | null
   normalizedModel?: boolean
   source?: string
+  talariaActivity?: import('@maudecode/talaria-web-contracts').TalariaActivity | undefined
   goalRelated?: boolean
   /** Durable delegation identities acknowledged by this automatic turn. */
   completionKeys?: string[]
@@ -589,7 +592,7 @@ export class TurnRunner {
    * Admit automatic turns through the same workspace recovery and model resolution as user turns. After the user's Stop
    * none starts (TAL-899): the answer is a `held` 409, and the caller keeps its work for the user's next turn.
    */
-  async startServerTurn(session: Session, opts: Pick<StartTurnOptions, 'msg' | 'source' | 'goalRelated' | 'completionKeys' | 'backgroundUpdate'>): Promise<AdmissionResult> {
+  async startServerTurn(session: Session, opts: Pick<StartTurnOptions, 'msg' | 'source' | 'goalRelated' | 'completionKeys' | 'backgroundUpdate' | 'talariaActivity'>): Promise<AdmissionResult> {
     if ((await this.automaticTurnsHeld(session.session_id))) return { _status: 409, error: 'automatic turns are held after Stop', held: true }
     try {
       const service = this.deps.service()
@@ -615,7 +618,7 @@ export class TurnRunner {
     timing.identify(session.session_id)
     timing.begin('admission')
     try {
-      const response = await this.admitTimed(session, { ...opts, timing }, releaseStopHold)
+      const response = await this.admitTimed(session, { ...opts, ...(opts.talariaActivity ? { source: 'talaria' } : {}), timing }, releaseStopHold)
       if (response._status !== undefined) timing.finish('refused')
       else if (!response.stream_id || !this.workers.has(response.stream_id)) timing.finish('noop')
       return response
@@ -660,7 +663,7 @@ export class TurnRunner {
     const wasHiddenEmpty = !s.messages.length && !s.context_messages.length && !s.hasPendingPrompt
     const attachments = opts.attachments ?? []
     // A background wakeup (TAL-460) or update continuation (TAL-1990) stays one in a forked session too.
-    const source = !isAutomaticSource(opts.source) && str(s.source_tag).toLowerCase() === 'fork' ? 'fork' : (opts.source ?? 'webui')
+    const source = !opts.talariaActivity && !isAutomaticSource(opts.source) && str(s.source_tag).toLowerCase() === 'fork' ? 'fork' : (opts.source ?? 'webui')
     // TAL-1005: the context figures the last turn reported hold for a turn on the same model only, and are judged before
     // admission clears the post-compression estimate. A `/btw` clone is thrown away after one answer, so it is never due.
     const sameRuntime = str(s.model) === str(opts.model) && str(s.model_provider) === str(opts.modelProvider)
@@ -693,7 +696,9 @@ export class TurnRunner {
     const previousAcceptances = s.extra.completion_acceptances
     if (opts.completionKeys?.length) s.extra.completion_acceptances = { ...accepted, ...Object.fromEntries(opts.completionKeys.map((key) => [key, streamId])) }
     const previousUpdates = s.extra.background_updates
+    const previousActivities = s.extra.talaria_activities
     if (opts.backgroundUpdate) recordBackgroundUpdate(s, streamId, opts.backgroundUpdate)
+    if (opts.talariaActivity) recordTalariaActivity(s, `turn:${streamId}`, opts.talariaActivity)
     const admission = { stream_id: streamId, session_id: s.session_id, started_at: this.deps.now(), phase: 'starting', workspace: opts.workspace, model: opts.model, provider: opts.modelProvider, ephemeral: Boolean(opts.ephemeral), ...(opts.activityParentSessionId ? { activity_parent_session_id: opts.activityParentSessionId } : {}), origin: turnOrigin(source), admitting: true }
     this.registry.registerActiveRun(admission)
     // A run is visible from here, before its worker exists: `finished()` waits for its admission first (TAL-1165).
@@ -703,6 +708,7 @@ export class TurnRunner {
       try { await timing.measure('admission_persistence', () => this.deps.store.save(s)) } catch (error) {
         this.registry.activeRuns.delete(streamId)
         s.extra.background_updates = previousUpdates
+        s.extra.talaria_activities = previousActivities
         s.extra.completion_acceptances = previousAcceptances
         s.automatic_turns_stop_held = previousStopHold
         throw error
@@ -801,6 +807,7 @@ export class TurnRunner {
       await put('compressed', { session_id: sessionId, message: 'Compression finished' }, createdAt === undefined ? {} : { createdAt })
     }
     const put = async (event: string, data: Record<string, unknown>, meta: JournalEventMeta = {}): Promise<void> => {
+      if (data.talaria_activity) data = redactNestedMessageContainers(data, deps.redactEnabled()) as Record<string, unknown>
       if (this.registry.cancelled.has(streamId) && !['cancel', 'apperror', 'steer_consumed', 'steer_withdrawn', 'run_status'].includes(event)) return
       const terminal = ['done', 'cancel', 'apperror', 'error', 'stream_end'].includes(event)
       if (terminal) {
@@ -969,7 +976,7 @@ export class TurnRunner {
     let streamWrites: Promise<void> = Promise.resolve()
     let streamWriteError: Error | undefined
     // TAL-424: steers an errored turn ended without taking, sent as one follow-up turn once this one is torn down.
-    let followUp: string[] = []
+    let followUp: (string | FollowUpMessage)[] = []
     try {
       if (!sidecar) throw new SidecarError('The Agent sidecar is not running; chat is unavailable until it starts.', { condition: 'sidecar_unavailable' })
       if (materializeError) throw new Error(`Could not load this message's attachments: ${materializeError.message}`)
@@ -2217,7 +2224,7 @@ export class TurnRunner {
     return true
   }
 
-  async steer(sessionId: string, text: string, displayText: string, steerId: string): Promise<Record<string, unknown>> {
+  async steer(sessionId: string, text: string, displayText: string, steerId: string, activity?: import('@maudecode/talaria-web-contracts').TalariaActivity): Promise<Record<string, unknown>> {
     let s: Session | null = null
     try { s = (await this.deps.store.get(sessionId, { metadataOnly: true })) } catch { s = null }
     const activeStreamId = s?.active_stream_id ?? null
@@ -2230,11 +2237,16 @@ export class TurnRunner {
     if (!sidecar) return { accepted: false, fallback: 'no_cached_agent', stream_id: null }
     // Register provisionally before the RPC: the Agent may apply the steer and finish the turn before the steer
     // reply arrives, and the turn's finalisation must then already see the record. A rejection removes it again.
-    return this.withSteerChain(activeStreamId, sessionId, () => this.steerInto(sidecar, sessionId, activeStreamId, text, displayText, steerId))
+    return this.withSteerChain(activeStreamId, sessionId, () => this.steerInto(sidecar, sessionId, activeStreamId, text, displayText, steerId, activity))
   }
 
-  private async steerInto(sidecar: SidecarLike, sessionId: string, activeStreamId: string, text: string, displayText: string, steerId: string): Promise<Record<string, unknown>> {
-    const record: SteerRecord = { steer_id: steerId, session_id: sessionId, stream_id: activeStreamId, text, display_text: displayText || text, created_at: this.deps.now(), state: 'pending', can_redirect: false }
+  private async steerInto(sidecar: SidecarLike, sessionId: string, activeStreamId: string, text: string, displayText: string, steerId: string, activity?: import('@maudecode/talaria-web-contracts').TalariaActivity): Promise<Record<string, unknown>> {
+    if (activity) {
+      const session = await this.deps.store.get(sessionId)
+      recordTalariaActivity(session, `steer:${steerId}`, activity)
+      await this.deps.store.save(session)
+    }
+    const record: SteerRecord = { steer_id: steerId, session_id: sessionId, stream_id: activeStreamId, text, display_text: activity?.summary || displayText || text, created_at: this.deps.now(), state: 'pending', can_redirect: false, ...(activity ? { talariaActivity: activity } : {}) }
     const records = this.steers.get(activeStreamId) ?? []
     records.push(record)
     this.steers.set(activeStreamId, records)
@@ -2287,7 +2299,7 @@ export class TurnRunner {
       consumed.push({ steer_id: record.steer_id, text: record.display_text || record.text, agent_text: record.text, submitted_at: record.created_at, consumed_at: consumedAt, after_tool_call_id: afterToolCallId, ...(opts.redirected ? { redirected: true } : {}) })
       this.consumedSteers.set(record.stream_id, consumed)
     }
-    return { steer_id: record.steer_id, session_id: record.session_id, stream_id: record.stream_id, display_text: record.display_text, created_at: record.created_at, agent_text: record.text, text: record.display_text || record.text, consumed_at: consumedAt, after_tool_call_id: afterToolCallId }
+    return { steer_id: record.steer_id, session_id: record.session_id, stream_id: record.stream_id, display_text: record.display_text, created_at: record.created_at, ...(record.talariaActivity ? { talaria_activity: record.talariaActivity } : { agent_text: record.text }), text: record.display_text || record.text, consumed_at: consumedAt, after_tool_call_id: afterToolCallId }
   }
 
   /**
@@ -2363,7 +2375,7 @@ export class TurnRunner {
    * Terminal steer bookkeeping: the records the Agent no longer holds are consumed; the rest it never took are either
    * `stopped` (withdrawn with their text for the composer) or returned as one `followup` turn's texts (TAL-424).
    */
-  private finalizeSteers(streamId: string, leftoverText: string, mode: 'stopped' | 'followup'): { events: [string, Record<string, unknown>][]; leftovers: string[] } {
+  private finalizeSteers(streamId: string, leftoverText: string, mode: 'stopped' | 'followup'): { events: [string, Record<string, unknown>][]; leftovers: (string | FollowUpMessage)[] } {
     const records = this.steers.get(streamId) ?? []
     this.steers.delete(streamId)
     // Text that ends with none of these steers is another surface's: the Agent took every one of them.
@@ -2374,7 +2386,7 @@ export class TurnRunner {
     const unmatched = matched ? leftoverText.slice(0, leftoverText.length - matched.length).replace(/\n+$/, '') : leftoverText
     const events: [string, Record<string, unknown>][] = consumed.map((r) => ['steer_consumed', this.consumedSteerPayload(r)])
     for (const r of left) events.push(['steer_withdrawn', { steer_id: r.steer_id, reason: mode, text: r.display_text }])
-    if (mode === 'followup') return { events, leftovers: [...(unmatched ? [unmatched] : []), ...left.map((r) => r.text)] }
+    if (mode === 'followup') return { events, leftovers: [...(unmatched ? [unmatched] : []), ...left.map((r) => r.talariaActivity ? { text: r.text, activity: r.talariaActivity } : r.text)] }
     if (unmatched) events.push(['steer_withdrawn', { steer_id: null, reason: 'stopped', text: unmatched }])
     return { events, leftovers: [] }
   }
@@ -2383,22 +2395,26 @@ export class TurnRunner {
    * TAL-424: the steers a finished turn never took go on as one follow-up turn, sent once by the server for every client.
    * Should another turn already hold the session, they steer into that one instead, so no text is lost.
    */
-  private async startSteerFollowUp(sessionId: string, leftovers: string[]): Promise<void> {
+  private async startSteerFollowUp(sessionId: string, leftovers: (string | FollowUpMessage)[]): Promise<void> {
     const texts = [...(this.queuedInstructions.get(sessionId) ?? []), ...leftovers]
     this.queuedInstructions.delete(sessionId)
     if (!texts.length) return
-    let s: Session
-    try { s = (await this.deps.store.get(sessionId)) } catch { return }
-    const msg = texts.join('\n')
-    const started = (await this.startServerTurn(s, { msg }))
-    if (!started._status || started._status < 400) return
-    if (started._status === 409 && started.active_stream_id) {
-      void this.steer(sessionId, msg, msg, `steer-${randomUUID()}`).then((r) => {
-        if (r.accepted !== true) this.deps.log(`[webui] WARNING: steer follow-up for ${sessionId} was not accepted (${str(r.fallback)}); text: ${msg.slice(0, 200)}`)
-      })
-      return
+    const entries: FollowUpMessage[] = []
+    for (const text of texts) {
+      const last = entries.at(-1)
+      if (typeof text === 'string' && last && !last.activity) last.text += `\n${text}`
+      else entries.push(typeof text === 'string' ? { text } : text)
     }
-    this.deps.log(`[webui] WARNING: steer follow-up for ${sessionId} not started (${String(started._status)}): ${str(started.error)}`)
+    for (const entry of entries) {
+      let s: Session
+      try { s = (await this.deps.store.get(sessionId)) } catch { return }
+      const started = await this.startServerTurn(s, { msg: entry.text, talariaActivity: entry.activity })
+      if (!started._status || started._status < 400) continue
+      if (started._status === 409 && started.active_stream_id) {
+        const result = await this.steer(sessionId, entry.text, entry.activity?.summary ?? entry.text, `steer-${randomUUID()}`, entry.activity)
+        if (result.accepted !== true) this.deps.log(`[webui] WARNING: steer follow-up for ${sessionId} was not accepted (${str(result.fallback)})`)
+      } else this.deps.log(`[webui] WARNING: steer follow-up for ${sessionId} not started (${String(started._status)}): ${str(started.error)}`)
+    }
   }
 
   /**
@@ -2457,7 +2473,7 @@ export class TurnRunner {
   /** What every client shows for a pending steer; the server decides which actions it offers. */
   private pendingSteerView(r: SteerRecord): PendingSteer {
     const open = r.state === 'pending'
-    return { steer_id: r.steer_id, text: r.display_text, submitted_at: r.created_at, state: r.state, actions: { edit: open, cancel: open, send_now: open && r.can_redirect } }
+    return { steer_id: r.steer_id, text: r.display_text, submitted_at: r.created_at, state: r.state, ...(r.talariaActivity ? { talaria_activity: r.talariaActivity } : {}), actions: { edit: open && !r.talariaActivity, cancel: open, send_now: open && r.can_redirect } }
   }
 
   /** TAL-397: the todo list the running turn last wrote, before its tool row settles; a cancelled turn keeps it too. */

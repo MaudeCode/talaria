@@ -30,6 +30,7 @@ const formats: Record<string, Format> = {
   'connector-offers': { directory: 'connector-offers', secret: true },
   // TAL-1963: one decision review per file, keyed by its review id; it holds the user's answers.
   'decision-reviews': { directory: 'decision-reviews', secret: true },
+  'talaria-activities': { directory: 'sessions/_talaria_activities', secret: true },
   // TAL-1967: one proposal per file, keyed by its proposal id.
   proposals: { directory: 'proposals', secret: true },
   // TAL-1968: one `show` block per file, keyed by its block id; an HTML block holds its page.

@@ -6,13 +6,14 @@ import TalariaKit
 struct SandalMark: View {
     @Environment(\.liveActivityPalette) private var palette
     let height: CGFloat
+    var color: Color? = nil
 
     var body: some View {
         Image("Sandal")
             .resizable()
             .renderingMode(.template)
             .scaledToFit()
-            .foregroundStyle(palette.primaryText)
+            .foregroundStyle(color ?? palette.primaryText)
             .frame(width: height * 0.93, height: height)
             .accessibilityHidden(true)
     }

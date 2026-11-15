@@ -207,7 +207,7 @@ it('uses native submission and exact admission receipts, with no direct worker o
   const run = await deps.promptQueues.create('native-proof', [{ session_id: sid, project_id: null, text: 'Native prompt' }, { session_id: sessions[1]!.session_id, project_id: null, text: 'Later prompt' }])
   await deps.promptQueues.action(run.id, run.revision, 'start')
   await deps.promptQueues.settled()
-  expect(submit).toHaveBeenCalledWith(sid, expect.objectContaining({ submission_id: run.cards[0]!.request_id }), undefined, expect.objectContaining({ authority_epoch: 7 }))
+  expect(submit).toHaveBeenCalledWith(sid, expect.objectContaining({ submission_id: run.cards[0]!.request_id }), undefined, expect.objectContaining({ authority_epoch: 7 }), undefined)
   expect(direct).not.toHaveBeenCalled()
   outcome = { ...outcome, state: 'unavailable', snapshot: null, receipt: null }
   deps.promptQueues.wake(run.id); await deps.promptQueues.settled()

@@ -198,7 +198,8 @@ struct ChatTranscriptMessageBlock: View, Equatable {
                     content: steering.text,
                     timestamp: steering.submittedAt,
                     messageId: steering.id,
-                    name: SteeringHintState.consumed.rawValue
+                    name: SteeringHintState.consumed.rawValue,
+                    talariaActivity: steering.talariaActivity
                 ))
             }
         }
@@ -380,7 +381,8 @@ struct ChatTranscriptMessageBlock: View, Equatable {
                         content: steering.text,
                         timestamp: steering.submittedAt,
                         messageId: steering.id,
-                        name: SteeringHintState.consumed.rawValue
+                        name: SteeringHintState.consumed.rawValue,
+                        talariaActivity: steering.talariaActivity
                     ))
                 }
             }

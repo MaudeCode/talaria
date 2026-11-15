@@ -43,7 +43,9 @@ struct ChatTranscriptMessageRow: View {
         // Rows the server marked as compaction markers render as collapsible
         // lines (as on Web), never as user bubbles — and without bubble actions,
         // which don't apply to system-emitted markers.
-        if let markerKind = message.markerKind {
+        if let activity = message.talariaActivity, message.backgroundUpdate == nil {
+            MarkerMessageCardView(activity: activity, stateID: activity.id, messageID: message.messageId)
+        } else if let markerKind = message.markerKind {
             MarkerMessageCardView(kind: markerKind, content: message.markerBody ?? message.content, stateID: message.messageId ?? "index:\(visibleIndex)")
         } else if let actionContext {
             // The actions hang off the transcript's long press rather than a

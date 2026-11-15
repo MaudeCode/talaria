@@ -405,7 +405,9 @@ export function Transcript(props: TranscriptProps) {
 
   const continuedTurn = continued ? live ?? undefined : undefined
   const renderRow = (row: VisibleMessage, i: number) => (
-    row.message._background_update
+    row.message._talaria_activity
+      ? <MarkerRow key={row.key} row={row} />
+      : row.message._background_update
       ? <BackgroundUpdateRow key={row.key} row={row} />
       : row.message._marker_kind
       ? <MarkerRow key={row.key} row={row} />

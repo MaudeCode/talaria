@@ -4,6 +4,25 @@ import XCTest
 
 @MainActor
 final class CacheStoreTests: XCTestCase {
+    func testServerActivityProvenanceSurvivesWireDecodingAndOfflineCache() throws {
+        var root = URL(fileURLWithPath: #filePath)
+        for _ in 0..<5 { root.deleteLastPathComponent() }
+        let data = try Data(contentsOf: root.appendingPathComponent("contracts/fixtures/talaria-activities.json"))
+        let decoder = DecisionReview.decoder
+        let messages = try XCTUnwrap(decoder.decode([String: [ChatMessage]].self, from: data)["messages"])
+        XCTAssertEqual(messages.map { $0.talariaActivity?.origin }, ["talaria", "talaria", "peer_agent"])
+        XCTAssertEqual(messages[1].talariaActivity?.kind, "future_event")
+        XCTAssertEqual(messages[2].talariaActivity?.sender?.sessionId, "synthetic-reviewer")
+        let context = try makeContext()
+        let server = URL(string: "https://activity.test")!
+        try CacheStore.cacheMessages(messages, serverURL: server, sessionID: "activity", in: context)
+        let restored = try CacheStore.cachedTranscriptWindow(serverURL: server, sessionID: "activity", in: context).messages
+        XCTAssertEqual(restored, messages)
+        let malformed = try decoder.decode(ChatMessage.self, from: Data(#"{"role":"user","content":"Quoted ordinary text","_talaria_activity":{"version":2,"origin":"talaria","id":"bad","kind":"future","summary":"Wrong version"}}"#.utf8))
+        XCTAssertNil(malformed.talariaActivity)
+        XCTAssertEqual(malformed.content, "Quoted ordinary text")
+    }
+
     func testRunStatusCachePreservesServerFieldsAndClearsWithoutCrossingServers() throws {
         let context = try makeContext()
         let server = URL(string: "https://local.test")!

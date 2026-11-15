@@ -145,6 +145,89 @@
           "items": {
             "type": "object",
             "properties": {
+              "talaria_activity": {
+                "type": "object",
+                "properties": {
+                  "version": {
+                    "type": "number",
+                    "const": 1
+                  },
+                  "origin": {
+                    "type": "string",
+                    "enum": [
+                      "talaria",
+                      "peer_agent"
+                    ]
+                  },
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "kind": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "summary": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "details": {
+                    "type": "string"
+                  },
+                  "sender": {
+                    "type": "object",
+                    "properties": {
+                      "session_id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "session_id",
+                      "name"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "target": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "decision_review",
+                          "session"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "path": {
+                        "type": "string",
+                        "pattern": "^\\/[^/]"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id",
+                      "path"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "version",
+                  "origin",
+                  "id",
+                  "kind",
+                  "summary"
+                ],
+                "additionalProperties": false
+              },
               "steer_id": {
                 "type": "string"
               },

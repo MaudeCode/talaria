@@ -83,9 +83,42 @@ test('answers, defers, reviews and submits a decision review the agent opened', 
     // Back in the chat: the handoff turn is there and the chip is gone.
     await page.getByRole('button', { name: 'Back to chat' }).click()
     await expect(page).toHaveURL(new RegExp(`/session/${sid}$`))
-    await expect(page.getByText(`The decision review "Settings audit" (${reviewId}) was submitted.`, { exact: false })).toBeVisible()
+    const activity = page.locator('[data-role="activity"]', { hasText: 'Decision review submitted · Settings audit' })
+    await expect(activity).toBeVisible()
+    await expect(page.getByText('Call decision_review_read', { exact: false })).toHaveCount(0)
     await expect(chip).toHaveCount(0)
     await shot('handoff')
+    await expectNoOverflow(page, 'handoff', shot)
+    if (process.env.DECISION_SHOTS) {
+      // The same synthetic transcript without provenance reproduces the older server's ordinary bubble.
+      const stream = server.deps.registry.activeRunStreamForSession(sid)
+      if (stream) await server.deps.turns.finished(stream)
+      const session = await server.deps.sessionStore.get(sid)
+      const receipts = session.extra.talaria_activities
+      const messages = structuredClone(session.messages)
+      try {
+        session.extra.talaria_activities = {}
+        await server.deps.sessionStore.save(session)
+        server.deps.channels.emit(sid, 'session-updated', { session_id: sid, source: 'activity-fixture-before' }, 'default')
+        await expect(page.getByText(handed[0]!, { exact: true })).toBeVisible()
+        await shot('handoff-before')
+      } finally {
+        session.extra.talaria_activities = receipts
+        session.messages = messages
+        await server.deps.sessionStore.save(session)
+        server.deps.channels.emit(sid, 'session-updated', { session_id: sid, source: 'activity-fixture-after' }, 'default')
+        await expect(activity).toBeVisible()
+      }
+    }
+    await activity.getByRole('link').click()
+    await expect(page).toHaveURL(new RegExp(`/decisions/${reviewId}$`))
+    if (process.env.DECISION_SHOTS) {
+      await page.goto(`${server.base}/settings/appearance`)
+      await page.locator('#main [data-theme-val="light"]').click()
+      await page.goto(`${server.base}/session/${sid}`)
+      await expect(activity).toBeVisible()
+      await shot('handoff-light')
+    }
   } finally {
     await page.goto('about:blank')
     await server.close()

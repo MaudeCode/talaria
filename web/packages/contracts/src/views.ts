@@ -124,8 +124,21 @@ export type BackgroundLink = z.infer<typeof BackgroundLinkSchema>
 
 export { DisplayMediaSchema, type DisplayMedia } from './display-media.js'
 
+/** Server-issued presentation only. Neither provenance nor a target grants permission to act. */
+export const TalariaActivitySchema = z.object({
+  version: z.literal(1), origin: z.enum(['talaria', 'peer_agent']), id: z.string().min(1),
+  kind: z.string().min(1), summary: z.string().min(1),
+  details: z.string().optional(),
+  sender: z.object({ session_id: z.string().min(1), name: z.string().min(1) }).optional().catch(undefined),
+  target: z.object({ kind: z.enum(['decision_review', 'session']), id: z.string().min(1), path: z.string().regex(/^\/[^/]/) }).optional().catch(undefined),
+})
+export type TalariaActivity = z.infer<typeof TalariaActivitySchema>
+/** Malformed optional presentation never discards the underlying message or stream event. */
+export const OptionalTalariaActivitySchema = TalariaActivitySchema.optional().catch(undefined)
+
 /** One normalized activity row: the server decides role, order, tool completion/error, and steering consumption. */
 export const ActivitySceneRowSchema = z.looseObject({
+  talaria_activity: OptionalTalariaActivitySchema,
   row_id: z.string(), order_index: z.number().int(), role: z.enum(['prose', 'reasoning', 'tool', 'steering']), created_at: z.number().optional(),
   text: z.string().optional(), titles: z.array(z.string()).optional(),
   /** TAL-1175: a reasoning row's segment identity, equal to the `disclosure_key` of its live `reasoning` events; absent on inline thinking. */
@@ -190,6 +203,7 @@ export const TurnUsageSchema = z.object({
 export type TurnUsage = z.infer<typeof TurnUsageSchema>
 
 export const MessageSchema = z.looseObject({
+  _talaria_activity: OptionalTalariaActivitySchema,
   role: z.string(), content: MessageContentSchema.optional(), id: MessageIdSchema.optional(), message_id: MessageIdSchema.optional(), timestamp: z.number().nullable().optional(),
   reaction_view: MessageReactionViewSchema.optional(),
   attachments: z.array(AttachmentSchema).optional(), tool_calls: z.array(ToolCallSchema).optional(),
@@ -300,6 +314,7 @@ export const ComposerDraftSchema = z.looseObject({ text: z.string().optional(), 
  * `sending_now`: a Send now is delivering it after the running tools yield. `actions` say what this client may offer.
  */
 export const PendingSteerSchema = z.object({
+  talaria_activity: OptionalTalariaActivitySchema,
   steer_id: z.string(), text: z.string(), submitted_at: z.number(), state: z.enum(['pending', 'sending_now']),
   actions: z.object({ edit: z.boolean(), cancel: z.boolean(), send_now: z.boolean() }),
 })

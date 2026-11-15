@@ -41,17 +41,19 @@ public struct PendingSteer: Decodable, Equatable, Sendable {
     public let submittedAt: Double?
     public let state: State
     public let actions: Actions
+    public let talariaActivity: TalariaActivity?
 
-    public init(steerId: String, text: String, submittedAt: Double? = nil, state: State = .pending, actions: Actions = .none) {
+    public init(steerId: String, text: String, submittedAt: Double? = nil, state: State = .pending, actions: Actions = .none, talariaActivity: TalariaActivity? = nil) {
         self.steerId = steerId
         self.text = text
         self.submittedAt = submittedAt
         self.state = state
         self.actions = actions
+        self.talariaActivity = talariaActivity
     }
 
     enum CodingKeys: String, CodingKey {
-        case steerId, text, submittedAt, state, actions
+        case steerId, text, submittedAt, state, actions, talariaActivity
     }
 
     public init(from decoder: Decoder) throws {
@@ -64,6 +66,7 @@ public struct PendingSteer: Decodable, Equatable, Sendable {
         submittedAt = container.decodeLossyDoubleIfPresent(forKey: .submittedAt)
         state = container.decodeLossyStringIfPresent(forKey: .state).flatMap(State.init(rawValue:)) ?? .pending
         actions = (try? container.decodeIfPresent(Actions.self, forKey: .actions)) ?? .none
+        talariaActivity = try? container.decodeIfPresent(TalariaActivity.self, forKey: .talariaActivity)
     }
 }
 

@@ -1,0 +1,7 @@
+{
+  "messages": [
+    {"role":"user","content":"Read the review through the decision tool.","message_id":"decision-event","_turn_id":"decision-turn","_display":"row","_talaria_activity":{"version":1,"origin":"talaria","id":"decision-event","kind":"decision_submitted","summary":"Decision review submitted · Example review","target":{"kind":"decision_review","id":"dr_01234567","path":"/decisions/dr_01234567"}}},
+    {"role":"user","content":"A private model instruction.","message_id":"future-event","_turn_id":"future-turn","_display":"row","_talaria_activity":{"version":1,"origin":"talaria","id":"future-event","kind":"future_event","summary":"Finished a future activity"}},
+    {"role":"user","content":"Check the result.","message_id":"peer-event","_turn_id":"peer-turn","_display":"row","_talaria_activity":{"version":1,"origin":"peer_agent","id":"peer-event","kind":"peer_message","summary":"Message from Reviewer","details":"Check the result.","sender":{"session_id":"synthetic-reviewer","name":"Reviewer"},"target":{"kind":"session","id":"synthetic-reviewer","path":"/session/synthetic-reviewer"}}}
+  ]
+}

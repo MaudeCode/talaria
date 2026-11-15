@@ -13,6 +13,24 @@ import { queryWrapper } from '../../test/fixtures'
 
 afterEach(cleanup)
 
+describe('server-issued activity rows', () => {
+  it('renders future kinds and peer senders through the shared branded line without leaking model instructions', () => {
+    Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() })
+    const { messages } = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/talaria-activities.json'), 'utf8')) as { messages: Message[] }
+    const view = render(<Transcript rows={projectMessages(messages)} live={null} assistantName="Assistant" mode="compact_worklog" renderUserMarkdown={false} autoFollow={false} sessionId="s" actions={{}} tts={false} truncated={false} loadedFrom={0} onLoadOlder={() => undefined} loadingOlder={false} emptyState={null} showJumpButtons={false} virtualizeLongTranscripts={false} />)
+    expect(view.container.querySelectorAll('[data-role="activity"]')).toHaveLength(3)
+    expect(view.container.querySelector('[data-role="user"]')).toBeNull()
+    expect(screen.getByRole('link', { name: 'Decision review submitted · Example review' })).toHaveAttribute('href', expect.stringContaining('/decisions/dr_01234567'))
+    expect(screen.getByText('Finished a future activity')).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Message from Reviewer' })).toHaveAttribute('href', expect.stringContaining('/session/synthetic-reviewer'))
+    expect(view.container.textContent).not.toContain('Read the review through the decision tool.')
+    expect(view.container.textContent).not.toContain('A private model instruction.')
+    expect(screen.getByText('Check the result.')).not.toBeVisible()
+    fireEvent.click(view.container.querySelector('summary')!)
+    expect(screen.getByText('Check the result.')).toBeVisible()
+  })
+})
+
 describe('UserMessageRow attachments', () => {
   it('renders a filename-only attachment as a plain chip and links one with a stored path (TAL-277)', () => {
     const row = { index: 0, key: 'u0', message: { role: 'user', content: 'look', attachments: [{ name: 'example.png', filename: 'example.png' }, { name: 'upload.txt', path: '/uploads/upload.txt' }] } }
@@ -137,11 +155,11 @@ describe('background updates (TAL-460)', () => {
     const keyOf = (id: string) => projectMessages(messages).find((r) => r.message.message_id === id)?.key ?? key(id)
     expect(order).toEqual([
       `user:${keyOf('typed-marker-user')}`, `assistant:${keyOf('typed-marker-reply')}`,
-      `background:${keyOf('wakeup-mixed-user')}`, `assistant:${keyOf('wakeup-mixed-reply')}`,
-      `background:${keyOf('wakeup-legacy-user')}`, `assistant:${keyOf('wakeup-legacy-reply')}`,
-      `background:${keyOf('wakeup-silent-user')}`,
+      `activity:${keyOf('wakeup-mixed-user')}`, `assistant:${keyOf('wakeup-mixed-reply')}`,
+      `activity:${keyOf('wakeup-legacy-user')}`, `assistant:${keyOf('wakeup-legacy-reply')}`,
+      `activity:${keyOf('wakeup-silent-user')}`,
       // TAL-1990: the server's continuation after an Update anyway is an automatic row too, with its reply under it.
-      `background:${keyOf('continuation-user')}`, `assistant:${keyOf('continuation-reply')}`,
+      `activity:${keyOf('continuation-user')}`, `assistant:${keyOf('continuation-reply')}`,
       `user:${keyOf('user-no-reply')}`, `assistant:${keyOf('user-no-reply-answer')}`,
     ])
     expect(view.container.querySelector(`[data-message-key="${keyOf('wakeup-silent-user')}"] summary`)).toHaveTextContent('./backup.sh')

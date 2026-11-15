@@ -7619,6 +7619,85 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "_talaria_activity": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": 1
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "talaria",
+                                      "peer_agent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "summary": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "details": {
+                                    "type": "string"
+                                  },
+                                  "sender": {
+                                    "type": "object",
+                                    "properties": {
+                                      "session_id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "session_id",
+                                      "name"
+                                    ]
+                                  },
+                                  "target": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "enum": [
+                                          "decision_review",
+                                          "session"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "path": {
+                                        "type": "string",
+                                        "pattern": "^\\/[^/]"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "id",
+                                      "path"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "origin",
+                                  "id",
+                                  "kind",
+                                  "summary"
+                                ]
+                              },
                               "role": {
                                 "type": "string"
                               },
@@ -8376,6 +8455,85 @@
                                     "items": {
                                       "type": "object",
                                       "properties": {
+                                        "talaria_activity": {
+                                          "type": "object",
+                                          "properties": {
+                                            "version": {
+                                              "const": 1
+                                            },
+                                            "origin": {
+                                              "enum": [
+                                                "talaria",
+                                                "peer_agent"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "id": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "kind": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "summary": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "details": {
+                                              "type": "string"
+                                            },
+                                            "sender": {
+                                              "type": "object",
+                                              "properties": {
+                                                "session_id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "name": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                }
+                                              },
+                                              "required": [
+                                                "session_id",
+                                                "name"
+                                              ]
+                                            },
+                                            "target": {
+                                              "type": "object",
+                                              "properties": {
+                                                "kind": {
+                                                  "enum": [
+                                                    "decision_review",
+                                                    "session"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "path": {
+                                                  "type": "string",
+                                                  "pattern": "^\\/[^/]"
+                                                }
+                                              },
+                                              "required": [
+                                                "kind",
+                                                "id",
+                                                "path"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "version",
+                                            "origin",
+                                            "id",
+                                            "kind",
+                                            "summary"
+                                          ]
+                                        },
                                         "row_id": {
                                           "type": "string"
                                         },
@@ -10066,6 +10224,85 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "talaria_activity": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": 1
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "talaria",
+                                      "peer_agent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "summary": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "details": {
+                                    "type": "string"
+                                  },
+                                  "sender": {
+                                    "type": "object",
+                                    "properties": {
+                                      "session_id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "session_id",
+                                      "name"
+                                    ]
+                                  },
+                                  "target": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "enum": [
+                                          "decision_review",
+                                          "session"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "path": {
+                                        "type": "string",
+                                        "pattern": "^\\/[^/]"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "id",
+                                      "path"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "origin",
+                                  "id",
+                                  "kind",
+                                  "summary"
+                                ]
+                              },
                               "steer_id": {
                                 "type": "string"
                               },
@@ -13339,6 +13576,85 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "_talaria_activity": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": 1
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "talaria",
+                                      "peer_agent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "summary": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "details": {
+                                    "type": "string"
+                                  },
+                                  "sender": {
+                                    "type": "object",
+                                    "properties": {
+                                      "session_id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "session_id",
+                                      "name"
+                                    ]
+                                  },
+                                  "target": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "enum": [
+                                          "decision_review",
+                                          "session"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "path": {
+                                        "type": "string",
+                                        "pattern": "^\\/[^/]"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "id",
+                                      "path"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "origin",
+                                  "id",
+                                  "kind",
+                                  "summary"
+                                ]
+                              },
                               "role": {
                                 "type": "string"
                               },
@@ -14096,6 +14412,85 @@
                                     "items": {
                                       "type": "object",
                                       "properties": {
+                                        "talaria_activity": {
+                                          "type": "object",
+                                          "properties": {
+                                            "version": {
+                                              "const": 1
+                                            },
+                                            "origin": {
+                                              "enum": [
+                                                "talaria",
+                                                "peer_agent"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "id": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "kind": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "summary": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "details": {
+                                              "type": "string"
+                                            },
+                                            "sender": {
+                                              "type": "object",
+                                              "properties": {
+                                                "session_id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "name": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                }
+                                              },
+                                              "required": [
+                                                "session_id",
+                                                "name"
+                                              ]
+                                            },
+                                            "target": {
+                                              "type": "object",
+                                              "properties": {
+                                                "kind": {
+                                                  "enum": [
+                                                    "decision_review",
+                                                    "session"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "path": {
+                                                  "type": "string",
+                                                  "pattern": "^\\/[^/]"
+                                                }
+                                              },
+                                              "required": [
+                                                "kind",
+                                                "id",
+                                                "path"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "version",
+                                            "origin",
+                                            "id",
+                                            "kind",
+                                            "summary"
+                                          ]
+                                        },
                                         "row_id": {
                                           "type": "string"
                                         },
@@ -15786,6 +16181,85 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "talaria_activity": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": 1
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "talaria",
+                                      "peer_agent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "summary": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "details": {
+                                    "type": "string"
+                                  },
+                                  "sender": {
+                                    "type": "object",
+                                    "properties": {
+                                      "session_id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "session_id",
+                                      "name"
+                                    ]
+                                  },
+                                  "target": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "enum": [
+                                          "decision_review",
+                                          "session"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "path": {
+                                        "type": "string",
+                                        "pattern": "^\\/[^/]"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "id",
+                                      "path"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "origin",
+                                  "id",
+                                  "kind",
+                                  "summary"
+                                ]
+                              },
                               "steer_id": {
                                 "type": "string"
                               },
@@ -17730,6 +18204,85 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "_talaria_activity": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": 1
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "talaria",
+                                      "peer_agent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "summary": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "details": {
+                                    "type": "string"
+                                  },
+                                  "sender": {
+                                    "type": "object",
+                                    "properties": {
+                                      "session_id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "session_id",
+                                      "name"
+                                    ]
+                                  },
+                                  "target": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "enum": [
+                                          "decision_review",
+                                          "session"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "path": {
+                                        "type": "string",
+                                        "pattern": "^\\/[^/]"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "id",
+                                      "path"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "origin",
+                                  "id",
+                                  "kind",
+                                  "summary"
+                                ]
+                              },
                               "role": {
                                 "type": "string"
                               },
@@ -18487,6 +19040,85 @@
                                     "items": {
                                       "type": "object",
                                       "properties": {
+                                        "talaria_activity": {
+                                          "type": "object",
+                                          "properties": {
+                                            "version": {
+                                              "const": 1
+                                            },
+                                            "origin": {
+                                              "enum": [
+                                                "talaria",
+                                                "peer_agent"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "id": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "kind": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "summary": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "details": {
+                                              "type": "string"
+                                            },
+                                            "sender": {
+                                              "type": "object",
+                                              "properties": {
+                                                "session_id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "name": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                }
+                                              },
+                                              "required": [
+                                                "session_id",
+                                                "name"
+                                              ]
+                                            },
+                                            "target": {
+                                              "type": "object",
+                                              "properties": {
+                                                "kind": {
+                                                  "enum": [
+                                                    "decision_review",
+                                                    "session"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "path": {
+                                                  "type": "string",
+                                                  "pattern": "^\\/[^/]"
+                                                }
+                                              },
+                                              "required": [
+                                                "kind",
+                                                "id",
+                                                "path"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "version",
+                                            "origin",
+                                            "id",
+                                            "kind",
+                                            "summary"
+                                          ]
+                                        },
                                         "row_id": {
                                           "type": "string"
                                         },
@@ -20177,6 +20809,85 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "talaria_activity": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": 1
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "talaria",
+                                      "peer_agent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "summary": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "details": {
+                                    "type": "string"
+                                  },
+                                  "sender": {
+                                    "type": "object",
+                                    "properties": {
+                                      "session_id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "session_id",
+                                      "name"
+                                    ]
+                                  },
+                                  "target": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "enum": [
+                                          "decision_review",
+                                          "session"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "path": {
+                                        "type": "string",
+                                        "pattern": "^\\/[^/]"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "id",
+                                      "path"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "origin",
+                                  "id",
+                                  "kind",
+                                  "summary"
+                                ]
+                              },
                               "steer_id": {
                                 "type": "string"
                               },
@@ -25253,6 +25964,85 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "_talaria_activity": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": 1
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "talaria",
+                                      "peer_agent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "summary": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "details": {
+                                    "type": "string"
+                                  },
+                                  "sender": {
+                                    "type": "object",
+                                    "properties": {
+                                      "session_id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "session_id",
+                                      "name"
+                                    ]
+                                  },
+                                  "target": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "enum": [
+                                          "decision_review",
+                                          "session"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "path": {
+                                        "type": "string",
+                                        "pattern": "^\\/[^/]"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "id",
+                                      "path"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "origin",
+                                  "id",
+                                  "kind",
+                                  "summary"
+                                ]
+                              },
                               "role": {
                                 "type": "string"
                               },
@@ -26010,6 +26800,85 @@
                                     "items": {
                                       "type": "object",
                                       "properties": {
+                                        "talaria_activity": {
+                                          "type": "object",
+                                          "properties": {
+                                            "version": {
+                                              "const": 1
+                                            },
+                                            "origin": {
+                                              "enum": [
+                                                "talaria",
+                                                "peer_agent"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "id": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "kind": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "summary": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "details": {
+                                              "type": "string"
+                                            },
+                                            "sender": {
+                                              "type": "object",
+                                              "properties": {
+                                                "session_id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "name": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                }
+                                              },
+                                              "required": [
+                                                "session_id",
+                                                "name"
+                                              ]
+                                            },
+                                            "target": {
+                                              "type": "object",
+                                              "properties": {
+                                                "kind": {
+                                                  "enum": [
+                                                    "decision_review",
+                                                    "session"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "path": {
+                                                  "type": "string",
+                                                  "pattern": "^\\/[^/]"
+                                                }
+                                              },
+                                              "required": [
+                                                "kind",
+                                                "id",
+                                                "path"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "version",
+                                            "origin",
+                                            "id",
+                                            "kind",
+                                            "summary"
+                                          ]
+                                        },
                                         "row_id": {
                                           "type": "string"
                                         },
@@ -27700,6 +28569,85 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "talaria_activity": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": 1
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "talaria",
+                                      "peer_agent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "summary": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "details": {
+                                    "type": "string"
+                                  },
+                                  "sender": {
+                                    "type": "object",
+                                    "properties": {
+                                      "session_id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "session_id",
+                                      "name"
+                                    ]
+                                  },
+                                  "target": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "enum": [
+                                          "decision_review",
+                                          "session"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "path": {
+                                        "type": "string",
+                                        "pattern": "^\\/[^/]"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "id",
+                                      "path"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "origin",
+                                  "id",
+                                  "kind",
+                                  "summary"
+                                ]
+                              },
                               "steer_id": {
                                 "type": "string"
                               },
@@ -32087,6 +33035,85 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "_talaria_activity": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": 1
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "talaria",
+                                      "peer_agent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "summary": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "details": {
+                                    "type": "string"
+                                  },
+                                  "sender": {
+                                    "type": "object",
+                                    "properties": {
+                                      "session_id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "session_id",
+                                      "name"
+                                    ]
+                                  },
+                                  "target": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "enum": [
+                                          "decision_review",
+                                          "session"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "path": {
+                                        "type": "string",
+                                        "pattern": "^\\/[^/]"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "id",
+                                      "path"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "origin",
+                                  "id",
+                                  "kind",
+                                  "summary"
+                                ]
+                              },
                               "role": {
                                 "type": "string"
                               },
@@ -32844,6 +33871,85 @@
                                     "items": {
                                       "type": "object",
                                       "properties": {
+                                        "talaria_activity": {
+                                          "type": "object",
+                                          "properties": {
+                                            "version": {
+                                              "const": 1
+                                            },
+                                            "origin": {
+                                              "enum": [
+                                                "talaria",
+                                                "peer_agent"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "id": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "kind": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "summary": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "details": {
+                                              "type": "string"
+                                            },
+                                            "sender": {
+                                              "type": "object",
+                                              "properties": {
+                                                "session_id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "name": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                }
+                                              },
+                                              "required": [
+                                                "session_id",
+                                                "name"
+                                              ]
+                                            },
+                                            "target": {
+                                              "type": "object",
+                                              "properties": {
+                                                "kind": {
+                                                  "enum": [
+                                                    "decision_review",
+                                                    "session"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "path": {
+                                                  "type": "string",
+                                                  "pattern": "^\\/[^/]"
+                                                }
+                                              },
+                                              "required": [
+                                                "kind",
+                                                "id",
+                                                "path"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "version",
+                                            "origin",
+                                            "id",
+                                            "kind",
+                                            "summary"
+                                          ]
+                                        },
                                         "row_id": {
                                           "type": "string"
                                         },
@@ -34534,6 +35640,85 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "talaria_activity": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": 1
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "talaria",
+                                      "peer_agent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "summary": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "details": {
+                                    "type": "string"
+                                  },
+                                  "sender": {
+                                    "type": "object",
+                                    "properties": {
+                                      "session_id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "session_id",
+                                      "name"
+                                    ]
+                                  },
+                                  "target": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "enum": [
+                                          "decision_review",
+                                          "session"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "path": {
+                                        "type": "string",
+                                        "pattern": "^\\/[^/]"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "id",
+                                      "path"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "origin",
+                                  "id",
+                                  "kind",
+                                  "summary"
+                                ]
+                              },
                               "steer_id": {
                                 "type": "string"
                               },
@@ -39553,6 +40738,85 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "_talaria_activity": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": 1
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "talaria",
+                                      "peer_agent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "summary": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "details": {
+                                    "type": "string"
+                                  },
+                                  "sender": {
+                                    "type": "object",
+                                    "properties": {
+                                      "session_id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "session_id",
+                                      "name"
+                                    ]
+                                  },
+                                  "target": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "enum": [
+                                          "decision_review",
+                                          "session"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "path": {
+                                        "type": "string",
+                                        "pattern": "^\\/[^/]"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "id",
+                                      "path"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "origin",
+                                  "id",
+                                  "kind",
+                                  "summary"
+                                ]
+                              },
                               "role": {
                                 "type": "string"
                               },
@@ -40310,6 +41574,85 @@
                                     "items": {
                                       "type": "object",
                                       "properties": {
+                                        "talaria_activity": {
+                                          "type": "object",
+                                          "properties": {
+                                            "version": {
+                                              "const": 1
+                                            },
+                                            "origin": {
+                                              "enum": [
+                                                "talaria",
+                                                "peer_agent"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "id": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "kind": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "summary": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "details": {
+                                              "type": "string"
+                                            },
+                                            "sender": {
+                                              "type": "object",
+                                              "properties": {
+                                                "session_id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "name": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                }
+                                              },
+                                              "required": [
+                                                "session_id",
+                                                "name"
+                                              ]
+                                            },
+                                            "target": {
+                                              "type": "object",
+                                              "properties": {
+                                                "kind": {
+                                                  "enum": [
+                                                    "decision_review",
+                                                    "session"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "path": {
+                                                  "type": "string",
+                                                  "pattern": "^\\/[^/]"
+                                                }
+                                              },
+                                              "required": [
+                                                "kind",
+                                                "id",
+                                                "path"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "version",
+                                            "origin",
+                                            "id",
+                                            "kind",
+                                            "summary"
+                                          ]
+                                        },
                                         "row_id": {
                                           "type": "string"
                                         },
@@ -42000,6 +43343,85 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "talaria_activity": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": 1
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "talaria",
+                                      "peer_agent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "summary": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "details": {
+                                    "type": "string"
+                                  },
+                                  "sender": {
+                                    "type": "object",
+                                    "properties": {
+                                      "session_id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "session_id",
+                                      "name"
+                                    ]
+                                  },
+                                  "target": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "enum": [
+                                          "decision_review",
+                                          "session"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "path": {
+                                        "type": "string",
+                                        "pattern": "^\\/[^/]"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "id",
+                                      "path"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "origin",
+                                  "id",
+                                  "kind",
+                                  "summary"
+                                ]
+                              },
                               "steer_id": {
                                 "type": "string"
                               },
@@ -43889,6 +45311,85 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "_talaria_activity": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": 1
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "talaria",
+                                      "peer_agent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "summary": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "details": {
+                                    "type": "string"
+                                  },
+                                  "sender": {
+                                    "type": "object",
+                                    "properties": {
+                                      "session_id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "session_id",
+                                      "name"
+                                    ]
+                                  },
+                                  "target": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "enum": [
+                                          "decision_review",
+                                          "session"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "path": {
+                                        "type": "string",
+                                        "pattern": "^\\/[^/]"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "id",
+                                      "path"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "origin",
+                                  "id",
+                                  "kind",
+                                  "summary"
+                                ]
+                              },
                               "role": {
                                 "type": "string"
                               },
@@ -44646,6 +46147,85 @@
                                     "items": {
                                       "type": "object",
                                       "properties": {
+                                        "talaria_activity": {
+                                          "type": "object",
+                                          "properties": {
+                                            "version": {
+                                              "const": 1
+                                            },
+                                            "origin": {
+                                              "enum": [
+                                                "talaria",
+                                                "peer_agent"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "id": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "kind": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "summary": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "details": {
+                                              "type": "string"
+                                            },
+                                            "sender": {
+                                              "type": "object",
+                                              "properties": {
+                                                "session_id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "name": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                }
+                                              },
+                                              "required": [
+                                                "session_id",
+                                                "name"
+                                              ]
+                                            },
+                                            "target": {
+                                              "type": "object",
+                                              "properties": {
+                                                "kind": {
+                                                  "enum": [
+                                                    "decision_review",
+                                                    "session"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "path": {
+                                                  "type": "string",
+                                                  "pattern": "^\\/[^/]"
+                                                }
+                                              },
+                                              "required": [
+                                                "kind",
+                                                "id",
+                                                "path"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "version",
+                                            "origin",
+                                            "id",
+                                            "kind",
+                                            "summary"
+                                          ]
+                                        },
                                         "row_id": {
                                           "type": "string"
                                         },
@@ -46336,6 +47916,85 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "talaria_activity": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": 1
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "talaria",
+                                      "peer_agent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "summary": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "details": {
+                                    "type": "string"
+                                  },
+                                  "sender": {
+                                    "type": "object",
+                                    "properties": {
+                                      "session_id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "session_id",
+                                      "name"
+                                    ]
+                                  },
+                                  "target": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "enum": [
+                                          "decision_review",
+                                          "session"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "path": {
+                                        "type": "string",
+                                        "pattern": "^\\/[^/]"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "id",
+                                      "path"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "origin",
+                                  "id",
+                                  "kind",
+                                  "summary"
+                                ]
+                              },
                               "steer_id": {
                                 "type": "string"
                               },
@@ -48287,6 +49946,85 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "_talaria_activity": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": 1
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "talaria",
+                                      "peer_agent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "summary": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "details": {
+                                    "type": "string"
+                                  },
+                                  "sender": {
+                                    "type": "object",
+                                    "properties": {
+                                      "session_id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "session_id",
+                                      "name"
+                                    ]
+                                  },
+                                  "target": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "enum": [
+                                          "decision_review",
+                                          "session"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "path": {
+                                        "type": "string",
+                                        "pattern": "^\\/[^/]"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "id",
+                                      "path"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "origin",
+                                  "id",
+                                  "kind",
+                                  "summary"
+                                ]
+                              },
                               "role": {
                                 "type": "string"
                               },
@@ -49044,6 +50782,85 @@
                                     "items": {
                                       "type": "object",
                                       "properties": {
+                                        "talaria_activity": {
+                                          "type": "object",
+                                          "properties": {
+                                            "version": {
+                                              "const": 1
+                                            },
+                                            "origin": {
+                                              "enum": [
+                                                "talaria",
+                                                "peer_agent"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "id": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "kind": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "summary": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "details": {
+                                              "type": "string"
+                                            },
+                                            "sender": {
+                                              "type": "object",
+                                              "properties": {
+                                                "session_id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "name": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                }
+                                              },
+                                              "required": [
+                                                "session_id",
+                                                "name"
+                                              ]
+                                            },
+                                            "target": {
+                                              "type": "object",
+                                              "properties": {
+                                                "kind": {
+                                                  "enum": [
+                                                    "decision_review",
+                                                    "session"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "path": {
+                                                  "type": "string",
+                                                  "pattern": "^\\/[^/]"
+                                                }
+                                              },
+                                              "required": [
+                                                "kind",
+                                                "id",
+                                                "path"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "version",
+                                            "origin",
+                                            "id",
+                                            "kind",
+                                            "summary"
+                                          ]
+                                        },
                                         "row_id": {
                                           "type": "string"
                                         },
@@ -50734,6 +52551,85 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "talaria_activity": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": 1
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "talaria",
+                                      "peer_agent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "summary": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "details": {
+                                    "type": "string"
+                                  },
+                                  "sender": {
+                                    "type": "object",
+                                    "properties": {
+                                      "session_id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "session_id",
+                                      "name"
+                                    ]
+                                  },
+                                  "target": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "enum": [
+                                          "decision_review",
+                                          "session"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "path": {
+                                        "type": "string",
+                                        "pattern": "^\\/[^/]"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "id",
+                                      "path"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "origin",
+                                  "id",
+                                  "kind",
+                                  "summary"
+                                ]
+                              },
                               "steer_id": {
                                 "type": "string"
                               },
@@ -52683,6 +54579,85 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "_talaria_activity": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": 1
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "talaria",
+                                      "peer_agent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "summary": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "details": {
+                                    "type": "string"
+                                  },
+                                  "sender": {
+                                    "type": "object",
+                                    "properties": {
+                                      "session_id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "session_id",
+                                      "name"
+                                    ]
+                                  },
+                                  "target": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "enum": [
+                                          "decision_review",
+                                          "session"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "path": {
+                                        "type": "string",
+                                        "pattern": "^\\/[^/]"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "id",
+                                      "path"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "origin",
+                                  "id",
+                                  "kind",
+                                  "summary"
+                                ]
+                              },
                               "role": {
                                 "type": "string"
                               },
@@ -53440,6 +55415,85 @@
                                     "items": {
                                       "type": "object",
                                       "properties": {
+                                        "talaria_activity": {
+                                          "type": "object",
+                                          "properties": {
+                                            "version": {
+                                              "const": 1
+                                            },
+                                            "origin": {
+                                              "enum": [
+                                                "talaria",
+                                                "peer_agent"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "id": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "kind": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "summary": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "details": {
+                                              "type": "string"
+                                            },
+                                            "sender": {
+                                              "type": "object",
+                                              "properties": {
+                                                "session_id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "name": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                }
+                                              },
+                                              "required": [
+                                                "session_id",
+                                                "name"
+                                              ]
+                                            },
+                                            "target": {
+                                              "type": "object",
+                                              "properties": {
+                                                "kind": {
+                                                  "enum": [
+                                                    "decision_review",
+                                                    "session"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "path": {
+                                                  "type": "string",
+                                                  "pattern": "^\\/[^/]"
+                                                }
+                                              },
+                                              "required": [
+                                                "kind",
+                                                "id",
+                                                "path"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "version",
+                                            "origin",
+                                            "id",
+                                            "kind",
+                                            "summary"
+                                          ]
+                                        },
                                         "row_id": {
                                           "type": "string"
                                         },
@@ -55130,6 +57184,85 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "talaria_activity": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": 1
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "talaria",
+                                      "peer_agent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "summary": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "details": {
+                                    "type": "string"
+                                  },
+                                  "sender": {
+                                    "type": "object",
+                                    "properties": {
+                                      "session_id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "session_id",
+                                      "name"
+                                    ]
+                                  },
+                                  "target": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "enum": [
+                                          "decision_review",
+                                          "session"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "path": {
+                                        "type": "string",
+                                        "pattern": "^\\/[^/]"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "id",
+                                      "path"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "origin",
+                                  "id",
+                                  "kind",
+                                  "summary"
+                                ]
+                              },
                               "steer_id": {
                                 "type": "string"
                               },
@@ -57027,6 +59160,85 @@
                       "items": {
                         "type": "object",
                         "properties": {
+                          "talaria_activity": {
+                            "type": "object",
+                            "properties": {
+                              "version": {
+                                "const": 1
+                              },
+                              "origin": {
+                                "enum": [
+                                  "talaria",
+                                  "peer_agent"
+                                ],
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "kind": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "summary": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "details": {
+                                "type": "string"
+                              },
+                              "sender": {
+                                "type": "object",
+                                "properties": {
+                                  "session_id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "name": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "required": [
+                                  "session_id",
+                                  "name"
+                                ]
+                              },
+                              "target": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "enum": [
+                                      "decision_review",
+                                      "session"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "path": {
+                                    "type": "string",
+                                    "pattern": "^\\/[^/]"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "id",
+                                  "path"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "version",
+                              "origin",
+                              "id",
+                              "kind",
+                              "summary"
+                            ]
+                          },
                           "row_id": {
                             "type": "string"
                           },
@@ -68524,6 +70736,85 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "_talaria_activity": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": 1
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "talaria",
+                                      "peer_agent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "summary": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "details": {
+                                    "type": "string"
+                                  },
+                                  "sender": {
+                                    "type": "object",
+                                    "properties": {
+                                      "session_id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "session_id",
+                                      "name"
+                                    ]
+                                  },
+                                  "target": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "enum": [
+                                          "decision_review",
+                                          "session"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "path": {
+                                        "type": "string",
+                                        "pattern": "^\\/[^/]"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "id",
+                                      "path"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "origin",
+                                  "id",
+                                  "kind",
+                                  "summary"
+                                ]
+                              },
                               "role": {
                                 "type": "string"
                               },
@@ -69281,6 +71572,85 @@
                                     "items": {
                                       "type": "object",
                                       "properties": {
+                                        "talaria_activity": {
+                                          "type": "object",
+                                          "properties": {
+                                            "version": {
+                                              "const": 1
+                                            },
+                                            "origin": {
+                                              "enum": [
+                                                "talaria",
+                                                "peer_agent"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "id": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "kind": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "summary": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "details": {
+                                              "type": "string"
+                                            },
+                                            "sender": {
+                                              "type": "object",
+                                              "properties": {
+                                                "session_id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "name": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                }
+                                              },
+                                              "required": [
+                                                "session_id",
+                                                "name"
+                                              ]
+                                            },
+                                            "target": {
+                                              "type": "object",
+                                              "properties": {
+                                                "kind": {
+                                                  "enum": [
+                                                    "decision_review",
+                                                    "session"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "path": {
+                                                  "type": "string",
+                                                  "pattern": "^\\/[^/]"
+                                                }
+                                              },
+                                              "required": [
+                                                "kind",
+                                                "id",
+                                                "path"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "version",
+                                            "origin",
+                                            "id",
+                                            "kind",
+                                            "summary"
+                                          ]
+                                        },
                                         "row_id": {
                                           "type": "string"
                                         },
@@ -70971,6 +73341,85 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "talaria_activity": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": 1
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "talaria",
+                                      "peer_agent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "summary": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "details": {
+                                    "type": "string"
+                                  },
+                                  "sender": {
+                                    "type": "object",
+                                    "properties": {
+                                      "session_id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "session_id",
+                                      "name"
+                                    ]
+                                  },
+                                  "target": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "enum": [
+                                          "decision_review",
+                                          "session"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "path": {
+                                        "type": "string",
+                                        "pattern": "^\\/[^/]"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "id",
+                                      "path"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "origin",
+                                  "id",
+                                  "kind",
+                                  "summary"
+                                ]
+                              },
                               "steer_id": {
                                 "type": "string"
                               },
@@ -72912,6 +75361,85 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "_talaria_activity": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": 1
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "talaria",
+                                      "peer_agent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "summary": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "details": {
+                                    "type": "string"
+                                  },
+                                  "sender": {
+                                    "type": "object",
+                                    "properties": {
+                                      "session_id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "session_id",
+                                      "name"
+                                    ]
+                                  },
+                                  "target": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "enum": [
+                                          "decision_review",
+                                          "session"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "path": {
+                                        "type": "string",
+                                        "pattern": "^\\/[^/]"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "id",
+                                      "path"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "origin",
+                                  "id",
+                                  "kind",
+                                  "summary"
+                                ]
+                              },
                               "role": {
                                 "type": "string"
                               },
@@ -73669,6 +76197,85 @@
                                     "items": {
                                       "type": "object",
                                       "properties": {
+                                        "talaria_activity": {
+                                          "type": "object",
+                                          "properties": {
+                                            "version": {
+                                              "const": 1
+                                            },
+                                            "origin": {
+                                              "enum": [
+                                                "talaria",
+                                                "peer_agent"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "id": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "kind": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "summary": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "details": {
+                                              "type": "string"
+                                            },
+                                            "sender": {
+                                              "type": "object",
+                                              "properties": {
+                                                "session_id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "name": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                }
+                                              },
+                                              "required": [
+                                                "session_id",
+                                                "name"
+                                              ]
+                                            },
+                                            "target": {
+                                              "type": "object",
+                                              "properties": {
+                                                "kind": {
+                                                  "enum": [
+                                                    "decision_review",
+                                                    "session"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "path": {
+                                                  "type": "string",
+                                                  "pattern": "^\\/[^/]"
+                                                }
+                                              },
+                                              "required": [
+                                                "kind",
+                                                "id",
+                                                "path"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "version",
+                                            "origin",
+                                            "id",
+                                            "kind",
+                                            "summary"
+                                          ]
+                                        },
                                         "row_id": {
                                           "type": "string"
                                         },
@@ -75359,6 +77966,85 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "talaria_activity": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": 1
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "talaria",
+                                      "peer_agent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "summary": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "details": {
+                                    "type": "string"
+                                  },
+                                  "sender": {
+                                    "type": "object",
+                                    "properties": {
+                                      "session_id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "session_id",
+                                      "name"
+                                    ]
+                                  },
+                                  "target": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "enum": [
+                                          "decision_review",
+                                          "session"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "path": {
+                                        "type": "string",
+                                        "pattern": "^\\/[^/]"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "id",
+                                      "path"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "origin",
+                                  "id",
+                                  "kind",
+                                  "summary"
+                                ]
+                              },
                               "steer_id": {
                                 "type": "string"
                               },
@@ -77986,6 +80672,85 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "_talaria_activity": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": 1
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "talaria",
+                                      "peer_agent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "summary": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "details": {
+                                    "type": "string"
+                                  },
+                                  "sender": {
+                                    "type": "object",
+                                    "properties": {
+                                      "session_id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "session_id",
+                                      "name"
+                                    ]
+                                  },
+                                  "target": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "enum": [
+                                          "decision_review",
+                                          "session"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "path": {
+                                        "type": "string",
+                                        "pattern": "^\\/[^/]"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "id",
+                                      "path"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "origin",
+                                  "id",
+                                  "kind",
+                                  "summary"
+                                ]
+                              },
                               "role": {
                                 "type": "string"
                               },
@@ -78743,6 +81508,85 @@
                                     "items": {
                                       "type": "object",
                                       "properties": {
+                                        "talaria_activity": {
+                                          "type": "object",
+                                          "properties": {
+                                            "version": {
+                                              "const": 1
+                                            },
+                                            "origin": {
+                                              "enum": [
+                                                "talaria",
+                                                "peer_agent"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "id": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "kind": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "summary": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "details": {
+                                              "type": "string"
+                                            },
+                                            "sender": {
+                                              "type": "object",
+                                              "properties": {
+                                                "session_id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "name": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                }
+                                              },
+                                              "required": [
+                                                "session_id",
+                                                "name"
+                                              ]
+                                            },
+                                            "target": {
+                                              "type": "object",
+                                              "properties": {
+                                                "kind": {
+                                                  "enum": [
+                                                    "decision_review",
+                                                    "session"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "path": {
+                                                  "type": "string",
+                                                  "pattern": "^\\/[^/]"
+                                                }
+                                              },
+                                              "required": [
+                                                "kind",
+                                                "id",
+                                                "path"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "version",
+                                            "origin",
+                                            "id",
+                                            "kind",
+                                            "summary"
+                                          ]
+                                        },
                                         "row_id": {
                                           "type": "string"
                                         },
@@ -80433,6 +83277,85 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "talaria_activity": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": 1
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "talaria",
+                                      "peer_agent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "summary": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "details": {
+                                    "type": "string"
+                                  },
+                                  "sender": {
+                                    "type": "object",
+                                    "properties": {
+                                      "session_id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "session_id",
+                                      "name"
+                                    ]
+                                  },
+                                  "target": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "enum": [
+                                          "decision_review",
+                                          "session"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "path": {
+                                        "type": "string",
+                                        "pattern": "^\\/[^/]"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "id",
+                                      "path"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "origin",
+                                  "id",
+                                  "kind",
+                                  "summary"
+                                ]
+                              },
                               "steer_id": {
                                 "type": "string"
                               },
@@ -82953,6 +85876,85 @@
                               "items": {
                                 "type": "object",
                                 "properties": {
+                                  "_talaria_activity": {
+                                    "type": "object",
+                                    "properties": {
+                                      "version": {
+                                        "const": 1
+                                      },
+                                      "origin": {
+                                        "enum": [
+                                          "talaria",
+                                          "peer_agent"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "kind": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "summary": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "details": {
+                                        "type": "string"
+                                      },
+                                      "sender": {
+                                        "type": "object",
+                                        "properties": {
+                                          "session_id": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "name": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          }
+                                        },
+                                        "required": [
+                                          "session_id",
+                                          "name"
+                                        ]
+                                      },
+                                      "target": {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "enum": [
+                                              "decision_review",
+                                              "session"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "id": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "path": {
+                                            "type": "string",
+                                            "pattern": "^\\/[^/]"
+                                          }
+                                        },
+                                        "required": [
+                                          "kind",
+                                          "id",
+                                          "path"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "version",
+                                      "origin",
+                                      "id",
+                                      "kind",
+                                      "summary"
+                                    ]
+                                  },
                                   "role": {
                                     "type": "string"
                                   },
@@ -83687,6 +86689,85 @@
                                         "items": {
                                           "type": "object",
                                           "properties": {
+                                            "talaria_activity": {
+                                              "type": "object",
+                                              "properties": {
+                                                "version": {
+                                                  "const": 1
+                                                },
+                                                "origin": {
+                                                  "enum": [
+                                                    "talaria",
+                                                    "peer_agent"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "kind": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "summary": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "details": {
+                                                  "type": "string"
+                                                },
+                                                "sender": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "session_id": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "name": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "session_id",
+                                                    "name"
+                                                  ]
+                                                },
+                                                "target": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "enum": [
+                                                        "decision_review",
+                                                        "session"
+                                                      ],
+                                                      "type": "string"
+                                                    },
+                                                    "id": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "path": {
+                                                      "type": "string",
+                                                      "pattern": "^\\/[^/]"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind",
+                                                    "id",
+                                                    "path"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "version",
+                                                "origin",
+                                                "id",
+                                                "kind",
+                                                "summary"
+                                              ]
+                                            },
                                             "row_id": {
                                               "type": "string"
                                             },
@@ -85264,6 +88345,85 @@
                               "items": {
                                 "type": "object",
                                 "properties": {
+                                  "talaria_activity": {
+                                    "type": "object",
+                                    "properties": {
+                                      "version": {
+                                        "const": 1
+                                      },
+                                      "origin": {
+                                        "enum": [
+                                          "talaria",
+                                          "peer_agent"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "kind": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "summary": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "details": {
+                                        "type": "string"
+                                      },
+                                      "sender": {
+                                        "type": "object",
+                                        "properties": {
+                                          "session_id": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "name": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          }
+                                        },
+                                        "required": [
+                                          "session_id",
+                                          "name"
+                                        ]
+                                      },
+                                      "target": {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "enum": [
+                                              "decision_review",
+                                              "session"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "id": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "path": {
+                                            "type": "string",
+                                            "pattern": "^\\/[^/]"
+                                          }
+                                        },
+                                        "required": [
+                                          "kind",
+                                          "id",
+                                          "path"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "version",
+                                      "origin",
+                                      "id",
+                                      "kind",
+                                      "summary"
+                                    ]
+                                  },
                                   "steer_id": {
                                     "type": "string"
                                   },
@@ -132202,6 +135362,85 @@
                           "message": {
                             "type": "object",
                             "properties": {
+                              "_talaria_activity": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": 1
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "talaria",
+                                      "peer_agent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "summary": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "details": {
+                                    "type": "string"
+                                  },
+                                  "sender": {
+                                    "type": "object",
+                                    "properties": {
+                                      "session_id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "session_id",
+                                      "name"
+                                    ]
+                                  },
+                                  "target": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "enum": [
+                                          "decision_review",
+                                          "session"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "path": {
+                                        "type": "string",
+                                        "pattern": "^\\/[^/]"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "id",
+                                      "path"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "origin",
+                                  "id",
+                                  "kind",
+                                  "summary"
+                                ]
+                              },
                               "role": {
                                 "type": "string"
                               },
@@ -132959,6 +136198,85 @@
                                     "items": {
                                       "type": "object",
                                       "properties": {
+                                        "talaria_activity": {
+                                          "type": "object",
+                                          "properties": {
+                                            "version": {
+                                              "const": 1
+                                            },
+                                            "origin": {
+                                              "enum": [
+                                                "talaria",
+                                                "peer_agent"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "id": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "kind": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "summary": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "details": {
+                                              "type": "string"
+                                            },
+                                            "sender": {
+                                              "type": "object",
+                                              "properties": {
+                                                "session_id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "name": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                }
+                                              },
+                                              "required": [
+                                                "session_id",
+                                                "name"
+                                              ]
+                                            },
+                                            "target": {
+                                              "type": "object",
+                                              "properties": {
+                                                "kind": {
+                                                  "enum": [
+                                                    "decision_review",
+                                                    "session"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "path": {
+                                                  "type": "string",
+                                                  "pattern": "^\\/[^/]"
+                                                }
+                                              },
+                                              "required": [
+                                                "kind",
+                                                "id",
+                                                "path"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "version",
+                                            "origin",
+                                            "id",
+                                            "kind",
+                                            "summary"
+                                          ]
+                                        },
                                         "row_id": {
                                           "type": "string"
                                         },
