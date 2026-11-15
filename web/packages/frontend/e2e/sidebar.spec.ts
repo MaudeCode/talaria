@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { expect, settle, test } from './fixtures'
+import { DUO_VIEWPORTS, expect, settle, test } from './fixtures'
 import { routeProviders } from './providers'
 
 /** TAL-1867: one left column on every page, expanded or as an icon rail, tiled from 641px and a drawer below. */
@@ -14,6 +14,10 @@ const stored = (page: Page, key: string) => page.evaluate((k) => localStorage.ge
 /** The destinations and footer controls in DOM order, which is also the tab order. */
 const controls = (page: Page) => page.locator('nav[aria-label="Primary navigation"]').locator('a[aria-label]:visible, button[aria-label]:visible').evaluateAll((nodes) => nodes.filter((node) => !node.closest('#panelChat, #panelSettings')).map((node) => node.getAttribute('aria-label')))
 const desktopOnly = (name: string) => { test.skip(name !== 'desktop', 'the tiled column is desktop chrome') }
+const feedbackSettings = (page: Page, enabled: boolean) => page.route('**/api/settings', async (route) => {
+  const response = await route.fetch()
+  await route.fulfill({ response, json: { ...await response.json(), show_sidebar_feedback: enabled } })
+})
 /** Clicks the edge tab and measures every animation frame until the motion has settled. */
 const framesOfToggle = (page: Page) => page.evaluate(async () => {
   const aside = document.querySelector('aside.sidebar') as HTMLElement
@@ -607,9 +611,10 @@ test('the phone drawer shows pinned quotas and a row closes it into Insights', a
   })
 })
 
-/** TAL-1868: Settings shows Back and its section list in the one column, never the destinations or a second column. */
-test('Settings swaps the column for Back and its sections, and leaving restores it', async ({ page }, info) => {
+/** Settings swaps only the destinations for its sections; the brand and footer stay available. */
+test('Settings keeps the brand and footer around its sections, and Back restores the last page', async ({ page }, info) => {
   desktopOnly(info.project.name)
+  await feedbackSettings(page, true)
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/skills')
   await settle(page)
@@ -617,15 +622,59 @@ test('Settings swaps the column for Back and its sections, and leaving restores 
   await row(page, 'Settings').click()
   await expect(page).toHaveURL(/\/settings\/appearance$/)
   await expect(sidebar(page)).toHaveAttribute('data-shell-marker', 'kept')
+  await expect(page.locator('#themePickerGrid')).toBeVisible()
   await expect.poll(() => width(page, 'aside.sidebar')).toBe(300)
   expect(await left(page, '#main')).toBe(300)
-  expect(await controls(page)).toEqual(['Back'])
+  expect(await controls(page)).toEqual(['New conversation', 'No password', 'Back', 'Send feedback', 'Notifications'])
   await expect(page.locator('nav[aria-label="Primary navigation"]')).toHaveCount(1)
   await expect(sidebar(page).locator('#settingsMenu [data-settings-section="system"]')).toBeVisible()
-  await expect(sidebar(page).locator('[data-panel], .sidebar-brand, .sidebar-footer, #sessionList')).toHaveCount(0)
+  await expect(sidebar(page).locator('[data-panel="tasks"], [data-panel="settings"], #sessionList')).toHaveCount(0)
+  const footer = sidebar(page).locator('.sidebar-footer')
+  await expect(footer.getByRole('button', { name: 'Back', exact: true })).toBeVisible()
+  await footer.getByRole('button', { name: 'Notifications', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: 'Notifications', exact: true })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await footer.getByRole('button', { name: 'Send feedback', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: 'Send feedback', exact: true })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await page.locator('#main .settings-section-title').click()
+  await settle(page)
   await expect(page.locator('main#main')).toHaveClass(/showing-settings/)
   await expect(page.locator('html')).not.toHaveClass(/hub-active/)
   await page.screenshot({ path: info.outputPath('settings-desktop.png') })
+
+  // At short and phone sizes only the section list scrolls; the shared controls keep their own space.
+  for (const viewport of [{ name: 'mobile', width: 390, height: 844 }, ...DUO_VIEWPORTS]) {
+    await page.setViewportSize(viewport)
+    await settle(page)
+    if (viewport.width <= 640) await page.locator('#btnHamburger').click()
+    await expect(button(page, 'New conversation')).toBeInViewport({ ratio: 1 })
+    for (const name of ['Back', 'Send feedback', 'Notifications']) await expect(button(page, name), viewport.name).toBeInViewport({ ratio: 1 })
+    const last = sidebar(page).locator('[data-settings-section="about"]')
+    await sidebar(page).locator('#panelSettings .sidebar-scroll').evaluate((el) => { el.scrollTop = el.scrollHeight })
+    await expect(last).toBeInViewport({ ratio: 1 })
+    const bounds = await sidebar(page).evaluate((el) => {
+      const brand = el.querySelector('.sidebar-brand')!.getBoundingClientRect()
+      const panel = el.querySelector('#panelSettings')!
+      const menu = panel.getBoundingClientRect()
+      const footer = el.querySelector('.sidebar-footer')!.getBoundingClientRect()
+      return { fits: brand.bottom <= menu.top && menu.bottom <= footer.top, overflow: document.documentElement.scrollWidth > innerWidth || panel.scrollWidth > panel.clientWidth }
+    })
+    expect(bounds, viewport.name).toEqual({ fits: true, overflow: false })
+    await page.screenshot({ path: info.outputPath(`settings-${viewport.name}.png`) })
+    if (viewport.width <= 640) await button(page, 'Close menu').click()
+  }
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.locator('#main [data-theme-val="light"]').click()
+  await expect(page.locator('html')).not.toHaveClass(/\bdark\b/)
+  for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: 'mobile', width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport)
+    await settle(page)
+    if (viewport.width <= 640) await page.locator('#btnHamburger').click()
+    await page.screenshot({ path: info.outputPath(`settings-light-${viewport.name}.png`) })
+    if (viewport.width <= 640) await button(page, 'Close menu').click()
+  }
+  await page.setViewportSize({ width: 1440, height: 900 })
 
   // Moving between sections does not change where Back goes.
   await page.locator('[data-settings-section="system"]').click()
@@ -633,15 +682,22 @@ test('Settings swaps the column for Back and its sections, and leaving restores 
   await button(page, 'Back').click()
   await expect(page).toHaveURL(/\/skills$/)
   await expect(sidebar(page).locator('#sessionList')).toBeVisible()
+
+  await feedbackSettings(page, false)
+  await page.goto('/settings/appearance')
+  await expect(button(page, 'Send feedback')).toHaveCount(0)
+  await button(page, 'New conversation').click()
+  await expect(page).toHaveURL(/\/$/)
 })
 
 /** The rail's visible rows by name and its separators as `|`, top to bottom. */
 const railItems = (page: Page) => sidebar(page).locator('.sidebar-row:visible, .sidebar-rail-separator:visible').evaluateAll((nodes) => nodes.map((node) => (node.classList.contains('sidebar-rail-separator') ? '|' : node.getAttribute('aria-label'))))
-const SETTINGS_RAIL = ['Back', '|', 'Appearance', 'Chat', 'Navigation', 'Notifications', 'Speech', '|', 'Models', 'Providers', 'Tools', '|', 'Profiles', 'Spaces', 'Extensions', 'Access', 'System', 'Logs', 'About']
+const SETTINGS_RAIL = ['|', 'Appearance', 'Chat', 'Navigation', 'Notifications', 'Speech', '|', 'Models', 'Providers', 'Tools', '|', 'Profiles', 'Spaces', 'Extensions', 'Access', 'System', 'Logs', 'About', 'No password', 'Back', 'Send feedback', 'Notifications']
 
-/** TAL-2183: the stored choice applies on Settings too; collapsed, its column is a rail of Back and the sections (TAL-2184: no search). */
+/** The stored rail choice applies on Settings too; the sections scroll between the brand and footer. */
 test('Settings collapses to a rail of Back and its sections by the one stored choice', async ({ page }, info) => {
   desktopOnly(info.project.name)
+  await feedbackSettings(page, true)
   await page.setViewportSize({ width: 1440, height: 900 })
   await collapsedOn(page, '/skills')
   await row(page, 'Settings').click()
@@ -649,7 +705,12 @@ test('Settings collapses to a rail of Back and its sections by the one stored ch
   await expect.poll(() => width(page, 'aside.sidebar')).toBe(64)
   expect(await left(page, '#main')).toBe(64)
   expect(await railItems(page)).toEqual(SETTINGS_RAIL)
-  for (const name of SETTINGS_RAIL.filter((name) => name !== '|')) await expect(sidebar(page).getByRole(name === 'Back' ? 'button' : 'link', { name, exact: true }), name).toBeInViewport({ ratio: 1 })
+  await expect(button(page, 'New conversation')).toBeInViewport({ ratio: 1 })
+  for (const section of await sidebar(page).locator('[data-settings-section]').all()) {
+    await section.scrollIntoViewIfNeeded()
+    await expect(section).toBeInViewport({ ratio: 1 })
+  }
+  for (const name of ['Back', 'Send feedback', 'Notifications']) await expect(button(page, name)).toBeInViewport({ ratio: 1 })
   // Three labels are too wide for the rail and show a short caption; the row's name stays the label.
   expect(await sidebar(page).locator('[data-settings-section] .sidebar-row-caption').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-caption')))).toEqual(['Appear.', 'Chat', 'Nav', 'Notifs', 'Speech', 'Models', 'Providers', 'Tools', 'Profiles', 'Spaces', 'Extensions', 'Access', 'System', 'Logs', 'About'])
   const appearance = sidebar(page).locator('[data-settings-section="appearance"]')
@@ -790,9 +851,10 @@ test('the phone drawer on Settings has Back and the sections, and Back closes it
   await page.locator('#btnHamburger').click()
   await expect(drawer).toBeInViewport({ ratio: 1 })
   expect(await width(page, 'aside.sidebar')).toBe(390)
-  expect(await controls(page)).toEqual(['Back'])
+  expect(await controls(page)).toEqual(['New conversation', 'No password', 'Back', 'Notifications'])
   await expect(sidebar(page).locator('#settingsMenu [data-settings-section="system"]')).toBeVisible()
-  await expect(sidebar(page).locator('#sessionList, .sidebar-footer')).toHaveCount(0)
+  await expect(sidebar(page).locator('#sessionList')).toHaveCount(0)
+  await expect(sidebar(page).locator('.sidebar-footer').getByRole('button', { name: 'Back', exact: true })).toBeVisible()
   await page.screenshot({ path: info.outputPath('settings-drawer.png') })
   await page.locator('[data-settings-section="system"]').click()
   await expect(page).toHaveURL(/\/settings\/system$/)

@@ -152,8 +152,6 @@
 .layout:not(.sidebar-collapsed) #settingsMenu .sidebar-row-label{line-height:inherit}
 .layout:not(.sidebar-collapsed) #settingsMenu .sidebar-row.active{background:var(--menu-active-bg);color:var(--menu-active-fg);box-shadow:var(--menu-active-shadow);font-weight:var(--menu-active-weight)}
 .layout:not(.sidebar-collapsed) #settingsMenu .sidebar-row.active > svg{color:var(--menu-active-fg)}
-/* Back carries the rows' 2px margin, so the head moves up by it and stays where it was. */
-@media (min-width:641px){.layout:not(.sidebar-collapsed) .settings-menu-head{margin-top:-2px}}
 html[data-sidebar-collapsed="1"] .sidebar{transition:none}
 /* 641-900px: the opened panel covers the page from the rail's slot; the negative margin keeps #main where the rail left it. */
 @media (min-width:641px) and (max-width:900px){.sidebar.mobile-open{width:300px;margin-inline-end:-236px;z-index:200;background:var(--sidebar-bg)}}
