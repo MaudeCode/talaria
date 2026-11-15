@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Files the agent names inside inline code now arrive in chat instead of showing as code.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

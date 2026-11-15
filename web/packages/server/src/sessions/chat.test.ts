@@ -1170,13 +1170,13 @@ describe('chat turns through the sidecar', () => {
     const ws = realpathSync(join(s.state, 'workspace'))
     writeFileSync(join(ws, 'shot.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
     const denied = join(s.state, 'sessions', 'leak.png')
-    const reply = `**Here MEDIA:${join(ws, 'shot.png')} done**\n\n- ![song](${join(ws, 'song.mp3')})\n\n> ![outside](/etc/outside.png) MEDIA:${denied}\n\n\`MEDIA:${join(ws, 'shot.png')}\``
+    const reply = `**Here MEDIA:${join(ws, 'shot.png')} done**\n\n- ![song](${join(ws, 'song.mp3')})\n\n> ![outside](/etc/outside.png) MEDIA:${denied}\n\n\`open MEDIA:${join(ws, 'shot.png')}\``
     sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: reply }]))
     sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Media"', usage: null }))
     const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'show me' }))
     const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
     const url = (path: string): string => `./api/media?${new URLSearchParams({ path, session_id: sid }).toString()}`
-    const display = `**Here ![shot.png](${url(join(ws, 'shot.png'))}) done**\n\n- [song](${url(join(ws, 'song.mp3'))})\n\n> ![outside](/etc/outside.png) MEDIA:${denied}\n\n\`MEDIA:${join(ws, 'shot.png')}\``
+    const display = `**Here ![shot.png](${url(join(ws, 'shot.png'))}) done**\n\n- [song](${url(join(ws, 'song.mp3'))})\n\n> ![outside](/etc/outside.png) MEDIA:${denied}\n\n\`open MEDIA:${join(ws, 'shot.png')}\``
     const media = [
       { url: url(join(ws, 'shot.png')), name: 'shot.png', mime: 'image/png', kind: 'image' },
       { url: url(join(ws, 'song.mp3')), name: 'song.mp3', mime: 'audio/mpeg', kind: 'audio' },

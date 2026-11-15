@@ -279,6 +279,14 @@ describe('mediaAnchorRoot session MEDIA scan (TAL-573)', () => {
     expect(reads()).toBe(1)
   })
 
+  it('grants the path of a tag the agent wrapped in backticks (TAL-2029)', async () => {
+    const target = join(base, 'outside', 'report.pdf')
+    for (const content of [`Here: \`MEDIA:${target}\``, `Here: \`MEDIA:${target}\`.`, `**\`MEDIA:${target}\`**`]) {
+      const session = { messages: [{ role: 'assistant', content }] } as unknown as Session
+      expect(await mediaAnchorRoot(target, session, deps), content).toBe(join(base, 'outside'))
+    }
+  })
+
   it('scans a saved transcript once until it grows or its revision changes (TAL-1730)', async () => {
     const outside = join(base, 'outside')
     const [first, second, third] = ['first.png', 'second.png', 'third.png'].map((name) => join(outside, name)) as [string, string, string]

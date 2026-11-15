@@ -2,7 +2,8 @@
  * TAL-186: transcript media references. Finds `MEDIA:` tokens, bare `file://` URLs and local Markdown image
  * destinations in a message's Markdown and rewrites each one to standard Markdown pointing at its media URL, so clients
  * render the message as one document. The text is parsed as CommonMark, so code blocks (fenced or indented), code spans
- * (across lines too), HTML and escapes stay literal; a reference the resolver refuses stays as written.
+ * (across lines too), HTML and escapes stay literal, except a single-backtick span holding exactly one `MEDIA:` tag
+ * (TAL-2029); a reference the resolver refuses stays as written.
  */
 import { basename, extname, isAbsolute, resolve } from 'node:path'
 import { fromMarkdown } from 'mdast-util-from-markdown'
@@ -100,12 +101,17 @@ export function projectMediaRefs(markdown: string, resolver: MediaRefResolver): 
     else if (node.type === 'image') {
       const ref = imageDestinationRef(node.url, resolver.workspace)
       const media = ref === null ? null : mediaFor(ref, resolver)
-      if (media) edits.push({ start, end, text: media.kind === 'image' ? `![${escapeLabel(node.alt || media.name)}](${media.url})` : `[${escapeLabel(node.alt || media.name)}](${media.url})`, media })
+      if (media) edits.push({ start, end, text: mediaMarkdown(media, node.alt), media })
     } else if (node.type === 'link' && node.url.startsWith(MEDIA)) {
       // `[label](MEDIA:/path)`: only the destination is rewritten, so the label keeps its own Markdown.
       const media = mediaFor(node.url.slice(MEDIA.length), resolver)
       const at = media ? markdown.lastIndexOf(node.url, end) : -1
       if (media && at >= start) edits.push({ start: at, end: at + node.url.length, text: media.url, media })
+    } else if (node.type === 'inlineCode') {
+      // TAL-2029: `` `MEDIA:/path` `` is a directive, as the Agent's gateway reads it; longer or double-backtick code stays literal.
+      const ref = wholeCodeTag(markdown.slice(start, end), node.value)
+      const media = ref === null ? null : mediaFor(ref, resolver)
+      if (media) edits.push({ start, end, text: mediaMarkdown(media), media })
     }
     if ('children' in node) for (const child of node.children) visit(child)
   }
@@ -141,12 +147,26 @@ function textEdits(source: string, from: number, to: number, resolver: MediaRefR
     const ref = raw && isFileUrl ? fileUrlPath(raw) : raw
     const media = ref ? mediaFor(ref, resolver) : null
     if (media && refEnd !== null) {
-      const label = escapeLabel(media.name)
-      edits.push({ start: cursor, end: refEnd, text: media.kind === 'image' ? `![${label}](${media.url})` : `[${label}](${media.url})`, media })
+      edits.push({ start: cursor, end: refEnd, text: mediaMarkdown(media), media })
       cursor = refEnd
     } else cursor = isToken ? refStart : cursor + FILE_URL.length
   }
   return edits
+}
+
+/** A single-backtick code span holding exactly `MEDIA:<ref>`: the ref, or null for any other code. */
+function wholeCodeTag(source: string, value: string): string | null {
+  if (source.startsWith('``')) return null
+  const tag = value.trim()
+  const ref = tag.startsWith(MEDIA) ? tag.slice(MEDIA.length) : ''
+  // `MEDIA:<path>` is a placeholder, not a path.
+  return ref && !/[\s<>]/.test(ref) ? ref : null
+}
+
+/** A media item as Markdown: an image shows inline, anything else is a link. */
+function mediaMarkdown(media: DisplayMedia, label?: string | null): string {
+  const text = escapeLabel(label || media.name)
+  return media.kind === 'image' ? `![${text}](${media.url})` : `[${text}](${media.url})`
 }
 
 /** Where a reference ends: at whitespace or `)` `]` (and `<>"'` for a file URL), less trailing sentence punctuation. */
