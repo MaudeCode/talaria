@@ -18,6 +18,7 @@ public struct AssistantActivityRow: Identifiable, Equatable, Sendable {
         let consumedAt: Double?
         /// Server-measured length of the work phase this steer ended.
         var phaseDuration: Double? = nil
+        public var talariaActivity: TalariaActivity? = nil
     }
 
     public enum Content: Equatable, Sendable {
@@ -622,7 +623,8 @@ public struct AssistantActivityTimeline: Equatable, Sendable {
                     text: text,
                     submittedAt: Self.number(row.steering?["submitted_at"]),
                     consumedAt: Self.number(row.steering?["consumed_at"]),
-                    phaseDuration: Self.number(row.steering?["phase_duration"])
+                    phaseDuration: Self.number(row.steering?["phase_duration"]),
+                    talariaActivity: row.talariaActivity
                 )),
                 createdAt: row.createdAt
             ))
@@ -1067,7 +1069,7 @@ extension ChatViewModel {
             )
 
             // A compaction marker is a card of its own, never part of an assistant turn (TAL-305).
-            if message.role == "assistant", message.markerKind == nil {
+            if message.role == "assistant", message.markerKind == nil, message.talariaActivity == nil {
                 // The server stamps each row with its turn; a new turn id starts a new assistant turn.
                 if let previous = assistantSegments.last, previous.segment.message.turnId != message.turnId {
                     appendAssistantTurn()
@@ -1082,7 +1084,7 @@ extension ChatViewModel {
             appendAssistantTurn()
             let absoluteIndex = offset + loadedIndex
             // A compaction keeps its row's identity when rows land before it (TAL-1566).
-            let renderID = message.markerKind != nil
+            let renderID = message.markerKind != nil || message.talariaActivity != nil
                 ? message.messageId.map { "marker:\($0)" } ?? "transcript:\(absoluteIndex)"
                 : "transcript:\(absoluteIndex)"
 

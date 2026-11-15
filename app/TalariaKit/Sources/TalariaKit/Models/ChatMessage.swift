@@ -1,5 +1,42 @@
 import Foundation
 
+/// Extends marker/background presentation with server-issued provenance. Kinds remain open for future producers.
+public struct TalariaActivity: Codable, Equatable, Sendable {
+    public struct Target: Codable, Equatable, Sendable {
+        public let kind: String
+        public let id: String
+        public let path: String
+    }
+    public struct Sender: Codable, Equatable, Sendable {
+        public let sessionId: String
+        public let name: String
+    }
+    public let version: Int
+    public let origin: String
+    public let id: String
+    public let kind: String
+    public let summary: String
+    public let details: String?
+    public let sender: Sender?
+    public let target: Target?
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decode(Int.self, forKey: .version)
+        origin = try container.decode(String.self, forKey: .origin)
+        id = try container.decode(String.self, forKey: .id)
+        kind = try container.decode(String.self, forKey: .kind)
+        summary = try container.decode(String.self, forKey: .summary)
+        guard version == 1, ["talaria", "peer_agent"].contains(origin), !id.isEmpty, !kind.isEmpty, !summary.isEmpty else {
+            throw DecodingError.dataCorruptedError(forKey: .version, in: container, debugDescription: "Unsupported activity envelope")
+        }
+        details = try? container.decodeIfPresent(String.self, forKey: .details)
+        sender = try? container.decodeIfPresent(Sender.self, forKey: .sender)
+        target = try? container.decodeIfPresent(Target.self, forKey: .target)
+    }
+    enum CodingKeys: String, CodingKey { case version, origin, id, kind, summary, details, sender, target }
+}
+
 public enum ReasoningTitleMetadata {
     public static func normalize(_ values: [String]) -> [String] {
         var result: [String] = []
@@ -46,6 +83,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
     public internal(set) var displayBody: TranscriptDisplayBody?
     /// The server marked this row an automatic background wakeup (TAL-371): render its completion lines, not the user's bubble.
     public internal(set) var backgroundUpdate: BackgroundUpdate?
+    public internal(set) var talariaActivity: TalariaActivity?
     /// The server marked this row part of a background reply that is only a silence marker (TAL-460): it is not shown.
     public internal(set) var backgroundSilent: Bool
     /// The server marked this row a compaction marker (TAL-305): render its card, never a message bubble.
@@ -92,7 +130,8 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
         backgroundSilent: Bool = false,
         markerKind: ChatMarkerMessageKind? = nil,
         markerBody: String? = nil,
-        display: Display? = nil
+        display: Display? = nil,
+        talariaActivity: TalariaActivity? = nil
     ) {
         self.role = role
         self.content = content
@@ -119,6 +158,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
         self.markerKind = markerKind
         self.markerBody = markerBody
         self.display = display
+        self.talariaActivity = talariaActivity
     }
 
     enum CodingKeys: String, CodingKey {
@@ -145,6 +185,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
         case displayContent = "_displayContent"
         case media = "_media"
         case backgroundUpdate = "_backgroundUpdate"
+        case talariaActivity = "_talariaActivity"
         case backgroundSilent = "_backgroundSilent"
         case markerKind = "_markerKind"
         case markerBody = "_markerBody"
@@ -184,6 +225,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
             media: try? container.decodeIfPresent([JSONValue].self, forKey: .media)
         )
         backgroundUpdate = try? container.decodeIfPresent(BackgroundUpdate.self, forKey: .backgroundUpdate)
+        talariaActivity = try? container.decodeIfPresent(TalariaActivity.self, forKey: .talariaActivity)
         backgroundSilent = (try? container.decodeIfPresent(Bool.self, forKey: .backgroundSilent)) == true
         markerKind = ChatMarkerMessageKind(wireValue: container.decodeLossyStringIfPresent(forKey: .markerKind))
         markerBody = markerKind == nil ? nil : container.decodeLossyStringIfPresent(forKey: .markerBody)
@@ -270,6 +312,12 @@ extension ChatMessage {
     /// A steer row the App draws itself (its `_talaria_steer_*` state never comes from the server), whatever the id.
     public var isLocalSteeringHint: Bool {
         steeringHintState != nil && messageId != nil
+    }
+
+    /// The explicit persisted receipt's id, also used to reconcile a cold transcript with replay.
+    public var persistedSteerID: String? {
+        guard case .string(let id)? = steer?["steer_id"], !id.isEmpty else { return nil }
+        return id
     }
 
     public func applyingTurnMetrics(duration: Double? = nil, tokensPerSecond: Double? = nil) -> ChatMessage {
@@ -465,6 +513,7 @@ extension AssistantActivityScene {
 /// One server-normalized scene row. The server decides order, role, tool completion and error, and
 /// steering consumption; the app reads those fields as sent.
 public struct AssistantActivitySceneRow: Codable, Equatable, Sendable {
+    public let talariaActivity: TalariaActivity?
     public let rowID: String?
     public let orderIndex: Int?
     public let role: String?
@@ -479,6 +528,7 @@ public struct AssistantActivitySceneRow: Codable, Equatable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case rowID = "rowId"
+        case talariaActivity
         case orderIndex
         case role
         case text
@@ -493,6 +543,7 @@ public struct AssistantActivitySceneRow: Codable, Equatable, Sendable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         rowID = container.decodeLossyStringIfPresent(forKey: .rowID)
+        talariaActivity = try? container.decodeIfPresent(TalariaActivity.self, forKey: .talariaActivity)
         orderIndex = container.decodeLossyIntIfPresent(forKey: .orderIndex)
         role = container.decodeLossyStringIfPresent(forKey: .role)
         text = container.decodeLossyStringIfPresent(forKey: .text)

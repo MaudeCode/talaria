@@ -28,6 +28,7 @@ public final class CachedMessage {
     var collapsible: Bool?
     var displayBodyData: Data?
     var backgroundUpdateData: Data?
+    var talariaActivityData: Data?
     var backgroundSilent: Bool?
     var markerKind: String?
     var markerBody: String?
@@ -96,6 +97,7 @@ public final class CachedMessage {
         collapsible = message.collapsible ? true : nil
         displayBodyData = message.displayBody.flatMap { try? JSONEncoder().encode($0) }
         backgroundUpdateData = message.backgroundUpdate.flatMap { try? JSONEncoder().encode($0) }
+        talariaActivityData = message.talariaActivity.flatMap { try? JSONEncoder().encode($0) }
         backgroundSilent = message.backgroundSilent ? true : nil
         markerKind = message.markerKind?.wireValue
         markerBody = message.markerBody

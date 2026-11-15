@@ -2,7 +2,7 @@ import type { MessageReactionView, TurnUsage } from '@maudecode/talaria-web-cont
 import { Popover } from '@base-ui/react/popover'
 import { ContextMenu, Menu, MenuItem } from '../../ui/Menu'
 import { memo, useLayoutEffect, useRef, useState, type ReactElement } from 'react'
-import { AlertTriangle, ArrowUp, CalendarClock, ChevronRight, Copy, GitBranch, Info, ListChecks, Pencil, Reply, RotateCcw, SmilePlus, Shrink, Volume2, Webhook, type LucideIcon } from 'lucide-react'
+import { AlertTriangle, ArrowUp, CalendarClock, Copy, GitBranch, Info, ListChecks, Pencil, Reply, RotateCcw, SmilePlus, Shrink, Volume2, Webhook, type LucideIcon } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { BackgroundLine, Message } from '../../contracts'
 import { StatusIcon } from '../background/BackgroundWork'
@@ -21,6 +21,7 @@ import { POPUP_MOTION } from '../../ui/popupMotion'
 import { formatDate } from '../../ui/States'
 import { rawFileUrl } from '../../api/endpoints'
 import { appUrl } from '../../lib/appRoot'
+import { TranscriptActivityLine } from './TranscriptActivityLine'
 import { copyWithToast } from '../../lib/clipboard'
 import { speak } from '../voice/tts'
 import { ImageLightbox, type LightboxImage } from './ImageLightbox'
@@ -170,20 +171,28 @@ export const BackgroundUpdateRow = memo(function BackgroundUpdateRow({ row }: { 
   const update = row.message._background_update
   if (!update) return null
   const text = messageText(row.message.content)
+  const lines = <ul className="flex flex-col gap-1">{update.lines.map((line, i) => <BackgroundLineRow key={i} line={line} parentReview={update.review_state} />)}</ul>
+  const description = update.lines.map((line) => reviewDescription(line, update.review_state)).join(', ')
+  const body = <>
+    <CollapsedBody excerpt={row.message._display_truncated ? row.message._display_excerpt : undefined}>
+      {(excerpt) => <div className="msg-body whitespace-pre-wrap">{excerpt ?? text}</div>}
+    </CollapsedBody>
+    <div className="msg-foot">
+      {row.message.timestamp ? <span className="msg-time">{formatDate(row.message.timestamp)}</span> : null}
+      <IconButton label={m.copy()} className="h-6 w-6" onClick={() => copyWithToast(text)}><Copy size={12} aria-hidden="true" /></IconButton>
+    </div>
+  </>
+  if (row.message._talaria_activity) return <div className="msg-row" data-role="activity" data-origin={row.message._talaria_activity.origin} data-msg-idx={row.index} data-message-key={row.key}>
+    <TranscriptActivityLine activity={row.message._talaria_activity} title={description} label={lines}>{body}</TranscriptActivityLine>
+  </div>
   return (
     <div className="msg-row" data-role="background" data-msg-idx={row.index} data-message-key={row.key}>
       <details className="background-update text-[13px] text-muted">
-        <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden" aria-label={update.lines.map((line) => reviewDescription(line, update.review_state)).join(', ')}>
-          <ul className="flex flex-col gap-1">{update.lines.map((line, i) => <BackgroundLineRow key={i} line={line} parentReview={update.review_state} />)}</ul>
+        <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden" aria-label={description}>
+          {lines}
         </summary>
         <div className="mt-2 rounded-md border border-border bg-surface px-3 py-2">
-          <CollapsedBody excerpt={row.message._display_truncated ? row.message._display_excerpt : undefined}>
-            {(excerpt) => <div className="msg-body whitespace-pre-wrap">{excerpt ?? text}</div>}
-          </CollapsedBody>
-          <div className="msg-foot">
-            {row.message.timestamp ? <span className="msg-time">{formatDate(row.message.timestamp)}</span> : null}
-            <IconButton label={m.copy()} className="h-6 w-6" onClick={() => copyWithToast(text)}><Copy size={12} aria-hidden="true" /></IconButton>
-          </div>
+          {body}
         </div>
       </details>
     </div>
@@ -197,24 +206,27 @@ export const BackgroundUpdateRow = memo(function BackgroundUpdateRow({ row }: { 
  */
 export const MarkerRow = memo(function MarkerRow({ row }: { row: VisibleMessage }) {
   const { message } = row
+  const activity = message._talaria_activity
+  if (activity) {
+    if (message._background_update) return <BackgroundUpdateRow row={row} />
+    const body = activity.details
+    return <div className="msg-row" data-role="activity" data-origin={activity.origin} data-msg-idx={row.index} data-message-key={row.key}>
+      <TranscriptActivityLine activity={activity}>
+        {body ? <div className="msg-body whitespace-pre-wrap">{body}</div> : null}
+      </TranscriptActivityLine>
+    </div>
+  }
   if (!message._marker_kind) return null
   const tasks = message._marker_kind === 'preserved_task_list'
   const Icon = tasks ? ListChecks : Shrink
   const text = message._marker_body ?? messageText(message.content)
   return (
     <div className="msg-row" data-role="marker" data-msg-idx={row.index} data-message-key={row.key}>
-      <details className="marker-row group text-[13px] text-muted">
-        <summary className="flex w-fit cursor-pointer list-none items-center gap-2 [&::-webkit-details-marker]:hidden">
-          <Icon size={14} aria-hidden="true" className="shrink-0" />
-          <span className="min-w-0">{tasks ? m.marker_preserved_task_list() : m.marker_context_compaction()}</span>
-          <ChevronRight size={14} aria-hidden="true" className="shrink-0 transition-transform group-open:rotate-90 motion-reduce:transition-none" />
-        </summary>
-        <div className="mt-2 pl-[22px]">
+      <TranscriptActivityLine title={tasks ? m.marker_preserved_task_list() : m.marker_context_compaction()} icon={<Icon size={14} aria-hidden="true" className="shrink-0" />}>
           <CollapsedBody excerpt={message._marker_body === undefined && message._display_truncated ? message._display_excerpt : undefined}>
             {(excerpt) => <div className="msg-body whitespace-pre-wrap">{excerpt ?? text}</div>}
           </CollapsedBody>
-        </div>
-      </details>
+      </TranscriptActivityLine>
     </div>
   )
 })

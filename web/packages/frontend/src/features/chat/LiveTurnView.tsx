@@ -103,7 +103,7 @@ function PendingSteerMessage({ sessionId, steer }: { sessionId: string; steer: P
     </span>
   ) : null
   if (answered(resource)) return null
-  return <SteerMessage text={steer.text} state={steer.state} actions={actions} />
+  return <SteerMessage text={steer.text} state={steer.state} actions={actions} activity={steer.activity} />
 }
 
 /**

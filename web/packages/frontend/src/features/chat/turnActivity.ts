@@ -1,4 +1,5 @@
 import type { Message } from '../../contracts'
+import { TalariaActivitySchema } from '@maudecode/talaria-web-contracts'
 import type { LiveTurn, Segment } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
 import type { ToolCardData } from './blocks/ToolCard'
@@ -14,7 +15,7 @@ export type ActivityItem = (
   | ({ key: string; kind: 'text'; text: string } & DisplayBody)
   | { key: string; kind: 'reasoning'; text: string; titles?: string[]; disclosureKey?: string }
   | { key: string; kind: 'tool'; call: ToolCardData }
-  | { key: string; kind: 'steering'; text: string; consumed: boolean }
+  | { key: string; kind: 'steering'; text: string; consumed: boolean; activity?: import('@maudecode/talaria-web-contracts').TalariaActivity | undefined }
 ) & { createdAt?: number }
 
 export interface TurnActivity {
@@ -59,7 +60,7 @@ export function turnIdOf(message: Message): string | undefined {
 
 /** An assistant row of a reply: a marker card (`_marker_kind`) or a notice (`_notice_kind`, TAL-815) renders on its own. */
 export function isReplyRow(message: Message): boolean {
-  return message.role === 'assistant' && !message._marker_kind && !message._notice_kind
+  return message.role === 'assistant' && !message._marker_kind && !message._notice_kind && !message._talaria_activity
 }
 
 /**
@@ -106,7 +107,7 @@ export function sceneItems(value: unknown): ActivityItem[] {
     const at = typeof row.created_at === 'number' ? { createdAt: row.created_at } : {}
     if (row.role === 'prose') return [{ key, kind: 'text', text: text(row.text), ...displayBody(row.display_text, row.media), ...at }]
     if (row.role === 'reasoning') return [{ key, kind: 'reasoning', text: text(row.text), titles: Array.isArray(row.titles) ? row.titles.map(text) : [], ...(text(row.disclosure_key) ? { disclosureKey: text(row.disclosure_key) } : {}), ...at }]
-    if (row.role === 'steering') return [{ key, kind: 'steering', text: text(row.text), consumed: record(row.steering).consumed === true, ...at }]
+    if (row.role === 'steering') return [{ key, kind: 'steering', text: text(row.text), consumed: record(row.steering).consumed === true, activity: TalariaActivitySchema.safeParse(row.talaria_activity).data, ...at }]
     if (row.role !== 'tool') return []
     const tool = record(row.tool)
     return [{ key, kind: 'tool', ...at, call: {
@@ -156,7 +157,7 @@ export function liveActivity(turn: Pick<LiveTurn, 'segments' | 'tools' | 'status
         if (processed.content.trim()) items.push({ key: `text:${i}`, kind: 'text', text: processed.content })
       }
     }
-    else if (segment.kind === 'steering') items.push({ key: `steering:${segment.steerId}`, kind: 'steering', text: segment.text, consumed: true })
+    else if (segment.kind === 'steering') items.push({ key: `steering:${segment.steerId}`, kind: 'steering', text: segment.text, consumed: true, activity: segment.activity })
     else if (!seen.has(segment.toolId) && !omitToolIds?.has(segment.toolId)) {
       seen.add(segment.toolId)
       const call = turn.tools[segment.toolId]

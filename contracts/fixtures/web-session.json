@@ -1708,6 +1708,7 @@
           ],
           "review_state": "unknown"
         },
+        "_talaria_activity": { "version": 1, "origin": "talaria", "id": "wake-contract", "kind": "process_wakeup", "summary": "Background update received" },
         "_source": "process_wakeup",
         "_display": "row"
       },
@@ -1756,6 +1757,7 @@
           ],
           "review_state": "unknown"
         },
+        "_talaria_activity": { "version": 1, "origin": "talaria", "id": "wake-legacy", "kind": "process_wakeup", "summary": "Background update received" },
         "_source": "process_wakeup",
         "_display": "row"
       },
@@ -1805,6 +1807,7 @@
           ],
           "review_state": "unknown"
         },
+        "_talaria_activity": { "version": 1, "origin": "talaria", "id": "wake-silent", "kind": "process_wakeup", "summary": "Background update received" },
         "_source": "process_wakeup",
         "_display": "row"
       },
@@ -1848,12 +1851,13 @@
             {
               "kind": "other",
               "status": "completed",
-              "label": "Continue where you left off.",
+              "label": "Continued after Web update",
               "review_state": "unknown"
             }
           ],
           "review_state": "unknown"
         },
+        "_talaria_activity": { "version": 1, "origin": "talaria", "id": "continue-contract", "kind": "update_continuation", "summary": "Continued after Web update" },
         "_source": "update_continuation",
         "_display": "row"
       },

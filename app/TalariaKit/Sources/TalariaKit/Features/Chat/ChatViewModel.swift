@@ -2607,10 +2607,7 @@ public final class ChatViewModel {
         cachedMessages: [ChatMessage],
         streamIsActive: Bool = false
     ) -> [ChatMessage] {
-        let persistedSteerIDs = Set(loadedMessages.compactMap { message -> String? in
-            guard case .string(let steerID)? = message.steer?["steer_id"] else { return nil }
-            return steerID
-        })
+        let persistedSteerIDs = Set(loadedMessages.compactMap(\.persistedSteerID))
         let pendingHints = cachedMessages.filter { message in
             message.isLocalSteeringHint
                 && (streamIsActive || (
@@ -2964,7 +2961,7 @@ public final class ChatViewModel {
         }
 
         return messages[searchRange].contains { message in
-            guard message.role == "assistant", message.markerKind == nil else { return false }
+            guard message.role == "assistant", message.markerKind == nil, message.talariaActivity == nil else { return false }
             return hasAssistantResponseContent(message)
         }
     }
@@ -5153,14 +5150,7 @@ public final class ChatViewModel {
     private func appendSteeringHint(
         _ text: String
     ) -> (messageID: String, precedingAssistantMessageID: String?, timestamp: Double) {
-        flushPendingStreamingContent()
-        archiveLiveActivityIfNeeded()
-        liveAssistantActivity.removeAll()
-        pendingReasoningTitles = []
-        let precedingAssistantMessageID = streamingAssistantMessageID
-        streamingAssistantMessageID = nil
-        toolCallAnchorMessageID = nil
-        reasoningAnchorMessageID = nil
+        let precedingAssistantMessageID = prepareForSteeringMessage()
 
         let messageID = "local-steer-\(UUID().uuidString)"
         noteSteerChange(messageID)
@@ -5174,6 +5164,18 @@ public final class ChatViewModel {
         ))
         scheduleStreamingScrollTrigger()
         return (messageID, precedingAssistantMessageID, timestamp)
+    }
+
+    private func prepareForSteeringMessage() -> String? {
+        flushPendingStreamingContent()
+        archiveLiveActivityIfNeeded()
+        liveAssistantActivity.removeAll()
+        pendingReasoningTitles = []
+        let precedingAssistantMessageID = streamingAssistantMessageID
+        streamingAssistantMessageID = nil
+        toolCallAnchorMessageID = nil
+        reasoningAnchorMessageID = nil
+        return precedingAssistantMessageID
     }
 
     private func finalizeSteeringPhase(assistantMessageID: String?, endingAt timestamp: Double) {
@@ -5253,7 +5255,8 @@ public final class ChatViewModel {
             content: steer.text,
             timestamp: steer.submittedAt ?? Date().timeIntervalSince1970,
             messageId: steer.steerId,
-            name: state.rawValue
+            name: state.rawValue,
+            talariaActivity: steer.talariaActivity
         ))
         scheduleStreamingScrollTrigger()
     }
@@ -7601,7 +7604,24 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
 
     @discardableResult
     public func streamCoordinatorConsumeSteeringHint(_ event: SteeringStreamEvent) -> Bool {
-        consumeSteeringHint(id: event.steerId, text: event.text)
+        if event.talariaActivity != nil {
+            guard let steerID = event.steerId, !steerID.isEmpty else { return false }
+            if closedSteerIDs.contains(steerID) || messages.contains(where: { $0.persistedSteerID == steerID }) {
+                closeSteer(steerID)
+                return false
+            }
+        }
+        let consumed = consumeSteeringHint(id: event.steerId, text: event.text)
+        if let activity = event.talariaActivity, let steerID = event.steerId {
+            _ = prepareForSteeringMessage()
+            if let index = messages.firstIndex(where: { $0.messageId == steerID }) {
+                messages[index].talariaActivity = activity
+            } else {
+                messages.append(ChatMessage(role: "user", content: event.text, timestamp: event.consumedAt, messageId: steerID, name: SteeringHintState.consumed.rawValue, talariaActivity: activity))
+            }
+            return true
+        }
+        return consumed
     }
 
     public func streamCoordinatorApplyPendingSteer(_ steer: PendingSteer) {

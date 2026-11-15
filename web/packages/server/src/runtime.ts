@@ -53,6 +53,7 @@ import { profileList } from './api/settings-router.js'
 import { HttpError } from './api/router.js'
 import { str } from './util.js'
 import { cancelSessionStream, sendSessionMessage, startSessionChat } from './sessions/admission.js'
+import { peerAgentActivity } from './sessions/talaria-activities.js'
 import { JsonStorage } from './sessions/storage/json.js'
 import { attachmentSessionName, createBlobStore, localAttachmentRoot } from './sessions/storage/blobs.js'
 import { SqliteStorage } from './sessions/storage/sqlite.js'
@@ -744,7 +745,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   }
   const extensionsEnabled = (): boolean => { try { return deps.extensions.enabledSync() } catch { return false } }
   const ownerLaunchStore = new BackgroundTaskStore(storage.documents, now, undefined, 'owner-side-work')
-  sessions.owner = new GatewaySessions({ onWebCompletion: (profile, sid, identity, session) => { relay.noteWebCompletion(profile, sid, identity, session) }, service: sessions, sidecar: () => sidecar, registry, journal, events, channels, launchStore: ownerLaunchStore,
+  sessions.owner = new GatewaySessions({ activityDocuments: storage.documents, onWebCompletion: (profile, sid, identity, session) => { relay.noteWebCompletion(profile, sid, identity, session) }, service: sessions, sidecar: () => sidecar, registry, journal, events, channels, launchStore: ownerLaunchStore,
     profileHome, activeProfile, showReasoning: async (home) => showReasoning(await agentConfig.read(home)), configFingerprint: (home) => agentConfig.fingerprint(home), redactEnabled: sessions.deps.redactEnabled, now, log })
   // TAL-1164: the `talaria` agent toolset. A tool call names the Web session whose agent made it; that session's
   // profile scopes every answer, exactly as a request bound to that session would be.
@@ -868,13 +869,13 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       // The new chat runs with the caller's toolsets, not the profile's defaults, and starts without YOLO.
       const created = await sessions.create({ enabled_toolsets: caller.enabled_toolsets })
       if (title?.trim()) await sessions.rename(created.session_id, title.trim())
-      const started = await startSessionChat(deps, { session_id: created.session_id, message })
+      const started = await startSessionChat(deps, { session_id: created.session_id, message }, { talariaActivity: peerAgentActivity(caller, message) })
       return { session_id: created.session_id, title: str(started.title) || (await store.get(created.session_id, { metadataOnly: true })).title, stream_id: started.stream_id ? str(started.stream_id) : null }
     }),
     'server.session_send': ({ caller_session_id, session_id, message }) => asCaller(caller_session_id, async (caller) => {
       const target = await runTarget(caller, session_id)
       await assertNoWiderThanCaller(caller, target)
-      return sendSessionMessage(deps, target.session_id, message)
+      return sendSessionMessage(deps, target.session_id, message, peerAgentActivity(caller, message))
     }),
     'server.session_wait': ({ caller_session_id, session_id, timeout_s }) => asCaller(caller_session_id, async (caller) => {
       const target = await runTarget(caller, session_id)

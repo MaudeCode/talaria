@@ -7,6 +7,7 @@ import type { AppDeps } from '../http/context.js'
 import { HttpFailure } from './service.js'
 import { StreamChannel, type StreamSubscriber } from './streams.js'
 import { redactString } from '../redact.js'
+import { talariaActivity } from './talaria-activities.js'
 
 export interface GroupScope { home: string; subject: string; profile: string }
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
@@ -219,8 +220,15 @@ export class Groups {
   private rows(scope: GroupScope, state: State, events: NativeEvent[], paused: GroupPaused[]): GroupView['rows'] {
     return events.flatMap((event): GroupView['rows'] => {
       const member = state.room.members.find((m) => m.member_id === event.actor.id && m.member_id === event.payload.member_id && m.profile === event.actor.profile)
-      const notice = (fields: Partial<GroupView['rows'][number]['message']>): GroupView['rows'] => [{ key: `${event.seq}:${event.event_id}`, index: event.seq, author: '', thread_id: null, scheduled: false, attachments: [],
-        message: { role: 'assistant' as const, message_id: event.event_id, timestamp: event.created_at, _turn_id: event.event_id, ...fields } }]
+      const notice = (fields: Partial<GroupView['rows'][number]['message']>): GroupView['rows'] => {
+        const assignment = fields._lead_assignment
+        const kind = fields._notice_kind ?? 'group_notice'
+        const summary = assignment ? assignment.lead === null ? `Picked ${assignment.assignees.join(', ')}` : assignment.assignees.length ? `${assignment.lead} gave this to ${assignment.assignees.join(', ')}` : `${assignment.lead} took this`
+          : kind === 'paused_max_rounds' ? 'Paused at the round limit' : kind === 'paused_max_messages' ? 'Paused at the reply limit' : 'Could not wake group members'
+        return [{ key: `${event.seq}:${event.event_id}`, index: event.seq, author: '', thread_id: null, scheduled: false, attachments: [],
+          message: { role: 'assistant' as const, message_id: event.event_id, timestamp: event.created_at, _turn_id: event.event_id, ...fields,
+            _talaria_activity: { ...talariaActivity(kind, summary), id: event.event_id, ...(typeof fields.content === 'string' && fields.content ? { details: fields.content } : {}) } } }]
+      }
       if (event.kind === 'member.unavailable' && event.actor.kind === 'gateway' && event.payload.error) return notice({ content: redactString(event.payload.error), _notice_kind: 'wake_failed' })
       if (['room.assignment', 'room.routed'].includes(event.kind) && event.actor.kind === 'gateway') {
         const name = (id: string | undefined) => { const seat = state.room.members.find((m) => m.member_id === id); return seat && redactString(seat.display_name || seat.profile) }

@@ -200,6 +200,10 @@ describe('decision reviews (TAL-1963)', () => {
     const message = (starts()[0]!.params as { user_message: string }).user_message
     expect(message).toBe(`The decision review "Release choices" (${id}) was submitted. Call decision_review_read with review_id ${id} for the answers.`)
     expect(message).not.toContain('\n')
+    const detail = (await http('GET', `/api/session?session_id=${CALLER}`)).body.session as { messages: Record<string, unknown>[] }
+    expect(detail.messages).toContainEqual(expect.objectContaining({
+      _talaria_activity: expect.objectContaining({ version: 1, origin: 'talaria', kind: 'decision_submitted', summary: 'Decision review submitted · Release choices', target: { kind: 'decision_review', id, path: `/decisions/${id}` } }) as unknown,
+    }))
     expect((await http('POST', `/api/decisions/${id}/submit`)).body.code).toBe('review_closed')
     expect((await answer(id, 'a', { value: 'change', notes: '', deferred: false, custom: false, expected_version: 1 })).body.code).toBe('review_closed')
 
@@ -212,6 +216,23 @@ describe('decision reviews (TAL-1963)', () => {
     expect(starts()).toHaveLength(1)
     finish()
     await s.deps.turns.finished(s.deps.registry.activeRunStreamForSession(CALLER)!)
+  })
+
+  it('does not reopen or replay a submission after losing the steer acknowledgement', async () => {
+    let finish: () => void = () => undefined
+    sidecar.respond('chat.start', () => new Promise((resolve) => { finish = () => { resolve(completed) } }))
+    sidecar.respond('chat.steer', () => { throw new Error('Lost acknowledgement') })
+    const started = await s.deps.turns.startServerTurn(await s.deps.sessionStore.get(CALLER), { msg: 'Existing work' })
+    try {
+      await vi.waitFor(() => { expect(sidecar.calls.some((call) => call.method === 'chat.start')).toBe(true) })
+      const id = created(await ask('server.decision_review_put', { title: 'Acknowledgement loss', items: [item('a')] }))
+      await answer(id, 'a', { value: 'keep' })
+      expect((await http('POST', `/api/decisions/${id}/submit`)).status).toBeGreaterThanOrEqual(400)
+      expect((await s.deps.decisions.get(id)).status).toBe('submitted')
+      expect((await http('POST', `/api/decisions/${id}/submit`)).body.code).toBe('review_closed')
+      expect(sidecar.calls.filter((call) => call.method === 'chat.steer')).toHaveLength(1)
+      expect(sidecar.calls.filter((call) => call.method === 'chat.start')).toHaveLength(1)
+    } finally { finish(); await s.deps.turns.finished(started.stream_id!) }
   })
 
   it('reopens a review whose submit message the session refused', async () => {

@@ -1,4 +1,6 @@
 import { Fragment, useContext, useLayoutEffect, useRef, type ReactNode } from 'react'
+import type { TalariaActivity } from '@maudecode/talaria-web-contracts'
+import { TranscriptActivityLine } from './TranscriptActivityLine'
 import { CornerUpRight } from 'lucide-react'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { fetchAnchorScene } from '../../api/endpoints'
@@ -61,7 +63,8 @@ function SettleSpacer({ turnKey }: { turnKey: string }) {
 }
 
 /** A steer the user sent mid-turn: consumed (no `state`), or still pending with the actions the server allows. */
-export function SteerMessage({ text, state, actions }: { text: string; state?: PendingSteerRow['state'] | undefined; actions?: ReactNode }) {
+export function SteerMessage({ text, state, actions, activity }: { text: string; state?: PendingSteerRow['state'] | undefined; actions?: ReactNode; activity?: TalariaActivity | undefined }) {
+  if (activity) return <div className="msg-row" data-role="activity" data-origin={activity.origin} data-activity-steering="1"><TranscriptActivityLine activity={activity}>{activity.details ? <div className="whitespace-pre-wrap">{activity.details}</div> : null}</TranscriptActivityLine>{actions}</div>
   return (
     <div className="msg-row steer-message" data-role="user" data-activity-steering="1" data-steer-state={state ?? 'consumed'}>
       <div className="steer-message-label"><CornerUpRight size={12} aria-hidden="true" />{m.steer_hint_label()}{state && <> · {state === 'pending' ? m.steer_waiting() : m.steer_sending()}</>}{actions}</div>
@@ -124,7 +127,7 @@ function ActivityBody({ activity, mode, earlier, sessionId }: { activity: TurnAc
     switch (item.kind) {
       case 'text': return <div key={item.key} className="msg-body"><Markdown text={item.display ?? item.text} liveTurn={running} streaming={activeTail && last} fade={disclosure?.fadeText === true} /><MediaTiles media={item.media} sessionId={sessionId} /></div>
       case 'reasoning': return <ReasoningBlock key={item.key} arrivalKey={item.key} text={item.text} titles={item.titles} disclosureKey={item.disclosureKey} live={activeTail && last} />
-      case 'steering': return <SteerMessage key={item.key} text={item.text} />
+      case 'steering': return <SteerMessage key={item.key} text={item.text} activity={item.activity} />
       case 'tool': return <ToolCard key={item.key} arrivalKey={item.key} call={item.call} sessionId={sessionId} />
     }
   }

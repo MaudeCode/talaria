@@ -8,6 +8,58 @@ import XCTest
 /// says to VoiceOver, its button trait, and where it sits against its neighbours.
 @MainActor
 final class TranscriptHostedTests: XCTestCase {
+    func testBrandedQueueControlsAndBackgroundDisclosureRetainTheirActions() async throws {
+        let decoder = DecisionReview.decoder
+        let peer = try decoder.decode(ChatMessage.self, from: Data(#"{"role":"user","_talaria_activity":{"version":1,"origin":"peer_agent","id":"peer","kind":"peer_message","summary":"Message from Reviewer","details":"Check the result."}}"#.utf8))
+        let background = try decoder.decode(ChatMessage.self, from: Data(#"{"role":"user","content":"Full result details.","message_id":"background","_talaria_activity":{"version":1,"origin":"talaria","id":"background","kind":"process_wakeup","summary":"Background update received"},"_background_update":{"kind":"process","attention":false,"count":1,"summary":"Command done","lines":[{"kind":"command","status":"completed","label":"make check","review_state":"reviewed"}]}}"#.utf8))
+        let peerActivity = try XCTUnwrap(peer.talariaActivity)
+        let backgroundUpdate = try XCTUnwrap(background.backgroundUpdate)
+        var requested: (String, PendingSteerAction)?
+        let window = try hostWindow(VStack(alignment: .leading, spacing: 12) {
+            MarkerMessageCardView(activity: peerActivity, stateID: "pending", messageID: "pending")
+            BackgroundUpdateLinesView(update: backgroundUpdate, message: background)
+        }.padding()
+            .environment(\.pendingSteerControls, PendingSteerControls(actions: ["pending": .init(edit: false, cancel: true, sendNow: true)]))
+            .environment(\.pendingSteerAction, ChatEnvironmentAction<(String, PendingSteerAction), Void> { requested = $0 }))
+        defer { window.isHidden = true }
+        let send = try await requireElement(in: window, label: "Send now")
+        XCTAssertNil(HostedAccessibility.element(in: window, label: "Edit steering message"))
+        HostedAccessibility.activate(send)
+        XCTAssertTrue(requested?.0 == "pending" && requested?.1 == .sendNow)
+        _ = try await requireElement(in: window, label: "Cancel steering message")
+        let batch = try await requireElement(in: window, label: "Talaria. make check. The parent reviewed this result.")
+        XCTAssertNil(HostedAccessibility.element(in: window, label: "Full result details."))
+        attachHostedScreenshot(window, name: "activity-queue-and-background-collapsed")
+        HostedAccessibility.activate(batch)
+        _ = try await requireElement(in: window, label: "Full result details.")
+        attachHostedScreenshot(window, name: "activity-queue-and-background-expanded")
+    }
+
+    func testBrandedActivitiesUseFlatAccessibleRowsAndDisclosePeerContent() async throws {
+        let decoder = DecisionReview.decoder
+        let peer = try decoder.decode(ChatMessage.self, from: Data(#"{"role":"user","content":"Agent-only prompt","_talaria_activity":{"version":1,"origin":"peer_agent","id":"peer","kind":"future_kind","summary":"Message from Reviewer","details":"The result is ready.","sender":{"session_id":"reviewer","name":"Reviewer"}}}"#.utf8))
+        let activity = try XCTUnwrap(peer.talariaActivity)
+        for variant in HostedVariant.gallery {
+            let window = try hostWindow(
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Before the activity")
+                    MarkerMessageCardView(activity: activity, stateID: "\(variant.name):peer")
+                    Text("After the activity")
+                }.padding(), size: variant.size,
+                traits: { $0.userInterfaceStyle = variant.style; $0.preferredContentSizeCategory = variant.textSize }
+            )
+            defer { window.isHidden = true }
+            let row = try await requireElement(in: window, label: "Talaria. Message from Reviewer")
+            XCTAssertGreaterThanOrEqual(row.accessibilityFrame.height.rounded(), 44)
+            XCTAssertNil(HostedAccessibility.element(in: window, label: "Agent-only prompt"))
+            XCTAssertNil(HostedAccessibility.element(in: window, label: "The result is ready."))
+            attachHostedScreenshot(window, name: "activity-\(variant.name)-collapsed")
+            HostedAccessibility.activate(row)
+            _ = try await requireElement(in: window, label: "The result is ready.")
+            attachHostedScreenshot(window, name: "activity-\(variant.name)-expanded")
+        }
+    }
+
     func testRunningToolProgressAndCompletion() throws {
         for (size, name) in [(CGSize(width: 320, height: 844), "phone"), (HostedSize.padLandscape, "pad")] {
             for (state, fields, expected) in [

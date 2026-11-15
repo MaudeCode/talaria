@@ -13,7 +13,7 @@ import type { AppDeps } from '../http/context.js'
 import type { DocumentBackend } from './storage/backend.js'
 import { updateDocument } from './storage/document.js'
 import { HttpFailure } from './service.js'
-import { sendSessionMessage } from './admission.js'
+import { sendTalariaMessage } from './admission.js'
 
 const NAMESPACE = 'decision-reviews'
 
@@ -377,8 +377,9 @@ export class DecisionReviews {
       stored.submitted_at = this.now()
     }, this.visibleCheck)
     try {
-      await sendSessionMessage(this.deps(), review.session_id, submitMessage(review))
+      await sendTalariaMessage(this.deps(), review.session_id, submitMessage(review), 'decision_submitted', `Decision review submitted · ${review.title}`, { kind: 'decision_review', id: review.review_id, path: `/decisions/${review.review_id}` })
     } catch (error) {
+      if (error instanceof HttpFailure && error.extra.outcome_unknown === true) throw error
       await this.edit(id, (stored) => { if (stored.status === 'submitted' && stored.submitted_at === review.submitted_at) { stored.status = 'open'; stored.submitted_at = null } })
       throw error
     }

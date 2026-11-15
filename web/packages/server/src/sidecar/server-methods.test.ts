@@ -209,7 +209,7 @@ describe('server.session_new, server.session_send, server.session_wait, server.s
       const queued = await ask('server.session_send', { session_id: target, message: 'Also update the changelog' })
       expect(queued).toMatchObject({ result: { outcome: 'queued', stream_id: s.deps.registry.activeRunStreamForSession(target) } })
       expect((queued as { result: { steer_id: string } }).result.steer_id).toMatch(/^steer-/)
-      expect(s.deps.turns.pendingSteers(s.deps.registry.activeRunStreamForSession(target)!).map((steer) => steer.text)).toEqual(['Also update the changelog'])
+      expect(s.deps.turns.pendingSteers(s.deps.registry.activeRunStreamForSession(target)!)).toEqual([expect.objectContaining({ text: 'Message from Untitled', talaria_activity: expect.objectContaining({ origin: 'peer_agent', sender: { session_id: caller, name: 'Untitled' }, details: 'Also update the changelog' }) as unknown })])
 
       // session_wait: on timeout, then on the run's end with its reply.
       expect(await ask('server.session_wait', { session_id: target, timeout_s: 1 })).toMatchObject({ result: { session_id: target, outcome: 'timeout', is_streaming: true, run_state: 'running' } })

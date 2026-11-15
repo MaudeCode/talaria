@@ -26,6 +26,10 @@ import { SessionEventBus } from './events.js'
 import { messageCountsAsRenderable, messageWindowForDisplay, messagesForLimitedPayload } from './window.js'
 import { isCompactionRow, pendingUserRow, stripToolCallXml } from './merge.js'
 import { withTurnIds } from './anchor.js'
+import { TalariaActivitySchema, type TalariaActivity } from '@maudecode/talaria-web-contracts'
+import type { DocumentBackend } from './storage/backend.js'
+import { updateDocument } from './storage/document.js'
+import { isDict } from './merge.js'
 import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles.js'
 import { CANONICAL_READ_ONLY_REASON, WEB_DIAGNOSTIC_REQUEST_PREFIX } from './state-db.js'
 import { toolProgress } from './tool-display.js'
@@ -162,11 +166,13 @@ function projectedWindow(rows: Row[], project: (start: number) => unknown[], lim
 
 /** TAL-1336: owner events after which the session's processes or subagents read differently. */
 const OWNER_WORK_EVENTS: ReadonlySet<string> = new Set(['subagent.start', 'subagent.complete', 'background.complete'])
+const MESSAGE_REFUSED = 'The owning Agent refused this message'
 export type OwnerWorkOutcome = NonNullable<GatewaySessionResult['work_outcome']>
 export interface OwnerWorkRef { kind: 'process' | 'subagent'; id: string; epoch: number }
 export interface OwnerWorkRead { home: string; state: 'available' | 'unsupported' | 'unavailable'; work: OwnerWork | null }
 
 export class GatewaySessions {
+  private readonly activityAdmissions = new Map<string, Set<Promise<void>>>()
   private readonly watches = new Map<string, Watch>()
   private readonly runWorkers = new Set<Promise<void>>()
   private readonly observations = new Map<string, Observation>()
@@ -193,6 +199,7 @@ export class GatewaySessions {
     onWebCompletion?: (profile: string, sessionId: string, identity: string, session: Row | null) => void;
     service: SessionService; sidecar: () => SidecarLike | null; registry: StreamRegistry;
     launchStore?: BackgroundTaskStore;
+    activityDocuments?: DocumentBackend;
     journal: RunJournal; events: SessionEventBus; channels: SessionChannels; profileHome: (profile: string) => string;
     activeProfile: () => string; showReasoning: (home: string) => Promise<boolean>; configFingerprint?: (home: string) => string; redactEnabled: () => boolean; now: () => number; log: (line: string) => void;
   }) { this.notices = new SessionNotices(deps.now) }
@@ -810,20 +817,34 @@ export class GatewaySessions {
       fields.todo_state = this.nativeTodo(target, snapshot) ?? normalizeTodoSnapshot({ todos: [] })
       const observed = this.watches.get(target.key)?.snapshot
       const canReact = snapshot.reactions_supported === true && this.attachment(result).can_submit
+      // An owner may publish its prompt before submit acknowledges it, without echoing input_id on the row.
+      const pendingActivities = this.activityAdmissions.get(target.key)
+      if (pendingActivities) await Promise.all([...pendingActivities])
+      const activities = await this.activityReceipts(target, snapshot)
+      const owner = fields.owner_attachment as OwnerAttachment
+      const activeActivity = owner.active_admission ? TalariaActivitySchema.safeParse(activities[owner.active_admission.admission_id]).data : undefined
+      fields.owner_attachment = { ...owner,
+        ...(activeActivity && owner.active_admission ? { active_admission: { ...owner.active_admission, text: activeActivity.summary } } : {}),
+        admissions: owner.admissions.map((admission) => {
+          const activity = TalariaActivitySchema.safeParse(activities[admission.admission_id]).data
+          return activity ? { ...admission, text: activity.summary, actions: admission.actions.filter((action) => action !== 'edit' && action !== 'retry') } : admission
+        }),
+      }
       const nativeRows: Row[] = [...snapshot.messages]
       const active = stream ? runningAdmission(snapshot) : null
       let start = active ? nativeRows.findIndex((m) => m.role === 'user' && m.message_id === active.admission_id) : -1
       if (active && stream && start < 0) {
         start = nativeRows.length
-        nativeRows.push({ ...pendingUserRow(active.text ?? '', [], null, str(snapshot.info.source) || 'gateway', stream), message_id: active.admission_id })
+        nativeRows.push({ ...pendingUserRow(active.text ?? '', [], null, str(snapshot.info.source) || 'gateway', stream), message_id: active.admission_id, ...(activities[active.admission_id] ? { _talaria_activity: activities[active.admission_id] } : {}) })
       }
       const turnRow = (row: Row, index: number): Row => start >= 0 && index >= start ? { ...row, _turn_id: stream } : row
       // Reaction views and the turn projection cost per row, so only the rows the requested page can reach get them.
       const project = (from: number) => this.deps.service.foreignMessages(nativeRows.slice(from).map((message, slot) => {
         const index = from + slot
         if (index >= snapshot.messages.length) return turnRow(message, index)
-        const { reactions, ...row } = message
-        return turnRow({ ...row, reaction_view: this.reactionView({ ...row, reactions }, canReact) }, index)
+        const { reactions, _talaria_activity: _untrusted, ...row } = message
+        const activity = row.role === 'user' ? TalariaActivitySchema.safeParse(activities[str(row.message_id)]).data : undefined
+        return turnRow({ ...row, ...(activity ? { _talaria_activity: activity } : {}), reaction_view: this.reactionView({ ...row, reactions }, canReact) }, index)
       }), base, showReasoning, { baseIndex: from })
       const [rows, offset] = withMessages ? projectedWindow(nativeRows.map(turnRow), project, limit, before) : [[], 0]
       const model = str(snapshot.info.model) || str(base.model) || null
@@ -857,11 +878,33 @@ export class GatewaySessions {
   }
 
   /** Called before the direct-chat admission path, including for an already materialized foreign session. */
-  async submit(sid: string, body: Row, timing?: StartupTiming, fence?: QueueAdmissionFence): Promise<Row | null> {
-    return (await this.admit(sid, body, timing, fence))?.row ?? null
+  async submit(sid: string, body: Row, timing?: StartupTiming, fence?: QueueAdmissionFence, activity?: TalariaActivity): Promise<Row | null> {
+    const admitted = await this.admit(sid, body, timing, fence, activity)
+    if (activity && admitted?.receipt && 'admission_id' in admitted.receipt && admitted.receipt.status === 'terminal' && admitted.receipt.outcome === 'failed') throw new HttpFailure(409, MESSAGE_REFUSED)
+    return admitted?.row ?? null
   }
 
-  private async admit(sid: string, body: Row, timing?: StartupTiming, fence?: QueueAdmissionFence): Promise<{ row: Row; receipt: GatewaySessionResult['receipt'] } | null> {
+  /** Native sessions have no Web Session document. Input receipts bind presentation before dispatch. */
+  private async activityReceipts(target: Target, snapshot?: GatewaySnapshot, issued?: { input: string; activity: TalariaActivity }, receipt?: GatewaySessionResult['receipt']): Promise<Record<string, unknown>> {
+    const documents = this.deps.activityDocuments
+    if (!documents) {
+      if (issued) throw new HttpFailure(503, 'Activity storage is unavailable')
+      return {}
+    }
+    return updateDocument(documents, 'talaria-activities', ownerStateId(target.key), (raw) => {
+      const value = isDict(raw) ? raw : {}
+      const inputs = { ...(isDict(value.inputs) ? value.inputs : {}), ...(issued ? { [issued.input]: issued.activity } : {}) }
+      const admissions = { ...(isDict(value.admissions) ? value.admissions : {}) }
+      for (const input of [...(snapshot?.pending ?? []), ...(receipt && 'admission_id' in receipt ? [receipt] : [])]) {
+        const inputId = str(input.input_id), admissionId = str(input.admission_id)
+        if (inputId && admissionId && inputs[inputId]) admissions[admissionId] = inputs[inputId]
+      }
+      if (issued && receipt && 'admission_id' in receipt && str(receipt.admission_id)) admissions[str(receipt.admission_id)] = issued.activity
+      return { value: { inputs, admissions }, result: admissions, skip: !raw && !issued }
+    })
+  }
+
+  private async admit(sid: string, body: Row, timing?: StartupTiming, fence?: QueueAdmissionFence, activity?: TalariaActivity): Promise<{ row: Row; receipt: GatewaySessionResult['receipt'] } | null> {
     const target = await this.target(sid)
     if (!target) return null
     const text = str(body.message).trim()
@@ -878,7 +921,29 @@ export class GatewaySessions {
     const base = await (timing ? timing.measure('owner_detail', () => this.deps.service.detail(sid, {})) : this.deps.service.detail(sid, {}))
     if (fence && (!this.deps.service.deps.profilesMatch(str(base.profile) || null, fence.profile) || (str(base.project_id) || null) !== fence.project_id || before.snapshot?.authority_epoch !== fence.authority_epoch || before.snapshot.running || before.snapshot.pending.some((p) => p.status !== 'terminal'))) throw new HttpFailure(409, 'Queue target changed or is busy')
     const closeSubmit = timing?.begin('owner_submit')
-    const result = await this.call(target, { action: 'submit', request_id: body.submission_id, text })
+    if (activity) await this.activityReceipts(target, before.snapshot ?? undefined, { input: str(body.submission_id), activity })
+    let settled: () => void = () => undefined
+    const pending = this.activityAdmissions.get(target.key) ?? new Set<Promise<void>>()
+    const barrier = activity ? new Promise<void>((resolve) => { settled = resolve }) : null
+    if (barrier) { pending.add(barrier); this.activityAdmissions.set(target.key, pending) }
+    let result: GatewaySessionResult
+    try {
+      result = await this.call(target, { action: 'submit', request_id: body.submission_id, text })
+      if (activity && result.receipt && 'admission_id' in result.receipt) {
+        if (str(result.receipt.input_id) && str(result.receipt.input_id) !== str(body.submission_id)) throw new HttpFailure(409, 'The owner returned a receipt for another input. Reconcile before resending.', { outcome_unknown: true })
+        const refused = result.receipt.status === 'terminal' && result.receipt.outcome === 'failed'
+        const presentation = refused ? { ...activity, kind: 'delivery_refused', summary: 'Message delivery refused' } : activity
+        try { await this.activityReceipts(target, result.snapshot ?? undefined, { input: str(body.submission_id), activity: presentation }, result.receipt) }
+        catch {
+          if (refused) throw new HttpFailure(409, MESSAGE_REFUSED)
+          throw new HttpFailure(503, 'The owner accepted this message, but its presentation could not be saved. Reconcile before resending.', { outcome_unknown: true, admission_id: result.receipt.admission_id })
+        }
+      }
+    } finally {
+      settled()
+      if (barrier) pending.delete(barrier)
+      if (!pending.size && this.activityAdmissions.get(target.key) === pending) this.activityAdmissions.delete(target.key)
+    }
     closeSubmit?.(result.receipt ? 'ok' : result.state === 'unavailable' ? 'unknown' : 'refused')
     if (result.state === 'attached' && result.snapshot && result.receipt?.voice_stopped === true) {
       const watch = this.watches.get(target.key)
@@ -892,7 +957,20 @@ export class GatewaySessions {
     const watch = snapshot && (refused || snapshot.running || snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started'))
       ? this.watches.get(target.key) ?? this.watch(target, base, snapshot, refused ? str(result.receipt.admission_id) : undefined) : null
     this.deps.events.publish('owner_admission', { profile: target.profile, sessionId: sid })
-    return { receipt: result.receipt, row: { session_id: sid, ...(watch ? { stream_id: watch.stream, turn_id: watch.stream } : {}), owner_attachment: this.attachment(result), admission_id: result.receipt.admission_id, session: await this.view(base, result, watch?.stream ?? null, target) } }
+    try {
+      const session = await this.view(base, result, watch?.stream ?? null, target)
+      return { receipt: result.receipt, row: { session_id: sid, ...(watch ? { stream_id: watch.stream, turn_id: watch.stream } : {}), owner_attachment: session.owner_attachment, admission_id: result.receipt.admission_id, session } }
+    } catch (error) {
+      if (activity && refused) throw new HttpFailure(409, MESSAGE_REFUSED)
+      if (activity) throw new HttpFailure(503, 'The owner accepted this message, but its display could not be read. Reconcile before resending.', { outcome_unknown: true, admission_id: result.receipt.admission_id })
+      throw error
+    }
+  }
+
+  /** A deleted chat leaves no retained sender text in presentation receipts. */
+  async forgetActivities(sid: string, profile: string | null): Promise<void> {
+    const home = this.deps.profileHome(profile || this.deps.activeProfile())
+    await this.deps.activityDocuments?.delete('talaria-activities', ownerStateId(JSON.stringify([home, sid])))
   }
 
   /** Whether this chat runs on a canonical owner: the classification no client derives. */

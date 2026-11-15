@@ -51,13 +51,13 @@ export type Segment =
   | { kind: 'reasoning'; text: string; titles: string[]; disclosureKey?: string }
   | { kind: 'tool'; toolId: string }
   /** A consumed steer, at the place the server will persist it: after the tool that had completed. */
-  | { kind: 'steering'; steerId: string; text: string }
+  | { kind: 'steering'; steerId: string; text: string; activity?: import('@maudecode/talaria-web-contracts').TalariaActivity | undefined }
 
 /**
  * TAL-425: a steer the Agent has not taken yet, as the server reports it (`steer_pending`, session `pending_steers`),
  * with the actions it allows. `sending`: this tab's steer before its POST returns, the only client-side state.
  */
-export interface PendingSteerRow { steerId: string; text: string; state: 'sending' | PendingSteer['state']; actions: PendingSteer['actions'] }
+export interface PendingSteerRow { steerId: string; text: string; state: 'sending' | PendingSteer['state']; actions: PendingSteer['actions']; activity?: import('@maudecode/talaria-web-contracts').TalariaActivity | undefined }
 const NO_STEER_ACTIONS: PendingSteer['actions'] = { edit: false, cancel: false, send_now: false }
 
 export interface LiveTurn {
@@ -282,11 +282,11 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       let at = after ? stamped.segments.findIndex((s) => s.kind === 'tool' && s.toolId === after) + 1 : 0
       // Steers the Agent took at the same point keep the server's consumption order.
       while (stamped.segments[at]?.kind === 'steering') at += 1
-      const segment: Segment = { kind: 'steering', steerId: id, text: event.data.text ?? '' }
+      const segment: Segment = { kind: 'steering', steerId: id, text: event.data.text ?? '', activity: event.data.talaria_activity }
       return closeSteer({ ...stamped, segments: [...stamped.segments.slice(0, at), segment, ...stamped.segments.slice(at)] }, id)
     }
     case 'steer_pending':
-      return upsertSteer(stamped, { steerId: event.data.steer_id, text: event.data.text, state: event.data.state, actions: event.data.actions })
+      return upsertSteer(stamped, { steerId: event.data.steer_id, text: event.data.text, state: event.data.state, actions: event.data.actions, activity: event.data.talaria_activity })
     case 'steer_withdrawn':
       return event.data.steer_id ? closeSteer(stamped, event.data.steer_id) : stamped
     case 'compressing':
@@ -430,7 +430,7 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
       const turn = state.turns[action.sessionId]
       if (turn?.streamId !== action.streamId) return state
       const known = new Set([...turn.closedSteerIds, ...turn.pendingSteers.map((p) => p.steerId)])
-      const added = action.steers.filter((p) => !known.has(p.steer_id)).map((p): PendingSteerRow => ({ steerId: p.steer_id, text: p.text, state: p.state, actions: p.actions }))
+      const added = action.steers.filter((p) => !known.has(p.steer_id)).map((p): PendingSteerRow => ({ steerId: p.steer_id, text: p.text, state: p.state, actions: p.actions, activity: p.talaria_activity }))
       return added.length ? { turns: { ...state.turns, [action.sessionId]: { ...turn, pendingSteers: [...turn.pendingSteers, ...added] } } } : state
     }
   }

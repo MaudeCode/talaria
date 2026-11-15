@@ -16,7 +16,7 @@ import type { DocumentBackend } from './storage/backend.js'
 import { updateDocument } from './storage/document.js'
 import { HttpFailure } from './service.js'
 import { AGENT_PROMPT_DEFAULT_TIMEOUT_SECONDS } from './pending.js'
-import { sendSessionMessage } from './admission.js'
+import { sendTalariaMessage } from './admission.js'
 import { agentApprovals, compressionPrepareAhead, maxTokensStatus } from '../config/agent-config.js'
 import { loadEnvFile } from '../providers/env-file.js'
 import { MASK, MCP_HOST_BOUND_KEYS } from '../tools/mcp.js'
@@ -352,7 +352,7 @@ export class Proposals {
 
   /** Tell the owning session; the decision stands when the session cannot take the message. */
   private async tell(proposal: StoredProposal): Promise<void> {
-    try { await sendSessionMessage(this.deps(), proposal.session_id, decisionMessage(proposal)) } catch (error) {
+    try { await sendTalariaMessage(this.deps(), proposal.session_id, decisionMessage(proposal), `proposal_${proposal.status}`, `Proposal ${proposal.status} · ${proposal.summary}`) } catch (error) {
       this.deps().log(`[webui] could not tell ${proposal.session_id} about proposal ${proposal.proposal_id}: ${(error as Error).message}`)
     }
   }

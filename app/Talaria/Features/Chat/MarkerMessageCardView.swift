@@ -4,58 +4,60 @@ import TalariaKit
 /// A row the server marks as a compaction marker or preserved task list (TAL-305), in place of a message bubble: one flat
 /// disclosure line on the `ReasoningBlockView` pattern, so it reads like the transcript's other activity rows (TAL-1566).
 struct MarkerMessageCardView: View {
-    let kind: ChatMarkerMessageKind
+    let kind: ChatMarkerMessageKind?
     let content: String?
+    let activity: TalariaActivity?
+    let messageID: String?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.chatDisclosureToggled) private var chatDisclosureToggled
+    @Environment(\.chatOpenDecisionReview) private var openReview
     @ChatRetainedState("marker-expansion") private var isExpanded = false
 
     /// `stateID` names the row, so its expansion follows it, not its kind or position.
     init(kind: ChatMarkerMessageKind, content: String?, stateID: String) {
         self.kind = kind
         self.content = content
+        self.activity = nil
+        self.messageID = nil
         _isExpanded = ChatRetainedState(wrappedValue: false, "marker-expansion:\(stateID)")
     }
+
+    init(activity: TalariaActivity, stateID: String, messageID: String? = nil) {
+        self.kind = nil
+        self.content = activity.details
+        self.activity = activity
+        self.messageID = messageID
+        _isExpanded = ChatRetainedState(wrappedValue: false, "marker-expansion:\(stateID)")
+    }
+
+    private var title: String { activity?.summary ?? kind?.title ?? "" }
+    private var accessibilityTitle: String { activity == nil ? title : "Talaria. \(title)" }
+    private var hasDetails: Bool { !(content ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var reviewID: String? { activity?.target?.kind == "decision_review" && openReview != nil ? activity?.target?.id : nil }
 
     var body: some View {
         let body = (content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
 
         VStack(alignment: .leading, spacing: isExpanded ? 6 : 0) {
-            Button {
-                chatDisclosureToggled()
-                withAnimation(ChatMotion.disclosure(reduceMotion: reduceMotion)) {
-                    isExpanded.toggle()
-                }
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: iconName)
-                        .resizable()
-                        .scaledToFit()
-                        .foregroundStyle(.secondary)
-                        .frame(width: 16, height: 16)
-
-                    Text(kind.title)
-                        .font(AppFont.callout())
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-
-                    Spacer(minLength: 4)
-
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                }
-                .frame(minHeight: 44)
-                .contentShape(Rectangle())
+            if hasDetails || reviewID != nil {
+                Button {
+                    if let reviewID { openReview?(reviewID); return }
+                    chatDisclosureToggled()
+                    withAnimation(ChatMotion.disclosure(reduceMotion: reduceMotion)) { isExpanded.toggle() }
+                } label: { header }
+                .buttonStyle(.plain)
+                .accessibilityLabel(accessibilityTitle)
+                .accessibilityHint(body.isEmpty ? "" : isExpanded ? String(localized: "Double tap to collapse details.") : String(localized: "Double tap to expand details."))
+                .accessibilityIdentifier(activity == nil ? "transcript-marker" : "transcript-activity")
+            } else {
+                header.accessibilityElement(children: .ignore).accessibilityLabel(accessibilityTitle)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(kind.title)
-            .accessibilityHint(isExpanded ? String(localized: "Double tap to collapse details.") : String(localized: "Double tap to expand details."))
+            PendingSteerButtonsView(messageID: messageID)
 
-            if isExpanded {
-                Text(body.isEmpty ? kind.title : body)
+            if isExpanded && !body.isEmpty {
+                Text(verbatim: body)
                     .font(AppFont.caption())
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
@@ -65,6 +67,28 @@ struct MarkerMessageCardView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contextMenu { PendingSteerButtonsView(messageID: messageID, inMenu: true) }
+    }
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            if activity != nil {
+                SandalMark(height: 16, color: .secondary)
+            } else {
+                Image(systemName: iconName).resizable().scaledToFit()
+                    .foregroundStyle(.secondary).frame(width: 16, height: 16)
+            }
+            Text(verbatim: title).font(AppFont.callout())
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                .truncationMode(.tail)
+                .foregroundStyle(activity == nil ? Color.primary : Color.secondary)
+            Spacer(minLength: 4)
+            if hasDetails {
+                Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary).rotationEffect(.degrees(isExpanded ? 90 : 0))
+            }
+        }
+        .frame(minHeight: 44).contentShape(Rectangle())
     }
 
     private var iconName: String {
@@ -73,6 +97,8 @@ struct MarkerMessageCardView: View {
             return "arrow.down.right.and.arrow.up.left"
         case .preservedTaskList:
             return "checklist"
+        case nil:
+            return "info.circle"
         }
     }
 }
@@ -103,6 +129,8 @@ struct BackgroundUpdateLinesView: View {
                     isExpanded.toggle()
                 }
             } label: {
+                HStack(alignment: .top, spacing: 8) {
+                    if message.talariaActivity != nil { SandalMark(height: 16, color: .secondary) }
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(Array(update.lines.enumerated()), id: \.offset) { _, line in
                         BackgroundLineRow(line: line, parentReview: update.reviewState)
@@ -110,35 +138,40 @@ struct BackgroundUpdateLinesView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
+                }
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(update.lines.map { BackgroundLineRow.accessibilityText(for: $0, parentReview: update.reviewState) }.joined(separator: ", "))
+            .accessibilityLabel((message.talariaActivity == nil ? "" : "Talaria. ") + update.lines.map { BackgroundLineRow.accessibilityText(for: $0, parentReview: update.reviewState) }.joined(separator: ", "))
             .accessibilityHint(isExpanded ? String(localized: "Double tap to collapse details.") : String(localized: "Double tap to expand details."))
             .accessibilityIdentifier("background-update-lines")
 
             if isExpanded {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(verbatim: bodyText)
-                        .font(AppFont.caption())
-                        .foregroundStyle(.primary)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    if message.displayExcerpt != nil {
-                        Button(showsFullBody ? String(localized: "Show less") : String(localized: "Show more")) {
-                            showsFullBody.toggle()
-                        }
-                        .font(AppFont.caption())
-                        .buttonStyle(.borderless)
-                    }
+                if message.talariaActivity != nil {
+                    detail.padding(.leading, 24).transition(.opacity)
+                } else {
+                    detail.padding(.horizontal, 10).padding(.vertical, 9)
+                        .accessorySurface(fallbackMaterial: .thinMaterial, cornerRadius: 10).transition(.opacity)
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 9)
-                .accessorySurface(fallbackMaterial: .thinMaterial, cornerRadius: 10)
-                // A fade: unlike the cards, this box has no surface around it to clip a slide from above.
-                .transition(.opacity)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var detail: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(verbatim: bodyText)
+                .font(AppFont.caption())
+                .foregroundStyle(.primary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if message.displayExcerpt != nil {
+                Button(showsFullBody ? String(localized: "Show less") : String(localized: "Show more")) {
+                    showsFullBody.toggle()
+                }
+                .font(AppFont.caption())
+                .buttonStyle(.borderless)
+            }
+        }
     }
 
     private var bodyText: String {

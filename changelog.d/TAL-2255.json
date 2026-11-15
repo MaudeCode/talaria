@@ -1,0 +1,5 @@
+{
+  "entries": [
+    {"category":"Changed","summary":"Talaria updates and messages from other agents appear as compact activity lines in chats.","highlight":false,"components":["app","web"],"announcement":{"title":"Clearer chat activity","description":"See Talaria updates and messages from other agents as compact, labeled activity lines.","icon":"chat"}}
+  ]
+}

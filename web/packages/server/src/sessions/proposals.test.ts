@@ -41,6 +41,10 @@ describe('proposals (TAL-1967)', () => {
   const show = async (id: string) => (await http('GET', `/api/proposals/${id}`)).body
   const approve = async (id: string, hash?: string) => http('POST', `/api/proposals/${id}/approve`, { payload_hash: hash ?? (await show(id)).payload_hash })
   const told = () => sidecar.calls.filter((call) => call.method === 'chat.start').map((call) => (call.params as { user_message: string }).user_message)
+  const activityKinds = async () => {
+    const session = (await http('GET', `/api/session?session_id=${CALLER}`)).body.session as { messages: { _talaria_activity?: { kind: string } }[] }
+    return session.messages.flatMap((row) => row._talaria_activity ? [row._talaria_activity.kind] : [])
+  }
   const save = async (session_id: string, profile = 'default') => {
     const workspace = join(s.state, 'workspace')
     mkdirSync(workspace, { recursive: true })
@@ -77,6 +81,7 @@ describe('proposals (TAL-1967)', () => {
     expect(reply).toEqual({ result: asRun(put!.result) })
     clock += 60
     expect((await http('POST', `/api/proposals/${id}/reject`)).status).toBe(200)
+    await vi.waitFor(async () => { expect(await activityKinds()).toContain('proposal_rejected') })
     const [read] = fixtures['server.proposal_read']
     expect(await ask('server.proposal_read', asRun(read!.params), String(read!.params.caller_session_id))).toEqual({ result: asRun(read!.result) })
   })
@@ -97,6 +102,7 @@ describe('proposals (TAL-1967)', () => {
     expect(approved).toMatchObject({ status: 200, body: { status: 'applied', outcome: { text: 'Installed probe, turned off until you enable it in Plugins.', error: null }, actions: { can_approve: false, reason: 'closed' } } })
     expect(installs.slice(1)).toEqual([{ profile_home: s.deps.profileHome('default'), name: 'probe' }, { profile_home: s.deps.profileHome('default'), name: 'probe', consent_token: 'token-2' }])
     await vi.waitFor(() => { expect(told()).toEqual([`Proposal ${id} (Install plugin Probe) was approved and applied: Installed probe, turned off until you enable it in Plugins. Call proposal_read with proposal_id ${id} for details.`]) })
+    expect(await activityKinds()).toContain('proposal_applied')
   })
 
   it('fails a plugin approval, installing nothing, when the preview no longer matches what was reviewed', async () => {
@@ -138,6 +144,7 @@ describe('proposals (TAL-1967)', () => {
     expect(approved.body).toMatchObject({ status: 'failed', outcome: { text: null, error: expect.stringContaining('read-only') as unknown } })
     expect(configs.get(s.state)).toEqual(before)
     await vi.waitFor(() => { expect(told()).toEqual([expect.stringContaining(`Proposal ${id} (Change MCP server notes) was approved but failed:`)]) })
+    expect(await activityKinds()).toContain('proposal_failed')
   })
 
   it('replaces an existing MCP server exactly as shown, masking its stored credentials and clearing what the proposal drops', async () => {

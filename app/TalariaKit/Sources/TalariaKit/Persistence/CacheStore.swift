@@ -590,7 +590,8 @@ private extension ChatMessage {
             backgroundSilent: cachedMessage.backgroundSilent == true,
             markerKind: ChatMarkerMessageKind(wireValue: cachedMessage.markerKind),
             markerBody: cachedMessage.markerBody,
-            display: cachedMessage.display.flatMap(ChatMessage.Display.init(rawValue:))
+            display: cachedMessage.display.flatMap(ChatMessage.Display.init(rawValue:)),
+            talariaActivity: cachedMessage.talariaActivityData.flatMap { try? JSONDecoder().decode(TalariaActivity.self, from: $0) }
         )
     }
 }

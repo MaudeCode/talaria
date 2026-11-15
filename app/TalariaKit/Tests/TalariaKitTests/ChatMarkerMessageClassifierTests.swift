@@ -27,16 +27,18 @@ final class ChatMarkerMessageClassifierTests: XCTestCase {
         XCTAssertNil(message.markerBody)
     }
 
-    func testAnAssistantMarkerStaysOutOfTheTurnAroundIt() {
+    func testAnAssistantMarkerStaysOutOfTheTurnAroundIt() throws {
+        let activity = try decode(#"{"role":"assistant","content":"Private notification","message_id":"activity","_turn_id":"t","_display":"row","_talaria_activity":{"version":1,"origin":"talaria","id":"activity","kind":"future_kind","summary":"A future notice"}}"#)
         let messages = [
             ChatMessage(role: "user", content: "Go", timestamp: 1, messageId: "u", turnId: "t"),
             ChatMessage(role: "assistant", content: "One", timestamp: 2, messageId: "a1", turnId: "t"),
+            activity,
             ChatMessage(role: "assistant", content: "[context compaction] summary", timestamp: 3, messageId: "m", turnId: "t", markerKind: .contextCompaction),
             ChatMessage(role: "assistant", content: "Two", timestamp: 4, messageId: "a2", turnId: "t"),
         ]
         let rows = ChatViewModel.transcriptMessages(from: messages)
-        XCTAssertEqual(rows.map { $0.message.messageId }, ["u", "a1", "m", "a2"])
-        XCTAssertEqual(rows.map { $0.assistantSegments.count }, [0, 1, 0, 1])
+        XCTAssertEqual(rows.map { $0.message.messageId }, ["u", "a1", "activity", "m", "a2"])
+        XCTAssertEqual(rows.map { $0.assistantSegments.count }, [0, 1, 0, 0, 1])
     }
 
     private func decode(_ json: String) throws -> ChatMessage {
