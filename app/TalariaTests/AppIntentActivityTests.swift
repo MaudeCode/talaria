@@ -88,6 +88,7 @@ final class AppIntentActivityTests: XCTestCase {
 
     /// Chat titles and approvals never reach a locked device that has not authenticated.
     func testStatusAndVoiceAnswersRequireAuthentication() {
+        XCTAssertEqual(ReplyToTalariaIntent.authenticationPolicy, .requiresAuthentication)
         XCTAssertEqual(TalariaStatusIntent.authenticationPolicy, .requiresAuthentication)
         XCTAssertEqual(RespondToApprovalByVoiceIntent.authenticationPolicy, .requiresAuthentication)
     }

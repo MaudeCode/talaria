@@ -38,6 +38,7 @@ struct ReplyToTalariaIntent: AskingTalariaIntent {
     static let description = IntentDescription("Continue the last Talaria chat and hear the reply.")
 
     static let openAppWhenRun: Bool = false
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
     @Parameter(title: "Text", requestValueDialog: "What do you want to say?")
     var text: String

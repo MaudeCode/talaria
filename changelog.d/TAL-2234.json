@@ -10,6 +10,13 @@
         "description": "Ask Talaria, hear what needs you, and approve runs with Siri on HomeView.",
         "icon": "voice"
       }
+    },
+    {
+      "category": "Security",
+      "summary": "Continuing a chat with Siri requires authentication before accessing the conversation.",
+      "highlight": false,
+      "components": ["app"],
+      "announce": false
     }
   ]
 }
