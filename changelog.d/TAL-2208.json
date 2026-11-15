@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Extension SVG, XML and text files open in the extension sandbox instead of on the Talaria origin, so a malicious extension file can no longer act as the signed-in user.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

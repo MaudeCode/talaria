@@ -127,7 +127,7 @@ export async function handleExtensionStatic(ctx: RequestContext): Promise<void> 
   try { rel = decodeURIComponent(ctx.path.slice(EXTENSION_ROUTE_PREFIX.length)) } catch { (await ctx.json({ error: 'not found' }, { status: 404 })); return }
   const file = await ctx.deps.extensions.staticFile(rel)
   if (!file) { (await ctx.json({ error: 'not found' }, { status: 404 })); return }
-  await sendPanelFile(ctx, file, file.html)
+  await sendPanelFile(ctx, file, file.sandbox)
 }
 
 /**

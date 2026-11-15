@@ -39,11 +39,13 @@ const REGISTRY_TTL_MS = 300_000
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1'])
 const ALLOWED_ASSET_PREFIXES = ['/extensions/', '/static/']
 const ALLOWED_DOTFILES = new Set(['.gitkeep', '.gitignore', '.gitattributes', '.env.example'])
-export const EXTENSION_MIME: Record<string, string> = { css: 'text/css', js: 'application/javascript', html: 'text/html', svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', ico: 'image/x-icon', gif: 'image/gif', webp: 'image/webp', woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf', otf: 'font/otf', wasm: 'application/wasm' }
+export const EXTENSION_MIME: Record<string, string> = { css: 'text/css', js: 'application/javascript', html: 'text/html', svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', ico: 'image/x-icon', gif: 'image/gif', webp: 'image/webp', avif: 'image/avif', json: 'application/json', woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf', otf: 'font/otf', wasm: 'application/wasm' }
 const SKIN_TOKENS = new Set<string>(SKIN_TOKEN_NAMES)
 /** Skin keys and TTS engine ids share the frontend contract's slug. */
 const DECLARATION_ID_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/
 const TEXT_MIME = new Set(['text/css', 'application/javascript', 'text/html', 'image/svg+xml', 'text/plain'])
+/** TAL-2208: types a browser never runs as a document load on the app origin; every other type (HTML, SVG, XML, text, …) gets the sandbox CSP. */
+const INERT_MIME = new Set(['text/css', 'application/javascript', 'application/json', 'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif', 'image/x-icon', 'font/woff', 'font/woff2', 'font/ttf', 'font/otf'])
 
 export interface ExtensionDeps { env: Record<string, string | undefined>; stateDir: string; documents: DocumentBackend; isAuthEnabled: () => Promise<boolean>; fetch: typeof fetch; log: (line: string) => void }
 
@@ -849,8 +851,8 @@ export class ExtensionService {
     })
   }
 
-  /** Python `serve_extension_static`: bytes, MIME, weak ETag, sandbox CSP for HTML; null means 404. */
-  async staticFile(rel: string): Promise<{ body: Buffer; contentType: string; html: boolean; etag: string } | null> {
+  /** Python `serve_extension_static`: bytes, MIME, weak ETag, sandbox CSP for every non-inert type; null means 404. */
+  async staticFile(rel: string): Promise<{ body: Buffer; contentType: string; sandbox: boolean; etag: string } | null> {
     const root = this.root()
     const opened = root ? openContainedFile(root, rel) : null
     if (!opened) return null
@@ -861,7 +863,7 @@ export class ExtensionService {
       const body = await this.staticBody(fd, file, signatureOf(file, st), Number(st.size))
       const ext = file.slice(file.lastIndexOf('.') + 1).toLowerCase()
       const ct = EXTENSION_MIME[ext] ?? 'text/plain'
-      return { body, contentType: TEXT_MIME.has(ct) ? `${ct}; charset=utf-8` : ct, html: ct === 'text/html', etag: weakEtag(st.size, st.mtimeNs, st.ctimeNs) }
+      return { body, contentType: TEXT_MIME.has(ct) ? `${ct}; charset=utf-8` : ct, sandbox: !INERT_MIME.has(ct), etag: weakEtag(st.size, st.mtimeNs, st.ctimeNs) }
     } catch {
       return null
     } finally {
