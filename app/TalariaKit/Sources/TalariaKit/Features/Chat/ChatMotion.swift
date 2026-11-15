@@ -27,7 +27,7 @@ public enum ChatMotion {
     }
 
     /// Bottom-follow scrolling and active-row height growth while a response
-    /// streams in. Short enough to keep up with the ~48ms word-reveal cadence;
+    /// streams in. Short enough to keep up with the coalesced reveal ticks;
     /// each new flush retargets the previous animation so the streaming edge
     /// glides instead of stepping per flush.
     public static func streamingFollow(reduceMotion: Bool) -> Animation? {

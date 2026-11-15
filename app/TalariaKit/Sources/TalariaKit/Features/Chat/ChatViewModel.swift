@@ -661,13 +661,13 @@ public final class ChatViewModel {
     // scroll trigger / first content flush. Injectable so tests can drive
     // coalescing deterministically; production keeps the 16ms default.
     private let streamingScrollCoalescingDelayNanoseconds: UInt64
-    // Display pacing for streamed assistant text (issue #212): after the first
-    // coalesced flush, buffered tokens are revealed word-by-word at this cadence,
-    // with the per-tick quota scaling up so the display never trails the live
-    // stream by more than the max lag. Pacing affects display timing only — the
-    // buffer and final content are untouched. Injectable for tests.
-    private let streamingWordRevealCadenceNanoseconds: UInt64
-    private let streamingMaxRevealLagNanoseconds: UInt64
+    // TAL-1410: each coalesced flush shows every buffered complete word at once and
+    // holds a trailing partial word; this delay schedules the follow-up tick that
+    // releases a held fragment. Display timing only — the buffer and final content
+    // are untouched. Injectable for tests.
+    private let streamingHeldFragmentRevealDelayNanoseconds: UInt64
+    /// Whether the last paced tick held back a trailing fragment.
+    @ObservationIgnored private var streamingRevealHeldFragment = false
     private var speechSynthesizer: (any ChatSpeechSynthesizing)?
     private var speechDelegate: SpeechSynthesizerDelegate?
     // Identity of the utterance currently being spoken. A stale finish/cancel callback
@@ -793,8 +793,7 @@ public final class ChatViewModel {
         showsLiveActivityResponseExcerpts: Bool = false,
         pollingIntervals: ChatPollingIntervals = .standard,
         streamingScrollCoalescingDelayNanoseconds: UInt64 = 16_000_000,
-        streamingWordRevealCadenceNanoseconds: UInt64 = 48_000_000,
-        streamingMaxRevealLagNanoseconds: UInt64 = 1_000_000_000,
+        streamingHeldFragmentRevealDelayNanoseconds: UInt64 = 48_000_000,
         speechSynthesizerFactory: @escaping () -> any ChatSpeechSynthesizing = { AVSpeechSynthesizer() },
         listenAudioSession: (any ListenAudioSessionControlling)? = nil,
         listenRemoteControlCenter: (any ListenRemoteControlControlling)? = nil,
@@ -861,8 +860,7 @@ public final class ChatViewModel {
         self.showsLiveActivityResponseExcerpts = showsLiveActivityResponseExcerpts
         self.pollingIntervals = pollingIntervals
         self.streamingScrollCoalescingDelayNanoseconds = streamingScrollCoalescingDelayNanoseconds
-        self.streamingWordRevealCadenceNanoseconds = streamingWordRevealCadenceNanoseconds
-        self.streamingMaxRevealLagNanoseconds = streamingMaxRevealLagNanoseconds
+        self.streamingHeldFragmentRevealDelayNanoseconds = streamingHeldFragmentRevealDelayNanoseconds
         self.speechSynthesizerFactory = speechSynthesizerFactory
         self.listenAudioSession = listenAudioSession ?? ListenAudioSessionController()
         self.listenRemoteControlCenter = listenRemoteControlCenter ?? ListenRemoteControlController()
@@ -1058,10 +1056,11 @@ public final class ChatViewModel {
         let resolvedDelay = delay ?? streamingScrollCoalescingDelayNanoseconds
         pendingStreamingContentFlushTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: resolvedDelay)
-            guard let self else { return }
+            // A cancelled tick no longer owns the slot; a newer tick may already hold it (TAL-1410).
+            guard let self, !Task.isCancelled else { return }
 
             self.pendingStreamingContentFlushTask = nil
-            guard !Task.isCancelled, self.sessionID == expectedSessionID else { return }
+            guard self.sessionID == expectedSessionID else { return }
 
             self.drainStreamingContentTick()
         }
@@ -1073,21 +1072,18 @@ public final class ChatViewModel {
         cancelPendingStreamingContentFlush()
         drainStreamingContentTick()
     }
+
+    var pendingStreamingContentFlushTaskForTesting: Task<Void, Never>? { pendingStreamingContentFlushTask }
 #endif
 
-    /// One paced flush tick: drains a word-cadence quota of buffered assistant
-    /// text (reasoning still flushes whole — pacing applies to assistant content
-    /// only) and reschedules itself at the word cadence while a backlog remains.
-    /// Completion paths (done/cancel/error/interim/snapshot) bypass pacing via
-    /// `flushPendingStreamingContent()`, which cancels any scheduled tick.
+    /// One coalesced flush tick: shows all buffered complete words (reasoning
+    /// still flushes whole) and reschedules itself only while a trailing
+    /// fragment is held. Completion paths (done/cancel/error/interim/snapshot)
+    /// show everything via `flushPendingStreamingContent()`, which cancels any
+    /// scheduled tick.
     private func drainStreamingContentTick() {
         var didMutate = false
-        let quota = StreamingWordDrain.drainQuota(
-            backlogUnitCount: StreamingWordDrain.unitCount(in: pendingAssistantTokenText),
-            cadenceNanoseconds: streamingWordRevealCadenceNanoseconds,
-            maxLagNanoseconds: streamingMaxRevealLagNanoseconds
-        )
-        if flushAssistantTokens(maxWordUnits: quota) {
+        if flushAssistantTokens(holdingTrailingFragment: true) {
             didMutate = true
         }
         if flushReasoningChunks() {
@@ -1099,7 +1095,7 @@ public final class ChatViewModel {
         }
 
         if !pendingAssistantTokenText.isEmpty {
-            scheduleStreamingContentFlush(afterNanoseconds: streamingWordRevealCadenceNanoseconds)
+            scheduleStreamingContentFlush(afterNanoseconds: streamingHeldFragmentRevealDelayNanoseconds)
         }
     }
 
@@ -1111,6 +1107,7 @@ public final class ChatViewModel {
     private func resetPendingStreamingContentBuffers() {
         cancelPendingStreamingContentFlush()
         pendingAssistantTokenText = ""
+        streamingRevealHeldFragment = false
         pendingReasoningText = ""
         pendingReasoningTitles = []
     }
@@ -6797,21 +6794,28 @@ public final class ChatViewModel {
     }
 
     @discardableResult
-    private func flushAssistantTokens(maxWordUnits: Int? = nil) -> Bool {
-        guard !pendingAssistantTokenText.isEmpty else { return false }
+    private func flushAssistantTokens(holdingTrailingFragment: Bool = false) -> Bool {
+        guard !pendingAssistantTokenText.isEmpty else {
+            streamingRevealHeldFragment = false
+            return false
+        }
 
-        // A word-unit limit moves only the head of the buffer into the visible
-        // message; the tail stays pending.
-        let pendingText = pendingAssistantTokenText
+        // A paced tick moves the buffer through its last whitespace into the
+        // visible message; a trailing fragment stays pending for one tick.
         let appendedContent: String
-        if let maxWordUnits {
-            let (head, tail) = StreamingWordDrain.splitAtUnitBoundary(pendingText, unitCount: maxWordUnits)
-            guard !head.isEmpty else { return false }
-            appendedContent = head
-            pendingAssistantTokenText = tail
+        if holdingTrailingFragment {
+            let (shown, held) = StreamingWordDrain.revealCut(
+                pendingAssistantTokenText,
+                heldPreviousTick: streamingRevealHeldFragment
+            )
+            streamingRevealHeldFragment = !held.isEmpty
+            guard !shown.isEmpty else { return false }
+            appendedContent = shown
+            pendingAssistantTokenText = held
         } else {
-            appendedContent = pendingText
+            appendedContent = pendingAssistantTokenText
             pendingAssistantTokenText = ""
+            streamingRevealHeldFragment = false
         }
 
         let messageID = ensureStreamingAssistantMessage()

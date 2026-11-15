@@ -5,14 +5,13 @@ import Foundation
 /// fixture plus the pacing math that decides how many word units each tick
 /// reveals. Pure so it is unit-testable; the view owns the actual timer.
 ///
-/// Word units come from `StreamingWordDrain`, the same splitter production
-/// uses for #212 pacing, so `prefix(of:unitCount:)` can never alter content —
-/// the final prefix is exactly the fixture.
+/// Word units come from `StreamingWordDrain`, which splits on grapheme
+/// clusters, so `prefix(of:unitCount:)` can never alter content — the final
+/// prefix is exactly the fixture.
 public enum StreamingLabReplay {
-    /// Matches the production word-reveal cadence in `ChatViewModel`
-    /// (one unit per 48ms tick), so the default lab speed feels like a real
-    /// reply and higher speeds reveal several words per tick — the chunky
-    /// #212 backlog-catch-up arrival pattern.
+    /// Simulated arrival tick: the default lab speed feels like a real reply
+    /// and higher speeds reveal several words per tick, the chunky burst
+    /// arrival pattern production shows whole on one coalesced tick.
     public static let tickInterval: TimeInterval = 0.048
 
     public static let defaultWordsPerSecond: Double = 21
