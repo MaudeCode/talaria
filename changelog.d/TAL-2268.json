@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Send feedback with details alone; the title is optional.",
+      "highlight": false,
+      "components": ["app", "web"],
+      "announce": false
+    }
+  ]
+}

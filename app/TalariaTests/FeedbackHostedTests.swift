@@ -163,17 +163,20 @@ final class FeedbackHostedTests: XCTestCase {
     }
 
     func testFormAndVerbatimDiagnosticsOnPhoneAndDuoInner() async throws {
-        for (name, size) in [("phone", HostedSize.phone), ("duo-inner", HostedSize.duoInner)] {
+        for variant in HostedVariant.gallery {
             let model = model()
-            model.edit { $0.title = "A clearer activity history"; $0.body = "Please keep completed background work easy to find."; $0.kind = "feature" }
-            let window = try hostWindow(NavigationStack { AboutSettingsView(feedback: model) }, size: size)
+            model.edit { $0.body = "Please keep completed background work easy to find."; $0.kind = "feature" }
+            let window = try hostWindow(NavigationStack { AboutSettingsView(feedback: model) }, size: variant.size) {
+                $0.userInterfaceStyle = variant.style
+                $0.preferredContentSizeCategory = variant.textSize
+            }
             HostedAccessibility.activate(try await requireElement(in: window, label: "Send Feedback"))
             _ = try await requireElement(in: window, label: "Include Diagnostics")
-            HostedAccessibility.activate(try await requireElement(in: window, label: "Diagnostics"))
-            let preview = await awaitElement(in: window) { $0.accessibilityLabel == "Web: synthetic\n  Exact diagnostics <redacted>" }
-            XCTAssertNotNil(preview)
+            attachHostedScreenshot(window, name: "feedback-form-\(variant.name)")
+            HostedAccessibility.activate(try await requireElementScrolling(in: window, "Diagnostics") { $0.accessibilityLabel == "Diagnostics" })
+            _ = try await requireElementScrolling(in: window, "Diagnostics preview") { $0.accessibilityLabel == "Web: synthetic\n  Exact diagnostics <redacted>" }
             XCTAssertEqual(model.diagnosticsText, "Web: synthetic\n  Exact diagnostics <redacted>")
-            attachHostedScreenshot(window, name: "feedback-\(name)")
+            attachHostedScreenshot(window, name: "feedback-\(variant.name)")
             HostedAccessibility.activate(try XCTUnwrap(HostedAccessibility.toolbarItem("Cancel", in: window)))
             XCTAssertFalse(model.isPresented)
             XCTAssertEqual(model.draft.kind, "feature")

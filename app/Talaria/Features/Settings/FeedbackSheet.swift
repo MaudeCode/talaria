@@ -22,7 +22,7 @@ struct FeedbackSheet: View {
                         Text("Feature Request").tag("feature")
                         Text("Other").tag("other")
                     }
-                    TextField("Title", text: field(\.title))
+                    TextField("Title (optional)", text: field(\.title))
                         .accessibilityIdentifier("feedback-title")
                     TextField("Details", text: field(\.body), axis: .vertical)
                         .lineLimit(5...12)

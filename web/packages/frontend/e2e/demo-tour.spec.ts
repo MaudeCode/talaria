@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { SettingsSectionSchema } from '@maudecode/talaria-web-contracts'
 import { ChatPageSchema, ToolsTabSchema } from '../src/contracts/url'
 import type { Page, TestInfo } from '@playwright/test'
-import { expect, expectNoOverflow, settle, test } from './fixtures'
+import { DUO_VIEWPORTS, expect, expectNoOverflow, settle, test } from './fixtures'
 import { bootDemoServer, DEMO_SESSION_ID } from './demo-server'
 
 test.use({ serviceWorkers: 'block' })
@@ -158,3 +158,32 @@ test('every Settings section and Tools tab shows its heading without horizontal 
 test('every Settings section and Tools tab shows its heading in the light theme', async ({ page }, info) => {
   await settingsPages(page, info, 'light')
 })
+
+for (const theme of ['dark', 'light'] as const) {
+  test(`feedback form fits the viewport in the ${theme} theme`, async ({ page }, info) => {
+    const { server } = await bootDemoServer()
+    try {
+      if (theme === 'light') await pickLightTheme(page, server.base)
+      await page.goto(`${server.base}/settings/about`)
+      await page.getByRole('button', { name: 'Send feedback' }).click()
+      const dialog = page.getByRole('dialog', { name: 'Send feedback' })
+      await dialog.getByRole('textbox', { name: 'Details' }).fill('Please keep completed background work easy to find.')
+      const viewports = [{ name: theme === 'light' ? `light-${info.project.name}` : info.project.name, ...page.viewportSize()! },
+        ...(theme === 'dark' && info.project.name === 'desktop' ? DUO_VIEWPORTS : [])]
+      const shots = process.env.TOUR_SHOTS
+      if (shots) mkdirSync(shots, { recursive: true })
+      for (const { name, width, height } of viewports) {
+        await page.setViewportSize({ width, height })
+        const title = dialog.getByRole('textbox', { name: /^Title/ })
+        const send = dialog.getByRole('button', { name: 'Send', exact: true })
+        await title.scrollIntoViewIfNeeded()
+        await expect(title).toBeInViewport({ ratio: 1 })
+        expect(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
+        if (shots) await page.screenshot({ path: `${shots}/feedback-${name}.png` })
+        await send.scrollIntoViewIfNeeded()
+        await expect(send).toBeInViewport({ ratio: 1 })
+        if (shots && height < 500) await page.screenshot({ path: `${shots}/feedback-${name}-send.png` })
+      }
+    } finally { await page.goto('about:blank').catch(() => undefined); await server.close() }
+  })
+}

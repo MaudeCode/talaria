@@ -35,7 +35,7 @@ async function setup(options: Options = OPTIONS) {
   return { upload: vi.mocked(api.uploadFeedbackAttachment), compressImage: vi.mocked(media.compressImage), submit: vi.mocked(api.submitFeedback), diagnostics: vi.mocked(api.fetchFeedbackDiagnostics), toast: vi.mocked(toasts.showToast), sentToast: vi.mocked(toasts.showRichToast), dismiss: vi.mocked(toasts.dismissToast), ...view }
 }
 const open = () => fireEvent.click(screen.getByRole('button', { name: 'Send feedback' }))
-const title = () => screen.getByRole('textbox', { name: 'Title' })
+const title = () => screen.getByRole('textbox', { name: /^Title/ })
 const details = () => screen.getByRole('textbox', { name: 'Details' })
 const send = () => screen.getByRole('button', { name: 'Send' })
 function fill(kind = 'Feature request') {
@@ -65,8 +65,9 @@ beforeEach(() => {
 })
 afterEach(() => { vi.unstubAllGlobals() })
 
-it('opens from Help with kind, title, details and diagnostics; Send needs a title and details within their limits', async () => {
-  await setup()
+it.each(['Bug', 'Feature request', 'Other'])('sends %s with details and an optional title', async (kind) => {
+  const { submit } = await setup()
+  submit.mockResolvedValue({ status: 'sent', reportId: 'synthetic-report-1', attachments: [] })
   open()
   expect(screen.getByRole('dialog', { name: 'Send feedback' })).toBeVisible()
   expect(screen.getByRole('group', { name: 'Type' })).toBeVisible()
@@ -81,6 +82,15 @@ it('opens from Help with kind, title, details and diagnostics; Send needs a titl
   expect(send()).toBeDisabled()
   fireEvent.change(details(), { target: { value: 'And details' } })
   expect(send()).toBeEnabled()
+  fireEvent.click(screen.getByRole('button', { name: kind }))
+  fireEvent.change(title(), { target: { value: '' } })
+  expect(send()).toBeEnabled()
+  fireEvent.change(title(), { target: { value: '   ' } })
+  expect(send()).toBeEnabled()
+  expect(title()).toHaveAccessibleName('Title (optional)')
+  fireEvent.click(send())
+  await closed()
+  expect(submit).toHaveBeenCalledWith(expect.objectContaining({ title: '   ', body: 'And details' }))
 })
 
 it('fetches the diagnostics only when the disclosure opens and shows the server text verbatim', async () => {
@@ -376,6 +386,7 @@ it('rolls back without sending when an attachment fails to upload, and Send wait
   open()
   await attach()
   fill()
+  fireEvent.change(title(), { target: { value: '' } })
   pick(synthetic('a.png', 'image/png'))
   fireEvent.click(send())
   await closed()

@@ -119,7 +119,6 @@ public final class FeedbackComposer {
 
     public var canSend: Bool {
         isCurrent && server != nil && !isSending
-            && !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !draft.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && validationError == nil
             && attachments.allSatisfy { $0.attachmentId != nil }

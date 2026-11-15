@@ -294,7 +294,7 @@ export function FeedbackDialog() {
   const options = useQuery({ queryKey: keys.feedbackOptions, queryFn: api.fetchFeedbackOptions, enabled: open, staleTime: 60_000 })
   const limits = options.data?.attachments.enabled && options.data.attachments.maxCount > 0 ? options.data.attachments : null
   const accept = limits?.acceptedTypes.filter((type) => limits.videoAllowed || !type.startsWith('video/')).join(',')
-  const ready = /\S/.test(draft.title) && /\S/.test(draft.body) && !draft.files.some((f) => f.status === 'error')
+  const ready = /\S/.test(draft.body) && !draft.files.some((f) => f.status === 'error')
   const onPaste = (e: ClipboardEvent<HTMLFormElement>) => {
     const files = Array.from(e.clipboardData.items).filter((i) => i.kind === 'file').map((i) => i.getAsFile()).filter((f): f is File => !!f)
     if (!limits || !files.length) return
