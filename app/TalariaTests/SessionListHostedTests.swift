@@ -133,6 +133,26 @@ final class ToolbarPriorityHostedTests: XCTestCase {
         _ = try await requireElement(in: window, label: "2 queued")
         settle(0.3)
         attachHostedScreenshot(window, name: "duo-work-chips-while-typing")
+
+        // Delivery outlives pinned rows. The bar follows the server's summary, then disappears when delivery settles.
+        let summaries = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("delegation-status")) as? [String: Any])
+        let awaiting = try JSONSerialization.data(withJSONObject: try XCTUnwrap(summaries["awaiting_delivery"]))
+        UITestFixtureURLProtocol.backgroundDelegationStatus.withLock { $0 = awaiting }
+        await model.refreshBackgroundTasks()
+        XCTAssertEqual(model.pinnedBackgroundTaskCount, 0)
+        window.endEditing(true)
+        let reachable = await awaitCondition { HostedAccessibility.toolbarItem("Background tasks", in: window) != nil }
+        XCTAssertTrue(reachable)
+        settle(0.3)
+        attachHostedScreenshot(window, name: "duo-unpinned-awaiting-delivery")
+        let delivered = try JSONSerialization.data(withJSONObject: try XCTUnwrap(summaries["available_zero"]))
+        UITestFixtureURLProtocol.backgroundDelegationStatus.withLock { $0 = delivered }
+        await model.refreshBackgroundTasks()
+        let deliveredHidden = await awaitCondition { HostedAccessibility.toolbarItem("Background tasks", in: window) == nil }
+        XCTAssertTrue(deliveredHidden, "Delivered work must leave the Duo bar")
+        XCTAssertNil(HostedAccessibility.element(in: window, label: "1 awaiting delivery"))
+        settle(0.3)
+        attachHostedScreenshot(window, name: "duo-delivered-work-hidden")
         _ = await model.cancelActiveStream()
     }
 

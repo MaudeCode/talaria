@@ -28,7 +28,7 @@ import { LiveStatusPill } from '../chat/LiveTurnView'
 import { ComposerNotices, type ComposerNotice } from './ComposerNotices'
 import { useBtw } from './useBtw'
 import { useCommandOutput } from './useCommandOutput'
-import { BackgroundWorkCard, useBackgroundTasks, useStartBackground } from '../background/BackgroundWork'
+import { BackgroundWorkCard, delegationSummary, useBackgroundTasks, useStartBackground } from '../background/BackgroundWork'
 import { beginFirstSend, endFirstSend, failFirstSend, getFirstSend, ownsFirstSend, useFirstSend } from '../chat/firstSend'
 import { REST_MS, onComposerRestRequest, requestScroll } from '../chat/sendMotion'
 import { MOTION_EASE, prefersReducedMotion } from '../../lib/motion'
@@ -846,6 +846,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
   const background = useBackgroundTasks(session ? sessionId : null).data
   const backgroundTasks = background?.tasks ?? EMPTY_TASKS
   const pinnedCount = background?.pinned_count ?? 0
+  const delivery = background?.delegation_status
   const admissions = session?.owner_attachment?.admissions ?? EMPTY_ADMISSIONS
   const ownerInputs = session?.owner_attachment?.queued_input_count ?? 0
   // TAL-1043: an owner input with an unknown outcome blocks sending until it is retried or discarded, so its chip says so.
@@ -860,7 +861,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
     ...(commandNotice ? [commandNotice] : []),
     ...(dictating ? [{ id: 'dictation', content: <span className="inline-flex items-center gap-1.5" role="status"><span className="mic-dot" aria-hidden="true" />{m.voice_listening()}</span> }] : []),
     ...(showYolo ? [{ id: 'yolo', tone: 'warning' as const, content: <><span aria-hidden="true">⚡</span><span className="truncate">{m.yolo_tab_active()}</span></>, action: { label: m.yolo_turn_off(), run: onToggleYolo } }] : []),
-    ...(sessionId && pinnedCount ? [{ id: 'background', content: <><Layers size={13} className="shrink-0" aria-hidden="true" /><span className="truncate">{m.bg_card_count({ n: pinnedCount })}</span></>, detail: { title: m.bg_card_title(), content: <BackgroundWorkCard sessionId={sessionId} tasks={backgroundTasks} /> } }] : []),
+    ...(sessionId && (pinnedCount > 0 || delivery?.visible) ? [{ id: 'background', content: <><Layers size={13} className="shrink-0" aria-hidden="true" /><span className="truncate">{delivery?.visible ? delegationSummary(delivery) : m.bg_card_count({ n: pinnedCount })}</span></>, detail: { title: m.bg_card_title(), content: <BackgroundWorkCard sessionId={sessionId} tasks={backgroundTasks} delivery={delivery} /> } }] : []),
     ...(sessionId && (queued.length > 0 || ownerInputs) ? [{ id: 'queue', tone: outcomeUnknown ? 'warning' as const : undefined, content: <><ListPlus size={13} className="shrink-0" aria-hidden="true" /><span className="truncate">{outcomeUnknown ? m.owner_outcome_unknown() : m.queued_count({ n: queued.length + ownerInputs })}</span></>, detail: { title: ownerInputs ? m.owner_inputs() : m.queued_count({ n: queued.length }), content: <QueueCard sessionId={sessionId} queued={queued} onChange={onQueueChange} pendingId={intent.send?.queueId} admissions={admissions} onAdmissionAction={props.onOwnerAction} /> } }] : []),
   ]
   // A `/btw` draft asks beside the turn instead of steering, queueing or interrupting it (TAL-518).

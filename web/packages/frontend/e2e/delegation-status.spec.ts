@@ -41,7 +41,7 @@ test('the Agents page words every delegation summary the server sends', async ({
   await expect(page.locator('.agents-delivery')).toHaveCount(0)
   await shot('before')
   for (const [name, text] of [
-    ['awaiting_delivery', '1 awaiting delivery'], ['running_and_awaiting', '1 running · 3 awaiting delivery'], ['available_zero', 'Nothing running or awaiting delivery'],
+    ['awaiting_delivery', '1 awaiting delivery'], ['running_and_awaiting', '1 running · 3 awaiting delivery'], ['available_zero', null],
     ['unknown', 'Delivery status unavailable'], ['unsupported', 'This chat’s owner doesn’t report delivery status'], ['hidden', null],
   ] as const) {
     state = name

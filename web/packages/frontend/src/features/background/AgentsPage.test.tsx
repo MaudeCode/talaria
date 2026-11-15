@@ -31,7 +31,6 @@ afterEach(() => { vi.useRealTimers() })
 
 describe('Agents page delegation summary (TAL-1579)', () => {
   it.each([
-    ['available_zero', 'Nothing running or awaiting delivery'],
     ['running', '2 running'],
     ['awaiting_delivery', '1 awaiting delivery'],
     ['running_and_awaiting', '1 running · 3 awaiting delivery'],
@@ -45,7 +44,7 @@ describe('Agents page delegation summary (TAL-1579)', () => {
   })
 
   it('shows a dispatch the live registry holds before the ledger counts it as running', async () => {
-    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue(response({ ...states.available_zero!, memory_live: true, refresh: true }))
+    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue(response({ ...states.available_zero!, memory_live: true, visible: true, refresh: true }))
     renderPage()
     expect(await screen.findByText('Running', { selector: '.agents-delivery' })).toBeInTheDocument()
   })
@@ -69,7 +68,7 @@ describe('Agents page delegation summary (TAL-1579)', () => {
     renderPage()
     expect(await screen.findByText('1 awaiting delivery')).toBeInTheDocument()
     await act(async () => { await vi.advanceTimersByTimeAsync(10_000) })
-    expect(await screen.findByText('Nothing running or awaiting delivery')).toBeInTheDocument()
+    expect(summary()).toBeNull()
     const calls = vi.mocked(api.fetchBackgroundTasks).mock.calls.length
     await act(async () => { await vi.advanceTimersByTimeAsync(30_000) })
     expect(vi.mocked(api.fetchBackgroundTasks).mock.calls.length).toBe(calls)

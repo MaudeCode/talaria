@@ -17,6 +17,10 @@ import { endFirstSend, getFirstSend } from '../chat/firstSend'
 import { returnToComposer } from './composerReturn'
 import { commandCatalog } from '../../../../server/src/tools/commands.ts'
 import { showToast } from '../toast/toast'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import type { DelegationStatus } from '@maudecode/talaria-web-contracts'
+import { keys } from '../../api/queryKeys'
 
 vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), cancelChat: vi.fn(), fetchStreamStatus: vi.fn(), fetchSession: vi.fn(), uploadFile: vi.fn(), rollbackUpload: vi.fn(), saveDraft: vi.fn(), fetchDraft: vi.fn(), steerChat: vi.fn(), startChat: vi.fn(), startBackground: vi.fn(), fetchBackgroundTasks: vi.fn(), fetchBackgroundResult: vi.fn(), askBtw: vi.fn(), fetchCommands: vi.fn(), fetchModels: vi.fn(() => Promise.reject(new Error('offline'))), fetchProviderQuotas: vi.fn(() => Promise.reject(new Error('offline'))), execCommand: vi.fn(), fetchTranscribeCapability: vi.fn(), fetchExecutionModes: vi.fn(() => Promise.resolve({ modes: [{ mode: 'normal', available: true, reason: null, can_attach: true }, { mode: 'ignore_config', available: true, reason: null, can_attach: false }, { mode: 'safe', available: true, reason: null, can_attach: false }] } satisfies ExecutionModes)) }))
 // jsdom has no EventSource: a followed turn opens a stream handle that does nothing.
@@ -64,7 +68,7 @@ function renderComposer(session: Session | null, live: LiveTurn | null = null, o
     </QueryClientProvider>
   )
   const view = render(tree(live))
-  return { ...view, rerenderWith: (turn: LiveTurn | null) => view.rerender(tree(turn)), rerenderSession: (record: Session) => view.rerender(tree(live, record)), rerenderSettings: (next: Settings) => view.rerender(tree(live, session, next)) }
+  return { ...view, qc, rerenderWith: (turn: LiveTurn | null) => view.rerender(tree(turn)), rerenderSession: (record: Session) => view.rerender(tree(live, record)), rerenderSettings: (next: Settings) => view.rerender(tree(live, session, next)) }
 }
 
 describe('Composer', () => {
@@ -455,6 +459,23 @@ describe('Composer', () => {
     renderComposer({ ...writable, is_streaming: false, read_only: true, owner_attachment: owner })
     await waitFor(() => expect(api.fetchBackgroundTasks).toHaveBeenCalledWith('s1'))
     expect(await screen.findByRole('button', { name: 'Background work · 3' })).toBeInTheDocument()
+  })
+
+  it.each([
+    ['running', '2 running'],
+    ['awaiting_delivery', '1 awaiting delivery'],
+    ['unknown', 'Delivery status unavailable'],
+    ['unsupported', 'This chat’s owner doesn’t report delivery status'],
+    ['available_zero', null],
+  ])('uses the server’s %s delegation summary for the unpinned background entry (TAL-2251)', async (state, label) => {
+    const states = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/delegation-status.json'), 'utf8')) as Record<string, DelegationStatus>
+    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 's1', agent_available: true, pinned_count: 0, tasks: [], delegation_status: states[state] })
+    const view = renderComposer(writable)
+    await waitFor(() => expect(view.qc.getQueryState(keys.background('s1'))?.status).toBe('success'))
+    view.rerenderSession({ ...writable })
+    const chip = document.querySelector('[data-notice="background"]')
+    if (label) expect(chip).toHaveTextContent(label)
+    else expect(chip).toBeNull()
   })
 
   it('counts an owner\'s queued inputs as the server does (TAL-1531)', async () => {

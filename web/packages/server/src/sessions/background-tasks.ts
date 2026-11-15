@@ -391,7 +391,7 @@ export function withBackgroundLinks<T>(messages: T[], receipts: Receipt[]): T[] 
 
 /**
  * TAL-1579: the session's delegation summary from the sidecar's counts (null: not asked, or the read failed). Shown while
- * the session has a delegation record or anything counts; refreshed while work runs or a completion waits for delivery.
+ * work runs, a completion waits for delivery, or existing delegations have unknown delivery status.
  */
 export function delegationStatus(read: SidecarResult<'process.delegation_status'> | null, opts: { owned: boolean; hasDelegations: boolean }): DelegationStatus {
   const availability = opts.owned ? 'unsupported' : read?.ledger === 'available' ? 'available' : 'unknown'
@@ -400,7 +400,7 @@ export function delegationStatus(read: SidecarResult<'process.delegation_status'
   const awaiting_delivery_count = counted ? read.awaiting_delivery_count : null
   const memory_live = opts.owned ? null : read?.memory_live ?? null
   const refresh = (running_count ?? 0) > 0 || (awaiting_delivery_count ?? 0) > 0 || memory_live === true
-  return { availability, running_count, awaiting_delivery_count, memory_live, visible: opts.hasDelegations || refresh, refresh }
+  return { availability, running_count, awaiting_delivery_count, memory_live, visible: refresh || (!counted && opts.hasDelegations), refresh }
 }
 
 /** TAL-1336: one native-owner row: the task every client sees and the owner reference only this server holds. */

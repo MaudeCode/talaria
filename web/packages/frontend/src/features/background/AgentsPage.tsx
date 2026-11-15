@@ -4,14 +4,14 @@
  */
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import type { BackgroundTask, DelegationStatus } from '@maudecode/talaria-web-contracts'
+import type { BackgroundTask } from '@maudecode/talaria-web-contracts'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { ErrorState, LoadingState } from '../../ui/States'
 import { relativeTime } from '../sessions/SessionListPanel'
 import { m } from '../../paraglide/messages.js'
 import { useState } from 'react'
-import { SteerForm, TaskActionButtons, TaskHeading, agentsSummary, statusLabel, useTaskActions } from './BackgroundWork'
+import { SteerForm, TaskActionButtons, TaskHeading, agentsSummary, delegationSummary, statusLabel, useTaskActions } from './BackgroundWork'
 import { RowContextMenu } from '../../ui/Menu'
 
 const LIVE_REFRESH_MS = 10_000
@@ -32,18 +32,6 @@ export function useHasActiveAgents(sessionId: string, open: boolean): boolean | 
   if (!query.isFetchedAfterMount && !query.isError) return undefined
   // ponytail: old-server fallback — a server before TAL-373 sends no `agents_working`; it then opens on the last page.
   return query.data?.agents_working ?? false
-}
-
-/** TAL-1579: the server's delegation summary in words; the server decides whether it shows. */
-export function delegationSummary(status: DelegationStatus): string {
-  if (status.availability === 'unsupported') return m.panel_agents_delivery_unsupported()
-  if (status.availability === 'unknown' || status.running_count === null || status.awaiting_delivery_count === null) return m.panel_agents_delivery_unknown()
-  const parts = []
-  if (status.running_count) parts.push(m.panel_agents_delivery_running({ n: status.running_count }))
-  // A dispatch the live registry holds before its ledger row is running, though not yet counted.
-  else if (status.memory_live) parts.push(m.bg_status_running())
-  if (status.awaiting_delivery_count) parts.push(m.panel_agents_delivery_waiting({ n: status.awaiting_delivery_count }))
-  return parts.length ? parts.join(' · ') : m.panel_agents_delivery_none()
 }
 
 export function AgentsPage({ sessionId, active }: { sessionId: string; active: boolean }) {

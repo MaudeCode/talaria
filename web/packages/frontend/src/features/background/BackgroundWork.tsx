@@ -5,7 +5,7 @@
 import { useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Check, CircleHelp, Clock, LoaderCircle, X } from 'lucide-react'
-import type { BackgroundLink, BackgroundTask, BackgroundReviewState } from '@maudecode/talaria-web-contracts'
+import type { BackgroundLink, BackgroundTask, BackgroundReviewState, DelegationStatus } from '@maudecode/talaria-web-contracts'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { Markdown } from '../chat/render/Markdown'
@@ -67,7 +67,7 @@ export function useBackgroundTasks(sessionId: string | null | undefined) {
       return { ...data, tasks, pinned_count: Math.max(0, data.pinned_count + pinned(tasks) - pinned(data.tasks)) }
     },
     enabled: Boolean(sessionId),
-    refetchInterval: (query) => (query.state.data?.tasks.some((t) => t.active) ? LIVE_REFRESH_MS : false),
+    refetchInterval: (query) => (query.state.data?.tasks.some((t) => t.active) || query.state.data?.delegation_status?.refresh ? LIVE_REFRESH_MS : false),
   })
 }
 
@@ -185,12 +185,25 @@ function TaskRow({ sessionId, task }: { sessionId: string; task: BackgroundTask 
   )
 }
 
-/** The list behind the composer's background chip: the work the server pins for this session; nothing when there is none. */
-export function BackgroundWorkCard({ sessionId, tasks }: { sessionId: string; tasks: BackgroundTask[] }) {
+/** The server's delegation summary in words, shared by the Agents page and composer. */
+export function delegationSummary(status: DelegationStatus): string {
+  if (status.availability === 'unsupported') return m.panel_agents_delivery_unsupported()
+  if (status.availability === 'unknown' || status.running_count === null || status.awaiting_delivery_count === null) return m.panel_agents_delivery_unknown()
+  const parts = []
+  if (status.running_count) parts.push(m.panel_agents_delivery_running({ n: status.running_count }))
+  // A dispatch the live registry holds before its ledger row is running, though not yet counted.
+  else if (status.memory_live) parts.push(m.bg_status_running())
+  if (status.awaiting_delivery_count) parts.push(m.panel_agents_delivery_waiting({ n: status.awaiting_delivery_count }))
+  return parts.length ? parts.join(' · ') : m.panel_agents_delivery_none()
+}
+
+/** The list behind the composer's background chip: pinned work and the summary the server makes visible. */
+export function BackgroundWorkCard({ sessionId, tasks, delivery }: { sessionId: string; tasks: BackgroundTask[]; delivery?: DelegationStatus | undefined }) {
   const pinned = tasks.filter((t) => t.pinned)
-  if (!pinned.length) return null
+  if (!pinned.length && !delivery?.visible) return null
   return (
     <span className="bg-work-card flex min-w-0 flex-1 flex-col gap-1" role="region" aria-label={m.bg_card_title()} aria-live="polite">
+      {delivery?.visible && <span role="status">{delegationSummary(delivery)}</span>}
       <ul className="flex min-w-0 flex-col gap-1">{pinned.map((t) => <TaskRow key={t.task_id} sessionId={sessionId} task={t} />)}</ul>
     </span>
   )

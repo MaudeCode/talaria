@@ -21,10 +21,12 @@ SIDECAR_SERVER_INPUTS = ("packages/server/src/sidecar/", "packages/server/src/ru
                          "packages/server/src/tools/updates.ts", "packages/server/src/test/fixtures/local-reset.json",
                          "packages/server/package.json", "packages/server/tsconfig.json",
                          "packages/server/tsconfig.build.json")
-# Web and TalariaKit's package tests read every root fixture; the App's hosted tests and Relay read only these
+# Web and TalariaKit's package tests read every root fixture; Sidecar, the App's hosted tests and Relay read only these
 # (TAL-1674). test_fixture_readers_are_routed rescans the readers so the lists cannot fall behind them. The
 # release-note generator and stamp tests share the What's New fixture (TAL-1616).
 FIXTURE_READERS = {
+    "web_sidecar": {"mcp-cost-policy.json", "mcp-events.json", "native-cron-refusal.json", "plan-allowance.json",
+                    "web-native-notices.json", "web-native-todos.json", "web-native-work.json", "web-reactions.json"},
     "tooling": {"whats-new.json"},
     "app": {"connectors.json", "decision-review.json", "delegation-status.json", "execution-modes.json",
             "model-confirmation.json", "proposal.json", "running-subagent.json", "settings-model-picker.json", "show.json",
@@ -133,7 +135,7 @@ def path_suites(path):
         return {"web_server", "contracts"}
     if path.startswith("contracts/fixtures/"):
         name = path.removeprefix("contracts/fixtures/")
-        return JOBS["web"] | {"contracts"} | {suite for suite, names in FIXTURE_READERS.items() if name in names}
+        return {"web_server", "web_frontend", "contracts"} | {suite for suite, names in FIXTURE_READERS.items() if name in names}
     if path.startswith("contracts/") or path in ("web/contract_versions.json", "relay/convex/releaseInfo.json"):
         return CONSUMERS
     if path == "releases/agent_probe.py":
