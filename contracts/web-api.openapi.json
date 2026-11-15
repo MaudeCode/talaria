@@ -92094,7 +92094,7 @@
                   "title": {
                     "type": "string",
                     "maxLength": 120,
-                    "pattern": "\\S"
+                    "description": "Optional title. When omitted or blank, the server uses the first non-blank line of body, limited to 120 UTF-16 code units."
                   },
                   "body": {
                     "type": "string",
@@ -92148,7 +92148,6 @@
                 "required": [
                   "requestId",
                   "kind",
-                  "title",
                   "body",
                   "includeDiagnostics",
                   "client"

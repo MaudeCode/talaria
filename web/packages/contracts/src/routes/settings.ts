@@ -35,7 +35,7 @@ export const FeedbackAttachmentTypeSchema = z.enum(Object.keys(FEEDBACK_ATTACHME
 const feedbackText = (max: number) => z.string().max(max).regex(/\S/, 'Must not be blank')
 export const FeedbackSubmitSchema = z.strictObject({
   requestId: z.uuid(), kind: z.enum(['bug', 'feature', 'other']),
-  title: feedbackText(120), body: feedbackText(8000),
+  title: z.string().max(120).optional().describe('Optional title. When omitted or blank, the server uses the first non-blank line of body, limited to 120 UTF-16 code units.'), body: feedbackText(8000),
   includeDiagnostics: z.boolean(),
   client: z.strictObject({ platform: z.enum(['web', 'ios']), appVersion: feedbackText(64).optional(), osVersion: feedbackText(64).optional(), deviceModel: feedbackText(64).optional() }),
   // Staging issues lowercase IDs and the App re-encodes them in uppercase; one form here means claiming, retry fingerprints and the repeat check agree.

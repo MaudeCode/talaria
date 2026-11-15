@@ -109,11 +109,27 @@ it('previews exactly the bounded, redacted diagnostics attached to unsigned feed
 it('omits diagnostics on opt-out and validates closed inputs before forwarding', async () => {
   expect((await submit({ ...input(), includeDiagnostics: false })).status).toBe(200)
   expect(calls[0]!.payload).not.toHaveProperty('diagnostics')
-  for (const change of [{ requestId: 'bad' }, { title: '' }, { title: '   ' }, { client: { platform: 'web', appVersion: '' } }, { title: 'x'.repeat(121) }, { body: 'x'.repeat(8001) }, { kind: 'secret' }, { client: { platform: 'android' } }, { client: { platform: 'web', account: 'private' } }, { unexpected: true }]) {
+  for (const change of [{ requestId: 'bad' }, { body: '' }, { body: ' \n\t ' }, { client: { platform: 'web', appVersion: '' } }, { title: 'x'.repeat(121) }, { body: 'x'.repeat(8001) }, { kind: 'secret' }, { client: { platform: 'android' } }, { client: { platform: 'web', account: 'private' } }, { unexpected: true }]) {
     const response = await submit({ ...input(), ...change })
     expect(response.status).toBe(400)
     expect(await response.json()).toMatchObject({ error: 'invalid' })
   }
+  expect(calls).toHaveLength(1)
+})
+
+it.each([
+  { title: '', body: '  First line\nMore details', expected: 'First line' },
+  { title: undefined, body: '\n\t Omitted title\r\nMore details', expected: 'Omitted title' },
+  { title: ' \n\t ', body: 'Whitespace title\nMore details', expected: 'Whitespace title' },
+  { title: '', body: 'x'.repeat(119) + ' more words', expected: 'x'.repeat(119) },
+  { title: '', body: 'x'.repeat(118) + '🙂 more words', expected: 'x'.repeat(118) + '🙂' },
+  { title: '', body: 'x'.repeat(119) + '🙂 more words', expected: 'x'.repeat(119) },
+  { title: 'My chosen title', body: 'Different details', expected: 'My chosen title' },
+])('forwards a non-empty title from details when needed: $expected', async ({ title, body, expected }) => {
+  const request = { ...input(), title, body }
+  expect((await submit(request)).status).toBe(200)
+  expect(calls[0]!.payload).toMatchObject({ title: expected, body })
+  expect((await submit(request)).status).toBe(200)
   expect(calls).toHaveLength(1)
 })
 

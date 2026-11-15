@@ -35,7 +35,7 @@ async function setup(options: Options = OPTIONS) {
   return { upload: vi.mocked(api.uploadFeedbackAttachment), compressImage: vi.mocked(media.compressImage), submit: vi.mocked(api.submitFeedback), diagnostics: vi.mocked(api.fetchFeedbackDiagnostics), toast: vi.mocked(toasts.showToast), sentToast: vi.mocked(toasts.showRichToast), dismiss: vi.mocked(toasts.dismissToast), ...view }
 }
 const open = () => fireEvent.click(screen.getByRole('button', { name: 'Send feedback' }))
-const title = () => screen.getByRole('textbox', { name: 'Title' })
+const title = () => screen.getByRole('textbox', { name: /^Title/ })
 const details = () => screen.getByRole('textbox', { name: 'Details' })
 const send = () => screen.getByRole('button', { name: 'Send' })
 function fill(kind = 'Feature request') {
@@ -65,8 +65,9 @@ beforeEach(() => {
 })
 afterEach(() => { vi.unstubAllGlobals() })
 
-it('opens from Help with kind, title, details and diagnostics; Send needs a title and details within their limits', async () => {
-  await setup()
+it.each(['Bug', 'Feature request', 'Other'])('sends %s with details and an optional title', async (kind) => {
+  const { submit } = await setup()
+  submit.mockResolvedValue({ status: 'sent', reportId: 'synthetic-report-1', attachments: [] })
   open()
   expect(screen.getByRole('dialog', { name: 'Send feedback' })).toBeVisible()
   expect(screen.getByRole('group', { name: 'Type' })).toBeVisible()
@@ -81,6 +82,15 @@ it('opens from Help with kind, title, details and diagnostics; Send needs a titl
   expect(send()).toBeDisabled()
   fireEvent.change(details(), { target: { value: 'And details' } })
   expect(send()).toBeEnabled()
+  fireEvent.click(screen.getByRole('button', { name: kind }))
+  fireEvent.change(title(), { target: { value: '' } })
+  expect(send()).toBeEnabled()
+  fireEvent.change(title(), { target: { value: '   ' } })
+  expect(send()).toBeEnabled()
+  expect(title()).toHaveAccessibleName('Title (optional)')
+  fireEvent.click(send())
+  await closed()
+  expect(submit).toHaveBeenCalledWith(expect.objectContaining({ title: '   ', body: 'And details' }))
 })
 
 it('fetches the diagnostics only when the disclosure opens and shows the server text verbatim', async () => {
@@ -95,32 +105,34 @@ it('fetches the diagnostics only when the disclosure opens and shows the server 
   expect(diagnostics).toHaveBeenCalledTimes(1)
 })
 
-it.each(['ctrlKey', 'metaKey'] as const)('submits once with %s+Enter from any feedback form control', async (modifier) => {
+it.each(['ctrlKey', 'metaKey'] as const)('submits once with %s+Enter and no title from any feedback form control', async (modifier) => {
   const { submit, sentToast } = await setup()
   submit.mockReturnValue(new Promise(() => undefined))
   for (const control of [title, details, () => screen.getByRole('checkbox', { name: 'Include diagnostics' }), () => screen.getByRole('button', { name: 'Cancel' })]) {
     open()
     fill()
+    fireEvent.change(title(), { target: { value: '' } })
     const before = submit.mock.calls.length
     const uncancelled = fireEvent.keyDown(control(), { key: 'Enter', [modifier]: true })
     await waitFor(() => expect(submit).toHaveBeenCalledTimes(before + 1))
     expect(uncancelled).toBe(false)
     await closed()
-    expect(submit).toHaveBeenLastCalledWith({ requestId: expect.any(String) as string, kind: 'feature', title: 'Composer loses text', body: 'After reconnecting the composer is empty.', includeDiagnostics: true, client: { platform: 'web' } })
+    expect(submit).toHaveBeenLastCalledWith({ requestId: expect.any(String) as string, kind: 'feature', title: '', body: 'After reconnecting the composer is empty.', includeDiagnostics: true, client: { platform: 'web' } })
     expect(sentToast).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'feedback-sent', text: 'Feedback sent' }))
   }
 })
 
-it.each(['ctrlKey', 'metaKey'] as const)('does not submit with %s+Enter when the title or details are blank', async (modifier) => {
+it.each(['ctrlKey', 'metaKey'] as const)('does not submit with %s+Enter when details are blank', async (modifier) => {
   const { submit } = await setup()
   open()
   fill()
-  for (const [field, other] of [[title, details], [details, title]] as const) {
-    fireEvent.change(field(), { target: { value: '   ' } })
-    fireEvent.keyDown(other(), { key: 'Enter', [modifier]: true })
-    expect(submit).not.toHaveBeenCalled()
-    expect(screen.getByRole('dialog', { name: 'Send feedback' })).toBeVisible()
-    fill()
+  for (const value of ['', ' \n ']) {
+    fireEvent.change(details(), { target: { value } })
+    for (const control of [title, details]) {
+      fireEvent.keyDown(control(), { key: 'Enter', [modifier]: true })
+      expect(submit).not.toHaveBeenCalled()
+      expect(screen.getByRole('dialog', { name: 'Send feedback' })).toBeVisible()
+    }
   }
 })
 
@@ -376,6 +388,7 @@ it('rolls back without sending when an attachment fails to upload, and Send wait
   open()
   await attach()
   fill()
+  fireEvent.change(title(), { target: { value: '' } })
   pick(synthetic('a.png', 'image/png'))
   fireEvent.click(send())
   await closed()

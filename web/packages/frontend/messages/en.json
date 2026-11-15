@@ -858,7 +858,7 @@
 	"feedback_send_open": "Send feedback",
 	"feedback_sent": "Feedback sent",
 	"feedback_sent_without_attachments": "Sent without attachments",
-	"feedback_title": "Title",
+	"feedback_title": "Title (optional)",
 	"feedback_unavailable": "Feedback isn't available on this server.",
 	"feedback_unreachable": "Couldn't reach the feedback service.",
 	"feedback_video_limit": "Attach up to {n} video.",

@@ -683,8 +683,16 @@ test('Settings keeps the brand and footer around its sections, and Back restores
   await expect(page).toHaveURL(/\/skills$/)
   await expect(sidebar(page).locator('#sessionList')).toBeVisible()
 
+  await page.goto('/settings/navigation')
+  const feedbackToggle = page.getByRole('button', { name: 'Show Feedback', exact: true })
+  await expect(feedbackToggle).toHaveAttribute('aria-pressed', 'true')
   await feedbackSettings(page, false)
-  await page.goto('/settings/appearance')
+  const saved = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith('/api/settings'))
+  await feedbackToggle.click()
+  const response = await saved
+  expect(response.request().postDataJSON()).toMatchObject({ show_sidebar_feedback: false })
+  expect(response.ok()).toBe(true)
+  await sidebar(page).locator('[data-settings-section="appearance"]').click()
   await expect(button(page, 'Send feedback')).toHaveCount(0)
   await button(page, 'New conversation').click()
   await expect(page).toHaveURL(/\/$/)

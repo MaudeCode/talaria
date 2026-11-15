@@ -118,8 +118,25 @@ final class FeedbackComposerTests: XCTestCase {
         XCTAssertFalse(model.canSend)
         model.edit { $0.title = "valid"; $0.body += "a" }
         XCTAssertFalse(model.canSend)
-        model.edit { $0.title = " \n"; $0.body = "valid" }
+        model.edit { $0.title = "valid"; $0.body = " \n" }
         XCTAssertFalse(model.canSend)
+    }
+
+    func testDetailsOnlyFeedbackSendsWithoutClientTitleDerivation() async throws {
+        for kind in ["bug", "feature", "other"] {
+            for title in ["", " \n"] {
+                var sent: FeedbackRequest?
+                let model = FeedbackComposer(server: server, defaults: defaults(), clientMetadata: metadata, submit: { request in
+                    sent = request
+                    return FeedbackResult(status: "sent", reportId: "synthetic-report")
+                })
+                model.edit { $0.kind = kind; $0.title = title; $0.body = "Details without a title" }
+                try await XCTUnwrap(model.send()).value
+                XCTAssertEqual(sent?.title, title)
+                XCTAssertEqual(sent?.body, "Details without a title")
+                XCTAssertEqual(sent?.kind, kind)
+            }
+        }
     }
 
     func testSuccessfulAutomaticRetrySendsTheSameRequestAndClearsTheDraft() async throws {

@@ -255,7 +255,9 @@ extension XCTestCase {
         in window: UIWindow, _ message: String, file: StaticString = #filePath, line: UInt = #line,
         where match: @escaping (NSObject) -> Bool
     ) async throws -> NSObject {
-        let scroll = try XCTUnwrap(window.rootViewController?.view.firstView(ofType: UIScrollView.self) {
+        let root = window.rootViewController
+        let view = root?.presentedViewController?.view ?? root?.view
+        let scroll = try XCTUnwrap(view?.firstView(ofType: UIScrollView.self) {
             $0.accessibilityIdentifier != "app-sidebar" && $0.bounds.height > 300
         }, "No scrolling list", file: file, line: line)
         for _ in 0..<12 {
