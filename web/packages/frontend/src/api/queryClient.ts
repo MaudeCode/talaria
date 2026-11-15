@@ -56,7 +56,11 @@ const DehydratedSchema = z.object({
 function restoreSnapshot(qc: QueryClient, generation: string | null): void {
   const snap = readPersistedJson(SNAPSHOT_KEY, DehydratedSchema)
   if (!snap || (snap.generation ?? null) !== generation) return
-  const queries = snap.queries.filter((q) => snapshotSchema(q.queryKey)?.safeParse(q.state.data).success)
+  // Invalidated, not just old: a snapshot written moments ago would otherwise count as fresh for staleTime and the
+  // reload would show it without asking the server (TAL-2271). It still paints; the first observer refetches.
+  const queries = snap.queries
+    .filter((q) => snapshotSchema(q.queryKey)?.safeParse(q.state.data).success)
+    .map((q) => ({ ...q, state: { ...q.state, isInvalidated: true } }))
   hydrate(qc, { queries, mutations: [] } as unknown as DehydratedState)
 }
 
