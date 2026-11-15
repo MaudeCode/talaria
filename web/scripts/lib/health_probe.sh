@@ -164,6 +164,7 @@ if [[ "${BASH_SOURCE[0]:-}" == "${0}" ]]; then
     echo "usage: health_probe.sh <host> <port> [path] [max_time]" >&2
     exit 2
   fi
+  source "$(dirname -- "${BASH_SOURCE[0]}")/normalize-web-env.sh" || exit 1
   hermes_webui_probe_health "$@"
   exit $?
 fi

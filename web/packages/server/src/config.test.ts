@@ -1,5 +1,5 @@
 import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -73,6 +73,20 @@ it('normalizes the container shell environment without evaluating setting values
   })
   expect(JSON.parse(output)).toEqual({ port: '9797', password })
   expect(existsSync(marker)).toBe(false)
+})
+
+it('the standalone health probe honors legacy TLS settings in an independent process', () => {
+  const bin = resolve(home, 'bin')
+  mkdirSync(bin)
+  // The network boundary answers only HTTPS, as a healthy TLS listener would.
+  writeFileSync(resolve(bin, 'curl'), '#!/usr/bin/env bash\nif [[ "${*: -1}" == https://127.0.0.1:8787/health ]]; then printf \'{"ok":true}\'; else exit 22; fi\n', { mode: 0o755 })
+  const script = resolve(import.meta.dirname, '../../../scripts/lib/health_probe.sh')
+  const result = spawnSync('bash', [script, '127.0.0.1', '8787'], {
+    env: { PATH: `${bin}:${process.env.PATH ?? ''}`, HOME: home, HERMES_WEBUI_TLS_CERT: '/synthetic/cert.pem', HERMES_WEBUI_TLS_KEY: '/synthetic/key.pem' }, encoding: 'utf8',
+  })
+  expect(result.status, result.stderr).toBe(0)
+  expect(JSON.parse(result.stdout)).toEqual({ ok: true })
+  expect(result.stderr.match(/\[webui\] WARNING:/g)).toHaveLength(1)
 })
 
 it('selects JSON session storage by default, and each backend explicitly', () => {

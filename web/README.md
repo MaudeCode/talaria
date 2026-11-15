@@ -108,6 +108,8 @@ commented template.
 
 `HERMES_WEBUI_*` variables remain supported as deprecated aliases for `TALARIA_WEB_*` at server startup, including in `.env` files. When both forms occur in the same source, the new name wins, including an explicitly empty value. Existing checkout-file and process-environment precedence still applies. Startup logs one warning naming the aliases and their replacements, without their values.
 
+Before adopting updated Compose templates, rename the password and allowed-host entries in the deployment `.env` to `TALARIA_WEB_PASSWORD` and `TALARIA_WEB_ALLOWED_HOSTS`. Compose interpolation does not apply the server's startup aliases. An old password key alone is not forwarded and can leave authentication disabled.
+
 | Variable | Default | Description |
 |---|---|---|
 | `TALARIA_WEB_AGENT_DIR` | auto-discovered | Hermes Agent checkout the sidecar runs against |
