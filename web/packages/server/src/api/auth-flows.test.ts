@@ -297,6 +297,12 @@ describe('OIDC browser state binding', () => {
       const secure = await s.get('/api/auth/oidc/start', { headers: fresh() })
       expect(setCookie(secure, 'hermes_oidc_state')).toMatch(/^hermes_oidc_state=[0-9a-f]{64}; HttpOnly; Max-Age=600; Path=\/api\/auth\/oidc; SameSite=Lax; Secure$/)
     } finally { delete s.deps.config.env.TALARIA_WEB_SECURE }
+    // A redirect URI under a mount moves the path with it, so the browser still sends the cookie to the callback.
+    const mounted = new OidcService({
+      env: { ...OIDC_BASE_ENV, TALARIA_WEB_OIDC_REDIRECT_URI: 'https://talaria.example/mount/api/auth/oidc/callback' }, operatorConfig: () => Promise.resolve({}), profileHome: () => '',
+      fetch: () => fakeIdp(now).fetch, pinned: () => { throw new Error('trusted host uses plain fetch') }, now, log: () => undefined,
+    })
+    expect(await mounted.callbackDirectory('http://127.0.0.1:8787')).toBe('/mount/api/auth/oidc')
   })
 
   it('answers the 11th browser start from one client within a minute with 429 and leaves other clients alone', async () => {
