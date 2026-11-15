@@ -9,6 +9,7 @@ import { keys } from '../../api/queryKeys'
 import { isApiError } from '../../contracts/common'
 import { FEEDBACK_DRAFT_KEY as DRAFT_KEY, FeedbackDraftSchema, FeedbackDraftsSchema } from '../../contracts/persisted'
 import { randomUuid } from '../../lib/randomHex'
+import { isImeEnter } from '../../lib/isImeEnter'
 import { readPersistedJson, removePersisted, writePersistedJson } from '../../lib/persisted'
 import { currentLocale } from '../../i18n/runtime'
 import { formatDurationUnits } from '../../i18n/units'
@@ -303,7 +304,12 @@ export function FeedbackDialog() {
   const onDrop = (e: DragEvent<HTMLFormElement>) => { if (!limits || !e.dataTransfer.files.length) return; e.preventDefault(); addFiles(e.dataTransfer.files, limits) }
   return (
     <Dialog open={open} onOpenChange={(next) => update({ open: next })} title={m.feedback_send_open()}>
-      <form className="flex flex-col gap-3 text-sm" onSubmit={(e) => { e.preventDefault(); if (ready) void send() }} onPaste={onPaste} onDragOver={(e) => { if (limits) e.preventDefault() }} onDrop={onDrop}>
+      <form className="flex flex-col gap-3 text-sm" onSubmit={(e) => { e.preventDefault(); if (ready) void send() }} onPaste={onPaste} onDragOver={(e) => { if (limits) e.preventDefault() }} onDrop={onDrop}
+        onKeyDown={(e) => {
+          if (e.key !== 'Enter' || !(e.ctrlKey || e.metaKey) || isImeEnter(e)) return
+          e.preventDefault()
+          e.currentTarget.requestSubmit()
+        }}>
         <div role="group" aria-label={m.feedback_kind()} className="flex gap-1 rounded-md border border-border bg-input p-1">
           {KINDS.map(([kind, label]) => (
             <button key={kind} type="button" aria-pressed={draft.kind === kind} onClick={() => edit({ kind })} className={cn('min-h-9 flex-auto whitespace-nowrap rounded px-3 text-sm text-muted hover:text-text', draft.kind === kind && 'bg-surface text-text shadow-sm')}>{label()}</button>

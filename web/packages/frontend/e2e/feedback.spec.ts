@@ -1,5 +1,5 @@
 import type { Route } from '@playwright/test'
-import { expect, settle, test } from './fixtures'
+import { expect, expectNoOverflow, settle, test } from './fixtures'
 
 /** TAL-1574: Settings → Help sends feedback optimistically; a refusal reopens the dialog with the draft. */
 const diagnostics = { text: 'Web: 1.4.0\nRelay registered: no', bytes: 31 }
@@ -21,8 +21,19 @@ for (const theme of ['dark', 'light'] as const) {
     await expect(dialog.locator('[data-feedback-diagnostics]')).toHaveText(diagnostics.text)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await page.screenshot({ path: testInfo.outputPath(`feedback-${theme}.png`) })
+    if (theme === 'dark' && testInfo.project.name === 'desktop') {
+      await expectNoOverflow(page, 'feedback', async (name) => {
+        await dialog.getByRole('button', { name: 'Send', exact: true }).scrollIntoViewIfNeeded()
+        await expect(dialog.getByRole('button', { name: 'Send', exact: true })).toBeInViewport({ ratio: 1 })
+        await page.screenshot({ path: testInfo.outputPath(`${name}.png`) })
+      })
+    }
 
-    await dialog.getByRole('button', { name: 'Send', exact: true }).click()
+    const details = dialog.getByRole('textbox', { name: 'Details' })
+    await details.press('End')
+    await details.press('Enter')
+    await expect(details).toHaveValue('The composer was empty after the connection came back.\n')
+    await details.press(theme === 'dark' ? 'Control+Enter' : 'Meta+Enter')
     await expect(dialog).toBeHidden()
     await expect(page.getByText('Feedback sent')).toBeVisible()
     await expect.poll(() => held !== null).toBe(true)
