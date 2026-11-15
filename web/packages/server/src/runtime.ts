@@ -1074,6 +1074,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     oidc,
     passkeys,
     nativeOidcLimiter: new WindowLimiter(60, 10, now),
+    browserOidcLimiter: new WindowLimiter(60, 10, now),
     clearPasskeys: async () => { (await passkeys.clear()) },
     skills: new SkillsService({ sidecar: () => sidecar, config: agentConfig, log }),
     skillReplays,

@@ -22,7 +22,7 @@ export class OidcAuthError extends Error {
 }
 
 const DEFAULT_SCOPES = ['openid', 'profile', 'email']
-const PENDING_TTL_S = 600
+export const PENDING_TTL_S = 600
 const MAX_PENDING = 128
 const CLOCK_SKEW_S = 60
 const CACHE_TTL_S = 300
@@ -286,6 +286,16 @@ export class OidcService {
     return cfg.redirect_uri || requestBaseUrl.replace(/\/+$/, '') + '/api/auth/oidc/callback'
   }
 
+  /** TAL-2206: the browser state cookie's path, the callback URL's directory (`/api/auth/oidc` unless a configured redirect URI sits under a mount). */
+  async callbackDirectory(requestBaseUrl: string): Promise<string> {
+    try {
+      const path = new URL(this.redirectUri(await this.require(), requestBaseUrl)).pathname
+      return path.slice(0, path.lastIndexOf('/')) || '/'
+    } catch {
+      return '/api/auth/oidc'
+    }
+  }
+
   private prune(): void {
     const now = this.deps.now()
     for (const [k, v] of this.pending) if (now - v.created_at > PENDING_TTL_S) this.pending.delete(k)
@@ -328,13 +338,17 @@ export class OidcService {
     return pending?.native_flow_id ?? null
   }
 
-  /** Python `complete_authorization_code_flow`. */
-  async completeCodeFlow(requestBaseUrl: string, state: string, code: string): Promise<{ next_path: string; native_flow_id: string | null; subject: string; email: string; bound_profile: string | null; oidc_binding: Dict; claims: Dict }> {
+  /**
+   * Python `complete_authorization_code_flow`. `browserBound`: the callback carried the state cookie the browser start set
+   * (TAL-2206). A browser-flow state without it is refused and stays pending for the browser that started it; a native
+   * flow is bound by its flow id, client state and PKCE verifier instead.
+   */
+  async completeCodeFlow(requestBaseUrl: string, state: string, code: string, browserBound: boolean): Promise<{ next_path: string; native_flow_id: string | null; subject: string; email: string; bound_profile: string | null; oidc_binding: Dict; claims: Dict }> {
     const cfg = await this.require()
     this.prune()
     const pending = this.pending.get(state)
+    if (!pending || (!pending.native_flow_id && !browserBound)) throw new OidcAuthError('Invalid OIDC state', 401)
     this.pending.delete(state)
-    if (!pending) throw new OidcAuthError('Invalid OIDC state', 401)
     try {
       const discovery = await this.discoveryDocument(cfg)
       const discoveryIssuer = str(discovery.issuer).trim()
