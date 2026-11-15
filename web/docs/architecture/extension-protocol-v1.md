@@ -11,7 +11,8 @@ document that speaks this protocol or it is listed as needing migration.
   allow-popups allow-downloads allow-modals">`. The document has an opaque
   origin: no cookies, no same-origin API access, no access to the host DOM,
   React tree, or storage. The server adds a matching `sandbox` CSP to every
-  extension HTML response and refuses `/api/*` requests that carry
+  extension response a browser can run as a document (HTML, SVG, XML, text)
+  and refuses `/api/*` requests that carry
   `Origin: null`, so a panel cannot call the API directly even by accident.
 - The host (the main WebUI page) is the only party with session authority. An
   extension reaches the server, the session, settings, storage, and the UI only
@@ -155,8 +156,10 @@ a build step; see `docs/examples/extensions/hello-panel/`.
 
 ## Server rules
 
-- `/extensions/*` serves files from the configured extension directory; HTML
-  responses carry `Content-Security-Policy: sandbox …`.
+- `/extensions/*` serves files from the configured extension directory. Only
+  CSS, JavaScript, JSON, fonts and raster images load without the sandbox;
+  every other type (HTML, SVG, XML, text, …) carries
+  `Content-Security-Policy: sandbox …`, on its 304 too.
 - `/dashboard-plugins/<name>/index.html` serves the plugin's `dist/index.html`,
   or a generated wrapper around `dist/index.js` and `dist/style.css` that loads
   the SDK, when the plugin is enabled in Settings.
