@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Keep the brand, feedback and notifications available in the Settings sidebar, with Back in the footer.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

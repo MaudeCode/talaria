@@ -29,6 +29,9 @@ const MORE_OPEN_KEY = 'hermes-webui-sidebar-more-open'
  */
 function SidebarNav({ panel }: { panel: ReactNode }) {
   useLocale()
+  const settings = useIsSettings()
+  const navigate = useNavigate()
+  const back = () => { closeMobileSidebar(); void navigate({ href: settingsBackHref() }) }
   const rail = useIsSidebarRail()
   const isDesktop = useIsDesktop()
   const isTiled = useIsTiled()
@@ -71,7 +74,7 @@ function SidebarNav({ panel }: { panel: ReactNode }) {
         <Brandmark className="brandmark sidebar-brandmark" />
         <span className="sidebar-row-label min-w-0 truncate">{bootstrap.bot_name}</span>
       </button>
-      <div className="sidebar-scroll flex min-h-0 flex-1 flex-col">
+      {settings ? panel : <div className="sidebar-scroll flex min-h-0 flex-1 flex-col">
         <div className="sidebar-rows flex min-h-0 flex-col gap-0.5">
           {isDesktop && !isTiled && <button type="button" className={cn(SIDEBAR_ROW, 'sidebar-rail-only sidebar-rail-menu')} id="btnHamburger" inert={!rail} aria-label={m.sidebar_show()} aria-expanded={false} onClick={toggleMobileSidebar}><MenuIcon {...SIDEBAR_ICON_PROPS} /></button>}
           <button type="button" className={cn(SIDEBAR_ROW, 'sidebar-expanded-only')} id="btnNewChat" inert={rail} aria-label={m.sidebar_new_chat()} onClick={() => { void newChat() }}><SidebarRowContent icon={SquarePen} label={m.sidebar_new_chat()} /></button>
@@ -90,10 +93,12 @@ function SidebarNav({ panel }: { panel: ReactNode }) {
           <SidebarFold rail={rail}><SidebarQuotas /></SidebarFold>
         </div>
         <div className="sidebar-panel flex min-h-0 flex-col" inert={rail}>{panel}</div>
-      </div>
+      </div>}
       <NoPasswordWarning />
       <div className="sidebar-footer flex flex-none items-center gap-0.5">
-        {destinationRow('settings')}
+        {settings
+          ? <button type="button" className={SIDEBAR_ROW} aria-label={m.back()} onClick={back}><SidebarRowContent icon={ChevronLeft} label={m.back()} /></button>
+          : destinationRow('settings')}
         {showsFeedback && <button type="button" className={cn(SIDEBAR_ROW, 'sidebar-icon-row has-tooltip')} data-panel="feedback" data-tooltip={m.feedback_rail_label()} aria-label={m.feedback_send_open()} onClick={openFeedback}><SidebarRowContent icon={MessageSquareWarning} label={m.feedback_rail_label()} /></button>}
         <UpdateNotificationCenterButton placement="sidebar" />
       </div>
@@ -127,26 +132,6 @@ function NoPasswordWarning() {
       </Link>
       <span id={descriptionId} hidden>{m.auth_disabled_warning_message()}</span>
     </div>
-  )
-}
-
-/**
- * Settings' column: Back and the section list, in place of the destinations, the chat list and the footer. The list's
- * sections are sidebar rows, so on the rail they morph into icons over captions like every other page's rows (TAL-2183).
- */
-function SettingsNav({ panel }: { panel: ReactNode }) {
-  useLocale()
-  const navigate = useNavigate()
-  const back = () => { closeMobileSidebar(); void navigate({ href: settingsBackHref() }) }
-  return (
-    <nav className="sidebar-primary flex min-h-0 flex-1 flex-col min-[641px]:p-(--island-gap)" aria-label="Primary navigation">
-      <div className="sidebar-scroll flex flex-none flex-col">
-        <div className="sidebar-rows flex flex-col">
-          <button type="button" className={SIDEBAR_ROW} aria-label={m.back()} onClick={back}><SidebarRowContent icon={ChevronLeft} label={m.back()} /></button>
-        </div>
-      </div>
-      {panel}
-    </nav>
   )
 }
 
@@ -219,7 +204,7 @@ export function Sidebar({ panel }: { panel: ReactNode }) {
             <X size={18} aria-hidden="true" />
           </button>
         )}
-        {settings ? <SettingsNav panel={panel} /> : <SidebarNav panel={panel} />}
+        <SidebarNav panel={panel} />
         <span className="seam seam-tr" aria-hidden="true" />
         <span className="seam seam-br" aria-hidden="true" />
         {isTiled && !rail && (
