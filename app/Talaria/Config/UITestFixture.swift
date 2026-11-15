@@ -522,6 +522,8 @@ final class UITestFixtureURLProtocol: URLProtocol {
     /// process once per test (TAL-856).
     static func resetForHostedTest() {
         generation.withLock { $0 += 1 }
+        // Shared API sessions carry the generation they were built under (TAL-847).
+        UITestURLSessionHook.resetSharedSessions()
         approvalBypassOverride = nil
         sessionToolsets.withLock { $0 = nil }
         reasoningDefaults.withLock { $0 = ("medium", true) }
