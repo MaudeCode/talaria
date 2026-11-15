@@ -3,9 +3,12 @@
 `TalariaTests/VisualReferences/*.png` are pixel references for a small set of
 core surfaces: the session row, the session-list empty state, the offline
 banner, the transcript loading skeleton, composer attachment variants, the shared
-status chip in each emphasis, a disabled skill row, and the
+status chip in each emphasis, a disabled skill row, the
 Live Activity Lock Screen plus every Dynamic Island family in the running,
-waiting, stale, completed, failed and cancelled states.
+waiting, stale, completed, failed and cancelled states, and the small quota and
+Needs you widgets as CarPlay and HomeView draw them: without their container
+background, in full-color and accented rendering, light and dark
+(`CarPlayWidgetTests`).
 
 `VisualReference.assertMatchesReference` renders a view with `ImageRenderer` at
 2x and compares it to its reference. There is no snapshot dependency; XCTest,

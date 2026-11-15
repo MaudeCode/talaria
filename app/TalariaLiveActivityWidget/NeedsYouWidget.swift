@@ -12,7 +12,10 @@ struct NeedsYouWidget: Widget {
         .configurationDisplayName("Needs you")
         .description("Chats waiting for your approval or answer.")
         .supportedFamilies([.accessoryCircular, .accessoryRectangular, .accessoryInline, .systemSmall])
+        .lockedIPhoneUse(Self.lockedIPhoneUse)
     }
+
+    static let lockedIPhoneUse = LockedIPhoneUse.showsData
 }
 
 struct NeedsYouTimelineEntry: TimelineEntry {
@@ -185,6 +188,26 @@ extension View {
             default: Color.clear
             }
         }
+    }
+}
+
+/// TAL-2230: what a Talaria widget can do while the iPhone stays locked. CarPlay, and the HomeView it feeds, show
+/// `.systemSmall` widgets from a locked iPhone, so a widget that needs it unlocked stays off them.
+enum LockedIPhoneUse: Equatable {
+    /// Shows data from the App Group suite, which a locked iPhone still serves.
+    case showsData
+    /// Only opens the app.
+    case opensApp
+
+    var disfavoredLocations: [WidgetLocation] {
+        guard self == .opensApp, #available(iOS 26, *) else { return [] }
+        return [.carPlay]
+    }
+}
+
+extension WidgetConfiguration {
+    func lockedIPhoneUse(_ use: LockedIPhoneUse) -> some WidgetConfiguration {
+        disfavoredLocations(use.disfavoredLocations, for: [.systemSmall])
     }
 }
 
