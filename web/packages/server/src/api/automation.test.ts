@@ -81,7 +81,7 @@ describe('crons, kanban, extensions, terminal', () => {
   beforeAll(async () => {
     sidecar = new FakeSidecar()
     pty = fakePty()
-    zip = makeZip({ 'ext-one/manifest.json': JSON.stringify({ version: '1.2.3', name: 'Ext One', scripts: ['main.js'], sidecar: { type: 'loopback', origin: 'http://127.0.0.1:4567' } }), 'ext-one/main.js': 'console.log(1)' })
+    zip = makeZip({ 'ext-one/manifest.json': JSON.stringify({ version: '1.2.3', name: 'Ext One', scripts: ['main.js'], sidecar: { type: 'loopback', origin: 'http://127.0.0.1:4567' } }), 'ext-one/main.js': 'console.log(1)', ...Object.fromEntries(['x.svg', 'x.html', 'x.xml', 'x.txt', 'x.css', 'x.json', 'x.woff2', 'x.png'].map((name) => [`ext-one/${name}`, '<svg xmlns="http://www.w3.org/2000/svg"><script href="main.js"/></svg>'])) })
     sha = (await import('node:crypto')).createHash('sha256').update(zip).digest('hex')
     const fakeFetch: typeof fetch = (input, init) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
@@ -671,6 +671,17 @@ describe('crons, kanban, extensions, terminal', () => {
     res = await s.get('/extensions/ext-one/main.js')
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toBe('application/javascript; charset=utf-8')
+    // TAL-2208: only inert types load on the app origin; anything a browser can run as a document gets the sandbox CSP,
+    // on its 304 revalidation too.
+    const sandboxCsp = "sandbox allow-scripts allow-forms allow-popups allow-downloads allow-modals; frame-ancestors 'self'"
+    for (const [name, sandboxed] of [['x.svg', true], ['x.html', true], ['x.xml', true], ['x.txt', true], ['main.js', false], ['x.css', false], ['x.json', false], ['x.woff2', false], ['x.png', false]] as const) {
+      res = await s.get(`/extensions/ext-one/${name}`)
+      expect(res.status, name).toBe(200)
+      expect(res.headers.get('content-security-policy')?.includes(sandboxCsp), name).toBe(sandboxed)
+      const revalidated = await s.get(`/extensions/ext-one/${name}`, { headers: { 'if-none-match': res.headers.get('etag') ?? '' } })
+      expect(revalidated.status, name).toBe(304)
+      expect(revalidated.headers.get('content-security-policy'), name).toBe(res.headers.get('content-security-policy'))
+    }
     res = await s.get('/extensions/ext-one/../manifest.json')
     expect(res.status).toBe(404)
     // A symlink inside the extension directory never exposes its target (Python `serve_extension_static`).

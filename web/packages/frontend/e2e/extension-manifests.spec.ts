@@ -12,10 +12,10 @@ test('a gallery extension with a panel gets a sidebar entry, Open, and Uninstall
     writeFileSync(join(root, id, 'manifest.json'), JSON.stringify(manifest))
     for (const [name, body] of Object.entries(files)) writeFileSync(join(root, id, name), body)
   }
-  seed('gal', { name: 'Gallery Panel', version: '1.0.0', panel: 'index.html', nav: { label: 'Gal' }, capabilities: ['theme'] }, { 'index.html': '<!doctype html><p>gallery panel body</p>' })
+  seed('gal', { name: 'Gallery Panel', version: '1.0.0', panel: 'index.html', nav: { label: 'Gal' }, capabilities: ['theme'] }, { 'index.html': '<!doctype html><p>gallery panel body</p><img alt="gallery logo" src="logo.svg">', 'logo.svg': '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8"/></svg>' })
   seed('old', { name: 'Old Script', scripts: ['old.js'] }, { 'old.js': '' })
   const record = (files: string[]) => ({ version: '1.0.0', files, installed_at: '2026-01-01T00:00:00Z' })
-  writeFileSync(join(state, 'extension-install-manifest.json'), JSON.stringify({ version: 1, installed: { gal: record(['manifest.json', 'index.html']), old: record(['manifest.json', 'old.js']) } }))
+  writeFileSync(join(state, 'extension-install-manifest.json'), JSON.stringify({ version: 1, installed: { gal: record(['manifest.json', 'index.html', 'logo.svg']), old: record(['manifest.json', 'old.js']) } }))
   try {
     await page.goto('/settings/extensions')
     await settle(page)
@@ -34,6 +34,8 @@ test('a gallery extension with a panel gets a sidebar entry, Open, and Uninstall
     if (process.env.TAL704_SHOTS) await page.screenshot({ path: `${process.env.TAL704_SHOTS}/settings-${testInfo.project.name}.png` })
     await gal.getByRole('link', { name: 'Open' }).click()
     await expect(page.frameLocator('iframe').getByText('gallery panel body')).toBeVisible()
+    // TAL-2208: an SVG served with the sandbox CSP still renders as the panel's <img>.
+    await expect.poll(() => page.frameLocator('iframe').getByRole('img', { name: 'gallery logo' }).evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(8)
     // On a phone the entry waits in the closed drawer; on desktop More opens itself on the extension's page.
     if (testInfo.project.name === 'desktop') await expect(page.locator('nav[aria-label="Primary navigation"] [data-extension="gal"]')).toHaveAttribute('aria-label', 'Gal')
     if (process.env.TAL704_SHOTS) await page.screenshot({ path: `${process.env.TAL704_SHOTS}/panel-${testInfo.project.name}.png` })
