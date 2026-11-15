@@ -12,8 +12,8 @@ import { join, resolve } from 'node:path'
 import { createServer, connect as netConnect } from 'node:net'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
-import { loadLauncherDotenv, loadStartupEnv } from './dotenv.js'
-import { resolveHermesHome } from '../config.js'
+import { loadLauncherDotenv, loadStartupEnv, parseDotenv } from './dotenv.js'
+import { migrateLegacyWebEnv, resolveHermesHome } from '../config.js'
 import { str } from '../util.js'
 import { STOP_GRACE_MS } from './supervise.js'
 
@@ -283,8 +283,13 @@ function launchdJobPid(env: Record<string, string | undefined>, label: string, w
 function systemdUnitPort(env: Record<string, string | undefined>, scope: string, unit: string): string | null {
   const unitEnv = hostTool(env, 'systemctl', [scope, 'show', '-p', 'Environment', '--value', unit])
   if (timedOut(unitEnv)) return null
-  const m1 = /TALARIA_WEB_PORT=(\d+)/.exec(unitEnv.stdout || '')
-  if (m1) return m1[1] ?? ''
+  // systemctl quotes whole assignments; resolve aliases before comparing the unit's port.
+  const assignments = (unitEnv.stdout || '').match(/(?:[^\s"'\\]|\\.|"(?:\\.|[^"\\])*"|'[^']*')+/g) ?? []
+  const settings: Record<string, string> = {}
+  for (const assignment of assignments) Object.assign(settings, parseDotenv(assignment.replace(/^(['"])(.*)\1$/s, '$2')))
+  migrateLegacyWebEnv(settings)
+  const configuredPort = settings.TALARIA_WEB_PORT ?? ''
+  if (/^\d+$/.test(configuredPort)) return configuredPort
   const exec = hostTool(env, 'systemctl', [scope, 'show', '-p', 'ExecStart', '--value', unit])
   if (timedOut(exec)) return null
   const m2 = /--port[=\s](\d+)/.exec(exec.stdout || '')

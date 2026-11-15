@@ -6,7 +6,8 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { homeDotenvKeys, loadLauncherDotenv, loadStartupEnv, parseDotenv } from './dotenv.js'
 import { agentDirFromHermesCli, detectSupervisor, parseBootstrapArgs, runBootstrap, waitForHealth } from './launcher.js'
-import { ctlPaths, launchdConflictPid, parseLaunchBinding, portIsBindable, readState, runCtl, type CtlContext } from './ctl.js'
+import { ctlPaths, launchdConflictPid, parseLaunchBinding, portIsBindable, readState, runCtl, systemdConflict, type CtlContext } from './ctl.js'
+import { LEGACY_WEB_ENV_PREFIX } from '../config.js'
 import { bootTestServer } from '../test/harness.js'
 
 vi.mock('node:child_process', async (original) => {
@@ -231,6 +232,23 @@ describe('ctl', () => {
     for (const tool of ['lsof', 'ss', 'systemctl']) stubHostTool(home, tool, 'exit 1')
     return { env: { PATH: `${join(home, 'bin')}:${process.env.PATH ?? ''}`, HOME: home, HERMES_HOME: join(home, '.hermes'), TALARIA_WEB_CTL_ISOLATE_WORKTREE: '0', ...extraEnv }, webRoot, home, serveCommand, log: (l) => out.push(l), warn: (l) => err.push(l), out, err }
   }
+
+  it.each([
+    ['legacy port', `${LEGACY_WEB_ENV_PREFIX}PORT=9876`, true],
+    ['new port', 'TALARIA_WEB_PORT=9876', true],
+    ['new port wins', `${LEGACY_WEB_ENV_PREFIX}PORT=8765 TALARIA_WEB_PORT=9876`, true],
+    ['empty new port wins', `${LEGACY_WEB_ENV_PREFIX}PORT=9876 TALARIA_WEB_PORT=`, false],
+    ['quoted legacy assignment', `"${LEGACY_WEB_ENV_PREFIX}PORT=9876"`, true],
+    ['assignment text inside another value', `"OTHER=value ${LEGACY_WEB_ENV_PREFIX}PORT=9876"`, false],
+  ] as const)('detects a restarting systemd unit from %s', (_name, environment, conflict) => {
+    const home = scratch()
+    try {
+      const ctx = makeCtx(home, ['node'])
+      writeFileSync(join(home, 'systemd.env'), environment)
+      stubHostTool(home, 'systemctl', `case "$*" in *ActiveState*) echo activating;; *Environment*) cat '${join(home, 'systemd.env')}';; esac`)
+      expect(systemdConflict(ctx.env, 9876)).toBe(conflict ? 'unit hermes-webui.service is activating (auto-restart pending on port 9876)' : null)
+    } finally { rmSync(home, { recursive: true, force: true }) }
+  })
 
   it('resolves the ctl files under the Hermes home and parses the launch binding', () => {
     const home = scratch()
