@@ -606,6 +606,26 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect((await json(again)).password_auth_enabled).toBe(false)
   })
 
+  it('TAL-2209: setting, changing, and clearing the password sign out every other session and keep the caller\'s', async () => {
+    const fresh = await bootTestServer({ sidecar: new FakeSidecar() })
+    try {
+      const auth = fresh.deps.auth
+      let other = auth.createSession()
+      const first = await post(fresh, '/api/settings', { _set_password: 'correct horse battery' })
+      const caller = (first.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
+      expect(auth.verifySession(other)).toBe(false)
+      for (const change of [{ _set_password: 'new one here', _current_password: 'correct horse battery' }, { _clear_password: true, _current_password: 'new one here' }]) {
+        other = auth.createSession()
+        const res = await post(fresh, '/api/settings', change, { cookie: caller, 'x-hermes-csrf-token': await csrfFor(fresh, caller) })
+        expect(res.status).toBe(200)
+        expect(auth.verifySession(other)).toBe(false)
+        expect(auth.verifySession(caller.split('=')[1])).toBe(true)
+      }
+    } finally {
+      await fresh.close()
+    }
+  })
+
   it('previews task-specific auxiliary reasoning without writing configuration', async () => {
     const fake = new FakeSidecar()
     const server = await bootTestServer({ sidecar: fake })

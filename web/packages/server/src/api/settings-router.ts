@@ -299,7 +299,7 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
   if (ack !== undefined && ack !== null && !(await auth.isAuthEnabled())) body.auth_disabled_acknowledged = pyBool(ack)
   else if ((await auth.isAuthEnabled()) || requestedPassword) body.auth_disabled_acknowledged = false
 
-  const saved: Dict = await deps.settings.save(body, { profile: activeProfileName(ctx) })
+  const saved: Dict = await deps.settings.save(body, { profile: activeProfileName(ctx), sessionCookie: cookie })
   const raw = await deps.settings.readRaw()
   saved.persisted_speech_keys = [...SETTINGS_SPEECH_KEYS].filter((k) => k in raw).sort()
   Reflect.deleteProperty(saved, 'password_hash')

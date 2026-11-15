@@ -418,7 +418,7 @@ describe('save', () => {
   it('hashes _set_password, clears with _clear_password, and notifies', async () => {
     const s = store()
     const changed: number[] = []
-    s.hooks.onPasswordChanged = () => changed.push(1)
+    s.hooks.onPasswordChanged = () => { changed.push(1) }
     expect((await s.save({ _set_password: ' hunter2 ' })).password_hash).toBe('hashed:hunter2')
     expect(onDisk().password_hash).toBe('hashed:hunter2')
     expect((await s.save({ _clear_password: true })).password_hash).toBeNull()

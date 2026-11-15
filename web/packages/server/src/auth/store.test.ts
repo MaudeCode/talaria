@@ -179,6 +179,34 @@ describe('sessions', () => {
   })
 })
 
+describe('TAL-2209: sign-in changes never leave the server more open', () => {
+  it('revoking all sessions but the caller\'s lands on disk, and a forged or missing caller cookie keeps none', async () => {
+    const store = await makeStore()
+    const caller = store.createSession({ authType: 'password' })
+    const other = store.createSession({ authType: 'oidc' })
+    await store.revokeSessionsExcept(caller)
+    const restarted = await makeStore()
+    expect([restarted.verifySession(caller), restarted.verifySession(other)]).toEqual([true, false])
+    await store.revokeSessionsExcept(`${AuthStore.tokenFromCookieValue(caller)}.${'0'.repeat(64)}`)
+    expect(store.verifySession(caller)).toBe(false)
+    const anonymous = store.createSession()
+    await store.revokeSessionsExcept(null)
+    expect(store.verifySession(anonymous)).toBe(false)
+  })
+
+  it('registered passkeys keep auth on whatever the passkey flag says; no passkeys and the flag off leave auth off', async () => {
+    for (const [env, cfg] of [[{ TALARIA_WEB_PASSKEY: '0' }, true], [{}, false]] as const) {
+      const store = await makeStore(env)
+      store.passkeyConfigFlag = () => cfg
+      expect(store.passkeyFeatureFlagEnabled()).toBe(false)
+      store.passkeysEnabled = () => Promise.resolve(true)
+      expect(await store.isAuthEnabled()).toBe(true)
+      store.passkeysEnabled = () => Promise.resolve(false)
+      expect(await store.isAuthEnabled()).toBe(false)
+    }
+  })
+})
+
 describe('TTL, cookie name, and sliding policy', () => {
   it('resolves the TTL env > settings > default with the [60s, 1y] clamp', async () => {
     expect((await makeStore()).resolveSessionTtl()).toBe(SESSION_TTL)

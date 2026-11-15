@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Setting, changing, or removing the Web password now signs out every other device, and turning off passkeys no longer turns sign-in off while a passkey is registered.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}
