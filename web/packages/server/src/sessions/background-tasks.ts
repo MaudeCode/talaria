@@ -355,7 +355,10 @@ export function dispatchedDelegationIds(result: unknown): string[] {
 export function startsBackgroundWork(name: unknown, result: unknown): boolean {
   const kind = toolKind(name)
   if (kind === 'delegate') return dispatchedDelegationIds(result).length > 0
-  return kind === 'shell' && isDict(result) && str(result.session_id).startsWith('proc_')
+  if (kind !== 'shell') return false
+  // A native owner's `tool.complete` carries the result as its JSON text (TAL-2266).
+  if (typeof result === 'string') { try { result = JSON.parse(result) } catch { return false } }
+  return isDict(result) && str(result.session_id).startsWith('proc_')
 }
 
 /** The link a delegation tool row shows: its units' records, one combined status, and summed subagent counts. */

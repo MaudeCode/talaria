@@ -6315,14 +6315,16 @@ public final class ChatViewModel {
         return BackgroundRead(scope: backgroundWorkScope, sequence: backgroundReadsStarted, activityGeneration: streamCoordinator.sessionActivityGeneration)
     }
 
-    /// Shows one read unless a newer one is already shown (an owner that restarted between them lists other rows), the
-    /// chat or profile changed, or a run started since: false when it kept what is shown.
+    /// Shows one read unless a newer one is already shown (an owner that restarted between them lists other rows) or the
+    /// chat or profile changed: false when it kept what is shown. A run that started or ended since makes only the
+    /// read's activity phase and worker count stale; its rows still carry work the Agent started meanwhile (TAL-2266).
     private func applyBackgroundRead(_ response: BackgroundTasksResponse, _ read: BackgroundRead) -> Bool {
-        guard read.sequence > backgroundReadShown, read.scope == backgroundWorkScope,
-              read.activityGeneration == streamCoordinator.sessionActivityGeneration else { return false }
+        guard read.sequence > backgroundReadShown, read.scope == backgroundWorkScope else { return false }
         backgroundReadShown = read.sequence
-        streamCoordinator.applySessionActivityPhase(response.activityPhase)
-        streamCoordinator.applyWorkerCount(response.workerCount)
+        if read.activityGeneration == streamCoordinator.sessionActivityGeneration {
+            streamCoordinator.applySessionActivityPhase(response.activityPhase)
+            streamCoordinator.applyWorkerCount(response.workerCount)
+        }
         backgroundTasks = response.tasks
         backgroundPinnedCount = response.pinnedCount
         backgroundOwnerWork = response.ownerWork

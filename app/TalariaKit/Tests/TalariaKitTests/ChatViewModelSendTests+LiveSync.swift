@@ -116,6 +116,44 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(viewModel.activeStreamID, "stream-123")
     }
 
+    /// TAL-2266: work the Agent starts mid-turn reaches the badge even when the turn ends before the read answers.
+    func testABackgroundChangeMidTurnRaisesTheBadgeWhenTheTurnEndsDuringItsRead() async throws {
+        let streamClient = SpySSEStreamingClient()
+        let delegationStarted = LockedCounter()
+        let heldReads = LockedCounter()
+        let releaseRead = DispatchSemaphore(value: 0)
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                return apiTestJSONResponse(#"{"session_id": "session-abc", "stream_id": "stream-123"}"#, for: request)
+            case "/api/background/tasks":
+                guard delegationStarted.count > 0 else {
+                    return apiTestJSONResponse(#"{"session_id":"session-abc","agent_available":true,"tasks":[]}"#, for: request)
+                }
+                if heldReads.increment() == 1 { releaseRead.wait() }
+                return apiTestJSONResponse(#"{"session_id":"session-abc","agent_available":true,"pinned_count":1,"tasks":[{"task_id":"d1","kind":"delegation","status":"running","title":"Audit","pinned":true,"dismissible":false,"active":true}]}"#, for: request)
+            case "/api/session":
+                return apiTestJSONResponse(Self.idleTranscript, for: request)
+            default:
+                return apiTestJSONResponse(#"{}"#, for: request)
+            }
+        }
+        let didStart = await viewModel.sendMessage("Delegate the audit")
+        XCTAssertTrue(didStart)
+        XCTAssertEqual(viewModel.pinnedBackgroundTaskCount, 0)
+
+        _ = delegationStarted.increment()
+        let change = Task { await viewModel.handleSessionsChange(.changed(reason: "background_task", sessionID: "session-abc")) }
+        try await waitUntil { heldReads.count == 1 }
+        streamClient.emit(.done(DoneStreamEvent(session: nil)))
+        XCTAssertNil(viewModel.activeStreamID, "The turn ended while the read was in flight")
+        releaseRead.signal()
+        await change.value
+
+        XCTAssertEqual(viewModel.pinnedBackgroundTaskCount, 1)
+        XCTAssertEqual(viewModel.pinnedBackgroundTasks.map(\.taskId), ["d1"])
+    }
+
     private static let idleTranscript = """
     {"session": {"session_id": "session-abc", "title": "Planning", "messages": [
       {"role": "user", "content": "Question", "timestamp": 1770000001, "message_id": "user-1"},
