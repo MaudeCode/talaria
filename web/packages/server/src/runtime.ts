@@ -168,7 +168,10 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   await auth.initialize()
   settings.hooks = {
     hashPassword: async (pw) => (await auth.hashPassword(pw)),
-    onPasswordChanged: () => { auth.invalidatePasswordHashCache() },
+    onPasswordChanged: async (sessionCookie) => {
+      auth.invalidatePasswordHashCache()
+      await auth.revokeSessionsExcept(sessionCookie)
+    },
   }
   await settings.applyStartupWorkspace()
   config.defaultWorkspace = settings.defaultWorkspace

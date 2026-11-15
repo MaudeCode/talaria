@@ -330,9 +330,16 @@ function settingsByProfile(settings: Settings, key: string): Settings {
 
 export interface SettingsHooks {
   hashPassword?: (password: string) => Promise<string>
-  onPasswordChanged?: () => void
+  /** Awaited before the save resolves; `sessionCookie` is the saving request's session, which stays signed in. */
+  onPasswordChanged?: (sessionCookie: string | null) => void | Promise<void>
   defaultModel?: () => string
   defaultModelProvider?: () => string | undefined
+}
+
+interface SaveOptions {
+  profile?: string
+  /** The saving request's session cookie, kept when a password change signs out every other session (TAL-2209). */
+  sessionCookie?: string | null
 }
 
 export interface SettingsStoreOptions {
@@ -540,7 +547,7 @@ export class SettingsStore {
   }
 
   /** Save a patch, ignoring unknown keys and invalid values. `provider_quota_thresholds` patches `profile`'s set. Returns the merged settings. */
-  async save(input: Settings, opts: { profile?: string } = {}): Promise<Settings> {
+  async save(input: Settings, opts: SaveOptions = {}): Promise<Settings> {
     const settings: Settings = { ...input }
     // Preserve request intent and hash once before retrying revisioned reads and writes.
     const rawPw = settings._set_password
@@ -556,7 +563,7 @@ export class SettingsStore {
     return withDocumentQueue(this.documents, 'settings', 'settings', () => this.applySave(settings, clearPw, newPasswordHash, opts))
   }
 
-  private async applySave(settings: Settings, clearPw: unknown, newPasswordHash: string | null, opts: { profile?: string }): Promise<Settings> {
+  private async applySave(settings: Settings, clearPw: unknown, newPasswordHash: string | null, opts: SaveOptions): Promise<Settings> {
     for (let attempt = 0; ; attempt += 1) {
       let record
       try { record = await this.documents.get('settings', 'settings') }
@@ -691,7 +698,7 @@ export class SettingsStore {
       const chosenKeys = new Set([...storedChosenKeys, ...appliedChosenKeys])
       try { await this.writeSettings(this.payloadForWrite(current, chosenKeys), record?.revision ?? null) }
       catch (error) { if (error instanceof RevisionConflict && attempt < 1) continue; throw error }
-      if (passwordChanged) this.hooks.onPasswordChanged?.()
+      if (passwordChanged) await this.hooks.onPasswordChanged?.(opts.sessionCookie ?? null)
       this.defaultWorkspace = current.default_workspace as string
       current.default_model = this.hooks.defaultModel?.() ?? ''
       return current

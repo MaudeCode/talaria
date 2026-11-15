@@ -124,7 +124,7 @@ Before adopting updated Compose templates, rename the password and allowed-host 
 | `TALARIA_WEB_CLAUDE_PROJECTS_DIR` | `~/.claude/projects` | Claude Code transcripts listed read-only when **Show Claude Code sessions** is on |
 | `TALARIA_WEB_DEFAULT_MODEL` | provider default | Optional model override |
 | `TALARIA_WEB_PASSWORD` | unset | Enables password authentication (required when binding beyond loopback) |
-| `TALARIA_WEB_PASSKEY` | unset | Passkey availability flag |
+| `TALARIA_WEB_PASSKEY` | unset | Passkey availability flag (also `webui_passkey_enabled` in `config.yaml`). Off hides passkey sign-in and registration but keeps authentication on while a passkey is registered; to sign in again, turn it back on, or set `TALARIA_WEB_PASSWORD` and restart |
 | `TALARIA_WEB_TLS_CERT` / `TALARIA_WEB_TLS_KEY` | unset | Serve HTTPS directly (TLS 1.2+) |
 | `TALARIA_WEB_TRUSTED_PROXY_CIDRS`, `TALARIA_WEB_TRUST_FORWARDED_FOR`, `TALARIA_WEB_TRUST_FORWARDED_HOST`, `TALARIA_WEB_TRUST_FORWARDED_PROTO` | unset | Reverse-proxy trust |
 | `TALARIA_WEB_ALLOWED_ORIGINS` | unset | Extra browser origins accepted by the same-origin check; their hostnames also pass the Host check |

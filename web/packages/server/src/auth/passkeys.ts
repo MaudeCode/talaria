@@ -86,6 +86,8 @@ export function rpContext(headers: { origin?: string | undefined; host?: string 
 export class PasskeyStore {
   private readonly credentialsFile = 'passkeys'
   private readonly challengesFile = '.passkey_challenges'
+  private hasCredentials: boolean | null = null
+  private credentialWrites = 0
 
   constructor(private readonly documents: DocumentBackend, private readonly now: () => number = () => Date.now() / 1000) {}
 
@@ -109,7 +111,24 @@ export class PasskeyStore {
     return (await this.credentials()).map((c) => ({ id: c.id, label: c.label || 'Passkey', created_at: c.created_at, last_used_at: c.last_used_at, sign_count: c.sign_count }))
   }
 
-  async available(): Promise<boolean> { return (await this.credentials()).length > 0 }
+  /**
+   * The auth gate asks on every request without a password (TAL-2209), so the answer is kept until this store writes a
+   * credential. A failed read is not kept; a read that a write overtakes is not kept either.
+   */
+  async available(): Promise<boolean> {
+    if (this.hasCredentials !== null) return this.hasCredentials
+    const generation = this.credentialWrites
+    let raw: unknown
+    try { raw = (await readDocument(this.documents, 'passkeys', this.credentialsFile, { replaceInvalid: true }))?.value ?? null } catch { return false }
+    const has = this.parseCredentials(raw).length > 0
+    if (generation === this.credentialWrites) this.hasCredentials = has
+    return has
+  }
+
+  private async writeCredentials(edit: (raw: unknown) => Credential[]): Promise<void> {
+    try { await updateDocument(this.documents, 'passkeys', this.credentialsFile, (raw) => ({ value: edit(raw), result: undefined }), { replaceInvalid: true }) }
+    finally { this.credentialWrites += 1; this.hasCredentials = null }
+  }
 
   private challenges(raw: unknown): Record<string, Challenge> {
     if (!isDict(raw)) return {}
@@ -205,11 +224,11 @@ export class PasskeyStore {
     try { pem = createPublicKey({ key: { kty: 'EC', crv: 'P-256', x: b64u(x), y: b64u(y) }, format: 'jwk' }).export({ type: 'spki', format: 'pem' }).toString() } catch { throw new PasskeyError('Only ES256 passkeys are supported') }
     const id = b64u(credentialId)
     const label = str(payload.label).trim().slice(0, 80) || 'Passkey'
-    await updateDocument(this.documents, 'passkeys', this.credentialsFile, (raw) => {
+    await this.writeCredentials((raw) => {
       const creds = this.parseCredentials(raw).filter((credential) => credential.id !== id)
       creds.push({ id, label, public_key_pem: pem, sign_count: parsed.sign_count, created_at: this.now(), last_used_at: null })
-      return { value: creds, result: undefined }
-    }, { replaceInvalid: true })
+      return creds
+    })
     return { ok: true, credential: { id, label } }
   }
 
@@ -228,29 +247,29 @@ export class PasskeyStore {
     let ok = false
     try { ok = cryptoVerify('sha256', signed, createPublicKey(creds[idx]!.public_key_pem), signature) } catch { ok = false }
     if (!ok) throw new PasskeyError('Passkey signature verification failed')
-    await updateDocument(this.documents, 'passkeys', this.credentialsFile, (raw) => {
+    await this.writeCredentials((raw) => {
       const current = this.parseCredentials(raw)
       const credential = current.find((item) => item.id === credId)
       if (credential?.public_key_pem !== creds[idx]!.public_key_pem) throw new PasskeyError('Unknown passkey')
       if (parsed.sign_count && credential.sign_count && parsed.sign_count <= credential.sign_count) throw new PasskeyError('Passkey sign counter did not advance')
       credential.sign_count = parsed.sign_count || credential.sign_count
       credential.last_used_at = this.now()
-      return { value: current, result: undefined }
-    }, { replaceInvalid: true })
+      return current
+    })
     return { ok: true, credential_id: credId }
   }
 
   async delete(credentialId: string): Promise<{ ok: true; credentials: Dict[] }> {
-    await updateDocument(this.documents, 'passkeys', this.credentialsFile, (raw) => {
+    await this.writeCredentials((raw) => {
       const creds = this.parseCredentials(raw)
       const kept = creds.filter((credential) => credential.id !== credentialId)
       if (kept.length === creds.length) throw new PasskeyError('Passkey not found')
-      return { value: kept, result: undefined }
-    }, { replaceInvalid: true })
+      return kept
+    })
     return { ok: true, credentials: (await this.registered()) }
   }
 
   async clear(): Promise<void> {
-    if (await this.loadJson(this.credentialsFile)) await updateDocument(this.documents, 'passkeys', this.credentialsFile, () => ({ value: [], result: undefined }), { replaceInvalid: true })
+    if (await this.loadJson(this.credentialsFile)) await this.writeCredentials(() => [])
   }
 }

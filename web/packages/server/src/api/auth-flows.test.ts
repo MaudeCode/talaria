@@ -739,12 +739,12 @@ describe('auth gate fails closed on unknown or unreadable auth state', () => {
       // A registered credential with the flag only in config.yaml: the flag is unknown while the snapshot is cold.
       s.deps.auth.passkeysEnabled = () => Promise.resolve(true)
       s.deps.auth.passkeyConfigFlag = () => null
-      expect((await s.deps.auth.passkeysAvailable())).toBe(true)
       expect(await s.deps.auth.isAuthEnabled()).toBe(true)
       expect((await s.get('/api/sessions')).status).toBe(401)
-      // The flag read back as false: passkeys are off and the gate opens.
+      // TAL-2209: the flag read back as false only stops offering passkeys; the registered credential keeps the gate shut.
       s.deps.auth.passkeyConfigFlag = () => false
-      expect((await s.deps.auth.passkeysAvailable())).toBe(false)
+      expect(await s.deps.auth.isAuthEnabled()).toBe(true)
+      expect((await s.get('/api/sessions')).status).toBe(401)
     } finally { await s.close() }
   })
 
@@ -802,12 +802,12 @@ describe('auth gate per-request cost', () => {
     } finally { await s.close() }
   })
 
-  it('never touches passkeys.json while passkeys are off and no password is set', async () => {
+  it('reads passkeys.json once, not per request, while no password is set', async () => {
     const s = await bootTestServer()
     try {
       const reads = documentReads()
-      expect((await s.get('/api/sessions', { headers: { cookie: 'hermes_profile=default' } })).status).toBe(200)
-      expect(reads('passkeys')).toBe(0)
+      for (let i = 0; i < 5; i += 1) expect((await s.get('/api/sessions', { headers: { cookie: 'hermes_profile=default' } })).status).toBe(200)
+      expect(reads('passkeys')).toBeLessThanOrEqual(1)
     } finally { await s.close() }
   })
 
