@@ -18,7 +18,11 @@ struct NewChatWidget: Widget {
         .configurationDisplayName("New Chat")
         .description("Open Talaria on a new chat, optionally in a profile.")
         .supportedFamilies([.systemSmall, .accessoryCircular, .accessoryRectangular, .accessoryInline])
+        .lockedIPhoneUse(Self.lockedIPhoneUse)
     }
+
+    /// The composer needs the iPhone unlocked.
+    static let lockedIPhoneUse = LockedIPhoneUse.opensApp
 }
 
 struct NewChatWidgetEntry: TimelineEntry {

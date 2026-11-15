@@ -94,7 +94,10 @@ struct ProviderQuotaWidget: Widget {
             .accessoryCircular,
             .accessoryRectangular,
         ])
+        .lockedIPhoneUse(Self.lockedIPhoneUse)
     }
+
+    static let lockedIPhoneUse = LockedIPhoneUse.showsData
 }
 
 struct ProviderQuotaPaceWidget: Widget {

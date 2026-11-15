@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "CarPlay and HomeView offer the small quota and Needs you widgets and leave out the New Chat widget, which needs an unlocked iPhone.",
+      "components": ["app"],
+      "highlight": false,
+      "announce": false
+    }
+  ]
+}
