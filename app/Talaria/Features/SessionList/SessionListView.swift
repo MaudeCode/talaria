@@ -211,6 +211,7 @@ struct SessionListView: View {
         let list = viewModel ?? SessionListViewModel(
             server: server,
             responseCache: .app(server: server),
+            needsYouStore: NeedsYouSnapshotStore(),
             archiveUndoLifetime: archiveUndoLifetime
         )
         if let modelContext { list.paintCachedStateIfEmpty(modelContext: modelContext) }

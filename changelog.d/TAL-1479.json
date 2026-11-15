@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Add a Needs you widget for the Lock Screen and Home Screen that counts the chats waiting for your approval or answer and names the first.",
+      "highlight": false,
+      "components": [
+        "app"
+      ],
+      "announcement": {
+        "title": "Needs you widget",
+        "description": "See on the Lock Screen which chats wait for your approval or answer, and tap to open one.",
+        "icon": "notifications"
+      }
+    }
+  ]
+}

@@ -89,6 +89,14 @@ final class TalariaAggregateLiveActivityManager {
             }
         } while refreshRequested
         if let firstError { throw firstError }
+        refreshNeedsYou()
+    }
+
+    /// TAL-1479: each Relay refresh also rereads the active server's waiting chats for the Needs you widget. Relay's
+    /// rows are capped and ungrouped, so the server's activity summary supplies the group and its count.
+    private func refreshNeedsYou() {
+        guard let server = AppIntentServer.saved() else { return }
+        Task { await NeedsYouSnapshotStore().refresh(client: server.client(), serverURL: server.url) }
     }
 
     private func performRefresh() async throws {
@@ -179,6 +187,7 @@ final class TalariaAggregateLiveActivityManager {
         let aggregate = try await client.snapshot()
         guard generation == operationGeneration, activeDisconnectCount == 0,
               TalariaRelayConfigurationStore.load() == credentials else { return }
+        refreshNeedsYou()
         if TalariaLiveActivityMode.current == .perSession, aggregate?.hasTerminalRows != true {
             await endAggregateActivities(client: client)
             return
