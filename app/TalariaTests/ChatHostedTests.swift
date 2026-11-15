@@ -1755,21 +1755,48 @@ final class ChatHostedTests: XCTestCase {
     /// TAL-1580: once the delegation's row has finished, the server's summary of what still runs and what awaits delivery
     /// keeps Background Work open from the composer, and the sheet shows it above the finished work.
     func testTheServersDelegationSummaryStaysReachableAfterTheRowsFinish() async throws {
-        let fixture = try FixtureApp(["--ui-test-background-updates"], for: self)
-        let summary = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("delegation-status")) as? [String: Any])
-        let status = try JSONSerialization.data(withJSONObject: try XCTUnwrap(summary["running_and_awaiting"]))
-        UITestFixtureURLProtocol.backgroundDelegationStatus.withLock { $0 = status }
-        let window = try hostWindow(fixture.chat(try await fixture.session(UITestFixtureURLProtocol.sessionID)), size: HostedSize.phone)
+        for (name, size) in [("phone", HostedSize.phone), ("duo-inner", HostedSize.duoInner)] {
+            let fixture = try FixtureApp(["--ui-test-background-updates"], for: self)
+            let summary = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("delegation-status")) as? [String: Any])
+            let status = try JSONSerialization.data(withJSONObject: try XCTUnwrap(summary["running_and_awaiting"]))
+            UITestFixtureURLProtocol.backgroundDelegationStatus.withLock { $0 = status }
+            let session = try await fixture.session(UITestFixtureURLProtocol.sessionID)
+            let model = ChatViewModel(session: session, server: UITestFixtureEnvironment.serverURL, client: fixture.client, networkPath: nil)
+            let window = try hostWindow(fixture.chat(session, viewModel: model), size: size)
 
-        let chip = try await requireElement(in: window, label: "1 running · 3 awaiting delivery", "Nothing pinned, and the summary has no way in")
-        XCTAssertNil(HostedAccessibility.element(in: window, label: "Background tasks · 0"))
-        settle(0.3)
-        attachHostedScreenshot(window, name: "delegation-summary-chip")
-        HostedAccessibility.activate(chip)
-        _ = try await requireElement(in: window, label: "1 running, 3 awaiting delivery", "The sheet does not read the summary")
-        settle(0.5)
-        XCTAssertNotNil(window.rootViewController?.presentedViewController, "The sheet closed although the server shows the summary")
-        attachHostedScreenshot(window, name: "delegation-summary-sheet")
+            let chip = try await requireElement(in: window, label: "1 running · 3 awaiting delivery", "Nothing pinned, and the summary has no way in")
+            XCTAssertNil(HostedAccessibility.element(in: window, label: "Background tasks · 0"))
+            settle(0.3)
+            attachHostedScreenshot(window, name: "delegation-summary-chip-\(name)")
+            HostedAccessibility.activate(chip)
+            _ = try await requireElement(in: window, label: "1 running, 3 awaiting delivery", "The sheet does not read the summary")
+            settle(0.5)
+            XCTAssertNotNil(window.rootViewController?.presentedViewController, "The sheet closed although the server shows the summary")
+            attachHostedScreenshot(window, name: "delegation-summary-sheet-\(name)")
+            HostedAccessibility.activate(try await requireElement(in: window, label: "Done"))
+            let closed = await awaitCondition { window.rootViewController?.presentedViewController == nil }
+            XCTAssertTrue(closed)
+            // The pre-fix server showed an empty summary. Clients still obey that explicit visibility field.
+            var oldServer = try XCTUnwrap(summary["available_zero"] as? [String: Any])
+            oldServer["visible"] = true
+            let empty = try JSONSerialization.data(withJSONObject: oldServer)
+            UITestFixtureURLProtocol.backgroundDelegationStatus.withLock { $0 = empty }
+            await model.refreshBackgroundTasks()
+            _ = try await requireElement(in: window, label: "Nothing running or awaiting delivery")
+            settle(0.3)
+            attachHostedScreenshot(window, name: "delegation-delivered-before-\(name)")
+            let delivered = try JSONSerialization.data(withJSONObject: try XCTUnwrap(summary["available_zero"]))
+            UITestFixtureURLProtocol.backgroundDelegationStatus.withLock { $0 = delivered }
+            await model.refreshBackgroundTasks()
+            let hidden = await awaitCondition { HostedAccessibility.element(in: window, label: "Nothing running or awaiting delivery") == nil }
+            XCTAssertTrue(hidden)
+            settle(0.3)
+            XCTAssertNil(HostedAccessibility.toolbarItem("Background tasks", in: window), "The toolbar still exposes delivered work")
+            attachHostedScreenshot(window, name: "delegation-delivered-\(name)")
+            model.cleanupPollingTasks()
+            window.isHidden = true
+            window.rootViewController = nil
+        }
     }
 
     func testDeliverySummaryWordsEachSharedFixture() throws {

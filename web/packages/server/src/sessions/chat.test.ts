@@ -2804,9 +2804,9 @@ describe('chat turns through the sidecar', () => {
     const delivered = await read()
     // The same task record either way: only the summary tells a waiting completion from a delivered one.
     expect(delivered.tasks).toEqual(pending.tasks)
-    expect(delivered.delegation_status).toEqual(summary({}))
+    expect(delivered.delegation_status).toEqual(summary({ visible: false }))
     // The Agents page narrows the list to delegations; the summary still counts the session.
-    expect((await read('&kind=delegation')).delegation_status).toEqual(summary({}))
+    expect((await read('&kind=delegation')).delegation_status).toEqual(summary({ visible: false }))
     ledger = { ledger: 'available', running_count: 2, awaiting_delivery_count: 0, memory_live: true }
     expect((await read()).delegation_status).toEqual(summary({ running_count: 2, memory_live: true, refresh: true }))
     // A dispatch the live registry holds before its ledger row: refreshed, never added to the durable count.

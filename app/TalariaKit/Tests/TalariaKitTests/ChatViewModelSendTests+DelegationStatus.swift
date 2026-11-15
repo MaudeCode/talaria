@@ -28,7 +28,7 @@ extension ChatViewModelSendTests {
         let awaiting = try XCTUnwrap(decodedDelegationStatus(try Self.delegationStatusFixture("awaiting_delivery")))
         XCTAssertEqual(awaiting, DelegationStatus(availability: .available, runningCount: 0, awaitingDeliveryCount: 1, memoryLive: false, visible: true, refresh: true))
         let zero = try XCTUnwrap(decodedDelegationStatus(try Self.delegationStatusFixture("available_zero")))
-        XCTAssertEqual(zero, DelegationStatus(availability: .available, runningCount: 0, awaitingDeliveryCount: 0, memoryLive: false, visible: true, refresh: false))
+        XCTAssertEqual(zero, DelegationStatus(availability: .available, runningCount: 0, awaitingDeliveryCount: 0, memoryLive: false, visible: false, refresh: false))
         let unknown = try XCTUnwrap(decodedDelegationStatus(try Self.delegationStatusFixture("unknown")))
         XCTAssertEqual(unknown, DelegationStatus(availability: .unknown, runningCount: nil, awaitingDeliveryCount: nil, memoryLive: nil, visible: true, refresh: false))
         let unsupported = try XCTUnwrap(decodedDelegationStatus(try Self.delegationStatusFixture("unsupported")))
@@ -84,9 +84,8 @@ extension ChatViewModelSendTests {
         XCTAssertTrue(viewModel.showsBackgroundWorkEntry, "Nothing is pinned, yet the awaiting completion must stay reachable")
 
         log.tasks = try Self.delegationTasksAnswer(try Self.delegationStatusFixture("available_zero"))
-        try await waitUntil { viewModel.backgroundDelegationSummary?.refresh == false }
-        XCTAssertEqual(viewModel.backgroundDelegationSummary?.runningCount, 0)
-        XCTAssertTrue(viewModel.showsBackgroundWorkEntry, "The server still shows the settled summary")
+        try await waitUntil { viewModel.backgroundDelegationSummary == nil }
+        XCTAssertFalse(viewModel.showsBackgroundWorkEntry, "Delivered work with nothing pinned has no composer or toolbar entry")
         let settled = log.taskReads
         try await Task.sleep(for: .milliseconds(100))
         XCTAssertEqual(log.taskReads, settled, "A settled summary keeps polling")

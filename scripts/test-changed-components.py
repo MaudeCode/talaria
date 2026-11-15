@@ -16,7 +16,7 @@ routing = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(routing)
 ALL = {"app", "app_tooling", "web_server", "web_frontend", "web_sidecar", "docker", "relay", "contracts", "tooling"}
 CONSUMERS = {"app", "web_server", "web_frontend", "web_sidecar", "relay", "contracts"}
-FIXTURE_SUITES = {"web_server", "web_frontend", "web_sidecar", "contracts"}
+FIXTURE_SUITES = {"web_server", "web_frontend", "contracts"}
 
 
 class RoutingTests(unittest.TestCase):
@@ -110,6 +110,9 @@ class RoutingTests(unittest.TestCase):
             # Only Web's drift check reads the OpenAPI document (TAL-1674).
             (["contracts/web-api.openapi.json"], {"web_server", "contracts"}),
             (["contracts/fixtures/web-session.json"], FIXTURE_SUITES),
+            (["contracts/fixtures/delegation-status.json"], FIXTURE_SUITES | {"app"}),
+            (["contracts/fixtures/mcp-events.json"], FIXTURE_SUITES | {"web_sidecar"}),
+            (["contracts/fixtures/plan-allowance.json"], FIXTURE_SUITES | {"web_sidecar"}),
             (["contracts/fixtures/vault-prompts.json"], FIXTURE_SUITES | {"app"}),
             (["contracts/fixtures/feedback-report.json"], FIXTURE_SUITES | {"relay"}),
             (["contracts/fixtures/feedback-report-agent.json"], FIXTURE_SUITES | {"relay"}),
@@ -168,6 +171,7 @@ class RoutingTests(unittest.TestCase):
         # files the Xcode project lists by path; the package's own tests run in the contracts job.
         project = (root / "app/Talaria.xcodeproj/project.pbxproj").read_text()
         readers = {
+            "web_sidecar": [path for path in tracked if path.startswith("web/sidecar/") and path.endswith(".py")],
             "app": [path for path in tracked if path.startswith("app/") and not path.startswith("app/TalariaKit/")
                     and path.endswith(".swift")]
                    + ["app/" + path for path in re.findall(r'path = "?\.\./(TalariaKit/[^";]+\.swift)', project)],
@@ -178,6 +182,7 @@ class RoutingTests(unittest.TestCase):
             for path in paths:
                 text = (root / path).read_text()
                 read |= set(re.findall(r"contracts/fixtures/([\w.-]+\.json)", text))
+                read |= set(re.findall(r"['\"]contracts['\"]\s*/\s*['\"]fixtures['\"]\s*/\s*['\"]([\w.-]+\.json)['\"]", text))
                 read |= {f"{name}.json" for name in re.findall(r"\b(?:sharedContractF|f)ixture\(\"([\w.-]+)\"\)", text)}
             with self.subTest(suite=suite):
                 self.assertEqual(read, routing.FIXTURE_READERS[suite])

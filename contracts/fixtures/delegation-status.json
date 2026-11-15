@@ -1,5 +1,5 @@
 {
-  "available_zero": { "availability": "available", "running_count": 0, "awaiting_delivery_count": 0, "memory_live": false, "visible": true, "refresh": false },
+  "available_zero": { "availability": "available", "running_count": 0, "awaiting_delivery_count": 0, "memory_live": false, "visible": false, "refresh": false },
   "running": { "availability": "available", "running_count": 2, "awaiting_delivery_count": 0, "memory_live": true, "visible": true, "refresh": true },
   "awaiting_delivery": { "availability": "available", "running_count": 0, "awaiting_delivery_count": 1, "memory_live": false, "visible": true, "refresh": true },
   "running_and_awaiting": { "availability": "available", "running_count": 1, "awaiting_delivery_count": 3, "memory_live": true, "visible": true, "refresh": true },

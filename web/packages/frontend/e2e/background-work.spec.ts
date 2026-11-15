@@ -1,11 +1,49 @@
 import { createServer, type ServerResponse } from 'node:http'
-import { expect, test } from './fixtures'
+import { expect, expectNoOverflow, test } from './fixtures'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 test.use({ serviceWorkers: 'block' })
 
 const task = (overrides: Record<string, unknown>) => ({
   task_id: 't', kind: 'background_command', status: 'running', title: 'x', started_at: 1770000100, updated_at: 1770000101, completed_at: null,
   result_available: false, child_sessions: [], exit_code: null, agents: null, pinned: true, dismissible: false, active: true, ...overrides,
+})
+
+test('an unpinned completion stays reachable until delivery, then its chip and dialog close (TAL-2251)', async ({ page }, testInfo) => {
+  const states = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts/fixtures/delegation-status.json'), 'utf8')) as Record<string, unknown>
+  const sid = 'delegation-delivery'
+  let delivered = false
+  await page.clock.install()
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
+    session_id: sid, title: 'Check the repo', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true, transcript_seq: null,
+    messages: [{ role: 'user', content: 'Check the repo' }, { role: 'assistant', content: 'The check finished.' }],
+  } } }))
+  await page.route('**/api/background/tasks?**', (route) => route.fulfill({ json: {
+    session_id: sid, agent_available: true, tasks: [], pinned_count: 0,
+    delegation_status: states[delivered ? 'available_zero' : 'awaiting_delivery'],
+  } }))
+  await page.goto(`/session/${sid}`)
+  await expect(page.locator('#msg')).toBeVisible()
+  const shot = async (name: string) => {
+    if (process.env.TAL2251_SHOTS) await page.screenshot({ path: `${process.env.TAL2251_SHOTS}/${name}-${testInfo.project.name}.png` })
+  }
+  await shot('unpinned-completion')
+  const chip = page.locator('[data-notice="background"]').getByRole('button')
+  await expect(chip).toHaveText('1 awaiting delivery')
+  await shot('awaiting-delivery')
+  await expectNoOverflow(page, 'awaiting-delivery', shot)
+  await chip.click()
+  const dialog = page.getByRole('dialog', { name: 'Background work' })
+  await expect(dialog).toContainText('1 awaiting delivery')
+  await expectNoOverflow(page, 'delivery-dialog', shot)
+  delivered = true
+  await page.clock.fastForward(15_000)
+  await expect(page.locator('[data-notice="background"]')).toHaveCount(0)
+  await expect(dialog).toHaveCount(0)
+  await expect(page.locator('#msg')).toBeFocused()
+  await shot('delivered')
+  await expectNoOverflow(page, 'delivered', shot)
 })
 
 /** The session's background work is the server's record: the composer's card and a delegation row show it (TAL-372). */

@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Background work controls disappear once all delegated work is delivered and nothing is pinned.",
+      "highlight": false,
+      "components": ["app", "web"],
+      "announce": false
+    }
+  ]
+}
