@@ -101,6 +101,8 @@ export async function bootTestServer(opts: BootOptions = {}): Promise<TestServer
     TALARIA_WEB_PORT: '0',
     // CI runs the suite once per backend (TAL-1066).
     ...(process.env.TALARIA_STORAGE ? { TALARIA_STORAGE: process.env.TALARIA_STORAGE } : {}),
+    // A same-host auth proxy must be listed for trusted-header sign-in (TAL-2203); a test that omits it passes ''.
+    ...(opts.env?.TALARIA_WEB_TRUSTED_AUTH_HEADER ? { TALARIA_WEB_TRUSTED_PROXY_CIDRS: '127.0.0.1/32,::1/128' } : {}),
     ...opts.env,
   }
   const postgresSchema = env.TALARIA_STORAGE === 'postgres' ? usePostgres(env) : null

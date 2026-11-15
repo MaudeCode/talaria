@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Talaria Web accepts trusted-header sign-in only from a proxy listed in TALARIA_WEB_TRUSTED_PROXY_CIDRS; if you use it, list your auth proxy's address there (127.0.0.1/32 for a proxy on the same host).",
+      "highlight": false,
+      "announce": false,
+      "components": ["web"]
+    }
+  ]
+}
