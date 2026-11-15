@@ -2,6 +2,7 @@ import PhotosUI
 import SwiftUI
 import TalariaKit
 import UIKit
+import UniformTypeIdentifiers
 
 /// Uses the same native form presentation as CreateProfileSheet; submission stays in the draft owner.
 struct FeedbackSheet: View {
@@ -107,11 +108,34 @@ struct FeedbackSheet: View {
                 }
                 .accessibilityIdentifier("feedback-add-attachment")
             }
+            if model.attachmentsEnabled {
+                PasteButton(supportedContentTypes: [.image]) { providers in
+                    Task { await attachImages(from: providers) }
+                }
+                .accessibilityIdentifier("feedback-paste-attachment")
+            }
             if let error = model.attachmentError {
                 SettingsErrorFootnote(error)
             }
         }
         .disabled(model.hasUnknownOutcome)
+    }
+
+    private func attachImages(from providers: [NSItemProvider]) async {
+        guard model.checkAttachmentCapacity(providers.count) else { return }
+        var images: [Data] = []
+        for provider in providers {
+            let data: Data? = await withCheckedContinuation { continuation in
+                provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, _ in
+                    continuation.resume(returning: data)
+                }
+            }
+            if let data { images.append(data) }
+        }
+        // The user may have picked another photo while the providers were loading.
+        guard model.checkAttachmentCapacity(images.count) else { return }
+        for data in images { model.addImage(data) }
+        if images.count != providers.count { model.reportUnloadableAttachment() }
     }
 
     /// Videos arrive as a temporary file copy, removed once compressed; photos arrive as data.

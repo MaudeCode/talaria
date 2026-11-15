@@ -38,6 +38,62 @@ final class FeedbackHostedTests: XCTestCase {
         }
     }
 
+    func testPastingClipboardPhotosUsesTheFeedbackAttachmentPipeline() async throws {
+        let model = model(attachments: true)
+        await model.loadAttachmentOptions()
+        let previousItems = UIPasteboard.general.items
+        defer { UIPasteboard.general.items = previousItems }
+        UIPasteboard.general.images = [try XCTUnwrap(UIImage(data: syntheticPhoto()))]
+        let window = try hostWindow(FeedbackSheet(model: model))
+        _ = try await requireElement(in: window, label: "Add Photo or Video")
+        attachHostedScreenshot(window, name: "feedback-before-paste")
+        let paste = try XCTUnwrap(window.firstView(ofType: UIPasteControl.self),
+                                 "Feedback must offer a native image paste action")
+        let target = try XCTUnwrap(paste.target)
+        target.paste?(itemProviders: UIPasteboard.general.itemProviders)
+        let uploaded = await awaitCondition { model.attachments.first?.attachmentId != nil }
+        XCTAssertTrue(uploaded, "The clipboard image must pass through compression and staging")
+        XCTAssertEqual(model.attachments.count, 1)
+        XCTAssertEqual(model.attachments.first?.contentType, "image/jpeg")
+        _ = try await requireElement(in: window, label: "Remove attachment Photo")
+        attachHostedScreenshot(window, name: "feedback-after-paste")
+
+        UIPasteboard.general.images = Array(repeating: try XCTUnwrap(UIImage(data: syntheticPhoto())), count: 2)
+        target.paste?(itemProviders: UIPasteboard.general.itemProviders)
+        let batchUploaded = await awaitCondition {
+            model.attachments.count == 3 && model.attachments.allSatisfy { $0.attachmentId != nil }
+        }
+        XCTAssertTrue(batchUploaded, "Every clipboard image must become a staged photo")
+    }
+
+    func testPlainTextStillPastesIntoTitleAndDetails() async throws {
+        let model = model(attachments: true)
+        await model.loadAttachmentOptions()
+        let previousItems = UIPasteboard.general.items
+        defer { UIPasteboard.general.items = previousItems }
+        let window = try hostWindow(FeedbackSheet(model: model))
+        _ = try await requireElement(in: window, label: "Add Photo or Video")
+        let text = "  Copied text & punctuation!  "
+        UIPasteboard.general.string = text
+        let title = try XCTUnwrap(window.firstView(ofType: UITextField.self) { $0.placeholder == "Title" })
+        title.becomeFirstResponder()
+        title.paste(nil)
+        let titlePasted = await awaitCondition { model.draft.title == text }
+        XCTAssertTrue(titlePasted)
+        if let details = window.firstView(ofType: UITextView.self) {
+            details.becomeFirstResponder()
+            details.paste(nil)
+        } else {
+            let details = try XCTUnwrap(window.firstView(ofType: UITextField.self) { $0.placeholder == "Details" })
+            details.becomeFirstResponder()
+            details.paste(nil)
+        }
+        let detailsPasted = await awaitCondition { model.draft.body == text }
+        XCTAssertTrue(detailsPasted)
+        XCTAssertTrue(model.attachments.isEmpty)
+        window.endEditing(true)
+    }
+
     func testOpeningTheSheetOffersNoScreenCapture() async throws {
         let model = model(attachments: true)
         let window = try hostWindow(NavigationStack { AboutSettingsView(feedback: model) })
@@ -62,6 +118,49 @@ final class FeedbackHostedTests: XCTestCase {
             ($0.accessibilityLabel ?? "").hasPrefix("Add Photo")
         }
         XCTAssertNil(attachControl)
+        XCTAssertNil(window.firstView(ofType: UIPasteControl.self), "Disabled attachments must not offer image paste")
+    }
+
+    func testPastingTooManyPhotosKeepsTheDraftAndShowsTheLimit() async throws {
+        let model = model(attachments: true)
+        await model.loadAttachmentOptions()
+        await model.addImage(syntheticPhoto())?.value
+        let original = model.attachments
+        let previousItems = UIPasteboard.general.items
+        defer { UIPasteboard.general.items = previousItems }
+        UIPasteboard.general.images = Array(repeating: try XCTUnwrap(UIImage(data: syntheticPhoto())), count: 5)
+        let window = try hostWindow(FeedbackSheet(model: model))
+        _ = try await requireElement(in: window, label: "Add Photo or Video")
+        let paste = try XCTUnwrap(window.firstView(ofType: UIPasteControl.self))
+        try XCTUnwrap(paste.target).paste?(itemProviders: UIPasteboard.general.itemProviders)
+        _ = try await requireElement(in: window, label: "Attach up to 5 files.")
+        XCTAssertEqual(model.attachments, original, "An oversized paste must not partially add its images")
+        attachHostedScreenshot(window, name: "feedback-paste-limit")
+    }
+
+    func testPastedPhotoLayoutAcrossTheGallery() async throws {
+        let model = model(attachments: true)
+        await model.loadAttachmentOptions()
+        await model.addImage(syntheticPhoto())?.value
+        let previousItems = UIPasteboard.general.items
+        defer { UIPasteboard.general.items = previousItems }
+        UIPasteboard.general.images = [try XCTUnwrap(UIImage(data: syntheticPhoto()))]
+        try await renderHostedPage("feedback-paste") {
+            FeedbackSheet(model: model)
+        } inspect: { window, _ in
+            _ = try await self.requireElementScrolling(in: window, "The pasted photo must remain reachable") {
+                $0.accessibilityLabel == "Remove attachment Photo"
+            }
+            _ = try await self.requireElementScrolling(in: window, "Image paste must remain reachable") {
+                HostedAccessibility.identifier(of: $0) == "feedback-paste-attachment"
+            }
+            let paste = try XCTUnwrap(window.firstView(ofType: UIPasteControl.self))
+            let scroll = try XCTUnwrap(window.firstView(ofType: UIScrollView.self) { $0.bounds.height > 300 })
+            scroll.scrollRectToVisible(paste.convert(paste.bounds, to: scroll).insetBy(dx: 0, dy: -16), animated: false)
+            self.settle(window: window)
+            XCTAssertTrue(window.bounds.contains(paste.convert(paste.bounds, to: window)),
+                          "The entire Paste action must be visible after scrolling")
+        }
     }
 
     func testTappingAnAttachedPhotoPreviewsTheCompressedFile() async throws {
