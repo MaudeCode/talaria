@@ -105,8 +105,9 @@ it('edits every retired Preferences, Conversation, System and Models & Providers
     qc.setQueryData(keys.settings, settings)
     reads.clear()
     const view = await renderPage(page, qc)
-    await waitFor(() => expect(view.container.querySelector(`[data-section="${page.section}"]`)).not.toBeNull())
-    if (page.page) await waitFor(() => expect(view.container.querySelector('[data-group]')).not.toBeNull())
+    // A lazy page chunk can take seconds on a loaded host (TAL-2164).
+    await waitFor(() => expect(view.container.querySelector(`[data-section="${page.section}"]`)).not.toBeNull(), { timeout: 10_000 })
+    if (page.page) await waitFor(() => expect(view.container.querySelector('[data-group]')).not.toBeNull(), { timeout: 10_000 })
     for (const control of CONTROLS) if (view.container.querySelector(control)) reads.add(control)
     for (const key of reads) if (key in PLACEMENT) (found[key] ??= []).push(page.id)
     view.unmount()
