@@ -3,6 +3,7 @@ import canonicalScene from '../src/features/chat/__fixtures__/activity-scene.jso
 import { createServer, type ServerResponse } from 'node:http'
 import { expect, test } from './fixtures'
 import { deferred } from '../src/test/fixtures'
+import { REVEAL_MS } from '../src/lib/motion'
 import { fullToolResult, hydrateAnchorActivityScenes, withTurnIds } from '../../server/dist/sessions/anchor.js'
 import { publicToolFrame, redactSessionData } from '../../server/dist/redact.js'
 import { reasoningProjection } from '../../server/dist/sessions/reasoning-display.js'
@@ -581,11 +582,13 @@ test('streaming and settlement keep a pinned transcript steady', async ({ page }
   if (!address || typeof address === 'string') throw new Error('Missing fixture port')
   await page.route('**/api/chat/stream?**', (route) => route.continue({ url: `http://127.0.0.1:${address.port}/stream` }))
   try {
+    // TAL-2274: E2E_CPU_THROTTLE=<rate> slows the page's CPU, as a loaded CI runner does, to check that frame sampling holds.
+    if (process.env.E2E_CPU_THROTTLE) await (await page.context().newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: Number(process.env.E2E_CPU_THROTTLE) })
     await page.goto(`/session/${sid}`)
     await expect(page.locator('.live-run-status')).toBeVisible()
-    // Sample every frame: how far content extends below the viewport, and where an older message sits.
+    // Sample every frame: how far content extends below the viewport, where an older message sits, and the animation clock.
     await page.evaluate(() => {
-      const w = window as unknown as { samples: { below: number; old: number; body: number; cover: number; phase: string }[]; phase: string }
+      const w = window as unknown as { samples: { below: number; old: number; body: number; dock: number; cover: number; t: number; phase: string }[]; phase: string }
       w.samples = []; w.phase = 'stream'
       const scroller = document.getElementById('messages')!
       const old = [...document.querySelectorAll('.msg-row')].find((el) => el.textContent?.includes('Earlier question 10'))!
@@ -593,6 +596,7 @@ test('streaming and settlement keep a pinned transcript steady', async ({ page }
       // frame callback runs after the frame. Read inside the callback, a height animation's growth for that frame shows
       // before the follow that scrolls it into view in the same frame.
       const channel = new MessageChannel()
+      const dock = document.querySelector<HTMLElement>('.composer-dock')!
       channel.port1.onmessage = () => {
         const body = document.querySelector('.assistant-turn:not(.live-turn):last-of-type .assistant-turn-blocks > .activity > .activity-body')
         const pill = document.querySelector('.live-run-status')
@@ -602,7 +606,9 @@ test('streaming and settlement keep a pinned transcript steady', async ({ page }
           below: scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight,
           old: old.getBoundingClientRect().top,
           body: body ? body.getBoundingClientRect().height : -1,
+          dock: dock.offsetHeight,
           cover: pill && last ? last.getBoundingClientRect().bottom - pill.getBoundingClientRect().top : 0,
+          t: document.timeline.currentTime as number,
           phase: w.phase,
         })
       }
@@ -621,24 +627,32 @@ test('streaming and settlement keep a pinned transcript steady', async ({ page }
     send('done', { session: { session_id: sid, title: 'Steady', messages: asServer(messages) } })
     await expect(page.locator('.live-turn')).toHaveCount(0)
     await page.waitForTimeout(700)
-    const samples = await page.evaluate(() => (window as unknown as { samples: { below: number; old: number; body: number; cover: number; phase: string }[] }).samples)
+    const samples = await page.evaluate(() => (window as unknown as { samples: { below: number; old: number; body: number; dock: number; cover: number; t: number; phase: string }[] }).samples)
     // Streamed lines never stay hidden below a pinned viewport for more than a couple of frames.
     let run = 0, longest = 0
     for (const s of samples.filter((f) => f.phase === 'stream')) { run = s.below > 2 ? run + 1 : 0; longest = Math.max(longest, run) }
     expect(longest).toBeLessThanOrEqual(2)
     // The docked pill never covers the newest streamed line.
     expect(Math.max(...samples.filter((f) => f.phase === 'stream' && f.below <= 2).map((f) => f.cover))).toBeLessThanOrEqual(0)
-    // The finished work visibly folds into "Worked": its body shrinks through several heights instead of vanishing.
+    // The finished work visibly folds into "Worked": its body shrinks through a height between open and shut instead of
+    // vanishing. A loaded runner draws few frames of the fold, so one in-between height is all a frame count can require.
     const folding = [...new Set(samples.filter((f) => f.phase === 'settle' && f.body > 0).map((f) => Math.round(f.body)))]
-    expect(folding.length).toBeGreaterThanOrEqual(3)
+    expect(folding.length).toBeGreaterThanOrEqual(2)
     expect(samples.at(-1)!.body).toBe(0)
-    // Folding into "Worked" moves older history gradually, never in one snap.
+    // TAL-2274: the "Working" chip's space under the transcript shuts through a height in between too; removed at once
+    // after its fade, it dropped pinned history by its whole height in one frame.
+    const dock = samples.filter((f) => f.phase === 'settle').map((f) => f.dock)
+    expect(new Set(dock).size).toBeGreaterThanOrEqual(3)
+    expect(dock.at(-1)).toBeLessThan(dock[0]!)
+    // Folding into "Worked" moves older history gradually, never in one snap. A late frame covers more of the travel, so
+    // a step may move as far as 4 times the travel's average pace allows over the animation time between its frames
+    // (TRAVEL_EASE peaks at 3.5), and at least 60% of the total; a snap moves everything in one ordinary frame.
     const settle = samples.slice(Math.max(0, samples.findIndex((f) => f.phase === 'settle') - 1))
-    const down = settle.slice(1).map((f, i) => f.old - settle[i]!.old).filter((d) => d > 0.5)
-    const total = down.reduce((a, b) => a + b, 0)
+    const down = settle.slice(1).map((f, i) => ({ d: f.old - settle[i]!.old, ms: f.t - settle[i]!.t })).filter((step) => step.d > 0.5)
+    const total = down.reduce((a, step) => a + step.d, 0)
     if (total > 4) {
-      expect(down.length).toBeGreaterThanOrEqual(3)
-      expect(Math.max(...down)).toBeLessThan(total * 0.6)
+      expect(down.length).toBeGreaterThanOrEqual(2)
+      for (const step of down) expect(step.d).toBeLessThan(total * Math.max(0.6, 4 * step.ms / REVEAL_MS))
     }
   } finally {
     await page.close()
