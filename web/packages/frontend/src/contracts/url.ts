@@ -39,7 +39,7 @@ export { SettingsSectionSchema, SettingsSectionGroupSchema, SETTINGS_SECTION_GRO
 export type { SettingsSectionId as SettingsSection, SettingsSectionGroup } from '@maudecode/talaria-web-contracts'
 
 /** TAL-1691, TAL-2100: Settings > Tools keeps each of its lists on a `?tab=`. */
-export const ToolsTabSchema = z.enum(['plugins', 'connectors', 'mcp'])
+export const ToolsTabSchema = z.enum(['toolsets', 'plugins', 'connectors', 'mcp'])
 export type ToolsTab = z.infer<typeof ToolsTabSchema>
 /** TAL-2138: Settings › Chat's sub-pages, `settings/chat/<page>`. */
 export const ChatPageSchema = z.enum(['workspace-panel', 'advanced'])

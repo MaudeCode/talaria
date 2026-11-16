@@ -18,7 +18,7 @@ test('catalog previews, confirms a disabled install and reconciles a lost acknow
     installed = true
     return route.fulfill({ status: 503, json: { error: 'Install outcome is unknown. Refresh Plugins to check the installed identity before trying again.', condition: 'plugin_install_unconfirmed' } })
   })
-  await page.goto('/settings/tools')
+  await page.goto('/settings/tools?tab=plugins')
   await settle(page)
   const section = page.locator('[data-section="plugins"]')
   await expect(section.getByText(/^Notes/)).toBeVisible()
@@ -60,7 +60,7 @@ test('catalog and installed empty states identify their own list', async ({ page
     const empty = new URL(route.request().url()).searchParams.get('query') === 'absent'
     return route.fulfill({ json: { supported: true, read_only: false, entries: empty ? [] : [entry], total: empty ? 0 : 1, next_offset: null } })
   })
-  await page.goto('/settings/tools')
+  await page.goto('/settings/tools?tab=plugins')
   await settle(page)
   const section = page.locator('[data-section="plugins"]')
   await page.getByRole('button', { name: 'Add plugin', exact: true }).click()

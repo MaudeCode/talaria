@@ -12,7 +12,7 @@ test('plugin save distinguishes persisted settings from live MCP application', a
   await page.route('**/api/plugins/settings', (route) => route.fulfill({ json: {
     ok: true, key: 'demo', written: ['api_key'], settings: fields, runtime_application,
   } }))
-  await page.goto('/settings/tools')
+  await page.goto('/settings/tools?tab=plugins')
   await settle(page)
   const section = page.locator('[data-section="plugins"]')
   for (const [application, message] of [
@@ -44,7 +44,7 @@ test('plugin filter narrows the installed list and each description keeps to one
   const plugins = Array.from({ length: 12 }, (_, i) => ({ key: `plugin-${i}`, name: `Plugin ${i}`, version: '1.0.0', kind: 'standalone', enabled: true, description: i === 3 ? `${long} with MAILBOX access` : long }))
   await routePlugins(page, () => ({ read_only: false, plugins }))
   await page.route('**/api/settings', async (route) => route.request().method() === 'GET' ? route.fulfill({ json: { ...await (await route.fetch()).json(), agent_approvals: true } }) : route.continue())
-  await page.goto('/settings/tools')
+  await page.goto('/settings/tools?tab=plugins')
   await settle(page)
   const section = page.locator('[data-section="plugins"]')
   const rows = section.locator('[data-plugin]')

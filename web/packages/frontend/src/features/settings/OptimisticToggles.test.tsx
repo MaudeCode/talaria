@@ -10,13 +10,14 @@ import * as api from '../../api/endpoints'
 import { deferred } from '../../test/fixtures'
 import { SkillsPage } from '../skills/SkillsPage'
 import { McpSection } from './McpSection'
+import { ToolsetDefaultsSection } from './ToolsetDefaultsSection'
 import { ExtensionsSection } from './ExtensionsSection'
 import { ConnectorsSection } from '../connectors/ConnectorsSection'
 import { teardownAll } from '../../stream/connection'
 import { showToast } from '../toast/toast'
 import { ApiError } from '../../contracts'
 
-vi.mock('../../api/endpoints', () => ({ removeConnectorAccount: vi.fn(), fetchSkillContent: vi.fn(), deleteSkill: vi.fn(), saveSkill: vi.fn(), fetchSkills: vi.fn(), fetchSkillsUsage: vi.fn(), toggleSkill: vi.fn(), fetchMcpServers: vi.fn(), fetchMcpTools: vi.fn(), toggleMcpServer: vi.fn(), fetchExtensionRegistry: vi.fn(), extensionAction: vi.fn(), fetchConnectors: vi.fn(), fetchConnectorTools: vi.fn(), setConnectorRule: vi.fn() }))
+vi.mock('../../api/endpoints', () => ({ removeConnectorAccount: vi.fn(), fetchSkillContent: vi.fn(), deleteSkill: vi.fn(), saveSkill: vi.fn(), fetchSkills: vi.fn(), fetchSkillsUsage: vi.fn(), toggleSkill: vi.fn(), fetchMcpServers: vi.fn(), fetchMcpTools: vi.fn(), toggleMcpServer: vi.fn(), fetchToolsetDefaults: vi.fn(), saveToolsetDefault: vi.fn(), fetchExtensionRegistry: vi.fn(), extensionAction: vi.fn(), fetchConnectors: vi.fn(), fetchConnectorTools: vi.fn(), setConnectorRule: vi.fn() }))
 vi.mock('../../shell/AppShell', () => ({ HubPage: ({ children, toolbar }: { children: ReactNode; toolbar?: ReactNode }) => <main>{toolbar}{children}</main> }))
 vi.mock('../pending-writes/PendingWritesPanel', () => ({ PendingWritesPanel: () => null }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
@@ -26,6 +27,8 @@ vi.mock('../../extensions/registry', () => ({ fetchExtensionManifestList: manife
 const ids = ['alpha', 'beta']
 const skills = () => ({ skills: ids.map((name) => ({ name, disabled: true, category: null, description: '' })) })
 const mcp = () => ({ toggle_supported: true, reload_required: true, servers: ids.map((name) => ({ name, enabled: false, can_toggle: true, status: 'disabled', health: 'unhealthy' })) })
+// TAL-2282: unselected available rows, each free to change; `gamma` keeps the list from ever being empty.
+const toolsetDefaults = () => ({ toolsets: [...ids, 'gamma'].map((name) => ({ name, description: '', available: true, selected: name === 'gamma', unavailable_reason: null, group: 'available' as const, can_deselect: true })), selected_toolsets: ['gamma'], using_defaults: true, default_toolsets: ['gamma'] })
 const extensions = () => ({ protocol_version: 1, total: 2, enabled_count: 0, manifests: ids.map((id) => ({ id, name: id, source: 'manifest', enabled: false, can_toggle: true, capabilities: [], permissions: {}, settings_schema: [], warnings: [], sidecar: { origin: 'http://127.0.0.1:1234', consented: false } })) })
 const connectors = () => ({ available: true, policy_revision: 'rev-1', connectors: ids.map((slug) => ({ slug, name: slug, enabled: false, rules_editable: true, connected: true, accounts: [], tools_off: 3, org_locked: false })) })
 const cases = [
@@ -33,6 +36,7 @@ const cases = [
   { name: 'MCP', ui: <McpSection />, key: keys.mcp.servers, snapshot: mcp, read: () => vi.mocked(api.fetchMcpServers), write: () => vi.mocked(api.toggleMcpServer) },
   { name: 'extension', ui: <ExtensionsSection />, key: [...keys.extensions.manifests, { q: '' }], snapshot: extensions, read: () => manifests, write: () => vi.mocked(api.extensionAction) },
   { name: 'connector', ui: <ConnectorsSection />, key: keys.connectors.page, snapshot: connectors, read: () => vi.mocked(api.fetchConnectors), write: () => vi.mocked(api.setConnectorRule) },
+  { name: 'default toolset', ui: <ToolsetDefaultsSection />, key: keys.toolsetDefaults, snapshot: toolsetDefaults, read: () => vi.mocked(api.fetchToolsetDefaults), write: () => vi.mocked(api.saveToolsetDefault) },
 ]
 
 beforeEach(() => {
@@ -347,4 +351,21 @@ it('sends a second skill save only after the first answers, so the newest text l
   expect(api.saveSkill).toHaveBeenCalledTimes(1)
   await act(async () => { first({ ok: true }); await Promise.resolve() })
   await waitFor(() => expect(api.saveSkill).toHaveBeenLastCalledWith('alpha', '# alpha!?'))
+})
+
+it('saves only the flipped default toolset, and offers no switch the server refuses (TAL-2282)', async () => {
+  const c = cases.find((item) => item.name === 'default toolset')!
+  const write = deferred<never>()
+  c.write().mockReturnValue(write.promise)
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+  const rows = toolsetDefaults()
+  vi.mocked(api.fetchToolsetDefaults).mockResolvedValue({ ...rows, toolsets: [...rows.toolsets.map((row) => row.name === 'gamma' ? { ...row, can_deselect: false } : row), { name: 'browser', description: '', available: false, selected: false, unavailable_reason: 'unavailable', group: 'not_available', can_deselect: false }] })
+  render(<QueryClientProvider client={qc}><ToolsetDefaultsSection /></QueryClientProvider>)
+  await screen.findByRole('switch', { name: 'alpha' })
+  expect(control('gamma')).toHaveAttribute('aria-disabled', 'true')
+  const unavailable = screen.getByRole('region', { name: 'Not available' })
+  expect(within(unavailable).getByRole('switch', { name: 'browser' })).toHaveAttribute('aria-disabled', 'true')
+  expect(within(unavailable).getByText('Unavailable')).toBeInTheDocument()
+  fireEvent.click(control('beta'))
+  await waitFor(() => expect(c.write()).toHaveBeenCalledWith('beta', true))
 })

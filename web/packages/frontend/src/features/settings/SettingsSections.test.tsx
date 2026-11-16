@@ -504,6 +504,6 @@ it('shows a failed connectors gate with a retry on the Connectors tab instead of
   vi.mocked(fetchConnectorsAvailable).mockRejectedValueOnce(new Error('gate down'))
   await renderSection(<ToolsSection tab="connectors" />)
   expect(await screen.findByRole('button', { name: 'Retry' })).toBeInTheDocument()
-  expect(screen.getByRole('tab', { name: 'Plugins' })).toHaveAttribute('aria-selected', 'true')
+  expect(screen.getByRole('tab', { name: 'Toolsets' })).toHaveAttribute('aria-selected', 'true')
   expect(screen.queryByRole('tab', { name: 'Connectors' })).toBeNull()
 })

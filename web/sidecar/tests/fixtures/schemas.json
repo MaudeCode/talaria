@@ -5614,6 +5614,192 @@
     ],
     "additionalProperties": false
   },
+  "toolsets.defaults": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "toolsets": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "available": {
+              "type": "boolean"
+            },
+            "selected": {
+              "type": "boolean"
+            },
+            "unavailable_reason": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "disabled",
+                    "unavailable"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "stripped_tools": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "stripped_by": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "group": {
+              "type": "string",
+              "enum": [
+                "available",
+                "not_available"
+              ]
+            },
+            "can_deselect": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "name",
+            "description",
+            "available",
+            "selected",
+            "unavailable_reason",
+            "group"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "selected_toolsets": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "using_defaults": {
+        "type": "boolean"
+      },
+      "default_toolsets": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "required": [
+      "toolsets",
+      "selected_toolsets",
+      "using_defaults",
+      "default_toolsets"
+    ],
+    "additionalProperties": false
+  },
+  "toolsets.set_default": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "toolsets": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "available": {
+              "type": "boolean"
+            },
+            "selected": {
+              "type": "boolean"
+            },
+            "unavailable_reason": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "disabled",
+                    "unavailable"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "stripped_tools": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "stripped_by": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "group": {
+              "type": "string",
+              "enum": [
+                "available",
+                "not_available"
+              ]
+            },
+            "can_deselect": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "name",
+            "description",
+            "available",
+            "selected",
+            "unavailable_reason",
+            "group"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "selected_toolsets": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "using_defaults": {
+        "type": "boolean"
+      },
+      "default_toolsets": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "required": [
+      "toolsets",
+      "selected_toolsets",
+      "using_defaults",
+      "default_toolsets"
+    ],
+    "additionalProperties": false
+  },
   "mcp.cost_policies": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

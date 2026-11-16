@@ -316,3 +316,56 @@ def test_terminal_open_runs_the_agent_command_guard(tmp_path) -> None:
     assert run.returncode == 0, run.stderr[-4000:]
     out = json.loads(run.stdout.strip().splitlines()[-1])
     assert out["sent"] == [] and out["result"]["condition"] == "approval_denied" and "BLOCKED" in out["result"]["error"], out
+
+
+@requires_agent
+def test_default_toolsets_save_through_the_agent_saver_and_keep_talarias_own(handshaken, hermes_home) -> None:
+    """TAL-2282: the defaults editor saves ``platform_toolsets.cli`` with ``hermes tools``' saver; ``talaria`` is an entry
+    there and ``harness`` an ``agent.disabled_toolsets`` opt-out. MCP entries and other platforms stay as written."""
+    config_file = hermes_home / 'config.yaml'
+    config_file.write_text('agent:\n  disabled_toolsets: [todo]\nplatform_toolsets:\n  cli: [file, terminal, synthetic-mcp]\n  telegram: [hermes-telegram]\n')
+    params = {'profile_home': str(hermes_home)}
+
+    def saved() -> dict:
+        return handshaken.result('config.get', params)['config']
+
+    def defaults_now() -> list[str]:
+        return handshaken.result('toolsets.catalog', {**params, 'enabled_toolsets': None})['default_toolsets']
+
+    shown = handshaken.result('toolsets.defaults', params)
+    rows = {row['name']: row for row in shown['toolsets']}
+    assert 'synthetic-mcp' not in rows, 'MCP servers keep their own controls'
+    assert {'file', 'talaria', 'harness'} <= set(rows)
+    assert rows['todo']['available'] is True and rows['todo']['selected'] is False and rows['todo']['group'] == 'available'
+
+    def toggle(name: str, enabled: bool) -> dict:
+        return handshaken.result('toolsets.set_default', {**params, 'name': name, 'enabled': enabled})
+
+    # Each write changes only its own toolset in the saved list, so interleaved switches never undo each other.
+    toggle('todo', True)
+    toggle('talaria', True)
+    result = toggle('terminal', False)
+    config = saved()
+    assert sorted(config['platform_toolsets']['cli']) == ['file', 'synthetic-mcp', 'talaria', 'todo']
+    assert config['platform_toolsets']['telegram'] == ['hermes-telegram']
+    assert 'todo' not in (config.get('agent') or {}).get('disabled_toolsets', []), 'choosing a toolset clears its disabled entry'
+    assert {'file', 'todo', 'talaria', 'harness'} <= set(defaults_now()) and 'terminal' not in defaults_now()
+    assert result['default_toolsets'] == defaults_now()
+
+    for name in ('talaria', 'todo', 'harness'):
+        toggle(name, False)
+    config = saved()
+    assert sorted(config['platform_toolsets']['cli']) == ['file', 'synthetic-mcp']
+    assert 'harness' in config['agent']['disabled_toolsets']
+    assert not {'talaria', 'harness'} & set(defaults_now())
+    harness = next(row for row in handshaken.result('toolsets.defaults', params)['toolsets'] if row['name'] == 'harness')
+    assert harness['available'] is True and harness['selected'] is False
+
+    toggle('harness', True)
+    assert 'harness' not in (saved().get('agent') or {}).get('disabled_toolsets', [])
+    assert 'harness' in defaults_now()
+
+    before = config_file.read_bytes()
+    message, _ = handshaken.call('toolsets.set_default', {**params, 'name': 'synthetic-mcp', 'enabled': True})
+    assert message['error']['code'] == -32602 and 'synthetic-mcp' in message['error']['message']
+    assert config_file.read_bytes() == before
