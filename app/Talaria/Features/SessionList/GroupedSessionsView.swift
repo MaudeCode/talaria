@@ -14,10 +14,8 @@ struct GroupedSessionsView: View {
     @State private var searchText = ""
 
     var body: some View {
-        let rows = sessions.map {
-            SessionInteractiveRow(viewModel: viewModel, session: $0, selectedSessionID: selectedSessionID, actions: actions,
-                                  searchText: searchText, style: rowStyle)
-        }
+        let rows = SessionInteractiveRow.rows(sessions, viewModel: viewModel, selectedSessionID: selectedSessionID, actions: actions,
+                                              searchText: searchText, style: rowStyle)
         SidebarList {
             if rows.isEmpty {
                 SessionListStatusRow(

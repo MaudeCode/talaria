@@ -58,6 +58,15 @@ struct SessionInteractiveRow: View, Equatable {
         )
     }
 
+    /// The rows a list shows, built in that list's body.
+    static func rows(_ sessions: [SessionSummary], viewModel: SessionListViewModel, selectedSessionID: String?,
+                     actions: SessionListRowActions, searchText: String, style: SessionRowStyle) -> [SessionInteractiveRow] {
+        sessions.map {
+            SessionInteractiveRow(viewModel: viewModel, session: $0, selectedSessionID: selectedSessionID, actions: actions,
+                                  searchText: searchText, style: style)
+        }
+    }
+
     /// The actions are the list's handlers, stable for its lifetime; only whether this row opens beside the chat
     /// follows view state, and `state` carries it.
     nonisolated static func == (lhs: SessionInteractiveRow, rhs: SessionInteractiveRow) -> Bool {

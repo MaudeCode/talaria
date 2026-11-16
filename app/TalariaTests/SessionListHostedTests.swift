@@ -3435,11 +3435,14 @@ final class HostedSidebarDrag {
     }
 }
 
-/// TAL-1398: a list update re-runs only the rows whose own state changed, in the sidebar's Recents and a section list.
+/// TAL-1398: a list update hands every row whose own state did not change an equal value, so `.equatable()` skips it,
+/// in the sidebar's Recents and the Scheduled section list. The hosted lists only show the changed row re-render: on a
+/// saturated runner SwiftUI re-runs every row without comparing them, so which rows it skips is not asserted.
 extension SessionListHostedTests {
-    func testAListUpdateReRunsOnlyTheChangedRow() async throws {
+    func testAListUpdateChangesOnlyTheChangedRow() async throws {
         for list in ["Recents", "Scheduled"] {
-            let state = RowSkipProtocol.State(sourceKind: list == "Scheduled" ? "cron" : "webui")
+            let scheduled = list == "Scheduled"
+            let state = RowSkipProtocol.State(sourceKind: scheduled ? "cron" : "webui")
             RowSkipProtocol.state = state
             defer { RowSkipProtocol.state = nil }
             let configuration = URLSessionConfiguration.ephemeral
@@ -3448,46 +3451,69 @@ extension SessionListHostedTests {
             let viewModel = SessionListViewModel(server: server, client: APIClient(baseURL: server, session: URLSession(configuration: configuration)))
             _ = await viewModel.load()
             XCTAssertEqual(viewModel.sessions.count, 3, list)
+            let actions = fixtureRowActions
+            // The rows each list builds: Recents from the ordinary group in sidebar style, Scheduled from its cron rows.
+            func rows() -> [String: SessionInteractiveRow] {
+                let sessions = scheduled
+                    ? viewModel.visibleSessions(searchText: "", selectedProjectID: nil).filter { $0.isCronSession && $0.archived != true }
+                    : viewModel.scheduledSessionGroups(searchText: "", selectedProjectID: nil).ordinary
+                let built = SessionInteractiveRow.rows(sessions, viewModel: viewModel, selectedSessionID: "row-b", actions: actions,
+                                                       searchText: "", style: scheduled ? .regular : .sidebar)
+                return Dictionary(uniqueKeysWithValues: built.map { ($0.session.id, $0) })
+            }
+            func changed(since before: [String: SessionInteractiveRow]) -> Set<String> {
+                let after = rows()
+                return Set(before.keys).union(after.keys).filter { before[$0] != after[$0] }
+            }
             let recorder = ChatBodyEvaluationRecorder()
             ChatBodyEvaluationRecorder.installed = recorder
             defer { ChatBodyEvaluationRecorder.installed = nil }
-            let window = try hostWindow(list == "Scheduled"
+            let window = try hostWindow(scheduled
                 ? AnyView(NavigationStack {
                     GroupedSessionsView(title: list, isEnabled: true, emptySystemImage: "calendar", includes: { $0.isCronSession },
-                                        viewModel: viewModel, selectedSessionID: "row-b", actions: fixtureRowActions)
+                                        viewModel: viewModel, selectedSessionID: "row-b", actions: actions)
                 })
-                : AnyView(RecentsRows(viewModel: viewModel, actions: fixtureRowActions)))
-            let rendered = await awaitCondition { ["row-a", "row-b", "row-c"].allSatisfy { recorder.counts["sessionRow:\($0)", default: 0] > 0 } }
-            XCTAssertTrue(rendered, "\(list): rows did not render")
+                : AnyView(RecentsRows(viewModel: viewModel, actions: actions)))
+            _ = try await requireElement(in: window, "\(list): rows did not render") { $0.accessibilityLabel?.hasPrefix("Row c") == true }
+            func reRenders(_ id: String) async -> Bool { await awaitCondition { recorder.counts["sessionRow:\(id)", default: 0] > 0 } }
 
-            func reRuns(_ change: () async -> Void) async -> Set<String> {
-                settle(0.2)
-                recorder.reset()
-                await change()
-                settle(0.2)
-                return Set(recorder.counts.keys.filter { $0.hasPrefix("sessionRow:") })
-            }
-            // Just after launch every list update can redraw every row; measure once an unchanged refresh redraws none.
-            var settled = false
-            for _ in 0..<20 where !settled { settled = await reRuns { _ = await viewModel.load() }.isEmpty }
-            XCTAssertTrue(settled, "\(list): an unchanged refresh keeps re-running rows")
-
+            var before = rows()
             state.rename("row-b", to: "Row b renamed")
-            let renamed = await reRuns { _ = await viewModel.load() }
-            XCTAssertEqual(renamed, ["sessionRow:row-b"], "\(list): a title change re-ran other rows")
+            recorder.reset()
+            _ = await viewModel.load()
+            XCTAssertEqual(changed(since: before), ["row-b"], "\(list): a title change")
+            let renamed = await reRenders("row-b")
+            XCTAssertTrue(renamed, "\(list): the renamed row did not re-render")
 
+            before = rows()
             let rowA = try XCTUnwrap(viewModel.sessions.first { $0.sessionId == "row-a" })
             state.pin("row-a")
-            let pinned = await reRuns { _ = await viewModel.setPinned(true, for: rowA) }
-            XCTAssertEqual(pinned, ["sessionRow:row-a"], "\(list): a pin re-ran other rows")
+            recorder.reset()
+            let pin = Task { await viewModel.setPinned(true, for: rowA) }
+            let pinHeld = await awaitCondition { state.isHolding }
+            XCTAssertTrue(pinHeld, "\(list): the pin never reached the server")
+            XCTAssertEqual(changed(since: before), ["row-a"], "\(list): a pending pin")
+            let pinShown = await reRenders("row-a")
+            XCTAssertTrue(pinShown, "\(list): the pinned row did not re-render")
+            state.release()
+            _ = await pin.value
+            XCTAssertEqual(changed(since: before), ["row-a"], "\(list): a pin")
 
+            before = rows()
             let rowC = try XCTUnwrap(viewModel.sessions.first { $0.sessionId == "row-c" })
             state.archive("row-c")
-            let archived = await reRuns { _ = await viewModel.archive(rowC) }
-            XCTAssertTrue(archived.isSubset(of: ["sessionRow:row-c"]), "\(list): an archive re-ran \(archived.sorted())")
-            let labels = HostedAccessibility.labels(in: window)
-            XCTAssertTrue(labels.contains { $0.hasPrefix("Row b renamed") }, "\(list): the renamed row kept its title")
-            XCTAssertFalse(labels.contains { $0.hasPrefix("Row c") }, "\(list): the archived row stayed")
+            let archive = Task { await viewModel.archive(rowC) }
+            let archiveHeld = await awaitCondition { state.isHolding }
+            XCTAssertTrue(archiveHeld, "\(list): the archive never reached the server")
+            XCTAssertEqual(changed(since: before), ["row-c"], "\(list): a pending archive")
+            state.release()
+            _ = await archive.value
+            XCTAssertEqual(changed(since: before), ["row-c"], "\(list): an archive")
+
+            let gone = await awaitNoElement(in: window) { $0.accessibilityLabel?.hasPrefix("Row c") == true }
+            XCTAssertTrue(gone, "\(list): the archived row stayed")
+            XCTAssertNotNil(HostedAccessibility.elements(in: window).first { $0.accessibilityLabel?.hasPrefix("Row b renamed") == true },
+                            "\(list): the renamed row kept its old title")
             window.isHidden = true
             window.rootViewController = nil
         }
@@ -3509,16 +3535,24 @@ private struct RecentsRows: View {
 }
 
 private final class RowSkipProtocol: URLProtocol {
+    /// The server's rows. A pin or archive is held until `release()`, so the list shows it pending first.
     final class State: @unchecked Sendable {
         private let lock = NSLock()
         private let sourceKind: String
         private var titles = ["row-a": "Row a", "row-b": "Row b", "row-c": "Row c"]
         private var pinned: Set<String> = []
         private var archived: Set<String> = []
+        private var held: RowSkipProtocol?
         init(sourceKind: String) { self.sourceKind = sourceKind }
         func rename(_ id: String, to title: String) { lock.withLock { titles[id] = title } }
         func pin(_ id: String) { lock.withLock { _ = pinned.insert(id) } }
         func archive(_ id: String) { lock.withLock { _ = archived.insert(id) } }
+        var isHolding: Bool { lock.withLock { held != nil } }
+        func hold(_ request: RowSkipProtocol) { lock.withLock { held = request } }
+        func release() {
+            let request = lock.withLock { () -> RowSkipProtocol? in defer { held = nil }; return held }
+            request?.answer(#"{"ok": true}"#)
+        }
         var sessionsJSON: String {
             lock.withLock {
                 let rows = titles.keys.sorted().filter { !archived.contains($0) }.map { id in
@@ -3532,10 +3566,13 @@ private final class RowSkipProtocol: URLProtocol {
     override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "row-skip.test" }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
-        let body = request.url?.path == "/api/sessions" ? Self.state?.sessionsJSON ?? #"{"sessions":[]}"# : #"{"ok": true}"#
+        if request.url?.path == "/api/sessions" { answer(Self.state?.sessionsJSON ?? #"{"sessions":[]}"#) }
+        else { Self.state?.hold(self) }
+    }
+    override func stopLoading() {}
+    func answer(_ body: String) {
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(body.utf8))
         client?.urlProtocolDidFinishLoading(self)
     }
-    override func stopLoading() {}
 }

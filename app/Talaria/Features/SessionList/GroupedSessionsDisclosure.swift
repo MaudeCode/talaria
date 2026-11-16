@@ -40,10 +40,8 @@ struct GroupedSessionsDisclosure: View {
         }
 
         if isExpanded {
-            let rows = displayedSessions.map {
-                SessionInteractiveRow(viewModel: viewModel, session: $0, selectedSessionID: selectedSessionID, actions: actions,
-                                      searchText: searchText, style: rowStyle)
-            }
+            let rows = SessionInteractiveRow.rows(displayedSessions, viewModel: viewModel, selectedSessionID: selectedSessionID,
+                                                  actions: actions, searchText: searchText, style: rowStyle)
             ForEach(rows, id: \.session.id) { row in
                 row.equatable()
                     .transition(SessionListMotion.disclosureContentTransition(reduceMotion: reduceMotion))

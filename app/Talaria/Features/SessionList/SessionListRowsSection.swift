@@ -37,7 +37,8 @@ struct SessionListRowsSection: View {
                 .padding(.horizontal, 24)
                 .sessionsScreenListRow()
         } else {
-            let rows = sessions.map(sessionRow)
+            let rows = SessionInteractiveRow.rows(sessions, viewModel: viewModel, selectedSessionID: selectedSessionID,
+                                                  actions: actions, searchText: searchText, style: rowStyle)
             if rowStyle == .sidebar {
                 ForEach(sidebarRows(rows), id: \.row.session.id) { row in
                     if showsHeading, let caption = row.caption {
@@ -71,17 +72,6 @@ struct SessionListRowsSection: View {
         case "recent": return String(localized: "Recents")
         default: return listed?.title
         }
-    }
-
-    private func sessionRow(_ session: SessionSummary) -> SessionInteractiveRow {
-        SessionInteractiveRow(
-            viewModel: viewModel,
-            session: session,
-            selectedSessionID: selectedSessionID,
-            actions: actions,
-            searchText: searchText,
-            style: rowStyle
-        )
     }
 
     private var sessionsHeaderRow: some View {
