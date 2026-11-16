@@ -488,6 +488,23 @@ describe('passkeys', () => {
   })
 })
 
+describe('passkey sign-in options throttle', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer({ env: { TALARIA_WEB_PASSKEY: '1' } }) })
+  afterAll(() => s.close())
+
+  it('TAL-2221: answers the 11th request from one client inside a minute with 429 and stores no challenge', async () => {
+    const origin = s.base
+    const options = (await json(await post(s, '/api/auth/passkey/register/options', {}, { origin }))).publicKey as Json
+    expect((await post(s, '/api/auth/passkey/register', new FakeAuthenticator().register(options, origin), { origin })).status).toBe(200)
+    for (let i = 0; i < 10; i += 1) expect((await post(s, '/api/auth/passkey/options', {}, { origin })).status).toBe(200)
+    const stored = (): number => Object.keys(JSON.parse(readFileSync(join(s.state, '.passkey_challenges.json'), 'utf8')) as Json).length
+    const before = stored()
+    expect((await post(s, '/api/auth/passkey/options', {}, { origin })).status).toBe(429)
+    expect(stored()).toBe(before)
+  })
+})
+
 describe('malformed passkey registration', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer({ env: { TALARIA_WEB_PASSKEY: '1' } }) })

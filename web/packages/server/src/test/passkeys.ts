@@ -18,6 +18,8 @@ export function cborEncode(value: unknown): Buffer {
 export class FakeAuthenticator {
   constructor(readonly key: { publicKey: KeyObject; privateKey: KeyObject } = generateKeyPairSync('ec', { namedCurve: 'P-256' }), readonly credentialId: Buffer = randomBytes(16)) {}
   counter = 0
+  /** Sets the user-verified flag (0x04); false models a PIN-less key that only proves presence. */
+  uv = true
   private authData(rpId: string, flags: number, extra: Buffer): Buffer {
     const head = Buffer.alloc(37)
     createHash('sha256').update(rpId, 'ascii').digest().copy(head, 0)
@@ -31,14 +33,14 @@ export class FakeAuthenticator {
     const cose = new Map<number, unknown>([[1, 2], [3, -7], [-1, 1], [-2, Buffer.from(String(pub.x), 'base64url')], [-3, Buffer.from(String(pub.y), 'base64url')]])
     const idLen = Buffer.alloc(2); idLen.writeUInt16BE(this.credentialId.length)
     const credData = Buffer.concat([Buffer.alloc(16), idLen, this.credentialId, cborEncode(cose)])
-    const authData = this.authData(String(rp.id), 0x41, credData)
+    const authData = this.authData(String(rp.id), this.uv ? 0x45 : 0x41, credData)
     const clientData = Buffer.from(JSON.stringify({ type: 'webauthn.create', challenge: options.challenge, origin }))
     const attestation = cborEncode(new Map<string, unknown>([['fmt', 'none'], ['attStmt', new Map()], ['authData', authData]]))
     return { id: b64u(this.credentialId), rawId: b64u(this.credentialId), type: 'public-key', response: { clientDataJSON: b64u(clientData), attestationObject: b64u(attestation) } }
   }
   assert(options: Json, origin: string, opts: { advance?: boolean } = {}): Json {
     if (opts.advance !== false) this.counter += 1
-    const authData = this.authData(String(options.rpId), 0x01, Buffer.alloc(0))
+    const authData = this.authData(String(options.rpId), this.uv ? 0x05 : 0x01, Buffer.alloc(0))
     const clientData = Buffer.from(JSON.stringify({ type: 'webauthn.get', challenge: options.challenge, origin }))
     const signature = cryptoSign('sha256', Buffer.concat([authData, createHash('sha256').update(clientData).digest()]), this.key.privateKey)
     return { id: b64u(this.credentialId), rawId: b64u(this.credentialId), type: 'public-key', response: { clientDataJSON: b64u(clientData), authenticatorData: b64u(authData), signature: b64u(signature) } }
