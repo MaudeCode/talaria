@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Sharing large photos or PDFs to Talaria checks each file's size before reading it, so oversized items no longer exhaust the share extension's memory.",
+      "highlight": false,
+      "components": [
+        "app"
+      ],
+      "announce": false
+    }
+  ]
+}

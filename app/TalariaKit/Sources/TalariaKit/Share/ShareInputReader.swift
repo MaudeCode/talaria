@@ -113,7 +113,7 @@ public enum ShareInputReader: Sendable {
             return nil
         }
 
-        return try? attachment(from: url, provider: provider)
+        return attachment(from: url, provider: provider)
     }
 
     private static func loadDataAttachment(from provider: NSItemProvider) async -> SharedAttachmentImport? {
@@ -121,9 +121,21 @@ public enum ShareInputReader: Sendable {
             return nil
         }
 
-        let data = await loadData(from: provider, typeIdentifier: typeIdentifier)
-        guard let data, data.count <= TalariaShareDraft.maximumSharedAttachmentBytes else {
+        // A file representation is size-checked before it is read and then mapped, so an
+        // over-cap item never enters the extension's memory. Only a provider that cannot
+        // supply a readable file falls back to its in-memory data representation.
+        let data: Data
+        switch await loadFileData(from: provider, typeIdentifier: typeIdentifier) {
+        case .read(let fileData):
+            data = fileData
+        case .oversized:
             return nil
+        case .unreadable:
+            guard let fallback = await loadData(from: provider, typeIdentifier: typeIdentifier),
+                  fallback.count <= TalariaShareDraft.maximumSharedAttachmentBytes else {
+                return nil
+            }
+            data = fallback
         }
 
         return SharedAttachmentImport(
@@ -133,7 +145,16 @@ public enum ShareInputReader: Sendable {
         )
     }
 
-    private static func attachment(from url: URL, provider: NSItemProvider) throws -> SharedAttachmentImport? {
+    /// The outcome of reading a shared file: `oversized` is final, `unreadable` lets a caller fall back.
+    private enum FileRead: Sendable {
+        case read(Data)
+        case oversized
+        case unreadable
+    }
+
+    /// Checks the file's size against the per-file cap before reading, then maps it rather than
+    /// copying it onto the heap. Mapped bytes stay readable after the provider unlinks its copy.
+    private static func readAttachmentFile(at url: URL) -> FileRead {
         let didStartAccessing = url.startAccessingSecurityScopedResource()
         defer {
             if didStartAccessing {
@@ -143,11 +164,17 @@ public enum ShareInputReader: Sendable {
 
         if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
            size > TalariaShareDraft.maximumSharedAttachmentBytes {
-            return nil
+            return .oversized
         }
 
-        let data = try Data(contentsOf: url)
-        guard data.count <= TalariaShareDraft.maximumSharedAttachmentBytes else {
+        guard let data = try? Data(contentsOf: url, options: .alwaysMapped) else {
+            return .unreadable
+        }
+        return data.count <= TalariaShareDraft.maximumSharedAttachmentBytes ? .read(data) : .oversized
+    }
+
+    private static func attachment(from url: URL, provider: NSItemProvider) -> SharedAttachmentImport? {
+        guard case .read(let data) = readAttachmentFile(at: url) else {
             return nil
         }
 
@@ -240,6 +267,16 @@ public enum ShareInputReader: Sendable {
         await withCheckedContinuation { continuation in
             provider.loadItem(forTypeIdentifier: typeIdentifier, options: nil) { item, _ in
                 continuation.resume(returning: LoadedItem(item))
+            }
+        }
+    }
+
+    /// Reads the provider's file representation inside its completion handler, before the
+    /// provider deletes the temporary copy.
+    private static func loadFileData(from provider: NSItemProvider, typeIdentifier: String) async -> FileRead {
+        await withCheckedContinuation { continuation in
+            provider.loadFileRepresentation(forTypeIdentifier: typeIdentifier) { url, _ in
+                continuation.resume(returning: url.map(readAttachmentFile) ?? .unreadable)
             }
         }
     }

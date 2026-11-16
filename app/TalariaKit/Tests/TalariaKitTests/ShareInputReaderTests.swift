@@ -115,6 +115,74 @@ final class ShareInputReaderTests: XCTestCase {
         XCTAssertEqual(input.attachments.first?.typeIdentifier, UTType.plainText.identifier)
     }
 
+    // MARK: - File representations (TAL-849)
+
+    /// Writes a sparse file of `count` bytes so an over-cap fixture costs no disk or memory.
+    private func temporaryFile(named name: String, count: Int, payload: Data? = nil) throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+
+        let url = directory.appendingPathComponent(name)
+        if let payload {
+            try payload.write(to: url)
+        } else {
+            FileManager.default.createFile(atPath: url.path, contents: nil)
+            let handle = try FileHandle(forWritingTo: url)
+            try handle.truncate(atOffset: UInt64(count))
+            try handle.close()
+        }
+        return url
+    }
+
+    func testOverCapFileRepresentationIsRejectedWithoutLoadingItsData() async throws {
+        let url = try temporaryFile(named: "scan.pdf", count: TalariaShareDraft.maximumSharedAttachmentBytes + 1)
+        let provider = RecordingItemProvider()
+        provider.registerFileRepresentation(forTypeIdentifier: UTType.pdf.identifier, visibility: .all) { completion in
+            completion(url, false, nil)
+            return nil
+        }
+
+        let input = try await ShareInputReader.input(from: [provider])
+
+        XCTAssertTrue(input.attachments.isEmpty)
+        XCTAssertFalse(provider.requestedDataRepresentation, "an over-cap file must not be read into memory")
+    }
+
+    func testUnderCapFileRepresentationImportsWithoutLoadingItsData() async throws {
+        let payload = Data([0x89, 0x50, 0x4E, 0x47, 0x01])
+        let url = try temporaryFile(named: "IMG_0001.png", count: payload.count, payload: payload)
+        let provider = RecordingItemProvider()
+        provider.registerFileRepresentation(forTypeIdentifier: UTType.png.identifier, visibility: .all) { completion in
+            completion(url, false, nil)
+            return nil
+        }
+
+        let input = try await ShareInputReader.input(from: [provider])
+
+        XCTAssertEqual(input.attachments.count, 1)
+        XCTAssertEqual(input.attachments.first?.data, payload)
+        XCTAssertEqual(input.attachments.first?.filename, "shared-image.png")
+        XCTAssertEqual(input.attachments.first?.typeIdentifier, UTType.png.identifier)
+        XCTAssertFalse(provider.requestedDataRepresentation, "the file representation must be read, not the data")
+    }
+
+    func testDataRepresentationIsTheFallbackWhenNoFileIsAvailable() async throws {
+        let payload = Data([0x01, 0x02, 0x03])
+        let provider = RecordingItemProvider(failsFileRepresentation: true)
+        provider.registerDataRepresentation(forTypeIdentifier: UTType.png.identifier, visibility: .all) { completion in
+            completion(payload, nil)
+            return nil
+        }
+
+        let input = try await ShareInputReader.input(from: [provider])
+
+        XCTAssertEqual(input.attachments.first?.data, payload)
+        XCTAssertEqual(input.attachments.first?.filename, "shared-image.png")
+        XCTAssertTrue(provider.requestedDataRepresentation)
+    }
+
     // MARK: - Filename fallbacks
 
     func testAttachmentFilenameFallsBackToTypeBasedName() async throws {
@@ -200,5 +268,41 @@ final class ShareInputReaderTests: XCTestCase {
         XCTAssertTrue(input.urls.isEmpty)
         XCTAssertTrue(input.textSnippets.isEmpty)
         XCTAssertTrue(input.attachments.isEmpty)
+    }
+}
+
+/// Records whether the reader asked for a provider's full data representation, and can
+/// refuse file representations to stand in for a provider that cannot supply a file.
+private final class RecordingItemProvider: NSItemProvider, @unchecked Sendable {
+    private let failsFileRepresentation: Bool
+    private let lock = NSLock()
+    private var didRequestData = false
+
+    init(failsFileRepresentation: Bool = false) {
+        self.failsFileRepresentation = failsFileRepresentation
+        super.init()
+    }
+
+    var requestedDataRepresentation: Bool {
+        lock.withLock { didRequestData }
+    }
+
+    override func loadDataRepresentation(
+        forTypeIdentifier typeIdentifier: String,
+        completionHandler: @escaping @Sendable (Data?, (any Error)?) -> Void
+    ) -> Progress {
+        lock.withLock { didRequestData = true }
+        return super.loadDataRepresentation(forTypeIdentifier: typeIdentifier, completionHandler: completionHandler)
+    }
+
+    override func loadFileRepresentation(
+        forTypeIdentifier typeIdentifier: String,
+        completionHandler: @escaping @Sendable (URL?, (any Error)?) -> Void
+    ) -> Progress {
+        guard !failsFileRepresentation else {
+            completionHandler(nil, CocoaError(.fileReadUnknown))
+            return Progress()
+        }
+        return super.loadFileRepresentation(forTypeIdentifier: typeIdentifier, completionHandler: completionHandler)
     }
 }
