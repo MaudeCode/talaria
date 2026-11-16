@@ -9,7 +9,11 @@ struct TaskDetailView: View {
     @State private var viewModel: TaskDetailViewModel
     @State private var isPresentingEditTask = false
     @State private var isConfirmingDelete = false
+    @State private var reads = ScreenReads()
     @Environment(\.dismiss) private var dismiss
+
+    /// Run history and a run's detail load beside the output; each supersedes only its own earlier read.
+    private enum ReadKey { case history, run }
 
     init(
         job: CronJob,
@@ -43,7 +47,7 @@ struct TaskDetailView: View {
                         Text(errorMessage)
                     } actions: {
                         Button("Try Again") {
-                            Task { await loadOutput() }
+                            reads.start { await loadOutput() }
                         }
                     }
                     .padding(.top, 24)
@@ -61,9 +65,9 @@ struct TaskDetailView: View {
                 if viewModel.isHistorySupported {
                     TaskRunHistorySection(
                         viewModel: viewModel,
-                        onSelect: { run in Task { await viewModel.loadRunDetail(run) } },
-                        onLoadMore: { Task { await viewModel.loadRunHistory() } },
-                        onRetry: { Task { await viewModel.retryRunHistory() } }
+                        onSelect: { run in reads.start(ReadKey.run) { await viewModel.loadRunDetail(run) } },
+                        onLoadMore: { reads.start(ReadKey.history) { await viewModel.loadRunHistory() } },
+                        onRetry: { reads.start(ReadKey.history) { await viewModel.retryRunHistory() } }
                     )
                     .padding(.top, 8)
                 }
@@ -74,7 +78,7 @@ struct TaskDetailView: View {
             TaskRunOutputSheet(
                 viewModel: viewModel,
                 run: run,
-                onRetry: { Task { await viewModel.loadRunDetail(run) } },
+                onRetry: { reads.start(ReadKey.run) { await viewModel.loadRunDetail(run) } },
                 onDismiss: { viewModel.dismissRun() }
             )
         }
@@ -82,7 +86,7 @@ struct TaskDetailView: View {
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 RefreshToolbarButton(isLoading: viewModel.isLoading) {
-                    Task { await loadOutput() }
+                    reads.start { await loadOutput() }
                 }
 
                 Menu {
@@ -160,6 +164,7 @@ struct TaskDetailView: View {
         ) {
             await viewModel.refresh()
         }
+        .ownsReads(reads)
     }
 
     @ViewBuilder

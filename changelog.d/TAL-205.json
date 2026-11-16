@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Leaving Tasks, Insights, or a Settings list stops the refresh you started there, and an earlier refresh can no longer replace newer results.",
+      "highlight": false
+    }
+  ]
+}

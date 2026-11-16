@@ -7,13 +7,13 @@ struct TasksView: View {
     let viewModel: TasksViewModel
     @Binding var selection: SectionItem?
     let onAPIError: (Error) -> Void
-
+    @State private var reads = ScreenReads()
 
     var body: some View {
         content
             .navigationTitle("Tasks")
             .toolbar {
-                TasksListActions(viewModel: viewModel, onAPIError: onAPIError)
+                TasksListActions(viewModel: viewModel, reads: reads, onAPIError: onAPIError)
             }
             .sheet(isPresented: Bindable(viewModel).isPresentingCreateTask) {
                 CronJobEditorSheet(
@@ -39,6 +39,7 @@ struct TasksView: View {
             .refreshesLive(on: .cronRun, every: .seconds(30), showsStatus: false) {
                 await loadTasks()
             }
+            .ownsReads(reads)
     }
 
     @ViewBuilder
@@ -52,7 +53,7 @@ struct TasksView: View {
                 Text(errorMessage)
             } actions: {
                 Button("Try Again") {
-                    Task { await loadTasks() }
+                    reads.start { await loadTasks() }
                 }
             }
         } else if viewModel.jobs.isEmpty, viewModel.recentCompletions.isEmpty, viewModel.unwritableStores.isEmpty {
@@ -84,6 +85,7 @@ struct TasksView: View {
 /// (TAL-1528).
 struct TasksListActions: ToolbarContent {
     let viewModel: TasksViewModel
+    let reads: ScreenReads
     let onAPIError: (Error) -> Void
 
     var body: some ToolbarContent {
@@ -100,7 +102,7 @@ struct TasksListActions: ToolbarContent {
 
         ToolbarItem(placement: .topBarTrailing) {
             RefreshToolbarButton(isLoading: viewModel.isLoading) {
-                Task { await Self.load(viewModel, onAPIError: onAPIError) }
+                reads.start { await Self.load(viewModel, onAPIError: onAPIError) }
             }
         }
     }

@@ -14,6 +14,7 @@ struct ArchivedSessionsView: View {
     @Environment(\.openArchivedSession) private var openArchivedSession
     @State private var viewModel: ArchivedSessionsViewModel
     @State private var openedSession: SessionSummary?
+    @State private var reads = ScreenReads()
     @AppStorage(AppHaptics.isEnabledKey) private var isHapticsEnabled = true
 
     init(server: URL, onAPIError: @escaping (Error) -> Void, selectedSessionID: String? = nil) {
@@ -41,6 +42,7 @@ struct ArchivedSessionsView: View {
             .refreshable {
                 await load()
             }
+            .ownsReads(reads)
             .alert(
                 "Action Failed",
                 isPresented: Binding(
@@ -90,7 +92,7 @@ struct ArchivedSessionsView: View {
                     .lineLimit(3)
 
                 Button("Try Again") {
-                    Task { await load() }
+                    reads.start { await load() }
                 }
                 // A List makes a default-styled button's whole row its tap target.
                 .buttonStyle(.plain)

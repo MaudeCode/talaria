@@ -73,9 +73,11 @@ public final class TaskDetailViewModel {
         do {
             let response = try await client.cronOutput(jobID: jobID, limit: 5)
             outputs = response.outputs ?? []
-        } catch {
+        } catch where !APIError.isCancellation(error) {
             lastError = error
             errorMessage = error.localizedDescription
+        } catch {
+            // The screen left mid-read (TAL-205); that is not a failure.
         }
 
         deliveryOptions = await deliveryOptionsResponse?.platforms
@@ -135,7 +137,7 @@ public final class TaskDetailViewModel {
             guard generation == historyGeneration else { return }
             isHistorySupported = false
         } catch {
-            guard generation == historyGeneration else { return }
+            guard generation == historyGeneration, !APIError.isCancellation(error) else { return }
             runsErrorMessage = error.localizedDescription
         }
     }
@@ -164,7 +166,7 @@ public final class TaskDetailViewModel {
             guard generation == runDetailGeneration else { return }
             selectedRunDetail = response
         } catch {
-            guard generation == runDetailGeneration else { return }
+            guard generation == runDetailGeneration, !APIError.isCancellation(error) else { return }
             runDetailErrorMessage = error.localizedDescription
         }
     }
