@@ -116,11 +116,12 @@ const COOKIE_DQ_RE = /("(?:Set-)?Cookie:\s*)((?:[^"\\\r\n]|\\.)*)/gi
 const COOKIE_BARE_RE = new RegExp(String.raw`((?<!['"])\b(?:Set-)?Cookie:\s*)((?:${QUOTED}|[^'"\\\r\n]|\\(?!"))+)`, 'gi')
 /**
  * A cookie header's value is a credential when any of its `;` segments is a `name=value` pair, read as
- * `parseCookieHeader` reads it (`name = value`, after an empty or flag segment), or, after `Set-Cookie:`, is one opaque
- * token of 16 or more characters; prose (`The cookie: it was tasty`, `the Set-Cookie: header`) is not.
+ * `parseCookieHeader` reads it (whatever whitespace `trim()` drops around `=`, after an empty or flag segment), or,
+ * after `Set-Cookie:`, is one opaque token of 16 or more characters; prose (`The cookie: it was tasty`, `the Set-Cookie:
+ * header`) is not.
  */
 const cookieHeaderValue = (head: string, value: string): boolean =>
-  /(?:^|;)[ \t]*[!#$%&'*+.^_\x60|~0-9A-Za-z-]+[ \t]*=/.test(value) || (/set-/i.test(head) && /^[^\s\\"';&|<>()$\x60*=]{16,}(?![^\s;])/.test(value))
+  /(?:^|;)\s*[!#$%&'*+.^_\x60|~0-9A-Za-z-]+\s*=/.test(value) || (/set-/i.test(head) && /^[^\s\\"';&|<>()$\x60*=]{16,}(?![^\s;])/.test(value))
 /** A credential value for a bare `cookie` key: a `name=value` payload or an opaque token, never code (`getCookie()`). */
 const cookieKeyValue = (value: string): boolean => /^[^=$][^=]*=/.test(value) || looksOpaque(value)
 /**

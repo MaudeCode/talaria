@@ -1354,6 +1354,8 @@ const AGENT_PARITY: Record<string, [string, string][]> = {
     ['Cookie: session=abc123', 'Cookie: ***'],
     ['Cookie: hermes_session = syntheticSessionValue1234567890', 'Cookie: ***'],
     ['Cookie: ; hermes_session=syntheticSessionValue1234567890', 'Cookie: ***'],
+    ['Cookie: hermes_session\u00a0=syntheticSessionValue1234567890', 'Cookie: ***'],
+    ['Cookie:\u00a0;\u00a0hermes_session=syntheticSessionValue1234567890', 'Cookie:\u00a0***'],
     ['Cookie: flag; hermes_session=syntheticSessionValue1234567890', 'Cookie: ***'],
     [`curl -H 'Cookie: hermes_session = syntheticSessionValue1234567890' x`, `curl -H 'Cookie: ***' x`],
     ['Set-Cookie: sid=xyz; Path=/', 'Set-Cookie: ***'],
