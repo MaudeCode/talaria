@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Background tasks lists each delegated agent's transcript, so you can open it while the agent is still running.",
+      "highlight": false,
+      "components": [
+        "app"
+      ],
+      "announcement": {
+        "title": "Watch delegated agents work",
+        "description": "Open an agent's transcript from Background tasks while it runs or after it finishes.",
+        "icon": "automation"
+      }
+    }
+  ]
+}

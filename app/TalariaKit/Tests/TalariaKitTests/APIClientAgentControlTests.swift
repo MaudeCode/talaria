@@ -349,10 +349,10 @@ final class APIClientAgentControlTests: APIClientTestCase {
               "agent_available": true,
               "tasks": [
                 {"task_id": "d1", "kind": "delegation", "status": "attention", "title": "Fix CI", "started_at": 1, "updated_at": 2, "completed_at": null,
-                 "result_available": false, "child_session_id": null, "exit_code": null, "agents": {"total": 2, "completed": 1, "failed": 0, "running": 1}, "pinned": true, "dismissible": false},
+                 "result_available": false, "child_sessions": [{"goal": "Fix lint", "session_id": "c1"}, {"goal": "No session"}, 7, {"session_id": "c2"}], "exit_code": null, "agents": {"total": 2, "completed": 1, "failed": 0, "running": 1}, "pinned": true, "dismissible": false},
                 {"task_id": "bg1", "kind": "background_command", "status": "completed", "title": "summarize", "result_available": true, "pinned": true, "dismissible": true},
                 {"task_id": "", "kind": "process"},
-                {"task_id": "p1", "kind": "future_kind", "status": "future_status", "title": "x"}
+                {"task_id": "p1", "kind": "future_kind", "status": "future_status", "title": "x", "child_sessions": {"goal": "not a list"}}
               ]
             }
             """, for: request)
@@ -360,7 +360,9 @@ final class APIClientAgentControlTests: APIClientTestCase {
 
         let response = try await client.backgroundTasks(sessionID: "abc123")
         XCTAssertEqual(response.tasks.map(\.taskId), ["d1", "bg1", "p1"])
-        XCTAssertEqual(response.tasks[0], BackgroundWorkTask(taskId: "d1", kind: .delegation, status: .attention, title: "Fix CI", agents: .init(total: 2, completed: 1, failed: 0, running: 1), pinned: true))
+        XCTAssertEqual(response.tasks[0], BackgroundWorkTask(taskId: "d1", kind: .delegation, status: .attention, title: "Fix CI", agents: .init(total: 2, completed: 1, failed: 0, running: 1), pinned: true,
+                                                             childSessions: [.init(goal: "Fix lint", sessionId: "c1"), .init(goal: "", sessionId: "c2")]))
+        XCTAssertEqual(response.tasks[1...].flatMap(\.childSessions), [], "A missing or malformed list is no child sessions")
         XCTAssertTrue(response.tasks[1].resultAvailable && response.tasks[1].dismissible)
         XCTAssertEqual(response.tasks[2].status, .unknown)
     }
