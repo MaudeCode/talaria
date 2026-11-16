@@ -205,7 +205,7 @@ final class SessionNavigationStateTests: XCTestCase {
     func testInitialRefreshStartsBeforeDelayedDeepLinkFinishes() async {
         let recorder = SessionInitialLoadEventRecorder()
 
-        await SessionListInitialLoad.run(
+        await SessionListLoad.initial(
             resolvePendingDeepLink: {
                 await recorder.record(.deepLinkStarted)
                 // Finish only once the refresh has started, or after a deadline a serial load would hit. A fixed
@@ -229,6 +229,49 @@ final class SessionNavigationStateTests: XCTestCase {
         }
 
         XCTAssertLessThan(refreshIndex, deepLinkFinishIndex)
+    }
+
+    func testRefreshLoadsRowsFirstThenProjectsAndProfileTogether() async {
+        let recorder = SessionInitialLoadEventRecorder()
+
+        await SessionListLoad.refresh(
+            loadRows: {
+                await recorder.record(.rowsStarted)
+                await recorder.record(.rowsFinished)
+            },
+            isViewingCachedData: { false },
+            loadProjects: {
+                await recorder.record(.projectsStarted)
+                await recorder.waitFor(.profileStarted)
+                await recorder.record(.projectsFinished)
+            },
+            loadActiveProfile: {
+                await recorder.record(.profileStarted)
+                await recorder.waitFor(.projectsStarted)
+                await recorder.record(.profileFinished)
+            }
+        )
+
+        let events = await recorder.snapshot()
+        let index = { (event: SessionInitialLoadEventRecorder.Event) in events.firstIndex(of: event) ?? .max }
+        XCTAssertLessThan(index(.rowsFinished), index(.projectsStarted))
+        XCTAssertLessThan(index(.rowsFinished), index(.profileStarted))
+        XCTAssertLessThan(index(.projectsStarted), index(.profileFinished), "\(events)")
+        XCTAssertLessThan(index(.profileStarted), index(.projectsFinished), "\(events)")
+    }
+
+    func testRefreshFromCachedRowsSkipsProjectsButLoadsProfile() async {
+        let recorder = SessionInitialLoadEventRecorder()
+
+        await SessionListLoad.refresh(
+            loadRows: { await recorder.record(.rowsFinished) },
+            isViewingCachedData: { true },
+            loadProjects: { await recorder.record(.projectsStarted) },
+            loadActiveProfile: { await recorder.record(.profileStarted) }
+        )
+
+        let events = await recorder.snapshot()
+        XCTAssertEqual(events, [.rowsFinished, .profileStarted])
     }
 
     func testExplicitNewChatRouteOverridesStoredSelection() {
@@ -622,6 +665,9 @@ private actor SessionInitialLoadEventRecorder {
         case deepLinkStarted
         case refreshStarted
         case deepLinkFinished
+        case rowsStarted, rowsFinished
+        case projectsStarted, projectsFinished
+        case profileStarted, profileFinished
     }
 
     private var events: [Event] = []
@@ -632,6 +678,14 @@ private actor SessionInitialLoadEventRecorder {
 
     func snapshot() -> [Event] {
         events
+    }
+
+    /// Returns once `event` is recorded, or after a deadline a serial load would hit.
+    func waitFor(_ event: Event) async {
+        let deadline = ContinuousClock.now + .seconds(2)
+        while !events.contains(event), ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
     }
 }
 

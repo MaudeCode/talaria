@@ -1346,12 +1346,17 @@ public final class SessionListViewModel {
         // snapshot when a project changes remotely between the two.
         projectsGeneration += 1
         let generation = projectsGeneration
+        let scope = resourceGeneration
         do {
             let response = try await client.projects(caching: responseCache?.entry(ResponseCache.Kind.projects))
             // A project the user created, renamed or deleted while this request
             // was in flight is newer than the snapshot it returns, so adopting
             // it would make that mutation disappear until the next refresh.
-            guard generation == projectsGeneration else { return false }
+            // A profile change also fences it: the refresh loads the profile
+            // alongside projects (TAL-845), so reload for the profile now active.
+            guard generation == projectsGeneration else {
+                return scope == resourceGeneration ? false : await loadProjects(silently: silently)
+            }
             projects = response.projects ?? []
             pendingChanges = pendingChanges.filter { !$0.key.hasPrefix("project:") || !$0.value.requiresRefresh }
             return true
