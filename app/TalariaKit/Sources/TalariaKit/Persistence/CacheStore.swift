@@ -325,10 +325,17 @@ public enum CacheStore {
             context.insert(row)
             session = row
         }
-        session?.recentMessagesOffset = messagesOffset
-        session?.recentMessagesTruncated = messagesOffset.map { _ in hasOlderMessages }
-        session?.recentMessagesCount = messagesOffset.map { _ in messages.count }
-        session?.recentMessagesExpiresAt = messagesOffset.map { _ in cachedAt.addingTimeInterval(CachePolicy.ttl) }
+        if let session {
+            var row = CacheRowWriter(row: session)
+            row.set(\.recentMessagesOffset, messagesOffset)
+            row.set(\.recentMessagesTruncated, messagesOffset.map { _ in hasOlderMessages })
+            row.set(\.recentMessagesCount, messagesOffset.map { _ in messages.count })
+            if messagesOffset == nil {
+                row.set(\.recentMessagesExpiresAt, nil)
+            } else {
+                row.renew(\.recentMessagesExpiresAt, at: cachedAt)
+            }
+        }
 
         try saveChanges(in: context, now: cachedAt)
     }

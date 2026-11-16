@@ -67,47 +67,35 @@ public final class CachedMessage {
         return "\(serverURLString)|session|\(sessionID)|message|\(messagePart)"
     }
 
-    func apply(_ message: ChatMessage, sortIndex: Int, cachedAt: Date = Date()) {
-        self.sortIndex = sortIndex
-        role = message.role
-        content = message.content
-        timestamp = message.timestamp
-        messageId = message.messageId
-        name = message.name
-        toolCallId = message.toolCallId
-        toolUseId = message.toolUseId
-        if let toolCalls = message.toolCalls, !toolCalls.isEmpty {
-            toolCallsData = try? JSONEncoder().encode(toolCalls)
-        } else {
-            toolCallsData = nil
-        }
-        if let contentParts = message.contentParts, !contentParts.isEmpty {
-            contentPartsData = try? JSONEncoder().encode(contentParts)
-        } else {
-            contentPartsData = nil
-        }
-        reasoning = message.reasoning
-        reasoningTitlesData = message.reasoningTitles.flatMap { try? JSONEncoder().encode($0) }
-        activitySceneData = message.activityScene.flatMap { try? JSONEncoder().encode($0) }
-        turnDuration = message.turnDuration
-        turnTps = message.turnTps
-        turnId = message.turnId
-        steerData = message.steer.flatMap { try? JSONEncoder().encode($0) }
-        displayExcerpt = message.displayExcerpt
-        collapsible = message.collapsible ? true : nil
-        displayBodyData = message.displayBody.flatMap { try? JSONEncoder().encode($0) }
-        backgroundUpdateData = message.backgroundUpdate.flatMap { try? JSONEncoder().encode($0) }
-        talariaActivityData = message.talariaActivity.flatMap { try? JSONEncoder().encode($0) }
-        backgroundSilent = message.backgroundSilent ? true : nil
-        markerKind = message.markerKind?.wireValue
-        markerBody = message.markerBody
-        display = message.display?.rawValue
-        if let attachments = message.attachments, !attachments.isEmpty {
-            attachmentsData = try? JSONEncoder().encode(attachments)
-        } else {
-            attachmentsData = nil
-        }
-        self.cachedAt = cachedAt
-        expiresAt = cachedAt.addingTimeInterval(CachePolicy.ttl)
+    func apply(_ message: ChatMessage, sortIndex: Int, cachedAt: Date = Date(), encoder: JSONEncoder = JSONEncoder()) {
+        var row = CacheRowWriter(row: self, encoder: encoder)
+        row.set(\.sortIndex, sortIndex)
+        row.set(\.role, message.role)
+        row.set(\.content, message.content)
+        row.set(\.timestamp, message.timestamp)
+        row.set(\.messageId, message.messageId)
+        row.set(\.name, message.name)
+        row.set(\.toolCallId, message.toolCallId)
+        row.set(\.toolUseId, message.toolUseId)
+        row.setJSON(\.toolCallsData, message.toolCalls.flatMap { $0.isEmpty ? nil : $0 })
+        row.setJSON(\.contentPartsData, message.contentParts.flatMap { $0.isEmpty ? nil : $0 })
+        row.set(\.reasoning, message.reasoning)
+        row.setJSON(\.reasoningTitlesData, message.reasoningTitles)
+        row.setJSON(\.activitySceneData, message.activityScene)
+        row.set(\.turnDuration, message.turnDuration)
+        row.set(\.turnTps, message.turnTps)
+        row.set(\.turnId, message.turnId)
+        row.setJSON(\.steerData, message.steer)
+        row.set(\.displayExcerpt, message.displayExcerpt)
+        row.set(\.collapsible, message.collapsible ? true : nil)
+        row.setJSON(\.displayBodyData, message.displayBody)
+        row.setJSON(\.backgroundUpdateData, message.backgroundUpdate)
+        row.setJSON(\.talariaActivityData, message.talariaActivity)
+        row.set(\.backgroundSilent, message.backgroundSilent ? true : nil)
+        row.set(\.markerKind, message.markerKind?.wireValue)
+        row.set(\.markerBody, message.markerBody)
+        row.set(\.display, message.display?.rawValue)
+        row.setJSON(\.attachmentsData, message.attachments.flatMap { $0.isEmpty ? nil : $0 })
+        row.renew(cachedAt: \.cachedAt, expiresAt: \.expiresAt, at: cachedAt)
     }
 }
