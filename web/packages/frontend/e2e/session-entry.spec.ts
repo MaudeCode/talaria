@@ -148,9 +148,18 @@ test('long history beside a live run renders on a slow CPU', async ({ page }, te
     // the history's Markdown on every tick so it never appeared.
     await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 })
     await page.goto(`/session/${history.sid}`)
+    // TAL-1883: the live turn mounts at the end of a serial chain: boot, the session read, the 600-row history commit,
+    // then the attach effect's stream-status read and connect. On a slow shared runner the whole chain can outlast one
+    // assertion's budget, so wait on each observable step in the order the client takes them.
+    await expect(page.locator('[data-message-key]')).toHaveCount(600)
+    await expect.poll(() => !!history.run.stream, 'the client connects to the run stream').toBe(true)
     await expect(page.locator('.live-turn')).toBeAttached()
     await expect(page.locator('[data-message-key="600"] .msg-body p').first()).toBeAttached()
     expect(await page.evaluate(() => (window as unknown as { oldestWithNewest?: boolean }).oldestWithNewest), 'the history renders newest first, a batch per task').toBe(false)
+  } catch (error) {
+    // The teardown below leaves the page blank before Playwright's failure screenshot; keep the failing page.
+    await page.screenshot({ path: testInfo.outputPath('failed-page.png') })
+    throw error
   } finally {
     await cpu.send('Emulation.setCPUThrottlingRate', { rate: 1 })
     await cpu.detach()
