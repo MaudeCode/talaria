@@ -19,8 +19,10 @@ sys.path[:0] = [str(agent), str(agent / "tests/gateway/fixtures"), str(Path(__fi
 from peer_phases import POLL_SECONDS, Phases, report_modes
 
 OWN_OWNER = {"recovery", "secure", "dedicated", "profiles", "replay", "restart", "reasoning", "session-open"}
-# A profile plugin logging each on_session_open delivery; it holds the delivery past the owner's 5 s turn bound while
-# the .slow marker exists. Each line keeps its start time, so a barrier open can tell later deliveries from earlier ones.
+# Longest the owner holds a claimed turn on a pending open (the Agent's _UNBOUNDED_TURN_WAIT_S).
+OPEN_TURN_WAIT_S = 5
+# A profile plugin logging each on_session_open delivery; it holds the delivery past OPEN_TURN_WAIT_S while the .slow
+# marker exists. Each line keeps its start time, so a barrier open can tell later deliveries from earlier ones.
 OPEN_COUNTER = """import json
 import time
 from pathlib import Path
@@ -34,11 +36,11 @@ def register(ctx):
         with open(log, "a") as out:
             out.write(json.dumps(dict(row, phase="start")) + "\\n")
         if log.with_suffix(".slow").exists():
-            time.sleep(7)
+            time.sleep(%d)
         with open(log, "a") as out:
             out.write(json.dumps(dict(row, phase="done")) + "\\n")
     ctx.register_hook("on_session_open", opened)
-"""
+""" % (OPEN_TURN_WAIT_S + 2)
 
 
 def unsupported(mode):
@@ -571,7 +573,7 @@ async def probe_session_open(home, peer, desc):
 
         def call(action, **params):
             return sidecar.result("gateway.session", {"profile_home": str(home), "session_id": sid, "action": action, **params})
-        # A poll then a submit, while the consumer holds each delivery past the turn's 5 s bound.
+        # A poll then a submit, while the consumer holds each delivery past the turn's OPEN_TURN_WAIT_S bound.
         polled = time.time()
         log.with_suffix(".slow").touch()
         assert (await asyncio.to_thread(call, "snapshot"))["state"] == "attached"
@@ -587,7 +589,8 @@ async def probe_session_open(home, peer, desc):
         log.with_suffix(".slow").unlink()
         opened = await barrier(polled)
         assert opened == ["resume"], f"Web's snapshot and submit were delivered as opens: {opened} (the last is the barrier); the turn waited {reached:.1f} s"
-        assert reached < 2.5, f"the submitted turn waited {reached:.1f} s on an open"
+        # A turn held on an open takes the full bound; 1 s below it leaves room for a loaded runner.
+        assert reached < OPEN_TURN_WAIT_S - 1, f"the submitted turn waited {reached:.1f} s on an open"
 
         # The watch is the viewer opening the chat; every control alongside it is not.
         watched = time.time()
