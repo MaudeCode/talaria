@@ -485,10 +485,9 @@ echo ""; echo "== Preparing the Hermes Agent virtual environment for the Talaria
 # Agent-backed features answer 503 sidecar_unavailable.
 export PATH="/home/hermeswebui/.local/bin/:$PATH"
 if command -v uv &>/dev/null; then
-  echo "-- uv already installed ($(uv --version)), skipping download"
+  echo "-- Using $(uv --version)"
 else
-  echo "-- uv not found, downloading..."
-  curl -LsSf https://astral.sh/uv/install.sh | sh || error_exit "Failed to install uv — check network connectivity"
+  error_exit "uv is missing from this image, so the image is damaged. Pull the image again."
 fi
 
 export UV_CACHE_DIR=${UV_CACHE_DIR:-/uv_cache}

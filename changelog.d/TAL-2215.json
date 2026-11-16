@@ -1,0 +1,1 @@
+{"skip": "Build inputs only: the release images pin their base and uv images by digest; no app behavior changes."}

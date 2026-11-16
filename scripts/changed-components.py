@@ -90,6 +90,10 @@ SCRIPTS = {
 }
 
 
+# scripts/check-hosted-runners.py holds these Web image inputs to digest pins and no piped installs.
+IMAGE_PIN_INPUTS = ("Dockerfile", "docker_init.bash")
+
+
 def path_suites(path):
     if not isinstance(path, str) or any(part in ("", ".", "..") for part in path.split("/")) or "\0" in path:
         return SUITES
@@ -203,14 +207,15 @@ def path_suites(path):
         if local.startswith("static/"):
             return {"web_frontend", "web_server"}
         if local.startswith(("Dockerfile", "docker", ".docker", ".env.docker", "scripts/lib/")):
-            return {"docker", "web_server"}
+            # The tooling job's image pin check reads the Dockerfile and entrypoint (TAL-2215).
+            return {"docker", "web_server"} | ({"tooling"} if local in IMAGE_PIN_INPUTS else set())
         if local == ".env.example" or local.startswith("scripts/"):
             return {"web_server"}
         return WEB_BUILD
     if component == "relay":
         # No App, Web or contracts test runs Relay code. Consumers meet Relay only through contracts/ fixtures, which
         # relay/tests/sharedContracts.test.ts holds Relay to and whose changes select every consumer above (TAL-1644).
-        return {"relay"}
+        return {"relay", "tooling"} if path == "relay/bridge/Dockerfile" else {"relay"}
     return SUITES
 
 

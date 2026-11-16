@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Fail when a job in any workflow, including a local reusable workflow it calls, can run on a runner that is
 not GitHub-hosted for any event, when a workflow references the retired NAS S3 credentials, or when a workflow
-(or a local action it uses) calls a third-party action by anything but a full commit SHA."""
+(or a local action it uses) calls a third-party action by anything but a full commit SHA. The release images get the
+same rule: every base image and `COPY --from` image names a digest, and no build or entrypoint pipes a download into a
+shell (TAL-2215)."""
 
 import argparse
 import json
@@ -17,6 +19,11 @@ LITERAL = re.compile(r"'((?:[^']|'')*)'")
 COMPARISON = re.compile(r"(?:==|!=)\s*$")
 # First-party actions/* may float on a major tag; everything else must be immutable.
 PINNED = re.compile(r"(?:\./.+|actions/[\w.-]+(?:/[\w./-]+)?@[\w.-]+|[\w.-]+/[\w./-]+@[0-9a-f]{40})")
+DOCKERFILES = ("web/Dockerfile", "relay/bridge/Dockerfile")
+IMAGE_SCRIPTS = (*DOCKERFILES, "web/docker_init.bash")
+DIGEST = re.compile(r"\S+@sha256:[0-9a-f]{64}")
+PIPED_INSTALL = re.compile(r"\b(?:curl|wget)\b[^|\n]*\|\s*(?:sudo\s+)?(?:env(?:\s+\w+=\S*)*\s+)?(?:ba|da|z)?sh\b")
+VARIABLE = re.compile(r"\$\{?(\w+)\}?")
 
 
 def load(path):
@@ -104,16 +111,55 @@ def violations(root=ROOT, scope=None):
     return found
 
 
+def image_violations(root=ROOT):
+    """Release image inputs that can change without a commit: an image without a digest or a piped install."""
+    found = []
+    for name in IMAGE_SCRIPTS:
+        path = root / name
+        if not path.is_file():
+            found.append(f"{name}: not found")
+            continue
+        text = re.sub(r"\\\n", " ", path.read_text(encoding="utf-8"))
+        found += [f"{name}: pipes a download into a shell: {' '.join(match.group(0).split())}"
+                  for match in PIPED_INSTALL.finditer(text)]
+        if name in DOCKERFILES:
+            found += [f"{name}: {image} is not pinned to a sha256 digest" for image in unpinned_images(text)]
+    return found
+
+
+def unpinned_images(text):
+    """Base and `COPY --from` images that are neither an earlier stage nor digest-pinned after global ARG defaults."""
+    arguments, stages, found = {}, set(), []
+    for line in text.splitlines():
+        words = line.split()
+        if not words or words[0].startswith("#"):
+            continue
+        instruction = words[0].upper()
+        if instruction == "ARG" and not stages and len(words) > 1 and "=" in words[1]:
+            key, _, value = words[1].partition("=")
+            arguments[key] = value
+        elif instruction == "FROM":
+            image = next(word for word in words[1:] if not word.startswith("--"))
+            if len(words) > 2 and words[-2].upper() == "AS":
+                stages.add(words[-1].lower())
+            found.append(VARIABLE.sub(lambda match: arguments.get(match.group(1), match.group(0)), image))
+        elif instruction == "COPY":
+            found += [VARIABLE.sub(lambda match: arguments.get(match.group(1), match.group(0)), word.split("=", 1)[1])
+                      for word in words[1:] if word.startswith("--from=")]
+    return [image for image in found if not (DIGEST.fullmatch(image) or image.lower() in stages or image.isdigit())]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=ROOT, help="repository root to check")
     args = parser.parse_args()
-    found = violations(args.root)
+    found = violations(args.root) + image_violations(args.root)
     for violation in found:
         print(violation, file=sys.stderr)
     if found:
         return 1
-    print(f"Hosted runners only, pinned third-party actions, no NAS credentials: all {len(workflows(args.root))} workflows.")
+    print(f"Hosted runners only, pinned third-party actions, no NAS credentials: all {len(workflows(args.root))} workflows; "
+          f"digest-pinned images and no piped installs: {', '.join(IMAGE_SCRIPTS)}.")
     return 0
 
 
