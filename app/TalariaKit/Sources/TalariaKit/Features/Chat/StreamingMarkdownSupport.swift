@@ -19,7 +19,7 @@ public enum StreamingMarkdownBlockSplitter {
 #endif
         var lineStart = text.startIndex
         var chunkStart = text.startIndex
-        var isInsideFence = false
+        var openFence: (marker: Character, length: Int)?
         var stableChunks: [StreamingMarkdownChunk] = []
 
         while lineStart < text.endIndex {
@@ -30,15 +30,19 @@ public enum StreamingMarkdownBlockSplitter {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
 
             var stableBoundary: String.Index?
-            if isFenceDelimiter(trimmedLine) {
-                isInsideFence.toggle()
-                if !isInsideFence {
+            let fence = StreamingOpenCodeFence.fenceRun(in: Substring(trimmedLine))
+            if let open = openFence {
+                // Only a run of the opener's character, at least as long, with no info string closes it (TAL-844).
+                if let fence, fence.marker == open.marker, fence.length >= open.length, fence.rest.isEmpty {
+                    openFence = nil
                     stableBoundary = nextLineStart
                 }
-            } else if !isInsideFence, hasLineBreak {
-                if trimmedLine.isEmpty || isStableSingleLineBlock(trimmedLine) {
-                    stableBoundary = nextLineStart
-                }
+            } else if let fence, fence.marker == "~" || !fence.rest.contains("`") {
+                openFence = (fence.marker, fence.length)
+            } else if hasLineBreak, trimmedLine.isEmpty || isStableSingleLineBlock(trimmedLine),
+                      !startsIndented(text[nextLineStart...]) {
+                // An indented next line continues a list item; on its own it would read as a code block.
+                stableBoundary = nextLineStart
             }
 
             if let stableBoundary,
@@ -82,15 +86,18 @@ public enum StreamingMarkdownBlockSplitter {
         )
     }
 
-    private static func isFenceDelimiter(_ trimmedLine: String) -> Bool {
-        trimmedLine.hasPrefix("```") || trimmedLine.hasPrefix("~~~")
+    private static func startsIndented(_ text: Substring) -> Bool {
+        text.first == " " || text.first == "\t"
     }
 
     private static func isStableSingleLineBlock(_ trimmedLine: String) -> Bool {
-        let headingMarkerCount = trimmedLine.prefix(while: { $0 == "#" }).count
-        let isHeading = (1...6).contains(headingMarkerCount)
-            && trimmedLine.dropFirst(headingMarkerCount).first?.isWhitespace == true
-        return isHeading || trimmedLine == "---" || trimmedLine == "***"
+        isHeading(Substring(trimmedLine)) || trimmedLine == "---" || trimmedLine == "***"
+    }
+
+    /// An ATX heading line, without its leading whitespace.
+    static func isHeading(_ line: Substring) -> Bool {
+        let markerCount = line.prefix(while: { $0 == "#" }).count
+        return (1...6).contains(markerCount) && line.dropFirst(markerCount).first?.isWhitespace == true
     }
 }
 
@@ -172,7 +179,7 @@ public struct StreamingOpenCodeFence: Equatable, Sendable {
     }
 
     /// A line's run of three or more backticks or tildes after at most three spaces, with what follows it.
-    private static func fenceRun(in line: Substring) -> (marker: Character, length: Int, indent: Int, rest: Substring)? {
+    static func fenceRun(in line: Substring) -> (marker: Character, length: Int, indent: Int, rest: Substring)? {
         let line = line.hasSuffix("\r") ? line.dropLast() : line
         let indent = line.prefix(while: { $0 == " " }).count
         guard indent <= 3, let marker = line.dropFirst(indent).first, marker == "`" || marker == "~" else { return nil }

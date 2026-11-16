@@ -46,6 +46,44 @@ final class StreamingMarkdownBlockSplitterTests: XCTestCase {
         XCTAssertFalse(segments.stableChunks.isEmpty)
         XCTAssertTrue(segments.activeMarkdown.contains("More text"))
     }
+
+    /// A fence closes only on a run of its own character at least as long as the opener, with nothing after it
+    /// (TAL-844). A shorter or differently marked fence inside it is content, never a boundary.
+    func testLongerOrOtherMarkerFenceIsNeverSplitInside() {
+        for (opener, closer) in [("````markdown", "````"), ("~~~", "~~~")] {
+            let prose = String(repeating: "Line of prose.\n", count: 410)
+            let text = prose + """
+            \(opener)
+            ```swift
+            let inner = 1
+            ```
+
+            Still inside the outer fence.
+            \(closer)
+
+            After the fence.
+            """
+
+            let segments = StreamingMarkdownBlockSplitter.split(text)
+            let pieces = segments.stableChunks.map(\.text) + [segments.activeMarkdown]
+            let fenced = pieces.first { $0.contains(opener) }
+
+            XCTAssertNotNil(fenced, opener)
+            XCTAssertTrue(fenced?.contains("Still inside the outer fence.\n\(closer)\n") == true, "\(opener) was split inside")
+            XCTAssertEqual(pieces.joined(), text)
+        }
+    }
+
+    /// An indented line after a blank one continues a list item; split there, it would draw as an indented code block.
+    func testBlankLineBeforeIndentedContinuationIsNotABoundary() {
+        let prose = String(repeating: "Line of prose.\n", count: 410)
+        let text = prose + "1. Step one\n\n    ```bash\n    make\n    ```\n"
+
+        let segments = StreamingMarkdownBlockSplitter.split(text)
+        let pieces = segments.stableChunks.map(\.text) + [segments.activeMarkdown]
+
+        XCTAssertTrue(pieces.first { $0.contains("1. Step one") }?.contains("    ```bash\n    make\n") == true)
+    }
 }
 
 /// Width resolution for chat markdown table cells (issue #233). The layout

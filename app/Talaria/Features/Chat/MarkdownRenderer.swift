@@ -130,6 +130,13 @@ nonisolated struct MarkdownMainActorBlock<Content: View>: View {
     }
 }
 
+extension View {
+    /// The chat theme's margins for one kind of block, shared with the file preview's seams (TAL-844).
+    func markdownMargin(_ margin: ChatMarkdownBlockMargin) -> some View {
+        markdownMargin(top: margin.top, bottom: margin.bottom)
+    }
+}
+
 extension MarkdownUI.Theme {
     static func chat(colorScheme: ColorScheme, isStreaming: Bool) -> MarkdownUI.Theme {
         MarkdownUI.Theme.gitHub
@@ -165,7 +172,7 @@ extension MarkdownUI.Theme {
                         content: configuration.content,
                         isStreaming: isStreaming
                     )
-                    .markdownMargin(top: 4, bottom: 12)
+                    .markdownMargin(.codeBlock)
                 }
             }
             .table { configuration in
@@ -174,7 +181,7 @@ extension MarkdownUI.Theme {
                         label: configuration.label,
                         colorScheme: colorScheme
                     )
-                    .markdownMargin(top: 0, bottom: 16)
+                    .markdownMargin(.table)
                 }
             }
             .tableCell { configuration in
