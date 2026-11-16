@@ -333,3 +333,13 @@ jobs:
         run: ../../../scripts/check-web-browser --shard=${{ matrix.shard }}/6
         env:
           PLAYWRIGHT_APT_CACHE: ${{ github.workspace }}/web/.codex-tmp/playwright-apt
+
+      # A failed test keeps its screenshot, error context and trace here (TAL-1883).
+      - name: Retain the failed tests' results
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend-e2e-test-results-${{ matrix.shard }}-${{ github.run_attempt }}
+          path: web/packages/frontend/test-results
+          retention-days: 7
+          if-no-files-found: ignore
