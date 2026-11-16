@@ -143,4 +143,24 @@ final class TranscriptMediaTests: XCTestCase {
         XCTAssertTrue(loadedThird === thirdImage)
         XCTAssertTrue(reloadedFirst === firstImage)
     }
+
+    /// TAL-1238: a 12 MP photo is cached at the transcript thumbnail's size, not as a 48 MB bitmap, and loading it
+    /// never needs the main thread, which this test holds blocked until the image arrives. A tall screenshot still
+    /// covers the thumbnail's width, so filling the box does not upscale it.
+    func testThumbnailCachesTheImageDownsampledToCoverItsBoxWithoutTheMainThread() throws {
+        let box = ImagePreviewDownsampler.transcriptThumbnailPixelSize
+        let cache = DecodedImageCache()
+        for (width, height, expected) in [(4_000, 3_000, CGSize(width: 420, height: 315)), (1_179, 2_556, CGSize(width: 420, height: 911))] {
+            let data = try XCTUnwrap(TestImages.jpegData(width: width, height: height))
+            let loaded = LockedTestValue<PlatformImage?>(nil)
+            let done = DispatchSemaphore(value: 0)
+            Task.detached {
+                loaded.value = await cache.thumbnail(for: DecodedImageCacheKey(namespace: "test", resourceID: "\(width)"), covering: box) { data }
+                done.signal()
+            }
+            XCTAssertEqual(done.wait(timeout: .now() + 10), .success, "Loading must not wait for the blocked main thread")
+            let image = try XCTUnwrap(try XCTUnwrap(loaded.value).testCGImage)
+            XCTAssertEqual(CGSize(width: image.width, height: image.height), expected, "\(width)×\(height)")
+        }
+    }
 }

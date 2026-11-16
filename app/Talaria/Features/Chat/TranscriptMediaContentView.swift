@@ -81,7 +81,7 @@ struct TranscriptMediaImageProvider: ImageProvider {
 }
 
 /// An image inside a line of text (`**before ![x](…) after**`): the body's server media loads through the
-/// authenticated loader, fitted to the thumbnail box; any other image loads as MarkdownUI would.
+/// authenticated loader, shown fitted to the thumbnail box; any other image loads as MarkdownUI would.
 struct TranscriptMediaInlineImageProvider: InlineImageProvider {
     let display: TranscriptDisplayBody
     let cacheNamespace: String
@@ -95,20 +95,14 @@ struct TranscriptMediaInlineImageProvider: InlineImageProvider {
         }
         guard let loadMediaImage else { throw URLError(.resourceUnavailable) }
         let key = DecodedImageCacheKey(namespace: cacheNamespace, resourceID: reference.id)
-        guard let image = await DecodedImageCache.shared.image(for: key, load: {
-            guard let data = await loadMediaImage(reference) else { return nil }
-            return UIImage(data: data)
-        }) else { throw URLError(.cannotDecodeContentData) }
-        let fitted = Self.fitted(image)
-        guard let cgImage = fitted.cgImage else { throw URLError(.cannotDecodeContentData) }
-        return Image(cgImage, scale: fitted.scale, label: Text(label))
-    }
-
-    /// The image scaled down, never up, to fit `maxSize` at the screen's scale.
-    static func fitted(_ image: UIImage) -> UIImage {
-        let scale = min(1, maxSize.width / max(image.size.width, 1), maxSize.height / max(image.size.height, 1))
-        let size = CGSize(width: (image.size.width * scale).rounded(), height: (image.size.height * scale).rounded())
-        return UIGraphicsImageRenderer(size: size).image { _ in image.draw(in: CGRect(origin: .zero, size: size)) }
+        guard let image = await DecodedImageCache.shared.thumbnail(
+            for: key,
+            covering: ImagePreviewDownsampler.transcriptThumbnailPixelSize,
+            loadData: { await loadMediaImage(reference) }
+        ), let cgImage = image.cgImage else { throw URLError(.cannotDecodeContentData) }
+        // The cached thumbnail covers the box; a larger display scale fits it inside, never enlarging it.
+        let scale = max(image.scale, CGFloat(cgImage.width) / Self.maxSize.width, CGFloat(cgImage.height) / Self.maxSize.height)
+        return Image(cgImage, scale: scale, label: Text(label))
     }
 }
 

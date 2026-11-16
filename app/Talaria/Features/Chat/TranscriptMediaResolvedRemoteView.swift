@@ -62,8 +62,9 @@ struct TranscriptMediaResolvedRemoteView: View {
                 return
             }
 
+            let resolved = await Self.resolve(data)
             guard !Task.isCancelled else { return }
-            resolvedMedia = Self.resolve(data)
+            resolvedMedia = resolved
         }
     }
 
@@ -80,8 +81,11 @@ struct TranscriptMediaResolvedRemoteView: View {
             )
     }
 
-    private static func resolve(_ data: Data) -> ResolvedMedia {
-        if let image = UIImage(data: data) {
+    private static func resolve(_ data: Data) async -> ResolvedMedia {
+        if let image = await ImagePreviewDownsampler.thumbnailImage(
+            from: data,
+            covering: ImagePreviewDownsampler.transcriptThumbnailPixelSize
+        ) {
             return .image(image)
         }
 

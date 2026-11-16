@@ -1,5 +1,10 @@
 import Foundation
 import ImageIO
+#if canImport(UIKit)
+import UIKit
+#else
+import AppKit
+#endif
 
 public struct UploadResponse: Codable, Sendable {
     let filename: String?
@@ -59,6 +64,8 @@ public enum ImagePreviewDownsampler: Sendable {
     public static let attachmentMaxPixelSize = 512
     public static let filePreviewMaxPixelSize = 2_048
     public static let uploadMaxPixelSize = 4_096
+    /// A transcript media thumbnail's 210×132 pt box at 2×.
+    public static let transcriptThumbnailPixelSize = CGSize(width: 420, height: 264)
 
     public static func previewData(from data: Data, maxPixelSize: Int) -> Data? {
         guard maxPixelSize > 0 else { return data }
@@ -89,6 +96,30 @@ public enum ImagePreviewDownsampler: Sendable {
             guard !Task.isCancelled else { return nil }
             return generatedPreviewData
         }
+    }
+
+    /// The image decoded on a background thread, its orientation applied, scaled down (never up) until it just
+    /// covers `box` pixels, so a view that fills that box stays sharp. The bitmap is decoded before it returns, so
+    /// drawing it does no decoding on the main thread. Nil when the data does not decode as an image.
+    public static func thumbnailImage(from data: Data, covering box: CGSize) async -> PlatformImage? {
+        await Task.detached(priority: .userInitiated) {
+            guard let source = imageSource(data) else { return nil }
+            var maxPixelSize = Int(max(box.width, box.height))
+            if let size = pixelSize(for: source) {
+                // EXIF orientations 5–8 rotate the stored pixels a quarter turn.
+                let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+                let rotated = (intValue(properties?[kCGImagePropertyOrientation]) ?? 1) >= 5
+                let (width, height) = rotated ? (size.height, size.width) : (size.width, size.height)
+                let scale = min(1, max(box.width / CGFloat(width), box.height / CGFloat(height)))
+                maxPixelSize = Int((CGFloat(max(width, height)) * scale).rounded(.up))
+            }
+            guard let image = thumbnail(of: source, maxPixelSize: maxPixelSize) else { return nil }
+            #if canImport(UIKit)
+            return UIImage(cgImage: image)
+            #else
+            return NSImage(cgImage: image, size: .zero)
+            #endif
+        }.value
     }
 
     public enum UploadFormat: Sendable {
