@@ -487,7 +487,9 @@ test('A provider page pins from the server projection, shows a choice at once an
   await settle(page)
   const picker = page.locator('[data-provider-detail] [data-group="quota"]')
   const source = (name: string) => pinSwitch(page, name)
-  const toggle = (name: string) => Promise.all([page.waitForResponse((r) => r.url().endsWith('/api/settings') && r.request().method() === 'POST'), source(name).click()])
+  // A write settles on its own quota reread. Moving `projection` on before that read lands would show the next step's pins, so the next click undoes them.
+  const reread = () => page.waitForResponse((r) => new URL(r.url()).pathname === '/api/provider/quotas')
+  const toggle = async (name: string) => { const read = reread(); await source(name).click(); await read }
   await expect(picker.getByRole('switch')).toHaveCount(4)
   try {
     // The choice shows while the write is still held, before the server has answered.
@@ -499,8 +501,10 @@ test('A provider page pins from the server projection, shows a choice at once an
     await source('Claude').click()
     await expect(source('Claude')).toBeChecked()
     projection = { sidebar_source_ids: ['qsrc_weekly'], sidebar_can_pin: true }
+    const read = reread()
     release()
     await expect.poll(async () => (await (await page.request.get('/api/settings')).json() as { sidebar_quota_sources: string[] }).sidebar_quota_sources).toEqual(['qsrc_weekly'])
+    await read
     await page.unroute('**/api/settings')
 
     // The server's `sidebar_can_pin` closes the picker at two, and removing one reopens it.
@@ -513,6 +517,7 @@ test('A provider page pins from the server projection, shows a choice at once an
     await toggle('Claude')
     await expect(source('Claude')).not.toBeChecked()
     await expect(source('Z.ai')).toBeEnabled()
+    await expect(source('OpenRouter')).toBeChecked()
 
     // Overlapping refusals restore the confirmed projection without a read, across a remount, even when the read also fails.
     let refuse!: () => void
