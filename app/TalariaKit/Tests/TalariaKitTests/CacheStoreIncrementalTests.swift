@@ -146,11 +146,123 @@ final class CacheStoreIncrementalTests: XCTestCase {
         XCTAssertEqual(row.runStatusData, Data("detail".utf8))
     }
 
+    func testReapplyingAnIdentical120MessageWindowWritesAndEncodesNothing() throws {
+        let context = try makeContext()
+        let server = URL(string: "https://message-cache.test")!
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        let messages = try heavyMessageWindow(count: 120)
+        try CacheStore.cacheMessages(messages, serverURL: server, sessionID: "chat", in: context,
+            messagesOffset: 0, hasOlderMessages: true, cachedAt: now)
+        let rows = try context.fetch(FetchDescriptor<CachedMessage>(sortBy: [SortDescriptor(\.sortIndex)]))
+        XCTAssertEqual(rows.count, 120)
+
+        let encoder = CountingJSONEncoder()
+        for (offset, row) in rows.enumerated() {
+            row.apply(messages[offset], sortIndex: offset, cachedAt: now.addingTimeInterval(5), encoder: encoder)
+        }
+        XCTAssertFalse(context.hasChanges, "Re-applying an identical window must leave every row clean")
+        XCTAssertEqual(encoder.encodes, 0, "An unchanged blob must not be re-encoded")
+
+        var saves = 0
+        let contextID = ObjectIdentifier(context)
+        let observer = NotificationCenter.default.addObserver(forName: ModelContext.willSave, object: nil, queue: nil) { notification in
+            guard let object = notification.object as AnyObject?, ObjectIdentifier(object) == contextID else { return }
+            MainActor.assumeIsolated { saves += 1 }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        try CacheStore.cacheMessages(messages, serverURL: server, sessionID: "chat", in: context,
+            messagesOffset: 0, hasOlderMessages: true, cachedAt: now.addingTimeInterval(10))
+        XCTAssertEqual(saves, 0, "Saving an unchanged window must not call save()")
+        XCTAssertEqual(try CacheStore.cachedTranscriptWindow(serverURL: server, sessionID: "chat", in: context,
+            now: now.addingTimeInterval(20)).messages, messages)
+    }
+
+    func testChangingOneMessageContentDirtiesOnlyThatRow() throws {
+        let context = try makeContext()
+        let server = URL(string: "https://message-dirty.test")!
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        let messages = try heavyMessageWindow(count: 120)
+        try CacheStore.cacheMessages(messages, serverURL: server, sessionID: "chat", in: context,
+            messagesOffset: 0, hasOlderMessages: false, cachedAt: now)
+        let rows = try context.fetch(FetchDescriptor<CachedMessage>())
+        var changedRows = Set<String>()
+        for row in rows {
+            withObservationTracking {
+                // Every stored property, so even an equal-value setter invalidation counts as a write.
+                let fields: [PartialKeyPath<CachedMessage>] = [
+                    \.cacheKey, \.serverURLString, \.sessionID, \.sortIndex, \.role, \.content,
+                    \.timestamp, \.messageId, \.name, \.toolCallId, \.toolUseId, \.toolCallsData,
+                    \.contentPartsData, \.reasoning, \.reasoningTitlesData, \.activitySceneData,
+                    \.attachmentsData, \.turnDuration, \.turnTps, \.turnId, \.steerData,
+                    \.displayExcerpt, \.collapsible, \.displayBodyData, \.backgroundUpdateData,
+                    \.talariaActivityData, \.backgroundSilent, \.markerKind, \.markerBody, \.display,
+                    \.cachedAt, \.expiresAt,
+                ]
+                for field in fields { _ = row[keyPath: field] }
+            } onChange: { [messageID = row.messageId] in
+                MainActor.assumeIsolated { _ = changedRows.insert(messageID ?? "") }
+            }
+        }
+
+        var changed = messages
+        changed[60] = try heavyMessageWindow(count: 120, editedContentAt: 60)[60]
+        try CacheStore.cacheMessages(changed, serverURL: server, sessionID: "chat", in: context,
+            messagesOffset: 0, hasOlderMessages: false, cachedAt: now.addingTimeInterval(5))
+        XCTAssertEqual(changedRows, ["message-60"], "Only the edited message's row should receive property writes")
+        XCTAssertEqual(try CacheStore.cachedMessages(serverURL: server, sessionID: "chat", in: context, now: now)[60].content,
+            "Edited")
+    }
+
+    /// Messages carrying every encoded blob, so each one's change check is exercised.
+    private func heavyMessageWindow(count: Int, editedContentAt edited: Int? = nil) throws -> [ChatMessage] {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let media = #"[{"url":"./api/media?path=%2Ftmp%2Fa.png&session_id=chat","name":"a.png","mime":"image/png","kind":"image"}]"#
+        let activity = try decoder.decode(TalariaActivity.self, from: Data(
+            #"{"version":1,"origin":"talaria","id":"activity","kind":"handoff","summary":"Handed off","details":"More"}"#.utf8))
+        let update = BackgroundUpdate(lines: [BackgroundLine(kind: .command, status: .completed, label: "make", exitCode: 0,
+            reviewState: .reviewed)], reviewState: .reviewed)
+        return try (0..<count).map { index in
+            let content = index == edited ? "Edited" : "Reply \(index)"
+            if index.isMultiple(of: 2) {
+                return ChatMessage(role: "user", content: content, timestamp: Double(index), messageId: "message-\(index)",
+                    contentParts: [.object(["type": .string("text"), "text": .string(content)])],
+                    attachments: [MessageAttachment(name: "a.png", path: "/tmp/a.png", mime: "image/png", size: 10, isImage: true)],
+                    steer: ["text": .string("Steer \(index)")], collapsible: true, backgroundUpdate: update,
+                    talariaActivity: activity)
+            }
+            return try decoder.decode(ChatMessage.self, from: Data("""
+            {
+              "role": "assistant", "content": "\(content)", "message_id": "message-\(index)", "timestamp": \(index),
+              "tool_calls": [{"id": "call-\(index)", "type": "function", "function": {"name": "read_file", "arguments": "{}"}}],
+              "reasoning": "Thinking", "reasoning_titles": ["Reviewing"],
+              "_display_content": "![a.png](./api/media?path=%2Ftmp%2Fa.png&session_id=chat)", "_media": \(media),
+              "_anchor_activity_scene": {
+                "version": "activity_scene_v1", "final_answer": "\(content)", "final_answer_media": \(media),
+                "activity_rows": [
+                  {"row_id":"tool:call-\(index)","order_index":0,"role":"tool","tool":{"id":"call-\(index)","name":"read_file","args":null,"preview":null,"result":null,"done":true,"is_error":false,"duration":1.5,"cost_usd":null}},
+                  {"row_id":"thinking","order_index":1,"role":"reasoning","text":"Checking.","titles":["Reviewing"]}
+                ]
+              }
+            }
+            """.utf8))
+        }
+    }
+
     private func makeContext() throws -> ModelContext {
         let container = try ModelContainer(for: CachedSession.self, CachedMessage.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
         let context = ModelContext(container)
         context.autosaveEnabled = false
         return context
+    }
+}
+
+private final class CountingJSONEncoder: JSONEncoder, @unchecked Sendable {
+    private(set) var encodes = 0
+
+    override func encode<T: Encodable>(_ value: T) throws -> Data {
+        encodes += 1
+        return try super.encode(value)
     }
 }
