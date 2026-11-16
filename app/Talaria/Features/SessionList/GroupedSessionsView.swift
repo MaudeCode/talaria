@@ -35,6 +35,7 @@ struct GroupedSessionsView: View {
                         actions: actions,
                         searchText: searchText
                     )
+                    .equatable()
                 }
             }
         }

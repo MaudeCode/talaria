@@ -80,6 +80,7 @@ struct SessionListRowsSection: View {
             actions: actions,
             searchText: searchText
         )
+        .equatable()
     }
 
     private var sessionsHeaderRow: some View {

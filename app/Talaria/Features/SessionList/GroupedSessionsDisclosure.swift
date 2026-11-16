@@ -48,6 +48,7 @@ struct GroupedSessionsDisclosure: View {
                     actions: actions,
                     searchText: searchText
                 )
+                .equatable()
                 .transition(SessionListMotion.disclosureContentTransition(reduceMotion: reduceMotion))
             }
 

@@ -7,7 +7,8 @@ extension EnvironmentValues {
     @Entry var sessionRowStyle = SessionRowStyle.regular
 }
 
-struct SessionInteractiveRow: View {
+/// Apply `.equatable()` where a list builds it, so a list update re-runs only the rows whose own inputs changed.
+struct SessionInteractiveRow: View, Equatable {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.sessionRowsMonitorRuns) private var monitorsRuns
     @Environment(\.sessionRowStyle) private var rowStyle
@@ -15,9 +16,40 @@ struct SessionInteractiveRow: View {
     let session: SessionSummary
     let selectedSessionID: String?
     let actions: SessionListRowActions
-    var searchText = ""
+    let searchText: String
+    /// This row's own list state, read by the list building it, so the row observes neither the whole pending map nor
+    /// another row's write.
+    private let pendingChange: PendingResourceChange?
+    private let isMutating: Bool
+    private let canOpenBeside: Bool
+
+    init(viewModel: SessionListViewModel, session: SessionSummary, selectedSessionID: String?,
+         actions: SessionListRowActions, searchText: String = "") {
+        self.viewModel = viewModel
+        self.session = session
+        self.selectedSessionID = selectedSessionID
+        self.actions = actions
+        self.searchText = searchText
+        pendingChange = viewModel.pendingChange(for: session)
+        isMutating = viewModel.isMutating(session)
+        canOpenBeside = actions.openBeside(session) != nil
+    }
+
+    /// The actions are the list's handlers, stable for its lifetime; only whether this row opens beside the chat
+    /// follows view state.
+    nonisolated static func == (lhs: SessionInteractiveRow, rhs: SessionInteractiveRow) -> Bool {
+        lhs.session == rhs.session
+            && (lhs.session.sessionId == lhs.selectedSessionID) == (rhs.session.sessionId == rhs.selectedSessionID)
+            && lhs.searchText == rhs.searchText
+            && lhs.pendingChange == rhs.pendingChange
+            && lhs.isMutating == rhs.isMutating
+            && lhs.canOpenBeside == rhs.canOpenBeside
+    }
 
     var body: some View {
+        #if DEBUG
+        let _ = ChatBodyEvaluationRecorder.installed?("sessionRow:\(session.id)")
+        #endif
         draggableRowContent
             .id(session.id)
             // While picking chats the checkmarks carry selection, so the open chat stops reading as selected.
@@ -40,7 +72,7 @@ struct SessionInteractiveRow: View {
 
     @ViewBuilder
     private var draggableRowContent: some View {
-        if rowStyle == .sidebar, !viewModel.isSelectingSessions, actions.openBeside(session) != nil {
+        if rowStyle == .sidebar, !viewModel.isSelectingSessions, canOpenBeside {
             rowContent.onDrag {
                 actions.sidebarChatLifted(session)
                 return SidebarChatDrag.provider(for: session)
@@ -106,7 +138,7 @@ struct SessionInteractiveRow: View {
                     isViewingCachedData: viewModel.isViewingCachedData,
                     matchPreview: viewModel.contentMatchPreview(for: session, searchText: searchText),
                     searchText: searchText,
-                    pendingChange: viewModel.pendingChange(for: session),
+                    pendingChange: pendingChange,
                     style: style
                 )
             }
@@ -139,7 +171,8 @@ struct SessionInteractiveRow: View {
 
     private func rowMenu(placement: SessionRowContextMenu.Placement) -> SessionRowContextMenu {
         SessionRowContextMenu(viewModel: viewModel, session: session, actions: actions, placement: placement,
-            openBeside: rowStyle == .sidebar && !viewModel.isSelectingSessions ? actions.openBeside(session) : nil)
+            openBeside: rowStyle == .sidebar && !viewModel.isSelectingSessions ? actions.openBeside(session) : nil,
+            rowState: (pendingChange, isMutating))
     }
 
     @ViewBuilder

@@ -48,7 +48,12 @@ public enum ActiveSessionStateRefreshResult: Equatable, Sendable {
 @Observable
 public final class SessionListViewModel {
     public private(set) var sessions: [SessionSummary] = [] {
-        didSet { invalidateSessionPresentation() }
+        didSet {
+            invalidateSessionPresentation()
+            // Every sidebar row reads this; writing it only when it flips keeps a list update from re-running them all.
+            let supportsBulkActions = sessions.contains { $0.canDelete != nil }
+            if supportsBulkActions != self.supportsBulkActions { self.supportsBulkActions = supportsBulkActions }
+        }
     }
     /// The live streams the user stopped from a run card (TAL-1460). Their rows show the run stopped until the server's
     /// rows stop listing the stream as live.
@@ -1041,9 +1046,7 @@ public final class SessionListViewModel {
 
     /// ponytail: old-server fallback (TAL-627). A server that ships `can_delete` also serves
     /// `/api/sessions/bulk`; delete this check once every supported server does.
-    public var supportsBulkActions: Bool {
-        sessions.contains { $0.canDelete != nil }
-    }
+    public private(set) var supportsBulkActions = false
 
     public func isSelected(_ session: SessionSummary) -> Bool {
         guard let sessionId = Self.nonEmpty(session.sessionId) else { return false }
