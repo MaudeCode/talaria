@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Kanban keeps its live updates while Control Center, the notification shade, or a system prompt is open, and returning from the background reloads the Board only when it changed.",
+      "highlight": false,
+      "components": [
+        "app"
+      ],
+      "announce": false
+    }
+  ]
+}
