@@ -192,6 +192,61 @@ extension SessionListMutationTests {
         _ = await deletion.value
     }
 
+    /// A refresh loads projects and the profile together (TAL-845). When the profile
+    /// changed on the server, applying it fences the projects request in flight, so
+    /// projects must reload for the new profile instead of keeping the old list.
+    @MainActor
+    func testProjectsReloadWhenAConcurrentProfileRefreshChangesTheProfile() async throws {
+        let host = "tal845-projects-profile.test"
+        let requests = DeferredRequests()
+        let projectsCount = LockedTestValue(0)
+        let projectsArrived = expectation(description: "projects request arrived")
+        let profilesArrived = [expectation(description: "seed profiles"), expectation(description: "poll profiles")]
+
+        DeferredMockURLProtocol.setOnRequest({ request in
+            switch request.request.url?.path {
+            case "/api/profiles":
+                profilesArrived[requests.append(request) == 1 ? 0 : 1].fulfill()
+            case "/api/projects":
+                projectsCount.value += 1
+                if projectsCount.value == 1 {
+                    _ = requests.append(request)
+                    projectsArrived.fulfill()
+                } else {
+                    request.complete(withJSON: #"{"projects":[{"project_id":"work-project","name":"Work"}]}"#)
+                }
+            default: XCTFail("Unexpected request path: \(request.request.url?.path ?? "nil")")
+            }
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DeferredMockURLProtocol.self]
+        let server = try XCTUnwrap(URL(string: "https://\(host)"))
+        let client = APIClient(baseURL: server, session: URLSession(configuration: configuration))
+        let viewModel = SessionListViewModel(server: server, client: client)
+        let profiles = #""profiles":[{"name":"work"},{"name":"personal"}]"#
+
+        let seed = Task { await viewModel.loadActiveProfile() }
+        await fulfillment(of: [profilesArrived[0]], timeout: 5)
+        requests.request(at: 0).complete(withJSON: #"{"active":"personal","# + profiles + "}")
+        await seed.value
+        XCTAssertEqual(viewModel.activeProfileName, "personal")
+
+        let reload = Task { await viewModel.loadProjects(silently: true) }
+        await fulfillment(of: [projectsArrived], timeout: 5)
+        let poll = Task { await viewModel.loadActiveProfile() }
+        await fulfillment(of: [profilesArrived[1]], timeout: 5)
+        requests.request(at: 2).complete(withJSON: #"{"active":"work","# + profiles + "}")
+        await poll.value
+        XCTAssertEqual(viewModel.activeProfileName, "work")
+
+        requests.request(at: 1).complete(withJSON: #"{"projects":[{"project_id":"work-project","name":"Work"}]}"#)
+        _ = await reload.value
+
+        XCTAssertEqual(viewModel.projects.map(\.projectId), ["work-project"])
+    }
+
     /// The same tick reloads the active profile, so a switch made while it is in
     /// flight must not be undone by the profile that request reports.
     @MainActor
