@@ -37,28 +37,29 @@ struct SessionListRowsSection: View {
                 .padding(.horizontal, 24)
                 .sessionsScreenListRow()
         } else {
+            let rows = sessions.map(sessionRow)
             if rowStyle == .sidebar {
-                ForEach(sidebarRows, id: \.session.id) { row in
+                ForEach(sidebarRows(rows), id: \.row.session.id) { row in
                     if showsHeading, let caption = row.caption {
                         SidebarSectionHeader(title: caption, isCompact: true) { EmptyView() }
                     }
-                    sessionRow(row.session)
+                    row.row.equatable()
                 }
             } else {
-                ForEach(sessions) { session in sessionRow(session) }
+                ForEach(rows, id: \.session.id) { $0.equatable() }
             }
         }
     }
 
     /// A caption opens each run of rows in one group (TAL-1534): a server-grouped row's only when the server lists that
     /// group, so a row the list adds after the last response still opens its own.
-    private var sidebarRows: [(session: SessionSummary, caption: String?)] {
+    private func sidebarRows(_ rows: [SessionInteractiveRow]) -> [(row: SessionInteractiveRow, caption: String?)] {
         var previous: String??
-        return sessions.map { session in
-            let group = session.sidebarGroupKind
+        return rows.map { row in
+            let group = row.session.sidebarGroupKind
             defer { previous = group }
-            guard let group, previous != .some(group) else { return (session, nil) }
-            return (session, caption(for: group, serverGrouped: session.sidebarGroup != nil))
+            guard let group, previous != .some(group) else { return (row, nil) }
+            return (row, caption(for: group, serverGrouped: row.session.sidebarGroup != nil))
         }
     }
 
@@ -72,15 +73,15 @@ struct SessionListRowsSection: View {
         }
     }
 
-    private func sessionRow(_ session: SessionSummary) -> some View {
+    private func sessionRow(_ session: SessionSummary) -> SessionInteractiveRow {
         SessionInteractiveRow(
             viewModel: viewModel,
             session: session,
             selectedSessionID: selectedSessionID,
             actions: actions,
-            searchText: searchText
+            searchText: searchText,
+            style: rowStyle
         )
-        .equatable()
     }
 
     private var sessionsHeaderRow: some View {

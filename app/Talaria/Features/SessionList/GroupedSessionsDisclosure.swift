@@ -40,16 +40,13 @@ struct GroupedSessionsDisclosure: View {
         }
 
         if isExpanded {
-            ForEach(displayedSessions) { session in
-                SessionInteractiveRow(
-                    viewModel: viewModel,
-                    session: session,
-                    selectedSessionID: selectedSessionID,
-                    actions: actions,
-                    searchText: searchText
-                )
-                .equatable()
-                .transition(SessionListMotion.disclosureContentTransition(reduceMotion: reduceMotion))
+            let rows = displayedSessions.map {
+                SessionInteractiveRow(viewModel: viewModel, session: $0, selectedSessionID: selectedSessionID, actions: actions,
+                                      searchText: searchText, style: rowStyle)
+            }
+            ForEach(rows, id: \.session.id) { row in
+                row.equatable()
+                    .transition(SessionListMotion.disclosureContentTransition(reduceMotion: reduceMotion))
             }
 
             if !isSearchActive && sessions.count > 5 {

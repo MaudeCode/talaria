@@ -2,6 +2,7 @@ import SwiftUI
 import TalariaKit
 
 struct GroupedSessionsView: View {
+    @Environment(\.sessionRowStyle) private var rowStyle
     let title: String
     let isEnabled: Bool
     let emptySystemImage: String
@@ -13,8 +14,12 @@ struct GroupedSessionsView: View {
     @State private var searchText = ""
 
     var body: some View {
+        let rows = sessions.map {
+            SessionInteractiveRow(viewModel: viewModel, session: $0, selectedSessionID: selectedSessionID, actions: actions,
+                                  searchText: searchText, style: rowStyle)
+        }
         SidebarList {
-            if sessions.isEmpty {
+            if rows.isEmpty {
                 SessionListStatusRow(
                     title: searchText.isEmpty
                         ? String(localized: "No sessions yet")
@@ -27,16 +32,7 @@ struct GroupedSessionsView: View {
                 .padding(.horizontal, 24)
                 .sessionsScreenListRow()
             } else {
-                ForEach(sessions) { session in
-                    SessionInteractiveRow(
-                        viewModel: viewModel,
-                        session: session,
-                        selectedSessionID: selectedSessionID,
-                        actions: actions,
-                        searchText: searchText
-                    )
-                    .equatable()
-                }
+                ForEach(rows, id: \.session.id) { $0.equatable() }
             }
         }
         .navigationTitle(title)

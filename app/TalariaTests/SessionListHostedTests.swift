@@ -3457,19 +3457,24 @@ extension SessionListHostedTests {
                                         viewModel: viewModel, selectedSessionID: "row-b", actions: fixtureRowActions)
                 })
                 : AnyView(RecentsRows(viewModel: viewModel, actions: fixtureRowActions)))
-            _ = try await requireElement(in: window, "\(list): rows did not render") { $0.accessibilityLabel?.hasPrefix("Row c") == true }
+            let rendered = await awaitCondition { ["row-a", "row-b", "row-c"].allSatisfy { recorder.counts["sessionRow:\($0)", default: 0] > 0 } }
+            XCTAssertTrue(rendered, "\(list): rows did not render")
 
             func reRuns(_ change: () async -> Void) async -> Set<String> {
-                settle(0.2, window: window)
+                settle(0.2)
                 recorder.reset()
                 await change()
-                settle(0.2, window: window)
+                settle(0.2)
                 return Set(recorder.counts.keys.filter { $0.hasPrefix("sessionRow:") })
             }
+            // Just after launch every list update can redraw every row; measure once an unchanged refresh redraws none.
+            var settled = false
+            for _ in 0..<20 where !settled { settled = await reRuns { _ = await viewModel.load() }.isEmpty }
+            XCTAssertTrue(settled, "\(list): an unchanged refresh keeps re-running rows")
+
             state.rename("row-b", to: "Row b renamed")
             let renamed = await reRuns { _ = await viewModel.load() }
             XCTAssertEqual(renamed, ["sessionRow:row-b"], "\(list): a title change re-ran other rows")
-            XCTAssertNotNil(HostedAccessibility.elements(in: window).first { $0.accessibilityLabel?.hasPrefix("Row b renamed") == true })
 
             let rowA = try XCTUnwrap(viewModel.sessions.first { $0.sessionId == "row-a" })
             state.pin("row-a")
@@ -3480,8 +3485,9 @@ extension SessionListHostedTests {
             state.archive("row-c")
             let archived = await reRuns { _ = await viewModel.archive(rowC) }
             XCTAssertTrue(archived.isSubset(of: ["sessionRow:row-c"]), "\(list): an archive re-ran \(archived.sorted())")
-            let removed = await awaitNoElement(in: window) { $0.accessibilityLabel?.hasPrefix("Row c") == true }
-            XCTAssertTrue(removed, "\(list): the archived row stayed")
+            let labels = HostedAccessibility.labels(in: window)
+            XCTAssertTrue(labels.contains { $0.hasPrefix("Row b renamed") }, "\(list): the renamed row kept its title")
+            XCTAssertFalse(labels.contains { $0.hasPrefix("Row c") }, "\(list): the archived row stayed")
             window.isHidden = true
             window.rootViewController = nil
         }

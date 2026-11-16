@@ -7,44 +7,64 @@ extension EnvironmentValues {
     @Entry var sessionRowStyle = SessionRowStyle.regular
 }
 
-/// Apply `.equatable()` where a list builds it, so a list update re-runs only the rows whose own inputs changed.
+/// A list builds its rows in its own body and hands them to `ForEach` with `.equatable()`, so a list update re-runs only
+/// the rows whose own inputs changed. Built inside a `ForEach` closure instead, the row's list reads could land on the
+/// row itself and re-run it on every list change.
 struct SessionInteractiveRow: View, Equatable {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.sessionRowsMonitorRuns) private var monitorsRuns
-    @Environment(\.sessionRowStyle) private var rowStyle
     let viewModel: SessionListViewModel
     let session: SessionSummary
-    let selectedSessionID: String?
     let actions: SessionListRowActions
     let searchText: String
-    /// This row's own list state, read by the list building it, so the row observes neither the whole pending map nor
-    /// another row's write.
-    private let pendingChange: PendingResourceChange?
-    private let isMutating: Bool
-    private let canOpenBeside: Bool
+    private let state: State
+
+    /// Everything the row shows from the list, read where the list builds the row. The body reads no list state of its
+    /// own: an equatable row handed an equal value can miss a list change it observed in the same update. The style
+    /// comes from the list too: SwiftUI cannot compare it in the environment, so reading it there re-runs every row
+    /// whenever an ancestor's environment updates.
+    private struct State: Equatable {
+        var style: SessionRowStyle
+        var isOpen: Bool
+        var pendingChange: PendingResourceChange?
+        var isMutating: Bool
+        var canOpenBeside: Bool
+        var matchPreview: String?
+        var isViewingCachedData: Bool
+        var isSelectingSessions: Bool
+        var isPicked: Bool
+        var supportsBulkActions: Bool
+        var isPerformingBulkAction: Bool
+    }
 
     init(viewModel: SessionListViewModel, session: SessionSummary, selectedSessionID: String?,
-         actions: SessionListRowActions, searchText: String = "") {
+         actions: SessionListRowActions, searchText: String = "", style: SessionRowStyle = .regular) {
         self.viewModel = viewModel
         self.session = session
-        self.selectedSessionID = selectedSessionID
         self.actions = actions
         self.searchText = searchText
-        pendingChange = viewModel.pendingChange(for: session)
-        isMutating = viewModel.isMutating(session)
-        canOpenBeside = actions.openBeside(session) != nil
+        state = State(
+            style: style,
+            isOpen: session.sessionId == selectedSessionID,
+            pendingChange: viewModel.pendingChange(for: session),
+            isMutating: viewModel.isMutating(session),
+            canOpenBeside: actions.openBeside(session) != nil,
+            matchPreview: viewModel.contentMatchPreview(for: session, searchText: searchText),
+            isViewingCachedData: viewModel.isViewingCachedData,
+            isSelectingSessions: viewModel.isSelectingSessions,
+            isPicked: viewModel.isSelectingSessions && viewModel.isSelected(session),
+            supportsBulkActions: viewModel.supportsBulkActions,
+            isPerformingBulkAction: viewModel.isPerformingBulkAction
+        )
     }
 
     /// The actions are the list's handlers, stable for its lifetime; only whether this row opens beside the chat
-    /// follows view state.
+    /// follows view state, and `state` carries it.
     nonisolated static func == (lhs: SessionInteractiveRow, rhs: SessionInteractiveRow) -> Bool {
-        lhs.session == rhs.session
-            && (lhs.session.sessionId == lhs.selectedSessionID) == (rhs.session.sessionId == rhs.selectedSessionID)
-            && lhs.searchText == rhs.searchText
-            && lhs.pendingChange == rhs.pendingChange
-            && lhs.isMutating == rhs.isMutating
-            && lhs.canOpenBeside == rhs.canOpenBeside
+        lhs.session == rhs.session && lhs.searchText == rhs.searchText && lhs.state == rhs.state
     }
+
+    private var rowStyle: SessionRowStyle { state.style }
 
     var body: some View {
         #if DEBUG
@@ -53,7 +73,7 @@ struct SessionInteractiveRow: View, Equatable {
         draggableRowContent
             .id(session.id)
             // While picking chats the checkmarks carry selection, so the open chat stops reading as selected.
-            .sidebarRow(isSelected: !viewModel.isSelectingSessions && session.sessionId == selectedSessionID)
+            .sidebarRow(isSelected: !state.isSelectingSessions && state.isOpen)
             .transition(SessionListMotion.sessionRowTransition(reduceMotion: reduceMotion))
             .swipeActions(edge: .leading, allowsFullSwipe: false) {
                 sessionActions(placement: .leadingSwipe)
@@ -72,7 +92,7 @@ struct SessionInteractiveRow: View, Equatable {
 
     @ViewBuilder
     private var draggableRowContent: some View {
-        if rowStyle == .sidebar, !viewModel.isSelectingSessions, canOpenBeside {
+        if rowStyle == .sidebar, !state.isSelectingSessions, state.canOpenBeside {
             rowContent.onDrag {
                 actions.sidebarChatLifted(session)
                 return SidebarChatDrag.provider(for: session)
@@ -85,7 +105,7 @@ struct SessionInteractiveRow: View, Equatable {
     /// Select is a row-only prefix; all session actions use the same menu placement as the chat.
     @ViewBuilder
     func contextMenuContent(includesSelection: Bool) -> some View {
-        if !viewModel.isSelectingSessions {
+        if !state.isSelectingSessions {
             if includesSelection {
                 Button { viewModel.beginSelectingSessions() } label: {
                     Label("Select Chats…", systemImage: "checkmark.circle")
@@ -97,10 +117,10 @@ struct SessionInteractiveRow: View, Equatable {
     }
 
     private var canEnterSelection: Bool {
-        rowStyle == .sidebar && viewModel.supportsBulkActions && !viewModel.isSelectingSessions
+        rowStyle == .sidebar && state.supportsBulkActions && !state.isSelectingSessions
     }
 
-    private var selectionIsDisabled: Bool { viewModel.isViewingCachedData || viewModel.isPerformingBulkAction }
+    private var selectionIsDisabled: Bool { state.isViewingCachedData || state.isPerformingBulkAction }
 
     /// A run card keeps Stop beside the button that opens the chat, so VoiceOver reaches it and tapping it stops the
     /// run instead of opening the chat.
@@ -120,33 +140,33 @@ struct SessionInteractiveRow: View, Equatable {
 
     private func openButton(style: SessionRowStyle) -> some View {
         Button {
-            if viewModel.isSelectingSessions {
+            if state.isSelectingSessions {
                 viewModel.toggleSelection(session)
             } else {
                 actions.open(session)
             }
         } label: {
             HStack(spacing: 12) {
-                if viewModel.isSelectingSessions {
-                    Image(systemName: viewModel.isSelected(session) ? "checkmark.circle.fill" : "circle")
+                if state.isSelectingSessions {
+                    Image(systemName: state.isPicked ? "checkmark.circle.fill" : "circle")
                         .font(.title3)
                         .foregroundStyle(isSelectable ? Color.accentColor : Color.secondary)
                         .accessibilityHidden(true)
                 }
                 SessionRowView(
                     session: session,
-                    isViewingCachedData: viewModel.isViewingCachedData,
-                    matchPreview: viewModel.contentMatchPreview(for: session, searchText: searchText),
+                    isViewingCachedData: state.isViewingCachedData,
+                    matchPreview: state.matchPreview,
                     searchText: searchText,
-                    pendingChange: pendingChange,
+                    pendingChange: state.pendingChange,
                     style: style
                 )
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(viewModel.isSelectingSessions && !isSelectable)
-        .accessibilityAddTraits(viewModel.isSelectingSessions && viewModel.isSelected(session) ? .isSelected : [])
+        .disabled(state.isSelectingSessions && !isSelectable)
+        .accessibilityAddTraits(state.isPicked ? .isSelected : [])
     }
 
     private var stopButton: some View {
@@ -155,29 +175,29 @@ struct SessionInteractiveRow: View, Equatable {
         } label: {
             Label("Stop", systemImage: "stop.fill")
                 .font(AppFont.title3(weight: .semibold))
-                .foregroundStyle(viewModel.isSelectingSessions || viewModel.isViewingCachedData ? Color.secondary : Color.red)
+                .foregroundStyle(state.isSelectingSessions || state.isViewingCachedData ? Color.secondary : Color.red)
         }
         .buttonStyle(.bordered)
         .controlSize(.large)
         .tint(.red)
-        .disabled(viewModel.isSelectingSessions || viewModel.isViewingCachedData)
+        .disabled(state.isSelectingSessions || state.isViewingCachedData)
         .accessibilityIdentifier("session-run-stop")
         .padding(.trailing, 12)
     }
 
     private var isSelectable: Bool {
-        !viewModel.isViewingCachedData && SessionRowActionPolicy.isBulkSelectable(session)
+        !state.isViewingCachedData && SessionRowActionPolicy.isBulkSelectable(session)
     }
 
     private func rowMenu(placement: SessionRowContextMenu.Placement) -> SessionRowContextMenu {
         SessionRowContextMenu(viewModel: viewModel, session: session, actions: actions, placement: placement,
-            openBeside: rowStyle == .sidebar && !viewModel.isSelectingSessions ? actions.openBeside(session) : nil,
-            rowState: (pendingChange, isMutating))
+            openBeside: rowStyle == .sidebar && !state.isSelectingSessions ? actions.openBeside(session) : nil,
+            rowState: (state.pendingChange, state.isMutating))
     }
 
     @ViewBuilder
     func sessionActions(placement: SessionRowContextMenu.Placement) -> some View {
-        if !viewModel.isSelectingSessions {
+        if !state.isSelectingSessions {
             rowMenu(placement: placement)
         }
     }
