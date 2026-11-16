@@ -408,7 +408,7 @@ struct SessionListView: View {
                 // Start the normal refresh immediately so a slow direct session
                 // request cannot leave the sidebar empty. The launch root was already
                 // resolved from local data; only explicit deep links can navigate here.
-                await SessionListInitialLoad.run(
+                await SessionListLoad.initial(
                     resolvePendingDeepLink: {
                         await openPendingDeepLinkedSessionIfNeeded()
                     },
@@ -2082,9 +2082,7 @@ struct SessionListView: View {
     /// its refresh queue, and `loadProjects` and `loadActiveProfile` fence their
     /// own responses, so nothing here has to coordinate them.
     private func refreshSessionsAndActiveProfile() async {
-        await loadSessions()
-        guard !Task.isCancelled else { return }
-        await viewModel.loadActiveProfile()
+        await loadSessions(includingActiveProfile: true)
         guard !Task.isCancelled else { return }
         // Not awaited: restore and pull-to-refresh must not wait on transcripts. The view model
         // claims each run before its request, so overlapping refreshes never fetch one twice.
@@ -2163,23 +2161,30 @@ struct SessionListView: View {
         SessionListMotion.sessionMutationAnimation(reduceMotion: reduceMotion)
     }
 
-    private func loadSessions() async {
-        // Rows carry `sessionRowTransition`, but it only plays when the array is
-        // replaced inside an animation. The first population has nothing to move,
-        // so it stays unanimated and later refreshes slide a new row into its
-        // sorted place instead of popping it in.
-        let animation = viewModel.sessions.isEmpty
-            ? nil
-            : sessionActionAnimation
-        await viewModel.load(modelContext: modelContext, animation: animation)
-        guard !Task.isCancelled else { return }
-        handleLastError()
-
-        if !viewModel.isViewingCachedData {
-            await viewModel.loadProjects(silently: true)
-            guard !Task.isCancelled else { return }
-            handleLastError()
-        }
+    private func loadSessions(includingActiveProfile: Bool = false) async {
+        await SessionListLoad.refresh(
+            loadRows: {
+                // Rows carry `sessionRowTransition`, but it only plays when the array is
+                // replaced inside an animation. The first population has nothing to move,
+                // so it stays unanimated and later refreshes slide a new row into its
+                // sorted place instead of popping it in.
+                let animation = viewModel.sessions.isEmpty
+                    ? nil
+                    : sessionActionAnimation
+                await viewModel.load(modelContext: modelContext, animation: animation)
+                guard !Task.isCancelled else { return }
+                handleLastError()
+            },
+            isViewingCachedData: { viewModel.isViewingCachedData },
+            loadProjects: {
+                await viewModel.loadProjects(silently: true)
+                guard !Task.isCancelled else { return }
+                handleLastError()
+            },
+            loadActiveProfile: {
+                if includingActiveProfile { await viewModel.loadActiveProfile() }
+            }
+        )
     }
 
     private func togglePinned(_ session: SessionSummary) async {
