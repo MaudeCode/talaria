@@ -778,8 +778,13 @@ export class TurnRunner {
 
   /** Resolves once the stream's worker has ended (settled, failed, or torn down), or its admission failed; it never rejects. */
   async finished(streamId: string): Promise<void> {
-    await this.admissions.get(streamId)
+    await this.admitted(streamId)
     await this.workers.get(streamId)
+  }
+
+  /** Resolves once the stream's admission has ended either way (at once when none is in flight); it never rejects. */
+  async admitted(streamId: string): Promise<void> {
+    await this.admissions.get(streamId)
   }
 
   /**

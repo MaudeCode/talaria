@@ -48,11 +48,13 @@ export interface StreamOwner { owner: string | null; summary?: RunSummary | null
 
 /**
  * Python `_stream_id_owner_session_id`: the live registry first, then the run journal once the run has finished. A
- * `sessionId` the client named restricts the journal lookup to that session.
+ * `sessionId` the client named restricts the journal lookup to that session. TAL-2000: admission saves the session
+ * naming the stream before it opens the stream's channel, so a lookup waits for an in-flight admission first.
  */
 export async function resolveStreamOwner(ctx: RequestContext, streamId: string, sessionId?: string): Promise<StreamOwner> {
   const id = streamId.trim()
   if (!id) return { owner: null }
+  await ctx.deps.turns.admitted(id)
   const live = ctx.deps.registry.ownerSessionId(id)
   if (live) return { owner: live }
   if (!isSafeSessionId(id)) return { owner: null }

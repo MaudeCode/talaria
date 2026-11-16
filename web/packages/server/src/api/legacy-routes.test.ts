@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
@@ -89,6 +89,38 @@ describe('legacy chat and test-hook endpoints', () => {
     const failed = await post(s, '/api/chat', { session_id: sid, message: 'try again' })
     expect(failed.status).toBe(200)
     expect(await json(failed)).toMatchObject({ answer: 'started to say', status: 'partial', result: { completed: false, interrupted: false } })
+  })
+
+  it('serves /api/chat/stream for a stream id the session names while the turn is still being admitted', async () => {
+    const sid = await newSession()
+    sidecar.respond('chat.start', (params, emit) => {
+      emit({ event: 'token', data: { text: 'hello' } })
+      return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'hello' }])
+    })
+    // Hold admission after it saved the session (which now names the stream) and before it opened the stream's channel.
+    let held!: () => void
+    const holding = new Promise<void>((resolve) => { held = resolve })
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const setLastWorkspace = s.deps.workspaces.setLastWorkspace.bind(s.deps.workspaces)
+    vi.spyOn(s.deps.workspaces, 'setLastWorkspace').mockImplementationOnce(async (...args) => { held(); await gate; return setLastWorkspace(...args) })
+    // Release only once the stream request is waiting on that admission.
+    const admitted = s.deps.turns.admitted.bind(s.deps.turns)
+    vi.spyOn(s.deps.turns, 'admitted').mockImplementation((streamId) => { release(); return admitted(streamId) })
+    const pending = post(s, '/api/chat', { session_id: sid, message: 'hi' })
+    try {
+      await Promise.race([holding, pending.then(async (response) => { throw new Error(`Chat ended before admission: ${response.status} ${await response.clone().text()}`) })])
+      const streamId = (await s.deps.sessionStore.get(sid)).active_stream_id
+      expect(streamId).not.toBeNull()
+      expect(s.deps.registry.peek(String(streamId))).toBeUndefined()
+      const frames = await s.sse(`/api/chat/stream?stream_id=${String(streamId)}`, (f) => f.event === 'token')
+      expect(frames.filter((f) => f.event === 'token').map((f) => f.data)).toEqual([{ text: 'hello' }])
+      expect(await json(await pending)).toMatchObject({ answer: 'hello', status: 'done' })
+    } finally {
+      release()
+      vi.restoreAllMocks()
+      await pending.catch(() => undefined)
+    }
   })
 
   it('answers a failure that produced no text with its error frame', async () => {
