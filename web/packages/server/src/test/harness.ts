@@ -12,6 +12,7 @@ import type { AppDeps } from '../http/context.js'
 import { createDeps } from '../runtime.js'
 import { startServer, type RunningServer } from '../server.js'
 import type { SidecarLike } from '../sidecar/client.js'
+import { RUN_SETTLE_MS } from '../cli/supervise.js'
 import { dropTestSchema } from './postgres.js'
 
 export const WEB_ROOT = resolve(import.meta.dirname, '../../../..')
@@ -70,9 +71,15 @@ export interface BootOptions {
   gatewayPollMs?: number
   /** Install the SIGTERM/SIGINT/SIGHUP shutdown handlers (tests stub `process.exit` and remove them). */
   signals?: boolean
-  /** TAL-1628: the local-run drain budget `close` uses (the default is the worker's shutdown budget). */
+  /** TAL-1628: the local-run drain budget `close` uses; a drain test passes its own. */
   drain?: import('../server.js').StartServerOptions['drain']
 }
+
+/**
+ * TAL-2185: a test server's close stops the runs its suite left going at once instead of waiting out the worker's
+ * `RUN_DRAIN_MS` for them (a held fake turn never finishes on its own), so a suite's afterAll stays inside the hook timeout.
+ */
+const TEST_DRAIN = { waitMs: 0, settleMs: RUN_SETTLE_MS }
 
 /**
  * A Postgres-backed server (TAL-1067) uses the run's embedded Postgres, in a schema named for its state directory, so a
@@ -108,7 +115,7 @@ export async function bootTestServer(opts: BootOptions = {}): Promise<TestServer
   const postgresSchema = env.TALARIA_STORAGE === 'postgres' ? usePostgres(env) : null
   const deps = await createDeps({ ...(opts.storage ? { storage: opts.storage } : {}), env, webRoot: WEB_ROOT, log: (line) => logs.push(line), version: 'web-v0.0.0-test', ...(opts.now ? { now: opts.now } : {}), ...(opts.sidecar !== undefined ? { sidecar: opts.sidecar } : {}), ...(opts.gatewayPollMs !== undefined ? { gatewayPollMs: opts.gatewayPollMs } : {}) })
   opts.deps?.(deps)
-  const running = await startServer(createApp(deps), deps.config, { log: (line) => logs.push(line), signals: opts.signals ?? false, ...(opts.drain ? { drain: opts.drain } : {}) })
+  const running = await startServer(createApp(deps), deps.config, { log: (line) => logs.push(line), signals: opts.signals ?? false, drain: opts.drain ?? TEST_DRAIN })
   const base = `http://127.0.0.1:${running.port}`
   return {
     deps,

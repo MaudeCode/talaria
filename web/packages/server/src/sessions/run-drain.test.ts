@@ -12,6 +12,7 @@ import { bootTestServer as bootServer, type BootOptions, type TestServer } from 
 import { sessionPath, useJsonStorage } from '../test/storage.js'
 import { join } from 'node:path'
 import { writeContinuation } from '../tools/update-continuation.js'
+import { RUN_DRAIN_MS } from '../cli/supervise.js'
 import type { UpdateServiceDeps } from '../tools/updates.js'
 
 // The cases read the saved session file after storage closed, which only the JSON backend leaves readable.
@@ -182,6 +183,17 @@ describe('server close drains local runs (TAL-1628)', () => {
     expect(server.deps.registry.activeRuns.has('owner:gateway-run')).toBe(true)
     expect(sidecar.calls.some((c) => c.method === 'chat.interrupt')).toBe(false)
     await server.running.close()
+  })
+
+  it('stops a run a suite left going when it closes its test server, rather than waiting out the worker budget (TAL-2185)', async () => {
+    const { sidecar, release, interrupts } = heldSidecar()
+    const server = await bootTestServer({ sidecar })
+    try {
+      const { streamId } = await startTurn(server, 'left running')
+      const closing = server.close()
+      await expect.poll(() => interrupts, { timeout: RUN_DRAIN_MS / 2 }).toEqual([streamId])
+      await closing
+    } finally { release() }
   })
 
   it('settles local runs through the same drain before a requested restart exits', async () => {
