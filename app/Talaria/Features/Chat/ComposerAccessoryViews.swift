@@ -65,6 +65,7 @@ struct BackgroundWorkSheet: View {
     var steer: (_ taskID: String, _ text: String) async -> BackgroundControlOutcome? = { _, _ in nil }
 
     @Environment(\.dismiss) private var close
+    @Environment(\.openURL) private var openURL
     /// Rows whose Stop or Steer awaits its owner's answer: the owner produces the result, so only that row waits.
     @State private var controlling: Set<String> = []
     @State private var refusal: String?
@@ -88,6 +89,9 @@ struct BackgroundWorkSheet: View {
                             .contextMenu {
                                 ForEach(actions, id: \.self) { actionButton($0, task: task) }
                             }
+                        ForEach(task.childSessions) { child in
+                            transcriptRow(child, namedByGoal: task.childSessions.count > 1)
+                        }
                     }
                 } header: {
                     VStack(alignment: .leading, spacing: 4) {
@@ -167,6 +171,35 @@ struct BackgroundWorkSheet: View {
         } else {
             label
         }
+    }
+
+    /// TAL-2263: one of a delegation's subagents, under its row. It opens through the session deep link like every
+    /// other chat-to-chat jump, so the read-only transcript replaces this chat and the sheet steps aside for it.
+    private func transcriptRow(_ child: BackgroundWorkTask.ChildSession, namedByGoal: Bool) -> some View {
+        Button {
+            guard let url = TalariaDeepLink.sessionURL(sessionID: child.sessionId) else { return }
+            close()
+            openURL(url)
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Image(systemName: "text.bubble")
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Text(namedByGoal && !child.goal.isEmpty ? child.goal : String(localized: "Transcript"))
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+            }
+            .font(AppFont.footnote())
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint(String(localized: "Show transcript"))
+        .accessibilityIdentifier("background-task-transcript-\(child.sessionId)")
+        .listRowSeparator(.hidden, edges: .top)
     }
 
     /// The row's actions, as the server offers them: Stop on work it may stop, else Dismiss on a finished result, and

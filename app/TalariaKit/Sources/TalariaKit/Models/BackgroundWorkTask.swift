@@ -36,6 +36,29 @@ public struct BackgroundWorkTask: Decodable, Equatable, Identifiable, Sendable {
         }
     }
 
+    /// TAL-2263: one subagent session a delegation ran, by its goal: a read-only transcript to open.
+    public struct ChildSession: Decodable, Equatable, Identifiable, Sendable {
+        public var id: String { sessionId }
+        public let goal: String
+        public let sessionId: String
+
+        public init(goal: String, sessionId: String) {
+            self.goal = goal
+            self.sessionId = sessionId
+        }
+
+        enum CodingKeys: String, CodingKey { case goal, sessionId }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            guard let sessionId = container.decodeLossyStringIfPresent(forKey: .sessionId), !sessionId.isEmpty else {
+                throw DecodingError.dataCorruptedError(forKey: .sessionId, in: container, debugDescription: "A child session needs its id")
+            }
+            self.sessionId = sessionId
+            goal = container.decodeLossyStringIfPresent(forKey: .goal) ?? ""
+        }
+    }
+
     public var id: String { taskId }
     public let taskId: String
     public let kind: Kind
@@ -53,8 +76,10 @@ public struct BackgroundWorkTask: Decodable, Equatable, Identifiable, Sendable {
     public let canStop: Bool
     /// TAL-1336: an owner chat's subagent that takes a steering message now.
     public let canSteer: Bool
+    /// TAL-2263: the delegation's subagent sessions. Empty from a server older than the field.
+    public let childSessions: [ChildSession]
 
-    public init(taskId: String, kind: Kind, status: Status, title: String, agents: Agents? = nil, exitCode: Int? = nil, resultAvailable: Bool = false, pinned: Bool = false, dismissible: Bool = false, active: Bool = false, canStop: Bool = false, canSteer: Bool = false) {
+    public init(taskId: String, kind: Kind, status: Status, title: String, agents: Agents? = nil, exitCode: Int? = nil, resultAvailable: Bool = false, pinned: Bool = false, dismissible: Bool = false, active: Bool = false, canStop: Bool = false, canSteer: Bool = false, childSessions: [ChildSession] = []) {
         self.taskId = taskId
         self.kind = kind
         self.status = status
@@ -67,10 +92,11 @@ public struct BackgroundWorkTask: Decodable, Equatable, Identifiable, Sendable {
         self.active = active
         self.canStop = canStop
         self.canSteer = canSteer
+        self.childSessions = childSessions
     }
 
     enum CodingKeys: String, CodingKey {
-        case taskId, kind, status, title, agents, exitCode, resultAvailable, pinned, dismissible, active, canStop, canSteer
+        case taskId, kind, status, title, agents, exitCode, resultAvailable, pinned, dismissible, active, canStop, canSteer, childSessions
     }
 
     public init(from decoder: Decoder) throws {
@@ -90,6 +116,7 @@ public struct BackgroundWorkTask: Decodable, Equatable, Identifiable, Sendable {
         active = container.decodeLossyBoolIfPresent(forKey: .active) ?? false
         canStop = container.decodeLossyBoolIfPresent(forKey: .canStop) ?? false
         canSteer = container.decodeLossyBoolIfPresent(forKey: .canSteer) ?? false
+        childSessions = container.decodeLossyArrayIfPresent(ChildSession.self, forKey: .childSessions) ?? []
     }
 }
 

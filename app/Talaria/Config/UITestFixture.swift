@@ -1372,7 +1372,8 @@ final class UITestFixtureURLProtocol: URLProtocol {
         return [
             ["task_id": "deleg-ui-1", "kind": "delegation", "status": finished ? "completed" : "running", "title": "Fix CI", "started_at": 2_000_000_010, "updated_at": 2_000_000_011,
              "completed_at": finished ? 2_000_000_011 : NSNull(),
-             "result_available": false, "child_session_id": NSNull(), "exit_code": NSNull(), "agents": NSNull(), "pinned": !finished, "dismissible": false, "active": !finished],
+             "result_available": false, "child_sessions": [["goal": "Fix CI", "session_id": "ui-fixture-session-1"]], "exit_code": NSNull(), "agents": NSNull(), "pinned": !finished, "dismissible": false,
+             "active": !finished],
             ["task_id": "bg-ui", "kind": "background_command", "status": "completed", "title": "Summarize the repo", "started_at": 2_000_000_012, "updated_at": 2_000_000_013, "completed_at": 2_000_000_013,
              "result_available": true, "child_session_id": NSNull(), "exit_code": NSNull(), "agents": NSNull(), "pinned": !dismissed, "dismissible": !dismissed, "active": false]
         ]

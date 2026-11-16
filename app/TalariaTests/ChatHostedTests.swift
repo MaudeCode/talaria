@@ -1817,6 +1817,44 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertEqual(BackgroundWorkSheet.deliverySummary(future), ["Delivery status unavailable"])
     }
 
+    /// TAL-2263: each child session a delegation's record lists opens its own transcript from the sheet through the
+    /// session deep link, named by its goal when the delegation ran several, and before any result exists. A record
+    /// from an older server, or one whose list is not a list, shows its row alone.
+    func testADelegationsChildSessionsOpenTheirTranscripts() async throws {
+        let tasks = try APIClient.responseDecoder().decode([BackgroundWorkTask].self, from: Data("""
+        [
+          {"task_id": "one", "kind": "delegation", "status": "running", "title": "Check the tests", "result_available": false, "pinned": true,
+           "child_sessions": [{"goal": "Check the tests", "session_id": "child-solo"}]},
+          {"task_id": "many", "kind": "delegation", "status": "completed", "title": "Audit the release", "result_available": true, "pinned": true,
+           "child_sessions": [{"goal": "Read the logs", "session_id": "child-logs"}, {"goal": "No session"}, "junk", {"goal": "Trace the crash", "session_id": "child-crash"}]},
+          {"task_id": "old", "kind": "delegation", "status": "running", "title": "From an older server", "pinned": true},
+          {"task_id": "bad", "kind": "delegation", "status": "running", "title": "Not a list", "pinned": true, "child_sessions": "nope"}
+        ]
+        """.utf8))
+        let opened = LockedTestValue([URL]())
+        let window = try hostWindow(
+            BackgroundWorkSheet(tasks: tasks, loadResult: { _ in nil }, dismiss: { _ in })
+                .environment(\.openURL, OpenURLAction { opened.value.append($0); return .handled })
+        )
+        let prefix = "background-task-transcript-"
+        func transcripts() -> [NSObject] {
+            HostedAccessibility.elements(in: window).filter { HostedAccessibility.identifier(of: $0)?.hasPrefix(prefix) == true }
+        }
+        let listed = await awaitCondition { transcripts().count == 3 }
+        XCTAssertTrue(listed, "The sheet lists \(transcripts().count) transcripts for three child sessions")
+        XCTAssertEqual(transcripts().map(\.accessibilityLabel), ["Transcript", "Read the logs", "Trace the crash"])
+        for element in transcripts() {
+            XCTAssertTrue(HostedAccessibility.activate(element))
+            let sessionID = try XCTUnwrap(HostedAccessibility.identifier(of: element)).dropFirst(prefix.count)
+            XCTAssertEqual(opened.value.last.flatMap(TalariaDeepLink.sessionID(from:)), String(sessionID))
+        }
+        XCTAssertEqual(opened.value.count, 3)
+        for taskID in ["one", "many", "old", "bad"] {
+            XCTAssertNotNil(HostedAccessibility.element(in: window, identifier: "background-task-row-\(taskID)"), "\(taskID) lost its row")
+        }
+        attachHostedScreenshot(window, name: "background-tasks-transcripts")
+    }
+
     /// TAL-1043: an owner chat lists the owner's inputs with only the server's actions. An input with an unknown
     /// outcome blocks sending until Retry returns its text to the composer; nothing resends on its own.
     func testOwnerChatRecoversAnUnknownInputOnPhone() async throws {
