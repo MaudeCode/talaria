@@ -2096,6 +2096,29 @@ final class ChatHostedTests: XCTestCase {
         }
     }
 
+    /// TAL-1241: a running tool's glow keeps sweeping while its content is evaluated once, not every display frame.
+    func testRunningToolGlowSweepsWithoutPerFrameEvaluation() throws {
+        let evaluations = ChatBodyEvaluationRecorder()
+        let calls = (1...3).map { ToolCall(id: "glow-\($0)", name: "terminal", preview: nil, args: nil) }
+        let window = try hostWindow(
+            VStack { ForEach(calls) { ToolCallCardView(toolCall: $0) } }
+                .environment(\._accessibilityReduceMotion, false)
+                .environment(\.chatBodyEvaluation, evaluations),
+            animationsEnabled: true
+        )
+        func image() -> Data? {
+            UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+            }.pngData()
+        }
+        evaluations.reset()
+        let start = image()
+        settle(1)
+        XCTAssertLessThanOrEqual(evaluations.counts["activityGlow", default: 0], calls.count,
+                                 "A running tool's glow re-evaluated its content per frame")
+        XCTAssertNotEqual(image(), start, "A running tool's glow stood still")
+    }
+
     /// Mounting a buffered target is not arrival; wait before interacting with it.
     private func navigateTranscript(to id: String, anchor: UnitPoint, using controller: ChatScrollPositionController,
                                     afterRequest: () -> Void = {}) async throws {
