@@ -85,7 +85,7 @@ struct TranscriptMediaResolvedRemoteView: View {
         }
 
 #if DEBUG
-        TranscriptMediaProbeRecorder.record("imageDecode")
+        TranscriptProbeRecorder.record("imageDecode")
 #endif
         if let image = await ImagePreviewDownsampler.thumbnailImage(
             from: data,

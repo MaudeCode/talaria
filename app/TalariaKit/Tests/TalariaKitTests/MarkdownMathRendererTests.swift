@@ -3,6 +3,34 @@ import XCTest
 @testable import TalariaKit
 
 final class MarkdownMathRendererTests: XCTestCase {
+    /// The command table used to be sorted on every call and applied as escaped regular expressions (TAL-859).
+    func testLiteralCommandReplacementMatchesTheRegexPath() {
+        let table = MarkdownMathFormatter.knownCommandReplacements
+        let regexPath = { (value: String) in
+            table.sorted { $0.command.count > $1.command.count }.reduce(value) { result, entry in
+                result.replacingOccurrences(
+                    of: NSRegularExpression.escapedPattern(for: entry.command),
+                    with: NSRegularExpression.escapedTemplate(for: entry.replacement),
+                    options: .regularExpression
+                )
+            }
+        }
+        let inputs = table.flatMap { entry in
+            [entry.command, "a\(entry.command)b", "\(entry.command){x}", "\(entry.command)\u{301}", "\\\(entry.command)"]
+        } + [
+            table.map(\.command).joined(),
+            table.map(\.command).joined(separator: " "),
+            #"\le \leq \lequiv \to \top \tom \Rightarrow \rightarrow \Leftrightarrow \leftarrow \left( \right)"#
+        ]
+
+        for input in inputs {
+            XCTAssertEqual(MarkdownMathFormatter.replacingKnownCommands(in: input), regexPath(input), input.debugDescription)
+        }
+        XCTAssertEqual(MarkdownMathFormatter.replacingKnownCommands(in: #"\le\leq"#), "≤≤")
+        XCTAssertEqual(MarkdownMathFormatter.replacingKnownCommands(in: #"\to\top"#), "→⊤")
+        XCTAssertEqual(MarkdownMathFormatter.replacingKnownCommands(in: #"\Rightarrow\rightarrow"#), "⇒→")
+    }
+
     func testInlineMathReplacesCommonLatexCommands() {
         let input = #"Inline: the quadratic formula $x = \frac{-b \pm \sqrt{b^2-4ac}}{2a}$ works."#
 

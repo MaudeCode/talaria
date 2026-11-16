@@ -20,7 +20,11 @@ public enum MarkdownMathLayout: Equatable, Sendable {
 
 struct MarkdownMathSegmenter {
     static func segments(in content: String) -> [MarkdownMathSegment] {
+        guard MarkdownMathFormatter.mayContainMath(content) else { return [.markdown(content)] }
         let characters = Array(content)
+        #if DEBUG
+        TranscriptProbeRecorder.record("mathCharacterArray")
+        #endif
         guard characters.count >= 4 else {
             return [.markdown(MarkdownMathFormatter.replacingInlineMath(in: content))]
         }
@@ -157,6 +161,9 @@ private enum DisplayDelimiter: CaseIterable {
 
 enum MarkdownMathProtection {
     static func mask(for characters: [Character]) -> [Bool] {
+        #if DEBUG
+        TranscriptProbeRecorder.record("mathProtectionMask")
+        #endif
         let fenced = fencedCodeMask(for: characters)
         let inline = inlineCodeMask(for: characters, existingMask: fenced)
         return zip(fenced, inline).map { $0 || $1 }

@@ -2,7 +2,11 @@ import Foundation
 
 public struct MarkdownMathFormatter: Sendable {
     static func replacingInlineMath(in markdown: String) -> String {
+        guard mayContainMath(markdown) else { return markdown }
         let characters = Array(markdown)
+        #if DEBUG
+        TranscriptProbeRecorder.record("mathCharacterArray")
+        #endif
         guard characters.count >= 3 else { return markdown }
 
         let protected = MarkdownMathProtection.mask(for: characters)
@@ -34,6 +38,12 @@ public struct MarkdownMathFormatter: Sendable {
         }
 
         return result
+    }
+
+    /// Every math delimiter (`$`, `$$`, `\(`, `\[`) opens with `$` or `\`, so text with neither has nothing to format
+    /// and skips the character array and code mask both passes would build.
+    static func mayContainMath(_ text: String) -> Bool {
+        text.utf8.contains { $0 == UInt8(ascii: "$") || $0 == UInt8(ascii: "\\") }
     }
 
     public static func renderedText(for latex: String) -> String {

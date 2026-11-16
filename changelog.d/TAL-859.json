@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Chats open, scroll and stream faster, most of all for replies without math.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}
