@@ -141,6 +141,35 @@ final class ChatViewModelStreamingPaceTests: XCTestCase {
         XCTAssertEqual(viewModel.reasoningGroupsForAnchor(nil), [])
     }
 
+    /// TAL-1242: the transcript keys its reading-place hold on `excerptRevision`, so it bumps once per excerpt change
+    /// and never for a stream tick that changes only the trailing message's text.
+    @MainActor
+    func testExcerptRevisionBumpsPerExcerptChangeAndNotPerStreamTick() async throws {
+        let streamClient = PacingSpySSEStreamingClient()
+        let viewModel = try makeViewModel(streamClient: streamClient, coalescingDelayNanoseconds: 60_000_000_000,
+                                          sessionMessages: Self.excerptTranscript(truncated: false))
+        await viewModel.loadMessages()
+        let loadedRevision = viewModel.excerptRevision
+
+        stubSession(messages: Self.excerptTranscript(truncated: true))
+        await viewModel.loadMessages()
+        XCTAssertEqual(viewModel.messages.last?.displayExcerpt, "Long")
+        XCTAssertEqual(viewModel.excerptRevision, loadedRevision + 1, "One excerpt change bumps the revision once")
+
+        let didStart = await viewModel.sendMessage("Stream a reply")
+        XCTAssertTrue(didStart)
+        streamClient.emit(.token("w "))
+        viewModel.revealStreamingContentTickForTesting()
+        let streamingRevision = viewModel.excerptRevision
+        for tick in 0..<100 {
+            streamClient.emit(.token("t\(tick) "))
+            viewModel.revealStreamingContentTickForTesting()
+        }
+
+        XCTAssertEqual(assistantContent(of: viewModel), "w " + (0..<100).map { "t\($0) " }.joined())
+        XCTAssertEqual(viewModel.excerptRevision, streamingRevision, "Text-only stream ticks change no excerpt")
+    }
+
     @MainActor
     func testDoneEventFlushesRemainingBufferImmediately() async throws {
         let streamClient = PacingSpySSEStreamingClient()
@@ -365,6 +394,13 @@ final class ChatViewModelStreamingPaceTests: XCTestCase {
                 + #""reasoning": "Weigh question \#(turn)."}"#
         }
         return "[\(rows.joined(separator: ", "))]"
+    }
+
+    /// A question and a long answer the server sends whole or folded to an excerpt.
+    private static func excerptTranscript(truncated: Bool) -> String {
+        let fold = truncated ? #", "_display_truncated": true, "_display_excerpt": "Long""# : ""
+        return #"[{"role": "user", "content": "Question", "message_id": "user-0"}, "#
+            + #"{"role": "assistant", "content": "Long answer.", "message_id": "assistant-0"\#(fold)}]"#
     }
 
     @MainActor

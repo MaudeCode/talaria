@@ -735,6 +735,7 @@ private func historyTranscript(messages supplied: [ChatMessage]? = nil, messageC
     }
     return ChatTranscriptView(
         isLoading: false, errorMessage: nil, messages: messages,
+        excerptRevision: messages.map { [$0.displayExcerpt, $0.activityScene?.finalAnswerExcerpt] }.hashValue,
         displayedTranscriptMessages: ChatViewModel.transcriptMessages(from: messages, messageOffset: messageOffset),
         branchedFrom: nil, reasoningGroupsForAnchor: { _ in [] },
         completedToolCallGroupsForAnchor: { _ in [] }, archivedActivityRowsForAnchor: { _ in [] },

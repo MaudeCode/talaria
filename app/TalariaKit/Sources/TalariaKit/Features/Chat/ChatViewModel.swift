@@ -20,8 +20,31 @@ public final class ChatViewModel {
         didSet {
             let populated = !messages.isEmpty
             if hasMessages != populated { hasMessages = populated }
+            noteExcerptChanges()
             recomputeDisplayedTranscriptMessages()
         }
+    }
+    /// TAL-1242: bumped when the message list or any message's folded excerpt changes, so the transcript keeps the
+    /// reader's place on that integer instead of mapping every message on each streaming tick.
+    public private(set) var excerptRevision = 0
+    private struct ExcerptKey: Equatable {
+        let display: String?
+        let finalAnswer: String?
+        init(_ message: ChatMessage) {
+            display = message.displayExcerpt
+            finalAnswer = message.activityScene?.finalAnswerExcerpt
+        }
+    }
+    @ObservationIgnored private var excerptKeys: [ExcerptKey] = []
+
+    /// Compares in place against the last excerpts (no `oldValue`, which would copy the array on every tick write)
+    /// and allocates only when one changed.
+    private func noteExcerptChanges() {
+        let unchanged = excerptKeys.count == messages.count
+            && messages.indices.allSatisfy { excerptKeys[$0] == ExcerptKey(messages[$0]) }
+        guard !unchanged else { return }
+        excerptKeys = messages.map(ExcerptKey.init)
+        excerptRevision &+= 1
     }
     /// Layout reads message presence without observing each streamed content update.
     public private(set) var hasMessages = false
