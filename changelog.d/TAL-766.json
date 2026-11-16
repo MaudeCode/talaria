@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Kanban live updates on a busy Board now land without restarting: each burst of events refetches only the Board, and a burst during a refresh queues one more instead of cancelling it.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

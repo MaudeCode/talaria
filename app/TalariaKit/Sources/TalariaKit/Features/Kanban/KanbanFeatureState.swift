@@ -67,6 +67,10 @@ public final class KanbanFeatureState {
     private var streamFailureCount = 0
     private var reconnectTask: Task<Void, Never>?
     private var coalescingTask: Task<Void, Never>?
+    /// The live generation whose coalesced Board request is in flight; bursts during it queue one follow-up
+    /// instead of cancelling it.
+    private var liveReconcileGeneration: Int?
+    private var liveReconcileFollowUpPending = false
     private var pollingTask: Task<Void, Never>?
     private var activeCardMutationIDs: [String: UUID] = [:]
     private var pendingOptimisticStatuses: [String: String] = [:]
@@ -2285,16 +2289,33 @@ public final class KanbanFeatureState {
     }
 
     private func scheduleCoalescedReconciliation(board: String, generation: Int) {
+        if liveReconcileGeneration == generation {
+            liveReconcileFollowUpPending = true
+            return
+        }
         let sleep = self.sleep
         let delay = timing.coalescingDelay
         coalescingTask?.cancel()
         coalescingTask = Task { @MainActor [weak self] in
             do { try await sleep(delay) } catch { return }
             guard let self, self.isCurrentLiveWork(board: board, generation: generation) else { return }
-            let succeeded = await self.refreshBoard(usingCursor: false, refreshSupplementary: true)
-            guard self.isCurrentLiveWork(board: board, generation: generation) else { return }
-            if !succeeded, self.isOffline { self.startPollingIfNeeded() }
+            await self.reconcileLiveBoard(board: board, generation: generation)
         }
+    }
+
+    /// Refetches only the Board: stats and assignee history refresh on load, Board switch, and pull to refresh.
+    private func reconcileLiveBoard(board: String, generation: Int) async {
+        liveReconcileGeneration = generation
+        defer { if liveReconcileGeneration == generation { liveReconcileGeneration = nil } }
+        repeat {
+            liveReconcileFollowUpPending = false
+            let succeeded = await refreshBoard(usingCursor: false)
+            guard isCurrentLiveWork(board: board, generation: generation) else { return }
+            if !succeeded, isOffline {
+                startPollingIfNeeded()
+                return
+            }
+        } while liveReconcileFollowUpPending
     }
 
     private func startPollingIfNeeded() {
