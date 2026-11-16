@@ -45,10 +45,23 @@ def board(monkeypatch):
     return statements
 
 
-@pytest.mark.parametrize("method", [kanban.board_payload, kanban.events_payload])
-def test_an_up_to_date_poll_reads_no_tasks(board, method) -> None:
-    method({"since": 1})
+def test_an_up_to_date_event_poll_reads_no_tasks(board) -> None:
+    kanban.events_payload({"since": 1})
     assert [s for s in board if "FROM tasks" in s] == []
+
+
+def test_an_up_to_date_board_read_with_live_claims_reads_only_running_rows(board, monkeypatch) -> None:
+    monkeypatch.setattr(kanban._kb(), "_claim_is_live", lambda claim: True)
+    assert kanban.board_payload({"since": 1}) == {"changed": False, "latest_event_id": 1, "read_only": False}
+    assert [s for s in board if "FROM tasks" in s] == ["SELECT * FROM tasks WHERE status = 'running'"]
+
+
+def test_an_up_to_date_board_read_with_a_dead_claim_returns_the_board(board) -> None:
+    # A worker that dies writes no event, yet its card's actions change with its liveness.
+    result = kanban.board_payload({"since": 1})
+    assert result["changed"] is True
+    live = {t["id"]: t["claim_live"] for c in result["columns"] for t in c["tasks"]}
+    assert live["reused"] is False
 
 
 def test_a_board_read_judges_each_running_claim_on_its_loaded_row(board) -> None:

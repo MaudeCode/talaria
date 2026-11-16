@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SwiftUI
 
 /// Server-bound Kanban browsing state. Each instance owns one server's Board
 /// choice, filters, selection, and snapshots; nothing is shared across servers.
@@ -16,6 +17,9 @@ public final class KanbanFeatureState {
     public private(set) var configuration: KanbanConfiguration?
     public private(set) var boards: [KanbanBoard] = []
     public private(set) var snapshot: KanbanBoardSnapshot?
+    /// The Board and filters `snapshot` was read with; the server's event cursor ignores filters, so only
+    /// a match may ask for the Board since that cursor.
+    private var snapshotRequest: KanbanBoardRequest?
     private(set) var stats: KanbanStats?
     private(set) var assigneeHistory: KanbanAssigneeHistory?
     private(set) var capabilityWarnings: Set<KanbanReadCapabilityWarning> = []
@@ -683,6 +687,7 @@ public final class KanbanFeatureState {
             selectedBoardSlug = boardToLoad
             boardSelectionNotice = nil
             self.snapshot = snapshot
+            snapshotRequest = KanbanBoardRequest(board: boardToLoad)
             markBoardActivity()
             detailRefreshRevision &+= 1
             liveCursor = max(0, snapshot.latestEventID ?? 0)
@@ -734,6 +739,7 @@ public final class KanbanFeatureState {
         boards = availableBoards
         selectedBoardSlug = board
         self.snapshot = snapshot
+        snapshotRequest = nil
         self.report = report
         state = report.isPartial ? .partial : .compatible
         return true
@@ -1127,49 +1133,55 @@ public final class KanbanFeatureState {
         }
     }
 
-    public func setSceneActive(_ active: Bool) async {
-        guard sceneIsActive != active else { return }
-        sceneIsActive = active
-        if !active {
+    /// `.inactive` (Control Center, the notification shade, a system prompt, the app switcher) keeps the
+    /// stream and Board; only `.background` suspends live updates, and the next `.active` resumes them.
+    public func setScenePhase(_ phase: ScenePhase) async {
+        switch phase {
+        case .background:
+            guard sceneIsActive else { return }
+            sceneIsActive = false
             suspendLiveUpdates()
-            return
+        case .active:
+            guard !sceneIsActive else { return }
+            sceneIsActive = true
+            await reconcileAfterBackground()
+        default:
+            break
         }
-        guard isVisible, snapshot != nil else { return }
+    }
+
+    /// Reads the Board since its cursor when the last refresh succeeded and the snapshot matches the current
+    /// filters. An unchanged Board skips the Board list, stats and assignee reads; a changed one refreshes
+    /// them once.
+    private func reconcileAfterBackground() async {
+        guard isVisible, snapshot != nil, let board = selectedBoardSlug else { return }
         let previousRefreshFailed = refreshFailed
-        let boardCollectionSucceeded = await reconcileBoardCollection()
+        let generation = liveGeneration
+        let appliedRevision = detailRefreshRevision
+        let succeeded = await refreshBoard(
+            usingCursor: !refreshFailed && snapshotRequest == boardRequest(board: board),
+            refreshSupplementary: true
+        )
         guard !Task.isCancelled else {
             refreshFailed = previousRefreshFailed
             return
         }
-        if !boardCollectionSucceeded {
-            reportBoardCollectionRefreshFailure()
-        }
-        guard let board = selectedBoardSlug else { return }
-        let generation = liveGeneration
-        let succeeded = await refreshBoard(
-            usingCursor: false,
-            refreshSupplementary: true,
-            preserveRefreshFailure: !boardCollectionSucceeded
-        )
-        guard !Task.isCancelled else {
-            if boardCollectionSucceeded {
-                refreshFailed = previousRefreshFailed
-            } else {
-                reportBoardCollectionRefreshFailure()
-            }
+        guard isCurrentLiveWork(board: board, generation: generation) else { return }
+        guard succeeded else {
+            startPollingIfNeeded()
             return
         }
-        guard isCurrentLiveWork(board: board, generation: generation) else { return }
-        if succeeded {
-            isOffline = false
-            loadedDetailIsStale = false
-            retryLiveStream()
-        } else {
-            startPollingIfNeeded()
+        isOffline = false
+        loadedDetailIsStale = false
+        // `refreshBoard` bumps the revision only when it applied a Board.
+        if detailRefreshRevision != appliedRevision {
+            let boardCollectionSucceeded = await reconcileBoardCollection()
+            guard !Task.isCancelled, isCurrentLiveWork(board: board, generation: generation) else { return }
+            if !boardCollectionSucceeded {
+                reportBoardCollectionRefreshFailure()
+            }
         }
-        if !boardCollectionSucceeded {
-            reportBoardCollectionRefreshFailure()
-        }
+        retryLiveStream()
     }
 
     func setProfileFilter(_ profile: String?) async {
@@ -2148,22 +2160,18 @@ public final class KanbanFeatureState {
             if activeBoardLoadID == boardLoadID { isRefreshing = false }
         }
 
-        let request = KanbanBoardRequest(
-            board: board,
-            tenant: selectedTenant,
-            assignee: selectedProfile,
-            includeArchived: includeArchived,
-            onlyMine: onlyMine,
-            since: usingCursor ? snapshot?.latestEventID : nil
-        )
+        let filteredRequest = boardRequest(board: board)
+        var request = filteredRequest
+        request.since = usingCursor ? snapshot?.latestEventID : nil
         do {
             let response = try await client.kanbanBoard(request)
             guard isCurrentBoardLoad(boardLoadID, board: board) else { return false }
-            if usingCursor, response.changed == false {
-                // A cursor refresh may return the minimal unchanged envelope.
-            } else {
+            // A cursor refresh may return the minimal unchanged envelope, which keeps the Board as it is.
+            let unchanged = usingCursor && response.changed == false
+            if !unchanged {
                 let report = try validateBrowsingSnapshot(response, board: board)
                 snapshot = applyingPendingOptimism(to: response)
+                snapshotRequest = filteredRequest
                 markBoardActivity()
                 detailRefreshRevision &+= 1
                 self.report = report
@@ -2174,7 +2182,7 @@ public final class KanbanFeatureState {
             if preserveRefreshFailure {
                 refreshFailed = true
             }
-            if refreshSupplementary {
+            if refreshSupplementary, !unchanged {
                 await loadSupplementaryReads(board: board, boardLoadID: boardLoadID)
             }
             return true
@@ -2191,6 +2199,16 @@ public final class KanbanFeatureState {
             forwardAuthentication(error)
             return false
         }
+    }
+
+    private func boardRequest(board: String) -> KanbanBoardRequest {
+        KanbanBoardRequest(
+            board: board,
+            tenant: selectedTenant,
+            assignee: selectedProfile,
+            includeArchived: includeArchived,
+            onlyMine: onlyMine
+        )
     }
 
     private func startLiveUpdatesIfReady() {

@@ -548,7 +548,8 @@ def board_payload(params: dict) -> dict:
         assignee = profile
     with _conn(board=board) as conn:
         latest = _latest_event_id(conn)
-        if since is not None and since >= latest:
+        # A worker that dies writes no event, yet its card's actions follow its liveness: only live claims stay unchanged.
+        if since is not None and since >= latest and all(_row_claim_live(row) for row in _running_claims(conn).values()):
             return {"changed": False, "latest_event_id": latest, "read_only": False}
         _clear_stale_fences(conn)
         tasks = kb.list_tasks(conn, tenant=tenant, assignee=assignee, include_archived=include_archived)

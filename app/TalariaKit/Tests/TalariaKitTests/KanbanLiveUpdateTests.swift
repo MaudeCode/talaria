@@ -175,17 +175,120 @@ final class KanbanLiveUpdateTests: KanbanDefaultsTestCase {
         state.setVisible(true)
         XCTAssertEqual(stream.startURLs.count, 1)
 
-        await state.setSceneActive(false)
+        await state.setScenePhase(.background)
         XCTAssertGreaterThanOrEqual(stream.stopCount, 1)
         stream.emit(.events(events: [], cursor: 99, frameID: 99), startIndex: 0)
         XCTAssertEqual(state.liveCursor, 11)
 
-        await state.setSceneActive(true)
+        await state.setScenePhase(.active)
 
         let boardCallCount = await client.boardCallCount
         XCTAssertEqual(boardCallCount, 2)
         XCTAssertEqual(state.snapshot?.latestEventID, 13)
         XCTAssertEqual(stream.startURLs.count, 2)
+        state.setVisible(false)
+    }
+
+    func testInactiveRoundTripKeepsStreamAndBoardWithoutRequests() async {
+        let client = LiveKanbanClient(boardResults: [.success(.rich), .success(.newer)])
+        let stream = KanbanStreamSpy()
+        let state = makeState(client: client, stream: stream)
+        await state.load()
+        state.setVisible(true)
+        let revision = state.detailRefreshRevision
+        let stopCount = stream.stopCount
+
+        await state.setScenePhase(.inactive)
+        await state.setScenePhase(.active)
+
+        let counts = await client.readCounts
+        XCTAssertEqual(counts, KanbanReadCounts(board: 1, boards: 1, stats: 1, assignees: 1))
+        XCTAssertEqual(stream.startURLs.count, 1, "the stream stays open")
+        XCTAssertEqual(stream.stopCount, stopCount)
+        XCTAssertEqual(state.detailRefreshRevision, revision, "the Board is not re-applied")
+        state.setVisible(false)
+    }
+
+    func testUnchangedBackgroundRoundTripAsksSinceCursorAndSkipsOtherReads() async {
+        let client = LiveKanbanClient(boardResults: [.success(.rich), .success(.unchanged)])
+        let stream = KanbanStreamSpy()
+        let state = makeState(client: client, stream: stream)
+        await state.load()
+        state.setVisible(true)
+        let revision = state.detailRefreshRevision
+
+        await state.setScenePhase(.background)
+        await state.setScenePhase(.inactive)
+        await state.setScenePhase(.active)
+
+        let counts = await client.readCounts
+        XCTAssertEqual(counts, KanbanReadCounts(board: 2, boards: 1, stats: 1, assignees: 1))
+        let lastRequest = await client.boardRequests.last
+        XCTAssertEqual(lastRequest?.since, 11)
+        XCTAssertEqual(state.detailRefreshRevision, revision, "the Board is not re-applied")
+        XCTAssertEqual(stream.startURLs.count, 2)
+        XCTAssertEqual(stream.startURLs.last?.queryValue("since"), "11")
+        state.setVisible(false)
+    }
+
+    func testChangedBackgroundRoundTripAppliesCursorBoardThenReadsListAndSupplementaryOnce() async {
+        let client = LiveKanbanClient(boardResults: [.success(.rich), .success(.newer)])
+        let stream = KanbanStreamSpy()
+        let state = makeState(client: client, stream: stream)
+        await state.load()
+        state.setVisible(true)
+
+        await state.setScenePhase(.background)
+        await state.setScenePhase(.active)
+
+        let counts = await client.readCounts
+        XCTAssertEqual(counts, KanbanReadCounts(board: 2, boards: 2, stats: 2, assignees: 2))
+        let lastRequest = await client.boardRequests.last
+        XCTAssertEqual(lastRequest?.since, 11)
+        XCTAssertEqual(state.snapshot?.latestEventID, 13)
+        XCTAssertEqual(stream.startURLs.last?.queryValue("since"), "13")
+        state.setVisible(false)
+    }
+
+    func testSnapshotFromOtherFiltersDoesFullFetchAfterBackground() async {
+        let client = LiveKanbanClient(
+            boardResults: [.success(.rich), .success(.newer), .success(.rich), .success(.newer)]
+        )
+        let stream = KanbanStreamSpy()
+        let state = makeState(client: client, stream: stream)
+        await state.load()
+        state.setVisible(true)
+        await state.setTenantFilter("acme")
+        await state.load() // A cold load reads the Board without filters and keeps the chosen ones.
+
+        await state.setScenePhase(.background)
+        await state.setScenePhase(.active)
+
+        let lastRequest = await client.boardRequests.last
+        XCTAssertEqual(lastRequest?.tenant, "acme")
+        XCTAssertNil(lastRequest?.since, "the server cursor ignores filters, so an unfiltered snapshot cannot use it")
+        XCTAssertEqual(state.snapshot?.latestEventID, 13)
+        state.setVisible(false)
+    }
+
+    func testFailedRefreshDoesFullFetchAfterBackground() async {
+        let client = LiveKanbanClient(
+            boardResults: [.success(.rich), .failure(URLError(.badServerResponse)), .success(.newer)]
+        )
+        let stream = KanbanStreamSpy()
+        let state = makeState(client: client, stream: stream)
+        await state.load()
+        state.setVisible(true)
+        await state.refresh()
+        XCTAssertTrue(state.refreshFailed)
+
+        await state.setScenePhase(.background)
+        await state.setScenePhase(.active)
+
+        let lastRequest = await client.boardRequests.last
+        XCTAssertNil(lastRequest?.since, "a snapshot whose refresh failed cannot vouch for its cursor")
+        XCTAssertEqual(state.snapshot?.latestEventID, 13)
+        XCTAssertFalse(state.refreshFailed)
         state.setVisible(false)
     }
 
@@ -199,9 +302,9 @@ final class KanbanLiveUpdateTests: KanbanDefaultsTestCase {
 
         await state.load()
         state.setVisible(true)
-        await state.setSceneActive(false)
+        await state.setScenePhase(.background)
 
-        await state.setSceneActive(true)
+        await state.setScenePhase(.active)
 
         let boardCallCount = await client.boardCallCount
         XCTAssertEqual(boardCallCount, 2)
@@ -230,9 +333,9 @@ final class KanbanLiveUpdateTests: KanbanDefaultsTestCase {
 
         await state.load()
         state.setVisible(true)
-        await state.setSceneActive(false)
+        await state.setScenePhase(.background)
 
-        let foreground = Task { await state.setSceneActive(true) }
+        let foreground = Task { await state.setScenePhase(.active) }
         try await waitUntil { await client.foregroundRequestStarted }
         await state.selectBoard("release")
         let stopCountAfterSwitch = stream.stopCount
@@ -595,6 +698,10 @@ private actor LiveKanbanClient: KanbanDataClient {
 
     var boardCallCount: Int { boardRequests.count }
 
+    var readCounts: KanbanReadCounts {
+        KanbanReadCounts(board: boardRequests.count, boards: boardsCallCount, stats: statsCallCount, assignees: assigneeCallCount)
+    }
+
     func kanbanConfiguration() -> KanbanConfiguration {
         configurationCallCount += 1
         return configuration
@@ -642,6 +749,13 @@ private actor LiveKanbanClient: KanbanDataClient {
     func setKanbanCardStatus(_ request: KanbanCardStatusRequest) -> KanbanCardMutationEnvelope {
         decode(#"{"task":{"id":"\#(request.cardID)","status":"\#(request.status)",\#(allCardActions)}}"#)
     }
+}
+
+private struct KanbanReadCounts: Equatable {
+    let board: Int
+    let boards: Int
+    let stats: Int
+    let assignees: Int
 }
 
 private actor ForegroundBoardSwitchClient: KanbanDataClient {
@@ -698,6 +812,7 @@ private extension KanbanBoardSnapshot {
     static let rich: Self = decode(#"{"changed":true,"latest_event_id":11,"read_only":false,"columns":[{"name":"ready","tasks":[{"id":"CARD-1","status":"ready"}]}]}"#)
     static let archivable: Self = decode(#"{"changed":true,"latest_event_id":11,"read_only":false,"columns":[{"name":"ready","tasks":[{"id":"CARD-1","status":"ready",\#(allCardActions)}]}]}"#)
     static let archived: Self = decode(#"{"changed":true,"latest_event_id":12,"read_only":false,"columns":[{"name":"ready","tasks":[]}]}"#)
+    static let unchanged: Self = decode(#"{"changed":false,"latest_event_id":11,"read_only":false}"#)
     static let newer: Self = decode(#"{"changed":true,"latest_event_id":13,"read_only":false,"columns":[{"name":"ready","tasks":[{"id":"CARD-2","status":"ready"}]}]}"#)
     static let newest: Self = decode(#"{"changed":true,"latest_event_id":14,"read_only":false,"columns":[{"name":"ready","tasks":[{"id":"CARD-3","status":"ready"}]}]}"#)
     static let release: Self = decode(#"{"changed":true,"latest_event_id":20,"read_only":false,"columns":[{"name":"triage","tasks":[]}]}"#)

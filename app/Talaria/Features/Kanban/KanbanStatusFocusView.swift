@@ -186,8 +186,7 @@ struct KanbanStatusFocusView: View {
     }
 
     private func updateSceneActivity(_ phase: ScenePhase) {
-        let isActive = phase == .active
-        Task { await model.setSceneActive(isActive) }
+        Task { await model.setScenePhase(phase) }
     }
 
     private var loadingContent: some View {
