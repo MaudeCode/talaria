@@ -1352,6 +1352,8 @@ const AGENT_PARITY: Record<string, [string, string][]> = {
     ['X_COOKIE=abc123def', 'X_COOKIE=***'],
     ['INFO upstream Cookie: a=1; sid=opaqueSessionValue1234567890; theme=dark user=bob', 'INFO upstream Cookie: ***'],
     ['Cookie: session=abc123', 'Cookie: ***'],
+    ['Cookie: hermes_session = syntheticSessionValue1234567890', 'Cookie: ***'],
+    [`curl -H 'Cookie: hermes_session = syntheticSessionValue1234567890' x`, `curl -H 'Cookie: ***' x`],
     ['Set-Cookie: sid=xyz; Path=/', 'Set-Cookie: ***'],
     ['Set-Cookie: opaqueSessionValue1234567890', 'Set-Cookie: ***'],
     ['export SESSION_COOKIE="a=1; sid=opaqueSessionValue1234567890"', 'export SESSION_COOKIE="***"'],
