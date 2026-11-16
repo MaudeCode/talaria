@@ -80,11 +80,37 @@ function withoutMemoryContext(text: string): string {
   return stripped !== text && !stripped.trim() ? '' : stripped
 }
 
+/** A user row's `display_metadata[key]` when it is a string. */
+function userDisplayString(message: unknown, key: string): string | null {
+  if (!isDict(message) || message.role !== 'user' || !isDict(message.display_metadata)) return null
+  const value = message.display_metadata[key]
+  return typeof value === 'string' ? value : null
+}
+
 /** What the user typed on a turn a `pre_llm_call` hook vetoed (TAL-1824); the row's content is the Agent's placeholder for the model. */
 export function withheldPromptText(message: unknown): string | null {
-  if (!isDict(message) || message.role !== 'user' || !isDict(message.display_metadata)) return null
-  const typed = message.display_metadata.withheld_prompt
-  return typeof typed === 'string' && typed ? typed : null
+  return userDisplayString(message, 'withheld_prompt') || null
+}
+
+/**
+ * The ask of a multimodal turn (TAL-2061): the Agent stamps it before appending injected context (recalled memory,
+ * plugin and gateway notes) as another text part, which the stored row flattens into its content.
+ */
+function typedAskText(message: unknown): string | null {
+  return userDisplayString(message, 'typed_ask')
+}
+
+/** `content` showing `typed` as its only text, keeping its other parts (images) in place. */
+function withTypedAsk(content: unknown, typed: string): unknown {
+  if (!Array.isArray(content)) return typed
+  let placed = false
+  const parts = content.flatMap((part: unknown) => {
+    if (!isDict(part) || part.type !== 'text') return [part]
+    if (placed) return []
+    placed = true
+    return typed ? [{ ...part, text: typed }] : []
+  })
+  return placed || !typed ? parts : [{ type: 'text', text: typed }, ...parts]
 }
 
 /**
@@ -98,7 +124,8 @@ export function withheldRowForModel(row: Message): Message {
 /** Display-only user projection shared by transcript hydration and turn identity; model history stays untouched. */
 export function normalizeUserDisplay<T>(message: T): T {
   if (!isDict(message) || message.role !== 'user') return message
-  const content = withheldPromptText(message) ?? message.content
+  const typed = typedAskText(message)
+  const content = withheldPromptText(message) ?? (typed === null ? message.content : withTypedAsk(message.content, typed))
   if (typeof content === 'string') return { ...message, content: withoutMemoryContext(content) }
   if (!Array.isArray(content)) return message
   return { ...message, content: content.flatMap((part: unknown) => {
@@ -163,8 +190,8 @@ function sortKeysDeep(value: unknown): unknown {
 
 export function messagesHavePrefix(messages: unknown[], prefix: unknown[], identities: IdentityCache = new WeakMap()): boolean {
   if (messages.length < prefix.length) return false
-  // Both sides are model rows, and replay strips `display_metadata`: a vetoed row compares as its stored placeholder.
-  const modelIdentity = (m: unknown): string | null => (withheldPromptText(m) === null ? cachedIdentity(m, identities) : messageIdentity({ ...(m as Message), display_metadata: null }))
+  // Both sides are model rows, and replay strips `display_metadata`: a vetoed or typed-ask row compares as its stored content.
+  const modelIdentity = (m: unknown): string | null => (withheldPromptText(m) === null && typedAskText(m) === null ? cachedIdentity(m, identities) : messageIdentity({ ...(m as Message), display_metadata: null }))
   for (let i = 0; i < prefix.length; i += 1) if (modelIdentity(messages[i]) !== modelIdentity(prefix[i])) return false
   return true
 }
