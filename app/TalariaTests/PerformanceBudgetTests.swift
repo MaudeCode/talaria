@@ -187,3 +187,38 @@ final class DiffCodeBlockPerformanceTests: XCTestCase {
         }
     }
 }
+
+/// Remote media the server could not type, resolved for its transcript row and exported (TAL-866).
+///
+/// Both paths used to decode the bytes as an image, where ImageIO probes a WAV's RIFF header as WebP, and then build
+/// an `AVAudioPlayer`, which starts the audio subsystem. A header check now names the audio first, so a WAV reaches
+/// neither probe.
+@MainActor
+final class UnknownMediaProbePerformanceTests: XCTestCase {
+    func testOneSecondWAVResolvesAndExportsWithoutImageOrPlayerProbes() {
+        let wav = TestAudio.wavData(seconds: 1)
+        let reference = TranscriptMediaReference(url: "https://media.example.test/clip", name: "clip", mediaKind: .unsupported)
+        var durations: [Duration] = []
+
+        measureAsync(metrics: [XCTClockMetric()], options: performanceOptions(manualWindow: true)) { test in
+            TranscriptMediaProbeRecorder.reset()
+            let start = ContinuousClock.now
+            test.startMeasuring()
+            guard case .audio = await TranscriptMediaResolvedRemoteView.resolve(wav) else {
+                return XCTFail("The WAV did not resolve as audio")
+            }
+            let payload = TranscriptMediaExportSupport.payload(for: reference, data: wav)
+            test.stopMeasuring()
+            durations.append(ContinuousClock.now - start)
+            XCTAssertEqual(payload.filename, "clip.wav")
+            XCTAssertEqual(TranscriptMediaProbeRecorder.counts, [:])
+        }
+
+        // `measure` discards its first iteration, which pays any probe's one-time setup: an ImageIO codec plugin,
+        // the audio subsystem. Run alone, this test makes that call cold.
+        let attachment = XCTAttachment(string: "First resolve and export: \(durations.first ?? .zero)")
+        attachment.name = "Unknown media first call"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+}

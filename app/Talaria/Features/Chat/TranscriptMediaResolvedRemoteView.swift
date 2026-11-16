@@ -81,7 +81,10 @@ struct TranscriptMediaResolvedRemoteView: View {
             )
     }
 
-    private static func resolve(_ data: Data) async -> ResolvedMedia {
+    static func resolve(_ data: Data) async -> ResolvedMedia {
+#if DEBUG
+        TranscriptMediaProbeRecorder.record("imageDecode")
+#endif
         if let image = await ImagePreviewDownsampler.thumbnailImage(
             from: data,
             covering: ImagePreviewDownsampler.transcriptThumbnailPixelSize
@@ -89,6 +92,9 @@ struct TranscriptMediaResolvedRemoteView: View {
             return .image(image)
         }
 
+#if DEBUG
+        TranscriptMediaProbeRecorder.record("audioPlayer")
+#endif
         if (try? AVAudioPlayer(data: data)) != nil {
             return .audio(data)
         }
@@ -96,7 +102,7 @@ struct TranscriptMediaResolvedRemoteView: View {
         return .video
     }
 
-    private enum ResolvedMedia {
+    enum ResolvedMedia {
         case image(UIImage)
         case audio(Data)
         case video

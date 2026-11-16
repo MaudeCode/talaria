@@ -39,7 +39,7 @@ public enum TranscriptMediaExportSupport {
             )
         }
 
-        if resolvedKind == .image || PlatformImage(data: data) != nil {
+        if resolvedKind == .image || decodesAsImage(data) {
             return TranscriptMediaExportDescriptor(kind: .image, contentType: .png, fileExtension: "png")
         }
 
@@ -84,8 +84,18 @@ public enum TranscriptMediaExportSupport {
         return .data
     }
 
+    private static func decodesAsImage(_ data: Data) -> Bool {
+#if DEBUG
+        TranscriptMediaProbeRecorder.record("imageDecode")
+#endif
+        return PlatformImage(data: data) != nil
+    }
+
     private static func isAudioData(_ data: Data) -> Bool {
-        (try? AVAudioPlayer(data: data)) != nil
+#if DEBUG
+        TranscriptMediaProbeRecorder.record("audioPlayer")
+#endif
+        return (try? AVAudioPlayer(data: data)) != nil
     }
 
     private static func audioType(from data: Data) -> (contentType: UTType, fileExtension: String)? {
