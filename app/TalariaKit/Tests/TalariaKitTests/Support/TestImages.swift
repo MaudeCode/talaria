@@ -86,6 +86,28 @@ enum TestImages {
     }
 }
 
+/// Synthetic audio for tests, shared with the hosted tests like `TestImages`.
+enum TestAudio {
+    /// A 440 Hz tone as a WAV file: 44.1 kHz, mono, 16-bit PCM.
+    static func wavData(seconds: Double) -> Data {
+        let sampleRate = 44_100
+        var samples = Data()
+        for index in 0..<Int(Double(sampleRate) * seconds) {
+            let value = Int16(sin(Double(index) * 2 * .pi * 440 / Double(sampleRate)) * 12_000)
+            withUnsafeBytes(of: value.littleEndian) { samples.append(contentsOf: $0) }
+        }
+        var wav = Data()
+        func append(_ text: String) { wav.append(contentsOf: Array(text.utf8)) }
+        func append<T: FixedWidthInteger>(_ value: T) { withUnsafeBytes(of: value.littleEndian) { wav.append(contentsOf: $0) } }
+        append("RIFF"); append(UInt32(36 + samples.count)); append("WAVE")
+        append("fmt "); append(UInt32(16)); append(UInt16(1)); append(UInt16(1))
+        append(UInt32(sampleRate)); append(UInt32(sampleRate * 2)); append(UInt16(2)); append(UInt16(16))
+        append("data"); append(UInt32(samples.count))
+        wav.append(samples)
+        return wav
+    }
+}
+
 #if canImport(UIKit)
 import UIKit
 

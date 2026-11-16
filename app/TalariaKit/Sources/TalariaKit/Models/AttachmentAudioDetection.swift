@@ -1,4 +1,5 @@
 import Foundation
+import UniformTypeIdentifiers
 
 /// Pure, testable audio-attachment detection shared by the chat bubble and the
 /// full-screen attachment preview. Mirrors the image-detection rules used by
@@ -31,6 +32,51 @@ public enum AttachmentAudioDetection {
             if audioExtensions.contains(ext) { return true }
         }
         return false
+    }
+
+    /// The audio container `data` starts with, read from its first 12 bytes: WAV, MP3 (ID3 tag or frame sync), CAF,
+    /// FLAC, Ogg, AIFF, or MPEG-4 audio. An MPEG-4 file with a generic brand (`isom`, `mp42`) is audio when its track
+    /// handlers include sound and no video. Bytes the server could not type are checked here before any image decode,
+    /// so audio never reaches ImageIO or an `AVAudioPlayer` just to be recognized (TAL-866).
+    public static func containerType(of data: Data) -> (contentType: UTType, fileExtension: String)? {
+        let header = Array(data.prefix(12))
+        func has(_ magic: String, at offset: Int = 0) -> Bool {
+            let bytes = Array(magic.utf8)
+            return header.count >= offset + bytes.count && Array(header[offset..<offset + bytes.count]) == bytes
+        }
+        let fileExtension: String
+        if has("RIFF"), has("WAVE", at: 8) {
+            fileExtension = "wav"
+        } else if has("ID3") || (header.count >= 2 && header[0] == 0xFF && header[1] & 0xE0 == 0xE0) {
+            fileExtension = "mp3"
+        } else if has("caff") {
+            fileExtension = "caf"
+        } else if has("ftyp", at: 4), has("M4A", at: 8) || isAudioOnlyMPEG4(data) {
+            fileExtension = "m4a"
+        } else if has("fLaC") {
+            fileExtension = "flac"
+        } else if has("OggS") {
+            fileExtension = "ogg"
+        } else if has("FORM"), has("AIFF", at: 8) || has("AIFC", at: 8) {
+            fileExtension = "aiff"
+        } else {
+            return nil
+        }
+        return (UTType(filenameExtension: fileExtension, conformingTo: .audio) ?? .audio, fileExtension)
+    }
+
+    /// Whether an MPEG-4 file's track handlers (`hdlr` boxes) include sound and no video, so an audio-only file under a
+    /// generic brand is audio while a movie, or a HEIF image's `pict` track, is not.
+    private static func isAudioOnlyMPEG4(_ data: Data) -> Bool {
+        var handlers: Set<Data> = []
+        var searchStart = data.startIndex
+        while let box = data.range(of: Data("hdlr".utf8), in: searchStart..<data.endIndex) {
+            // Version and flags, then `pre_defined`, precede the handler type.
+            let type = box.upperBound + 8
+            if type + 4 <= data.endIndex { handlers.insert(data[type..<type + 4]) }
+            searchStart = box.upperBound
+        }
+        return handlers.contains(Data("soun".utf8)) && !handlers.contains(Data("vide".utf8))
     }
 }
 
