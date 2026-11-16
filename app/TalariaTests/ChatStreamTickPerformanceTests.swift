@@ -20,10 +20,11 @@ final class ChatStreamTickPerformanceTests: XCTestCase {
     private static let keystrokeCount = 200
 
     /// Today's counts per phase. A settled row or bubble never re-renders, code is highlighted off the main thread
-    /// (TAL-854), and reasoning cards are derived only when the transcript changes (TAL-855), so their counts are
-    /// absent. The streaming fence keeps its view and rebuilds only its open group of lines, and builds every line
-    /// once more when it closes and moves into the Markdown (TAL-1396). A keystroke re-runs only the composer; the
-    /// chat's four passes follow the composer's height as the draft wraps (TAL-852).
+    /// (TAL-854), reasoning cards are derived only when the transcript changes (TAL-855), and the transcript's
+    /// reading-place hold fires only when an excerpt changes (`excerptHold`, TAL-1242), so their counts are absent.
+    /// The streaming fence keeps its view and rebuilds only its open group of lines, and builds every line once more
+    /// when it closes and moves into the Markdown (TAL-1396). A keystroke re-runs only the composer; the chat's four
+    /// passes follow the composer's height as the draft wraps (TAL-852).
     private static let expectedTickWork = [
         "markdownSplit": 200, "messages": 200, "codeLine": 3_268
     ]

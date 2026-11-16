@@ -2008,6 +2008,7 @@ struct ChatView: View {
                 isLoading: viewModel.isLoading,
                 errorMessage: viewModel.errorMessage,
                 messages: viewModel.messages,
+                excerptRevision: viewModel.excerptRevision,
                 displayedTranscriptMessages: chat.displayedTranscriptMessages,
                 branchedFrom: viewModel.branchedFrom,
                 reasoningGroupsForAnchor: { anchorMessageID in

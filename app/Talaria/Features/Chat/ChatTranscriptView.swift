@@ -39,6 +39,8 @@ struct ChatTranscriptView: View {
     let isLoading: Bool
     let errorMessage: String?
     let messages: [ChatMessage]
+    /// Bumps when an excerpt changes (`ChatViewModel.excerptRevision`), so a stream tick compares one integer.
+    let excerptRevision: Int
     let displayedTranscriptMessages: [TranscriptMessage]
     let branchedFrom: SessionBranchLink?
     let reasoningGroupsForAnchor: (String?) -> [ReasoningGroup]
@@ -282,7 +284,10 @@ struct ChatTranscriptView: View {
                     preparedWidthChange = false
                     previousViewportWidth = width
                 }
-                .onChange(of: messages.map { [$0.displayExcerpt, $0.activityScene?.finalAnswerExcerpt] }) {
+                .onChange(of: excerptRevision) {
+#if DEBUG
+                    ChatBodyEvaluationRecorder.record("excerptHold")
+#endif
                     guard !shouldFollowLatestMessage else { return }
                     scrollPositionController.holdVisiblePosition {
                         proxy.scrollTo(transcriptContentID, anchor: .top)
