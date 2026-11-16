@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Sending feedback or closing Settings from the sidebar returns you to the open sidebar instead of closing and reopening it.",
+      "highlight": false
+    }
+  ]
+}
