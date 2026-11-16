@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web no longer hides job IDs that look like Telegram bot tokens, or prose and code that mention a cookie, behind `***`.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
