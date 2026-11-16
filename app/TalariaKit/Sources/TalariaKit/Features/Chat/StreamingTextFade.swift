@@ -3,7 +3,7 @@ import Foundation
 /// Tunables for the streamed-word fade-in effect (issue #213).
 ///
 /// New glyphs are queued behind the previous reveal at `glyphStagger` pace
-/// rather than stamped at arrival time, so a multi-word #212 drain batch
+/// rather than stamped at arrival time, so a multi-word reveal tick
 /// bleeds in glyph-by-glyph as a moving gradient (the Telegram look) instead
 /// of fading as one chunk.
 public enum StreamingTextFadeDefaults {
