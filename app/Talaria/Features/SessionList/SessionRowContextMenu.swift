@@ -13,23 +13,31 @@ struct SessionRowContextMenu: View {
     let actions: SessionListRowActions
     var placement: Placement = .menu
     var openBeside: (() -> Void)?
+    /// A list row hands over its current session and its own state; the chat's menu, given none, reads them from the list.
+    private let rowState: (pendingChange: PendingResourceChange?, isMutating: Bool)?
 
-    init(viewModel: SessionListViewModel, session: SessionSummary, actions: SessionListRowActions, placement: Placement = .menu, openBeside: (() -> Void)? = nil) {
+    init(viewModel: SessionListViewModel, session: SessionSummary, actions: SessionListRowActions, placement: Placement = .menu,
+         openBeside: (() -> Void)? = nil, rowState: (pendingChange: PendingResourceChange?, isMutating: Bool)? = nil) {
         self.viewModel = viewModel
         originalSession = session
         self.actions = actions
         self.placement = placement
         self.openBeside = openBeside
+        self.rowState = rowState
     }
 
     // Menu metadata observes list updates here, without invalidating the enclosing chat body.
     private var session: SessionSummary {
-        viewModel.sessions.first { $0.sessionId == originalSession.sessionId } ?? originalSession
+        guard rowState == nil else { return originalSession }
+        return viewModel.sessions.first { $0.sessionId == originalSession.sessionId } ?? originalSession
     }
 
     private var isViewingCachedData: Bool { viewModel.isViewingCachedData }
-    private var isMutating: Bool { viewModel.isMutating(session) }
-    private var pendingChange: PendingResourceChange? { viewModel.pendingChange(for: session) }
+    private var isMutating: Bool { rowState?.isMutating ?? viewModel.isMutating(session) }
+    private var pendingChange: PendingResourceChange? {
+        if let rowState { return rowState.pendingChange }
+        return viewModel.pendingChange(for: session)
+    }
 
     var body: some View {
         let session = self.session
@@ -78,14 +86,7 @@ struct SessionRowContextMenu: View {
                 .disabled(isViewingCachedData || isMutating || !hasServerSessionID(session))
 
                 Menu {
-                    SessionProjectMoveMenu(
-                        session: session,
-                        projects: viewModel.projects,
-                        isCreatingProject: viewModel.isCreatingProject,
-                        isMovingSession: isMutating,
-                        isLoadingProjects: viewModel.isLoadingProjects,
-                        actions: actions
-                    )
+                    SessionProjectMoveMenu(viewModel: viewModel, session: session, isMovingSession: isMutating, actions: actions)
                 } label: {
                     Label("Move to Project", systemImage: "folder")
                 }
@@ -180,6 +181,8 @@ struct SessionRemovalButtons: View {
 final class SessionActionContext {
     let viewModel: SessionListViewModel
     let actions: SessionListRowActions
+    /// The section lists' handlers, built once per list so their rows keep one set; only `open` differs from `actions`.
+    private var sectionActions: [AppSection: SessionListRowActions] = [:]
     let onAPIError: (Error) -> Void
     let filesInspector: SplitFilesInspector
     var modelContext: ModelContext?
@@ -195,6 +198,14 @@ final class SessionActionContext {
         self.actions = actions
         self.onAPIError = onAPIError
         self.filesInspector = filesInspector
+    }
+
+    func actions(in list: AppSection, make: () -> SessionListRowActions) -> SessionListRowActions {
+        guard list != .chats else { return actions }
+        if let cached = sectionActions[list] { return cached }
+        let made = make()
+        sectionActions[list] = made
+        return made
     }
 }
 

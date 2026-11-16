@@ -1,15 +1,15 @@
 import SwiftUI
 import TalariaKit
 
+/// Reads the projects in its own body, so only an open menu observes them.
 struct SessionProjectMoveMenu: View {
+    let viewModel: SessionListViewModel
     let session: SessionSummary
-    let projects: [ProjectSummary]
-    let isCreatingProject: Bool
     let isMovingSession: Bool
-    let isLoadingProjects: Bool
     let actions: SessionListRowActions
 
     var body: some View {
+        let projects = viewModel.projects
         Button {
             actions.move(session, nil)
         } label: {
@@ -44,7 +44,7 @@ struct SessionProjectMoveMenu: View {
         } label: {
             Label("New Project", systemImage: "folder.badge.plus")
         }
-        .disabled(isCreatingProject || isMovingSession)
+        .disabled(viewModel.isCreatingProject || isMovingSession)
 
         if projects.isEmpty {
             Button {
@@ -52,7 +52,7 @@ struct SessionProjectMoveMenu: View {
             } label: {
                 Label("Refresh Projects", systemImage: "arrow.clockwise")
             }
-            .disabled(isLoadingProjects)
+            .disabled(viewModel.isLoadingProjects)
         }
     }
 }

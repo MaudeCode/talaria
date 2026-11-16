@@ -2020,7 +2020,7 @@ struct SessionListView: View {
 
     /// Sidebar rows replace the root; section-owned lists push their chats above the list.
     private func sessionRowActions(in list: AppSection = .chats) -> SessionListRowActions {
-        var actions = list == .chats ? sessionActionContext?.actions ?? makeSessionRowActions() : makeSessionRowActions(in: list)
+        var actions = sessionActionContext?.actions(in: list) { makeSessionRowActions(in: list) } ?? makeSessionRowActions(in: list)
         if list == .chats {
             // Availability is view state, unlike the context's immutable command handlers. Read it in this render,
             // so rows update after a primary opens or the layout changes instead of keeping the launch snapshot.
