@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { bootTestServer, openStateDb } from '../test/harness.js'
 import { hydrateAnchorActivityScenes } from './anchor.js'
-import { messageIdentity, messageText, mergeDisplayMessagesAfterAgentResult, sanitizeMessagesForApi } from './merge.js'
+import { messageIdentity, messageText, messagesHavePrefix, mergeDisplayMessagesAfterAgentResult, sanitizeMessagesForApi } from './merge.js'
 import { stateDbSessionMessages } from './state-db.js'
 import type { Message } from './session.js'
 
@@ -109,5 +109,45 @@ describe('recalled memory display (TAL-888)', () => {
       const row = { role, content: memory }
       expect(project(row).content).toBe(memory)
     }
+  })
+})
+
+/** TAL-2061: the Agent stamps the clean ask of an image turn before appending its injected notes as another text part. */
+describe('typed ask display', () => {
+  const note = 'Plugin note from pre_llm_call: user is on the beta plan.'
+  const parts = [{ type: 'text', text: typed }, image, { type: 'text', text: note }]
+
+  it('shows only the typed ask with the image after reload, and leaves model context unchanged', async () => {
+    const s = await bootTestServer()
+    try {
+      const sid = (await s.deps.sessionStore.newSession()).session_id
+      const db = openStateDb(join(s.state, 'state.db'))
+      try {
+        db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL, display_metadata TEXT)')
+        db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'cli', 1000)
+        const insert = db.prepare('INSERT INTO messages (session_id, role, content, timestamp, display_metadata) VALUES (?, ?, ?, ?, ?)')
+        insert.run(sid, 'user', `\u0000json:${JSON.stringify(parts)}`, 1000, JSON.stringify({ typed_ask: typed }))
+        insert.run(sid, 'assistant', 'A test image.', 1001, null)
+        insert.run(sid, 'user', `${typed}\n${note}`, 1002, JSON.stringify({ typed_ask: typed }))
+        insert.run(sid, 'assistant', 'Same image.', 1003, null)
+      } finally { db.close() }
+      const response = await s.get(`/api/session?session_id=${sid}`)
+      expect(response.status).toBe(200)
+      const users = ((await response.json()) as { session: { messages: Message[] } }).session.messages.filter((m) => m.role === 'user')
+      expect(users.map((m) => messageText(m.content))).toEqual([typed, typed])
+      expect(users[0]!.content).toContainEqual(image)
+      const [stored] = stateDbSessionMessages(join(s.state, 'state.db'), sid) as Message[]
+      expect(sanitizeMessagesForApi([stored!], { preserveApiContent: true })[0]!.content).toEqual(parts)
+    } finally { await s.close() }
+  })
+
+  it('lets a withheld prompt win, keeps rows without a stamp as before, and compares model rows by their content', () => {
+    const row = { role: 'user', content: parts, display_metadata: { typed_ask: typed } }
+    expect(project(row).content).toEqual([{ type: 'text', text: typed }, image])
+    expect(project({ role: 'user', content: [image, { type: 'text', text: note }], display_metadata: { typed_ask: '' } }).content).toEqual([image])
+    expect(project({ ...row, display_metadata: { typed_ask: typed, withheld_prompt: 'the vetoed ask' } }).content).toBe('the vetoed ask')
+    const unstamped = { role: 'user', content: parts }
+    expect(project(unstamped)).toEqual(unstamped)
+    expect(messagesHavePrefix([row], [{ ...row, display_metadata: null }])).toBe(true)
   })
 })

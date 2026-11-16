@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "After a reload, a message you sent with an image in Talaria Web shows only what you typed, not the notes the Agent added for the model.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
