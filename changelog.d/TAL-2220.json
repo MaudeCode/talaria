@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Extension sidecar responses open as sandboxed downloads under Talaria Web's own security headers, so a sidecar can no longer serve a page that runs script as Talaria.",
+      "highlight": false,
+      "announce": false,
+      "components": ["web"]
+    }
+  ]
+}
