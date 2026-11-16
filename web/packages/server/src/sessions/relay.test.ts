@@ -39,6 +39,8 @@ it('projects a live Web completion without pairing and keeps terminal failures q
 const RELAY = 'https://relay.talaria.kil.dev'
 const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
+// The background publisher and sidecar runs outlast vi.waitFor's 1 s default on a loaded CI runner.
+const waitForRelay = <T>(check: () => T | Promise<T>): Promise<T> => vi.waitFor(check, { timeout: 5000 })
 const deletedViews = (s: TestServer): Json[] => (JSON.parse(readFileSync(join(s.state, 'talaria-relay-deleted.json'), 'utf8')) as { views: Json[] }).views
 
 function verifySigned(relay: FakeRelay, call: Captured, path: string): void {
@@ -279,7 +281,7 @@ describe('Talaria relay pairing and publishing', () => {
     const res = await post(s, '/api/talaria/viewed', { session_id: sid })
     expect(res.status).toBe(200)
     expect(await json(res)).toEqual({ ok: true })
-    await vi.waitFor(() => { expect(relay.views().some((c) => c.url.includes(sid))).toBe(true) })
+    await waitForRelay(() => { expect(relay.views().some((c) => c.url.includes(sid))).toBe(true) })
     const calls = relay.calls.slice(before)
     const viewedIndex = calls.findIndex((c) => c.url.endsWith(`/sessions/${sid}/viewed`))
     const snapshot = calls.slice(0, viewedIndex).reverse().find((c) => c.url.endsWith('/snapshot'))!
@@ -301,14 +303,14 @@ describe('Talaria relay pairing and publishing', () => {
       s.deps.registry.activeRuns.set(stream, { stream_id: stream, session_id: sid, started_at: 1, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false })
       s.deps.notifications.noteTerminal(stream, 'completed')
       s.deps.registry.activeRuns.delete(stream)
-      await vi.waitFor(() => { expect(relay.snapshots().some((c) => (c.body.states as Json[]).some((state) => state.sessionId === sid && state.phase === 'completed'))).toBe(true) })
+      await waitForRelay(() => { expect(relay.snapshots().some((c) => (c.body.states as Json[]).some((state) => state.sessionId === sid && state.phase === 'completed'))).toBe(true) })
       return sid
     }
 
     const deleted = await finishedSession('Deleted run', 'stream-d')
     const deletedAt = Date.now()
     expect((await post(s, '/api/session/delete', { session_id: deleted })).status).toBe(200)
-    await vi.waitFor(() => { expect(viewsOf(deleted)).toHaveLength(1) })
+    await waitForRelay(() => { expect(viewsOf(deleted)).toHaveLength(1) })
     verifySigned(relay, viewsOf(deleted)[0]!, viewedPath(deleted))
     expect(Number(viewsOf(deleted)[0]!.body.through)).toBeGreaterThanOrEqual(deletedAt)
 
@@ -316,7 +318,7 @@ describe('Talaria relay pairing and publishing', () => {
     const orphan = await finishedSession('Orphaned run', 'stream-o')
     expect((await s.deps.sessionStore.delete(orphan))).toBe(true)
     expect((await s.get(`/api/session?session_id=${orphan}&messages=0`)).status).toBe(404)
-    await vi.waitFor(() => { expect(viewsOf(orphan)).toHaveLength(1) })
+    await waitForRelay(() => { expect(viewsOf(orphan)).toHaveLength(1) })
 
     // Later lookups, an already-cleared deletion, and an id that never existed send nothing more. A real view queued
     // afterwards flushes in the same loop, so once it lands any stray acknowledgement would have landed too.
@@ -325,7 +327,7 @@ describe('Talaria relay pairing and publishing', () => {
     expect((await s.get('/api/session?session_id=neverexisted0001&messages=0')).status).toBe(404)
     const marker = await finishedSession('Marker run', 'stream-m')
     expect((await post(s, '/api/talaria/viewed', { session_id: marker })).status).toBe(200)
-    await vi.waitFor(() => { expect(viewsOf(marker)).toHaveLength(1) })
+    await waitForRelay(() => { expect(viewsOf(marker)).toHaveLength(1) })
     expect(viewsOf(orphan)).toHaveLength(1)
     expect(viewsOf(deleted)).toHaveLength(1)
     expect(viewsOf('neverexisted0001')).toHaveLength(0)
@@ -426,12 +428,12 @@ describe('relay publisher failure handling', () => {
       await s.deps.relay.clearDeleted(sid, 'default')
       chmodSync(sessionDirectory(s.deps.sessionStore), 0o000)
       expect((await s.deps.relay.start())).toBe(true)
-      await vi.waitFor(() => { expect(s.logs.some((line) => line.includes('EACCES')) || relay.views().some((call) => call.url.includes(sid))).toBe(true) })
+      await waitForRelay(() => { expect(s.logs.some((line) => line.includes('EACCES')) || relay.views().some((call) => call.url.includes(sid))).toBe(true) })
       expect(relay.views().filter((call) => call.url.includes(sid))).toEqual([])
       expect(deletedViews(s)).toHaveLength(1)
       chmodSync(sessionDirectory(s.deps.sessionStore), 0o700)
       s.deps.relay.current()!.changed()
-      await vi.waitFor(() => { expect(deletedViews(s)).toEqual([]) })
+      await waitForRelay(() => { expect(deletedViews(s)).toEqual([]) })
       expect(relay.views().filter((call) => call.url.includes(sid))).toHaveLength(1)
     } finally {
       chmodSync(sessionDirectory(s.deps.sessionStore), 0o700)
@@ -466,8 +468,8 @@ describe('relay publisher failure handling', () => {
       restore()
       if (failure === 'corrupt outbox') rmSync(outbox)
       expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(200)
-      await vi.waitFor(() => { expect(relay.views().some((call) => call.url.includes(sid))).toBe(true) })
-      await vi.waitFor(() => { expect(deletedViews(s)).toEqual([]) })
+      await waitForRelay(() => { expect(relay.views().some((call) => call.url.includes(sid))).toBe(true) })
+      await waitForRelay(() => { expect(deletedViews(s)).toEqual([]) })
     } finally {
       restore()
       s.deps.relay.stop()
@@ -497,12 +499,12 @@ describe('relay publisher failure handling', () => {
       expect((await restarted.deps.relay.start())).toBe(true)
       const marker = String(((await json(await post(restarted, '/api/session/new', { title: 'Replay barrier' }))).session as Json).session_id)
       await post(restarted, '/api/talaria/viewed', { session_id: marker })
-      await vi.waitFor(() => { expect(relay.views().some((call) => call.url.includes(marker))).toBe(true) })
+      await waitForRelay(() => { expect(relay.views().some((call) => call.url.includes(marker))).toBe(true) })
       expect(relay.views().some((call) => call.url.includes(sid))).toBe(false)
       expect(existsSync(sessionPath(s.deps.sessionStore, sid))).toBe(true)
       clock += 600
       expect((await post(restarted, '/api/session/delete', { session_id: sid })).status).toBe(200)
-      await vi.waitFor(() => { expect(deletedViews(s)).toEqual([]) })
+      await waitForRelay(() => { expect(deletedViews(s)).toEqual([]) })
       const calls = relay.views().filter((call) => call.url.includes(sid))
       expect(calls).toHaveLength(1)
       expect(calls[0]!.body.through).toBe(clock * 1000)
@@ -527,10 +529,10 @@ describe('relay publisher failure handling', () => {
       s.deps.registry.activeRuns.set('deleted-run', { stream_id: 'deleted-run', session_id: sid, started_at: clock, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false })
       s.deps.notifications.noteTerminal('deleted-run', 'completed')
       s.deps.registry.activeRuns.delete('deleted-run')
-      await vi.waitFor(() => { expect(relay.snapshots().some((c) => (c.body.states as Json[]).some((state) => state.sessionId === sid && state.phase === 'completed'))).toBe(true) })
+      await waitForRelay(() => { expect(relay.snapshots().some((c) => (c.body.states as Json[]).some((state) => state.sessionId === sid && state.phase === 'completed'))).toBe(true) })
       relay.viewedStatus = 503
       expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(200)
-      await vi.waitFor(() => { expect(relay.views().some((c) => c.url.includes(sid))).toBe(true) })
+      await waitForRelay(() => { expect(relay.views().some((c) => c.url.includes(sid))).toBe(true) })
       const original = relay.views().find((c) => c.url.includes(sid))!
       expect(original.body.through).toBe(clock * 1000)
       s.deps.relay.stop()
@@ -542,19 +544,19 @@ describe('relay publisher failure handling', () => {
         deps: (deps) => { deps.fetch = relay.fetch },
       })
       expect((await restarted.deps.relay.start())).toBe(true)
-      await vi.waitFor(() => { expect(relay.views().slice(before).some((c) => c.url.includes(sid))).toBe(true) })
+      await waitForRelay(() => { expect(relay.views().slice(before).some((c) => c.url.includes(sid))).toBe(true) })
       const replay = relay.views().slice(before).find((c) => c.url.includes(sid))!
       verifySigned(relay, replay, `/v1/publishers/${encodeURIComponent('https://pub.example')}/profiles/${profileId}/sessions/${sid}/viewed`)
       expect(replay.body).toEqual(original.body)
       expect(replay.headers['x-talaria-nonce']).not.toBe(original.headers['x-talaria-nonce'])
-      await vi.waitFor(() => { expect(deletedViews(s)).toEqual([]) })
+      await waitForRelay(() => { expect(deletedViews(s)).toEqual([]) })
       restarted.deps.relay.stop()
       const delivered = relay.views().length
       expect((await restarted.deps.relay.start())).toBe(true)
       // A later ordinary view acts as a barrier for another publisher pass.
       const marker = String(((await json(await post(restarted, '/api/session/new', { title: 'Marker' }))).session as Json).session_id)
       await post(restarted, '/api/talaria/viewed', { session_id: marker })
-      await vi.waitFor(() => { expect(relay.views().slice(delivered).some((c) => c.url.includes(marker))).toBe(true) })
+      await waitForRelay(() => { expect(relay.views().slice(delivered).some((c) => c.url.includes(marker))).toBe(true) })
       expect(relay.views().slice(delivered).some((c) => c.url.includes(sid))).toBe(false)
     } finally {
       restarted?.deps.relay.stop()
@@ -573,12 +575,12 @@ describe('relay publisher failure handling', () => {
       const sid = String(((await json(await post(s, '/api/session/new', { title: 'Rejected cleanup' }))).session as Json).session_id)
       relay.viewedStatus = status
       expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(200)
-      await vi.waitFor(() => { expect(s.logs.some((l) => l.includes(status === 404 ? 'does not support viewed' : 'rejected a viewed'))).toBe(true) })
+      await waitForRelay(() => { expect(s.logs.some((l) => l.includes(status === 404 ? 'does not support viewed' : 'rejected a viewed'))).toBe(true) })
       const before = relay.views().length
       relay.viewedStatus = 200
       await s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'again' }, 'default', true)
-      await vi.waitFor(() => { expect(relay.views().slice(before).some((c) => c.url.includes(sid))).toBe(true) })
-      await vi.waitFor(() => { expect(deletedViews(s)).toEqual([]) })
+      await waitForRelay(() => { expect(relay.views().slice(before).some((c) => c.url.includes(sid))).toBe(true) })
+      await waitForRelay(() => { expect(deletedViews(s)).toEqual([]) })
     } finally {
       s.deps.relay.stop()
       await s.close()
@@ -606,10 +608,10 @@ describe('relay publisher failure handling', () => {
       expect(deletedViews(s).map((v) => v.profile)).toEqual(['default', 'default', 'work'])
       expect(statSync(join(s.state, 'talaria-relay-deleted.json')).mode & 0o777).toBe(0o600)
       await s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'x' }, 'default', true)
-      await vi.waitFor(() => { expect(deletedViews(s).map((v) => v.profile)).toEqual(['work']) })
+      await waitForRelay(() => { expect(deletedViews(s).map((v) => v.profile)).toEqual(['work']) })
       expect(relay.views().map((c) => c.url.split('/sessions/')[1]?.split('/')[0])).toEqual(ids.slice(0, 2))
       await s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'work' }, 'work', true)
-      await vi.waitFor(() => { expect(deletedViews(s)).toEqual([]) })
+      await waitForRelay(() => { expect(deletedViews(s)).toEqual([]) })
       const config = (await loadRelayConfig(new JsonDocuments(s.state)))!
       const call = relay.views().find((c) => c.url.includes(ids[2]!))!
       verifySigned(relay, call, `/v1/publishers/${encodeURIComponent('https://pub.example')}/profiles/${config.profiles.work!.profile_id}/sessions/${ids[2]!}/viewed`)
@@ -639,7 +641,7 @@ describe('relay publisher failure handling', () => {
       if (condition === 'origin') (await saveRelayConfig(new JsonDocuments(s.state), { ...config, url: 'https://other-relay.example' }))
       expect((await s.deps.relay.start())).toBe(true)
       const pass = vi.spyOn(s.deps.relay.current()!, 'publishStarted')
-      await vi.waitFor(() => { expect(pass).toHaveBeenCalled() })
+      await waitForRelay(() => { expect(pass).toHaveBeenCalled() })
       expect(deletedViews(s)).toEqual(pending)
       expect(relay.views().some((c) => c.url.includes(sid))).toBe(false)
       pass.mockRestore()
@@ -648,7 +650,7 @@ describe('relay publisher failure handling', () => {
       await saveRelayConfig(new JsonDocuments(s.state), config)
       writeFileSync(join(s.state, '.talaria-relay-profile-id'), config.profiles.default!.identity + '\n')
       expect((await s.deps.relay.start())).toBe(true)
-      await vi.waitFor(() => { expect(deletedViews(s)).toEqual([]) })
+      await waitForRelay(() => { expect(deletedViews(s)).toEqual([]) })
       expect(relay.views().filter((c) => c.url.includes(sid))).toHaveLength(1)
     } finally {
       s.deps.relay.stop()
@@ -687,12 +689,12 @@ describe('relay publisher failure handling', () => {
       expect((await s.deps.relay.start())).toBe(true)
       const previous = s.deps.relay.current()!
       const completedPass = vi.spyOn(previous, 'publishStarted')
-      await vi.waitFor(() => { expect(relay.views()).toHaveLength(1) })
+      await waitForRelay(() => { expect(relay.views()).toHaveLength(1) })
       await s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'replace' }, 'default', true)
       expect(s.deps.relay.current()).not.toBe(previous)
-      await vi.waitFor(() => { expect(deletedViews(s)).toEqual([]) })
+      await waitForRelay(() => { expect(deletedViews(s)).toEqual([]) })
       release()
-      await vi.waitFor(() => { expect(completedPass).toHaveBeenCalled() })
+      await waitForRelay(() => { expect(completedPass).toHaveBeenCalled() })
       completedPass.mockRestore()
       expect(deletedViews(s)).toEqual([])
       expect(relay.views()).toHaveLength(2)
@@ -731,15 +733,15 @@ describe('relay publisher failure handling', () => {
         return response
       }
       expect((await s.deps.relay.start())).toBe(true)
-      await vi.waitFor(() => { expect(relay.views()).toHaveLength(1) })
+      await waitForRelay(() => { expect(relay.views()).toHaveLength(1) })
       await s.deps.relay.clearDeleted('second-deletion', 'default')
       expect(deletedViews(s)).toHaveLength(2)
       release()
-      await vi.waitFor(() => { expect(failed).toBe(true) })
+      await waitForRelay(() => { expect(failed).toBe(true) })
       expect(deletedViews(s)).toHaveLength(2)
       s.deps.relay.stop()
       expect((await s.deps.relay.start())).toBe(true)
-      await vi.waitFor(() => { expect(deletedViews(s)).toEqual([]) })
+      await waitForRelay(() => { expect(deletedViews(s)).toEqual([]) })
       const firstCalls = relay.views().filter((c) => c.url.includes('first-deletion'))
       expect(firstCalls.length).toBeGreaterThanOrEqual(2)
       expect(firstCalls.every((c) => c.body.through === first.through)).toBe(true)
@@ -813,9 +815,9 @@ describe('relay publisher failure handling', () => {
       relay.viewedStatus = 404
       for (let i = 0; i < 2; i++) {
         expect(await json(await post(s, '/api/talaria/viewed', { session_id: sid }))).toEqual({ ok: true })
-        await vi.waitFor(() => { expect(relay.views()).toHaveLength(i + 1) })
+        await waitForRelay(() => { expect(relay.views()).toHaveLength(i + 1) })
       }
-      await vi.waitFor(() => { expect(s.logs.filter((l) => l.includes('does not support viewed acknowledgements'))).toHaveLength(1) })
+      await waitForRelay(() => { expect(s.logs.filter((l) => l.includes('does not support viewed acknowledgements'))).toHaveLength(1) })
       expect(s.deps.relay.current()).not.toBeNull()
     } finally {
       s.deps.relay.stop()
@@ -870,7 +872,7 @@ describe('session-started events from the running server', () => {
     const chat = async (message: string): Promise<string> => {
       const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
       expect((await post(s, '/api/chat/start', { session_id: sid, message })).status).toBe(200)
-      await vi.waitFor(async () => { expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages).toHaveLength(2) })
+      await waitForRelay(async () => { expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages).toHaveLength(2) })
       return sid
     }
     try {
@@ -882,13 +884,13 @@ describe('session-started events from the running server', () => {
         for (let i = 0; i < 2; i++) {
           const before = relay.snapshots().length
           s.deps.relay.current()!.changed()
-          await vi.waitFor(() => { expect(relay.snapshots().length).toBeGreaterThan(before) })
+          await waitForRelay(() => { expect(relay.snapshots().length).toBeGreaterThan(before) })
         }
       }
       await passes()
 
       const first = await chat('hello there')
-      await vi.waitFor(() => { expect(attempts).toEqual([RELAY + startedPath(first)]) })
+      await waitForRelay(() => { expect(attempts).toEqual([RELAY + startedPath(first)]) })
       // The relay has not answered: another chat still starts and the list still reads.
       const second = await chat('and again')
       expect(((await json(await s.get('/api/sessions'))).sessions as Json[]).map((row) => row.session_id)).toEqual(expect.arrayContaining([first, second]))
@@ -903,7 +905,7 @@ describe('session-started events from the running server', () => {
 
       release()
       const started = (): Captured[] => relay.calls.filter((c) => c.url.endsWith('/started'))
-      await vi.waitFor(() => {
+      await waitForRelay(() => {
         s.deps.relay.current()!.changed()
         expect(started().map((c) => c.body.sessionId)).toEqual(expect.arrayContaining([first, second, 'cli_session_0001']))
       })
@@ -913,7 +915,7 @@ describe('session-started events from the running server', () => {
 
       // Another turn and further publisher passes announce nothing more.
       expect((await post(s, '/api/chat/start', { session_id: first, message: 'one more' })).status).toBe(200)
-      await vi.waitFor(async () => { expect(((await json(await s.get(`/api/session?session_id=${first}`))).session as Json).messages).toHaveLength(4) })
+      await waitForRelay(async () => { expect(((await json(await s.get(`/api/session?session_id=${first}`))).session as Json).messages).toHaveLength(4) })
       await passes()
       expect(started().map((c) => c.body.sessionId).sort()).toEqual([first, second, 'cli_session_0001'].sort())
     } finally {
@@ -939,7 +941,7 @@ describe('session activity lifecycle (TAL-1520)', () => {
       server.deps.registry.activeRuns.delete('deleted-parent')
       await server.deps.relay.current()!.publishSnapshot()
       expect((await post(server, '/api/session/delete', { session_id: session.session_id })).status).toBe(200)
-      await vi.waitFor(() => { expect(deletedViews(server)).toEqual([]) })
+      await waitForRelay(() => { expect(deletedViews(server)).toEqual([]) })
       const tombstones = remote.calls.filter((call) => call.url.endsWith(`/sessions/${session.session_id}/activity`) && call.body.state === null)
       expect(tombstones).toHaveLength(1)
       const tombstone = tombstones[0]!
@@ -1121,13 +1123,13 @@ describe('relay activity of a running turn (TAL-874)', () => {
       expect(response.status, await response.clone().text()).toBe(200)
       streamId = String((await json(response)).stream_id)
       const row = async () => (await server.deps.relay.current()!.buildStates('default')).find((state) => state.sessionId === sid)
-      await vi.waitFor(async () => { expect(await row()).toMatchObject({ phase: 'running', toolCount: 1, activityAt: 1_800_000_000_000 }) }, { timeout: 5000 })
-      await vi.waitFor(() => { expect((relay.snapshots().at(-1)?.body.states as Json[] | undefined)?.find((state) => state.sessionId === sid)).toMatchObject({ toolCount: 1 }) })
+      await waitForRelay(async () => { expect(await row()).toMatchObject({ phase: 'running', toolCount: 1, activityAt: 1_800_000_000_000 }) })
+      await waitForRelay(() => { expect((relay.snapshots().at(-1)?.body.states as Json[] | undefined)?.find((state) => state.sessionId === sid)).toMatchObject({ toolCount: 1 }) })
       clock += 30
-      await vi.waitFor(() => { expect(steps).toHaveLength(1) })
+      await waitForRelay(() => { expect(steps).toHaveLength(1) })
       steps[0]!()
       // Tool activity alone wakes the publisher, well before its idle refresh.
-      await vi.waitFor(() => { expect((relay.snapshots().at(-1)?.body.states as Json[] | undefined)?.find((state) => state.sessionId === sid)).toMatchObject({ toolCount: 2, activityAt: 1_800_000_030_000 }) })
+      await waitForRelay(() => { expect((relay.snapshots().at(-1)?.body.states as Json[] | undefined)?.find((state) => state.sessionId === sid)).toMatchObject({ toolCount: 2, activityAt: 1_800_000_030_000 }) })
       // A republish of the unchanged run moves updatedAt but never the last activity.
       clock += 60
       expect(await row()).toMatchObject({ toolCount: 2, activityAt: 1_800_000_030_000, updatedAt: 1_800_000_090_000 })
@@ -1192,19 +1194,19 @@ describe('plan and worker counts on activity rows (TAL-1422)', () => {
       expect(response.status, await response.clone().text()).toBe(200)
       streamId = String((await json(response)).stream_id)
       // Cancelled items leave the plan; the publisher sends what the rows show.
-      await vi.waitFor(async () => { expect(await row()).toMatchObject({ phase: 'running', planCompleted: 1, planTotal: 3, workerCount: 3 }) }, { timeout: 5000 })
-      await vi.waitFor(() => { expect(published()).toMatchObject({ planCompleted: 1, planTotal: 3, workerCount: 3 }) })
+      await waitForRelay(async () => { expect(await row()).toMatchObject({ phase: 'running', planCompleted: 1, planTotal: 3, workerCount: 3 }) })
+      await waitForRelay(() => { expect(published()).toMatchObject({ planCompleted: 1, planTotal: 3, workerCount: 3 }) })
       // The in-app background read reports the same worker count.
       expect(await json(await server.get(`/api/background/tasks?session_id=${sid}`))).toMatchObject({ worker_count: 3 })
-      await vi.waitFor(() => { expect(steps).toHaveLength(1) })
+      await waitForRelay(() => { expect(steps).toHaveLength(1) })
       steps[0]!()
-      await vi.waitFor(async () => { expect(await row()).toMatchObject({ planCompleted: 2, planTotal: 3 }) })
+      await waitForRelay(async () => { expect(await row()).toMatchObject({ planCompleted: 2, planTotal: 3 }) })
       subagents = 0
       expect(await row()).toMatchObject({ workerCount: 1 })
-      await vi.waitFor(() => { expect(steps).toHaveLength(2) })
+      await waitForRelay(() => { expect(steps).toHaveLength(2) })
       steps[1]!()
       // Every open item done: nothing is left to track, so the plan clears.
-      await vi.waitFor(async () => { expect(await row()).toMatchObject({ planCompleted: 0, planTotal: 0, workerCount: 1 }) })
+      await waitForRelay(async () => { expect(await row()).toMatchObject({ planCompleted: 0, planTotal: 0, workerCount: 1 }) })
       await server.get(`/api/chat/cancel?stream_id=${streamId}`)
       await server.deps.turns.finished(streamId)
       streamId = ''
