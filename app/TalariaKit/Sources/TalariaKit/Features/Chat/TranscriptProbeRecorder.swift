@@ -2,9 +2,10 @@ import Foundation
 import os
 
 #if DEBUG
-/// Counts the decode probes run on media the server could not type, for the unknown-media budget (TAL-866).
-/// `ChatBodyEvaluationRecorder` counts only main-thread render work, and these probes also run on detached tasks.
-public enum TranscriptMediaProbeRecorder {
+/// Counts expensive transcript work by name for the performance budgets: decode probes on media the server could not
+/// type (TAL-866) and the character arrays and code masks the math formatter builds (TAL-859).
+/// `ChatBodyEvaluationRecorder` counts only main-thread render work, and this work also runs on detached tasks.
+public enum TranscriptProbeRecorder {
     private static let state = OSAllocatedUnfairLock(initialState: [String: Int]())
 
     public static var counts: [String: Int] { state.withLock { $0 } }

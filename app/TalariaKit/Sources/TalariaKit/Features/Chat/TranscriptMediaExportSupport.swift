@@ -84,7 +84,7 @@ public enum TranscriptMediaExportSupport {
 
     private static func decodesAsImage(_ data: Data) -> Bool {
 #if DEBUG
-        TranscriptMediaProbeRecorder.record("imageDecode")
+        TranscriptProbeRecorder.record("imageDecode")
 #endif
         return PlatformImage(data: data) != nil
     }

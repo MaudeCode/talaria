@@ -201,7 +201,7 @@ final class UnknownMediaProbePerformanceTests: XCTestCase {
         var durations: [Duration] = []
 
         measureAsync(metrics: [XCTClockMetric()], options: performanceOptions(manualWindow: true)) { test in
-            TranscriptMediaProbeRecorder.reset()
+            TranscriptProbeRecorder.reset()
             let start = ContinuousClock.now
             test.startMeasuring()
             guard case .audio = await TranscriptMediaResolvedRemoteView.resolve(wav) else {
@@ -211,7 +211,7 @@ final class UnknownMediaProbePerformanceTests: XCTestCase {
             test.stopMeasuring()
             durations.append(ContinuousClock.now - start)
             XCTAssertEqual(payload.filename, "clip.wav")
-            XCTAssertEqual(TranscriptMediaProbeRecorder.counts, [:])
+            XCTAssertEqual(TranscriptProbeRecorder.counts, [:])
         }
 
         // `measure` discards its first iteration, which pays any probe's one-time setup: an ImageIO codec plugin,

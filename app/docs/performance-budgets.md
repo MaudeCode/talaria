@@ -7,9 +7,11 @@ baselines the thresholds came from, and how to compare a run against them.
 
 Every budget measures an algorithm in `TalariaTests`, where the numbers are
 stable enough to assert on, and runs in the hosted tests on the `main` push
-that introduces a regression. Launch, transcript scrolling, navigation and the
-sidebar are checked on a device against the release phone list
-(`docs/phone-checks.md`), in Instruments when a change touches them.
+that introduces a regression. Transcript math formatting needs no app host,
+so its budget runs under `swift test` in `TalariaKitTests`. Launch, transcript
+scrolling, navigation and the sidebar are checked on a device against the
+release phone list (`docs/phone-checks.md`), in Instruments when a change
+touches them.
 
 | Budget | Test |
 | --- | --- |
@@ -19,6 +21,7 @@ sidebar are checked on a device against the release phone list
 | Chat stream tick and keystroke | `TalariaTests/ChatStreamTickPerformanceTests` |
 | Chat open scaling | `TalariaTests/ChatOpenPerformanceTests` |
 | Unknown remote media resolve and export | `TalariaTests/UnknownMediaProbePerformanceTests` |
+| Transcript math formatting | `TalariaKitTests/MarkdownMathFormattingBudgetTests` |
 
 ## Fixture data
 
@@ -41,6 +44,9 @@ them.
 - The unknown media budget generates one second of a 440 Hz tone as a WAV
   (44.1 kHz, mono, 16-bit) and resolves and exports it as remote media with no
   file extension.
+- The transcript math budget lays out 120 generated Markdown paragraphs with
+  code spans, fences and links and no `$` or `\`, then 120 paragraphs where
+  every third carries inline math and the next display math.
 - The replay budget streams generated tokens, replays them over a scripted
   reconnect, and checks the resulting transcript on every run so a broken dedup
   cannot pass as a fast one.
@@ -202,6 +208,27 @@ on an iPhone 17 Pro simulator running iOS 27.0:
 | --- | --- | --- | --- |
 | Before | 2 image decodes, 2 audio players | 53-87 ms | 0.58-0.72 ms |
 | After | none | 0.85-1.24 ms | 0.20-0.22 ms |
+
+## Transcript math formatting: the measured change
+
+Every message passes through the math segmenter and inline formatter when it
+is laid out, and streaming text does so on every token. Both passes built a
+character array and a code mask over the whole message even when it held no
+`$` or `\`, and every math span sorted a 62-entry command table and ran each
+entry as a regular expression. Text with neither character now returns
+unchanged before either pass (TAL-859), and the table is a static list in
+longest-first order applied as literal replacements. The test counts the
+arrays and masks in DEBUG builds and asserts none for the prose corpus.
+
+Two runs of `swift test --package-path TalariaKit --filter
+MarkdownMathFormattingBudgetTests` before and after, Debug, on an Apple M4 Max
+host running macOS 27.0.1 with Swift 6.4.2. Each measurement is five layouts of
+the corpus; medians of five iterations per run:
+
+| | Prose arrays and masks | Prose, 5 layouts | Mixed math, 5 layouts |
+| --- | --- | --- | --- |
+| Before | 3 arrays, 3 masks | 0.304-0.312 s | 0.575-0.669 s |
+| After | none | 0.007 s | 0.202-0.203 s |
 
 ## Comparing a run
 
