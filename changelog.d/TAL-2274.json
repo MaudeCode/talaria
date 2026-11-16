@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "When a reply finishes in Talaria Web, earlier messages glide into place instead of jumping as the Working status leaves.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

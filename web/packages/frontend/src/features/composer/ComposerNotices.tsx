@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { m } from '../../paraglide/messages.js'
 import { cn } from '../../ui/cn'
 import { Dialog } from '../../ui/Dialog'
-import { prefersReducedMotion } from '../../lib/motion'
+import { prefersReducedMotion, REVEAL_MS, revealHeight } from '../../lib/motion'
 
 /**
  * One floating status chip above the composer (TAL-1078, after the App's StatusChip). A feature adds an entry; the
@@ -84,7 +84,7 @@ export function ComposerNotices({ notices, fallbackFocus }: { notices: ComposerN
     const timer = setTimeout(() => {
       timers.current.delete(timer)
       setLeaving((l) => l.filter((x) => !gone.some((g) => g.notice.id === x.notice.id)))
-    }, LEAVE_MS)
+    }, current.length ? LEAVE_MS : REVEAL_MS)
     timers.current.add(timer)
   }, [idKey])
   useEffect(() => { const pending = timers.current; return () => { for (const t of pending) clearTimeout(t) } }, [])
@@ -100,10 +100,21 @@ export function ComposerNotices({ notices, fallbackFocus }: { notices: ComposerN
   // A notice back before its exit ends shows once, as itself: the exit list catches up in the effect above.
   const present = new Set(notices.map((n) => n.id))
   for (const { notice, index } of leaving) if (!present.has(notice.id)) rows.splice(Math.min(index, rows.length), 0, { notice, out: true })
+  // TAL-2274: the last chips leaving shut their track, so the dock, and the transcript inset that follows its height,
+  // shrinks over the exit instead of at once when the fade ends. A chip back mid-exit reopens it from where it is.
+  const shutting = rows.length > 0 && rows.every((row) => row.out)
+  const track = useRef<HTMLDivElement>(null)
+  const shut = useRef(false)
+  useLayoutEffect(() => {
+    const el = track.current
+    const was = shut.current
+    shut.current = !!el && shutting
+    if (el && shutting !== was) revealHeight(el, { open: !shutting, hold: shutting })
+  }, [shutting])
   return (
     <>
       {rows.length > 0 && (
-        <div className="composer-notices-track">
+        <div ref={track} className="composer-notices-track">
           <div className="composer-notices" ref={fitChips}>
             {rows.map(({ notice: n, out }) => (
               <div key={n.id} className={cn('composer-notice', out && 'is-leaving')} data-notice={n.id} data-tone={n.tone ?? 'neutral'} inert={out}>
