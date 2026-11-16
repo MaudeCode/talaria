@@ -246,8 +246,10 @@ export const coreRouter = os.router({
       const { ctx } = context
       if (!ctx.deps.auth.passkeyFeatureFlagEnabled()) throw new HttpError(404, 'Passkey support is disabled. Set TALARIA_WEB_PASSKEY=1 or webui_passkey_enabled: true to enable.')
       if (!(await ctx.deps.auth.isAuthEnabled())) throw new HttpError(400, 'Auth not enabled')
+      const client = rateLimitClientIp(ctx)
+      if (ctx.deps.passkeyOptionsLimiter.limited(client)) throw new HttpError(429, 'Too many passkey sign-in attempts; try again in a minute')
       const [rpId, origin] = passkeyRp(ctx)
-      return { ok: true as const, publicKey: (await passkeyCall(async () => (await ctx.deps.passkeys.authenticationOptions(rpId, origin)))) }
+      return { ok: true as const, publicKey: (await passkeyCall(async () => (await ctx.deps.passkeys.authenticationOptions(rpId, origin, client)))) }
     }),
     passkeyLogin: os.auth.passkeyLogin.handler(async ({ input, context }) => {
       const { ctx } = context
@@ -271,7 +273,7 @@ export const coreRouter = os.router({
       if (!ctx.deps.auth.passkeyFeatureFlagEnabled()) throw new HttpError(404, 'Passkey support is disabled.')
       await requirePasskeyManagementAuth(ctx)
       const [rpId, origin] = passkeyRp(ctx)
-      return { ok: true as const, publicKey: (await passkeyCall(async () => (await ctx.deps.passkeys.registrationOptions(rpId, origin)))) }
+      return { ok: true as const, publicKey: (await passkeyCall(async () => (await ctx.deps.passkeys.registrationOptions(rpId, origin, rateLimitClientIp(ctx))))) }
     }),
     passkeyRegister: os.auth.passkeyRegister.handler(async ({ input, context }) => {
       const { ctx } = context
@@ -306,7 +308,7 @@ async function passkeyList(ctx: RequestContext): Promise<PasskeysList> {
   return { credentials: (await ctx.deps.passkeys.registered()) as PasskeysList['credentials'] }
 }
 
-/** The key for the login, passkey, native OIDC start, and TTS limiters; the policy lives in `throttleClientIp`. */
+/** The key for the login, passkey, passkey options, native OIDC start, and TTS limiters; the policy lives in `throttleClientIp`. */
 export function rateLimitClientIp(ctx: RequestContext): string {
   return throttleClientIp(ctx.headerAll('x-forwarded-for'), ctx.headerAll('x-real-ip'), ctx.peer, ctx.deps.config.env)
 }

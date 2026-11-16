@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Passkey sign-in in Talaria Web now requires your device's PIN or biometric check, and a flood of sign-in requests can no longer cancel a sign-in in progress.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

@@ -245,6 +245,8 @@ export interface AppDeps {
   nativeOidcLimiter: WindowLimiter
   /** TAL-2206: browser `/api/auth/oidc/start`, the same policy and client key as native starts. */
   browserOidcLimiter: WindowLimiter
+  /** TAL-2221: public `/api/auth/passkey/options`, 10 per client per 60 s, so a client cannot churn the challenge store. */
+  passkeyOptionsLimiter: WindowLimiter
   // ── crons, kanban, extensions, terminal (checkpoint 7c) ──
   crons: CronService
   kanban: KanbanService

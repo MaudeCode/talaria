@@ -1,6 +1,6 @@
 /**
  * Passkeys / WebAuthn (Python `api/passkeys.py`): ES256 only, `attestation: none`,
- * minimal CBOR, rpIdHash + user-presence + counter checks, SPKI PEM storage in
+ * minimal CBOR, rpIdHash + user-presence + user-verification + counter checks, SPKI PEM storage in
  * `passkeys.json`, bounded challenge store in `.passkey_challenges.json`.
  */
 import { createHash, createPublicKey, randomBytes, timingSafeEqual, verify as cryptoVerify } from 'node:crypto'
@@ -24,7 +24,8 @@ const b64u = (b: Buffer): string => b.toString('base64url')
 const b64uDecode = (v: unknown): Buffer => Buffer.from(str(v).trim(), 'base64url')
 
 interface Credential { id: string; label: string; public_key_pem: string; sign_count: number; created_at: number; last_used_at: number | null }
-interface Challenge { kind: string; rp_id: string; origin: string; ts: number }
+/** `client` is the rate-limit key of the request that asked for the challenge (TAL-2221). */
+interface Challenge { kind: string; rp_id: string; origin: string; client: string; ts: number }
 
 /** Minimal CBOR decoder (major types 0-5, 7 simple values); indefinite lengths are rejected. Malformed input always throws PasskeyError. */
 export function cborDecode(data: Buffer): unknown {
@@ -134,14 +135,21 @@ export class PasskeyStore {
     if (!isDict(raw)) return {}
     const now = this.now()
     const clean: Record<string, Challenge> = {}
-    for (const [key, value] of Object.entries(raw)) if (isDict(value) && now - (Number(value.ts) || 0) < CHALLENGE_TTL_S) clean[key] = { kind: str(value.kind), rp_id: str(value.rp_id), origin: str(value.origin), ts: Number(value.ts) || 0 }
+    for (const [key, value] of Object.entries(raw)) if (isDict(value) && now - (Number(value.ts) || 0) < CHALLENGE_TTL_S) clean[key] = { kind: str(value.kind), rp_id: str(value.rp_id), origin: str(value.origin), client: str(value.client), ts: Number(value.ts) || 0 }
     return clean
   }
 
-  private async storeChallenge(challenge: string, kind: string, rpId: string, origin: string): Promise<void> {
+  /**
+   * TAL-2221: a full context or store gives up the requesting client's own oldest challenge first, so one client cannot push
+   * out a challenge another client is still answering.
+   */
+  private async storeChallenge(challenge: string, kind: string, rpId: string, origin: string, client: string): Promise<void> {
     await updateDocument(this.documents, 'passkeys', this.challengesFile, (raw) => {
       const data = this.challenges(raw)
-      const oldest = (keys: string[]): string | null => keys.sort((a, b) => (data[a]?.ts ?? 0) - (data[b]?.ts ?? 0))[0] ?? null
+      const oldest = (keys: string[]): string | null => {
+        const own = keys.filter((key) => data[key]?.client === client)
+        return (own.length ? own : keys).sort((a, b) => (data[a]?.ts ?? 0) - (data[b]?.ts ?? 0))[0] ?? null
+      }
       for (;;) {
         const same = Object.keys(data).filter((key) => data[key]?.kind === kind && data[key]?.rp_id === rpId && data[key]?.origin === origin)
         if (same.length < MAX_PER_CONTEXT) break
@@ -150,7 +158,7 @@ export class PasskeyStore {
         Reflect.deleteProperty(data, victim)
       }
       while (Object.keys(data).length >= MAX_CHALLENGES) { const victim = oldest(Object.keys(data)); if (!victim) break; Reflect.deleteProperty(data, victim) }
-      data[challenge] = { kind, rp_id: rpId, origin, ts: this.now() }
+      data[challenge] = { kind, rp_id: rpId, origin, client, ts: this.now() }
       return { value: data, result: undefined }
     }, { replaceInvalid: true })
   }
@@ -166,22 +174,22 @@ export class PasskeyStore {
     return entry
   }
 
-  async registrationOptions(rpId: string, origin: string): Promise<Dict> {
+  async registrationOptions(rpId: string, origin: string, client = ''): Promise<Dict> {
     const challenge = b64u(randomBytes(32))
-    await this.storeChallenge(challenge, 'register', rpId, origin)
+    await this.storeChallenge(challenge, 'register', rpId, origin, client)
     return {
       challenge, rp: { name: RP_NAME, id: rpId }, user: { id: b64u(createHash('sha256').update(rpId).digest().subarray(0, 16)), name: RP_NAME, displayName: RP_NAME },
-      pubKeyCredParams: [{ type: 'public-key', alg: -7 }], authenticatorSelection: { residentKey: 'preferred', userVerification: 'preferred' }, timeout: 60000, attestation: 'none',
+      pubKeyCredParams: [{ type: 'public-key', alg: -7 }], authenticatorSelection: { residentKey: 'preferred', userVerification: 'required' }, timeout: 60000, attestation: 'none',
       excludeCredentials: (await this.registered()).map((c) => ({ type: 'public-key', id: c.id })),
     }
   }
 
-  async authenticationOptions(rpId: string, origin: string): Promise<Dict> {
+  async authenticationOptions(rpId: string, origin: string, client = ''): Promise<Dict> {
     const creds = (await this.registered())
     if (!creds.length) throw new PasskeyError('No passkeys are registered.')
     const challenge = b64u(randomBytes(32))
-    await this.storeChallenge(challenge, 'login', rpId, origin)
-    return { challenge, rpId, allowCredentials: creds.map((c) => ({ type: 'public-key', id: c.id })), timeout: 60000, userVerification: 'preferred' }
+    await this.storeChallenge(challenge, 'login', rpId, origin, client)
+    return { challenge, rpId, allowCredentials: creds.map((c) => ({ type: 'public-key', id: c.id })), timeout: 60000, userVerification: 'required' }
   }
 
   private async clientData(encoded: unknown, expectedType: string, kind: string): Promise<[Dict, Challenge, Buffer]> {
@@ -201,6 +209,8 @@ export class PasskeyStore {
     if (!timingSafeEqual(authData.subarray(0, 32), expected)) throw new PasskeyError('Passkey RP ID mismatch')
     const flags = authData[32] ?? 0
     if (!(flags & 0x01)) throw new PasskeyError('Passkey user presence was not verified')
+    // TAL-2221: a passkey can be the only sign-in factor, so holding an authenticator is not enough.
+    if (!(flags & 0x04)) throw new PasskeyError('Passkey user verification was not performed')
     return { flags, sign_count: authData.readUInt32BE(33), rest: authData.subarray(37) }
   }
 

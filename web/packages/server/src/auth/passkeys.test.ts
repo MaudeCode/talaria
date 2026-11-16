@@ -38,3 +38,35 @@ describe('available', () => {
     expect(await passkeys.available()).toBe(false)
   })
 })
+
+describe('challenges and user verification', () => {
+  const origin = 'http://localhost'
+  const setup = async (): Promise<{ passkeys: PasskeyStore; authenticator: FakeAuthenticator; clock: { t: number } }> => {
+    const clock = { t: 1000 }
+    const passkeys = new PasskeyStore(new JsonDocuments(mkdtempSync(join(tmpdir(), 'talaria-passkeys-'))), () => clock.t)
+    const authenticator = new FakeAuthenticator()
+    await passkeys.finishRegistration(authenticator.register(await passkeys.registrationOptions('localhost', origin), origin))
+    return { passkeys, authenticator, clock }
+  }
+
+  it('TAL-2221: a full context evicts the requesting client\'s own challenges before another client\'s', async () => {
+    const { passkeys, authenticator, clock } = await setup()
+    const mine = await passkeys.authenticationOptions('localhost', origin, 'client-a')
+    for (let i = 0; i < 12; i += 1) { clock.t += 1; await passkeys.authenticationOptions('localhost', origin, 'client-b') }
+    await expect(passkeys.finishLogin(authenticator.assert(mine, origin))).resolves.toMatchObject({ ok: true })
+  })
+
+  it('TAL-2221: options require user verification and responses without it are refused', async () => {
+    const { passkeys, authenticator } = await setup()
+    const registration = await passkeys.registrationOptions('localhost', origin)
+    expect(registration.authenticatorSelection).toMatchObject({ userVerification: 'required' })
+    const unverified = new FakeAuthenticator()
+    unverified.uv = false
+    await expect(passkeys.finishRegistration(unverified.register(registration, origin))).rejects.toThrow('Passkey user verification was not performed')
+    const login = await passkeys.authenticationOptions('localhost', origin)
+    expect(login.userVerification).toBe('required')
+    authenticator.uv = false
+    await expect(passkeys.finishLogin(authenticator.assert(login, origin))).rejects.toThrow('Passkey user verification was not performed')
+    expect(await passkeys.registered()).toHaveLength(1)
+  })
+})
