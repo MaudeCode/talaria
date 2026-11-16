@@ -631,6 +631,21 @@ def _delivery_home(scheduler, home: Path):
                 pass
 
 
+def _platform_labels(names) -> dict[str, str]:
+    """Display names (``PlatformEntry.label``) from the bound profile's platform registry; empty on Agents without one."""
+    try:
+        registry = importlib.import_module("gateway.platform_registry").platform_registry
+    except Exception:  # noqa: BLE001
+        return {}
+    labels = {}
+    for name in names:
+        with contextlib.suppress(Exception):
+            label = str(getattr(registry.get(name), "label", "") or "").strip()
+            if label:
+                labels[name] = label
+    return labels
+
+
 def _heartbeat(store_home, job_id, claim_owner):
     jobs = _jobs()
     last_beat = time.monotonic()
@@ -1030,6 +1045,7 @@ def register(registry) -> None:
     def delivery_options(ctx: CallContext, params: dict) -> dict:
         home = profile_home_param(params)
         known: set = set()
+        labels: dict = {}
         room_delivery_supported = False
         for module_name in ("cron.scheduler_delivery", "cron.scheduler"):
             try:
@@ -1046,7 +1062,8 @@ def register(registry) -> None:
                 if plugin_platforms is not None:
                     with scoped_home(home):
                         known.update(plugin_platforms())
+                        labels = _platform_labels(known)
                 break
         platforms = [{"value": "local", "label": "Local (save output only)"}, {"value": "origin", "label": "Origin (reply to creator)"}]
-        platforms.extend({"value": name, "label": name.capitalize()} for name in sorted(known))
+        platforms.extend({"value": name, "label": labels.get(name) or name.capitalize()} for name in sorted(known))
         return {"platforms": platforms, "room_delivery_supported": room_delivery_supported}
