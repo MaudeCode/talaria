@@ -1,5 +1,3 @@
-import AVFoundation
-import AVKit
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -82,6 +80,10 @@ struct TranscriptMediaResolvedRemoteView: View {
     }
 
     static func resolve(_ data: Data) async -> ResolvedMedia {
+        if AttachmentAudioDetection.containerType(of: data) != nil {
+            return .audio(data)
+        }
+
 #if DEBUG
         TranscriptMediaProbeRecorder.record("imageDecode")
 #endif
@@ -90,13 +92,6 @@ struct TranscriptMediaResolvedRemoteView: View {
             covering: ImagePreviewDownsampler.transcriptThumbnailPixelSize
         ) {
             return .image(image)
-        }
-
-#if DEBUG
-        TranscriptMediaProbeRecorder.record("audioPlayer")
-#endif
-        if (try? AVAudioPlayer(data: data)) != nil {
-            return .audio(data)
         }
 
         return .video

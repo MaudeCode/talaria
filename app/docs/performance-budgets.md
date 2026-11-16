@@ -18,6 +18,7 @@ sidebar are checked on a device against the release phone list
 | Large image preview preparation | `TalariaTests/ImagePreviewPerformanceTests` |
 | Chat stream tick and keystroke | `TalariaTests/ChatStreamTickPerformanceTests` |
 | Chat open scaling | `TalariaTests/ChatOpenPerformanceTests` |
+| Unknown remote media resolve and export | `TalariaTests/UnknownMediaProbePerformanceTests` |
 
 ## Fixture data
 
@@ -37,6 +38,9 @@ them.
   a link. The load measurement reopens a chat whose transcript is already
   cached; the hosted measurement opens an uncached `ChatView` and waits for the
   last row's label.
+- The unknown media budget generates one second of a 440 Hz tone as a WAV
+  (44.1 kHz, mono, 16-bit) and resolves and exports it as remote media with no
+  file extension.
 - The replay budget streams generated tokens, replays them over a scripted
   reconnect, and checks the resulting transcript on every run so a broken dedup
   cannot pass as a fast one.
@@ -179,6 +183,24 @@ A session on another profile adds one round trip, the profile switch, after
 the profiles in both. Models and workspaces are profile-scoped, so the switch
 settles first; reasoning is scoped to the resolved model, so it follows the
 models. The prefetched transcript applies only once the chat has appeared.
+
+## Unknown remote media: the measured change
+
+A transcript row for remote media the server could not type, and its export,
+decoded the bytes as an image and then built an `AVAudioPlayer` to learn
+whether they were audio. A WAV made ImageIO probe its RIFF header as WebP and
+started the audio subsystem. Both paths now read the first 12 bytes through
+`AttachmentAudioDetection.containerType(of:)` first (TAL-866). The test counts
+the probes it reaches in DEBUG builds and asserts none for the WAV.
+
+`measure` discards its first iteration, so the test attaches that first, cold
+resolve and export as `Unknown media first call`. Three runs of the test alone,
+on an iPhone 17 Pro simulator running iOS 27.0:
+
+| | Probes per resolve and export | First call | Later calls (median per run) |
+| --- | --- | --- | --- |
+| Before | 2 image decodes, 2 audio players | 53-87 ms | 0.58-0.72 ms |
+| After | none | 0.85-1.24 ms | 0.20-0.22 ms |
 
 ## Comparing a run
 

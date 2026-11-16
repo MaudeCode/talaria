@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Audio linked from a web address without a file type now appears in a chat right away, without a pause while the app works out what it is.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}
