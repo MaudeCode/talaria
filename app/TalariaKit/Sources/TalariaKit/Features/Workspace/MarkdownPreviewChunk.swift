@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 
 /// One piece of a Markdown file preview, drawn lazily on its own (TAL-844).
 public struct MarkdownPreviewChunk: Identifiable, Equatable, Sendable {
@@ -25,12 +26,29 @@ public struct MarkdownPreviewChunk: Identifiable, Equatable, Sendable {
         if !segments.activeMarkdown.allSatisfy(\.isWhitespace) {
             texts.append(segments.activeMarkdown)
         }
+        // Each chunk parses alone, so a reference link resolves only against definitions in its own text.
+        let definitions = referenceDefinitions(in: markdown)
+        let appendix = definitions.isEmpty ? "" : "\n\n" + definitions.joined(separator: "\n") + "\n"
         return texts.enumerated().map { index, text in
             let topSpacing = index == 0 ? 0 : max(
                 ChatMarkdownBlockMargin.closing(texts[index - 1]).bottom,
                 ChatMarkdownBlockMargin.opening(text).top
             )
-            return MarkdownPreviewChunk(id: index, text: text, topSpacing: topSpacing)
+            return MarkdownPreviewChunk(id: index, text: text + appendix, topSpacing: topSpacing)
+        }
+    }
+
+    /// The file's one-line link reference definitions outside fenced code. Appended after a blank line they draw
+    /// nothing. Footnotes (`[^note]:`) are left out: they are not links, and copied they would draw in every chunk.
+    // ponytail: one-line definitions only; a title on the next line stays with its own chunk.
+    private static func referenceDefinitions(in markdown: String) -> [Substring] {
+        var fence = MarkdownFenceScan()
+        return markdown.split(separator: "\n", omittingEmptySubsequences: false).filter { line in
+            let trimmed = line.drop(while: { $0 == " " })
+            guard fence.advance(Substring(trimmed.trimmingCharacters(in: .whitespacesAndNewlines))) == .outside,
+                  line.count - trimmed.count <= 3, trimmed.first == "[", trimmed.dropFirst().first != "^",
+                  let close = trimmed.firstIndex(of: "]"), trimmed[close...].hasPrefix("]:") else { return false }
+            return trimmed[close...].dropFirst(2).contains { !$0.isWhitespace }
         }
     }
 }
@@ -63,7 +81,7 @@ public struct ChatMarkdownBlockMargin: Equatable, Sendable {
         if StreamingOpenCodeFence.fenceRun(in: trimmed) != nil { return .codeBlock }
         if isThematicBreak(trimmed) { return .thematicBreak }
         if trimmed.first == "|" { return .table }
-        if isListMarker(trimmed) { return .list }
+        if StreamingMarkdownBlockSplitter.isListItem(trimmed) { return .list }
         return .paragraph
     }
 
@@ -83,15 +101,5 @@ public struct ChatMarkdownBlockMargin: Equatable, Sendable {
         let marks = line.filter { !$0.isWhitespace }
         guard let mark = marks.first, "-*_".contains(mark) else { return false }
         return marks.count >= 3 && marks.allSatisfy { $0 == mark }
-    }
-
-    private static func isListMarker(_ line: Substring) -> Bool {
-        if let marker = line.first, "-*+".contains(marker) {
-            return line.dropFirst().first?.isWhitespace == true
-        }
-        let digits = line.prefix(while: \.isNumber)
-        guard (1...9).contains(digits.count), let delimiter = line.dropFirst(digits.count).first,
-              delimiter == "." || delimiter == ")" else { return false }
-        return line.dropFirst(digits.count + 1).first?.isWhitespace == true
     }
 }

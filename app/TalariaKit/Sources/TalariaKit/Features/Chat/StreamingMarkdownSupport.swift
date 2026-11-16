@@ -19,7 +19,7 @@ public enum StreamingMarkdownBlockSplitter {
 #endif
         var lineStart = text.startIndex
         var chunkStart = text.startIndex
-        var openFence: (marker: Character, length: Int)?
+        var fence = MarkdownFenceScan()
         var stableChunks: [StreamingMarkdownChunk] = []
 
         while lineStart < text.endIndex {
@@ -30,19 +30,16 @@ public enum StreamingMarkdownBlockSplitter {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
 
             var stableBoundary: String.Index?
-            let fence = StreamingOpenCodeFence.fenceRun(in: Substring(trimmedLine))
-            if let open = openFence {
-                // Only a run of the opener's character, at least as long, with no info string closes it (TAL-844).
-                if let fence, fence.marker == open.marker, fence.length >= open.length, fence.rest.isEmpty {
-                    openFence = nil
+            switch fence.advance(Substring(trimmedLine)) {
+            case .closed:
+                stableBoundary = nextLineStart
+            case .opened, .inside:
+                break
+            case .outside:
+                if hasLineBreak, trimmedLine.isEmpty || isStableSingleLineBlock(trimmedLine),
+                   !continuesBlock(text[nextLineStart...]) {
                     stableBoundary = nextLineStart
                 }
-            } else if let fence, fence.marker == "~" || !fence.rest.contains("`") {
-                openFence = (fence.marker, fence.length)
-            } else if hasLineBreak, trimmedLine.isEmpty || isStableSingleLineBlock(trimmedLine),
-                      !startsIndented(text[nextLineStart...]) {
-                // An indented next line continues a list item; on its own it would read as a code block.
-                stableBoundary = nextLineStart
             }
 
             if let stableBoundary,
@@ -86,8 +83,21 @@ public enum StreamingMarkdownBlockSplitter {
         )
     }
 
-    private static func startsIndented(_ text: Substring) -> Bool {
-        text.first == " " || text.first == "\t"
+    /// An indented line continues a list item, and on its own would read as a code block; a list item may continue a
+    /// list, which split there would number again from its first item (TAL-844).
+    private static func continuesBlock(_ text: Substring) -> Bool {
+        text.first == " " || text.first == "\t" || isListItem(text)
+    }
+
+    /// A line opening a bullet or ordered list item, without its leading whitespace.
+    static func isListItem(_ line: Substring) -> Bool {
+        if let marker = line.first, "-*+".contains(marker) {
+            return line.dropFirst().first?.isWhitespace == true
+        }
+        let digits = line.prefix(while: \.isNumber)
+        guard (1...9).contains(digits.count), let delimiter = line.dropFirst(digits.count).first,
+              delimiter == "." || delimiter == ")" else { return false }
+        return line.dropFirst(digits.count + 1).first?.isWhitespace == true
     }
 
     private static func isStableSingleLineBlock(_ trimmedLine: String) -> Bool {
@@ -98,6 +108,29 @@ public enum StreamingMarkdownBlockSplitter {
     static func isHeading(_ line: Substring) -> Bool {
         let markerCount = line.prefix(while: { $0 == "#" }).count
         return (1...6).contains(markerCount) && line.dropFirst(markerCount).first?.isWhitespace == true
+    }
+}
+
+/// Where a line-by-line scan stands relative to fenced code (TAL-844). A fence closes only on a run of its opener's
+/// character, at least as long, with nothing after it; a backtick run followed by a backtick is inline code.
+struct MarkdownFenceScan {
+    enum Line { case opened, inside, closed, outside }
+
+    private var open: (marker: Character, length: Int)?
+
+    /// Advances past one line, given without its surrounding whitespace.
+    mutating func advance(_ trimmedLine: Substring) -> Line {
+        let run = StreamingOpenCodeFence.fenceRun(in: trimmedLine)
+        if let current = open {
+            guard let run, run.marker == current.marker, run.length >= current.length, run.rest.isEmpty else {
+                return .inside
+            }
+            open = nil
+            return .closed
+        }
+        guard let run, run.marker == "~" || !run.rest.contains("`") else { return .outside }
+        open = (run.marker, run.length)
+        return .opened
     }
 }
 

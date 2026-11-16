@@ -124,8 +124,8 @@ iterations:
 
 | Path | Clock | Memory growth | Peak memory |
 | --- | --- | --- | --- |
-| Whole file, the path this replaced | 0.795 s | 127,451 kB | 454,282 kB |
-| Lazy chunks | 0.092 s | 9,667 kB | 105,680 kB |
+| Whole file, the path this replaced | 0.741 s | 103,219 kB | 415,551 kB |
+| Lazy chunks | 0.079 s | 9,699 kB | 93,277 kB |
 
 ## Chat stream tick and keystroke work
 

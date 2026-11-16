@@ -38,6 +38,28 @@ final class MarkdownPreviewChunkTests: APIClientTestCase {
         }
     }
 
+    /// A reference link resolves in whichever chunk it lands: every chunk carries the file's definitions.
+    func testEveryChunkCarriesTheFileReferenceDefinitions() {
+        let markdown = "See the [Documentation][docs].\n\n" + Self.longParagraph + "\n\n## Links\n\n[docs]: https://example.test/docs\n"
+            + "[^note]: A footnote, not a link.\n"
+
+        let chunks = MarkdownPreviewChunk.chunks(for: markdown)
+
+        XCTAssertEqual(chunks.count, 2)
+        XCTAssertTrue(chunks.allSatisfy { $0.text.contains("\n[docs]: https://example.test/docs") })
+        XCTAssertEqual(chunks.filter { $0.text.contains("[^note]") }.count, 1)
+    }
+
+    /// A blank line between list items continues the list, so it never ends a chunk: split there, the second item
+    /// would number from one again.
+    func testLooseListIsNeverSplitBetweenItems() {
+        let markdown = "1. " + Self.longParagraph + "\n\n1. Second item\n\n- Bullet one\n\n- Bullet two\n"
+
+        let chunks = MarkdownPreviewChunk.chunks(for: markdown)
+
+        XCTAssertEqual(chunks.count, 1)
+    }
+
     func testMarkdownFileSplitsOncePerLoad() async throws {
         let markdown = (0..<12).map { "## Section \($0)\n\n" + Self.longParagraph + "\n\n```swift\nlet a = \($0)\n```\n" }
             .joined(separator: "\n")
