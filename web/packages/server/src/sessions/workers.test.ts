@@ -1008,6 +1008,8 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     await complete(sid, `${sid}_5`)
     // The new completion wakes the session; its teardown delivers the ones held while paused once its save commits.
     for (let i = 0; i < 100 && starts.length < 3; i += 1) await new Promise((r) => setTimeout(r, 20))
+    // The delivery's turn can end before that drain writes the held file; a drain queues behind it (TAL-2167).
+    await s.deps.completions.drainDeferred(sid)
     await idle()
     expect(starts).toHaveLength(3)
     expect(starts[1]).toContain(`Background process ${sid}_5 completed`)
