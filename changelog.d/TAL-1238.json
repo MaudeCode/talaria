@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Photos in a chat transcript load at thumbnail size in the background, so scrolling past a large photo no longer stutters or holds its full-size copy in memory.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

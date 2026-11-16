@@ -41,9 +41,11 @@ struct TranscriptMediaThumbnailView: View {
                 guard let loadMediaImage else { return }
                 image = nil
                 didAttemptLoad = false
-                let loadedImage = await DecodedImageCache.shared.image(for: imageCacheKey) {
-                    guard let data = await loadMediaImage(reference) else { return nil }
-                    return UIImage(data: data)
+                let loadedImage = await DecodedImageCache.shared.thumbnail(
+                    for: imageCacheKey,
+                    covering: ImagePreviewDownsampler.transcriptThumbnailPixelSize
+                ) {
+                    await loadMediaImage(reference)
                 }
                 guard !Task.isCancelled else { return }
                 await MainActor.run {

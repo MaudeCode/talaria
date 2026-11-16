@@ -48,6 +48,19 @@ public actor DecodedImageCache {
         }
         return image
     }
+
+    /// The image `loadData` returns, kept at the size it is shown: decoded off the caller's actor, scaled down
+    /// until it just covers `pixelSize` (TAL-1238). The cache never holds the full-size bitmap.
+    public func thumbnail(
+        for key: DecodedImageCacheKey,
+        covering pixelSize: CGSize,
+        loadData: @escaping @Sendable () async -> Data?
+    ) async -> PlatformImage? {
+        await image(for: key) {
+            guard let data = await loadData() else { return nil }
+            return await ImagePreviewDownsampler.thumbnailImage(from: data, covering: pixelSize)
+        }
+    }
 }
 
 public struct DecodedImageCacheKey: Hashable, Sendable {
