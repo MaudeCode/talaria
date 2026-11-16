@@ -105811,7 +105811,7 @@
       },
       "put": {
         "operationId": "toolsetDefaultsSet",
-        "summary": "Save the active profile's default toolsets (`platform_toolsets.cli`) through the Agent's own `hermes tools` saver and return them as read back.",
+        "summary": "Turn one toolset on or off in the active profile's default toolsets (`platform_toolsets.cli`), applied to the saved list through the Agent's own `hermes tools` saver, and return them as read back. Each write changes only its own toolset.",
         "tags": [
           "tools"
         ],
@@ -105822,15 +105822,16 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "toolsets": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
+                  "name": {
+                    "type": "string"
+                  },
+                  "enabled": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
-                  "toolsets"
+                  "name",
+                  "enabled"
                 ]
               }
             }
