@@ -272,6 +272,30 @@ final class APIClientUpdatesApplyTests: APIClientTestCase {
         XCTAssertTrue(replacement.supportsNotifications)
     }
 
+    /// TAL-1239: events and foregrounding carry fresh notices, so an idle active app asks at most once a minute.
+    @MainActor
+    func testActiveRefreshAsksAtMostOncePerMinuteAfterForeground() async throws {
+        var requestCount = 0
+        let viewModel = UpdateNotificationCenterViewModel(server: try XCTUnwrap(URL(string: "https://example.test")), client: makeClient { request in
+            requestCount += 1
+            return apiTestJSONResponse(#"{"notifications":[],"unread_count":0,"clearable_count":0,"can_clear":false}"#, for: request)
+        })
+        var elapsed = Duration.zero
+        var requestsBeforeWaiting: Int?
+
+        await viewModel.refreshWhileActive(
+            sleep: { interval in
+                if requestsBeforeWaiting == nil { requestsBeforeWaiting = requestCount }
+                elapsed += interval
+                if elapsed > .seconds(60) { throw CancellationError() }
+            },
+            onRefresh: {}
+        )
+
+        XCTAssertEqual(requestsBeforeWaiting, 1, "a foreground transition asks once before waiting")
+        XCTAssertLessThanOrEqual(requestCount - 1, 1, "60 s of an idle active app asks at most once")
+    }
+
     func testFollowUpdateReportsSuccessWhenServerFinishesAfterNinetySeconds() async throws {
         var polls = 0
         let client = makeClient { request in

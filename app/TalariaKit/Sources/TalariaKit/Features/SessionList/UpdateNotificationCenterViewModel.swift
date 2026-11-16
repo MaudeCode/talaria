@@ -49,6 +49,21 @@ public final class UpdateNotificationCenterViewModel {
         }
     }
 
+    /// Refreshes once, then every `interval` until cancelled or the server lacks notifications. Foregrounding restarts
+    /// this and `sessions_changed` refreshes too (TAL-1239), so the timer only covers a missed event.
+    public func refreshWhileActive(
+        interval: Duration = .seconds(60),
+        sleep: (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        onRefresh: () -> Void
+    ) async {
+        while !Task.isCancelled {
+            let continuePolling = await refresh()
+            onRefresh()
+            guard continuePolling else { return }
+            do { try await sleep(interval) } catch { return }
+        }
+    }
+
     public func load() async {
         isLoading = true
         await refresh()

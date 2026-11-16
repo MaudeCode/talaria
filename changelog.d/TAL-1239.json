@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria no longer checks for update notifications every 5 seconds while open. It checks when chats change, when you return to the app, and once a minute otherwise, which saves battery and data.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}
