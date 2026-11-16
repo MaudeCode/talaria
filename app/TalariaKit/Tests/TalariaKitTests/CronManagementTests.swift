@@ -1185,6 +1185,26 @@ final class CronManagementViewModelTests: APIClientTestCase {
         XCTAssertFalse(viewModel.hasMoreRuns)
     }
 
+    /// A screen that leaves mid-read cancels it (TAL-205); returning must not show "cancelled" as a failure.
+    @MainActor
+    func testTaskDetailViewModelIgnoresCancelledReads() async throws {
+        let client = makeClient { _ in throw URLError(.cancelled) }
+        let viewModel = TaskDetailViewModel(
+            job: try decodeCronJob(#"{"id": "job123", "name": "Digest"}"#),
+            runningElapsed: nil,
+            server: try XCTUnwrap(URL(string: "https://example.test")),
+            client: client
+        )
+
+        await viewModel.load()
+        await viewModel.loadRunDetail(try decodeRun(#"{"filename": "run-1.md"}"#))
+
+        XCTAssertNil(viewModel.errorMessage)
+        XCTAssertNil(viewModel.lastError)
+        XCTAssertNil(viewModel.runsErrorMessage)
+        XCTAssertNil(viewModel.runDetailErrorMessage)
+    }
+
     @MainActor
     func testTaskDetailViewModelRetryAfterFailedRefreshReloadsExhaustedHistory() async throws {
         let historyRequests = LockedCounter()

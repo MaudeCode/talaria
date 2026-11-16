@@ -139,3 +139,35 @@ private struct LiveRefreshModifier: ViewModifier {
         let interval: Duration?
     }
 }
+
+/// Runs a screen's button-started reads (Refresh, Try Again, load more) for as long as the screen is shown, as
+/// `.task` and `.refreshable` run theirs (TAL-205). Leaving the screen cancels them. A read started under a key
+/// cancels that key's earlier read and begins only once it has ended, so an older response never lands after a newer
+/// one; reads under different keys run side by side. Mutations and run actions stay outside, with their own
+/// reconciliation. The screen holds one in `@State` and applies `ownsReads(_:)`.
+@MainActor
+final class ScreenReads {
+    private var reads: [AnyHashable: Task<Void, Never>] = [:]
+
+    func start(_ key: AnyHashable = 0, _ read: @escaping @MainActor () async -> Void) {
+        let previous = reads[key]
+        previous?.cancel()
+        reads[key] = Task {
+            await previous?.value
+            guard !Task.isCancelled else { return }
+            await read()
+        }
+    }
+
+    /// Cancelled reads stay recorded, so a read started after the screen returns still waits for them to end.
+    func cancelAll() {
+        reads.values.forEach { $0.cancel() }
+    }
+}
+
+extension View {
+    /// Cancels the screen's button-started reads when it leaves (TAL-205).
+    func ownsReads(_ reads: ScreenReads) -> some View {
+        onDisappear { reads.cancelAll() }
+    }
+}

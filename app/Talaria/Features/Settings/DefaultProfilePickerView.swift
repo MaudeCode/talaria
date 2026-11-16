@@ -17,6 +17,7 @@ struct DefaultProfilePickerView: View {
     @State private var searchText = ""
     @State private var showsCreateProfile = false
     @State private var deleting: ProfileSummary?
+    @State private var reads = ScreenReads()
 
     init(server: URL, currentDefaultProfileName: String?, onSave: @escaping (DefaultProfileSelection) -> Void) {
         self.server = server
@@ -71,10 +72,11 @@ struct DefaultProfilePickerView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { await model.load() }
         .refreshesLive(showsStatus: !model.profiles.isEmpty) { await model.load() }
+        .ownsReads(reads)
         .sheet(isPresented: $showsCreateProfile) {
             CreateProfileSheet(server: server) { profile in
                 if let profile { model.appendCreated(profile) }
-                Task { await model.load() }
+                reads.start { await model.load() }
             }
         }
         .confirmationDialog(String(localized: "Delete \(deleting?.displayName ?? "")?"),

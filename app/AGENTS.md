@@ -50,6 +50,11 @@ Every exception requires a non-empty reason.
   consolidate behavior with multiple callers, delete obsolete code, keep files
   and types cohesive, avoid single-use abstractions, and create a Kaneo follow-up
   when necessary cleanup is too broad for the selected task.
+- A screen's reads die with it. Load in `.task` or `.refreshable`; start a
+  button's read (Refresh, Try Again, load more) with `ScreenReads.start` and
+  apply `ownsReads(_:)`, so leaving cancels it and a newer read lands last.
+  View models ignore `APIError.isCancellation`. Mutations and run actions stay
+  in their own `Task`.
 - Put new catalog keys at their sorted position; from the repository root run `app/ci/check-string-catalogs --fix` after edits or resolving a catalog conflict.
 - Group the Settings root into Interface, Profile, Server and This iPhone.
   Put a new control in an existing section of the group its storage belongs to

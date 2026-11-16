@@ -17,6 +17,7 @@ struct ProvidersView: View {
     ) private var providerAliasesData = Data()
     @State private var providerPendingRenameID: String?
     @State private var providerRenameText = ""
+    @State private var reads = ScreenReads()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(server: URL) {
@@ -38,6 +39,7 @@ struct ProvidersView: View {
             .onDisappear {
                 viewModel.cancelLoads()
             }
+            .ownsReads(reads)
             .alert("Rename Provider", isPresented: renameAlertIsPresented) {
                 TextField("Provider name", text: $providerRenameText)
                 Button("Cancel", role: .cancel) {
@@ -78,7 +80,7 @@ struct ProvidersView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
                 Button("Try Again") {
-                    Task { await viewModel.load() }
+                    reads.start { await viewModel.load() }
                 }
                 .font(.subheadline.weight(.medium))
             }

@@ -99,3 +99,89 @@ final class TasksHostedTests: XCTestCase {
         return try decoder.decode(type, from: Data(json.utf8))
     }
 }
+
+/// Button-started reads live and die with their screen, as `.task` reads do (TAL-205).
+@MainActor
+final class ScreenReadsHostedTests: XCTestCase {
+    func testLeavingTheScreenCancelsItsSuspendedRead() throws {
+        let reads = ScreenReads()
+        let screen = ShownScreen()
+        _ = try hostWindow(ShownScreenHost(screen: screen, reads: reads))
+        let request = HeldRequest()
+        let landed = ReadLog()
+        reads.start {
+            do { try await request.response(); landed.entries.append("answered") } catch { landed.entries.append("cancelled") }
+        }
+        settle()
+        XCTAssertEqual(landed.entries, [], "The request is still held")
+
+        screen.isShown = false
+        XCTAssertTrue(waitUntil { !landed.entries.isEmpty }, "Leaving the screen left its read running")
+        XCTAssertEqual(landed.entries, ["cancelled"])
+        request.answer()
+    }
+
+    func testANewerReadLandsAfterTheOlderOneItSupersedes() throws {
+        let reads = ScreenReads()
+        _ = try hostWindow(ShownScreenHost(screen: ShownScreen(), reads: reads))
+        let older = HeldRequest()
+        let landed = ReadLog()
+        reads.start {
+            // The older response is already on its way: it arrives despite the cancellation.
+            try? await older.response(cancellable: false)
+            landed.entries.append(Task.isCancelled ? "older, cancelled" : "older")
+        }
+        settle()
+        reads.start { landed.entries.append("newer") }
+        settle()
+        older.answer()
+
+        XCTAssertTrue(waitUntil { landed.entries.count == 2 }, "Both reads finish: \(landed.entries)")
+        XCTAssertEqual(landed.entries, ["older, cancelled", "newer"], "The newer read must cancel the older one and land last")
+    }
+}
+
+@MainActor
+private final class ReadLog {
+    var entries: [String] = []
+}
+
+@MainActor @Observable
+private final class ShownScreen {
+    var isShown = true
+}
+
+private struct ShownScreenHost: View {
+    let screen: ShownScreen
+    let reads: ScreenReads
+
+    var body: some View {
+        if screen.isShown {
+            Color.clear.ownsReads(reads)
+        }
+    }
+}
+
+/// A request held until `answer()`. A cancellable one throws as soon as its caller is cancelled, as URLSession's do.
+@MainActor
+private final class HeldRequest {
+    private var continuation: CheckedContinuation<Void, Error>?
+
+    func response(cancellable: Bool = true) async throws {
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation = $0 }
+        } onCancel: {
+            guard cancellable else { return }
+            Task { @MainActor in self.finish(.failure(CancellationError())) }
+        }
+    }
+
+    func answer() {
+        finish(.success(()))
+    }
+
+    private func finish(_ result: Result<Void, Error>) {
+        continuation?.resume(with: result)
+        continuation = nil
+    }
+}

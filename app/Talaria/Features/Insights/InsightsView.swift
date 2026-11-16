@@ -32,6 +32,7 @@ struct InsightsView: View {
     @State private var isShowingQuotaNotice = false
     @State private var isReorderingQuotas = false
     @State private var dailyMetric: InsightsDailyMetric = .tokens
+    @State private var reads = ScreenReads()
     @AppStorage(ProviderQuotaOrderSettings.storageKey) private var quotaOrderData = Data()
     @AppStorage(ProviderQuotaSidebarSettings.firstSourceKey) private var firstSidebarQuotaSourceID = ""
     @AppStorage(ProviderQuotaSidebarSettings.secondSourceKey) private var secondSidebarQuotaSourceID = ""
@@ -81,7 +82,7 @@ struct InsightsView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     RefreshToolbarButton(isLoading: isRefreshing) {
-                        Task { await refreshAll() }
+                        reads.start { await refreshAll() }
                     }
                 }
                 if tab == .quotas {
@@ -157,6 +158,7 @@ struct InsightsView: View {
                     every: ProviderQuotaRefreshInterval.storedValue(quotaRefreshIntervalSeconds).duration
                 )
             }
+            .ownsReads(reads)
     }
 
     /// Both tabs are plain lists on the system background: no cards anywhere on Insights.
@@ -245,7 +247,8 @@ struct InsightsView: View {
     @ViewBuilder
     private func quotaRowMenu(_ source: ProviderQuotaSource) -> some View {
         Button {
-            Task { await quotaViewModel.refreshQuotaSource(source.id) }
+            // Keyed by account, so refreshing one never cancels another's.
+            reads.start(source.id) { await quotaViewModel.refreshQuotaSource(source.id) }
         } label: {
             Label("Refresh", systemImage: "arrow.clockwise")
         }
@@ -284,7 +287,7 @@ struct InsightsView: View {
                 Text(error)
             } actions: {
                 Button("Try Again") {
-                    Task { await loadQuotas() }
+                    reads.start(InsightsTab.quotas) { await loadQuotas() }
                 }
             }
         } else if quotaViewModel.quotaSources.isEmpty {
@@ -341,7 +344,7 @@ struct InsightsView: View {
                 Text(errorMessage)
             } actions: {
                 Button("Try Again") {
-                    Task { await loadInsights() }
+                    reads.start(InsightsTab.usage) { await loadInsights() }
                 }
             }
         } else {
