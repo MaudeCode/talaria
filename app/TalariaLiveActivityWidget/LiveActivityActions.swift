@@ -37,9 +37,40 @@ struct RespondToApprovalIntent: LiveActivityIntent {
     @MainActor
     func perform() async throws -> some IntentResult {
         #if !TALARIA_WIDGET_EXTENSION
-        await LiveActivityApprovalResponder.shared.respond(
-            publisherID: publisherID, sessionID: sessionID, approval: .head(approvalHeadID), choice: answer.choice
-        )
+        if answer == .deny {
+            // TAL-1488: "Denied · Undo" for the window, then sent; the intent holds the process until then.
+            await DeferredDenial.shared.deny(.init(
+                publisherID: publisherID, sessionID: sessionID, approval: .head(approvalHeadID), fromBanner: false
+            ))
+        } else {
+            await LiveActivityApprovalResponder.shared.respond(
+                publisherID: publisherID, sessionID: sessionID, approval: .head(approvalHeadID), choice: answer.choice
+            )
+        }
+        #endif
+        return .result()
+    }
+}
+
+/// TAL-1488: Undo beside a Live Activity's "Denied": the denial is never sent and the row waits for approval again.
+struct UndoDenialIntent: LiveActivityIntent {
+    static let title: LocalizedStringResource = "Undo Deny"
+    static let isDiscoverable = false
+
+    @Parameter(title: "Server") var publisherID: String?
+    @Parameter(title: "Session") var sessionID: String
+
+    init() {}
+
+    init(publisherID: String?, sessionID: String) {
+        self.publisherID = publisherID
+        self.sessionID = sessionID
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        #if !TALARIA_WIDGET_EXTENSION
+        await DeferredDenial.shared.undo(publisherID: publisherID, sessionID: sessionID)
         #endif
         return .result()
     }
@@ -53,6 +84,8 @@ struct LiveActivityRowActions: Equatable {
     enum Kind: Equatable {
         /// `text` is what the approval runs; Relay never sends it, so a relay-driven row has none and offers no Allow.
         case approval(headID: String, text: String?)
+        /// TAL-1488: Deny waits out its Undo window.
+        case denying
         case open
     }
 
@@ -63,6 +96,7 @@ struct LiveActivityRowActions: Equatable {
     init?(state: AgentRunActivityAttributes.ContentState, publisherID: String?) {
         guard !state.isFinal else { return nil }
         switch state.status {
+        case .waitingForApproval where state.isDenying == true: kind = .denying
         case .waitingForApproval:
             kind = state.approvalHeadID.map { .approval(headID: $0, text: state.approvalText) } ?? .open
         case .waitingForClarification: kind = .open
@@ -74,6 +108,7 @@ struct LiveActivityRowActions: Equatable {
 
     init?(row: TalariaAggregateActivityAttributes.ContentState.Row) {
         switch row.phase {
+        case "waiting_for_approval" where row.isDenying == true: kind = .denying
         case "waiting_for_approval": kind = row.approvalHeadId.map { .approval(headID: $0, text: nil) } ?? .open
         case "waiting_for_input": kind = .open
         default: return nil
@@ -85,6 +120,8 @@ struct LiveActivityRowActions: Equatable {
     func intent(_ answer: RespondToApprovalIntent.Answer, headID: String) -> RespondToApprovalIntent {
         RespondToApprovalIntent(publisherID: publisherID, sessionID: sessionID, approvalHeadID: headID, answer: answer)
     }
+
+    var undoIntent: UndoDenialIntent { UndoDenialIntent(publisherID: publisherID, sessionID: sessionID) }
 
     var openURL: URL? { TalariaDeepLink.sessionURL(sessionID: sessionID, publisherID: publisherID) }
 
@@ -105,7 +142,23 @@ struct LiveActivityActionButtons: View {
             if let error {
                 LiveActivityAnswerError(text: error)
             }
-            if case let .approval(_, text?) = actions.kind {
+            if actions.kind == .denying {
+                // TAL-1488: "Denied · Undo" for Deny's window.
+                buttons { titled in
+                    Text("Denied")
+                        .foregroundStyle(palette.secondaryText)
+                        .lineLimit(1)
+                    if titled {
+                        Text(verbatim: "·")
+                            .foregroundStyle(palette.secondaryText)
+                            .accessibilityHidden(true)
+                    }
+                    Button(intent: actions.undoIntent) {
+                        label("Undo", systemImage: "arrow.uturn.backward", titled: titled)
+                    }
+                    .buttonStyle(.bordered)
+                }
+            } else if case let .approval(_, text?) = actions.kind {
                 Text(text)
                     .font(.caption.monospaced())
                     .foregroundStyle(palette.primaryText)

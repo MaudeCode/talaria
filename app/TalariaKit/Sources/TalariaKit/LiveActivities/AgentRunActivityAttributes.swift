@@ -20,6 +20,9 @@ public struct AgentRunActivityAttributes: Codable, Sendable {
         /// TAL-1463: what that approval runs, from the App's own stream. Relay never sends it, so a relay-driven
         /// activity offers Deny and Open; Allow needs the whole text on screen.
         public var approvalText: String?
+        /// TAL-1488: Deny was tapped and waits out its Undo window; the activity reads "Denied · Undo". Device-local: Relay
+        /// and the App's stream never send it, so their next update clears it.
+        public var isDenying: Bool?
         /// TAL-874: Relay's tool calls the run started and its last phase change or tool event. Absent from the App's own
         /// stream and from an older Relay or Web.
         public var toolCount: Int?
@@ -134,6 +137,8 @@ public struct TalariaAggregateActivityAttributes: Codable, Sendable {
             var deepLink: String
             /// TAL-1463: the approval a waiting row shows, so Allow and Deny answer only it.
             public var approvalHeadId: String? = nil
+            /// TAL-1488: Deny waits out its Undo window on this row. Device-local, like `answerError`.
+            public var isDenying: Bool? = nil
             /// TAL-1422: the row's plan progress and running workers, as Relay sends them.
             public var planCompleted: Int? = nil
             public var planTotal: Int? = nil

@@ -17,10 +17,13 @@ public enum PendingActionNotificationCategory {
     public static let approvalShowingAction = "talaria.approval.allow"
     /// Reply. Relay sets it as `aps.category`.
     public static let input = "talaria.input"
+    /// TAL-1488: Undo, on the "Denied · Undo" banner posted while a Deny waits out its window with no Live Activity.
+    public static let denied = "talaria.denied"
 
     public static let allowAction = "allow"
     public static let denyAction = "deny"
     public static let replyAction = "reply"
+    public static let undoAction = "undo"
 
     /// The approval a Relay push names: its queue head, as on a Live Activity.
     public static let approvalHeadIDKey = "approvalHeadId"
@@ -45,6 +48,11 @@ public enum PendingActionNotificationCategory {
             UNNotificationCategory(identifier: approval, actions: [deny], intentIdentifiers: []),
             UNNotificationCategory(identifier: approvalShowingAction, actions: [allow, deny], intentIdentifiers: []),
             UNNotificationCategory(identifier: input, actions: [reply], intentIdentifiers: []),
+            // Undo sends nothing, so it needs no authentication inside its five seconds.
+            UNNotificationCategory(
+                identifier: denied, actions: [UNNotificationAction(identifier: undoAction, title: String(localized: "Undo"))],
+                intentIdentifiers: []
+            ),
         ]
     }
 }

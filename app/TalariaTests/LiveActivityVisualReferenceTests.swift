@@ -239,6 +239,54 @@ final class LiveActivityVisualReferenceTests: XCTestCase {
         }
     }
 
+    /// TAL-1488: "Denied · Undo" while Deny waits out its window, on the Lock Screen, the expanded island (iPhone and the
+    /// Duo's narrow vertical island, where Undo keeps its symbol alone) and the aggregate's rows.
+    func testDenyingReferences() throws {
+        var state = AgentRunScenario.waiting.state
+        state.isDenying = true
+        try VisualReference.assertMatchesReference(
+            AgentRunLockScreenView(state: state).environment(\.agentRunFrozenClock, AgentRunScenario.frozenClock),
+            named: "live-activity-lock-screen-denying",
+            size: CGSize(width: 360, height: 140),
+            colorScheme: .dark,
+            background: AgentRunLiveActivityTheme.background
+        )
+        try VisualReference.assertMatchesReference(
+            expandedIsland(state).environment(\.agentRunFrozenClock, AgentRunScenario.frozenClock),
+            named: "live-activity-island-expanded-denying",
+            size: CGSize(width: 360, height: 108),
+            colorScheme: .dark,
+            background: .black
+        )
+        try VisualReference.assertMatchesReference(
+            AgentRunExpandedIslandBottomView(state: state),
+            named: "live-activity-island-expanded-denying-duo-outer",
+            size: CGSize(width: 120, height: 60),
+            colorScheme: .dark,
+            background: .black
+        )
+        let row = { (session: String, isDenying: Bool?) in
+            var row = TalariaAggregateActivityAttributes.ContentState.Row(
+                publisherId: "https://fixture.example", publisherLabel: "fixture", sessionId: session,
+                title: "Session \(session)", phase: "waiting_for_approval", status: "Approval", updatedAt: 0, deepLink: "",
+                approvalHeadId: "head-\(session)"
+            )
+            row.isDenying = isDenying
+            return row
+        }
+        let aggregate = TalariaAggregateActivityAttributes.ContentState(
+            schemaVersion: 1, activeCount: 2, title: "Talaria", subtitle: "2 active", updatedAt: 0,
+            rows: [row("A", true), row("B", nil)]
+        )
+        try VisualReference.assertMatchesReference(
+            TalariaAggregateRows(state: aggregate, isStale: false, limit: 2, spacing: 6).padding(14),
+            named: "live-activity-aggregate-rows-denying",
+            size: CGSize(width: 360, height: 100),
+            colorScheme: .dark,
+            background: AgentRunLiveActivityTheme.background
+        )
+    }
+
     /// TAL-2037: the small family on the Apple Watch Smart Stack and CarPlay; the timer while working, the stale
     /// wording, the ask and the outcome, then the aggregate's header and first row.
     func testSmallFamilyReferences() throws {
