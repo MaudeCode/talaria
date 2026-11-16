@@ -364,17 +364,21 @@ final class SessionListHostedTests: XCTestCase {
         }
     }
 
-    func testSettingsAvatarOpensSettings() async throws {
+    func testSettingsAvatarOpensSettingsOverTheOpenSidebar() async throws {
         let fixture = try FixtureApp(for: self)
         let window = try hostWindow(fixture.sessionList())
         try await openSidebar(in: window)
+        let sidebar = try XCTUnwrap(window.rootViewController?.firstDescendant(ofType: AppSidebarController.self)?.children[0].view)
         HostedAccessibility.activate(try await requireElement(in: window, where: isSettingsAvatar))
         _ = try await requireElement(in: window) {
             HostedAccessibility.identifier(of: $0) == "settings-user-profile"
         }
+        settle(0.1)
+        XCTAssertFalse(sidebar.accessibilityElementsHidden, "Settings must open over the drawer without closing it (TAL-2250)")
     }
 
-    func testSidebarFeedbackOpensTheSharedFormAndRestoresTheSidebar() async throws {
+    /// The drawer stays open under the sheet, so dismissing it shows no close-and-reopen slide (TAL-2250).
+    func testSidebarFeedbackOpensTheSharedFormOverTheOpenSidebar() async throws {
         defer { UserDefaults.standard.removeObject(forKey: SectionVisibilitySettings.sidebarFeedbackKey) }
         for (name, size) in [("phone", HostedSize.phone), ("duo-inner", HostedSize.duoInner)] {
             let fixture = try FixtureApp(for: self)
@@ -383,13 +387,21 @@ final class SessionListHostedTests: XCTestCase {
             try await openSidebar(in: window)
             let feedback = await awaitElement(in: window) { HostedAccessibility.identifier(of: $0) == "sidebar-send-feedback" }
             let button = try XCTUnwrap(feedback, "An open sidebar must offer Send Feedback beside Settings")
+            let drawer = try XCTUnwrap(window.rootViewController?.firstDescendant(ofType: AppSidebarController.self))
+            // The drawer hides its sidebar from VoiceOver exactly while it is closed; a tiled column disables it.
+            let drawerOpen = { drawer.isEnabled && drawer.children[0].view.accessibilityElementsHidden == false }
+            let opened = drawerOpen()
+            if name == "phone" { XCTAssertTrue(opened, "The phone's sidebar must be the open overlay drawer") }
             attachHostedScreenshot(window, name: "sidebar-feedback-\(name)")
             HostedAccessibility.activate(button)
             _ = try await requireElement(in: window, label: "Include Diagnostics")
+            settle(0.1)
+            XCTAssertEqual(drawerOpen(), opened, "Presenting feedback must leave the drawer open under the sheet")
             XCTAssertNotNil(HostedAccessibility.toolbarItem("Send", in: window))
             XCTAssertNil(HostedAccessibility.element(in: window, identifier: "settings-user-profile"))
             HostedAccessibility.activate(try XCTUnwrap(HostedAccessibility.toolbarItem("Cancel", in: window)))
             _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "sidebar-send-feedback" }
+            XCTAssertEqual(drawerOpen(), opened, "Dismissing feedback must return straight to the open sidebar")
             window.isHidden = true
             window.rootViewController = nil
         }

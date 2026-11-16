@@ -52,7 +52,6 @@ struct SessionListView: View {
     @State private var lastActiveSessionMonitorTaskID: SessionListAutoRefresh.ActiveRowTaskID?
     @State private var settingsPath: [SettingsPane] = []
     @State private var pendingSettingsPath: [SettingsPane]?
-    @State private var reopensSidebarAfterModal = false
     @State private var sidebarFeedback: FeedbackComposer?
     /// The regular-width split view's own width, which sizes its columns (TAL-1453).
     @State private var observedSidebarLayout = SidebarLayoutInputs()
@@ -276,8 +275,7 @@ struct SessionListView: View {
                         ? min(650, max(0, regularSplitWidth - 48)) : nil)
                     .presentationCompactAdaptation(.fullScreenCover)
             }
-            .feedbackPresentation(sidebarFeedback, isEnabled: !isPresentingSettings && !isPresentingUpdateNotifications,
-                                  onDismiss: sidebarModalDidDismiss)
+            .feedbackPresentation(sidebarFeedback, isEnabled: !isPresentingSettings && !isPresentingUpdateNotifications)
             // The sign-in sheet presents from the app root, which cannot stack it over these sheets: close them so a
             // session loss or a Settings "Sign In Again" (TAL-48) always reaches it.
             .onChange(of: authManager.pendingReauthentication) { _, server in
@@ -1749,10 +1747,10 @@ struct SessionListView: View {
     private func openSidebarFeedback() {
         guard sidebarFeedback?.isSending != true else { return }
         let model = FeedbackComposer(server: server, clientMetadata: .current)
-        presentSidebarModal {
-            sidebarFeedback = model
-            model.isPresented = true
-        }
+        // Sheets present over an open drawer, so dismissing one returns straight to it (TAL-2250).
+        dismissSidebarModals()
+        sidebarFeedback = model
+        model.isPresented = true
     }
 
     @ToolbarContentBuilder
@@ -1877,10 +1875,7 @@ struct SessionListView: View {
     /// Commit the destination beneath an open drawer before starting its own slide (TAL-477).
     /// A tiled column keeps the navigation stack's normal push animation.
     private func closeAppSidebar(then navigate: () -> Void) {
-        isPresentingSettings = false
-        sidebarFeedback?.isPresented = false
-        reopensSidebarAfterModal = false
-        pendingSettingsPath = nil
+        dismissSidebarModals()
         guard sidebarDrawerIsEnabled, appSidebar.isPresented else {
             navigate()
             return
@@ -2437,31 +2432,20 @@ struct SessionListView: View {
             settingsPath = path
             return
         }
-        presentSidebarModal {
-            settingsPath = path
-            isPresentingSettings = true
-        }
+        dismissSidebarModals()
+        settingsPath = path
+        isPresentingSettings = true
     }
 
-    private func presentSidebarModal(_ present: @escaping () -> Void) {
-        let reopensSidebar = appSidebar.isPresented
-        closeAppSidebar {
-            reopensSidebarAfterModal = reopensSidebar
-            present()
-        }
+    private func dismissSidebarModals() {
+        isPresentingSettings = false
+        sidebarFeedback?.isPresented = false
+        pendingSettingsPath = nil
     }
 
     private func settingsDidDismiss() {
         guard !isPresentingSettings else { return }
         settingsPath = []
-        sidebarModalDidDismiss()
-    }
-
-    private func sidebarModalDidDismiss() {
-        if reopensSidebarAfterModal, sidebarDrawerIsEnabled {
-            DispatchQueue.main.async { appSidebar.isPresented = true }
-        }
-        reopensSidebarAfterModal = false
     }
 
     private var settingsNavigationStack: some View {

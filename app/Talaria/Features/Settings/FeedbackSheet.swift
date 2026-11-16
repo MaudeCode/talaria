@@ -175,10 +175,10 @@ private struct PickedMovie: Transferable {
 }
 
 extension View {
-    func feedbackPresentation(_ model: FeedbackComposer?, isEnabled: Bool = true, onDismiss: (() -> Void)? = nil) -> some View {
+    func feedbackPresentation(_ model: FeedbackComposer?, isEnabled: Bool = true) -> some View {
         sheet(isPresented: Binding(get: { isEnabled && model?.isPresented == true }, set: { value in
             if isEnabled { model?.isPresented = value }
-        }), onDismiss: onDismiss) {
+        })) {
             if let model { FeedbackSheet(model: model) }
         }
         .overlay(alignment: .top) {
