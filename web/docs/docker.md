@@ -256,6 +256,18 @@ startup and the server reports drift. Do not swap in `hermes-agent:latest`;
 after changing the Agent image, follow
 [Upgrading the agent container](#upgrading-the-agent-container).
 
+The images Talaria builds from are pinned by digest too: `NODE_IMAGE` and the
+uv `COPY --from` image in `web/Dockerfile`, and the `FROM` image in
+`relay/bridge/Dockerfile`. CI (`scripts/check-hosted-runners.py`) fails on an
+image without a `@sha256:` digest and on any `curl … | sh` install in those
+files or `docker_init.bash`. To bump one, resolve the tag's multi-platform index
+digest and replace both the tag and the digest in one dependency-update PR:
+
+```bash
+docker buildx imagetools inspect node:24-slim | grep -m1 Digest
+docker buildx imagetools inspect ghcr.io/astral-sh/uv:<release> | grep -m1 Digest
+```
+
 ### 1. "Permission denied" at startup
 
 **Symptom**: Container starts but immediately crashes, logs show:

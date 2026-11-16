@@ -81,7 +81,11 @@ class RoutingTests(unittest.TestCase):
             (["web/package-lock.json"], {"web_server", "web_frontend", "web_sidecar", "docker", "contracts"}),
             (["web/skills/runtime/SKILL.md"], {"web_server", "web_frontend", "web_sidecar", "docker", "contracts"}),
             (["web/packages/frontend/src/guide.md"], {"web_frontend"}),
-            (["web/Dockerfile", "web/docker-compose.yml", "web/scripts/lib/health_probe.sh"], {"docker", "web_server"}),
+            (["web/docker-compose.yml", "web/scripts/lib/health_probe.sh"], {"docker", "web_server"}),
+            # The tooling job checks the release images' digest pins (TAL-2215).
+            (["web/Dockerfile"], {"docker", "web_server", "tooling"}),
+            (["web/docker_init.bash"], {"docker", "web_server", "tooling"}),
+            (["relay/bridge/Dockerfile"], {"relay", "tooling"}),
             (["web/.env.example"], {"web_server"}),
             (["app/Talaria/Features/Chat/ChatView.swift"], {"app", "app_tooling"}),
             (["app/Talaria/Resources/Guide.md"], {"app"}),

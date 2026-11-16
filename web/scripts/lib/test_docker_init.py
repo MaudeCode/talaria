@@ -292,6 +292,28 @@ class IdentityChange(HomeFixture):
         self.assertFails(result, "Failed to")
 
 
+class MissingUv(unittest.TestCase):
+    """The image ships uv; the entrypoint never downloads a replacement at runtime (TAL-2215)."""
+
+    def test_missing_uv_stops_startup_without_downloading(self):
+        block = re.search(r"^if command -v uv .*?^fi\n", SCRIPT.read_text(), re.M | re.S)
+        self.assertIsNotNone(block, "docker_init.bash no longer checks for uv")
+        with tempfile.TemporaryDirectory(prefix="talaria-docker-init-uv-") as temporary:
+            bin_dir, marker = Path(temporary) / "bin", Path(temporary) / "downloaded"
+            bin_dir.mkdir()
+            for name in ("curl", "sh"):
+                (bin_dir / name).write_text(f"#!{shutil.which('bash')}\necho {name} >> {marker}\n")
+                (bin_dir / name).chmod(0o755)
+            script = f"{entrypoint_code()}\n{block.group(0)}echo STARTUP-CONTINUES\n"
+            result = subprocess.run([shutil.which("bash"), "-c", script], env={"PATH": str(bin_dir)},
+                                    text=True, capture_output=True)
+            self.assertFalse(marker.exists(), marker.read_text() if marker.exists() else "")
+        output = result.stdout + result.stderr
+        self.assertNotEqual(result.returncode, 0, output)
+        self.assertNotIn("STARTUP-CONTINUES", result.stdout)
+        self.assertIn("uv is missing from this image, so the image is damaged. Pull the image again.", output)
+
+
 class SpoofedPyPI(socketserver.ThreadingTCPServer):
     """An HTTPS proxy that answers every CONNECT as pypi.org with a certificate from a test-owned CA."""
 

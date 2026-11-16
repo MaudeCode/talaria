@@ -136,6 +136,38 @@ jobs:
     def test_repository_is_hosted(self):
         self.assertEqual(hosted.violations(), [])
 
+    def test_release_images_need_digests_and_no_piped_installs(self):
+        pinned = "@sha256:" + "a" * 64
+        with tempfile.TemporaryDirectory(prefix="talaria-hosted-") as temporary:
+            root = Path(temporary)
+            (root / "web").mkdir()
+            (root / "relay/bridge").mkdir(parents=True)
+            (root / "web/Dockerfile").write_text(f"""\
+ARG NODE_IMAGE=node:24-slim{pinned}
+FROM --platform=$BUILDPLATFORM ${{NODE_IMAGE}} AS build
+FROM node:24-slim
+COPY --from=build /a /a
+COPY --from=ghcr.io/astral-sh/uv{pinned} /uv /usr/local/bin/
+COPY --from=ghcr.io/astral-sh/uv:0.13 /uvx /usr/local/bin/
+RUN apt-get update \\
+    && curl -LsSf https://example.test/install.sh \\
+    | env INSTALL_DIR=/usr/local/bin sh
+""")
+            (root / "relay/bridge/Dockerfile").write_text("FROM node:24-alpine\nRUN wget -qO- https://example.test/x | bash\n")
+            (root / "web/docker_init.bash").write_text("curl -fsSL https://example.test/x | sh || exit 1\ncurl -o uv.tgz https://example.test/uv\n")
+            found = hosted.image_violations(root)
+        self.assertEqual(found, [
+            "web/Dockerfile: pipes a download into a shell: curl -LsSf https://example.test/install.sh "
+            "| env INSTALL_DIR=/usr/local/bin sh",
+            "web/Dockerfile: node:24-slim is not pinned to a sha256 digest",
+            "web/Dockerfile: ghcr.io/astral-sh/uv:0.13 is not pinned to a sha256 digest",
+            "relay/bridge/Dockerfile: pipes a download into a shell: wget -qO- https://example.test/x | bash",
+            "relay/bridge/Dockerfile: node:24-alpine is not pinned to a sha256 digest",
+            "web/docker_init.bash: pipes a download into a shell: curl -fsSL https://example.test/x | sh"])
+
+    def test_repository_images_are_pinned(self):
+        self.assertEqual(hosted.image_violations(), [])
+
     def test_only_native_jobs_use_macos(self):
         # Hosted macOS allows five concurrent jobs, so each macOS job must still show the native work that
         # needs it; moving a portable job onto macOS fails here. Xcode image jobs select Xcode explicitly.

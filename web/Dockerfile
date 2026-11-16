@@ -1,6 +1,10 @@
+# Every image this build pulls is pinned by digest so a moved tag cannot change a release; web/docs/docker.md has the
+# bump procedure (TAL-2215).
+ARG NODE_IMAGE=node:24-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54
+
 # The frontend bundle is platform-independent, so it is built once natively and only static/dist enters the
 # image; it is not committed (TAL-379). The frontend imports the contracts package, which it builds first.
-FROM --platform=$BUILDPLATFORM node:24-slim AS frontend-build
+FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS frontend-build
 WORKDIR /apptoo
 COPY . /apptoo
 RUN npm ci --no-audit --no-fund --include=dev --workspace packages/contracts --workspace packages/frontend \
@@ -11,7 +15,7 @@ RUN npm ci --no-audit --no-fund --include=dev --workspace packages/contracts --w
 # Build the contracts and server packages natively on the build machine: compiling them (and node-pty) under
 # emulation for a foreign target is what made multi-platform releases slow (TAL-321). node-pty has no Linux
 # prebuilds, so a foreign target cross-compiles it.
-FROM --platform=$BUILDPLATFORM node:24-slim AS node-build
+FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS node-build
 ARG TARGETARCH
 WORKDIR /apptoo
 COPY . /apptoo
@@ -34,7 +38,7 @@ RUN set -eu \
     && npm prune --omit=dev --no-audit --no-fund --workspace packages/contracts --workspace packages/server \
     && rm -rf /root/.npm
 
-FROM node:24-slim
+FROM ${NODE_IMAGE}
 
 LABEL maintainer="MaudeCode"
 LABEL description="Talaria Web — TypeScript server and browser interface for Hermes Agent"
@@ -121,11 +125,9 @@ RUN rm -rf /var/lib/apt/lists/* /etc/apt/apt.conf.d/01proxy \
 
 USER root
 
-# Pre-install uv system-wide so the container doesn't need internet access at runtime
-# to create the Agent venv the sidecar runs on. Installing as root places uv in
-# /usr/local/bin, available to all users; the init script skips the download when
-# uv is already on PATH.
-RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+# uv creates the Agent venv the sidecar runs on. It comes from its digest-pinned release image into
+# /usr/local/bin for all users; the entrypoint refuses to start without it.
+COPY --from=ghcr.io/astral-sh/uv:0.13.8@sha256:5cc1805e2426484abca4ad46ea783bab281fdb225fd82d8ce6d66a81254bac85 /uv /uvx /usr/local/bin/
 
 # Root installs the pinned Agent's Python where the unprivileged entrypoint can find it.
 ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python
