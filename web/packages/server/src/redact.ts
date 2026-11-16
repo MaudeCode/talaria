@@ -115,6 +115,16 @@ const COOKIE_SQ_RE = /((?<!\$)'(?:Set-)?Cookie:\s*)([^'\r\n]*)/gi
 const COOKIE_DQ_RE = /("(?:Set-)?Cookie:\s*)((?:[^"\\\r\n]|\\.)*)/gi
 const COOKIE_BARE_RE = new RegExp(String.raw`((?<!['"])\b(?:Set-)?Cookie:\s*)((?:${QUOTED}|[^'"\\\r\n]|\\(?!"))+)`, 'gi')
 /**
+ * A cookie header's value is a credential when any of its `;` segments is a `name=value` pair, read as
+ * `parseCookieHeader` reads it (whatever whitespace `trim()` drops around `=`, after an empty or flag segment), or,
+ * after `Set-Cookie:`, is one opaque token of 16 or more characters; prose (`The cookie: it was tasty`, `the Set-Cookie:
+ * header`) is not.
+ */
+const cookieHeaderValue = (head: string, value: string): boolean =>
+  /(?:^|;)\s*[!#$%&'*+.^_\x60|~0-9A-Za-z-]+\s*=/.test(value) || (/set-/i.test(head) && /^[^\s\\"';&|<>()$\x60*=]{16,}(?![^\s;])/.test(value))
+/** A credential value for a bare `cookie` key: a `name=value` payload or an opaque token, never code (`getCookie()`). */
+const cookieKeyValue = (value: string): boolean => /^[^=$][^=]*=/.test(value) || looksOpaque(value)
+/**
  * `user:password@host` with no scheme (curl reads it as a URL), or after an expansion that may supply one
  * (`${SCHEME}bob:pw@host`). The password runs from the first `:` to the `@`, colons included (`bob:hunter:2@`);
  * `git@host:org/repo` has no password before its `@`.
@@ -238,10 +248,18 @@ const USER_FLAG_RE = /(?<![A-Za-z0-9-])(?:-[uU][ \t]*|--(?:user|proxy-u(?:s(?:e(
 const USER_FLAG_TEST_RE = new RegExp(USER_FLAG_RE.source)
 const QUERY_KEY_RE = /([?&]key=)([^\s"'&#]+)/gi
 /**
- * A Telegram bot token (`bot<id>:<secret>`): the id stays. The id starts a digit run, so a long number is scanned once
- * rather than from every digit (a match from mid-run would end at the same `:`).
+ * A Telegram bot token (`bot<id>:<secret>`): the id stays. It starts at an identifier boundary, as the Agent's does: a
+ * digit run inside an identifier (`job-a12345678:q-…`) is no bot id, and a long number is scanned once rather than from
+ * every digit. An escape spelling before it (`\n`, `\u0020`, `%0A`, an ANSI color code, raw or escaped) is read as the
+ * character it encodes, so JSON, repr and URL text keep their separators and an encoded letter (`\x41`) is no boundary.
  */
-const TELEGRAM_TOKEN_RE = /(bot)?(?<!\d)(\d{8,}):([-A-Za-z0-9_]{30,})/g
+const TELEGRAM_TOKEN_RE = /(\\[nrtbfv]|\\x[0-9a-fA-F]{2}|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8}|%[0-9a-fA-F]{2}|((?:\x1b|\\x1b|\\u001[bB]|\\033)\[[0-?]*[ -/]*[@-~])|(?<![A-Za-z_\p{Nd}]))(bot)?(\d{8,}):([-A-Za-z0-9_]{30,})/gu
+/** Whether an escape spelling before a Telegram id encodes an identifier character, which joins the id to a word. */
+function encodesIdentifierChar(boundary: string): boolean {
+  if (boundary.length <= 2) return false
+  const code = parseInt(boundary.startsWith('%') ? boundary.slice(1) : boundary.slice(2), 16)
+  return code > 0x10ffff || /^[A-Za-z_\p{Nd}]$/u.test(String.fromCodePoint(code))
+}
 /** An E.164 phone number, masked to its first and last digits; never inside a word or encoded data (`ab+1234567`). */
 const PHONE_RE = /(?<![A-Za-z0-9])\+[1-9]\d{6,14}(?![A-Za-z0-9])/g
 /**
@@ -890,6 +908,15 @@ function redactConnectionStrings(text: string): string {
   return out + text.slice(last)
 }
 
+/**
+ * A key whose only credential name is a bare `cookie` (`cookie`, `self.cookie`, `--cookie`, a `Set-Cookie` header): its
+ * value shape decides. A qualified name (`SESSION_COOKIE`, `X_COOKIE`) masks any value.
+ */
+function weakCookieKey(key: string): boolean {
+  const segments = dequote(key).replace(/^-+/, '').split(/[.:/[\]]/).filter(Boolean)
+  return /^(?:set-)?cookie$/i.test(segments.at(-1) ?? '') && !segments.slice(0, -1).some((segment) => isCredentialKey(segment))
+}
+
 /** Credential parameters (`CRED_PARAM_RE`) with their whole shell-word value fully masked. */
 function redactCredentialParams(text: string, unquotedKeysOnly = false): string {
   let out = ''
@@ -968,6 +995,7 @@ function redactCredentialParams(text: string, unquotedKeysOnly = false): string 
     const quoted = /["']/.test(value)
     // Nothing to mask: empty or already masked.
     if (!inner.trim() || inner === '***') continue
+    if (weakCookieKey(key) && !cookieKeyValue(inner)) continue
     if (basicPair) {
       const pair = /^([A-Za-z0-9._~-]{2,}):([^/@]+)$/s.exec(shellDequote(value))
       if (!pair) continue
@@ -2093,7 +2121,7 @@ function redactRules(text: string): string {
   out = out.replace(JWT_RE, (t) => mask(t))
   out = out.replace(WEBAPP_LINK_CREDENTIAL_RE, (_, head: string) => `${head}***`)
   out = redactHeaderCredentials(out, BEARER_RE)
-  for (const re of [COOKIE_ANSI_RE, COOKIE_SQ_RE, COOKIE_DQ_RE, COOKIE_BARE_RE]) out = out.replace(re, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${head}***` : whole))
+  for (const re of [COOKIE_ANSI_RE, COOKIE_SQ_RE, COOKIE_DQ_RE, COOKIE_BARE_RE]) out = out.replace(re, (whole, head: string, value: string) => (cookieHeaderValue(head, value) ? `${head}***` : whole))
   out = redactCredentialParams(out)
   if (hasAssignment) {
     if (assignmentScan.hasSubscribers) assignmentScan.publish({ purpose: 'mask', characters: out.length })
@@ -2112,7 +2140,7 @@ function redactRules(text: string): string {
   out = out.replace(BARE_USERINFO_RE, (_, head: string, secret: string) => head + mask(secret))
   out = out.replace(URL_USERINFO_RE, (_, head: string, secret: string) => head + (/['"\\]/.test(secret) ? '***' : mask(secret)))
   out = out.replace(URL_BARE_TOKEN_RE, (_, head: string, token: string) => head + (token.length < 8 && token.endsWith('***') ? token : mask(token)))
-  out = out.replace(TELEGRAM_TOKEN_RE, (_, bot: string | undefined, id: string) => `${bot ?? ''}${id}:***`)
+  out = out.replace(TELEGRAM_TOKEN_RE, (whole, boundary: string, csi: string | undefined, bot: string | undefined, id: string) => (!csi && encodesIdentifierChar(boundary) ? whole : `${boundary}${bot ?? ''}${id}:***`))
   out = out.replace(PHONE_RE, (phone) => { const keep = phone.length <= 8 ? 2 : 4; return `${phone.slice(0, keep)}****${phone.slice(-keep)}` })
   out = redactUserFlags(out)
   out = redactCommandFlags(out)
@@ -2137,7 +2165,7 @@ const LOWER_MARKERS = [
   'x-amz-signature', 'token=', 'secret=', 'password=', 'passwd', 'password', 'secret', 'token', 'api-key', 'apikey', 'clientsecret', 'private_key', 'credential', ' -u ', '--user ', 'authorization', 'signature', 'bearer ', 'cookie:', 'authorization=', 'key=', '"token"', '"secret"', '"password"', '"bearer"',
 ]
 const DISCORD_RE = /<@!?\d{17,20}>/
-const TELEGRAM_TEST_RE = new RegExp(TELEGRAM_TOKEN_RE.source)
+const TELEGRAM_TEST_RE = new RegExp(TELEGRAM_TOKEN_RE.source, 'u')
 const PHONE_TEST_RE = new RegExp(PHONE_RE.source)
 
 /**

@@ -1330,6 +1330,39 @@ const AGENT_PARITY: Record<string, [string, string][]> = {
     [`sk-${'a'.repeat(15)}\x1b${'b'.repeat(25)}`, 'sk-aaa...bbbb'],
     [`copied ghp_${'F'.repeat(29)}\nbutton [ref=e3]: Copy`, 'copied ghp_FF...FFFF\nbutton [ref=e3]: Copy'],
   ],
+  // Agent 3b421578: tests/agent/test_redact_telegram_boundary.py. A digit run inside an identifier is no bot id.
+  'v0.23.1 Telegram tokens start at an identifier boundary': [
+    ['ITEM-000042:job-a12345678:q-abcdefghijklmnopqrstuvwxyzABCDEF12', 'ITEM-000042:job-a12345678:q-abcdefghijklmnopqrstuvwxyzABCDEF12'],
+    ...['a', 'Z', '_', 'job-a', 'a0'].flatMap((prefix) => ['q-', 'rv-', 'prior-'].map((run): [string, string] => {
+      const payload = JSON.stringify({ research_pending: [{ key: `ITEM-000042:job-${prefix}12345678:${run}${'a'.repeat(32)}` }] })
+      return [payload, payload]
+    })),
+    ...['', 'bot'].flatMap((bot) => ['\\u0061', '\\u005f', '\\u0031', '\\u0661', '\\x41', '%41', '%5F', '%31'].map((left): [string, string] => [`${left}${bot}987654321:q-${'z'.repeat(32)}`, `${left}${bot}987654321:q-${'z'.repeat(32)}`])),
+    ...['', 'bot'].flatMap((bot) => ['', 'see ', "'", '"', '(', '=', '/', ':', '令牌：', '令牌', 'https://api.telegram.org/'].map((left): [string, string] => [`${left}${bot}123456789:${'Ab_9-'.repeat(7)} end`, `${left}${bot}123456789:*** end`])),
+    ...['', 'bot'].flatMap((bot) => ['\\n', '\\t', '\\r', '\\b', '\\f', '\\v', '\\x1b', '\\u0000', '\\u4ee4\\u724c', '\\u0020', '\\U0001f600', '%0A', '%0a', '%09', '%20', '%3A', 'https://example.invalid/?message=%0A'].map((left): [string, string] => [`${left}${bot}987654321:${'Qa_7-'.repeat(7)} end`, `${left}${bot}987654321:*** end`])),
+    ...['', 'bot'].flatMap((bot) => ['\n', '\t', '凭据'].map((message): [string, string] => [JSON.stringify({ message: `${message}${bot}987654321:${'Qa_7-'.repeat(7)}` }), JSON.stringify({ message: `${message}${bot}987654321:***` })])),
+    // An ANSI color code, JSON- or repr-escaped, is a separator; its final letter is no identifier.
+    ...['\\u001b[32m', '\\x1b[1;32m', '\\033[0m'].map((color): [string, string] => [`{"line":"${color}987654321:${'Qa_7-'.repeat(7)}"}`, `{"line":"${color}987654321:***"}`]),
+  ],
+  // Agent 3b421578: tests/agent/test_redact_cookies.py. A cookie header or assignment is a credential; cookie prose is not.
+  'v0.23.1 cookie credentials and cookie prose': [
+    ...['The cookie: it was tasty', 'The cookie: it was delicious', 'cookies enabled now', 'cookie_policy: strict', 'mycookiejar=1', 'Cookie.set("name", value)', 'the Set-Cookie: header sets state', 'if cookie == expected:', 'GET https://example.com/cb?cookie=abc123&x=1', 'cookie = getCookie()', 'self.cookie = cookie', 'cookie=None', 'cookie=$(cat jar)', '{"cookie": "chocolate"}'].map((prose): [string, string] => [prose, prose]),
+    ['cookie=opaque-session-value-1234567890; Path=/', 'cookie=***; Path=/'],
+    ['export SESSION_COOKIE=opaqueSessionValue1234567890', 'export SESSION_COOKIE=***'],
+    ['X_COOKIE=abc123def', 'X_COOKIE=***'],
+    ['INFO upstream Cookie: a=1; sid=opaqueSessionValue1234567890; theme=dark user=bob', 'INFO upstream Cookie: ***'],
+    ['Cookie: session=abc123', 'Cookie: ***'],
+    ['Cookie: hermes_session = syntheticSessionValue1234567890', 'Cookie: ***'],
+    ['Cookie: ; hermes_session=syntheticSessionValue1234567890', 'Cookie: ***'],
+    ['Cookie: hermes_session\u00a0=syntheticSessionValue1234567890', 'Cookie: ***'],
+    ['Cookie:\u00a0;\u00a0hermes_session=syntheticSessionValue1234567890', 'Cookie:\u00a0***'],
+    ['Cookie: flag; hermes_session=syntheticSessionValue1234567890', 'Cookie: ***'],
+    [`curl -H 'Cookie: hermes_session = syntheticSessionValue1234567890' x`, `curl -H 'Cookie: ***' x`],
+    ['Set-Cookie: sid=xyz; Path=/', 'Set-Cookie: ***'],
+    ['Set-Cookie: opaqueSessionValue1234567890', 'Set-Cookie: ***'],
+    ['export SESSION_COOKIE="a=1; sid=opaqueSessionValue1234567890"', 'export SESSION_COOKIE="***"'],
+    ['INFO upstream Cookie: sid="opaqueSessionValue1234567890"', 'INFO upstream Cookie: ***'],
+  ],
 }
 
 describe('Agent redactor parity', () => {
