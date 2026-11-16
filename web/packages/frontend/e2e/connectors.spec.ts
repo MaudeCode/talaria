@@ -120,7 +120,7 @@ test('the Connectors tab follows the server flag (TAL-818)', async ({ page }) =>
   await page.goto('/settings/tools?tab=connectors')
   await settle(page)
   const tabs = page.getByRole('tablist', { name: 'Tools' })
-  await expect(tabs.getByRole('tab', { name: 'Plugins' })).toHaveAttribute('aria-selected', 'true')
+  await expect(tabs.getByRole('tab', { name: 'Toolsets' })).toHaveAttribute('aria-selected', 'true')
   await expect(tabs.getByRole('tab', { name: 'Connectors' })).toHaveCount(0)
   available = true
   await page.reload()
