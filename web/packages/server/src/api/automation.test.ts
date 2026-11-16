@@ -91,6 +91,8 @@ describe('crons, kanban, extensions, terminal', () => {
       if (url === 'http://127.0.0.1:4567/redirect') return Promise.resolve(new Response(null, { status: 302, headers: { location: '/ping?via=redirect' } }))
       if (url === 'http://127.0.0.1:4567/redirect-out') return Promise.resolve(new Response(null, { status: 302, headers: { location: 'http://127.0.0.1:9999/ping' } }))
       if (url === 'http://127.0.0.1:4567/loop') return Promise.resolve(new Response(null, { status: 302, headers: { location: '/loop' } }))
+      if (url === 'http://127.0.0.1:4567/page') return Promise.resolve(new Response('<script>alert(document.cookie)</script>', { status: 200, headers: { 'content-type': 'text/html', 'content-security-policy': "script-src 'unsafe-inline'", 'content-security-policy-report-only': 'default-src *', 'x-frame-options': 'ALLOWALL', 'x-content-type-options': 'sniff', 'referrer-policy': 'unsafe-url', 'permissions-policy': 'camera=*', 'report-to': '{}', 'content-disposition': 'inline' } }))
+      if (url === 'http://127.0.0.1:4567/data') return Promise.resolve(new Response('{"ok":true}', { status: 201, headers: { 'content-type': 'application/json' } }))
       if (url === 'http://127.0.0.1:4567/big') return Promise.resolve(new Response(new ReadableStream({ pull(c) { c.enqueue(new Uint8Array(64 * 1024)) } }), { status: 200, headers: { 'content-type': 'application/octet-stream' } }))
       if (url.startsWith('http://127.0.0.1:4567/')) {
         const sent = new Headers(init?.headers ?? {})
@@ -716,6 +718,22 @@ describe('crons, kanban, extensions, terminal', () => {
     }
     expect(res.headers.get('set-cookie')).toBeNull()
     expect(res.headers.get('x-hermes-secret')).toBeNull()
+    // TAL-2220: the proxy is a data channel, never an app-origin document; the upstream's security headers never stand.
+    const appCsp = (await s.get('/api/extensions/manifests')).headers.get('content-security-policy')
+    const page = await s.get('/api/extensions/ext-one/sidecar/page', { headers: browserHeaders })
+    expect(page.status).toBe(200)
+    expect(page.headers.get('content-type')).toBe('text/html')
+    expect(page.headers.get('content-security-policy')).toBe(`${appCsp ?? ''}, sandbox`)
+    expect(page.headers.get('content-security-policy-report-only')).not.toBe('default-src *')
+    expect(page.headers.get('x-content-type-options')).toBe('nosniff')
+    expect(page.headers.get('x-frame-options')).toBe('DENY')
+    expect(page.headers.get('referrer-policy')).toBe('same-origin')
+    expect(page.headers.get('permissions-policy')).not.toBe('camera=*')
+    expect(page.headers.get('content-disposition')).toBe('attachment')
+    const data = await s.get('/api/extensions/ext-one/sidecar/data', { headers: browserHeaders })
+    expect(data.status).toBe(201)
+    expect(data.headers.get('content-type')).toBe('application/json')
+    expect(await data.json()).toEqual({ ok: true })
     // Same-origin redirects are followed server-side; cross-origin hops, loops, and oversized bodies answer 502.
     res = await post(s, '/api/extensions/ext-one/sidecar/redirect', { a: 1 }, 'POST', browserHeaders)
     expect(res.status).toBe(200)

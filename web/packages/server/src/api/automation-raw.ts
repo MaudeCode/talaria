@@ -19,6 +19,8 @@ import { ifNoneMatchMatches } from '../workspace/media.js'
 const KANBAN_HEARTBEAT_MS = 15_000
 const PROXY_MAX_RESPONSE = 512 * 1024
 const PROXY_MAX_REDIRECTS = 10
+/** Upstream response headers the proxy never forwards: framing/transport ones it owns, and the security headers the app sets. */
+const PROXY_DROPPED_RESPONSE_HEADERS = new Set(['content-length', 'set-cookie', 'content-encoding', 'content-security-policy', 'content-security-policy-report-only', 'x-frame-options', 'x-content-type-options', 'referrer-policy', 'permissions-policy', 'report-to', 'content-disposition'])
 const PROXY_RE = /^\/api\/extensions\/([^/]+)\/sidecar(?:\/(.*))?$/
 const HOP_BY_HOP = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade'])
 
@@ -285,17 +287,22 @@ export async function handleExtensionSidecarProxy(ctx: RequestContext, extension
     }
     const raw = await readCapped(res, PROXY_MAX_RESPONSE)
     if (raw === null) { (await ctx.json({ error: 'Extension sidecar response too large' }, { status: 502 })); return }
-    const out: Record<string, string> = {}
+    const out: Record<string, string | string[]> = {}
     let contentType = false
     const responseBound = connectionBoundNames(res.headers.get('connection'))
     res.headers.forEach((value, name) => {
       const lower = name.toLowerCase()
-      if (HOP_BY_HOP.has(lower) || responseBound.has(lower) || lower === 'content-length' || lower === 'set-cookie' || lower === 'content-encoding' || lower.startsWith('x-hermes-')) return
+      if (HOP_BY_HOP.has(lower) || responseBound.has(lower) || PROXY_DROPPED_RESPONSE_HEADERS.has(lower) || lower.startsWith('x-hermes-')) return
       if (lower === 'content-type') contentType = true
       out[name] = value
     })
     if (!contentType) out['Content-Type'] = 'application/octet-stream'
     out['Cache-Control'] = 'no-store'
+    // TAL-2220: the proxy is a data channel for the panel's fetch, never an app-origin document. The app's security
+    // headers stand, a second CSP header sandboxes the response, and a navigation downloads it instead of rendering.
+    const page = ctx.securityHeaders()['Content-Security-Policy']
+    out['Content-Security-Policy'] = [...(typeof page === 'string' ? [page] : []), 'sandbox']
+    out['Content-Disposition'] = 'attachment'
     await ctx.send({ status: res.status, headers: out, body: raw, security: true, gzip: false })
   } catch (error) {
     ctx.deps.log(`[webui] extension sidecar proxy failed: ${str((error as Error).message)}`)
