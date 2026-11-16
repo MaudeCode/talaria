@@ -2020,10 +2020,16 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     rmSync(join(s.state, 'profiles', 'escape'))
     rmSync(outside, { recursive: true, force: true })
     // An update issued during the same profile's delete waits for it, then is refused because the profile is gone.
+    // The update is posted only once the delete has reached the sidecar, however long that takes on the runner.
     let finishDelete: () => void = () => undefined
-    sidecar.respond('profiles.delete', (params) => new Promise((resolve) => { finishDelete = () => { rmSync(join(s.state, 'profiles', params.name), { recursive: true, force: true }); resolve({ ok: true }) } }))
+    let deleteStarted: () => void = () => undefined
+    const deleteReachedSidecar = new Promise<void>((r) => { deleteStarted = r })
+    sidecar.respond('profiles.delete', (params) => new Promise((resolve) => {
+      finishDelete = () => { rmSync(join(s.state, 'profiles', params.name), { recursive: true, force: true }); resolve({ ok: true }) }
+      deleteStarted()
+    }))
     const deleting = post(s, '/api/profile/delete', { name: 'zeta' })
-    await new Promise((r) => setTimeout(r, 50))
+    await deleteReachedSidecar
     let settled = false
     const updating = post(s, '/api/profile/update', { name: 'zeta', display_name: 'Late' }).then((r) => { settled = true; return r })
     await new Promise((r) => setTimeout(r, 50))
