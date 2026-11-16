@@ -512,12 +512,13 @@ export const toolsRouter = os.router({
     return catalogRows(catalog, input.q?.trim().toLowerCase())
   })),
   toolsetDefaults: os.toolsetDefaults.handler(({ context: { ctx } }) => run(async () => catalogRows(await runningSidecar(ctx).call('toolsets.defaults', { profile_home: home(ctx) })))),
-  // The sidecar saves with the Agent's own saver; holding the per-file lock orders it with every other config.yaml write.
+  // The sidecar applies the one toggle to the saved list with the Agent's own saver; holding the per-file lock makes that
+  // read-modify-write atomic against every other config.yaml write, so two toggles never overwrite each other.
   toolsetDefaultsSet: os.toolsetDefaultsSet.handler(({ input, context: { ctx } }) => run(async () => {
     const profileHome = home(ctx)
     let saved: ToolsetsCatalog | undefined
     await ctx.deps.agentConfig.update(profileHome, async () => {
-      saved = await runningSidecar(ctx).call('toolsets.set_defaults', { profile_home: profileHome, toolsets: input.toolsets }).catch(inputFailure)
+      saved = await runningSidecar(ctx).call('toolsets.set_default', { profile_home: profileHome, name: input.name, enabled: input.enabled }).catch(inputFailure)
       return false
     })
     return catalogRows(saved!)

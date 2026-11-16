@@ -17,7 +17,7 @@ import { teardownAll } from '../../stream/connection'
 import { showToast } from '../toast/toast'
 import { ApiError } from '../../contracts'
 
-vi.mock('../../api/endpoints', () => ({ removeConnectorAccount: vi.fn(), fetchSkillContent: vi.fn(), deleteSkill: vi.fn(), saveSkill: vi.fn(), fetchSkills: vi.fn(), fetchSkillsUsage: vi.fn(), toggleSkill: vi.fn(), fetchMcpServers: vi.fn(), fetchMcpTools: vi.fn(), toggleMcpServer: vi.fn(), fetchToolsetDefaults: vi.fn(), saveToolsetDefaults: vi.fn(), fetchExtensionRegistry: vi.fn(), extensionAction: vi.fn(), fetchConnectors: vi.fn(), fetchConnectorTools: vi.fn(), setConnectorRule: vi.fn() }))
+vi.mock('../../api/endpoints', () => ({ removeConnectorAccount: vi.fn(), fetchSkillContent: vi.fn(), deleteSkill: vi.fn(), saveSkill: vi.fn(), fetchSkills: vi.fn(), fetchSkillsUsage: vi.fn(), toggleSkill: vi.fn(), fetchMcpServers: vi.fn(), fetchMcpTools: vi.fn(), toggleMcpServer: vi.fn(), fetchToolsetDefaults: vi.fn(), saveToolsetDefault: vi.fn(), fetchExtensionRegistry: vi.fn(), extensionAction: vi.fn(), fetchConnectors: vi.fn(), fetchConnectorTools: vi.fn(), setConnectorRule: vi.fn() }))
 vi.mock('../../shell/AppShell', () => ({ HubPage: ({ children, toolbar }: { children: ReactNode; toolbar?: ReactNode }) => <main>{toolbar}{children}</main> }))
 vi.mock('../pending-writes/PendingWritesPanel', () => ({ PendingWritesPanel: () => null }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
@@ -36,7 +36,7 @@ const cases = [
   { name: 'MCP', ui: <McpSection />, key: keys.mcp.servers, snapshot: mcp, read: () => vi.mocked(api.fetchMcpServers), write: () => vi.mocked(api.toggleMcpServer) },
   { name: 'extension', ui: <ExtensionsSection />, key: [...keys.extensions.manifests, { q: '' }], snapshot: extensions, read: () => manifests, write: () => vi.mocked(api.extensionAction) },
   { name: 'connector', ui: <ConnectorsSection />, key: keys.connectors.page, snapshot: connectors, read: () => vi.mocked(api.fetchConnectors), write: () => vi.mocked(api.setConnectorRule) },
-  { name: 'default toolset', ui: <ToolsetDefaultsSection />, key: keys.toolsetDefaults, snapshot: toolsetDefaults, read: () => vi.mocked(api.fetchToolsetDefaults), write: () => vi.mocked(api.saveToolsetDefaults) },
+  { name: 'default toolset', ui: <ToolsetDefaultsSection />, key: keys.toolsetDefaults, snapshot: toolsetDefaults, read: () => vi.mocked(api.fetchToolsetDefaults), write: () => vi.mocked(api.saveToolsetDefault) },
 ]
 
 beforeEach(() => {
@@ -353,7 +353,7 @@ it('sends a second skill save only after the first answers, so the newest text l
   await waitFor(() => expect(api.saveSkill).toHaveBeenLastCalledWith('alpha', '# alpha!?'))
 })
 
-it('saves the whole default toolset list with the flipped row, and offers no switch the server refuses (TAL-2282)', async () => {
+it('saves only the flipped default toolset, and offers no switch the server refuses (TAL-2282)', async () => {
   const c = cases.find((item) => item.name === 'default toolset')!
   const write = deferred<never>()
   c.write().mockReturnValue(write.promise)
@@ -367,5 +367,5 @@ it('saves the whole default toolset list with the flipped row, and offers no swi
   expect(within(unavailable).getByRole('switch', { name: 'browser' })).toHaveAttribute('aria-disabled', 'true')
   expect(within(unavailable).getByText('Unavailable')).toBeInTheDocument()
   fireEvent.click(control('beta'))
-  await waitFor(() => expect(c.write()).toHaveBeenCalledWith(['beta', 'gamma']))
+  await waitFor(() => expect(c.write()).toHaveBeenCalledWith('beta', true))
 })

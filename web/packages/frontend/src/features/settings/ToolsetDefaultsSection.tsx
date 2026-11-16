@@ -14,26 +14,22 @@ const resource = (name: string) => `toolset-default:${name}`
 
 /**
  * TAL-2282: the toolsets every new chat in the active profile starts with. Each switch shows the choice at once and
- * saves the whole list; the server decides which rows are offered, available, and can be turned off.
+ * saves only its own toolset; the server decides which rows are offered, available, and can be turned off.
  */
 export function ToolsetDefaultsSection() {
   const effects = useResourceEffects<boolean>()
   const query = useQuery({ queryKey: keys.toolsetDefaults, queryFn: api.fetchToolsetDefaults })
   const save = useResourceMutation({
-    resource: ({ name }: { name: string; on: boolean; toolsets: string[] }) => resource(name),
+    resource: ({ name }: { name: string; on: boolean }) => resource(name),
     effect: ({ on }) => ({ value: on }),
     queryKey: keys.toolsetDefaults,
-    mutationFn: ({ toolsets }: { name: string; on: boolean; toolsets: string[] }) => api.saveToolsetDefaults(toolsets),
+    mutationFn: ({ name, on }: { name: string; on: boolean }) => api.saveToolsetDefault(name, on),
     onError: () => showToast(m.toolset_defaults_save_failed(), 5000, 'error'),
   })
   if (query.isPending) return <LoadingState />
   if (query.isError && !query.data) return <ErrorState error={query.error} onRetry={() => { void query.refetch() }} />
   const rows = query.data.toolsets
-  const shown = (row: ToolsetRow) => effects[resource(row.name)]?.value ?? row.selected
-  const toggle = (row: ToolsetRow, on: boolean) => {
-    const toolsets = rows.filter((item) => (item.name === row.name ? on : shown(item))).map((item) => item.name)
-    save.mutate({ name: row.name, on, toolsets })
-  }
+  const toggle = (row: ToolsetRow, on: boolean) => { save.mutate({ name: row.name, on }) }
   const list = (items: ToolsetRow[], label: string) => (
     <RowList aria-label={label}>
       {items.map((row) => <ToolsetDefaultRow key={row.name} row={row} effect={effects[resource(row.name)]} onToggle={toggle} />)}

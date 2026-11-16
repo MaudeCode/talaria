@@ -88,20 +88,25 @@ def defaults() -> dict:
     return {**result, 'toolsets': rows}
 
 
-def set_defaults(names) -> dict:
+def set_default(name, enabled) -> dict:
+    """Turn one toolset on or off in the profile's saved defaults, read fresh, so each write changes only its own toolset."""
+    if not isinstance(name, str) or not isinstance(enabled, bool):
+        raise InvalidParams('name must be a toolset name and enabled a boolean')
+    current = defaults()  # discovers the profile's plugins, so their toolsets are choices too
+    if name not in _checklist():
+        raise InvalidParams(f'unknown toolset: {name}')
+    chosen = [row['name'] for row in current['toolsets'] if row['selected'] and row['name'] != name]
+    _save_defaults(chosen + [name] if enabled else chosen)
+    return defaults()
+
+
+def _save_defaults(names: list[str]) -> None:
     """Save ``names`` as the profile's ``platform_toolsets.cli`` with the Agent's own ``hermes tools`` saver, which keeps
     MCP server entries and clears the ``agent.disabled_toolsets`` entries a chosen toolset covers."""
     from agent.skill_utils import parse_config_string_list
     from hermes_cli import tools_config
     from hermes_cli.config import load_config
-    from hermes_cli.plugins import discover_plugins
 
-    if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
-        raise InvalidParams('toolsets must be a list of toolset names')
-    discover_plugins()  # the profile's plugin toolsets are choices too
-    unknown = sorted(set(names) - _checklist())
-    if unknown:
-        raise InvalidParams(f"unknown toolsets: {', '.join(unknown)}")
     config = load_config()
     platforms = config.get('platform_toolsets') if isinstance(config.get('platform_toolsets'), dict) else {}
     saved = tools_config._coerce_platform_toolsets_value(platforms.get('cli'), 'cli')
@@ -114,7 +119,6 @@ def set_defaults(names) -> dict:
         disabled.append(harness_toolset.TOOLSET)
     config['agent'] = {**agent, 'disabled_toolsets': disabled}
     tools_config._save_platform_tools(config, 'cli', set(names) - set(_OWN))  # also saves the config
-    return defaults()
 
 
 def register(registry) -> None:
@@ -128,7 +132,7 @@ def register(registry) -> None:
         with scoped_home(profile_home_param(params)):
             return defaults()
 
-    @registry.method('toolsets.set_defaults')
-    def set_defaults_(ctx, params):
+    @registry.method('toolsets.set_default')
+    def set_default_(ctx, params):
         with scoped_home(profile_home_param(params)):
-            return set_defaults(params.get('toolsets'))
+            return set_default(params.get('name'), params.get('enabled'))

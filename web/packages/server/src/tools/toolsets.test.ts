@@ -102,18 +102,18 @@ it('reads the profile default toolsets and saves them under the config.yaml lock
   let release!: () => void
   const held = new Promise<void>((resolve) => { release = resolve })
   sidecar.respond('toolsets.defaults', () => catalog())
-  sidecar.respond('toolsets.set_defaults', async (params) => {
-    if (params.toolsets.includes('synthetic-mcp')) throw new SidecarError('unknown toolsets: synthetic-mcp', { code: -32602, condition: 'invalid_params' })
+  sidecar.respond('toolsets.set_default', async (params) => {
+    if (params.name === 'synthetic-mcp') throw new SidecarError('unknown toolset: synthetic-mcp', { code: -32602, condition: 'invalid_params' })
     order.push('save:start')
     await held
-    defaults = params.toolsets
+    defaults = params.enabled ? [...defaults, params.name] : defaults.filter((name) => name !== params.name)
     order.push('save:end')
     return catalog()
   })
   sidecar.respond('config.get', (params) => ({ path: params.config_path ?? join(params.profile_home, 'config.yaml'), exists: true, config: {} }))
   sidecar.respond('config.set', (params) => { order.push('other-write'); return { ok: true as const, path: params.config_path } })
   const s = await bootTestServer({ sidecar })
-  const put = (toolsets: string[]) => s.get('/api/toolsets/defaults', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ toolsets }) })
+  const put = (name: string, enabled: boolean) => s.get('/api/toolsets/defaults', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, enabled }) })
   const view = async (response: Response) => {
     expect(response.status).toBe(200)
     const parsed = ToolsetsCatalogSchema.parse(await response.json())
@@ -121,7 +121,7 @@ it('reads the profile default toolsets and saves them under the config.yaml lock
   }
   try {
     expect(await view(await s.get('/api/toolsets/defaults'))).toEqual({ defaults: ['file'], rows: [['file', true, false], ['talaria', false, true], ['missing', false, false]] })
-    const saving = put(['file', 'talaria'])
+    const saving = put('talaria', true)
     await vi.waitFor(() => { expect(order).toEqual(['save:start']) })
     // Another config.yaml write for the same profile waits for the save.
     const other = s.deps.agentConfig.update(s.deps.config.hermesHome, (config) => { config.marker = true })
@@ -131,7 +131,7 @@ it('reads the profile default toolsets and saves them under the config.yaml lock
     expect(await view(await saving)).toEqual({ defaults: ['file', 'talaria'], rows: [['file', true, true], ['talaria', true, true], ['missing', false, false]] })
     await other
     expect(order).toEqual(['save:start', 'save:end', 'other-write'])
-    const refused = await put(['synthetic-mcp'])
+    const refused = await put('synthetic-mcp', true)
     expect(refused.status).toBe(400)
   } finally { await s.close() }
 })

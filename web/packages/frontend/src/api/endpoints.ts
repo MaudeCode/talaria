@@ -159,7 +159,7 @@ export const setSessionYolo = (session_id: SessionId, enabled: boolean) => orpc(
 export const fetchSessionYolo = (session_id: SessionId) => orpc().session.yoloGet({ session_id })
 export const fetchToolsetsCatalog = (toolsets: string[] | null, session_id?: string, q = '') => orpc().toolsetsCatalog({ toolsets, ...(session_id ? { session_id } : {}), ...(q ? { q } : {}) })
 export const fetchToolsetDefaults = () => orpc().toolsetDefaults()
-export const saveToolsetDefaults = (toolsets: string[]) => orpc().toolsetDefaultsSet({ toolsets })
+export const saveToolsetDefault = (name: string, enabled: boolean) => orpc().toolsetDefaultsSet({ name, enabled })
 export const setSessionToolsets = (session_id: SessionId, toolsets: string[] | null) => orpc().session.toolsets({ session_id, toolsets })
 export const compressSession = (session_id: SessionId) => orpc().session.compressStart({ session_id })
 export const compressStatus = (session_id: SessionId) => orpc().session.compressStatus({ session_id })

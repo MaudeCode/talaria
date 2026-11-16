@@ -338,7 +338,13 @@ def test_default_toolsets_save_through_the_agent_saver_and_keep_talarias_own(han
     assert {'file', 'talaria', 'harness'} <= set(rows)
     assert rows['todo']['available'] is True and rows['todo']['selected'] is False and rows['todo']['group'] == 'available'
 
-    result = handshaken.result('toolsets.set_defaults', {**params, 'toolsets': ['file', 'todo', 'talaria', 'harness']})
+    def toggle(name: str, enabled: bool) -> dict:
+        return handshaken.result('toolsets.set_default', {**params, 'name': name, 'enabled': enabled})
+
+    # Each write changes only its own toolset in the saved list, so interleaved switches never undo each other.
+    toggle('todo', True)
+    toggle('talaria', True)
+    result = toggle('terminal', False)
     config = saved()
     assert sorted(config['platform_toolsets']['cli']) == ['file', 'synthetic-mcp', 'talaria', 'todo']
     assert config['platform_toolsets']['telegram'] == ['hermes-telegram']
@@ -346,7 +352,8 @@ def test_default_toolsets_save_through_the_agent_saver_and_keep_talarias_own(han
     assert {'file', 'todo', 'talaria', 'harness'} <= set(defaults_now()) and 'terminal' not in defaults_now()
     assert result['default_toolsets'] == defaults_now()
 
-    handshaken.result('toolsets.set_defaults', {**params, 'toolsets': ['file']})
+    for name in ('talaria', 'todo', 'harness'):
+        toggle(name, False)
     config = saved()
     assert sorted(config['platform_toolsets']['cli']) == ['file', 'synthetic-mcp']
     assert 'harness' in config['agent']['disabled_toolsets']
@@ -354,11 +361,11 @@ def test_default_toolsets_save_through_the_agent_saver_and_keep_talarias_own(han
     harness = next(row for row in handshaken.result('toolsets.defaults', params)['toolsets'] if row['name'] == 'harness')
     assert harness['available'] is True and harness['selected'] is False
 
-    handshaken.result('toolsets.set_defaults', {**params, 'toolsets': ['file', 'harness']})
+    toggle('harness', True)
     assert 'harness' not in (saved().get('agent') or {}).get('disabled_toolsets', [])
     assert 'harness' in defaults_now()
 
     before = config_file.read_bytes()
-    message, _ = handshaken.call('toolsets.set_defaults', {**params, 'toolsets': ['file', 'synthetic-mcp']})
+    message, _ = handshaken.call('toolsets.set_default', {**params, 'name': 'synthetic-mcp', 'enabled': True})
     assert message['error']['code'] == -32602 and 'synthetic-mcp' in message['error']['message']
     assert config_file.read_bytes() == before
