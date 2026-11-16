@@ -151,6 +151,62 @@ final class ImagePreviewPerformanceTests: XCTestCase {
     }
 }
 
+/// A long Markdown file preview's preparation and first layout, drawn whole against drawn in lazy chunks (TAL-844).
+///
+/// Drawn whole, the preview parses and lays out every block before its first frame although one screen shows; split
+/// into chunks in a `LazyVStack`, only the chunks on screen are built. The whole-file pair is the path this replaced.
+@MainActor
+final class MarkdownFilePreviewPerformanceTests: XCTestCase {
+    func testWholeFilePreparationAndFirstLayout() throws {
+        try measureFirstLayout { [MarkdownPreviewChunk(id: 0, text: $0, topSpacing: 0)] }
+    }
+
+    func testChunkedPreparationAndFirstLayout() throws {
+        try measureFirstLayout { MarkdownPreviewChunk.chunks(for: $0) }
+    }
+
+    private func measureFirstLayout(_ prepare: @escaping (String) -> [MarkdownPreviewChunk]) throws {
+        let markdown = Self.fixture
+        XCTAssertNil(MarkdownContentRenderingPolicy.fallbackReason(for: markdown))
+        measure(metrics: [XCTClockMetric(), XCTMemoryMetric()], options: performanceOptions()) {
+            let chunks = prepare(markdown)
+            guard let window = try? HostedScene.window(size: HostedSize.phone) else { return XCTFail("No hosted window") }
+            window.rootViewController = UIHostingController(rootView: ScrollView {
+                MarkdownPreviewDocument(chunks: chunks) { Text(verbatim: "NOTES.md") }.padding()
+            })
+            window.makeKeyAndVisible()
+            window.layoutIfNeeded()
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+    }
+
+    /// 43 sections, each a heading, two paragraphs, a 14-line Swift block and a list: about 60 KB, under the plain-text
+    /// fallback's 80,000 characters and 2,000 lines.
+    private static let fixture = (0..<43).map { section in
+        let paragraph = (0..<6).map { "Sentence \($0) of section \(section) describes the change in plain words." }
+            .joined(separator: " ")
+        let code = (0..<12).map { "    let value\($0) = compute(section: \(section), step: \($0))" }.joined(separator: "\n")
+        return """
+        ## Section \(section)
+
+        \(paragraph)
+
+        \(paragraph)
+
+        ```swift
+        func section\(section)() {
+        \(code)
+        }
+        ```
+
+        - First item of section \(section)
+        - Second item of section \(section)
+
+        """
+    }.joined(separator: "\n")
+}
+
 /// A 5,000-line `diff` block against the same block drawn plain (TAL-447).
 ///
 /// Prefix tinting adds one prefix check, a background and an accessibility

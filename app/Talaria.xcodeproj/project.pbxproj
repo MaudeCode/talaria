@@ -463,6 +463,7 @@
 		E14630000000000000000016 /* LiveActivityApprovalResponder.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14630000000000000000003 /* LiveActivityApprovalResponder.swift */; };
 		E14690000000000000000001 /* NotificationAnswer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14690000000000000000002 /* NotificationAnswer.swift */; };
 		E14690000000000000000003 /* NotificationAnswerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14690000000000000000004 /* NotificationAnswerTests.swift */; };
+		E08440000000000000000001 /* MarkdownPreviewDocumentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E08440000000000000000002 /* MarkdownPreviewDocumentTests.swift */; };
 		D74A00000000000000000019 /* VisualReference.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000003 /* VisualReference.swift */; };
 		D74A00000000000000000020 /* LiveActivityVisualReferenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000004 /* LiveActivityVisualReferenceTests.swift */; };
 		D74A00000000000000000021 /* AppScreenVisualReferenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000005 /* AppScreenVisualReferenceTests.swift */; };
@@ -938,6 +939,7 @@
 		E14630000000000000000003 /* LiveActivityApprovalResponder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityApprovalResponder.swift; sourceTree = "<group>"; };
 		E14690000000000000000002 /* NotificationAnswer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationAnswer.swift; sourceTree = "<group>"; };
 		E14690000000000000000004 /* NotificationAnswerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationAnswerTests.swift; sourceTree = "<group>"; };
+		E08440000000000000000002 /* MarkdownPreviewDocumentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownPreviewDocumentTests.swift; sourceTree = "<group>"; };
 		D74A00000000000000000003 /* VisualReference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisualReference.swift; sourceTree = "<group>"; };
 		D74A00000000000000000004 /* LiveActivityVisualReferenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityVisualReferenceTests.swift; sourceTree = "<group>"; };
 		D74A00000000000000000005 /* AppScreenVisualReferenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppScreenVisualReferenceTests.swift; sourceTree = "<group>"; };
@@ -1113,6 +1115,7 @@
 				C1TAL1396000000000000001 /* ChatCodeBlockStreamingTests.swift */,
 				A04500000000000000000018 /* LiveActivityTests.swift */,
 				E14690000000000000000004 /* NotificationAnswerTests.swift */,
+				E08440000000000000000002 /* MarkdownPreviewDocumentTests.swift */,
 				1A2B3C4D5E6F700000000340 /* AppIntentNewChatTests.swift */,
 				1A2B3C4D5E6F7000000014A0 /* AppIntentAskTalariaTests.swift */,
 				C1TAL2233000000000000002 /* AppIntentActivityTests.swift */,
@@ -2253,6 +2256,7 @@
 				C1TAL1396000000000000002 /* ChatCodeBlockStreamingTests.swift in Sources */,
 				A04500000000000000000008 /* LiveActivityTests.swift in Sources */,
 				E14690000000000000000003 /* NotificationAnswerTests.swift in Sources */,
+				E08440000000000000000001 /* MarkdownPreviewDocumentTests.swift in Sources */,
 				1A2B3C4D5E6F700000000341 /* AppIntentNewChatTests.swift in Sources */,
 				1A2B3C4D5E6F7000000014A1 /* AppIntentAskTalariaTests.swift in Sources */,
 				C1TAL2233000000000000003 /* AppIntentActivityTests.swift in Sources */,

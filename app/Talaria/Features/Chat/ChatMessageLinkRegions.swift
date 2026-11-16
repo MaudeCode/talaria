@@ -140,9 +140,9 @@ struct ChatMarkdownParagraph: View {
                 text
                 ForEach(nested) { media.thumbnail($0) }
             }
-            .markdownMargin(top: 0, bottom: 16)
+            .markdownMargin(.paragraph)
         } else {
-            text.markdownMargin(top: 0, bottom: 16)
+            text.markdownMargin(.paragraph)
         }
     }
 
@@ -184,7 +184,7 @@ struct ChatMarkdownHeading: View {
         // Inside the heading's text style, so `em` resolves against its font size.
         .relativePadding(.bottom, length: .em(level <= 2 ? 0.3 : 0))
         .relativeLineSpacing(.em(0.125))
-        .markdownMargin(top: 24, bottom: 16)
+        .markdownMargin(.heading)
         .markdownTextStyle {
             FontWeight(.semibold)
             if let fontScale {

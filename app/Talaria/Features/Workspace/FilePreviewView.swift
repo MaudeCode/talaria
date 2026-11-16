@@ -128,7 +128,7 @@ struct FilePreviewView: View {
     private func previewContent(_ preview: FilePreviewContent) -> some View {
         switch preview {
         case let .text(file) where rendersMarkdown:
-            markdownContent(file.content ?? "")
+            markdownContent(file.content ?? "", chunks: viewModel.markdownChunks)
         case let .text(file):
             sourceContent(file)
         case let .image(file):
@@ -156,13 +156,10 @@ struct FilePreviewView: View {
         }
     }
 
-    private func markdownContent(_ content: String) -> some View {
+    private func markdownContent(_ content: String, chunks: [MarkdownPreviewChunk]) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
+            MarkdownPreviewDocument(chunks: chunks) {
                 fileHeader
-
-                MarkdownRenderer(content: content, isStreaming: false)
-                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding()
         }
@@ -222,8 +219,7 @@ struct FilePreviewView: View {
     /// Markdown renders as prose unless a link asked for a line: the rendered
     /// document has no line numbers, so a targeted link uses the source viewer.
     private var rendersMarkdown: Bool {
-        guard initialLine == nil, let path = entry.path else { return false }
-        return ["md", "markdown", "mdown", "mkd"].contains((path as NSString).pathExtension.lowercased())
+        initialLine == nil && viewModel.isMarkdownPath
     }
 
     @ViewBuilder
@@ -340,5 +336,25 @@ struct FilePreviewView: View {
 
     private var exportActionsAreDisabled: Bool {
         viewModel.isExporting || isSavingToPhotos
+    }
+}
+
+/// A Markdown file drawn a chunk at a time, so only the chunks on screen parse and lay out (TAL-844). A file with one
+/// chunk draws through one renderer, as before.
+struct MarkdownPreviewDocument<Header: View>: View {
+    let chunks: [MarkdownPreviewChunk]
+    @ViewBuilder let header: Header
+
+    var body: some View {
+        LazyVStack(alignment: .leading, spacing: 0) {
+            header
+                .padding(.bottom, 12)
+
+            ForEach(chunks) { chunk in
+                MarkdownRenderer(content: chunk.text, isStreaming: false)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, chunk.topSpacing)
+            }
+        }
     }
 }

@@ -18,6 +18,7 @@ touches them.
 | Streaming replay catch-up scaling | `TalariaTests/ReplayCatchUpPerformanceTests` |
 | Dense Kanban load and filter | `TalariaTests/KanbanBoardPerformanceTests` |
 | Large image preview preparation | `TalariaTests/ImagePreviewPerformanceTests` |
+| Long Markdown file preview | `TalariaTests/MarkdownFilePreviewPerformanceTests` |
 | Chat stream tick and keystroke | `TalariaTests/ChatStreamTickPerformanceTests` |
 | Chat open scaling | `TalariaTests/ChatOpenPerformanceTests` |
 | Unknown remote media resolve and export | `TalariaTests/UnknownMediaProbePerformanceTests` |
@@ -30,6 +31,10 @@ them.
 
 - The Kanban budget decodes a generated 1,200-card Board across six columns.
 - The image budget encodes a deterministic 4032x3024 tile pattern as JPEG.
+- The Markdown file preview budget generates 43 sections, each a heading, two
+  paragraphs, a 14-line Swift code block and a two-item list: about 60 KB and
+  1,100 lines, under the plain-text fallback's 80,000 characters and 2,000
+  lines. It prepares the preview and lays out its first screen at 390x844.
 - The chat stream tick budget hosts the chat over 100 generated turns (200
   messages; every fifth reply carries reasoning and every fifth, offset by two,
   a fenced code block), streams a reply that opens, fills and closes a Swift
@@ -84,6 +89,9 @@ four times slower; the work counts match.
 The chat open budget was also measured in the build VM, on an iPhone 18 Pro
 simulator running iOS 27.2.
 
+The Markdown file preview budget was measured on an iPhone 17 Pro simulator
+running iOS 27.0 (build 24A434), in the pool above.
+
 The replay, chat and chat open budgets assert thresholds; the others record for comparison.
 
 - Replay catch-up may not cost more than 8x across the curve's 4x span, and
@@ -101,6 +109,23 @@ The replay, chat and chat open budgets assert thresholds; the others record for 
   at 200, in both measurements. The reopen of 600 messages may not take more
   than 1 s and the hosted open more than 5 s: about 7x and 10x the build VM, for
   a runner about four times slower.
+
+## Long Markdown file preview: the measured change
+
+The workspace preview drew a Markdown file as one renderer in a `VStack`, so
+opening it parsed and laid out every block, code blocks included, before the
+first frame. It now splits the file once per load, at the streaming splitter's
+fence-aware boundaries, and draws the pieces in a `LazyVStack`, so only the
+pieces on screen are built (TAL-844). Each seam restores the gap the whole
+document draws; `MarkdownPreviewDocumentTests` compares the two heights.
+
+`MarkdownFilePreviewPerformanceTests` records both paths. Medians of three
+iterations:
+
+| Path | Clock | Memory growth | Peak memory |
+| --- | --- | --- | --- |
+| Whole file, the path this replaced | 0.741 s | 103,219 kB | 415,551 kB |
+| Lazy chunks | 0.079 s | 9,699 kB | 93,277 kB |
 
 ## Chat stream tick and keystroke work
 

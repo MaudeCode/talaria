@@ -11,6 +11,8 @@ public final class FilePreviewViewModel {
     private var loadGeneration = 0
 
     public private(set) var preview: FilePreviewContent?
+    /// A Markdown file's preview pieces, split once per load rather than per body pass (TAL-844); empty otherwise.
+    public private(set) var markdownChunks: [MarkdownPreviewChunk] = []
     public private(set) var isLoading = false
     public private(set) var isExporting = false
     public private(set) var errorMessage: String?
@@ -43,6 +45,7 @@ public final class FilePreviewViewModel {
         if let requestedPath, requestedPath != path {
             path = requestedPath
             preview = nil
+            markdownChunks = []
             exportData = nil
         }
         loadGeneration += 1
@@ -87,6 +90,7 @@ public final class FilePreviewViewModel {
                 let file = try await apiClient.file(sessionID: sessionID, path: loadingPath)
                 guard !Task.isCancelled, loadGeneration == generation, path == loadingPath else { return }
                 exportData = file.content.map { Data($0.utf8) }
+                markdownChunks = isMarkdownPath ? MarkdownPreviewChunk.chunks(for: file.content ?? "") : []
                 preview = .serverFile(file)
             }
         } catch {
@@ -137,6 +141,11 @@ public final class FilePreviewViewModel {
 
     private var pathExtension: String {
         URL(fileURLWithPath: path).pathExtension.lowercased()
+    }
+
+    /// A Markdown file renders as prose.
+    public var isMarkdownPath: Bool {
+        ["md", "markdown", "mdown", "mkd"].contains(pathExtension)
     }
 
     private var isRasterImagePath: Bool {
