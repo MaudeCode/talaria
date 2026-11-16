@@ -482,16 +482,71 @@ final class LiveActivityTests: XCTestCase {
     func testRefusedDenyRestoresTheWaitingStateWithTheServersError() async throws {
         let fixture = try ApprovalAnswerFixture(responses: ["s1": (200, #"{"ok":false}"#)], in: self)
 
-        _ = try await RespondToApprovalIntent(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s1", approvalHeadID: "head-s1", answer: .deny).perform()
+        async let deny = RespondToApprovalIntent(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s1", approvalHeadID: "head-s1", answer: .deny).perform()
+        await fixture.clock.advance(by: DeferredDenial.window)
+        _ = try await deny
 
         let error = "The server did not accept that response. The request is still waiting."
         XCTAssertEqual(fixture.requests.value, [["session_id": "s1", "choice": "deny", "approval_id": "approval-s1"]])
-        XCTAssertEqual(fixture.updates.map(\.status), [.thinking, .waitingForApproval], "Optimistic first, then rolled back")
+        XCTAssertEqual(fixture.updates.map(\.status), [.waitingForApproval, .thinking, .waitingForApproval], "Denied · Undo, optimistic, then rolled back")
+        XCTAssertEqual(fixture.updates.map(\.isDenying), [true, nil, nil])
         XCTAssertEqual(fixture.run.status, .waitingForApproval)
         XCTAssertEqual(fixture.run.errorSummary, error)
         XCTAssertEqual(fixture.aggregate.rows.map(\.phase), ["waiting_for_approval", "waiting_for_approval"])
         XCTAssertEqual(fixture.aggregate.answerError, error)
         XCTAssertEqual(fixture.aggregate.subtitle, "2 waiting", "The server's subtitle stays")
+    }
+
+    /// TAL-1488: Deny reads "Denied · Undo" for five seconds, with Undo bound to the session, and is sent after that.
+    func testDenyReadsDeniedUndoForTheWindowThenLeavesTheWaitingState() async throws {
+        let fixture = try ApprovalAnswerFixture(in: self)
+
+        async let deny = RespondToApprovalIntent(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s1", approvalHeadID: "head-s1", answer: .deny).perform()
+        let denying = await awaitCondition(timeout: 5) { fixture.run.isDenying == true }
+        XCTAssertTrue(denying)
+        XCTAssertEqual(fixture.aggregate.rows.map(\.isDenying), [true, nil], "Only the denied session's row")
+        let actions = try XCTUnwrap(LiveActivityRowActions(state: fixture.run, publisherID: ApprovalAnswerFixture.publisher))
+        XCTAssertEqual(actions.kind, .denying)
+        XCTAssertEqual(actions.undoIntent.sessionID, "s1")
+        XCTAssertEqual(actions.undoIntent.publisherID, ApprovalAnswerFixture.publisher)
+        XCTAssertEqual(LiveActivityRowActions(row: fixture.aggregate.rows[0])?.kind, .denying)
+        for view in [
+            try hostWindow(AgentRunLockScreenView(state: fixture.run, publisherID: ApprovalAnswerFixture.publisher), size: CGSize(width: 360, height: 400)),
+            try hostWindow(AgentRunExpandedIslandBottomView(state: fixture.run, publisherID: ApprovalAnswerFixture.publisher), size: CGSize(width: 360, height: 400)),
+            try hostWindow(TalariaAggregateRows(state: fixture.aggregate, isStale: false, limit: 1, spacing: 5), size: CGSize(width: 360, height: 200)),
+        ] {
+            let labels = Set(HostedAccessibility.labels(in: view))
+            XCTAssertTrue(labels.isSuperset(of: ["Denied", "Undo"]), "\(labels)")
+            XCTAssertTrue(labels.isDisjoint(with: ["Allow", "Deny"]), "\(labels)")
+        }
+
+        XCTAssertEqual(fixture.requests.value, [], "Nothing is sent while Denied shows")
+        await fixture.clock.advance(by: DeferredDenial.window)
+        _ = try await deny
+        XCTAssertEqual(fixture.requests.value, [["session_id": "s1", "choice": "deny", "approval_id": "approval-s1"]])
+        XCTAssertEqual(fixture.run.status, .thinking)
+        XCTAssertNil(fixture.run.isDenying)
+        XCTAssertEqual(fixture.aggregate.rows.map(\.phase), ["running", "waiting_for_approval"])
+        XCTAssertEqual(fixture.aggregate.rows.map(\.isDenying), [nil, nil])
+    }
+
+    /// TAL-1488: Undo inside the window sends nothing and the rows wait for approval again, with Allow and Deny.
+    func testUndoOnTheLiveActivityRestoresTheWaitingStateAndSendsNothing() async throws {
+        let fixture = try ApprovalAnswerFixture(in: self)
+        let waiting = fixture.run
+
+        async let deny = RespondToApprovalIntent(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s1", approvalHeadID: "head-s1", answer: .deny).perform()
+        let denying = await awaitCondition(timeout: 5) { fixture.run.isDenying == true }
+        XCTAssertTrue(denying)
+        _ = try await UndoDenialIntent(publisherID: ApprovalAnswerFixture.publisher, sessionID: "s1").perform()
+        await fixture.clock.advance(by: DeferredDenial.window)
+        _ = try await deny
+
+        XCTAssertEqual(fixture.requests.value, [])
+        XCTAssertEqual(fixture.run, waiting)
+        XCTAssertEqual(fixture.aggregate.rows.map(\.phase), ["waiting_for_approval", "waiting_for_approval"])
+        XCTAssertEqual(fixture.aggregate.rows.map(\.isDenying), [nil, nil])
+        XCTAssertEqual(LiveActivityRowActions(state: fixture.run, publisherID: nil)?.kind, .approval(headID: "head-s1", text: nil))
     }
 
     /// Two rows answered at once: the refused one rolls back alone and the other keeps its answer.
@@ -567,7 +622,7 @@ final class LiveActivityTests: XCTestCase {
 /// One waiting run on a relay publisher, as the per-run and aggregate activities show it, beside a second waiting
 /// session, and a fixture server. `approval/pending` answers `pendingBodies` in turn (the last repeats), by default
 /// the session's own pending approval; `approval/respond` answers `responses` per session, by default success, and
-/// holds `heldSession`'s answer until `releaseHeldRespond()`. `activeServer` is the server a nil publisher names, as Siri
+/// holds `heldSession`'s answer until `releaseHeldRespond()`. Without `showsActivities` no Live Activity is on screen. `activeServer` is the server a nil publisher names, as Siri
 /// answers for it (TAL-2233).
 @MainActor
 final class ApprovalAnswerFixture {
@@ -579,6 +634,8 @@ final class ApprovalAnswerFixture {
     private var readAggregate: TalariaAggregateActivityAttributes.ContentState
     private(set) var updates: [AgentRunActivityAttributes.ContentState] = []
     let requests = LockedTestValue<[[String: String]]>([])
+    /// Deny's Undo window (TAL-1488) moves only when the test advances it.
+    let clock = ManualTestClock()
     private let held = DispatchSemaphore(value: 0)
 
     func releaseHeldRespond() { held.signal() }
@@ -592,6 +649,7 @@ final class ApprovalAnswerFixture {
         readsLag: Bool = false,
         suspendsWrites: Bool = false,
         activeServer: String? = nil,
+        showsActivities: Bool = true,
         in test: XCTestCase
     ) throws {
         run = AgentRunActivityStateReducer.waitingForApproval(
@@ -634,17 +692,24 @@ final class ApprovalAnswerFixture {
         test.addTeardownBlock { UserDefaults().removePersistentDomain(forName: lockName) }
         let original = LiveActivityApprovalResponder.shared
         test.addTeardownBlock { @MainActor in LiveActivityApprovalResponder.shared = original }
+        let denialsName = "ApprovalAnswerFixture.denials.\(UUID())"
+        test.addTeardownBlock { UserDefaults().removePersistentDomain(forName: denialsName) }
+        let originalDenials = DeferredDenial.shared
+        test.addTeardownBlock { @MainActor in DeferredDenial.shared = originalDenials }
+        DeferredDenial.shared = DeferredDenial(defaults: try XCTUnwrap(UserDefaults(suiteName: denialsName)), clock: clock, effects: .app)
         LiveActivityApprovalResponder.shared = LiveActivityApprovalResponder(
             makeClient: { TalariaRelayClient.originIdentifier($0 ?? activeServer ?? "") == Self.publisher ? client : nil },
             activeServer: { activeServer },
             appLock: AppLockModel(defaults: try XCTUnwrap(UserDefaults(suiteName: lockName))),
             display: .init(
-                runs: { [unowned self] in [.init(id: "run", publisherID: Self.publisher, state: readsLag ? readRun : run)] },
+                runs: { [unowned self] in
+                    showsActivities ? [.init(id: "run", publisherID: Self.publisher, state: readsLag ? readRun : run)] : []
+                },
                 updateRun: { [unowned self] in
                     if suspendsWrites { for _ in 0..<5 { await Task.yield() } }
                     XCTAssertEqual($0, "run"); readRun = run; run = $1; updates.append($1)
                 },
-                aggregates: { [unowned self] in [.init(id: "all", state: readsLag ? readAggregate : aggregate)] },
+                aggregates: { [unowned self] in showsActivities ? [.init(id: "all", state: readsLag ? readAggregate : aggregate)] : [] },
                 updateAggregate: { [unowned self] in XCTAssertEqual($0, "all"); readAggregate = aggregate; aggregate = $1 }
             )
         )

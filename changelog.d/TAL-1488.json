@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Deny from a notification or Live Activity now reads Denied with an Undo button for five seconds before it is sent, so a mistaken tap no longer costs a rerun.",
+      "highlight": true,
+      "components": [
+        "app"
+      ],
+      "announcement": {
+        "title": "Answer from a notification",
+        "description": "Allow, deny or reply from the banner or Live Activity, with five seconds to undo a Deny.",
+        "icon": "notifications"
+      }
+    }
+  ]
+}

@@ -16,6 +16,7 @@ final class NotificationAnswerTests: XCTestCase {
             "talaria.approval": ["deny:\(deny):false"],
             "talaria.approval.allow": ["allow:\(allow):false", "deny:\(deny):false"],
             "talaria.input": ["reply:\(allow):true"],
+            "talaria.denied": ["undo:0:false"],
         ])
         let registered = await UNUserNotificationCenter.current().notificationCategories()
         XCTAssertTrue(Set(table.keys).isSubset(of: registered.map(\.identifier)), "The App registers the categories at launch")
@@ -42,7 +43,10 @@ final class NotificationAnswerTests: XCTestCase {
             "sessionId": "s1", "publisherId": ApprovalAnswerFixture.publisher, "approvalHeadId": "head-s1",
         ]))
         let url = TalariaDeepLink.sessionURL(sessionID: "s1", publisherID: ApprovalAnswerFixture.publisher)
-        await TalariaAppDelegate.completeTap(opening: url, answering: deny, with: { opened.append($0) }) {}
+        async let tap: Void = TalariaAppDelegate.completeTap(opening: url, answering: deny, with: { opened.append($0) }) {}
+        // The session's Live Activity shows "Denied · Undo" for the window, so no Undo banner is posted.
+        await fixture.clock.advance(by: DeferredDenial.window)
+        await tap
 
         XCTAssertEqual(fixture.requests.value, [["session_id": "s1", "choice": "deny", "approval_id": "approval-s1"]])
         XCTAssertEqual(opened, [])
@@ -50,6 +54,52 @@ final class NotificationAnswerTests: XCTestCase {
 
         // A tap still opens the chat; it answers nothing.
         XCTAssertNil(NotificationAnswer(actionIdentifier: UNNotificationDefaultActionIdentifier, userText: nil, userInfo: ["sessionId": "s1"]))
+    }
+
+    /// TAL-1488: with no Live Activity showing the session, Deny posts one "Denied · Undo" banner; its Undo cancels the
+    /// same denial, so nothing is sent.
+    func testDenyWithoutALiveActivityPostsAnUndoBannerThatCancelsIt() async throws {
+        let fixture = try ApprovalAnswerFixture(showsActivities: false, in: self)
+        let posted = postSpy()
+        let userInfo = ["sessionId": "s1", "publisherId": ApprovalAnswerFixture.publisher, "approvalHeadId": "head-s1"]
+
+        async let deny: Void = XCTUnwrap(NotificationAnswer(actionIdentifier: "deny", userText: nil, userInfo: userInfo)).respond()
+        let shown = await awaitCondition(timeout: 5) { !posted.value.isEmpty }
+        XCTAssertTrue(shown)
+        let banner = try XCTUnwrap(posted.value.first)
+        XCTAssertEqual(banner.content.title, "Denied · Undo")
+        XCTAssertEqual(banner.content.categoryIdentifier, "talaria.denied")
+        let category = try XCTUnwrap(PendingActionNotificationCategory.all.first { $0.identifier == banner.content.categoryIdentifier })
+        XCTAssertEqual(category.actions.map(\.identifier), ["undo"])
+
+        let undo = try XCTUnwrap(NotificationAnswer(actionIdentifier: "undo", userText: nil, userInfo: banner.content.userInfo))
+        await undo.respond()
+        await fixture.clock.advance(by: DeferredDenial.window)
+        try await deny
+
+        XCTAssertEqual(fixture.requests.value, [], "The undone denial is never sent")
+        XCTAssertEqual(posted.value.count, 1)
+    }
+
+    /// TAL-1488: a session whose aggregate row carries no buttons (it follows the first two waiting rows) shows no Undo
+    /// there, so its Deny posts the Undo banner.
+    func testDenyForAnAggregateRowWithoutButtonsPostsTheUndoBanner() async throws {
+        let fixture = try ApprovalAnswerFixture(in: self)
+        var third = fixture.aggregate.rows[1]
+        third.sessionId = "s3"
+        third.approvalHeadId = "head-s3"
+        fixture.aggregate.rows.append(third)
+        let posted = postSpy()
+        let userInfo = ["sessionId": "s3", "publisherId": ApprovalAnswerFixture.publisher, "approvalHeadId": "head-s3"]
+
+        async let deny: Void = XCTUnwrap(NotificationAnswer(actionIdentifier: "deny", userText: nil, userInfo: userInfo)).respond()
+        let shown = await awaitCondition(timeout: 5) { !posted.value.isEmpty }
+        XCTAssertTrue(shown, "Without a visible Undo on the activity, the banner offers it")
+        XCTAssertEqual(posted.value.first?.content.title, "Denied · Undo")
+        await fixture.clock.advance(by: DeferredDenial.window)
+        try await deny
+
+        XCTAssertEqual(fixture.requests.value, [["session_id": "s3", "choice": "deny", "approval_id": "approval-s3"]])
     }
 
     func testARefusedAnswerPostsOneNotificationThatOpensTheChatToRetry() async throws {

@@ -97,6 +97,35 @@ final class LiveActivityApprovalResponder {
         }
     }
 
+    /// TAL-1488: marks the session's rows waiting for approval as "Denied · Undo" during Deny's Undo window, or restores
+    /// them. False when no Live Activity shows the session's Undo, so the banner path posts its own.
+    @discardableResult
+    func showDenying(_ denying: Bool, publisherID: String?, sessionID: String) async -> Bool {
+        let publisher = origin(publisherID)
+        let flag: Bool? = denying ? true : nil
+        var shown = false
+        for run in display.runs()
+        where run.state.sessionID == sessionID && run.state.status == .waitingForApproval && origin(run.publisherID) == publisher {
+            shown = true
+            var state = run.state
+            state.isDenying = flag
+            if state != run.state { await display.updateRun(run.id, state) }
+        }
+        for aggregate in display.aggregates() {
+            guard var state = currentAggregate(aggregate.id) else { continue }
+            let rows = state.rows.indices.filter { isWaiting(state.rows[$0], sessionID, publisher, .approval) }
+            guard !rows.isEmpty else { continue }
+            for index in rows { state.rows[index].isDenying = flag }
+            // Only a row with buttons on both the Lock Screen and the expanded island shows Undo.
+            let withButtons = LiveActivityRowActions.aggregateRows(
+                state.rows, limit: TalariaAggregateLiveActivityPresentation.expandedIslandRowLimit
+            ).filter { $0.actions != nil }
+            if rows.contains(where: { index in withButtons.contains { $0.row.id == state.rows[index].id } }) { shown = true }
+            await writeAggregate(aggregate.id, state)
+        }
+        return shown
+    }
+
     /// The prompt a session's rows wait on.
     enum Prompt {
         case approval, question
@@ -139,6 +168,7 @@ final class LiveActivityApprovalResponder {
         where [answeredRuns[run.id], run.state].contains(display.runs().first(where: { $0.id == run.id })?.state) {
             var restored = run.state
             restored.errorSummary = error
+            restored.isDenying = nil
             await display.updateRun(run.id, restored)
         }
         // Only this session's rows roll back, so another row answered meanwhile keeps its own state.
@@ -149,6 +179,7 @@ final class LiveActivityApprovalResponder {
                 guard let original = aggregate.state.rows.first(where: { $0.id == current.rows[index].id && waits($0) }),
                       [Self.answered(original), original].contains(current.rows[index]) else { continue }
                 current.rows[index] = original
+                current.rows[index].isDenying = nil
                 restoredRow = true
             }
             guard restoredRow else { continue }
@@ -267,6 +298,7 @@ final class LiveActivityApprovalResponder {
         var answered = row
         answered.phase = "running"
         answered.status = String(localized: "Working")
+        answered.isDenying = nil
         return answered
     }
 
