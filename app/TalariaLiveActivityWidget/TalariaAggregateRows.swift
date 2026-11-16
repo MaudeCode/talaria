@@ -15,12 +15,7 @@ struct TalariaAggregateRows: View {
     let spacing: CGFloat
 
     var body: some View {
-        var remainingActions = LiveActivityRowActions.aggregateRowLimit
-        let rows = state.rows.prefix(limit).map { row in
-            let actions = remainingActions > 0 ? LiveActivityRowActions(row: row) : nil
-            if actions != nil { remainingActions -= 1 }
-            return (row: row, actions: actions)
-        }
+        let rows = LiveActivityRowActions.aggregateRows(state.rows, limit: limit)
         VStack(alignment: .leading, spacing: spacing) {
             if let answerError = state.answerError {
                 LiveActivityAnswerError(text: answerError)

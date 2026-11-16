@@ -98,7 +98,7 @@ final class LiveActivityApprovalResponder {
     }
 
     /// TAL-1488: marks the session's rows waiting for approval as "Denied · Undo" during Deny's Undo window, or restores
-    /// them. False when no Live Activity shows the session, so the banner path posts its own Undo.
+    /// them. False when no Live Activity shows the session's Undo, so the banner path posts its own.
     @discardableResult
     func showDenying(_ denying: Bool, publisherID: String?, sessionID: String) async -> Bool {
         let publisher = origin(publisherID)
@@ -115,8 +115,12 @@ final class LiveActivityApprovalResponder {
             guard var state = currentAggregate(aggregate.id) else { continue }
             let rows = state.rows.indices.filter { isWaiting(state.rows[$0], sessionID, publisher, .approval) }
             guard !rows.isEmpty else { continue }
-            shown = true
             for index in rows { state.rows[index].isDenying = flag }
+            // Only a row with buttons on both the Lock Screen and the expanded island shows Undo.
+            let withButtons = LiveActivityRowActions.aggregateRows(
+                state.rows, limit: TalariaAggregateLiveActivityPresentation.expandedIslandRowLimit
+            ).filter { $0.actions != nil }
+            if rows.contains(where: { index in withButtons.contains { $0.row.id == state.rows[index].id } }) { shown = true }
             await writeAggregate(aggregate.id, state)
         }
         return shown

@@ -2,8 +2,8 @@ import Foundation
 
 /// TAL-1488: Deny from a notification banner or a Live Activity waits `window` before it is sent, so a mistaken tap can be
 /// undone. The display reads "Denied · Undo" meanwhile; Undo restores the waiting state and sends nothing. Each pending
-/// denial is persisted until it is sent, so a process killed inside the window sends it on the next launch: the window is
-/// a convenience, never a lost answer. Allow and the chat's own approval card stay instant.
+/// denial is persisted with its deadline until it is sent, so after a process killed inside the window the next launch
+/// keeps Undo for the rest of it and then sends: the window is a convenience, never a lost answer. Allow and the chat's own approval card stay instant.
 @MainActor
 public final class DeferredDenial {
     /// The denial of the approval a banner or activity showed, for one session.
@@ -55,37 +55,49 @@ public final class DeferredDenial {
     public static let window: Duration = .seconds(5)
     static let storageKey = "deferredDenial.pending"
 
+    /// A pending denial and when its window ends. Persisted, so a relaunch keeps Undo for the rest of the window.
+    private struct Entry: Codable {
+        let record: Record
+        let deadline: Date
+    }
+
     private let defaults: UserDefaults
     private let clock: any Clock<Duration>
+    private let now: () -> Date
     private let effects: Effects
-    /// Each pending record with the Deny that scheduled it, so a replaced Deny's timer sends nothing.
-    private var pending: [String: (record: Record, deny: UUID)] = [:]
+    /// Each pending entry with the Deny that scheduled it, so a replaced or undone Deny's timer sends nothing.
+    private var pending: [String: (entry: Entry, deny: UUID)] = [:]
     /// Records being sent; they stay persisted until their send returns.
     private var sending: [UUID: Record] = [:]
+    /// Entries a killed process left, loaded before any write; their timers start in `resumePersisted`.
+    private var restored: [String: UUID]?
 
-    public init(defaults: UserDefaults = .standard, clock: any Clock<Duration> = ContinuousClock(), effects: Effects) {
+    public init(
+        defaults: UserDefaults = .standard, clock: any Clock<Duration> = ContinuousClock(), now: @escaping () -> Date = Date.init,
+        effects: Effects
+    ) {
         self.defaults = defaults
         self.clock = clock
+        self.now = now
         self.effects = effects
     }
 
     /// Shows the denial, waits the window and sends it unless it was undone or replaced meanwhile. Returns when the
     /// window ends, so a caller holding a background task or an intent keeps the process alive until then.
     public func deny(_ record: Record) async {
+        loadPersisted()
         let deny = UUID()
-        pending[record.key] = (record, deny)
+        pending[record.key] = (Entry(record: record, deadline: now() + Self.window.timeInterval), deny)
         persist()
         await effects.show(record)
-        // A cancelled wait leaves the record persisted, for the next launch to send.
-        guard (try? await clock.sleep(for: Self.window)) != nil, pending[record.key]?.deny == deny else { return }
-        pending[record.key] = nil
-        await send([record])
+        await expire(record.key, deny)
     }
 
     /// Cancels the session's pending denial and restores its waiting state. False when none is pending.
     @discardableResult
     public func undo(publisherID: String?, sessionID: String) async -> Bool {
-        guard let record = pending.removeValue(forKey: Record.key(publisherID: publisherID, sessionID: sessionID))?.record else {
+        loadPersisted()
+        guard let record = pending.removeValue(forKey: Record.key(publisherID: publisherID, sessionID: sessionID))?.entry.record else {
             return false
         }
         persist()
@@ -93,33 +105,57 @@ public final class DeferredDenial {
         return true
     }
 
-    /// At launch: sends every denial a killed process left pending.
-    public func sendPersisted() async {
-        let stored = defaults.data(forKey: Self.storageKey).flatMap { try? JSONDecoder().decode([Record].self, from: $0) } ?? []
-        let ours = Set(pending.values.map(\.record)).union(sending.values)
-        await send(stored.filter { !ours.contains($0) })
+    /// At launch: resumes each denial a killed process left pending. Undo stays available for the rest of its window,
+    /// and one whose window has ended is sent now.
+    public func resumePersisted() async {
+        loadPersisted()
+        let resumed = restored ?? [:]
+        restored = [:]
+        await withTaskGroup(of: Void.self) { group in
+            for (key, deny) in resumed {
+                group.addTask { await self.expire(key, deny) }
+            }
+        }
     }
 
-    private func send(_ records: [Record]) async {
-        let ids = records.map { record in
-            let id = UUID()
-            sending[id] = record
-            return id
-        }
+    /// Sends the entry when its window ends, unless Undo or a later Deny replaced it meanwhile.
+    private func expire(_ key: String, _ deny: UUID) async {
+        guard let deadline = pending[key].flatMap({ $0.deny == deny ? $0.entry.deadline : nil }) else { return }
+        // A cancelled wait leaves the record persisted, for the next launch to send.
+        guard (try? await clock.sleep(for: .seconds(max(0, deadline.timeIntervalSince(now()))))) != nil,
+              let entry = pending[key], entry.deny == deny else { return }
+        pending[key] = nil
+        let id = UUID()
+        sending[id] = entry.entry.record
         persist()
-        for (id, record) in zip(ids, records) {
-            await effects.send(record)
-            sending[id] = nil
-            persist()
+        await effects.send(entry.entry.record)
+        sending[id] = nil
+        persist()
+    }
+
+    private func loadPersisted() {
+        guard restored == nil else { return }
+        var loaded: [String: UUID] = [:]
+        let stored = defaults.data(forKey: Self.storageKey).flatMap { try? JSONDecoder().decode([Entry].self, from: $0) } ?? []
+        for entry in stored where pending[entry.record.key] == nil {
+            let deny = UUID()
+            pending[entry.record.key] = (entry, deny)
+            loaded[entry.record.key] = deny
         }
+        restored = loaded
     }
 
     private func persist() {
-        let records = pending.values.map(\.record) + sending.values
-        if records.isEmpty {
+        // A record being sent has no window left; a relaunch sends it again, and the server settles a repeat.
+        let entries = pending.values.map(\.entry) + sending.values.map { Entry(record: $0, deadline: .distantPast) }
+        if entries.isEmpty {
             defaults.removeObject(forKey: Self.storageKey)
         } else {
-            defaults.set(try? JSONEncoder().encode(records), forKey: Self.storageKey)
+            defaults.set(try? JSONEncoder().encode(entries), forKey: Self.storageKey)
         }
     }
+}
+
+private extension Duration {
+    var timeInterval: TimeInterval { Double(components.seconds) + Double(components.attoseconds) / 1e18 }
 }

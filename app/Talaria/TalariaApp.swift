@@ -12,8 +12,8 @@ final class TalariaAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
         UNUserNotificationCenter.current().setNotificationCategories(PendingActionNotificationCategory.all)
-        // TAL-1488: a Deny whose Undo window a killed process never finished is sent now.
-        Task { @MainActor in await DeferredDenial.shared.sendPersisted() }
+        // TAL-1488: a Deny a killed process left pending keeps the rest of its Undo window, then is sent.
+        Task { @MainActor in await DeferredDenial.shared.resumePersisted() }
         if UserDefaults.standard.bool(forKey: TalariaRelayNotifications.isEnabledKey)
             || UserDefaults.standard.bool(forKey: ResponseCompletionNotifications.isEnabledKey) {
             application.registerForRemoteNotifications()

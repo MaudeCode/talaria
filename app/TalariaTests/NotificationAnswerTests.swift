@@ -81,6 +81,27 @@ final class NotificationAnswerTests: XCTestCase {
         XCTAssertEqual(posted.value.count, 1)
     }
 
+    /// TAL-1488: a session whose aggregate row carries no buttons (it follows the first two waiting rows) shows no Undo
+    /// there, so its Deny posts the Undo banner.
+    func testDenyForAnAggregateRowWithoutButtonsPostsTheUndoBanner() async throws {
+        let fixture = try ApprovalAnswerFixture(in: self)
+        var third = fixture.aggregate.rows[1]
+        third.sessionId = "s3"
+        third.approvalHeadId = "head-s3"
+        fixture.aggregate.rows.append(third)
+        let posted = postSpy()
+        let userInfo = ["sessionId": "s3", "publisherId": ApprovalAnswerFixture.publisher, "approvalHeadId": "head-s3"]
+
+        async let deny: Void = XCTUnwrap(NotificationAnswer(actionIdentifier: "deny", userText: nil, userInfo: userInfo)).respond()
+        let shown = await awaitCondition(timeout: 5) { !posted.value.isEmpty }
+        XCTAssertTrue(shown, "Without a visible Undo on the activity, the banner offers it")
+        XCTAssertEqual(posted.value.first?.content.title, "Denied · Undo")
+        await fixture.clock.advance(by: DeferredDenial.window)
+        try await deny
+
+        XCTAssertEqual(fixture.requests.value, [["session_id": "s3", "choice": "deny", "approval_id": "approval-s3"]])
+    }
+
     func testARefusedAnswerPostsOneNotificationThatOpensTheChatToRetry() async throws {
         let fixture = try ApprovalAnswerFixture(responses: ["s1": (200, #"{"ok":false}"#)], in: self)
         let posted = postSpy()

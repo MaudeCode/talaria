@@ -127,6 +127,18 @@ struct LiveActivityRowActions: Equatable {
 
     /// Aggregate rows that carry buttons: the first two waiting rows; the rest keep their row link.
     static let aggregateRowLimit = 2
+
+    /// The first `limit` aggregate rows, each with its buttons when it carries them.
+    static func aggregateRows(
+        _ rows: [TalariaAggregateActivityAttributes.ContentState.Row], limit: Int
+    ) -> [(row: TalariaAggregateActivityAttributes.ContentState.Row, actions: LiveActivityRowActions?)] {
+        var remaining = aggregateRowLimit
+        return rows.prefix(limit).map { row in
+            let actions = remaining > 0 ? LiveActivityRowActions(row: row) : nil
+            if actions != nil { remaining -= 1 }
+            return (row, actions)
+        }
+    }
 }
 
 /// A waiting row's choices, with a refused answer's error above them. Allow sits below the whole text of what it
