@@ -859,7 +859,12 @@ final class SettingsPlacementHostedTests: XCTestCase {
                                  server: UITestFixtureEnvironment.serverURL, pane: .category(category))
             })
             await settleSettingsFixture(in: window)
-            let rows = allSettingsRows(in: window)
+            // The server-settings rows carry no "Loading" label of their own, so the settle can pass before they arrive.
+            var rows = allSettingsRows(in: window)
+            _ = await awaitCondition {
+                rows = self.allSettingsRows(in: window)
+                return Set(identifiers).isSubset(of: rows.identifiers)
+            }
             for identifier in identifiers {
                 XCTAssertTrue(rows.identifiers.contains(identifier), "Missing server setting: \(identifier)")
             }
