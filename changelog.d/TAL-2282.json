@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Settings › Tools has a Toolsets tab where you choose which toolsets every new chat starts with, including the Talaria toolset.",
+      "highlight": false,
+      "components": ["web"],
+      "announcement": {
+        "title": "Default toolsets",
+        "description": "Choose which tools every new chat starts with, in Settings › Tools.",
+        "icon": "settings"
+      }
+    }
+  ]
+}

@@ -2878,6 +2878,7 @@
 	"settings_task_models_model": "Model",
 	"settings_task_models_task": "Task",
 	"settings_title": "Settings",
+	"settings_tools_tab_toolsets": "Toolsets",
 	"settings_trusted_link_hosts_count": [
 		{
 			"declarations": [
@@ -3276,6 +3277,8 @@
 	"tool_result_label": "Result",
 	"tool_show_full_output": "Show full output",
 	"tool_target_skill_suffix": "skill",
+	"toolset_defaults_save_failed": "Could not save default toolsets.",
+	"toolset_defaults_title": "Default toolsets",
 	"toolsets_count": [
 		{
 			"declarations": [

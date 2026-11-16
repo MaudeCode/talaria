@@ -99,8 +99,26 @@ async function agentCommands(ctx: RequestContext): Promise<Parameters<typeof com
 /** A slash command's sidecar failure: `notFound` is 404, bad input 400, the rest as `failure` maps them. */
 function commandFailure(error: unknown, notFound: string, message: string): never {
   if (error instanceof SidecarError && error.condition === notFound) throw new HttpError(404, message)
+  return inputFailure(error)
+}
+
+/** A sidecar refusal of bad input is 400; the rest as `failure` maps them. */
+function inputFailure(error: unknown): never {
   if (error instanceof SidecarError && (error.condition === 'invalid_params' || error.code === -32602)) throw new HttpError(400, error.message)
   return failure(error)
+}
+
+type ToolsetsCatalog = SidecarResult<'toolsets.catalog'>
+
+/**
+ * TAL-2144: each row's `can_deselect`, whether its switch can change: an available row can be chosen, a chosen row can be
+ * dropped (TAL-2282: even one that is unavailable now) unless it is the last. Available rows come first.
+ */
+function catalogRows(catalog: ToolsetsCatalog, needle = ''): ToolsetsCatalog {
+  const selected = new Set(catalog.selected_toolsets)
+  const toolsets = catalog.toolsets.map((row) => ({ ...row, can_deselect: selected.has(row.name) ? selected.size > 1 : row.available }))
+  const shown = needle ? toolsets.filter((row) => row.name.toLowerCase().includes(needle) || row.description.toLowerCase().includes(needle)) : toolsets
+  return { ...catalog, toolsets: [...shown.filter((row) => row.group === 'available'), ...shown.filter((row) => row.group !== 'available')] }
 }
 
 /** TAL-820: several profiles have third-party plugins and one of them loads its plugins into the shared sidecar process. */
@@ -491,11 +509,18 @@ export const toolsRouter = os.router({
   // TAL-2144: the menu's search and its Not available section, decided here so the client renders the rows as sent.
   toolsetsCatalog: os.toolsetsCatalog.handler(({ input, context: { ctx } }) => run(async () => {
     const catalog = await runningSidecar(ctx).call('toolsets.catalog', { profile_home: home(ctx), enabled_toolsets: input.toolsets })
-    const selected = new Set(catalog.selected_toolsets)
-    const toolsets = catalog.toolsets.map((row) => ({ ...row, can_deselect: row.available && (!selected.has(row.name) || selected.size > 1) }))
-    const needle = input.q?.trim().toLowerCase() ?? ''
-    const shown = needle ? toolsets.filter((row) => row.name.toLowerCase().includes(needle) || row.description.toLowerCase().includes(needle)) : toolsets
-    return { ...catalog, toolsets: [...shown.filter((row) => row.group === 'available'), ...shown.filter((row) => row.group !== 'available')] }
+    return catalogRows(catalog, input.q?.trim().toLowerCase())
+  })),
+  toolsetDefaults: os.toolsetDefaults.handler(({ context: { ctx } }) => run(async () => catalogRows(await runningSidecar(ctx).call('toolsets.defaults', { profile_home: home(ctx) })))),
+  // The sidecar saves with the Agent's own saver; holding the per-file lock orders it with every other config.yaml write.
+  toolsetDefaultsSet: os.toolsetDefaultsSet.handler(({ input, context: { ctx } }) => run(async () => {
+    const profileHome = home(ctx)
+    let saved: ToolsetsCatalog | undefined
+    await ctx.deps.agentConfig.update(profileHome, async () => {
+      saved = await runningSidecar(ctx).call('toolsets.set_defaults', { profile_home: profileHome, toolsets: input.toolsets }).catch(inputFailure)
+      return false
+    })
+    return catalogRows(saved!)
   })),
   skills: {
     revisions: os.skills.revisions.handler(({ input, context: { ctx } }) => run(async () => {

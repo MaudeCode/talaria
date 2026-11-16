@@ -105702,6 +105702,241 @@
         }
       }
     },
+    "/api/toolsets/defaults": {
+      "get": {
+        "operationId": "toolsetDefaults",
+        "summary": "Read the active profile's default toolsets. A toolset `agent.disabled_toolsets` turns off reads as available and unselected; choosing it clears that entry. MCP servers are not listed.",
+        "tags": [
+          "tools"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "toolsets": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "available": {
+                            "type": "boolean"
+                          },
+                          "selected": {
+                            "type": "boolean"
+                          },
+                          "unavailable_reason": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "disabled",
+                                  "unavailable"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "stripped_tools": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "stripped_by": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "group": {
+                            "enum": [
+                              "available",
+                              "not_available"
+                            ],
+                            "type": "string"
+                          },
+                          "can_deselect": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "description",
+                          "available",
+                          "selected",
+                          "unavailable_reason",
+                          "group"
+                        ]
+                      }
+                    },
+                    "selected_toolsets": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "using_defaults": {
+                      "type": "boolean"
+                    },
+                    "default_toolsets": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "toolsets",
+                    "selected_toolsets",
+                    "using_defaults",
+                    "default_toolsets"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "toolsetDefaultsSet",
+        "summary": "Save the active profile's default toolsets (`platform_toolsets.cli`) through the Agent's own `hermes tools` saver and return them as read back.",
+        "tags": [
+          "tools"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "toolsets": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "toolsets"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "toolsets": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "available": {
+                            "type": "boolean"
+                          },
+                          "selected": {
+                            "type": "boolean"
+                          },
+                          "unavailable_reason": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "disabled",
+                                  "unavailable"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "stripped_tools": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "stripped_by": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "group": {
+                            "enum": [
+                              "available",
+                              "not_available"
+                            ],
+                            "type": "string"
+                          },
+                          "can_deselect": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "description",
+                          "available",
+                          "selected",
+                          "unavailable_reason",
+                          "group"
+                        ]
+                      }
+                    },
+                    "selected_toolsets": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "using_defaults": {
+                      "type": "boolean"
+                    },
+                    "default_toolsets": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "toolsets",
+                    "selected_toolsets",
+                    "using_defaults",
+                    "default_toolsets"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/skills/revisions": {
       "get": {
         "operationId": "skills.revisions",

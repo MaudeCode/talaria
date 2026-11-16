@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ..errors import InvalidParams
 from ..home import profile_home_param, scoped_home
 from .. import harness_toolset, talaria_toolset
 
@@ -60,8 +61,74 @@ def catalog(override) -> dict:
     return {'toolsets': rows, 'selected_toolsets': selected, 'using_defaults': override is None, 'default_toolsets': list(defaults)}
 
 
+# TAL-2282: Talaria's own toolsets. ``talaria`` is an entry in ``platform_toolsets.cli`` that the Agent keeps as written;
+# ``harness`` is on unless ``agent.disabled_toolsets`` names it (TAL-1963).
+_OWN = (talaria_toolset.TOOLSET, harness_toolset.TOOLSET)
+
+
+def _checklist() -> set[str]:
+    """The toolsets the defaults editor sets: what ``hermes tools`` offers for ``cli``, plus Talaria's own."""
+    from hermes_cli import tools_config
+
+    return tools_config._checklist_toolset_keys('cli') | set(_OWN)
+
+
+def defaults() -> dict:
+    """The profile's default toolsets as an editor shows them. A toolset ``agent.disabled_toolsets`` turns off is just off
+    here: choosing it clears that entry, as ``hermes tools`` does. MCP servers keep their own controls."""
+    result = catalog(None)
+    editable = _checklist()
+    rows = []
+    for row in result['toolsets']:
+        if row['name'] not in editable:
+            continue
+        if row['unavailable_reason'] == 'disabled':
+            row = {**row, 'available': True, 'unavailable_reason': None, 'group': 'available'}
+        rows.append(row)
+    return {**result, 'toolsets': rows}
+
+
+def set_defaults(names) -> dict:
+    """Save ``names`` as the profile's ``platform_toolsets.cli`` with the Agent's own ``hermes tools`` saver, which keeps
+    MCP server entries and clears the ``agent.disabled_toolsets`` entries a chosen toolset covers."""
+    from agent.skill_utils import parse_config_string_list
+    from hermes_cli import tools_config
+    from hermes_cli.config import load_config
+    from hermes_cli.plugins import discover_plugins
+
+    if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
+        raise InvalidParams('toolsets must be a list of toolset names')
+    discover_plugins()  # the profile's plugin toolsets are choices too
+    unknown = sorted(set(names) - _checklist())
+    if unknown:
+        raise InvalidParams(f"unknown toolsets: {', '.join(unknown)}")
+    config = load_config()
+    platforms = config.get('platform_toolsets') if isinstance(config.get('platform_toolsets'), dict) else {}
+    saved = tools_config._coerce_platform_toolsets_value(platforms.get('cli'), 'cli')
+    talaria = talaria_toolset.TOOLSET
+    platforms['cli'] = [entry for entry in (saved if isinstance(saved, list) else []) if entry != talaria] + ([talaria] if talaria in names else [])
+    config['platform_toolsets'] = platforms
+    agent = config.get('agent') if isinstance(config.get('agent'), dict) else {}
+    disabled = [name for name in parse_config_string_list(agent.get('disabled_toolsets')) if name not in _OWN or name not in names]
+    if harness_toolset.TOOLSET not in names and harness_toolset.TOOLSET not in disabled:
+        disabled.append(harness_toolset.TOOLSET)
+    config['agent'] = {**agent, 'disabled_toolsets': disabled}
+    tools_config._save_platform_tools(config, 'cli', set(names) - set(_OWN))  # also saves the config
+    return defaults()
+
+
 def register(registry) -> None:
     @registry.method('toolsets.catalog')
     def catalog_(ctx, params):
         with scoped_home(profile_home_param(params)):
             return catalog(params.get('enabled_toolsets'))
+
+    @registry.method('toolsets.defaults')
+    def defaults_(ctx, params):
+        with scoped_home(profile_home_param(params)):
+            return defaults()
+
+    @registry.method('toolsets.set_defaults')
+    def set_defaults_(ctx, params):
+        with scoped_home(profile_home_param(params)):
+            return set_defaults(params.get('toolsets'))

@@ -3,6 +3,7 @@ const checkpointTargetKey = (sessionId: string, workspace: string) => ['checkpoi
 /** Query key families. Session refreshes use `invalidateSessionQueries` to preserve unrelated transcripts. */
 export const keys = {
   toolsets: (sessionId: string | undefined, value: string[] | null, q: string) => ['toolsets', sessionId, value, q] as const,
+  toolsetDefaults: ['toolset-defaults'] as const,
   executionModes: ['execution-modes'] as const,
   /**
    * TAL-1672: outside `sessions`, so session refreshes never reread an open inspector; the server's identity changes

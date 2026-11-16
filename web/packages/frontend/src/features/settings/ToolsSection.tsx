@@ -8,23 +8,25 @@ import { useSettingField } from './useSettingField'
 import { PluginsSection } from './PluginsSection'
 import { ConnectorsSection } from '../connectors/ConnectorsSection'
 import { McpSection } from './McpSection'
+import { ToolsetDefaultsSection } from './ToolsetDefaultsSection'
 import { SettingToggle, SettingsGroup, SETTINGS_PAGE } from './SettingsRows'
 
 /**
- * TAL-1691, TAL-2100: Settings > Tools, what the active profile's agent can reach. Plugins, connectors (behind the
- * server's gate) and MCP servers each fill a long list, so each takes a tab.
+ * TAL-1691, TAL-2100: Settings > Tools, what the active profile's agent can reach. Default toolsets (TAL-2282), plugins,
+ * connectors (behind the server's gate) and MCP servers each fill a long list, so each takes a tab.
  */
 export function ToolsSection({ tab, onTabChange }: { tab?: ToolsTab | undefined; onTabChange?: ((tab: ToolsTab) => void) | undefined }) {
   const { settings } = useSettingField(['agent_approvals'])
   const gate = useConnectorsAvailable()
   const connectors = gate.data?.available
   const tabs: { id: ToolsTab; label: () => string }[] = [
+    { id: 'toolsets', label: m.settings_tools_tab_toolsets },
     { id: 'plugins', label: m.settings_section_plugins_title },
     ...(connectors === true ? [{ id: 'connectors' as const, label: m.settings_section_connectors_title }] : []),
     { id: 'mcp', label: m.mcp_servers_title },
   ]
-  const active: ToolsTab = tabs.find((t) => t.id === tab)?.id ?? 'plugins'
-  // A Connectors link waits for the gate rather than opening Plugins first; a failed gate says so and offers a retry.
+  const active: ToolsTab = tabs.find((t) => t.id === tab)?.id ?? 'toolsets'
+  // A Connectors link waits for the gate rather than opening Toolsets first; a failed gate says so and offers a retry.
   const gating = tab === 'connectors' && gate.isPending
   const gateFailed = tab === 'connectors' && gate.isError && !gate.data
   return (
@@ -33,6 +35,7 @@ export function ToolsSection({ tab, onTabChange }: { tab?: ToolsTab | undefined;
       {gating ? <LoadingState compact /> : <>
         <TabStrip label={m.settings_section_tools_title()} tabs={tabs} value={active} onChange={(next) => onTabChange?.(next)} panelPrefix="tools" />
         <div role="tabpanel" id={`tools-${active}`} data-group={active} className={SETTINGS_PAGE}>
+          {active === 'toolsets' && <ToolsetDefaultsSection />}
           {active === 'plugins' && <PluginsSection />}
           {active === 'connectors' && <ConnectorsSection />}
           {active === 'mcp' && <McpSection />}

@@ -689,6 +689,16 @@ resolved `platform_toolsets.cli` list unless `agent.disabled_toolsets` names it.
 that list as `disabled_toolsets` too, so a session selection that names `harness` cannot bring it
 back. The opt-in `talaria` toolset stays off by default.
 
+`GET` and `PUT /api/toolsets/defaults` (TAL-2282) read and save those defaults for the active profile
+from Settings › Tools. The rows are the toolsets `hermes tools` offers for `cli`
+(`_checklist_toolset_keys`) plus `talaria` and `harness`; MCP servers keep their own switches. A
+toolset `agent.disabled_toolsets` turns off reads as available and off there. The sidecar's
+`toolsets.set_defaults` saves through the Agent's own `_save_platform_tools`, which writes the
+explicit `platform_toolsets.cli` list, keeps MCP server entries, records the known toolsets, and
+clears the disabled entries a chosen toolset covers. `talaria` is written as a list entry and
+`harness` as an `agent.disabled_toolsets` entry when it is off. Any other name is refused with
+`invalid_params`, and the server holds its per-file `config.yaml` lock for the save.
+
 `compression_prepare_ahead` in `/api/settings` is the profile's `compression.prepare_ahead`, or
 null on Agents whose `DEFAULT_CONFIG` lacks the key (before v0.22.6), where a write answers 409
 `setting_unavailable`. The Agent reads it once, at construction, so it is part of the cached chat

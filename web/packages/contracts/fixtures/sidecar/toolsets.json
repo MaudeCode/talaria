@@ -691,5 +691,584 @@
         ]
       }
     }
+  ],
+  "toolsets.defaults": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "toolsets": [
+          {
+            "name": "a2a",
+            "description": "Plugin toolset: a2a",
+            "available": false,
+            "selected": false,
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "not_available"
+          },
+          {
+            "name": "browser",
+            "description": "Browser automation: drive a real browser with Python over CDP (navigate, click, type, extract, screenshots), raw CDP, dialogs and vault logins",
+            "available": true,
+            "selected": true,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "clarify",
+            "description": "Ask the user clarifying questions (multiple-choice or open-ended)",
+            "available": true,
+            "selected": true,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "code_execution",
+            "description": "Run Python scripts that call tools programmatically (reduces LLM round trips)",
+            "available": true,
+            "selected": true,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "computer_use",
+            "description": "Background desktop control via cua-driver (macOS/Windows/Linux) — screenshots, mouse, keyboard, scroll, drag. Does NOT steal the user's cursor or keyboard focus. Works with any tool-capable model.",
+            "available": false,
+            "selected": true,
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "not_available"
+          },
+          {
+            "name": "connections",
+            "description": "Remote connector discovery, execution, and account authorization",
+            "available": true,
+            "selected": true,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "context_engine",
+            "description": "Runtime tools exposed by the active context engine",
+            "available": false,
+            "selected": false,
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "not_available"
+          },
+          {
+            "name": "cronjob",
+            "description": "Cronjob management tool - create, list, update, pause, resume, remove, and trigger scheduled tasks",
+            "available": true,
+            "selected": true,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "delegation",
+            "description": "Spawn subagents with isolated context for complex subtasks",
+            "available": true,
+            "selected": true,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "file",
+            "description": "File manipulation tools: read, write, patch (with fuzzy matching), and search (content + files)",
+            "available": true,
+            "selected": true,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "harness",
+            "description": "Hand the user a decision review to answer on a Talaria page, read their answers, and record what you did with each; propose a plugin install, MCP server, setting or scheduled task for the owner to approve; show a file, table, chart or page in the chat; ask the user for a credential, saved to the profile's .env without entering the chat; notify the user's devices that something is ready or needs them; deliver a file you made as a download; run a long command in a terminal the user watches and read its output; report a Talaria problem you ran into as feedback; read this session's usage, cost, context and provider quota.",
+            "available": true,
+            "selected": true,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "image_gen",
+            "description": "Creative generation tools (images)",
+            "available": false,
+            "selected": true,
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "not_available"
+          },
+          {
+            "name": "kanban",
+            "description": "Kanban multi-agent coordination — only active when the agent is spawned by the kanban dispatcher (HERMES_KANBAN_TASK env set). The dispatcher runs inside the gateway by default; see `kanban.dispatch_in_gateway` in config.yaml. Lets workers mark tasks done with structured handoffs, enter first-class review (request_review — not a block), return review changes, block for human input, heartbeat during long ops, comment on threads, attach files, and (for orchestrators) list, unblock, and fan out tasks.",
+            "available": true,
+            "selected": false,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "memory",
+            "description": "Persistent memory across sessions (personal notes + user profile)",
+            "available": true,
+            "selected": true,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "session_search",
+            "description": "Search and recall past conversations with summarization",
+            "available": true,
+            "selected": true,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "skills",
+            "description": "Access, create, edit, and manage skill documents with specialized instructions and knowledge",
+            "available": true,
+            "selected": true,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "talaria",
+            "description": "List, start, message, branch, organise, summarise and compress this profile's Talaria chats, wait on or stop their turns, manage their queued messages, see what they wait on and answer their questions and approvals, read or set their goals, organise this profile's projects and workspaces, list profiles, and list your background work.",
+            "available": true,
+            "selected": false,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "terminal",
+            "description": "Terminal/command execution and process management tools",
+            "available": true,
+            "selected": true,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "todo",
+            "description": "Task planning and tracking for multi-step work",
+            "available": true,
+            "selected": true,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "tts",
+            "description": "Text-to-speech: convert text to audio with Edge TTS (free), ElevenLabs, OpenAI, or xAI",
+            "available": false,
+            "selected": true,
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "not_available"
+          },
+          {
+            "name": "video",
+            "description": "Video analysis and understanding tools (opt-in, not in default toolset)",
+            "available": false,
+            "selected": false,
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "not_available"
+          },
+          {
+            "name": "video_gen",
+            "description": "Video generation tools. Single ``video_generate`` tool covers text-to-video (prompt only) and image-to-video (prompt + image_url), plus reference-to-video. Provider-specific edit/extend workflows may appear as separate tools. Configure via ``hermes tools`` → Video Generation.",
+            "available": false,
+            "selected": false,
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "not_available"
+          },
+          {
+            "name": "vision",
+            "description": "Image analysis and vision tools",
+            "available": false,
+            "selected": true,
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "not_available"
+          },
+          {
+            "name": "web",
+            "description": "Web research and content extraction tools",
+            "available": true,
+            "selected": true,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "x_search",
+            "description": "Search X (Twitter) posts and threads via xAI's built-in x_search Responses tool. Read-only public X discovery; use the xurl skill for authenticated X API reads and account actions. Available when xAI credentials are configured (SuperGrok OAuth or XAI_API_KEY). Off by default; enable in `hermes tools` → X (Twitter) Search.",
+            "available": false,
+            "selected": false,
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "not_available"
+          }
+        ],
+        "selected_toolsets": [
+          "browser",
+          "clarify",
+          "code_execution",
+          "computer_use",
+          "connections",
+          "cronjob",
+          "delegation",
+          "file",
+          "image_gen",
+          "memory",
+          "session_search",
+          "skills",
+          "terminal",
+          "todo",
+          "tts",
+          "vision",
+          "web",
+          "harness"
+        ],
+        "using_defaults": true,
+        "default_toolsets": [
+          "browser",
+          "clarify",
+          "code_execution",
+          "computer_use",
+          "connections",
+          "cronjob",
+          "delegation",
+          "file",
+          "image_gen",
+          "memory",
+          "session_search",
+          "skills",
+          "terminal",
+          "todo",
+          "tts",
+          "vision",
+          "web",
+          "harness"
+        ]
+      }
+    }
+  ],
+  "toolsets.set_defaults": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "toolsets": [
+          "file",
+          "talaria",
+          "harness"
+        ]
+      },
+      "result": {
+        "toolsets": [
+          {
+            "name": "a2a",
+            "description": "Plugin toolset: a2a",
+            "available": false,
+            "selected": false,
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "not_available"
+          },
+          {
+            "name": "browser",
+            "description": "Browser automation: drive a real browser with Python over CDP (navigate, click, type, extract, screenshots), raw CDP, dialogs and vault logins",
+            "available": true,
+            "selected": false,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "clarify",
+            "description": "Ask the user clarifying questions (multiple-choice or open-ended)",
+            "available": true,
+            "selected": false,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "code_execution",
+            "description": "Run Python scripts that call tools programmatically (reduces LLM round trips)",
+            "available": true,
+            "selected": false,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "computer_use",
+            "description": "Background desktop control via cua-driver (macOS/Windows/Linux) — screenshots, mouse, keyboard, scroll, drag. Does NOT steal the user's cursor or keyboard focus. Works with any tool-capable model.",
+            "available": false,
+            "selected": false,
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "not_available"
+          },
+          {
+            "name": "connections",
+            "description": "Remote connector discovery, execution, and account authorization",
+            "available": true,
+            "selected": false,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "context_engine",
+            "description": "Runtime tools exposed by the active context engine",
+            "available": false,
+            "selected": false,
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "not_available"
+          },
+          {
+            "name": "cronjob",
+            "description": "Cronjob management tool - create, list, update, pause, resume, remove, and trigger scheduled tasks",
+            "available": true,
+            "selected": false,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "delegation",
+            "description": "Spawn subagents with isolated context for complex subtasks",
+            "available": true,
+            "selected": false,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "file",
+            "description": "File manipulation tools: read, write, patch (with fuzzy matching), and search (content + files)",
+            "available": true,
+            "selected": true,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "harness",
+            "description": "Hand the user a decision review to answer on a Talaria page, read their answers, and record what you did with each; propose a plugin install, MCP server, setting or scheduled task for the owner to approve; show a file, table, chart or page in the chat; ask the user for a credential, saved to the profile's .env without entering the chat; notify the user's devices that something is ready or needs them; deliver a file you made as a download; run a long command in a terminal the user watches and read its output; report a Talaria problem you ran into as feedback; read this session's usage, cost, context and provider quota.",
+            "available": true,
+            "selected": true,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "image_gen",
+            "description": "Creative generation tools (images)",
+            "available": false,
+            "selected": false,
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "not_available"
+          },
+          {
+            "name": "kanban",
+            "description": "Kanban multi-agent coordination — only active when the agent is spawned by the kanban dispatcher (HERMES_KANBAN_TASK env set). The dispatcher runs inside the gateway by default; see `kanban.dispatch_in_gateway` in config.yaml. Lets workers mark tasks done with structured handoffs, enter first-class review (request_review — not a block), return review changes, block for human input, heartbeat during long ops, comment on threads, attach files, and (for orchestrators) list, unblock, and fan out tasks.",
+            "available": true,
+            "selected": false,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "memory",
+            "description": "Persistent memory across sessions (personal notes + user profile)",
+            "available": true,
+            "selected": false,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "session_search",
+            "description": "Search and recall past conversations with summarization",
+            "available": true,
+            "selected": false,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "skills",
+            "description": "Access, create, edit, and manage skill documents with specialized instructions and knowledge",
+            "available": true,
+            "selected": false,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "talaria",
+            "description": "List, start, message, branch, organise, summarise and compress this profile's Talaria chats, wait on or stop their turns, manage their queued messages, see what they wait on and answer their questions and approvals, read or set their goals, organise this profile's projects and workspaces, list profiles, and list your background work.",
+            "available": true,
+            "selected": true,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "terminal",
+            "description": "Terminal/command execution and process management tools",
+            "available": true,
+            "selected": false,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "todo",
+            "description": "Task planning and tracking for multi-step work",
+            "available": true,
+            "selected": false,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "tts",
+            "description": "Text-to-speech: convert text to audio with Edge TTS (free), ElevenLabs, OpenAI, or xAI",
+            "available": false,
+            "selected": false,
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "not_available"
+          },
+          {
+            "name": "video",
+            "description": "Video analysis and understanding tools (opt-in, not in default toolset)",
+            "available": false,
+            "selected": false,
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "not_available"
+          },
+          {
+            "name": "video_gen",
+            "description": "Video generation tools. Single ``video_generate`` tool covers text-to-video (prompt only) and image-to-video (prompt + image_url), plus reference-to-video. Provider-specific edit/extend workflows may appear as separate tools. Configure via ``hermes tools`` → Video Generation.",
+            "available": false,
+            "selected": false,
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "not_available"
+          },
+          {
+            "name": "vision",
+            "description": "Image analysis and vision tools",
+            "available": false,
+            "selected": false,
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "not_available"
+          },
+          {
+            "name": "web",
+            "description": "Web research and content extraction tools",
+            "available": true,
+            "selected": false,
+            "unavailable_reason": null,
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "available"
+          },
+          {
+            "name": "x_search",
+            "description": "Search X (Twitter) posts and threads via xAI's built-in x_search Responses tool. Read-only public X discovery; use the xurl skill for authenticated X API reads and account actions. Available when xAI credentials are configured (SuperGrok OAuth or XAI_API_KEY). Off by default; enable in `hermes tools` → X (Twitter) Search.",
+            "available": false,
+            "selected": false,
+            "unavailable_reason": "unavailable",
+            "stripped_tools": [],
+            "stripped_by": [],
+            "group": "not_available"
+          }
+        ],
+        "selected_toolsets": [
+          "file",
+          "talaria",
+          "harness"
+        ],
+        "using_defaults": true,
+        "default_toolsets": [
+          "file",
+          "talaria",
+          "harness"
+        ]
+      }
+    }
   ]
 }

@@ -32,6 +32,9 @@ export const REDACTION_METHODS = {
 
 export const TOOLSETS_METHODS = {
   'toolsets.catalog': { params: ProfileHomeParams.extend({ enabled_toolsets: z.array(z.string()).nullable() }), result: ToolsetsCatalogSchema },
+  /** TAL-2282: the profile's default toolsets as an editor shows them, and their save through the Agent's `hermes tools` saver. */
+  'toolsets.defaults': { params: ProfileHomeParams, result: ToolsetsCatalogSchema },
+  'toolsets.set_defaults': { params: ProfileHomeParams.extend({ toolsets: z.array(z.string()) }), result: ToolsetsCatalogSchema },
 } as const
 
 // ── goals ──────────────────────────────────────────────────────────────
