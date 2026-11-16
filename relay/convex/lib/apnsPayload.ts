@@ -188,10 +188,15 @@ export function makeNotification(input: {
         sound: "default",
         "thread-id": input.threadId,
         ...(input.alert.interruptionLevel ? { "interruption-level": input.alert.interruptionLevel } : {}),
+        ...(input.alert.category ? { category: input.alert.category } : {}),
       },
       publisherId: input.row.publisherId,
       sessionId: input.row.sessionId,
       deepLink: input.alert.deepLink ?? input.row.deepLink,
+      // TAL-1469: the request the banner's Deny or Reply answers; the App refuses it once another heads the queue.
+      ...(input.alert.category && input.alert.headId
+        ? { [input.alert.category === "talaria.approval" ? "approvalHeadId" : "inputHeadId"]: input.alert.headId }
+        : {}),
     },
   };
 }

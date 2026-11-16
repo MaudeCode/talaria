@@ -267,8 +267,9 @@ it("alerts a Web publisher's approval queue head with only the shared localized 
         pushToken: "contract-push-token", preferences: { ...defaultNotificationPreferences, notificationsEnabled: true },
       });
     });
-    const { snapshot, notificationAlert } = JSON.parse(fixture("relay-approval-alert")) as {
+    const { snapshot, notificationAlert, notificationCategory } = JSON.parse(fixture("relay-approval-alert")) as {
       snapshot: { snapshotId: string; states: Record<string, unknown>[] }; notificationAlert: Record<string, string>;
+      notificationCategory: string;
     };
     const path = publisherPath("prf_default", "snapshot");
     const running = JSON.parse(fixture("publisher-snapshot")) as { states: { revision: number; eventId: string }[] };
@@ -283,12 +284,17 @@ it("alerts a Web publisher's approval queue head with only the shared localized 
     const notifications = (await backend.run((ctx) => ctx.db.query("deliveryJobs").collect()))
       .filter((job) => job.kind === "notification");
     expect(notifications).toHaveLength(1);
-    expect(JSON.parse(notifications[0]!.request.payloadJson).aps.alert).toEqual(notificationAlert);
+    const payload = JSON.parse(notifications[0]!.request.payloadJson);
+    expect(payload.aps.alert).toEqual(notificationAlert);
+    expect(payload.aps.category).toBe(notificationCategory);
+    expect(payload.approvalHeadId).toBe(snapshot.states[0]!.approvalHeadId);
     expect(notifications[0]!.request.payloadJson).not.toContain("Contract fixture");
     // The head is bounded and opaque; anything else rejects the whole snapshot.
-    for (const approvalHeadId of ["", "x".repeat(65), "has/slash", 7]) {
-      const invalid = { ...snapshot, states: [{ ...snapshot.states[0], approvalHeadId }] };
-      expect((await signedPut(path, JSON.stringify(invalid))).status).toBe(400);
+    for (const head of ["", "x".repeat(65), "has/slash", 7]) {
+      for (const field of ["approvalHeadId", "inputHeadId"]) {
+        const invalid = { ...snapshot, states: [{ ...snapshot.states[0], [field]: head }] };
+        expect((await signedPut(path, JSON.stringify(invalid))).status).toBe(400);
+      }
     }
   } finally {
     clock.mockRestore();

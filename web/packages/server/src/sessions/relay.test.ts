@@ -166,6 +166,50 @@ describe('Talaria relay pairing and publishing', () => {
     }
   })
 
+  it('names the question queue head the way it names approvals, and gives Allow only the whole text it approves (TAL-1469)', async () => {
+    if (!s.deps.relay.current()) await post(s, '/api/talaria/relay/pair', { relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'invite-inputs' })
+    const sid = String(((await json(await post(s, '/api/session/new', { title: 'Private question title' }))).session as Json).session_id)
+    s.deps.registry.activeRuns.set('stream-inputs', { stream_id: 'stream-inputs', session_id: sid, started_at: 1, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false })
+    const publisher = s.deps.relay.current()!
+    const state = async () => {
+      await publisher.publishSnapshot()
+      return (relay.snapshots().at(-1)!.body.states as Json[]).find((row) => row.sessionId === sid)!
+    }
+    const pending = async (kind: string) => (await json(await s.get(`/api/${kind}/pending?session_id=${sid}`))).pending as Json
+    try {
+      s.deps.pending.submitClarify(sid, { clarify_id: 'first-question', question: 'Which private branch?' })
+      s.deps.pending.submitClarify(sid, { clarify_id: 'second-question', question: 'Which private tag?' })
+      const first = await state()
+      expect(first.phase).toBe('waiting_for_input')
+      expect(String(first.inputHeadId)).toMatch(/^[A-Za-z0-9_-]{22}$/)
+      expect((await pending('clarify')).head_id).toBe(first.inputHeadId)
+      s.deps.pending.resolveClarify(sid, 'first-question')
+      const second = await state()
+      expect(second.inputHeadId).not.toBe(first.inputHeadId)
+      expect((await pending('clarify')).head_id).toBe(second.inputHeadId)
+      expect(JSON.stringify(relay.snapshots().at(-1)!.body)).not.toMatch(/second-question|private tag/)
+      s.deps.pending.resolveClarify(sid, 'second-question')
+      expect(await state()).not.toHaveProperty('inputHeadId')
+
+      for (const [approval, actionText] of [
+        [{ command: '  git push\n  origin main ', description: 'Push' }, 'git push origin main'],
+        [{ description: 'Deploy the site' }, 'Deploy the site'],
+        // A command too long to show whole is never replaced by its shorter description.
+        [{ command: 'x'.repeat(81), description: 'short' }, undefined],
+        [{ command: 'x'.repeat(80) }, 'x'.repeat(80)],
+        [{ command: 'ls', allowed_choices: ['deny'] }, undefined],
+      ] as const) {
+        s.deps.pending.submitApproval(sid, { request_id: 'action-text', ...approval })
+        expect((await pending('approval')).action_text).toBe(actionText)
+        s.deps.pending.clearApprovals(sid)
+      }
+    } finally {
+      s.deps.pending.clearApprovals(sid)
+      s.deps.pending.clearClarifies(sid)
+      s.deps.registry.activeRuns.delete('stream-inputs')
+    }
+  })
+
   it('names the session\'s newest decision review by creation and its title (TAL-1966)', async () => {
     if (!s.deps.relay.current()) await post(s, '/api/talaria/relay/pair', { relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'invite-decisions' })
     const sid = String(((await json(await post(s, '/api/session/new', { title: 'Decision session' }))).session as Json).session_id)

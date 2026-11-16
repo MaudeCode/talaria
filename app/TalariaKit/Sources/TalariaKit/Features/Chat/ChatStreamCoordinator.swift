@@ -813,9 +813,10 @@ public final class ChatStreamCoordinator {
         case .planProgress(let payload):
             liveActivityManager?.update(.planProgress(completed: payload.completed, total: payload.total, sessionID: payload.sessionId))
         case .approvalPending(let update):
-            // An empty update is the settled prompt (`approval_cleared`); the run goes on.
+            // An empty update is the settled prompt (`approval_cleared`); the run goes on. Allow sits beside the server's
+            // `action_text` only (TAL-1469).
             liveActivityManager?.update(
-                update.pending.map { .waitingForApproval(headID: $0.headId, text: $0.command ?? $0.description) } ?? .promptSettled
+                update.pending.map { .waitingForApproval(headID: $0.headId, text: $0.actionText) } ?? .promptSettled
             )
             delegate?.streamCoordinatorApplyApprovalUpdate(update)
             markProgress()

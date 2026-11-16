@@ -2133,6 +2133,10 @@
                         "description": "The identity Relay publishes as `approvalHeadId` for this approval, so a Live Activity answers only the approval it showed (TAL-1463). Absent without an `approval_id`.",
                         "type": "string"
                       },
+                      "action_text": {
+                        "description": "What this approval runs on one line, its command or else its description, whole and at most 80 characters: the text a one-tap Allow on a notification or Live Activity sits beside (TAL-1469). Absent when the approval names neither, the text is longer, or `once` is not an allowed choice.",
+                        "type": "string"
+                      },
                       "approval_id": {
                         "type": "string"
                       },
@@ -2242,6 +2246,10 @@
                           ],
                           "additionalProperties": {}
                         }
+                      },
+                      "head_id": {
+                        "description": "The identity Relay publishes as `inputHeadId` for this question, so a notification's Reply answers only the question it named (TAL-1469). Absent without a `clarify_id`.",
+                        "type": "string"
                       },
                       "vault": {
                         "type": "object",

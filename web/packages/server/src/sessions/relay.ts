@@ -232,7 +232,7 @@ export interface RelayPublisherDeps {
 /** Per relay profile scope: sessions started before `floor` (first tracking) are never announced. */
 type StartedLedger = Map<string, { floor: number; sessions: Map<string, { startedAt: number; sent: boolean }> }>
 
-export interface RelayState { sessionId: string; streamId: string | null; eventId: string; revision: number; title: string; phase: string; activityPhase?: SessionActivityPhase; startedAt: number; updatedAt: number; toolCount?: number; activityAt?: number; planCompleted?: number; planTotal?: number; workerCount?: number; deepLink: string; origin: TurnOrigin; alertEligible?: false; approvalHeadId?: string; decisionReviewId?: string; decisionReviewTitle?: string; agentNotices?: AgentNotice[] }
+export interface RelayState { sessionId: string; streamId: string | null; eventId: string; revision: number; title: string; phase: string; activityPhase?: SessionActivityPhase; startedAt: number; updatedAt: number; toolCount?: number; activityAt?: number; planCompleted?: number; planTotal?: number; workerCount?: number; deepLink: string; origin: TurnOrigin; alertEligible?: false; approvalHeadId?: string; inputHeadId?: string; decisionReviewId?: string; decisionReviewTitle?: string; agentNotices?: AgentNotice[] }
 
 /** Python `TalariaRelayPublisher`: coalesces changes into signed complete snapshots with capped backoff. */
 export class RelayPublisher {

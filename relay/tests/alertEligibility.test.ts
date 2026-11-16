@@ -131,6 +131,19 @@ describe("publisher alert eligibility", () => {
     ]);
   });
 
+  it("TAL-1469: a published question head reaches the input notification, so its Reply answers only that question", async () => {
+    const backend = await seed({ pushToken: "push-token", activity: false });
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      ...publish, nonce: "n1", receivedAt: now + 1, snapshotId: "s1",
+      states: [{ ...snapshotState("session-1", 2, "waiting_for_input"), inputHeadId: "question-head-1" }],
+    });
+    await runScheduledRecomputes(backend);
+    const rows = await backend.run(async (ctx) => ctx.db.query("deliveryJobs").collect());
+    expect(rows.map((job) => JSON.parse(job.request.payloadJson))).toEqual([
+      expect.objectContaining({ aps: expect.objectContaining({ category: "talaria.input" }), inputHeadId: "question-head-1" }),
+    ]);
+  });
+
   it("still sends the Time Sensitive notification when another alert sounds on the activity", async () => {
     const backend = await seed({ pushToken: "push-token", activity: true });
     await backend.mutation(internal.publishers.acceptSnapshot, {

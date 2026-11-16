@@ -624,6 +624,8 @@ export const ApprovalPendingSchema = z.looseObject({
     .describe('The running tool call this approval holds, the `id` of its `tool` frame. Absent when the Agent names none.'),
   head_id: z.string().optional()
     .describe('The identity Relay publishes as `approvalHeadId` for this approval, so a Live Activity answers only the approval it showed (TAL-1463). Absent without an `approval_id`.'),
+  action_text: z.string().optional()
+    .describe('What this approval runs on one line, its command or else its description, whole and at most 80 characters: the text a one-tap Allow on a notification or Live Activity sits beside (TAL-1469). Absent when the approval names neither, the text is longer, or `once` is not an allowed choice.'),
   approval_id: z.string().optional(), session_id: z.string().optional(), command: z.string().optional(), description: z.string().optional(), title: z.string().optional(), name: z.string().optional(), kind: z.string().optional(),
   reason: z.string().optional(), action: z.string().optional(), question: z.string().optional(), status: z.string().optional(), pending_count: z.number().optional(), run_id: z.string().optional(), mirror_token: z.string().optional(),
 })
@@ -676,6 +678,8 @@ export const VaultPromptSchema = z.object({
 export type VaultPrompt = z.infer<typeof VaultPromptSchema>
 export const ClarifyPendingSchema = z.looseObject({
   steps: z.array(ClarifyStepSchema).optional(),
+  head_id: z.string().optional()
+    .describe('The identity Relay publishes as `inputHeadId` for this question, so a notification\'s Reply answers only the question it named (TAL-1469). Absent without a `clarify_id`.'),
   vault: VaultPromptSchema.optional(),
   clarify_id: z.string().optional(), session_id: z.string().optional(), question: z.string().optional(), description: z.string().optional(), choices: z.array(ClarifyChoiceSchema).optional(), title: z.string().optional(),
   name: z.string().optional(), kind: z.string().optional(), reason: z.string().optional(), action: z.string().optional(), status: z.string().optional(), raw_preview: z.string().optional(), timeout_at: z.number().optional(),

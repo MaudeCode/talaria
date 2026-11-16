@@ -351,6 +351,7 @@ function parseState(
   const origin = value.origin;
   const alertEligible = value.alertEligible;
   const approvalHeadId = value.approvalHeadId;
+  const inputHeadId = value.inputHeadId;
   const decisionReviewId = value.decisionReviewId;
   const decisionReviewTitle = value.decisionReviewTitle;
   const agentNotices = value.agentNotices === undefined ? undefined : parseAgentNotices(value.agentNotices);
@@ -359,6 +360,7 @@ function parseState(
     (origin !== undefined && origin !== "user" && origin !== "background") ||
     (alertEligible !== undefined && typeof alertEligible !== "boolean") ||
     (approvalHeadId !== undefined && (typeof approvalHeadId !== "string" || !approvalHeadPattern.test(approvalHeadId))) ||
+    (inputHeadId !== undefined && (typeof inputHeadId !== "string" || !approvalHeadPattern.test(inputHeadId))) ||
     (decisionReviewId !== undefined && (typeof decisionReviewId !== "string" || !decisionReviewPattern.test(decisionReviewId))) ||
     (decisionReviewTitle !== undefined && (typeof decisionReviewTitle !== "string" || decisionReviewTitle.length > 200 || decisionReviewId === undefined)) ||
     !sessionId ||
@@ -401,6 +403,7 @@ function parseState(
     ...(origin === undefined ? {} : { origin }),
     alertEligible,
     ...(approvalHeadId === undefined ? {} : { approvalHeadId }),
+    ...(inputHeadId === undefined ? {} : { inputHeadId }),
     ...(decisionReviewId === undefined ? {} : { decisionReviewId, decisionReviewTitle: decisionReviewTitle ?? "" }),
     ...(agentNotices === undefined ? {} : { agentNotices }),
   };
@@ -621,6 +624,7 @@ http.route({
               origin: state.origin,
               alertEligible: state.alertEligible,
               approvalHeadId: state.approvalHeadId,
+              inputHeadId: state.inputHeadId,
               decisionReviewId: state.decisionReviewId,
               decisionReviewTitle: state.decisionReviewTitle,
               agentNotices: state.agentNotices,

@@ -61,6 +61,8 @@ public struct PendingClarification: Decodable, Equatable, Identifiable, Sendable
     }
 
     public let clarifyId: String?
+    /// TAL-1469: the identity Relay names this question by, so a notification's Reply answers only it.
+    public let headId: String?
     let question: String?
     let sessionId: String?
     let requestedAt: Double?
@@ -75,6 +77,7 @@ public struct PendingClarification: Decodable, Equatable, Identifiable, Sendable
 
     init(
         clarifyId: String? = nil,
+        headId: String? = nil,
         question: String? = nil,
         sessionId: String? = nil,
         requestedAt: Double? = nil,
@@ -84,6 +87,7 @@ public struct PendingClarification: Decodable, Equatable, Identifiable, Sendable
         vault: VaultPrompt? = nil
     ) {
         self.clarifyId = clarifyId
+        self.headId = headId
         self.question = question
         self.sessionId = sessionId
         self.requestedAt = requestedAt
@@ -96,6 +100,8 @@ public struct PendingClarification: Decodable, Equatable, Identifiable, Sendable
     enum CodingKeys: String, CodingKey {
         case clarifyId
         case clarifyIdSnake = "clarify_id"
+        case headId
+        case headIdSnake = "head_id"
         case question
         case sessionId
         case sessionIdSnake = "session_id"
@@ -113,6 +119,8 @@ public struct PendingClarification: Decodable, Equatable, Identifiable, Sendable
         let container = try decoder.container(keyedBy: CodingKeys.self)
         clarifyId = container.decodeLossyStringIfPresent(forKey: .clarifyId)
             ?? container.decodeLossyStringIfPresent(forKey: .clarifyIdSnake)
+        headId = (container.decodeLossyStringIfPresent(forKey: .headId)
+            ?? container.decodeLossyStringIfPresent(forKey: .headIdSnake)).flatMap { $0.isEmpty ? nil : $0 }
         question = container.decodeLossyStringIfPresent(forKey: .question)
         sessionId = container.decodeLossyStringIfPresent(forKey: .sessionId)
             ?? container.decodeLossyStringIfPresent(forKey: .sessionIdSnake)

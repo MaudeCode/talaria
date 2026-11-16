@@ -59,6 +59,9 @@ public struct PendingApproval: Decodable, Equatable, Identifiable, Sendable {
     public let headId: String?
     public let command: String?
     public let description: String?
+    /// TAL-1469: what the approval runs, whole and on one line, for a one-tap Allow to sit beside; nil when the server
+    /// offers no one-tap Allow for it.
+    public let actionText: String?
     let patternKey: String?
     let patternKeys: [String]?
     /// TAL-1043: the choices the approval's owner accepts; nil (an older server without the field) allows all four.
@@ -103,10 +106,12 @@ public struct PendingApproval: Decodable, Equatable, Identifiable, Sendable {
         patternKeys: [String]? = nil,
         allowedChoices: [ApprovalChoice]? = nil,
         canEnableYolo: Bool? = nil,
-        headId: String? = nil
+        headId: String? = nil,
+        actionText: String? = nil
     ) {
         self.approvalId = Self.normalizedApprovalId(approvalId)
         self.headId = headId
+        self.actionText = actionText
         self.command = command
         self.description = description
         self.patternKey = patternKey
@@ -131,6 +136,8 @@ public struct PendingApproval: Decodable, Equatable, Identifiable, Sendable {
         case canEnableYoloSnake = "can_enable_yolo"
         case headId
         case headIdSnake = "head_id"
+        case actionText
+        case actionTextSnake = "action_text"
     }
 
     public init(from decoder: Decoder) throws {
@@ -141,6 +148,8 @@ public struct PendingApproval: Decodable, Equatable, Identifiable, Sendable {
         )
         command = container.decodeLossyStringIfPresent(forKey: .command)
         description = container.decodeLossyStringIfPresent(forKey: .description)
+        actionText = (container.decodeLossyStringIfPresent(forKey: .actionText)
+            ?? container.decodeLossyStringIfPresent(forKey: .actionTextSnake)).flatMap { $0.isEmpty ? nil : $0 }
         patternKey = container.decodeLossyStringIfPresent(forKey: .patternKey)
             ?? container.decodeLossyStringIfPresent(forKey: .patternKeySnake)
         patternKeys = Self.decodeStringArray(from: container, keys: [.patternKeys, .patternKeysSnake])

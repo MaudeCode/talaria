@@ -564,6 +564,11 @@ public final class ChatViewModel {
         await pendingActionCoordinator.respondToConnectionOperation(move, env: env, opID: opID)
     }
 
+    /// TAL-1469: the chat's approval and question as the server holds them now, after one was answered elsewhere.
+    public func refreshPendingPrompts() async {
+        await pendingActionCoordinator.refreshPendingPrompts()
+    }
+
     /// Back from an authorization link: the owner looks now, when the server offers that.
     public func wakeConnectionOperation() async {
         await pendingActionCoordinator.wakeConnectionOperation()

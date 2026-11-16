@@ -218,11 +218,17 @@ export function alertForState(
     case "waiting_for_approval":
       return preferences.notifyOnApproval
         // Generic copy: an approval alert never carries the session title or anything the approval names.
-        ? { title: approvalAlertTitleKey, body: approvalAlertBodyKey, localized: true, interruptionLevel: "time-sensitive" }
+        ? {
+          title: approvalAlertTitleKey, body: approvalAlertBodyKey, localized: true, interruptionLevel: "time-sensitive",
+          ...(next.approvalHeadId ? { category: "talaria.approval" as const, headId: next.approvalHeadId } : {}),
+        }
         : null;
     case "waiting_for_input":
       return preferences.notifyOnInput
-        ? { title: next.title, body: `Input needed on ${next.publisherLabel}`, interruptionLevel: "time-sensitive" }
+        ? {
+          title: next.title, body: `Input needed on ${next.publisherLabel}`, interruptionLevel: "time-sensitive",
+          ...(next.inputHeadId ? { category: "talaria.input" as const, headId: next.inputHeadId } : {}),
+        }
         : null;
     case "completed":
       // TAL-873: a turn a finished sub-agent or background process started completes quietly unless the device opts in.

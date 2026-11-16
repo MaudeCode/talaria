@@ -1,0 +1,18 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Answer a waiting run from its notification: Deny an approval, Allow one whose command the notification shows, or Reply to a question, without opening the app.",
+      "highlight": true,
+      "components": [
+        "app",
+        "relay"
+      ],
+      "announcement": {
+        "title": "Answer from notifications",
+        "description": "Allow, Deny or Reply right from a Talaria notification without opening the app.",
+        "icon": "notifications"
+      }
+    }
+  ]
+}
