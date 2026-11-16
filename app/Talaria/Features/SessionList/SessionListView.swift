@@ -472,6 +472,10 @@ struct SessionListView: View {
                             userInfo: [SessionsChange.userInfoKey: change]
                         )
                         Task { await refreshSessionsAndActiveProfile() }
+                        Task {
+                            await updateNotificationViewModel.refresh()
+                            updateNotificationsRefreshed()
+                        }
                     },
                     onLiveChange: { isSessionEventStreamLive = $0 }
                 )
@@ -1828,15 +1832,12 @@ struct SessionListView: View {
 
     private func refreshUpdateNotificationsWhileActive() async {
         guard scenePhase == .active else { return }
-        while !Task.isCancelled {
-            let continuePolling = await updateNotificationViewModel.refresh()
-            handleUpdateNotificationError()
-            guard continuePolling else {
-                isPresentingUpdateNotifications = false
-                return
-            }
-            try? await Task.sleep(for: .seconds(5))
-        }
+        await updateNotificationViewModel.refreshWhileActive(onRefresh: updateNotificationsRefreshed)
+    }
+
+    private func updateNotificationsRefreshed() {
+        handleUpdateNotificationError()
+        if !updateNotificationViewModel.supportsNotifications { isPresentingUpdateNotifications = false }
     }
 
     private func sidebarButton(isPresented: Bool = false) -> some View {
