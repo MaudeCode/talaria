@@ -138,6 +138,23 @@ final class AttachmentAudioDetectionTests: XCTestCase {
         }
     }
 
+    func testContainerTypeTellsAudioOnlyMPEG4FromMoviesUnderGenericBrands() {
+        func box(_ type: String, _ payload: [UInt8]) -> [UInt8] {
+            withUnsafeBytes(of: UInt32(8 + payload.count).bigEndian, Array.init) + Array(type.utf8) + payload
+        }
+        func mpeg4(brand: String, handlers: [String]) -> Data {
+            let tracks = handlers.map { handler in
+                box("trak", box("mdia", box("hdlr", [UInt8](repeating: 0, count: 8) + Array(handler.utf8) + [UInt8](repeating: 0, count: 13))))
+            }
+            return Data(box("ftyp", Array("\(brand)\0\0\u{2}\0isom".utf8)) + box("moov", tracks.flatMap { $0 }))
+        }
+
+        for brand in ["isom", "mp42"] {
+            XCTAssertEqual(AttachmentAudioDetection.containerType(of: mpeg4(brand: brand, handlers: ["soun"]))?.fileExtension, "m4a", brand)
+            XCTAssertNil(AttachmentAudioDetection.containerType(of: mpeg4(brand: brand, handlers: ["vide", "soun"])), brand)
+        }
+    }
+
     func testContainerTypeIgnoresImagesAndOtherBytes() throws {
         let png = try XCTUnwrap(TestImages.pngData(width: 2, height: 2))
         XCTAssertNil(AttachmentAudioDetection.containerType(of: png))

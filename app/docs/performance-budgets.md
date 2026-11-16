@@ -189,8 +189,9 @@ models. The prefetched transcript applies only once the chat has appeared.
 A transcript row for remote media the server could not type, and its export,
 decoded the bytes as an image and then built an `AVAudioPlayer` to learn
 whether they were audio. A WAV made ImageIO probe its RIFF header as WebP and
-started the audio subsystem. Both paths now read the first 12 bytes through
-`AttachmentAudioDetection.containerType(of:)` first (TAL-866). The test counts
+started the audio subsystem. Both paths now check the header first through
+`AttachmentAudioDetection.containerType(of:)` (TAL-866): its first 12 bytes,
+and for an MPEG-4 file with a generic brand, its track handler types. The test counts
 the probes it reaches in DEBUG builds and asserts none for the WAV.
 
 `measure` discards its first iteration, so the test attaches that first, cold
