@@ -24,8 +24,55 @@ final class KanbanLiveUpdateTests: KanbanDefaultsTestCase {
         XCTAssertNil(lastRequest?.since)
         let statsCallCount = await client.statsCallCount
         let assigneeCallCount = await client.assigneeCallCount
-        XCTAssertEqual(statsCallCount, 2)
-        XCTAssertEqual(assigneeCallCount, 2)
+        XCTAssertEqual(statsCallCount, 1)
+        XCTAssertEqual(assigneeCallCount, 1)
+
+        await state.refresh()
+        let refreshedStatsCallCount = await client.statsCallCount
+        let refreshedAssigneeCallCount = await client.assigneeCallCount
+        XCTAssertEqual(refreshedStatsCallCount, 2)
+        XCTAssertEqual(refreshedAssigneeCallCount, 2)
+        state.setVisible(false)
+    }
+
+    func testBurstDuringLiveReconcileAppliesItAndQueuesOneFollowUp() async throws {
+        try await assertHeldLiveReconcileAppliesAndQueuesOneFollowUp(burstsDuringRequest: 1)
+    }
+
+    func testBurstsDuringLiveReconcileQueueOnlyOneFollowUp() async throws {
+        try await assertHeldLiveReconcileAppliesAndQueuesOneFollowUp(burstsDuringRequest: 3)
+    }
+
+    private func assertHeldLiveReconcileAppliesAndQueuesOneFollowUp(burstsDuringRequest: Int) async throws {
+        let client = LiveKanbanClient(
+            boardResults: [.success(.rich), .success(.newer), .success(.newest)],
+            heldBoardCalls: [2, 3]
+        )
+        let stream = KanbanStreamSpy()
+        let state = makeState(client: client, stream: stream)
+
+        await state.load()
+        state.setVisible(true)
+        stream.emit(.hello(cursor: 11, board: "main"))
+        stream.emit(Self.eventsFrame(cursor: 12, kind: "task.updated"))
+        try await waitUntil { await client.heldBoardCallCount == 1 }
+
+        for cursor in 13..<(13 + burstsDuringRequest) {
+            stream.emit(Self.eventsFrame(cursor: cursor, kind: "task.updated"))
+        }
+        // Several coalescing delays: a burst that restarted the reconcile would have sent its request by now.
+        try await Task.sleep(for: .milliseconds(50))
+        await client.releaseHeldBoardCall()
+
+        try await waitUntil { await client.boardCallCount == 3 }
+        XCTAssertEqual(state.snapshot?.latestEventID, 13, "the held request's result was discarded")
+        await client.releaseHeldBoardCall()
+        try await waitUntil { state.snapshot?.latestEventID == 14 }
+        try await Task.sleep(for: .milliseconds(50))
+        let boardCallCount = await client.boardCallCount
+        let statsCallCount = await client.statsCallCount
+        XCTAssertEqual(boardCallCount, 3)
+        XCTAssertEqual(statsCallCount, 1)
         state.setVisible(false)
     }
 
@@ -520,18 +567,30 @@ private actor LiveKanbanClient: KanbanDataClient {
     private(set) var assigneeCallCount = 0
     private(set) var configurationCallCount = 0
     private(set) var boardsCallCount = 0
+    /// One-based Board call numbers that wait for `releaseHeldBoardCall()` before returning.
+    private let heldBoardCalls: Set<Int>
+    private var heldBoardContinuations: [CheckedContinuation<Void, Never>] = []
 
     init(
         configuration: KanbanConfiguration = .liveConfiguration,
         boards: KanbanBoardsResponse = .single,
         boardResults: [Result<KanbanBoardSnapshot, Error>],
         eventsResult: Result<KanbanEventsEnvelope, Error> = .success(.events(cursor: 11)),
-        boardsResults: [Result<KanbanBoardsResponse, Error>]? = nil
+        boardsResults: [Result<KanbanBoardsResponse, Error>]? = nil,
+        heldBoardCalls: Set<Int> = []
     ) {
         self.configuration = configuration
         self.boardsResults = boardsResults ?? [.success(boards)]
         self.boardResults = boardResults
         self.eventsResult = eventsResult
+        self.heldBoardCalls = heldBoardCalls
+    }
+
+    var heldBoardCallCount: Int { heldBoardContinuations.count }
+
+    func releaseHeldBoardCall() {
+        guard !heldBoardContinuations.isEmpty else { return }
+        heldBoardContinuations.removeFirst().resume()
     }
 
     var boardCallCount: Int { boardRequests.count }
@@ -550,10 +609,13 @@ private actor LiveKanbanClient: KanbanDataClient {
         return try boardsResults[0].get()
     }
 
-    func kanbanBoard(_ request: KanbanBoardRequest) throws -> KanbanBoardSnapshot {
+    func kanbanBoard(_ request: KanbanBoardRequest) async throws -> KanbanBoardSnapshot {
         boardRequests.append(request)
-        guard !boardResults.isEmpty else { return .newer }
-        return try boardResults.removeFirst().get()
+        let result = boardResults.isEmpty ? .success(.newer) : boardResults.removeFirst()
+        if heldBoardCalls.contains(boardRequests.count) {
+            await withCheckedContinuation { heldBoardContinuations.append($0) }
+        }
+        return try result.get()
     }
 
     func kanbanStats(board: String) -> KanbanStats {
@@ -637,6 +699,7 @@ private extension KanbanBoardSnapshot {
     static let archivable: Self = decode(#"{"changed":true,"latest_event_id":11,"read_only":false,"columns":[{"name":"ready","tasks":[{"id":"CARD-1","status":"ready",\#(allCardActions)}]}]}"#)
     static let archived: Self = decode(#"{"changed":true,"latest_event_id":12,"read_only":false,"columns":[{"name":"ready","tasks":[]}]}"#)
     static let newer: Self = decode(#"{"changed":true,"latest_event_id":13,"read_only":false,"columns":[{"name":"ready","tasks":[{"id":"CARD-2","status":"ready"}]}]}"#)
+    static let newest: Self = decode(#"{"changed":true,"latest_event_id":14,"read_only":false,"columns":[{"name":"ready","tasks":[{"id":"CARD-3","status":"ready"}]}]}"#)
     static let release: Self = decode(#"{"changed":true,"latest_event_id":20,"read_only":false,"columns":[{"name":"triage","tasks":[]}]}"#)
     static let releaseUpdated: Self = decode(#"{"changed":true,"latest_event_id":21,"read_only":false,"columns":[{"name":"triage","tasks":[{"id":"REL-1","status":"triage"}]}]}"#)
 }
