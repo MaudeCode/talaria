@@ -2701,9 +2701,13 @@ function activityFields(fields: { kind?: unknown; target?: unknown; verb?: unkno
   }
 }
 
-/** TAL-2336: a run's call from its live record, as its transcript row shows it: redacted, with its outcome once it finished. */
-export function activityTool(call: Record<string, unknown>, enabled: boolean, workspace: string | null): ActivityTool {
+/**
+ * TAL-2336: a run's call from its live record, as its transcript row shows it: redacted, with its outcome once it finished.
+ * A call the transcript leaves out (TAL-2331 `hidden`) is named nowhere else either.
+ */
+export function activityTool(call: Record<string, unknown>, enabled: boolean, workspace: string | null): ActivityTool | undefined {
   const frame = publicToolFrame(call, enabled, workspace)
+  if (frame.hidden === true) return undefined
   const outcome = isDict(frame.result_view) && isDict(frame.result_view.outcome) ? frame.result_view.outcome as ActivityTool['outcome'] : undefined
   return activityFields(frame, call.done === true, call.is_error === true, outcome)
 }

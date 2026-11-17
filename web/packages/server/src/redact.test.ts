@@ -3,7 +3,7 @@ import { subscribe, unsubscribe } from 'node:diagnostics_channel'
 import { describe, expect, it, vi } from 'vitest'
 import { isRasterDataUri } from './raster-image.js'
 import { toolOutcome } from './sessions/merge.js'
-import { mightContainSensitiveText, publicToolFrame, redactNestedMessageContainers, redactSensitive, redactSessionData, redactText } from './redact.js'
+import { activityTool, mightContainSensitiveText, publicToolFrame, redactNestedMessageContainers, redactSensitive, redactSessionData, redactText } from './redact.js'
 import { MessageSchema } from '@maudecode/talaria-web-contracts'
 import { sanitizeShareMessage } from './sessions/shares.js'
 import { hydrateAnchorActivityScenes, withTurnIds } from './sessions/anchor.js'
@@ -1694,4 +1694,11 @@ describe('tool argument and result rows (TAL-2318)', () => {
     // A bare completion carries no rows of its own, so its start frame's stay.
     expect(publicToolFrame({ name: 'session_search', args: {} }, true)).not.toHaveProperty('args_fields')
   })
+})
+
+// TAL-2336: a Live Activity names no call its transcript leaves out: a tool lookup while lookups are hidden (TAL-2331).
+it('names no hidden tool lookup on a Live Activity, and a failed one as its row shows it', () => {
+  const lookup = { name: 'tool_search', args: { query: 'calendar' }, tid: 't', done: true }
+  expect(activityTool(lookup, true, null)).toBeUndefined()
+  expect(activityTool({ ...lookup, is_error: true }, true, null)).toMatchObject({ kind: 'search', done: true, failed: true })
 })
