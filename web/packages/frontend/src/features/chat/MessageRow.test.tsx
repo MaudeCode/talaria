@@ -5,6 +5,7 @@ import { Transcript } from './Transcript'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { Message } from '../../contracts'
+import type { TurnSummaryPart } from '@maudecode/talaria-web-contracts'
 import { groupAssistantTurns } from './turnActivity'
 import { projectMessages } from './useTranscript'
 import { LiveStatusPill } from './LiveTurnView'
@@ -123,6 +124,31 @@ describe('reply token speed (TAL-2150)', () => {
     render(<AssistantMessageRow row={reply()} name="Assistant" mode="compact_worklog" actions={{}} tts={false} tps isLast />)
     expect(screen.queryByText(/tok\/s/)).toBeNull()
     expect(screen.getByText('4.3s · test-model')).toBeTruthy()
+  })
+})
+
+describe('reply turn summary (TAL-2339)', () => {
+  const reply = (summary?: unknown) => groupAssistantTurns(projectMessages([{ role: 'assistant', id: 1, content: 'Done.', _turnDuration: 12, _usedModel: 'test-model',
+    _anchor_activity_scene: { version: 'activity_scene_v1', activity_rows: [], final_answer: 'Done.', terminal_state: 'completed', ...(summary === undefined ? {} : { turn_summary: summary as TurnSummaryPart[] }) } }]))[0]!
+  const footer = (container: HTMLElement) => container.querySelector<HTMLElement>('.msg-foot')!
+
+  it('follows the duration and model on the footer\'s line, each part in the reader\'s words', () => {
+    const { container } = render(<AssistantMessageRow row={reply([{ key: 'files_changed', count: 3 }, { key: 'memories_saved', count: 1 }, { key: 'schedules_changed', count: 1 }, { key: 'messages_sent', count: 2 }])} name="Assistant" mode="compact_worklog" actions={{}} tts={false} isLast />)
+    const meta = footer(container).querySelector<HTMLElement>('.msg-run-meta')!
+    expect(meta.textContent).toBe('12s · test-model · Changed 3 files · Saved 1 memory · Changed 1 schedule · Sent 2 messages')
+    expect(meta.querySelector('.msg-turn-summary')?.textContent).toBe('Changed 3 files · Saved 1 memory · Changed 1 schedule · Sent 2 messages')
+    expect(meta.title).toBe(meta.textContent)
+    expect(footer(container).dataset.turnSummary).toBe('1')
+  })
+
+  it('adds nothing for a turn that changed nothing, from an older server, or for a part a newer server adds', () => {
+    for (const summary of [[], undefined, [{ key: 'widgets_built', count: 4 }]]) {
+      const { container, unmount } = render(<AssistantMessageRow row={reply(summary)} name="Assistant" mode="compact_worklog" actions={{}} tts={false} isLast />)
+      expect(footer(container).querySelector('.msg-run-meta')?.textContent).toBe('12s · test-model')
+      expect(footer(container).querySelector('.msg-turn-summary')).toBeNull()
+      expect(footer(container).dataset.turnSummary).toBeUndefined()
+      unmount()
+    }
   })
 })
 

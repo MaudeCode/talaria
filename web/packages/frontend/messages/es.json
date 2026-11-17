@@ -1956,6 +1956,96 @@
 	"tree_view": "树形",
 	"tts_listen": "Escuchar",
 	"tts_not_supported": "Síntesis de voz no disponible",
+	"turn_summary_files_changed": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "{count} archivo cambiado",
+				"countPlural=other": "{count} archivos cambiados"
+			}
+		}
+	],
+	"turn_summary_memories_saved": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "{count} entrada de memoria guardada",
+				"countPlural=other": "{count} entradas de memoria guardadas"
+			}
+		}
+	],
+	"turn_summary_messages_sent": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "{count} mensaje enviado",
+				"countPlural=other": "{count} mensajes enviados"
+			}
+		}
+	],
+	"turn_summary_schedules_changed": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "{count} programación cambiada",
+				"countPlural=other": "{count} programaciones cambiadas"
+			}
+		}
+	],
+	"turn_summary_skills_updated": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "{count} habilidad actualizada",
+				"countPlural=other": "{count} habilidades actualizadas"
+			}
+		}
+	],
+	"turn_summary_tasks_updated": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "{count} tarea actualizada",
+				"countPlural=other": "{count} tareas actualizadas"
+			}
+		}
+	],
 	"type_slash": "Escribe / para ver los comandos",
 	"unsaved_confirm": "Tienes cambios sin guardar en la vista previa. ¿Descartar y navegar?",
 	"untitled": "Sin título",

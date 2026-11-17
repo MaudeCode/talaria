@@ -25,6 +25,8 @@ struct ChatTranscriptMessageBlock: View, Equatable {
     let isEditingMessage: Bool
     let isForkingMessage: Bool
     let disablesHistoryActions: Bool
+    /// TAL-2339: the git recap card shows under this turn, so its reply's summary leaves out the file count.
+    let showsGitRecap: Bool
     let loadAttachmentImage: @MainActor (String) async -> Data?
     let loadAttachmentData: @MainActor (String) async -> Data?
     let loadTranscriptMediaImage: @MainActor (TranscriptMediaReference) async -> Data?
@@ -66,6 +68,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
             lhs.isEditingMessage == rhs.isEditingMessage &&
             lhs.isForkingMessage == rhs.isForkingMessage &&
             lhs.disablesHistoryActions == rhs.disablesHistoryActions &&
+            lhs.showsGitRecap == rhs.showsGitRecap &&
             lhs.transcriptMediaCacheNamespace == rhs.transcriptMediaCacheNamespace
     }
 
@@ -541,6 +544,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
             attachments: includesAttachments ? message.attachments : nil,
             turnDuration: includesTurnMetrics ? message.turnDuration : nil,
             turnTps: includesTurnMetrics ? message.turnTps : nil,
+            turnSummary: includesTurnMetrics ? AssistantTurnSummary.shownParts(message.turnSummary, besideGitRecap: showsGitRecap) : nil,
             turnId: message.turnId,
             steer: message.steer,
             displayExcerpt: displayExcerpt,

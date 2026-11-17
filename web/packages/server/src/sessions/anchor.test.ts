@@ -662,12 +662,14 @@ describe('anchor scenes over HTTP', () => {
     ]
     await s.deps.sessionStore.save(session)
     // A client-posted scene cannot claim changes its turn never made.
-    expect((await post(s, '/api/session/anchor-scene', { session_id: sid, message_index: 4, scene: { version: 'activity_scene_v1', activity_rows: [], file_changes: [{ path: 'forged', action: 'added' }] } })).status).toBe(200)
+    expect((await post(s, '/api/session/anchor-scene', { session_id: sid, message_index: 4, scene: { version: 'activity_scene_v1', activity_rows: [], file_changes: [{ path: 'forged', action: 'added' }], turn_summary: [{ key: 'messages_sent', count: 9 }] } })).status).toBe(200)
     const messages = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
     const settled = messages.map((m) => (m._anchor_activity_scene as Json | undefined)?.file_changes)
     expect(settled[2]).toEqual([{ path: 'src/a.swift', action: 'edited' }, { path: 'new.swift', action: 'renamed' }])
     expect(settled[4]).toEqual([])
     expect(settled[6]).toEqual([{ path: 'c.swift', action: 'deleted' }])
+    // TAL-2339: the footer summary is the turn's own too, and counts only calls that returned a result: none of these did.
+    expect(messages.map((m) => (m._anchor_activity_scene as Json | undefined)?.turn_summary)).toEqual([undefined, undefined, [], undefined, [], undefined, []])
   })
 
   it('keeps full tool results in scenes, clipping them only in a limited response like raw tool rows', async () => {

@@ -71,6 +71,8 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
     public internal(set) var attachments: [MessageAttachment]?
     public internal(set) var turnDuration: Double?
     public internal(set) var turnTps: Double?
+    /// TAL-2339: what the settled turn changed, which its reply's header words; nil without one.
+    public internal(set) var turnSummary: [TurnSummaryPart]?
     /// The server turn this row belongs to; turns are grouped by equality of this id.
     public internal(set) var turnId: String?
     /// A consumed steer the server persisted in its turn: shown inside the turn's scene, never as its own row.
@@ -121,6 +123,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
         attachments: [MessageAttachment]? = nil,
         turnDuration: Double? = nil,
         turnTps: Double? = nil,
+        turnSummary: [TurnSummaryPart]? = nil,
         turnId: String? = nil,
         steer: [String: JSONValue]? = nil,
         displayExcerpt: String? = nil,
@@ -148,6 +151,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
         self.attachments = attachments
         self.turnDuration = turnDuration
         self.turnTps = turnTps
+        self.turnSummary = turnSummary
         self.turnId = turnId
         self.steer = steer
         self.displayExcerpt = displayExcerpt
@@ -214,6 +218,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
         turnDuration = container.decodeLossyDoubleIfPresent(forKey: .turnDuration)
             ?? activityScene?.turnDuration
         turnTps = container.decodeLossyDoubleIfPresent(forKey: .turnTps)
+        turnSummary = activityScene?.turnSummary
         turnId = container.decodeLossyStringIfPresent(forKey: .turnId)
         steer = try? container.decodeIfPresent([String: JSONValue].self, forKey: .steer)
         displayExcerpt = (try? container.decodeIfPresent(Bool.self, forKey: .displayTruncated)) == true
@@ -399,6 +404,46 @@ public struct BackgroundLine: Codable, Equatable, Sendable {
     }
 }
 
+/// TAL-2339: one part of a settled turn's summary (`_anchor_activity_scene.turn_summary`): what kind of thing it changed and how
+/// many. The server counts it from the turn's successful calls; the App only words it.
+public struct TurnSummaryPart: Codable, Equatable, Sendable {
+    public enum Key: String, Codable, Sendable {
+        case filesChanged = "files_changed", memoriesSaved = "memories_saved", skillsUpdated = "skills_updated"
+        case schedulesChanged = "schedules_changed", tasksUpdated = "tasks_updated", messagesSent = "messages_sent"
+    }
+
+    public let key: Key
+    public let count: Int
+
+    public init(key: Key, count: Int) {
+        self.key = key
+        self.count = count
+    }
+
+    /// Parts decode one by one, so a part a newer server adds drops alone.
+    static func decodeLossily(_ values: [JSONValue]) -> [TurnSummaryPart] {
+        values.compactMap { value in
+            guard case .object(let object) = value,
+                  case .string(let rawKey)? = object["key"], let key = Key(rawValue: rawKey),
+                  case .number(let number)? = object["count"], let count = Int(exactly: number), count > 0
+            else { return nil }
+            return TurnSummaryPart(key: key, count: count)
+        }
+    }
+
+    /// The part in the reader's words.
+    public var text: String {
+        switch key {
+        case .filesChanged: String(localized: "Changed \(count) files")
+        case .memoriesSaved: String(localized: "Saved \(count) memories")
+        case .skillsUpdated: String(localized: "Updated \(count) skills")
+        case .schedulesChanged: String(localized: "Changed \(count) schedules")
+        case .tasksUpdated: String(localized: "Updated \(count) tasks")
+        case .messagesSent: String(localized: "Sent \(count) messages")
+        }
+    }
+}
+
 public struct AssistantActivityScene: Codable, Equatable, Sendable {
     public let version: String?
     public let finalAnswer: String?
@@ -423,6 +468,8 @@ public struct AssistantActivityScene: Codable, Equatable, Sendable {
     /// Server-attributed files the whole turn changed, in first-touch order; `nil` from a Web
     /// that predates the field (TAL-355), which then shows no recap.
     public let fileChanges: [AssistantTurnFileChange]?
+    /// TAL-2339: what the whole turn changed, in the server's order; `nil` from a Web that predates the field.
+    public let turnSummary: [TurnSummaryPart]?
 
     /// TAL-2332: read only to give each row its group's record.
     private enum GroupKeys: String, CodingKey { case activityGroups }
@@ -442,6 +489,7 @@ public struct AssistantActivityScene: Codable, Equatable, Sendable {
         case finalPhaseDuration
         case serverHasConsumedSteering = "hasConsumedSteering"
         case fileChanges
+        case turnSummary
     }
 
     public init(from decoder: Decoder) throws {
@@ -460,6 +508,8 @@ public struct AssistantActivityScene: Codable, Equatable, Sendable {
         serverHasConsumedSteering = try? container.decodeIfPresent(Bool.self, forKey: .serverHasConsumedSteering)
         fileChanges = (try? container.decodeIfPresent([JSONValue].self, forKey: .fileChanges))
             .map(AssistantTurnFileChange.decodeLossily)
+        turnSummary = (try? container.decodeIfPresent([JSONValue].self, forKey: .turnSummary))
+            .map(TurnSummaryPart.decodeLossily)
 
         let groups = AssistantActivityGroup.byID(try? decoder.container(keyedBy: GroupKeys.self).decodeIfPresent([JSONValue].self, forKey: .activityGroups))
         activityRows = (try? container.decodeIfPresent([JSONValue].self, forKey: .activityRows))

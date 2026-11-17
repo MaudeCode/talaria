@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "A reply's footer on Web and its header in the App say what the turn changed, such as \"Changed 3 files · Saved 1 memory · Changed 1 schedule\", on the same line as its other details; failed calls are not counted.",
+      "highlight": false,
+      "components": [
+        "web",
+        "app"
+      ],
+      "announce": false
+    }
+  ]
+}

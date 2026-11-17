@@ -16,6 +16,7 @@ import { toolMessageForLimitedPayload } from './window.js'
 import { decidedEditDiff, toolArgs, toolEditDiff, toolName } from './tool-display.js'
 import { ToolProgressSchema, type ToolProgress, type ToolEditDiff } from '@maudecode/talaria-web-contracts'
 import { turnFileChanges } from './file-changes.js'
+import { turnSummary } from './turn-summary.js'
 
 const isDict = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
 
@@ -487,7 +488,7 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
   return {
     version: 'activity_scene_v1', activity_rows: rows, final_answer: finalAnswer, terminal_state: terminalState,
     expanded_by_default: worklogExpandedByDefault(terminalState, rows.length, { mustShow: rows.some((row) => row.tool?.result_view?.outbound_draft ?? row.tool?.result_view?.proposal ?? row.tool?.result_view?.block ?? row.tool?.result_view?.terminal ?? row.tool?.result_view?.media?.length) }), turn_duration: anchorSceneMessageTurnDuration(last),
-    file_changes: turnFileChanges(rows),
+    file_changes: turnFileChanges(rows), turn_summary: turnSummary(rows),
     ...(typeof last._final_phase_duration === 'number' ? { final_phase_duration: last._final_phase_duration } : {}),
   }
 }
@@ -529,10 +530,10 @@ function withBuiltToolFlags(rows: unknown, built: Record<string, unknown> | null
   })
 }
 
-/** The outcome fields a stored scene predates, from its turn by the same rules as a built one, and the turn's file changes. */
+/** The outcome fields a stored scene predates, from its turn by the same rules as a built one, and the turn's file changes and summary (TAL-2339). */
 function withStoredOutcome(preview: Record<string, unknown>, built: Record<string, unknown> | null): Record<string, unknown> {
   // Always the turn's own: a stored scene is client-posted, so its rows never decide what the turn changed.
-  const next: Record<string, unknown> = { ...preview, file_changes: built?.file_changes ?? [], activity_rows: withBuiltToolFlags(preview.activity_rows, built) }
+  const next: Record<string, unknown> = { ...preview, file_changes: built?.file_changes ?? [], turn_summary: built?.turn_summary ?? [], activity_rows: withBuiltToolFlags(preview.activity_rows, built) }
   // Only an explicit outcome carries over from the turn; answered or not follows the scene's own final answer.
   const explicit = str(built?.terminal_state)
   if (!str(next.terminal_state)) next.terminal_state = explicit && explicit !== 'completed' && explicit !== 'no_response' ? explicit : str(next.final_answer).trim() ? 'completed' : 'no_response'

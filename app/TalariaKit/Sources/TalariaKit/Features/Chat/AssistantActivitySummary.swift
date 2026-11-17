@@ -13,6 +13,18 @@ public enum AssistantTurnSummary {
         if hours > 0 { return String(localized: "Worked for \(hours)h \(minutes)m") }
         return String(localized: "Worked for \(minutes)m \(total % 60)s")
     }
+
+    /// TAL-2339: the parts of a settled turn's summary its reply shows: every part, but the file count where the git recap
+    /// card under the turn already says it.
+    public static func shownParts(_ parts: [TurnSummaryPart]?, besideGitRecap: Bool) -> [TurnSummaryPart]? {
+        besideGitRecap ? parts?.filter { $0.key != .filesChanged } : parts
+    }
+
+    /// TAL-2339: a turn's summary as one run of text joined by middle dots; nil when it has no part.
+    public static func changes(_ parts: [TurnSummaryPart]?) -> String? {
+        guard let parts, !parts.isEmpty else { return nil }
+        return parts.map(\.text).joined(separator: " · ")
+    }
 }
 
 public enum AssistantActivityHeaderSummary {

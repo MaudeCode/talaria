@@ -65,6 +65,12 @@
               "action": "edited"
             }
           ],
+          "turn_summary": [
+            {
+              "key": "files_changed",
+              "count": 1
+            }
+          ],
           "activity_groups": [
             {
               "group_id": "group:0",
@@ -215,6 +221,7 @@
           "terminal_state": "completed",
           "expanded_by_default": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_groups": [
             {
               "group_id": "group:0",
@@ -311,6 +318,7 @@
           "has_consumed_steering": false,
           "activity_scene_ref": "f9928a710235ec20fd940085c6f26e7b37d1f1b0d3d52aba0664371eefd9fb8f",
           "file_changes": [],
+          "turn_summary": [],
           "activity_groups": [],
           "final_phase_activity": {
             "group_id": "phase:0",
@@ -341,6 +349,7 @@
           "has_consumed_steering": false,
           "activity_scene_ref": "12bef384f788f810bccc2f1750a8a6cfd29aea0184d0bfb135420e7ed6e0aabc",
           "file_changes": [],
+          "turn_summary": [],
           "activity_groups": [],
           "final_phase_activity": {
             "group_id": "phase:0",
@@ -482,6 +491,7 @@
           "has_consumed_steering": false,
           "activity_scene_ref": "e47b99c9f7978ea6c1dbce5894c55d1724a6b10e70874ac245908af12a982075",
           "file_changes": [],
+          "turn_summary": [],
           "activity_groups": [
             {
               "group_id": "group:0",
@@ -620,6 +630,7 @@
           "has_consumed_steering": false,
           "activity_scene_ref": "9d328184a056a90fee315a9711c8f475bee7b3b9cf2e075576e67c283b7b8aeb",
           "file_changes": [],
+          "turn_summary": [],
           "activity_groups": [
             {
               "group_id": "group:0",
@@ -733,6 +744,7 @@
           "has_consumed_steering": false,
           "activity_scene_ref": "a9c678a881acc3f427bdd7fcf546980c993682b3412aee746d19dcf1d298c43a",
           "file_changes": [],
+          "turn_summary": [],
           "activity_groups": [
             {
               "group_id": "group:0",
@@ -1028,6 +1040,7 @@
           "has_consumed_steering": true,
           "activity_scene_ref": "d17054d885c35cd26205697b2c00128d79ea43ef67f732a08a06e55043265ad7",
           "file_changes": [],
+          "turn_summary": [],
           "activity_groups": [
             {
               "group_id": "group:0",
@@ -1485,6 +1498,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 2,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -1668,6 +1682,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 2,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -1808,6 +1823,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 2,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -1928,6 +1944,7 @@
           "expanded_by_default": true,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 2,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -2077,6 +2094,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 0,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -2118,6 +2136,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 0,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -2156,6 +2175,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 0,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -2202,6 +2222,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 0,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -2240,6 +2261,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 0,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -2318,6 +2340,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 0,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -2386,6 +2409,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 0,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -2448,6 +2472,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 0,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -2511,6 +2536,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 0,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -2574,6 +2600,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 0,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -2613,6 +2640,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 0,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -3108,6 +3136,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 1,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -3164,6 +3193,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 1,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -3220,6 +3250,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 1,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -3276,6 +3307,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 1,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -3332,6 +3364,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 1,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -3388,6 +3421,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 1,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -3444,6 +3478,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 1,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -3500,6 +3535,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 1,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -3556,6 +3592,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 1,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -3612,6 +3649,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 1,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -3668,6 +3706,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 1,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -3724,6 +3763,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 1,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -3769,6 +3809,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 0,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -3807,6 +3848,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 0,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -3845,6 +3887,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 0,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -3900,6 +3943,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 1,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -3957,6 +4001,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 1,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -4007,6 +4052,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 0,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -4064,6 +4110,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 0,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -4137,6 +4184,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 0,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -4510,6 +4558,7 @@
             "expanded_by_default": false,
             "has_consumed_steering": false,
             "file_changes": [],
+            "turn_summary": [],
             "activity_rows_total": 4,
             "activity_rows_offset": 0,
             "activity_rows_complete": true,
@@ -4926,6 +4975,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 0,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -5068,6 +5118,7 @@
           "expanded_by_default": true,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 4,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -5498,6 +5549,12 @@
                 "action": "edited"
               }
             ],
+            "turn_summary": [
+              {
+                "key": "files_changed",
+                "count": 2
+              }
+            ],
             "activity_rows_total": 2,
             "activity_rows_offset": 0,
             "activity_rows_complete": true,
@@ -5604,6 +5661,7 @@
             "expanded_by_default": false,
             "has_consumed_steering": false,
             "file_changes": [],
+            "turn_summary": [],
             "activity_rows_total": 0,
             "activity_rows_offset": 0,
             "activity_rows_complete": true,
@@ -5651,6 +5709,7 @@
             "expanded_by_default": false,
             "has_consumed_steering": false,
             "file_changes": [],
+            "turn_summary": [],
             "activity_rows_total": 0,
             "activity_rows_offset": 0,
             "activity_rows_complete": true,
@@ -5916,6 +5975,7 @@
           "expanded_by_default": true,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 1,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -6164,6 +6224,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 0,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -6228,6 +6289,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 0,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -6686,6 +6748,16 @@
                 "action": "edited"
               }
             ],
+            "turn_summary": [
+              {
+                "key": "files_changed",
+                "count": 1
+              },
+              {
+                "key": "skills_updated",
+                "count": 1
+              }
+            ],
             "activity_rows_total": 2,
             "activity_rows_offset": 0,
             "activity_rows_complete": true,
@@ -6774,6 +6846,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 0,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -6810,6 +6883,7 @@
           "expanded_by_default": false,
           "has_consumed_steering": false,
           "file_changes": [],
+          "turn_summary": [],
           "activity_rows_total": 0,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
@@ -7576,6 +7650,7 @@
             "expanded_by_default": false,
             "has_consumed_steering": false,
             "file_changes": [],
+            "turn_summary": [],
             "activity_rows_total": 4,
             "activity_rows_offset": 0,
             "activity_rows_complete": true,
@@ -8010,6 +8085,7 @@
             "expanded_by_default": false,
             "has_consumed_steering": false,
             "file_changes": [],
+            "turn_summary": [],
             "activity_rows_total": 3,
             "activity_rows_offset": 0,
             "activity_rows_complete": true,
@@ -9017,6 +9093,7 @@
             "expanded_by_default": true,
             "has_consumed_steering": false,
             "file_changes": [],
+            "turn_summary": [],
             "activity_rows_total": 6,
             "activity_rows_offset": 0,
             "activity_rows_complete": true,
@@ -10047,6 +10124,16 @@
             "expanded_by_default": false,
             "has_consumed_steering": false,
             "file_changes": [],
+            "turn_summary": [
+              {
+                "key": "memories_saved",
+                "count": 1
+              },
+              {
+                "key": "schedules_changed",
+                "count": 1
+              }
+            ],
             "activity_rows_total": 7,
             "activity_rows_offset": 0,
             "activity_rows_complete": true,
@@ -10669,6 +10756,12 @@
             "expanded_by_default": false,
             "has_consumed_steering": false,
             "file_changes": [],
+            "turn_summary": [
+              {
+                "key": "tasks_updated",
+                "count": 2
+              }
+            ],
             "activity_rows_total": 4,
             "activity_rows_offset": 0,
             "activity_rows_complete": true,
@@ -11565,6 +11658,7 @@
             "expanded_by_default": true,
             "has_consumed_steering": false,
             "file_changes": [],
+            "turn_summary": [],
             "activity_rows_total": 7,
             "activity_rows_offset": 0,
             "activity_rows_complete": true,
@@ -11956,6 +12050,7 @@
             "expanded_by_default": false,
             "has_consumed_steering": false,
             "file_changes": [],
+            "turn_summary": [],
             "activity_rows_total": 3,
             "activity_rows_offset": 0,
             "activity_rows_complete": true,
@@ -12281,6 +12376,7 @@
             "expanded_by_default": false,
             "has_consumed_steering": false,
             "file_changes": [],
+            "turn_summary": [],
             "activity_rows_total": 3,
             "activity_rows_offset": 0,
             "activity_rows_complete": true,
@@ -13022,6 +13118,20 @@
             "expanded_by_default": false,
             "has_consumed_steering": false,
             "file_changes": [],
+            "turn_summary": [
+              {
+                "key": "memories_saved",
+                "count": 1
+              },
+              {
+                "key": "schedules_changed",
+                "count": 1
+              },
+              {
+                "key": "messages_sent",
+                "count": 1
+              }
+            ],
             "activity_groups": [
               {
                 "group_id": "group:0",
@@ -13635,6 +13745,12 @@
               {
                 "path": "src/auth/session.ts",
                 "action": "edited"
+              }
+            ],
+            "turn_summary": [
+              {
+                "key": "files_changed",
+                "count": 1
               }
             ],
             "activity_groups": [
@@ -14439,6 +14555,12 @@
             "expanded_by_default": false,
             "has_consumed_steering": false,
             "file_changes": [],
+            "turn_summary": [
+              {
+                "key": "tasks_updated",
+                "count": 1
+              }
+            ],
             "activity_groups": [
               {
                 "group_id": "group:0",

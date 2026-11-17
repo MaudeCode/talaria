@@ -150,9 +150,11 @@ public enum ChatTranscriptDisplaySettings {
         hasTextContent: Bool,
         isEnabled: Bool,
         showsResponseSpeed: Bool = false,
-        hasResponseSpeed: Bool = false
+        hasResponseSpeed: Bool = false,
+        hasTurnSummary: Bool = false
     ) -> Bool {
-        (isEnabled || (showsResponseSpeed && hasResponseSpeed)) &&
+        // TAL-2339: a reply whose turn changed something shows its summary in the header whatever the other settings.
+        (isEnabled || (showsResponseSpeed && hasResponseSpeed) || hasTurnSummary) &&
             role == "assistant" &&
             hasTextContent
     }

@@ -1932,6 +1932,96 @@
 	"tree_view": "Baum",
 	"tts_listen": "Anhören",
 	"tts_not_supported": "Sprachsynthese nicht verfügbar",
+	"turn_summary_files_changed": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "{count} Datei geändert",
+				"countPlural=other": "{count} Dateien geändert"
+			}
+		}
+	],
+	"turn_summary_memories_saved": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "{count} Erinnerung gespeichert",
+				"countPlural=other": "{count} Erinnerungen gespeichert"
+			}
+		}
+	],
+	"turn_summary_messages_sent": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "{count} Nachricht gesendet",
+				"countPlural=other": "{count} Nachrichten gesendet"
+			}
+		}
+	],
+	"turn_summary_schedules_changed": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "{count} Zeitplan geändert",
+				"countPlural=other": "{count} Zeitpläne geändert"
+			}
+		}
+	],
+	"turn_summary_skills_updated": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "{count} Skill aktualisiert",
+				"countPlural=other": "{count} Skills aktualisiert"
+			}
+		}
+	],
+	"turn_summary_tasks_updated": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "{count} Aufgabe aktualisiert",
+				"countPlural=other": "{count} Aufgaben aktualisiert"
+			}
+		}
+	],
 	"type_slash": "Tippe / für Befehle",
 	"unsaved_confirm": "Sie haben ungespeicherte Änderungen in der Vorschau. Verwerfen und fortfahren?",
 	"untitled": "Unbenannt",
