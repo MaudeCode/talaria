@@ -751,6 +751,36 @@ describe('target order', () => {
   })
 })
 
+describe('deferred tool bridges after reload (TAL-2316)', () => {
+  it('shows a persisted bridged call as the call it ran, with the live frame\'s name, kind and target, and its result card', () => {
+    const fn = (id: string, name: string, args: unknown) => ({ id, type: 'function', function: { name, arguments: JSON.stringify(args) } })
+    const block = { block_id: 'sb_0123456789ab', kind: 'table', title: 'Latency' }
+    const messages = withTurnIds([
+      { role: 'user', content: 'Go', _turn_id: 't' },
+      { role: 'assistant', content: '', _turn_id: 't', tool_calls: [
+        fn('d', 'tool_describe', { names: ['profile_list', 'session_list'] }),
+        fn('s', 'tool_call', { calls: [{ name: 'session_list', arguments: { query: 'deploy' } }] }),
+        fn('b', 'tool_call', { calls: [{ name: 'show', arguments: { path: 'latency.csv' } }] }),
+        fn('w', 'tool_call', { calls: [{ name: 'a', arguments: {} }, { name: 'b', arguments: {} }] }),
+      ] },
+      ...['d', 's', 'w'].map((id) => ({ role: 'tool', tool_call_id: id, content: '{}', _turn_id: 't' })),
+      { role: 'tool', tool_call_id: 'b', content: JSON.stringify(block), _turn_id: 't' },
+      { role: 'assistant', content: 'Done.', _turn_id: 't' },
+    ])
+    const out = redactSessionData({ messages: hydrateAnchorActivityScenes(messages, {}) }, true).messages as Record<string, unknown>[]
+    const rows = (out.at(-1)!._anchor_activity_scene as { activity_rows: { tool?: Record<string, unknown> }[] }).activity_rows.flatMap((row) => (row.tool ? [row.tool] : []))
+    expect(rows.map(({ name, kind, target }) => ({ name, kind, target }))).toEqual([
+      { name: 'tool_describe', kind: 'read', target: 'profile_list, session_list' },
+      { name: 'session_list', kind: 'list', target: 'deploy' },
+      { name: 'show', kind: 'unknown', target: 'latency.csv' },
+      { name: 'tool_call', kind: 'unknown', target: '' },
+    ])
+    const { name, kind, target } = publicToolFrame({ name: 'session_list', tid: 's', args: { query: 'deploy' } }, true)
+    expect(rows[1]).toMatchObject({ name, kind, target })
+    expect(rows[2]).toMatchObject({ shows_card: true, result_view: { block } })
+  })
+})
+
 describe('redactSessionData', () => {
   it('masks credential-keyed arguments of persisted calls in every shape', () => {
     const args = { command: 'login', password: 'hunter2' }
