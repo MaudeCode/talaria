@@ -37,6 +37,19 @@ final class ToolApprovalAndAgentsFixtureTests: XCTestCase {
         XCTAssertNil(try JSONDecoder().decode(PendingApproval.self, from: Data(#"{"approval_id":"old","command":"ls"}"#.utf8)).tool)
     }
 
+    /// A voice or Shortcuts Allow confirms the server's `allow_text`, never the question or reason shown as `description`;
+    /// an older server without the field keeps its command or own description.
+    func testAllowOutsideTheCardConfirmsOnlyTheServersAllowText() throws {
+        let snake = JSONDecoder()
+        snake.keyDecodingStrategy = .convertFromSnakeCase
+        func action(_ json: String) throws -> [String?] {
+            try [JSONDecoder(), snake].map { try $0.decode(PendingApproval.self, from: Data(json.utf8)).allowAction }
+        }
+        XCTAssertEqual(try action(#"{"approval_id":"q","description":"Allow?","allow_text":null}"#), [nil, nil])
+        XCTAssertEqual(try action(#"{"approval_id":"c","command":"git push","description":"Force push","allow_text":"git push"}"#), ["git push", "git push"])
+        XCTAssertEqual(try action(#"{"approval_id":"old","description":"Write /etc/hosts"}"#), ["Write /etc/hosts", "Write /etc/hosts"])
+    }
+
     func testDelegationLinkDecodesEachSubagent() throws {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase

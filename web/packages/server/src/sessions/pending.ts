@@ -464,13 +464,16 @@ export function promptHeadId(sid: string, promptId: string): string {
 
 /**
  * An approval head with `head_id`, so a Live Activity or notification answers only it, `action_text` (TAL-1469), and
- * (TAL-2333) the one `description` clients show: the Agent's description, else its question, else its reason.
+ * (TAL-2333) the one `description` clients show: the Agent's description, else its question, else its reason. A question
+ * or reason only asks, so `allow_text`, what an Allow outside the card confirms, is the command or the Agent's own
+ * description alone, else null.
  */
 function approvalHead(sid: string, head: Record<string, unknown>): Record<string, unknown> {
   const approvalId = str(head.approval_id)
   const actionText = approvalActionText(head)
-  const description = [head.description, head.question, head.reason].find((text) => typeof text === 'string' && text.trim())
-  return { ...head, ...(approvalId ? { head_id: promptHeadId(sid, approvalId) } : {}), ...(actionText ? { action_text: actionText } : {}), ...(description ? { description } : {}) }
+  const shown = (keys: string[]) => keys.map((key) => head[key]).find((text): text is string => typeof text === 'string' && Boolean(text.trim()))
+  const description = shown(['description', 'question', 'reason'])
+  return { ...head, ...(approvalId ? { head_id: promptHeadId(sid, approvalId) } : {}), ...(actionText ? { action_text: actionText } : {}), ...(description ? { description } : {}), allow_text: shown(['command', 'description'])?.trim() ?? null }
 }
 
 /** A question head with `head_id`, the identity Relay publishes as `inputHeadId`, so a notification's Reply answers only it. */

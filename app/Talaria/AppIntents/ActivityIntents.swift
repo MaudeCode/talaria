@@ -165,11 +165,10 @@ struct RespondToApprovalByVoiceIntent: AppIntent, ForegroundContinuableIntent {
         guard let pending = try await client.approvalPending(sessionID: approval.id).pending else {
             return .spoken(noLongerWaiting)
         }
-        // What the approval runs, as the server words it. Allow confirms only that, never a chat title, so an approval
-        // that names no action is reviewed in the chat; Deny runs nothing and may confirm on the title.
-        let action = [pending.command, pending.description]
-            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first { !$0.isEmpty }
+        // What the approval runs, as the server words it (TAL-2333: never its question or reason). Allow confirms only
+        // that, never a chat title, so an approval that names no action is reviewed in the chat; Deny runs nothing and
+        // may confirm on the title.
+        let action = pending.allowAction
         guard pending.allows(answer.choice), action != nil || answer == .deny else {
             return .openInApp(
                 String(localized: "Open Talaria to answer this one."),

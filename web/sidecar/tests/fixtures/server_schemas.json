@@ -2253,6 +2253,13 @@
                         "description": "TAL-2333: what the approval asks, the Agent's description, else its question, else its reason. Clients show only this.",
                         "type": "string"
                       },
+                      "allow_text": {
+                        "description": "TAL-2333: the whole text an Allow outside the card (Siri, Shortcuts) confirms: the command, else the Agent's own description, never its question or reason. Null when it names neither, so the user reviews it in the chat. Absent on an older server, whose `description` is the Agent's own.",
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
                       "approval_id": {
                         "type": "string"
                       },

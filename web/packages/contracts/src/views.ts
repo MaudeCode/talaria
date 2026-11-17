@@ -854,6 +854,8 @@ export const ApprovalPendingSchema = z.looseObject({
     .describe('What this approval runs on one line, its command or else its description, whole and at most 80 characters: the text a one-tap Allow on a notification or Live Activity sits beside (TAL-1469). Absent when the approval names neither, the text is longer, or `once` is not an allowed choice.'),
   description: z.string().optional()
     .describe('TAL-2333: what the approval asks, the Agent\'s description, else its question, else its reason. Clients show only this.'),
+  allow_text: z.string().nullable().optional()
+    .describe('TAL-2333: the whole text an Allow outside the card (Siri, Shortcuts) confirms: the command, else the Agent\'s own description, never its question or reason. Null when it names neither, so the user reviews it in the chat. Absent on an older server, whose `description` is the Agent\'s own.'),
   approval_id: z.string().optional(), session_id: z.string().optional(), command: z.string().optional(), title: z.string().optional(), name: z.string().optional(), kind: z.string().optional(),
   reason: z.string().optional(), action: z.string().optional(), question: z.string().optional(), status: z.string().optional(), pending_count: z.number().optional(), run_id: z.string().optional(), mirror_token: z.string().optional(),
 })
