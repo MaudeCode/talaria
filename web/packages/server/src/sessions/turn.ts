@@ -21,8 +21,8 @@ import { HttpFailure, markSessionTitleGenerated } from './service.js'
 import type { SessionEventBus } from './events.js'
 import { StreamRegistry, SessionChannels, type StreamChannel } from './streams.js'
 import { TRANSCRIPT_WINDOW, ChatUsageSchema, type TurnUsage, ConnectorOperationSnapshotSchema, type ProviderPhase, type RateLimitWait, type RunStatus, type ApprovalAnswerer, type ApprovalInstructionOutcome, type ClarifyAnswers, type VaultPrompt, type PendingSteer, type SessionGoal, type SessionNotice, type SidecarResult, type SteerWithdrawn, type SteerWithdrawRequest, type SteerSendNowResponse } from '@maudecode/talaria-web-contracts'
-import { toolProgress } from './tool-display.js'
-import { catalogNames, connectorOperation } from '../tools/connectors.js'
+import { connectorLogoUnread, toolProgress } from './tool-display.js'
+import { catalogNames, connectorOperation, rememberCatalogNames } from '../tools/connectors.js'
 import { PendingPrompts, approvalAllows, clarifyReply, isVaultPrompt, vaultReply } from './pending.js'
 import type { JournalEventMeta } from './storage/backend.js'
 import { materializeTurnAttachments, type BlobStore } from './storage/blobs.js'
@@ -1133,6 +1133,11 @@ export class TurnRunner {
                 toolIds.set(call, call.tid || mintToolId())
                 toolStartedAt.set(call, receivedAt)
                 this.registry.noteToolEvent(streamId, receivedAt, true)
+                // TAL-2330: a connector call no catalog read has covered reads it, so its completion and a reload show its app's logo.
+                if (sidecar && connectorLogoUnread(data.name)) {
+                  const home = deps.profileHome(s.profile)
+                  void sidecar.call('connectors.catalog', { profile_home: home }).then((r) => rememberCatalogNames(home, r.connectors), () => undefined)
+                }
                 const redacted = deps.redactEnabled()
                 await emitFrame('tool', publicToolFrame(withToolId(data, toolIds.get(call)!), redacted, s.workspace, sessionId), { redacted })
                 return

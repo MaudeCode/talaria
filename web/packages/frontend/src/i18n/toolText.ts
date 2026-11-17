@@ -4,7 +4,7 @@
 // they compose grammar from tables with count-free fallbacks.
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/restrict-plus-operands */
 export type ToolActionState = 'running' | 'done'
-export type ToolKind = 'shell' | 'read' | 'list' | 'search' | 'web' | 'write' | 'skill' | 'memory' | 'delegate' | 'talaria' | 'image' | 'audio' | 'video' | 'image_analysis' | 'video_analysis' | 'session' | 'schedule' | 'connection' | 'question' | 'kanban' | 'browser' | 'computer' | 'unknown' | (string & {})
+export type ToolKind = 'shell' | 'read' | 'list' | 'search' | 'web' | 'write' | 'skill' | 'memory' | 'delegate' | 'talaria' | 'image' | 'audio' | 'video' | 'image_analysis' | 'video_analysis' | 'session' | 'schedule' | 'connection' | 'question' | 'kanban' | 'browser' | 'computer' | 'mcp' | 'connector' | 'unknown' | (string & {})
 
 const _I18N_TOOL_ACTION_TEXT_EN: any = {
     shell: { running: 'Running', done: 'Ran', fail: 'run', fallback: 'a command' },
@@ -41,6 +41,8 @@ const _I18N_TOOL_ACTION_TEXT_EN: any = {
     browser_fill: { running: 'Filling', done: 'Filled', fail: 'fill', fallback: 'a login' },
     browser_list: { running: 'Listing', done: 'Listed', fail: 'list', fallback: 'saved logins' },
     computer: { running: 'Using', done: 'Used', fail: 'use', fallback: 'the computer' },
+    mcp: { running: 'Using', done: 'Used', fail: 'use', fallback: 'an MCP tool' },
+    connector: { running: 'Using', done: 'Used', fail: 'use', fallback: 'an app' },
     computer_capture: { running: 'Capturing', done: 'Captured', fail: 'capture', fallback: 'the screen' },
     computer_click: { running: 'Clicking', done: 'Clicked', fail: 'click', fallback: 'on the screen' },
     computer_type: { running: 'Typing', done: 'Typed', fail: 'type', fallback: 'text' },
@@ -69,6 +71,8 @@ const _I18N_TOOL_SUMMARY_TEXT_EN: any = {
     kanban: { running: ['Working on a task', 'Working on tasks'], done: ['Worked on a task', 'Worked on tasks'] },
     browser: { running: ['Using the browser', 'Using the browser'], done: ['Used the browser', 'Used the browser'] },
     computer: { running: ['Using the computer', 'Using the computer'], done: ['Used the computer', 'Used the computer'] },
+    mcp: { running: ['Using an MCP tool', 'Using MCP tools'], done: ['Used an MCP tool', 'Used MCP tools'] },
+    connector: { running: ['Using an app', 'Using apps'], done: ['Used an app', 'Used apps'] },
     unknown: { running: ['Calling a tool', 'Calling tools'], done: ['Called a tool', 'Called tools'] },
 };
 const _I18N_TOOL_ACTION_TEXT_RU: any = {
@@ -106,6 +110,8 @@ const _I18N_TOOL_ACTION_TEXT_RU: any = {
     browser_fill: { running: 'Заполняю', done: 'Заполнен', fail: 'заполнить', fallback: 'вход' },
     browser_list: { running: 'Получаю список', done: 'Получен список', fail: 'получить список', fallback: 'сохранённых входов' },
     computer: { running: 'Использую', done: 'Использован', fail: 'использовать', fallback: 'компьютер' },
+    mcp: { running: 'Использую', done: 'Использован', fail: 'использовать', fallback: 'инструмент MCP' },
+    connector: { running: 'Использую', done: 'Использовано', fail: 'использовать', fallback: 'приложение' },
     computer_capture: { running: 'Снимаю', done: 'Снят', fail: 'снять', fallback: 'экран' },
     computer_click: { running: 'Нажимаю', done: 'Нажато', fail: 'нажать', fallback: 'на экране' },
     computer_type: { running: 'Ввожу', done: 'Введён', fail: 'ввести', fallback: 'текст' },
@@ -134,6 +140,8 @@ const _I18N_TOOL_SUMMARY_TEXT_RU: any = {
     kanban: { running: ['Идёт работа над задачей', 'Идёт работа над {n} задачами', 'Идёт работа над {n} задачами'], done: ['Работа над задачей выполнена', 'Выполнена работа над {n} задачами', 'Выполнена работа над {n} задачами'] },
     browser: { running: ['Используется браузер', 'Используется браузер ({n})', 'Используется браузер ({n})'], done: ['Браузер использован', 'Браузер использован ({n})', 'Браузер использован ({n})'] },
     computer: { running: ['Используется компьютер', 'Используется компьютер ({n})', 'Используется компьютер ({n})'], done: ['Компьютер использован', 'Компьютер использован ({n})', 'Компьютер использован ({n})'] },
+    mcp: { running: ['Используется инструмент MCP', 'Используются {n} инструмента MCP', 'Используется {n} инструментов MCP'], done: ['Использован инструмент MCP', 'Использованы {n} инструмента MCP', 'Использовано {n} инструментов MCP'] },
+    connector: { running: ['Используется приложение', 'Используются {n} приложения', 'Используется {n} приложений'], done: ['Использовано приложение', 'Использованы {n} приложения', 'Использовано {n} приложений'] },
     unknown: { running: ['Выполняется инструмент', 'Выполняются {n} инструмента', 'Выполняется {n} инструментов'], done: ['Инструмент выполнен', 'Выполнены {n} инструмента', 'Выполнено {n} инструментов'] },
 };
 const _I18N_TOOL_SUMMARY_TEXT_RU_COUNT_FREE: any = {
@@ -159,6 +167,8 @@ const _I18N_TOOL_SUMMARY_TEXT_RU_COUNT_FREE: any = {
     kanban: { running: 'Идёт работа над задачами', done: 'Работа над задачами выполнена' },
     browser: { running: 'Используется браузер', done: 'Браузер использован' },
     computer: { running: 'Используется компьютер', done: 'Компьютер использован' },
+    mcp: { running: 'Используются инструменты MCP', done: 'Инструменты MCP использованы' },
+    connector: { running: 'Используются приложения', done: 'Приложения использованы' },
     unknown: { running: 'Выполняются инструменты', done: 'Инструменты выполнены' },
 };
 const _I18N_TOOL_ACTION_TEXT_ZH: any = {
@@ -196,6 +206,8 @@ const _I18N_TOOL_ACTION_TEXT_ZH: any = {
     browser_fill: { running: '正在填写', done: '已填写', fail: '填写', fallback: '登录信息' },
     browser_list: { running: '正在列出', done: '已列出', fail: '列出', fallback: '已保存的登录' },
     computer: { running: '正在使用', done: '已使用', fail: '使用', fallback: '电脑' },
+    mcp: { running: '正在使用', done: '已使用', fail: '使用', fallback: 'MCP 工具' },
+    connector: { running: '正在使用', done: '已使用', fail: '使用', fallback: '应用' },
     computer_capture: { running: '正在截取', done: '已截取', fail: '截取', fallback: '屏幕' },
     computer_click: { running: '正在点击', done: '已点击', fail: '点击', fallback: '屏幕' },
     computer_type: { running: '正在输入', done: '已输入', fail: '输入', fallback: '文本' },
@@ -224,6 +236,8 @@ const _I18N_TOOL_SUMMARY_TEXT_ZH: any = {
     kanban: { running: ['正在处理任务', '正在处理 {n} 个任务'], done: ['已处理任务', '已处理 {n} 个任务'] },
     browser: { running: ['正在使用浏览器', '正在使用浏览器 {n} 次'], done: ['已使用浏览器', '已使用浏览器 {n} 次'] },
     computer: { running: ['正在使用电脑', '正在使用电脑 {n} 次'], done: ['已使用电脑', '已使用电脑 {n} 次'] },
+    mcp: { running: ['正在使用 MCP 工具', '正在使用 {n} 个 MCP 工具'], done: ['已使用 MCP 工具', '已使用 {n} 个 MCP 工具'] },
+    connector: { running: ['正在使用应用', '正在使用 {n} 个应用'], done: ['已使用应用', '已使用 {n} 个应用'] },
     unknown: { running: ['正在运行工具', '正在运行 {n} 个工具'], done: ['已运行工具', '已运行 {n} 个工具'] },
 };
 const _I18N_TOOL_ACTION_TEXT_ZH_HANT: any = {
@@ -261,6 +275,8 @@ const _I18N_TOOL_ACTION_TEXT_ZH_HANT: any = {
     browser_fill: { running: '正在填寫', done: '已填寫', fail: '填寫', fallback: '登入資訊' },
     browser_list: { running: '正在列出', done: '已列出', fail: '列出', fallback: '已儲存的登入' },
     computer: { running: '正在使用', done: '已使用', fail: '使用', fallback: '電腦' },
+    mcp: { running: '正在使用', done: '已使用', fail: '使用', fallback: 'MCP 工具' },
+    connector: { running: '正在使用', done: '已使用', fail: '使用', fallback: '應用程式' },
     computer_capture: { running: '正在擷取', done: '已擷取', fail: '擷取', fallback: '螢幕' },
     computer_click: { running: '正在點按', done: '已點按', fail: '點按', fallback: '螢幕' },
     computer_type: { running: '正在輸入', done: '已輸入', fail: '輸入', fallback: '文字' },
@@ -289,6 +305,8 @@ const _I18N_TOOL_SUMMARY_TEXT_ZH_HANT: any = {
     kanban: { running: ['正在處理任務', '正在處理 {n} 個任務'], done: ['已處理任務', '已處理 {n} 個任務'] },
     browser: { running: ['正在使用瀏覽器', '正在使用瀏覽器 {n} 次'], done: ['已使用瀏覽器', '已使用瀏覽器 {n} 次'] },
     computer: { running: ['正在使用電腦', '正在使用電腦 {n} 次'], done: ['已使用電腦', '已使用電腦 {n} 次'] },
+    mcp: { running: ['正在使用 MCP 工具', '正在使用 {n} 個 MCP 工具'], done: ['已使用 MCP 工具', '已使用 {n} 個 MCP 工具'] },
+    connector: { running: ['正在使用應用程式', '正在使用 {n} 個應用程式'], done: ['已使用應用程式', '已使用 {n} 個應用程式'] },
     unknown: { running: ['正在執行工具', '正在執行 {n} 個工具'], done: ['已執行工具', '已執行 {n} 個工具'] },
 };
 function _i18nProcessedElapsed(prefix?: any, duration?: any) {
@@ -412,6 +430,8 @@ const _I18N_TOOL_ACTION_TEXT_VI: any = {
     browser_fill: { running: 'Đang điền', done: 'Đã điền', fail: 'điền', fallback: 'thông tin đăng nhập' },
     browser_list: { running: 'Đang liệt kê', done: 'Đã liệt kê', fail: 'liệt kê', fallback: 'thông tin đăng nhập đã lưu' },
     computer: { running: 'Đang dùng', done: 'Đã dùng', fail: 'dùng', fallback: 'máy tính' },
+    mcp: { running: 'Đang dùng', done: 'Đã dùng', fail: 'dùng', fallback: 'công cụ MCP' },
+    connector: { running: 'Đang dùng', done: 'Đã dùng', fail: 'dùng', fallback: 'ứng dụng' },
     computer_capture: { running: 'Đang chụp', done: 'Đã chụp', fail: 'chụp', fallback: 'màn hình' },
     computer_click: { running: 'Đang nhấp', done: 'Đã nhấp', fail: 'nhấp', fallback: 'trên màn hình' },
     computer_type: { running: 'Đang nhập', done: 'Đã nhập', fail: 'nhập', fallback: 'văn bản' },
@@ -440,6 +460,8 @@ const _I18N_TOOL_SUMMARY_TEXT_VI: any = {
     kanban: { running: ['Đang xử lý một tác vụ', 'Đang xử lý {n} tác vụ'], done: ['Đã xử lý một tác vụ', 'Đã xử lý {n} tác vụ'] },
     browser: { running: ['Đang dùng trình duyệt', 'Đang dùng trình duyệt {n} lần'], done: ['Đã dùng trình duyệt', 'Đã dùng trình duyệt {n} lần'] },
     computer: { running: ['Đang dùng máy tính', 'Đang dùng máy tính {n} lần'], done: ['Đã dùng máy tính', 'Đã dùng máy tính {n} lần'] },
+    mcp: { running: ['Đang dùng công cụ MCP', 'Đang dùng {n} công cụ MCP'], done: ['Đã dùng công cụ MCP', 'Đã dùng {n} công cụ MCP'] },
+    connector: { running: ['Đang dùng ứng dụng', 'Đang dùng {n} ứng dụng'], done: ['Đã dùng ứng dụng', 'Đã dùng {n} ứng dụng'] },
     unknown: { running: ['Đang chạy công cụ', 'Đang chạy {n} công cụ'], done: ['Đã chạy công cụ', 'Đã chạy {n} công cụ'] },
 };
 function _i18nProcessedElapsedVi(duration?: any) {
@@ -490,6 +512,8 @@ const _I18N_TOOL_ACTION_TEXT_PL: any = {
     browser_fill: { running: 'Wypełnianie', done: 'Wypełniono', fail: 'wypełnić', fallback: 'dane logowania' },
     browser_list: { running: 'Wyświetlanie listy', done: 'Wyświetlono listę', fail: 'wyświetlić listę', fallback: 'zapisanych logowań' },
     computer: { running: 'Używanie', done: 'Użyto', fail: 'użyć', fallback: 'komputera' },
+    mcp: { running: 'Używanie', done: 'Użyto', fail: 'użyć', fallback: 'narzędzia MCP' },
+    connector: { running: 'Używanie', done: 'Użyto', fail: 'użyć', fallback: 'aplikacji' },
     computer_capture: { running: 'Przechwytywanie', done: 'Przechwycono', fail: 'przechwycić', fallback: 'ekran' },
     computer_click: { running: 'Klikanie', done: 'Kliknięto', fail: 'kliknąć', fallback: 'na ekranie' },
     computer_type: { running: 'Wpisywanie', done: 'Wpisano', fail: 'wpisać', fallback: 'tekst' },
@@ -518,6 +542,8 @@ const _I18N_TOOL_SUMMARY_TEXT_PL: any = {
     kanban: { running: ['Praca nad zadaniem', 'Praca nad {n} zadaniami'], done: ['Zakończono pracę nad zadaniem', 'Zakończono pracę nad {n} zadaniami'] },
     browser: { running: ['Używanie przeglądarki', 'Używanie przeglądarki ({n})'], done: ['Użyto przeglądarki', 'Użyto przeglądarki ({n})'] },
     computer: { running: ['Używanie komputera', 'Używanie komputera ({n})'], done: ['Użyto komputera', 'Użyto komputera ({n})'] },
+    mcp: { running: ['Używanie narzędzia MCP', 'Używanie {n} narzędzi MCP'], done: ['Użyto narzędzia MCP', 'Użyto {n} narzędzi MCP'] },
+    connector: { running: ['Używanie aplikacji', 'Używanie {n} aplikacji'], done: ['Użyto aplikacji', 'Użyto {n} aplikacji'] },
     unknown: { running: ['Uruchamianie narzędzia', 'Uruchamianie {n} narzędzi'], done: ['Uruchomiono narzędzie', 'Uruchomiono {n} narzędzi'] },
 };
 const _I18N_TOOL_SUMMARY_TEXT_PL_COUNT_FREE: any = {
@@ -543,6 +569,8 @@ const _I18N_TOOL_SUMMARY_TEXT_PL_COUNT_FREE: any = {
     kanban: { running: 'Praca nad zadaniami', done: 'Zakończono pracę nad zadaniami' },
     browser: { running: 'Używanie przeglądarki', done: 'Użyto przeglądarki' },
     computer: { running: 'Używanie komputera', done: 'Użyto komputera' },
+    mcp: { running: 'Używanie narzędzi MCP', done: 'Użyto narzędzi MCP' },
+    connector: { running: 'Używanie aplikacji', done: 'Użyto aplikacji' },
     unknown: { running: 'Uruchamianie narzędzi', done: 'Uruchomiono narzędzia' },
 };
 function _i18nProcessedElapsedPl(duration?: any) {
@@ -606,6 +634,8 @@ const _I18N_TOOL_ACTION_TEXT_CS: any = {
     browser_fill: { running: 'Vyplňování', done: 'Vyplněno', fail: 'vyplnit', fallback: 'přihlášení' },
     browser_list: { running: 'Výpis', done: 'Vypsán seznam', fail: 'vypsat seznam', fallback: 'uložených přihlášení' },
     computer: { running: 'Používání', done: 'Použit', fail: 'použít', fallback: 'počítač' },
+    mcp: { running: 'Používání', done: 'Použit', fail: 'použít', fallback: 'nástroj MCP' },
+    connector: { running: 'Používání', done: 'Použita', fail: 'použít', fallback: 'aplikace' },
     computer_capture: { running: 'Pořizování', done: 'Pořízen', fail: 'pořídit', fallback: 'snímek obrazovky' },
     computer_click: { running: 'Klikání', done: 'Kliknuto', fail: 'kliknout', fallback: 'na obrazovku' },
     computer_type: { running: 'Psaní', done: 'Napsán', fail: 'napsat', fallback: 'text' },
@@ -634,6 +664,8 @@ const _I18N_TOOL_SUMMARY_TEXT_CS: any = {
     kanban: { running: ['Práce na úkolu', 'Práce na {n} úkolech'], done: ['Dokončena práce na úkolu', 'Dokončena práce na {n} úkolech'] },
     browser: { running: ['Používání prohlížeče', 'Používání prohlížeče {n}×'], done: ['Použit prohlížeč', 'Použit prohlížeč {n}×'] },
     computer: { running: ['Používání počítače', 'Používání počítače {n}×'], done: ['Použit počítač', 'Použit počítač {n}×'] },
+    mcp: { running: ['Používání nástroje MCP', 'Používání {n} nástrojů MCP'], done: ['Použit nástroj MCP', 'Použito {n} nástrojů MCP'] },
+    connector: { running: ['Používání aplikace', 'Používání {n} aplikací'], done: ['Použita aplikace', 'Použito {n} aplikací'] },
     unknown: { running: ['Spouštění nástroje', 'Spouštění {n} nástrojů'], done: ['Spuštěn nástroj', 'Spuštěno {n} nástrojů'] },
 };
 const _I18N_TOOL_SUMMARY_TEXT_CS_COUNT_FREE: any = {
@@ -659,6 +691,8 @@ const _I18N_TOOL_SUMMARY_TEXT_CS_COUNT_FREE: any = {
     kanban: { running: 'Práce na úkolech', done: 'Dokončena práce na úkolech' },
     browser: { running: 'Používání prohlížeče', done: 'Použit prohlížeč' },
     computer: { running: 'Používání počítače', done: 'Použit počítač' },
+    mcp: { running: 'Používání nástrojů MCP', done: 'Použity nástroje MCP' },
+    connector: { running: 'Používání aplikací', done: 'Použity aplikace' },
     unknown: { running: 'Spouštění nástrojů', done: 'Spuštěny nástroje' },
 };
 function _i18nProcessedElapsedCs(duration?: any) {

@@ -138,7 +138,7 @@ struct ToolCallCardView: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 8) {
-            ToolActivityIcon(name: statusIcon)
+            ToolActivityIcon(name: statusIcon, logoURL: toolCall.isError == true ? nil : toolCall.app?.logoURL)
                 .foregroundStyle(statusColor)
                 .frame(width: 16, height: 16)
 
@@ -499,10 +499,30 @@ extension EnvironmentValues {
 }
 
 /// A tool row's icon at the shared 14 pt glyph size: an SF Symbol, or (TAL-2317) the Talaria mark for Talaria's own tools.
+/// TAL-2330: a connector call's catalog logo, rounded, in place of the symbol once it loads; the symbol while it loads or fails.
 struct ToolActivityIcon: View {
     let name: String
+    var logoURL: URL?
 
     var body: some View {
+        if let logoURL {
+            AsyncImage(url: logoURL) { phase in
+                if let image = phase.image {
+                    image
+                        .resizable()
+                        .scaledToFit()
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .accessibilityHidden(true)
+                } else {
+                    symbol
+                }
+            }
+        } else {
+            symbol
+        }
+    }
+
+    @ViewBuilder private var symbol: some View {
         if name == AssistantActivitySummary.talariaMarkIcon {
             Image(name)
                 .resizable()

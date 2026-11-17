@@ -2,7 +2,7 @@ import { homedir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 import { decidedResultView, toolOutcome, toolResultSnippet, toolResultView, withToolCallOutcomes } from './merge.js'
 import { diffHunks } from '../text/diff.js'
-import { decidedEditDiff, EDIT_DIFF_MAX_LINES, tokenToolKind, toolArgs, toolDisplay, toolEditDiff, toolKind, toolName, toolProgress } from './tool-display.js'
+import { appTitle, decidedEditDiff, EDIT_DIFF_MAX_LINES, rememberConnectorLogos, tokenToolKind, toolArgs, toolDisplay, toolEditDiff, toolKind, toolName, toolProgress } from './tool-display.js'
 import { fullToolResult } from './anchor.js'
 import { publicToolFrame } from '../redact.js'
 import { TALARIA_TOOL_NAMES, TOOL_PRESENTATIONS, type ToolResultView } from '@maudecode/talaria-web-contracts'
@@ -839,5 +839,43 @@ describe('browser and computer-use calls (TAL-2328)', () => {
     expect(view('computer_use', { apps: [{ name: 'Safari', pid: 1 }, { name: 'Mail', pid: 2 }], count: 2 }, { action: 'list_apps' }).rows).toEqual({ title: 'Apps', rows: [{ label: 'Safari' }, { label: 'Mail' }] })
     expect(view('computer_use', { ok: false, action: 'click', code: 'human_has_control', error: 'The user has control.' }, { action: 'click' }).rows).toEqual({ rows: [{ label: 'You have control of the computer', status: 'warn' }] })
     expect(view('computer_use', { error: 'click failed: no element 9' }, { action: 'click' })).toEqual({ error: 'click failed: no element 9' })
+  })
+})
+
+describe('MCP and connector calls (TAL-2330)', () => {
+  it('names an MCP call by its server\'s app and its action, with no logo', () => {
+    expect(toolDisplay('mcp__github__create_issue', { title: 'Bug' })).toEqual({ kind: 'mcp', target: 'Create issue', focus_path: null, app: { name: 'GitHub', logo_url: null } })
+    expect(toolKind('mcp__github__create_issue')).toBe('mcp')
+  })
+
+  it('names a connector call by its app, its action without the vendor prefix and its account alias, with the catalog logo', () => {
+    rememberConnectorLogos([{ slug: 'gmail', logo_url: 'https://logos.example/gmail.svg' }, { slug: 'slack', logo_url: null }])
+    expect(toolDisplay('connectors__gmail__GMAIL_SEND_EMAIL', { to: 'a@example.com', connector_alias: 'work' })).toEqual({ kind: 'connector', target: 'Send email (work)', focus_path: null, app: { name: 'Gmail', logo_url: 'https://logos.example/gmail.svg' } })
+    expect(toolDisplay('connectors__slack__SLACK_SEND_MESSAGE', {})).toMatchObject({ kind: 'connector', target: 'Send message', app: { name: 'Slack', logo_url: null } })
+    // Live, the frame carries the same fields.
+    expect(publicToolFrame({ name: 'connectors__gmail__GMAIL_SEND_EMAIL', tid: 'g', args: { connector_alias: 'work' } }, true)).toMatchObject({ kind: 'connector', target: 'Send email (work)', app: { name: 'Gmail', logo_url: 'https://logos.example/gmail.svg' } })
+  })
+
+  it('titles apps as the Agent does: its known titles, else each word capitalized', () => {
+    expect(['github', 'GitHub', 'googlecalendar', 'stripe_mcp', 'my-server', 'acme_crm', ' notion '].map(appTitle)).toEqual(['GitHub', 'GitHub', 'Google Calendar', 'Stripe', 'My Server', 'Acme Crm', 'Notion'])
+    expect(toolDisplay('mcp__my-server__list_open_things', {})).toMatchObject({ kind: 'mcp', target: 'List open things', app: { name: 'My Server', logo_url: null } })
+    // An MCP tool keeps a prefix that only a connector's vendor adds.
+    expect(toolDisplay('mcp__github__GITHUB_LIST_REPOS', {})).toMatchObject({ target: 'Github list repos' })
+  })
+
+  it('keeps the file focus and edit diff of an MCP file tool, as its name tokens gave them', () => {
+    const diff = '--- a/x.txt\n+++ b/x.txt\n@@ -1 +1 @@\n-a\n+b'
+    expect(toolEditDiff('mcp__fs__write_file', JSON.stringify({ diff }))).toMatchObject({ added: 1, removed: 1 })
+    expect(toolDisplay('mcp__filesystem__read_file', { path: '/ws/src/main.ts' }, '/ws')).toMatchObject({ kind: 'mcp', focus_path: 'src/main.ts' })
+    expect(toolDisplay('mcp__filesystem__write_file', { path: 'src/main.ts' })).toMatchObject({ kind: 'mcp', focus_path: 'src/main.ts' })
+    expect(toolDisplay('mcp__github__create_issue', { path: 'src/main.ts' }).focus_path).toBeNull()
+  })
+
+  it('classifies a name in neither form exactly as before', () => {
+    for (const name of ['mcp__github', 'mcp__github__', 'connectors__gmail', 'connectors____send', 'connectors__gmail__', 'my_mcp__read_file', 'read_file']) {
+      const display = toolDisplay(name, { path: 'a.txt' })
+      expect(display, name).not.toHaveProperty('app')
+      expect(display.kind, name).toBe(tokenToolKind(name))
+    }
   })
 })

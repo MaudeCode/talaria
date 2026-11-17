@@ -82,6 +82,9 @@ public enum AssistantActivitySummary: Sendable {
         // TAL-2328: the agent's browser and the desktop.
         case browser
         case computer
+        // TAL-2330: an MCP server's tool and a hosted connector's.
+        case mcp
+        case connector
         case generic
     }
 
@@ -113,6 +116,7 @@ public enum AssistantActivitySummary: Sendable {
     public static func label(for toolCall: ToolCall) -> String {
         if toolCall.kind == .kanban { return kanbanLabel(for: toolCall) }
         if toolCall.kind == .browser || toolCall.kind == .computer { return browserLabel(for: toolCall) }
+        if toolCall.kind == .mcp || toolCall.kind == .connector { return appLabel(for: toolCall) }
         if let specificLabel = specificLabel(for: toolCall) {
             return specificLabel
         }
@@ -145,6 +149,7 @@ public enum AssistantActivitySummary: Sendable {
             case .image, .audio, .video, .imageAnalysis, .videoAnalysis, .schedule, .connection, .question: return failedPhrase(for: category(for: toolCall))
             case .kanban: return kanbanLabel(for: toolCall)
             case .browser, .computer: return browserLabel(for: toolCall)
+            case .mcp, .connector: return appLabel(for: toolCall)
             }
         }
         switch (kind, toolCall.isCompleted) {
@@ -175,6 +180,7 @@ public enum AssistantActivitySummary: Sendable {
             return phrase(for: category(for: toolCall), count: 1, completed: toolCall.isCompleted)
         case (.kanban, _): return kanbanLabel(for: toolCall)
         case (.browser, _), (.computer, _): return browserLabel(for: toolCall)
+        case (.mcp, _), (.connector, _): return appLabel(for: toolCall)
         }
     }
 
@@ -245,6 +251,17 @@ public enum AssistantActivitySummary: Sendable {
         }
     }
 
+    /// TAL-2330: an MCP or connector call reads as "<App> · <Action>", the server's app and target; a failure takes the
+    /// "use" verb, and a call without its app (an older server) its kind's phrase.
+    private static func appLabel(for toolCall: ToolCall) -> String {
+        let category = category(for: toolCall)
+        guard let app = toolCall.app?.name.trimmingCharacters(in: .whitespacesAndNewlines), !app.isEmpty else {
+            return toolCall.isError == true ? failedPhrase(for: category) : phrase(for: category, count: 1, completed: toolCall.isCompleted)
+        }
+        let named = [app, collapsedTarget(for: toolCall, kind: toolCall.kind ?? .unknown)].compactMap { $0 }.joined(separator: " · ")
+        return toolCall.isError == true ? String(localized: "Failed to use \(named)") : named
+    }
+
     /// The server's redacted target as sent; only the localized skill suffix and layout truncation are the app's.
     private static func collapsedTarget(for toolCall: ToolCall, kind: ToolDisplayKind) -> String? {
         guard var target = toolCall.target?.trimmingCharacters(in: .whitespacesAndNewlines), !target.isEmpty else {
@@ -294,6 +311,8 @@ public enum AssistantActivitySummary: Sendable {
         case .kanban: .kanban
         case .browser: .browser
         case .computer: .computer
+        case .mcp: .mcp
+        case .connector: .connector
         case .memory, .delegate, .unknown: .generic
         }
     }
@@ -362,6 +381,14 @@ public enum AssistantActivitySummary: Sendable {
         case (.browser, _, false): String(localized: "Using the browser")
         case (.computer, _, true): String(localized: "Used the computer")
         case (.computer, _, false): String(localized: "Using the computer")
+        case (.mcp, true, true): String(localized: "Used an MCP tool")
+        case (.mcp, false, true): String(localized: "Used MCP tools")
+        case (.mcp, true, false): String(localized: "Using an MCP tool")
+        case (.mcp, false, false): String(localized: "Using MCP tools")
+        case (.connector, true, true): String(localized: "Used an app")
+        case (.connector, false, true): String(localized: "Used apps")
+        case (.connector, true, false): String(localized: "Using an app")
+        case (.connector, false, false): String(localized: "Using apps")
         case (.generic, true, true): String(localized: "Called a tool")
         case (.generic, false, true): String(localized: "Called tools")
         case (.generic, true, false): String(localized: "Calling a tool")
@@ -390,6 +417,8 @@ public enum AssistantActivitySummary: Sendable {
         case .kanban: String(localized: "Failed to update a task")
         case .browser: String(localized: "Failed to use the browser")
         case .computer: String(localized: "Failed to use the computer")
+        case .mcp: String(localized: "Failed to use an MCP tool")
+        case .connector: String(localized: "Failed to use an app")
         case .generic: String(localized: "Tool failed")
         }
     }
@@ -413,6 +442,8 @@ public enum AssistantActivitySummary: Sendable {
         case .kanban: "rectangle.split.3x1"
         case .browser: "macwindow"
         case .computer: "desktopcomputer"
+        case .mcp: "server.rack"
+        case .connector: "cable.connector"
         case .generic: "wrench"
         }
     }

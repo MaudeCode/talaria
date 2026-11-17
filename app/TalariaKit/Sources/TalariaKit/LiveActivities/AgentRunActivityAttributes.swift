@@ -449,6 +449,8 @@ public enum ToolDisplayKind: String, Equatable, Sendable {
     case kanban
     /// TAL-2328: the agent's browser (code, a CDP command, a dialog, saved logins) and the desktop (`computer_use`).
     case browser, computer
+    /// TAL-2330: an MCP server's tool and a hosted connector's; each names its app in `ToolCall.app`.
+    case mcp, connector
 
     /// An older server sends no kind; an unrecognized one decodes as `.unknown`.
     public init?(serverValue: String?) {

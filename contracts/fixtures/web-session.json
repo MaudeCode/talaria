@@ -10093,5 +10093,351 @@
         }
       ]
     }
+  },
+  "tool_app_views": {
+    "session": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "File the bug and tell the team",
+          "message_id": "app-user",
+          "timestamp": 9300,
+          "_turn_id": "app-run",
+          "_display": "row"
+        },
+        {
+          "role": "assistant",
+          "content": "",
+          "message_id": "app-calls",
+          "timestamp": 9301,
+          "tool_calls": [
+            {
+              "args_fields": [
+                {
+                  "key": "repo",
+                  "value": "acme/web",
+                  "multiline": false
+                },
+                {
+                  "key": "title",
+                  "value": "Login fails",
+                  "multiline": false
+                }
+              ],
+              "kind": "mcp",
+              "target": "Create issue",
+              "app": {
+                "name": "GitHub",
+                "logo_url": null
+              },
+              "function": {
+                "name": "mcp__github__create_issue",
+                "arguments": "{\"repo\":\"acme/web\",\"title\":\"Login fails\"}"
+              },
+              "id": "call-mcp",
+              "done": true,
+              "is_error": false,
+              "result": "{\"number\":42,\"url\":\"https://github.com/acme/web/issues/42\"}",
+              "result_view": {
+                "text": "{\n  \"number\": 42,\n  \"url\": \"https://github.com/acme/web/issues/42\"\n}",
+                "fields": [
+                  {
+                    "key": "number",
+                    "value": "42",
+                    "multiline": false
+                  },
+                  {
+                    "key": "url",
+                    "value": "https://github.com/acme/web/issues/42",
+                    "multiline": false
+                  }
+                ]
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "to",
+                  "value": "team@example.com",
+                  "multiline": false
+                },
+                {
+                  "key": "subject",
+                  "value": "Bug filed",
+                  "multiline": false
+                },
+                {
+                  "key": "connector_alias",
+                  "value": "work",
+                  "multiline": false
+                }
+              ],
+              "kind": "connector",
+              "target": "Send email (work)",
+              "app": {
+                "name": "Gmail",
+                "logo_url": "https://logos.example/gmail.svg"
+              },
+              "function": {
+                "name": "connectors__gmail__GMAIL_SEND_EMAIL",
+                "arguments": "{\"to\":\"team@example.com\",\"subject\":\"Bug filed\",\"connector_alias\":\"work\"}"
+              },
+              "id": "call-mail",
+              "done": true,
+              "is_error": false,
+              "result": "{\"successful\":true,\"data\":{\"id\":\"m1\"}}",
+              "result_view": {
+                "text": "{\n  \"id\": \"m1\"\n}",
+                "fields": [
+                  {
+                    "key": "id",
+                    "value": "m1",
+                    "multiline": false
+                  }
+                ]
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "title",
+                  "value": "Bug notes",
+                  "multiline": false
+                }
+              ],
+              "kind": "connector",
+              "target": "Create page",
+              "app": {
+                "name": "Notion",
+                "logo_url": null
+              },
+              "function": {
+                "name": "connectors__notion__NOTION_CREATE_PAGE",
+                "arguments": "{\"title\":\"Bug notes\"}"
+              },
+              "id": "call-notion",
+              "done": true,
+              "is_error": false,
+              "result": "{\"successful\":true,\"data\":{\"id\":\"p1\"}}",
+              "result_view": {
+                "text": "{\n  \"id\": \"p1\"\n}",
+                "fields": [
+                  {
+                    "key": "id",
+                    "value": "p1",
+                    "multiline": false
+                  }
+                ]
+              },
+              "duration": null,
+              "type": "function"
+            }
+          ],
+          "_turn_id": "app-run",
+          "_display": "row"
+        },
+        {
+          "role": "tool",
+          "content": "{\"number\":42,\"url\":\"https://github.com/acme/web/issues/42\"}",
+          "timestamp": 9302,
+          "tool_call_id": "call-mcp",
+          "_turn_id": "app-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"successful\":true,\"data\":{\"id\":\"m1\"}}",
+          "timestamp": 9303,
+          "tool_call_id": "call-mail",
+          "_turn_id": "app-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"successful\":true,\"data\":{\"id\":\"p1\"}}",
+          "timestamp": 9304,
+          "tool_call_id": "call-notion",
+          "_turn_id": "app-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "assistant",
+          "content": "Filed #42 and told the team.",
+          "message_id": "app-answer",
+          "timestamp": 9305,
+          "_anchor_activity_scene": {
+            "version": "activity_scene_v1",
+            "activity_rows": [
+              {
+                "row_id": "tool:call-mcp",
+                "order_index": 0,
+                "role": "tool",
+                "created_at": 9301,
+                "tool": {
+                  "id": "call-mcp",
+                  "name": "mcp__github__create_issue",
+                  "args_fields": [
+                    {
+                      "key": "repo",
+                      "value": "acme/web",
+                      "multiline": false
+                    },
+                    {
+                      "key": "title",
+                      "value": "Login fails",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "mcp",
+                  "target": "Create issue",
+                  "app": {
+                    "name": "GitHub",
+                    "logo_url": null
+                  },
+                  "args": {
+                    "repo": "acme/web",
+                    "title": "Login fails"
+                  },
+                  "preview": null,
+                  "result": "{\"number\":42,\"url\":\"https://github.com/acme/web/issues/42\"}",
+                  "result_view": {
+                    "text": "{\n  \"number\": 42,\n  \"url\": \"https://github.com/acme/web/issues/42\"\n}",
+                    "fields": [
+                      {
+                        "key": "number",
+                        "value": "42",
+                        "multiline": false
+                      },
+                      {
+                        "key": "url",
+                        "value": "https://github.com/acme/web/issues/42",
+                        "multiline": false
+                      }
+                    ]
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-mail",
+                "order_index": 1,
+                "role": "tool",
+                "created_at": 9301,
+                "tool": {
+                  "id": "call-mail",
+                  "name": "connectors__gmail__GMAIL_SEND_EMAIL",
+                  "args_fields": [
+                    {
+                      "key": "to",
+                      "value": "team@example.com",
+                      "multiline": false
+                    },
+                    {
+                      "key": "subject",
+                      "value": "Bug filed",
+                      "multiline": false
+                    },
+                    {
+                      "key": "connector_alias",
+                      "value": "work",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "connector",
+                  "target": "Send email (work)",
+                  "app": {
+                    "name": "Gmail",
+                    "logo_url": "https://logos.example/gmail.svg"
+                  },
+                  "args": {
+                    "to": "team@example.com",
+                    "subject": "Bug filed",
+                    "connector_alias": "work"
+                  },
+                  "preview": null,
+                  "result": "{\"successful\":true,\"data\":{\"id\":\"m1\"}}",
+                  "result_view": {
+                    "text": "{\n  \"id\": \"m1\"\n}",
+                    "fields": [
+                      {
+                        "key": "id",
+                        "value": "m1",
+                        "multiline": false
+                      }
+                    ]
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-notion",
+                "order_index": 2,
+                "role": "tool",
+                "created_at": 9301,
+                "tool": {
+                  "id": "call-notion",
+                  "name": "connectors__notion__NOTION_CREATE_PAGE",
+                  "args_fields": [
+                    {
+                      "key": "title",
+                      "value": "Bug notes",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "connector",
+                  "target": "Create page",
+                  "app": {
+                    "name": "Notion",
+                    "logo_url": null
+                  },
+                  "args": {
+                    "title": "Bug notes"
+                  },
+                  "preview": null,
+                  "result": "{\"successful\":true,\"data\":{\"id\":\"p1\"}}",
+                  "result_view": {
+                    "text": "{\n  \"id\": \"p1\"\n}",
+                    "fields": [
+                      {
+                        "key": "id",
+                        "value": "p1",
+                        "multiline": false
+                      }
+                    ]
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              }
+            ],
+            "final_answer": "Filed #42 and told the team.",
+            "turn_duration": null,
+            "terminal_state": "completed",
+            "expanded_by_default": false,
+            "has_consumed_steering": false,
+            "file_changes": [],
+            "activity_rows_total": 3,
+            "activity_rows_offset": 0,
+            "activity_rows_complete": true,
+            "activity_rows_omitted": 0,
+            "activity_scene_ref": "9a4e6f66dd1de9caf2f8e1fecbbcf7372a9c281c252216d934a79cd6317f1f5b"
+          },
+          "_turn_id": "app-run",
+          "_display": "row"
+        }
+      ]
+    }
   }
 }

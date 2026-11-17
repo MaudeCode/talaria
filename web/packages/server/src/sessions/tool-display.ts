@@ -3,7 +3,7 @@
  * module computes for live frames and the public projection of persisted calls (`redact.ts` stamps them). Callers pass
  * redacted args, so the target never shows more than the arguments it came from.
  */
-import type { FileExcerpt, FileExcerptLine, ResultLink, ResultLinks, ResultPage, SearchMatches, SearchMatchFile, ToolEditDiff, ToolKind, ToolPresentation, ToolPresentationEntry, ToolProgress, ToolRow, ToolRows, ToolVerb } from '@maudecode/talaria-web-contracts'
+import type { FileExcerpt, FileExcerptLine, ResultLink, ResultLinks, ResultPage, SearchMatches, SearchMatchFile, ToolApp, ToolEditDiff, ToolKind, ToolPresentation, ToolPresentationEntry, ToolProgress, ToolRow, ToolRows, ToolVerb } from '@maudecode/talaria-web-contracts'
 import { DecisionReviewRefSchema, DisplayMediaSchema, FileExcerptSchema, OutboundDraftRefSchema, SearchMatchesSchema, ProposalRefSchema, ShowBlockRefSchema, TALARIA_TOOL_NAMES, TerminalRefSchema, TOOL_PRESENTATIONS, type DecisionReviewRef, type DisplayMedia, type OutboundDraftRef, type ProposalRef, type ShowBlockRef, type TerminalRef } from '@maudecode/talaria-web-contracts'
 import { posix } from 'node:path'
 import { str } from '../util.js'
@@ -73,7 +73,66 @@ export const toolPresentation = (name: unknown): ToolPresentation | undefined =>
 
 export function toolKind(name: unknown): ToolKind {
   if (typeof name === 'string' && TALARIA_TOOLS.has(name)) return 'talaria'
-  return agentTool(name)?.kind ?? tokenToolKind(name)
+  return appTool(name)?.kind ?? agentTool(name)?.kind ?? tokenToolKind(name)
+}
+
+/**
+ * TAL-2330: the kind a file decision (focus path, edit diff) reads: an MCP or connector tool's from its name tokens, as it
+ * was before its app kind, so `mcp__filesystem__read_file` still focuses its file and a `write_file` keeps its diff.
+ */
+const fileKind = (name: unknown): ToolKind => (appTool(name) ? tokenToolKind(name) : toolKind(name))
+
+/** TAL-2330: the Agent's titles for apps a slug does not spell (`tools/tool_labels.py` `_APP_TITLES`), by lowercase slug. */
+const APP_TITLES: Record<string, string> = {
+  discord: 'Discord', figma: 'Figma', github: 'GitHub', gmail: 'Gmail', googlecalendar: 'Google Calendar', googledocs: 'Google Docs',
+  googledrive: 'Google Drive', jira: 'Jira', linear: 'Linear', notion: 'Notion', outlook: 'Outlook', slack: 'Slack', stripe_mcp: 'Stripe', todoist: 'Todoist',
+}
+
+/** TAL-2330: an app's title as the Agent's `app_title` gives it: a known title, else each `-`/`_`/space-separated word capitalized. */
+export function appTitle(slug: string): string {
+  const key = slug.trim()
+  if (Object.hasOwn(APP_TITLES, key.toLowerCase())) return APP_TITLES[key.toLowerCase()]!
+  return key.split(/[-_\s]+/).filter(Boolean).map((word) => { const [head = '', ...rest] = word; return head.toUpperCase() + rest.join('') }).join(' ') || key
+}
+
+/** TAL-2330: a tool slug as the Agent's `_action_phrase` reads it, in sentence case: a connector's `<APP>_` vendor prefix dropped. */
+function actionPhrase(tool: string, app = ''): string {
+  let text = tool.trim()
+  const prefix = `${app.replaceAll('-', '_').toUpperCase()}_`
+  if (app && text.toUpperCase().startsWith(prefix)) text = text.slice(prefix.length)
+  const [head = '', ...rest] = text.split(/[-_\s]+/).filter(Boolean).join(' ').toLowerCase()
+  return head.toUpperCase() + rest.join('')
+}
+
+/** TAL-2330: each connector's catalog logo by slug, from the last catalog read; a connector call shows its app's. */
+const connectorLogos = new Map<string, string | null>()
+export function rememberConnectorLogos(catalog: readonly { slug: string; logo_url: string | null }[]): void {
+  for (const row of catalog) connectorLogos.set(row.slug, row.logo_url)
+}
+
+/** Connector slugs a catalog read was started for, so an app the catalog lacks is asked for once. */
+const logoReads = new Set<string>()
+/**
+ * TAL-2330: true, once per app, for a connector call whose app no catalog read has covered. ponytail: after a restart a reload
+ * shows the connector icon until a catalog read (Settings › Connectors, a connect card, a new connector call).
+ */
+export function connectorLogoUnread(name: unknown): boolean {
+  const app = appTool(name)
+  if (app?.kind !== 'connector' || connectorLogos.has(app.slug) || logoReads.has(app.slug)) return false
+  logoReads.add(app.slug)
+  return true
+}
+
+/**
+ * TAL-2330: an MCP server's tool (`mcp__<server>__<tool>`) or a hosted connector's (`connectors__<app>__<tool>`), split as the
+ * Agent's `label_for_tool_name` splits it; undefined for any other name, or one with no tool.
+ */
+function appTool(name: unknown): { kind: 'mcp' | 'connector'; slug: string; tool: string } | undefined {
+  if (typeof name !== 'string') return undefined
+  const connector = /^connectors__(.*?)__(.*)$/s.exec(name)
+  if (connector) return connector[1] && connector[2] ? { kind: 'connector', slug: connector[1], tool: connector[2] } : undefined
+  const mcp = /^mcp__(.*?)__(.+)$/s.exec(name)
+  return mcp ? { kind: 'mcp', slug: mcp[1]!, tool: mcp[2]! } : undefined
 }
 
 /** The name-token rules, for a tool neither Talaria nor the Agent table lists. */
@@ -108,6 +167,8 @@ const TARGET_KEYS: Partial<Record<ToolKind, string[]>> = {
 const TALARIA_TARGET_KEYS: Record<string, string[]> = { deliver: ['path'], terminal_open: ['command'] }
 const FALLBACK_KEYS = ['cmd', 'command', 'path', 'file_path', 'file', 'uri', 'url', 'query', 'pattern', 'dir', 'task', 'name']
 const TOOL_TARGET_MAX = 200
+/** A target whitespace-collapsed and capped by code point, so the cap never splits a surrogate pair into invalid JSON. */
+const capped = (text: string): string => Array.from(text.replace(/\s+/g, ' ').trim()).slice(0, TOOL_TARGET_MAX).join('')
 
 /** Python's `repr` of a JSON value (what `str()` shows for items inside a list or dict). */
 function pythonRepr(value: unknown): string {
@@ -184,11 +245,20 @@ function delegateTarget(arg: (keys: string[]) => string): string {
  * A call's display class and label: the first line of its kind's argument, whitespace-collapsed and capped. TAL-1458:
  * `focus_path` is a read or write call's file inside the session's `workspace` root, the file a companion page shows.
  */
-export function toolDisplay(name: unknown, args: unknown, workspace: string | null = null): { kind: ToolKind; target: string; focus_path: string | null; shows_card?: true; verb?: ToolVerb } {
+export function toolDisplay(name: unknown, args: unknown, workspace: string | null = null): { kind: ToolKind; target: string; focus_path: string | null; shows_card?: true; verb?: ToolVerb; app?: ToolApp } {
   const bridge = BRIDGES.get(str(name))
   const kind = bridge?.kind ?? toolKind(name)
   const a = isDict(args) ? args : {}
   const arg = (keys: string[]) => keys.map((k) => snapshotArg(a, k)).find((v): v is string => typeof v === 'string' && Boolean(v.trim())) ?? ''
+  // TAL-2330: an MCP or connector call reads as its app and action; a connector's names the account alias the call picked.
+  const focus = (fileKind: ToolKind) => (fileKind === 'read' || fileKind === 'write' ? focusPath(arg(FOCUS_KEYS), workspace) : null)
+  const app = appTool(name)
+  if (app) {
+    const connector = app.kind === 'connector'
+    const action = actionPhrase(app.tool, connector ? app.slug : '')
+    const alias = connector ? arg(['connector_alias']).trim() : ''
+    return { kind, target: capped(alias ? `${action} (${alias})` : action), focus_path: focus(fileKind(name)), app: { name: appTitle(app.slug), logo_url: connector ? connectorLogos.get(app.slug) ?? null : null } }
+  }
   const special = name === 'delegate_task' ? delegateTarget(arg) : bridge ? bridge.target(snapshotItems(snapshotArg(a, bridge.key) ?? '')) : ''
   const own = kind === 'talaria' ? arg(TALARIA_TARGET_KEYS[str(name)] ?? []) || str(name) : ''
   const line = (special || own || arg(TARGET_KEYS[kind] ?? FALLBACK_KEYS)).trim().split('\n')[0] ?? ''
@@ -198,9 +268,8 @@ export function toolDisplay(name: unknown, args: unknown, workspace: string | nu
   const actions = typeof name === 'string' && Object.hasOwn(ACTION_VERBS, name) ? ACTION_VERBS[name]! : undefined
   const action = arg(['action']).trim().toLowerCase()
   const verb = actions ? (Object.hasOwn(actions, action) ? actions[action] : undefined) : agentTool(name)?.verb
-  // Capped by code point, so the cap never splits a surrogate pair into invalid JSON.
   return {
-    kind, target: Array.from(first.replace(/\s+/g, ' ').trim()).slice(0, TOOL_TARGET_MAX).join(''), focus_path: kind === 'read' || kind === 'write' ? focusPath(arg(FOCUS_KEYS), workspace) : null,
+    kind, target: capped(first), focus_path: focus(kind),
     ...(typeof name === 'string' && CARD_TOOLS.has(name) ? { shows_card: true as const } : {}),
     ...(verb ? { verb } : {}),
   }
@@ -329,7 +398,7 @@ export function toolEditDiff(name: unknown, result: unknown, displayMetadata?: u
 /** A file-edit result's own unified `diff`: a listed tool's when it presents a diff, an unlisted one's when its name reads `write`. */
 function resultDiff(name: unknown, result: unknown): unknown {
   const presentation = toolPresentation(name)
-  if (presentation ? presentation !== 'diff' : toolKind(name) !== 'write') return undefined
+  if (presentation ? presentation !== 'diff' : fileKind(name) !== 'write') return undefined
   let data: unknown = Array.isArray(result) ? messageText(result) : result
   if (typeof data === 'string') { try { data = JSON.parse(data) } catch { return undefined } }
   const diff = isDict(data) ? data.diff : undefined

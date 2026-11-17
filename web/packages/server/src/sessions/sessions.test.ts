@@ -15,6 +15,7 @@ import { SidecarError } from '../sidecar/client.js'
 import { str } from '../util.js'
 import { diffHunks } from '../text/diff.js'
 import { withPendingUserTurn, withoutRunningTurnOutput } from './merge.js'
+import { rememberConnectorLogos } from './tool-display.js'
 import { JsonJournalWriter as RunJournalWriter } from './storage/json-journal.js'
 import typedRows from '../test/fixtures/agent-typed-rows.json' with { type: 'json' }
 
@@ -3306,6 +3307,51 @@ describe('session detail ships Kanban rows (TAL-2327)', () => {
       const rows = ((messages.find((m) => m.message_id === 'kanban-answer')?._anchor_activity_scene as Json).activity_rows as Json[]).filter((r) => r.role === 'tool')
       expect(Object.fromEntries(rows.map((r) => [(r.tool as Json).id, (r.tool as Json).result_view])), query).toEqual(expected)
       expect(rows.map((r) => (r.tool as Json).verb), query).toEqual(['list', 'create', 'complete', 'comment'])
+    }
+  })
+})
+
+describe('session detail names MCP and connector calls by app and action (TAL-2330)', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer(); rememberConnectorLogos([{ slug: 'gmail', logo_url: 'https://logos.example/gmail.svg' }, { slug: 'notion', logo_url: null }]) })
+  afterAll(() => s.close())
+
+  const fixturePath = join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json')
+  const call = (id: string, name: string, args: Json): Json => ({ id, type: 'function', function: { name, arguments: JSON.stringify(args) } })
+  /** An MCP call, a connector call on a named account whose app has a catalog logo, and one whose app has none. */
+  const transcript: Json[] = [
+    { role: 'user', content: 'File the bug and tell the team', message_id: 'app-user', timestamp: 9300, _turn_id: 'app-run' },
+    { role: 'assistant', content: '', message_id: 'app-calls', timestamp: 9301, _turn_id: 'app-run', tool_calls: [
+      call('call-mcp', 'mcp__github__create_issue', { repo: 'acme/web', title: 'Login fails' }),
+      call('call-mail', 'connectors__gmail__GMAIL_SEND_EMAIL', { to: 'team@example.com', subject: 'Bug filed', connector_alias: 'work' }),
+      call('call-notion', 'connectors__notion__NOTION_CREATE_PAGE', { title: 'Bug notes' }),
+    ] },
+    { role: 'tool', tool_call_id: 'call-mcp', content: JSON.stringify({ number: 42, url: 'https://github.com/acme/web/issues/42' }), timestamp: 9302, _turn_id: 'app-run' },
+    { role: 'tool', tool_call_id: 'call-mail', content: JSON.stringify({ successful: true, data: { id: 'm1' } }), timestamp: 9303, _turn_id: 'app-run' },
+    { role: 'tool', tool_call_id: 'call-notion', content: JSON.stringify({ successful: true, data: { id: 'p1' } }), timestamp: 9304, _turn_id: 'app-run' },
+    { role: 'assistant', content: 'Filed #42 and told the team.', message_id: 'app-answer', timestamp: 9305, _turn_id: 'app-run' },
+  ]
+
+  it('matches the shared contract fixture in every window, on the calls and the scene alike', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const session = (await s.deps.sessionStore.get(sid))
+    session.messages = structuredClone(transcript)
+    session.title = 'MCP and connector calls'
+    await s.deps.sessionStore.save(session)
+    const fixture = (JSON.parse(readFileSync(fixturePath, 'utf8')) as Json).tool_app_views as Json
+    const named = <T>(value: T): T => JSON.parse(JSON.stringify(value).replaceAll(sid, 'app-session')) as T
+    for (const query of ['', '&msg_limit=50']) {
+      const messages = named(((await json(await s.get(`/api/session?session_id=${sid}&messages=1${query}`))).session as Json).messages as Json[])
+      expect(messages, query).toEqual((fixture.session as Json).messages)
+      const display = (c: Json) => [c.kind, c.target, c.app]
+      const expected = [
+        ['mcp', 'Create issue', { name: 'GitHub', logo_url: null }],
+        ['connector', 'Send email (work)', { name: 'Gmail', logo_url: 'https://logos.example/gmail.svg' }],
+        ['connector', 'Create page', { name: 'Notion', logo_url: null }],
+      ]
+      expect((messages.find((m) => m.message_id === 'app-calls')?.tool_calls as Json[]).map(display), query).toEqual(expected)
+      const rows = ((messages.find((m) => m.message_id === 'app-answer')?._anchor_activity_scene as Json).activity_rows as Json[]).filter((r) => r.role === 'tool')
+      expect(rows.map((r) => display(r.tool as Json)), query).toEqual(expected)
     }
   })
 })

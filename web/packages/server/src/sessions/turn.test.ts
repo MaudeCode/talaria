@@ -397,3 +397,33 @@ describe('transcript settlement cost (TAL-1688)', () => {
     } finally { await server.close() }
   })
 })
+
+describe('connector call logos (TAL-2330)', () => {
+  it('reads the catalog once for a connector call\'s app, so its call shows the app\'s logo after the turn', async () => {
+    const sidecar = new FakeSidecar()
+    sidecar.respond('connectors.catalog', () => ({ connectors: [{ slug: 'gmail', name: 'Gmail', description: '', category: '', logo_url: 'https://logos.example/gmail.svg' }] }))
+    const args = { to: 'a@example.com', connector_alias: 'work' }
+    sidecar.respond('chat.start', (params, emit) => {
+      for (const tid of ['g1', 'g2']) {
+        emit({ event: 'tool', data: { name: 'connectors__gmail__GMAIL_SEND_EMAIL', tid, args } })
+        emit({ event: 'tool_complete', data: { name: 'connectors__gmail__GMAIL_SEND_EMAIL', tid, result: '{"ok": true}' } })
+      }
+      return { ...completed(params), messages: [...params.conversation_history, { role: 'user', content: params.user_message },
+        { role: 'assistant', content: '', tool_calls: ['g1', 'g2'].map((id) => ({ id, type: 'function', function: { name: 'connectors__gmail__GMAIL_SEND_EMAIL', arguments: JSON.stringify(args) } })) },
+        { role: 'tool', tool_call_id: 'g1', content: '{"ok": true}' }, { role: 'tool', tool_call_id: 'g2', content: '{"ok": true}' },
+        { role: 'assistant', content: 'answer' }] }
+    })
+    const server = await bootTestServer({ sidecar })
+    try {
+      const session = await server.deps.sessionStore.newSession()
+      const start = await server.get('/api/chat/start', { method: 'POST', body: JSON.stringify({ session_id: session.session_id, message: 'mail it' }), headers: { 'content-type': 'application/json' } })
+      const { stream_id: streamId } = await start.json() as { stream_id: string }
+      const frames = await server.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')
+      expect(frames.find((f) => f.event === 'tool')?.data).toMatchObject({ kind: 'connector', target: 'Send email (work)', app: { name: 'Gmail' } })
+      expect(sidecar.calls.filter((c) => c.method === 'connectors.catalog')).toHaveLength(1)
+      const detail = await (await server.get(`/api/session?session_id=${session.session_id}`)).json() as { session: { messages: { tool_calls?: Record<string, unknown>[] }[] } }
+      const calls = detail.session.messages.flatMap((m) => m.tool_calls ?? [])
+      expect(calls.map((c) => [c.kind, c.target, c.app])).toEqual(Array(2).fill(['connector', 'Send email (work)', { name: 'Gmail', logo_url: 'https://logos.example/gmail.svg' }]))
+    } finally { await server.close() }
+  })
+})

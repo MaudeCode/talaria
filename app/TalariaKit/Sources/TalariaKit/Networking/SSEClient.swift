@@ -263,6 +263,8 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
     public let kind: ToolDisplayKind?
     /// TAL-2327: the verb a `kanban` call shows.
     public let verb: ToolVerb?
+    /// TAL-2330: an `mcp` or `connector` call's app.
+    public let app: ToolApp?
     public let target: String?
     public let progress: ToolProgress?
     /// TAL-315: the server's result sections, on a completion.
@@ -280,6 +282,7 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
         case argsFields = "args_fields"
         case kind
         case verb
+        case app
         case target
         case progress
         case resultView = "result_view"
@@ -300,6 +303,7 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
         stableID: String? = nil,
         kind: ToolDisplayKind? = nil,
         verb: ToolVerb? = nil,
+        app: ToolApp? = nil,
         target: String? = nil,
         resultView: ToolResultView? = nil,
         editDiff: ToolEditDiff? = nil,
@@ -308,6 +312,7 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
         argsFields: [ToolField]? = nil
     ) {
         self.verb = verb
+        self.app = app
         self.eventType = eventType
         self.name = name
         self.preview = preview
@@ -335,6 +340,7 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
         isError = container.decodeLossyBoolIfPresent(forKey: .isError)
         kind = ToolDisplayKind(serverValue: container.decodeLossyStringIfPresent(forKey: .kind))
         verb = ToolVerb(serverValue: container.decodeLossyStringIfPresent(forKey: .verb))
+        app = try? container.decodeIfPresent(ToolApp.self, forKey: .app)
         target = container.decodeLossyStringIfPresent(forKey: .target)
         resultView = try? container.decodeIfPresent(ToolResultView.self, forKey: .resultView)
         editDiff = try? container.decodeIfPresent(ToolEditDiff.self, forKey: .editDiff)
@@ -633,6 +639,7 @@ private extension ToolStreamEvent {
         stableID = nil
         kind = nil
         verb = nil
+        app = nil
         target = nil
         resultView = nil
         editDiff = nil

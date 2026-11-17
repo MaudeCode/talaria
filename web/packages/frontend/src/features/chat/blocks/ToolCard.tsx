@@ -4,7 +4,7 @@ import { useApprovalFlash, useDisclosure } from './Worklog'
 import { ChevronRight } from 'lucide-react'
 import { cn } from '../../../ui/cn'
 import { ToolKindIcon } from '../toolKind'
-import type { ApprovalAnsweredBy, BackgroundLink, FileExcerpt, ResultLinks, ResultPage, SearchMatches, ToolApprovalOutcome, ToolField, ToolKind, ToolProgress, ToolResultView, ToolRow, ToolRows, ToolVerb } from '@maudecode/talaria-web-contracts'
+import type { ApprovalAnsweredBy, BackgroundLink, FileExcerpt, ResultLinks, ResultPage, SearchMatches, ToolApp, ToolApprovalOutcome, ToolField, ToolKind, ToolProgress, ToolResultView, ToolRow, ToolRows, ToolVerb } from '@maudecode/talaria-web-contracts'
 import { agentsSummary, statusLabel } from '../../background/BackgroundWork'
 import { toolText } from '../../../i18n/toolText'
 import { useLocale } from '../../../i18n/useLocale'
@@ -30,6 +30,8 @@ export interface ToolCardData {
   kind: ToolKind
   /** TAL-2327: the verb a `kanban` call shows in place of its kind's own (server field). */
   verb?: ToolVerb | undefined
+  /** TAL-2330: an `mcp` or `connector` call's app, which names it and draws a connector's logo (server field). */
+  app?: ToolApp | undefined
   target: string
   args: unknown
   /** TAL-2318: the server's argument rows; absent from an older server, which shows `args` as JSON. */
@@ -54,6 +56,11 @@ export interface ToolCardData {
 }
 
 export function toolCardLabel(call: ToolCardData, locale: string): string {
+  // TAL-2330: an app's call reads "<App> · <Action>"; only a failure takes its kind's verb.
+  if (call.app) {
+    const named = [call.app.name, call.target].filter(Boolean).join(' · ')
+    return call.isError ? toolText(locale).actionLabel(call.kind, 'done', named, call.name, true) : named
+  }
   // TAL-2327: a call the server gave a verb reads with that verb's phrase of its kind (`kanban_create`).
   return toolText(locale).actionLabel(call.verb ? `${call.kind}_${call.verb}` : call.kind, call.done ? 'done' : 'running', call.target, call.name, call.isError)
 }
@@ -271,7 +278,7 @@ export function ToolCard({ call, timestamp, sessionId, arrivalKey }: { call: Too
     <div ref={arrival} className={cn('tool-card-row tool-card my-1 rounded-lg border border-border-subtle bg-surface-subtle text-[13px]', call.isError && 'border-error/40', !call.done && 'tool-card-running')} data-tool-id={call.id} data-tool-kind={kind} data-tool-done={call.done ? '1' : '0'} data-tool-error={call.isError ? '1' : undefined}>
       <button type="button" className={cn('tool-card-header flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-text', flash)} aria-expanded={open} onClick={toggle}>
         <ChevronRight size={14} className={cn('tool-card-toggle shrink-0 text-muted transition-transform', open && 'rotate-90')} aria-hidden="true" />
-        <span className="tool-card-icon"><ToolKindIcon kind={kind} /></span>
+        <span className="tool-card-icon"><ToolKindIcon kind={kind} logoUrl={call.app?.logo_url} /></span>
         <span className="tool-card-name min-w-0 flex-1 truncate"><SwapText className="tool-card-name-label" text={label} /></span>
         {!call.done && call.progress && <span className="tool-card-progress min-w-0 max-w-[60%] truncate text-[11px] tabular-nums text-muted" title={call.progress.message ?? undefined}>{[call.progress.percent === null ? null : new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 0 }).format(call.progress.percent / 100), call.progress.message].filter(Boolean).join(' · ')}</span>}
         {call.background && <span className="tool-card-background shrink-0 text-[11px] text-muted" data-background-status={call.background.status}>{call.background.status === 'running' || call.background.status === 'completed' ? agentsSummary(call.background.agents) : `${statusLabel(call.background.status)} · ${agentsSummary(call.background.agents)}`}</span>}

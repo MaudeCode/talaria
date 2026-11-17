@@ -740,9 +740,12 @@ rows, each opening the chat, scheduled job, connected apps or skill it names, an
 `browser` and `code`, the code it ran as a pathless `file_excerpt` above its terminal sections and the screenshot it saved
 as `media`; `browser_cdp`, `browser_dialog` and `browser_vault` are kind `browser` and `computer_use` kind `computer`, each
 `rows` (a capture's screenshot as `media` too), with a `verb` from the tool or its `action`; every other tool is `generic`, its result's text, else its key/value fields. The
-server reads a listed tool's kind and presentation from the table; MCP, connector and plugin tools
-keep the name-token rules and the generic result parser, and Talaria's own tools stay in
-`TALARIA_TOOL_NAMES`.
+server reads a listed tool's kind and presentation from the table. An MCP tool (`mcp__<server>__<tool>`) is kind `mcp`
+and a hosted connector's (`connectors__<app>__<tool>`) kind `connector` (TAL-2330), split as the Agent's
+`label_for_tool_name` splits them: `app.name` is the Agent's `app_title`, `target` its action phrase in sentence case
+(a connector's `<APP>_` prefix dropped, its `connector_alias` appended in parentheses) and a connector's `app.logo_url`
+its catalog logo. They keep the generic result parser; plugin tools keep the name-token rules too, and Talaria's own
+tools stay in `TALARIA_TOOL_NAMES`.
 
 `npm run fixtures -w packages/contracts` writes the table to `contracts/fixtures/tool-presentations.json`,
 and `sidecar/tests/test_agent_tool_presentations.py` checks it against the Agent's registry

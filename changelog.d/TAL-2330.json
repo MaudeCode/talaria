@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "MCP and connected-app tool calls read as their app and action (for example \"GitHub · Create issue\", with the account name when the call picks one) on the App and the Web, under the connected app's logo or an MCP or connector icon.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "app",
+        "web"
+      ]
+    }
+  ]
+}

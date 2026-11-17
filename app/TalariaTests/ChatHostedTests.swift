@@ -2329,6 +2329,34 @@ final class ChatHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "tool-kanban-rows")
     }
 
+    /// TAL-2330: an MCP call reads as its app and action under the MCP symbol; a connector call under its catalog logo, and
+    /// under the connector symbol when it has none.
+    func testMCPAndConnectorCardsReadAsTheirAppAndAction() async throws {
+        let logo = FileManager.default.temporaryDirectory.appendingPathComponent("gmail-\(UUID().uuidString).png")
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 32))
+        try renderer.pngData { context in
+            UIColor.systemRed.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 32, height: 32))
+        }.write(to: logo)
+        defer { try? FileManager.default.removeItem(at: logo) }
+        let calls = [
+            ToolCall(id: "mcp", name: "mcp__github__create_issue", preview: nil, args: nil, kind: .mcp, app: ToolApp(name: "GitHub"), target: "Create issue", isCompleted: true),
+            ToolCall(id: "mail", name: "connectors__gmail__GMAIL_SEND_EMAIL", preview: nil, args: nil, kind: .connector, app: ToolApp(name: "Gmail", logoURL: logo), target: "Send email (work)", isCompleted: true),
+            ToolCall(id: "notion", name: "connectors__notion__NOTION_CREATE_PAGE", preview: nil, args: nil, kind: .connector, app: ToolApp(name: "Notion"), target: "Create page", isCompleted: true),
+        ]
+        let window = try hostWindow(
+            ScrollView { VStack { ForEach(calls) { ToolCallCardView(toolCall: $0) } }.padding() },
+            size: CGSize(width: 390, height: 400)
+        )
+        let labels = { HostedAccessibility.elements(in: window).compactMap { $0.accessibilityLabel } }
+        let expected = ["GitHub · Create issue", "Gmail · Send email (work)", "Notion · Create page"]
+        let drawn = await awaitCondition(timeout: 5) { expected.allSatisfy { label in labels().contains { $0.contains(label) } } }
+        XCTAssertTrue(drawn, "\(labels())")
+        // The logo loads off the main thread; give it a moment to draw before the screenshot.
+        _ = await awaitCondition(timeout: 2) { false }
+        attachHostedScreenshot(window, name: "tool-mcp-connector")
+    }
+
     /// TAL-2328: an expanded browser-code call reads as its comment line under the browser icon and draws its code above
     /// its output; a desktop capture reads as its verb under the computer icon and draws its rows, never its JSON.
     func testExpandedBrowserAndComputerCardsDrawTheirCodeAndRows() async throws {
