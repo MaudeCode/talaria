@@ -60,4 +60,30 @@ final class RunStatusTests: XCTestCase {
         // Older servers keep the pre-contract compression/working presentation.
         XCTAssertEqual(try presentation("{}")?.kind, .compressing)
     }
+
+    func testWorkingStatusNamesTheRunningCallAndAHeldCallWaitsForApproval() throws {
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("run-status-tool")) as? [String: [String: Any]])
+        func presentation(_ key: String) throws -> ChatActiveRunStatusPresentation? {
+            let json = try JSONSerialization.data(withJSONObject: XCTUnwrap(fixture[key]?["data"]))
+            guard case .runStatus(_, let status) = SSEEventDecoder.decode(eventType: "run_status", data: String(decoding: json, as: UTF8.self)) else {
+                XCTFail("Missing status")
+                return nil
+            }
+            return ChatActiveRunStatusPolicy.presentation(
+                isStartingChat: false, hasActiveStream: true, activeStreamRecoveryState: .idle, isCancellingStream: false,
+                activeRunStartedAt: Date(timeIntervalSince1970: 0), serverRunStatus: status, hasServerRunStatus: true)
+        }
+        let running = try XCTUnwrap(presentation("running"))
+        XCTAssertEqual(running.label(agentName: "Hermes"), "Running npm test")
+        XCTAssertEqual(running.tool?.icon, "terminal")
+        XCTAssertFalse(running.isToolAwaitingApproval)
+        XCTAssertEqual(running.elapsedTime(now: Date(timeIntervalSince1970: 34), locale: Locale(identifier: "en_US")), "34s")
+        let held = try XCTUnwrap(presentation("held"))
+        XCTAssertEqual(held.label(agentName: "Hermes"), "Waiting for approval")
+        XCTAssertTrue(held.isToolAwaitingApproval)
+        // Between calls, and from an older server, the chip keeps "Working".
+        let between = try XCTUnwrap(presentation("between"))
+        XCTAssertEqual(between.label(agentName: "Hermes"), "Working")
+        XCTAssertNil(between.tool)
+    }
 }

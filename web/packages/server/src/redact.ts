@@ -2725,6 +2725,9 @@ export function activityTool(call: Record<string, unknown>, enabled: boolean, wo
   return activityFields(frame, call.done === true, call.is_error === true, outcome, details)
 }
 
+/** TAL-2336: an approval's `tool` as TAL-2333 sets it; an Agent's own `tool` field (a name) is not one. */
+export const isApprovalTool = (tool: unknown): tool is ApprovalTool => typeof tool === 'object' && tool !== null && typeof (tool as ApprovalTool).kind === 'string'
+
 /** TAL-2336: the call an approval holds (its `tool`), still running and waiting on the user. */
 export function heldActivityTool(tool: ApprovalTool, details = true): ActivityTool {
   return activityFields(tool, false, false, { key: 'pending_approval', tone: 'attention' }, details)

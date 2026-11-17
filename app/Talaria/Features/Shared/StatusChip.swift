@@ -19,6 +19,9 @@ struct StatusChip: View {
         /// A state that changes what the agent may do without asking. Only the icon takes the
         /// warning colour, so the caption keeps its text contrast.
         case warning
+        /// TAL-2337: a wait on the user, such as a call held for approval: the caption takes the warning colour, as the
+        /// transcript's outcome does.
+        case attention
     }
 
     static let cornerRadius: CGFloat = 16
@@ -26,6 +29,8 @@ struct StatusChip: View {
     let label: String
     var accessibilityLabel: String?
     let icon: Icon
+    /// TAL-2337: a call's icon after the activity icon, from the transcript row's table (`ToolActivityIcon`).
+    var toolIcon: String?
     var emphasis: Emphasis = .standard
     /// When set, an elapsed time that follows the label ("Working 42s").
     var elapsed: String?
@@ -34,6 +39,9 @@ struct StatusChip: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    /// About 18 caption characters, scaled with Dynamic Type.
+    @ScaledMetric(relativeTo: .caption) private var toolLabelWidth: CGFloat = 126
 
     var body: some View {
         HStack(spacing: 8) {
@@ -41,11 +49,29 @@ struct StatusChip: View {
                 .foregroundStyle(emphasis == .warning ? AnyShapeStyle(.orange) : textStyle)
                 .accessibilityHidden(true)
 
-            caption
+            if let toolIcon {
+                ToolActivityIcon(name: toolIcon)
+                    .foregroundStyle(textStyle)
+                    .accessibilityHidden(true)
+                // TAL-2337: a call's label truncates at about 18 characters (36 in a regular width), so the chip never
+                // outgrows the composer; the elapsed time after it stays whole.
+                HStack(spacing: 4) {
+                    Text(label)
+                        .foregroundStyle(emphasis == .attention ? AnyShapeStyle(.orange) : textStyle)
+                        .frame(maxWidth: horizontalSizeClass == .regular ? toolLabelWidth * 2 : toolLabelWidth, alignment: .leading)
+                    if let elapsed {
+                        Text(verbatim: elapsed).monospacedDigit().foregroundStyle(textStyle).fixedSize()
+                    }
+                }
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(textStyle)
-                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-                .minimumScaleFactor(0.88)
+                .lineLimit(1)
+            } else {
+                caption
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(textStyle)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                    .minimumScaleFactor(0.88)
+            }
         }
         .statusChipChrome()
         .fixedSize(horizontal: false, vertical: true)
@@ -78,7 +104,10 @@ struct StatusChip: View {
     }
 
     private var textStyle: AnyShapeStyle {
-        emphasis == .standard ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary)
+        switch emphasis {
+        case .standard, .attention: AnyShapeStyle(.secondary)
+        case .prominent, .warning: AnyShapeStyle(.primary)
+        }
     }
 }
 

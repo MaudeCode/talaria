@@ -27,6 +27,8 @@ struct RunStatusChip: View {
             label: presentation.label(agentName: agentName),
             accessibilityLabel: presentation.accessibilityLabel(agentName: agentName),
             icon: .activity,
+            toolIcon: presentation.tool?.icon,
+            emphasis: presentation.isToolAwaitingApproval ? .attention : .standard,
             elapsed: presentation.elapsedTime(now: now)
         )
         .accessibilityValue(presentation.accessibilityElapsedTime(now: now) ?? "")

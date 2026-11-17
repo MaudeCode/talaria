@@ -4,7 +4,7 @@
  * own transport fields (the Relay adds revisions and event IDs) on top of these rows.
  */
 import { randomBytes } from 'node:crypto'
-import type { ActivitySummary, ActivityTool, AgentNotifyLevel, ApprovalTool, DecisionReviewRef, SessionActivityPhase } from '@maudecode/talaria-web-contracts'
+import type { ActivitySummary, ActivityTool, AgentNotifyLevel, DecisionReviewRef, SessionActivityPhase } from '@maudecode/talaria-web-contracts'
 import { settledActivityPhase, type BackgroundActivity } from '../background-tasks.js'
 import { promptHeadId, type PendingPrompts } from '../pending.js'
 import type { SessionPrefixIndex } from '../prefix-index.js'
@@ -14,7 +14,7 @@ import type { SessionStore } from '../store.js'
 import type { ActiveRun, StreamRegistry } from '../streams.js'
 import type { TurnOrigin } from '../background-updates.js'
 import { str } from '../../util.js'
-import { activityTool, heldActivityTool, redactString } from '../../redact.js'
+import { activityTool, heldActivityTool, isApprovalTool, redactString } from '../../redact.js'
 
 const TERMINAL_RETENTION_S = 15 * 60
 // ponytail: bounds the terminal ledger when no channel ever reads it; the oldest finished run goes first.
@@ -116,9 +116,6 @@ export function activitySummary(rows: readonly ActivityState[], visible: (owner:
     approvals: waiting.filter((row) => row.phase === 'waiting_for_approval' && row.approval_id),
   }
 }
-
-/** TAL-2336: an approval's `tool` as TAL-2333 sets it; an Agent's own `tool` field (a name) is not one. */
-const isApprovalTool = (tool: unknown): tool is ApprovalTool => typeof tool === 'object' && tool !== null && typeof (tool as ApprovalTool).kind === 'string'
 
 /** `seen_phase`: TAL-874: the row phase the run last showed and when it changed, kept across rebuilds of the rows. */
 type TrackedRun = ActiveRun & { relay_phase?: string; terminal_at?: number; seen_phase?: { phase: string; at: number } }

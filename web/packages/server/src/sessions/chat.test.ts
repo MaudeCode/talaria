@@ -3343,6 +3343,30 @@ describe('chat turns through the sidecar', () => {
     await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')
   })
 
+  it('names the running call in the working status, the held one as waiting for approval, and none between calls (TAL-2337)', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.start', (params, emit) => {
+      emit({ event: 'token', data: { text: 'Testing. ' } })
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'terminal', preview: null, args: { command: 'npm test' }, tid: 'call-test' } })
+      emit({ event: 'approval', data: { request_id: 'held', command: 'npm test', tool_call_id: 'call-test', session_id: sid } })
+      emit({ event: 'approval_resolved', data: { approval_id: 'held' } })
+      emit({ event: 'tool_complete', data: { name: 'terminal', preview: 'ok', tid: 'call-test' } })
+      emit({ event: 'token', data: { text: 'Done.' } })
+      return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Testing. Done.' }])
+    })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'test' }))
+    const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    const running = { kind: 'shell', target: 'npm test', done: false }
+    expect(frames.filter((f) => f.event === 'run_status').map((f) => (f.data as Json).status)).toEqual([
+      { phase: 'working' },
+      { phase: 'working', current_tool: running },
+      { phase: 'working', current_tool: { ...running, outcome: { key: 'pending_approval', tone: 'attention' } } },
+      { phase: 'working', current_tool: running },
+      { phase: 'working' },
+      null,
+    ])
+  })
+
   it.each([['once', 'allowed'], ['session', 'allowed'], ['always', 'allowed'], ['deny', 'denied']])('tells the turn which tool row an approval answered with %s unlocked: %s (TAL-1783)', async (choice, outcome) => {
     const sid = await newSession(s)
     let release: () => void = () => undefined

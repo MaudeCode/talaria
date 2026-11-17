@@ -389,6 +389,9 @@ persisted metadata is additive, and clients keep the explicit values in cache.
 `run_status` carries `{session_id, status}`. The server selects `status.phase` in this order:
 `compressing`, `rate_limit_wait` (with the existing `wait` object), `prompt_reading`
 (with `progress_percent` from 0 through 100, or null when unknown), then `working`.
+While a call runs, `working` carries `current_tool` (TAL-2337): the call an approval holds, with the
+`pending_approval` outcome, else the latest running call the transcript shows, in the same redacted
+display fields as a Live Activity's call. Between calls it is absent and clients keep "Working".
 Session detail and the journal stream's `session_snapshot` fallback include the same current
 `run_status` so an attach beyond earlier progress frames still shows the current phase.
 Older servers omit this additive field. A retained stream keeps its status with its consumed cursor;
