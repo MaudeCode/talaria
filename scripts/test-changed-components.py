@@ -448,7 +448,7 @@ PROJECT = """// !$*UTF8*$!
 	};
 }
 """
-HOSTED_SOURCES = ["Hosted.swift", "AlphaHostedTests.swift", "BetaHostedTests.swift", "MathTests.swift",
+HOSTED_SOURCES = ["Hosted.swift", "AlphaHostedTests.swift", "BetaHostedTests.swift", "MathTests.swift", "Observer.swift",
                   "../TalariaKit/Tests/TalariaKitTests/Support/SharedFixture.swift"]
 SOURCES = {
     "app/TalariaKit/Tests/TalariaKitTests/LeafTests.swift": """import XCTest
@@ -498,7 +498,12 @@ final class UsesFixtureTests: XCTestCase {
         XCTAssertEqual(SharedFixture.make(), 1)
     }
 
-    func testIndependent() {}
+    func testIndependent() {
+        let table = \"\"\"
+            | a |
+            \"\"\"
+        XCTAssertFalse(table.isEmpty)
+    }
 }
 """,
     "app/TalariaKit/Tests/TalariaKitTests/MathTests.swift": """import XCTest
@@ -546,6 +551,15 @@ final class AlphaHostedTests: XCTestCase {
 final class BetaHostedTests: XCTestCase {
     func testThroughHelper() {
         XCTAssertEqual(Hosted.viaMenu(), 2)
+    }
+}
+""",
+    # XCTest calls it through the bundle's principal class; no test names it.
+    "app/TalariaTests/Observer.swift": """import XCTest
+
+final class Observer: NSObject, XCTestObservation {
+    func testBundleWillStart(_ testBundle: Bundle) {
+        _ = 1
     }
 }
 """,
@@ -669,6 +683,12 @@ class AppPlanTests(unittest.TestCase):
              {"TalariaKitTests": ("full", ["TalariaKitTests"]), "TalariaTests": ("full", ["TalariaTests"])}),
             ("an App source runs only the hosted target",
              [("app/Talaria/View.swift", "{}", "{ let x = 1 }")],
+             {"TalariaKitTests": empty, "TalariaTests": ("full", ["TalariaTests"])}),
+            ("whitespace inside a string literal is a change",
+             [("app/TalariaKit/Tests/TalariaKitTests/UsesFixtureTests.swift", "            | a |\n", "                | a |\n")],
+             {"TalariaKitTests": ("explicit", ["TalariaKitTests/UsesFixtureTests/testIndependent"]), "TalariaTests": empty}),
+            ("support XCTest invokes for every test runs its target in full",
+             [("app/TalariaTests/Observer.swift", "_ = 1", "_ = 2")],
              {"TalariaKitTests": empty, "TalariaTests": ("full", ["TalariaTests"])}),
             ("comments change nothing", [("app/TalariaTests/Hosted.swift", "        1\n", "        1 // one\n")],
              {"TalariaKitTests": empty, "TalariaTests": empty}),

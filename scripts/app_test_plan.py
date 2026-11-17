@@ -266,6 +266,7 @@ class Universe:
             self.files[path], self.lines[path] = scan(text, path)
         self.units = [decl for decls in self.files.values() for decl in walk(decls)]
         self.trail = set()
+        self.declared = {decl.name for decl in self.units if decl.parent is None}  # What the tested revision still has.
         self.superclass = {}
         for decl in self.units:
             if decl.kind == "class" and decl.inherits:
@@ -374,9 +375,15 @@ class Universe:
                 names = {cls} if member is None or implicit(member) else {cls, member.name}
                 result |= self.whole({cls}) | self.reach(names)
             else:
+                owner = deepest if deepest.is_type else (deepest.parent or deepest)
+                if any(name.startswith("XCTest") and name != "XCTestCase" for name in owner.inherits):  # XCTestObservation
+                    raise Uncertain(f"{owner.name} conforms to {', '.join(owner.inherits)}: XCTest invokes it for every test")
                 names = ({deepest.name} if plain(deepest) else set()) | \
-                    ({(deepest.parent or deepest).name} if implicit(deepest) or deepest.is_type else set())
-                result |= self.reach(names)
+                    ({owner.name} if implicit(deepest) or deepest.is_type else set())
+                found = self.reach(names)
+                if not found and (implicit(deepest) or deepest.is_type) and owner.name in self.declared:
+                    raise Uncertain(f"no test names {owner.name}, so the runtime may invoke {deepest.name}")
+                result |= found
         return result
 
 
@@ -472,9 +479,19 @@ def hosted_sources(project):
 # ----------------------------------------------------------------------------------------------------------------- Diff
 
 def code_changes(before, after):
-    """(old line numbers, new line numbers) whose code differs: comments and whitespace never count."""
-    old = [line.strip() for line in clean(before, strings=True).split("\n")] if before is not None else []
-    new = [line.strip() for line in clean(after, strings=True).split("\n")] if after is not None else []
+    """(old line numbers, new line numbers) whose code differs: comments and whitespace outside string literals never
+    count; whitespace inside a string literal does."""
+    def keys(text):
+        if text is None:
+            return []
+        result = []
+        # Both cleanings keep every line's length: one marks string contents as `s`, the other keeps them verbatim, so
+        # the first shows how much of each end is code whitespace or a comment.
+        for marked, verbatim in zip(clean(text).split("\n"), clean(text, strings=True).split("\n")):
+            result.append(verbatim[len(marked) - len(marked.lstrip()):len(marked.rstrip())])
+        return result
+
+    old, new = keys(before), keys(after)
     changed_old, changed_new = set(), set()
     for tag, low_old, high_old, low_new, high_new in difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes():
         if tag != "equal":
