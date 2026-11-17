@@ -171,15 +171,19 @@ extension SSEEvent {
 public struct ReasoningStreamEvent: Decodable, Equatable, Sendable {
     public let text: String
     public let titles: [String]
+    /// TAL-2332: the server's activity group of this reasoning segment.
+    public let groupID: String?
 
     enum CodingKeys: String, CodingKey {
         case text
         case titles
+        case groupID = "group_id"
     }
 
-    init(text: String, titles: [String] = []) {
+    init(text: String, titles: [String] = [], groupID: String? = nil) {
         self.text = text
         self.titles = ReasoningTitleMetadata.normalize(titles)
+        self.groupID = groupID
     }
 
     public init(from decoder: Decoder) throws {
@@ -188,6 +192,7 @@ public struct ReasoningStreamEvent: Decodable, Equatable, Sendable {
         titles = ReasoningTitleMetadata.normalize(
             (try? container.decodeIfPresent([String].self, forKey: .titles)) ?? []
         )
+        groupID = container.decodeLossyStringIfPresent(forKey: .groupID)
     }
 }
 
@@ -275,8 +280,13 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
     public let focusPath: String?
     /// TAL-2331: the transcript leaves this call out (server `hidden`); a failed lookup's completion omits it.
     public let isHidden: Bool
+    /// TAL-2332: the call's server activity group, and that group as it now stands.
+    public var groupID: String? = nil
+    public var group: AssistantActivityGroup? = nil
 
     enum CodingKeys: String, CodingKey {
+        case groupID = "group_id"
+        case group
         case eventType = "event_type"
         case name
         case preview
@@ -353,6 +363,8 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
         focusPath = container.decodeLossyStringIfPresent(forKey: .focusPath)
         stableID = container.decodeLossyStringIfPresent(forKey: .stableID)?.nonEmptyToolStreamID
         isHidden = container.decodeLossyBoolIfPresent(forKey: .isHidden) == true
+        groupID = container.decodeLossyStringIfPresent(forKey: .groupID)
+        group = AssistantActivityGroup(try? container.decodeIfPresent(JSONValue.self, forKey: .group))
     }
 }
 

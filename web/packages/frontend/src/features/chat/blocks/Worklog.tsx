@@ -9,6 +9,7 @@ import { readPersistedJson, writePersistedJson } from '../../../lib/persisted'
 import { motionOn, prefersReducedMotion, revealHeight, REVEAL_MS, TRAVEL_EASE } from '../../../lib/motion'
 import { SwapText } from '../../../ui/SwapText'
 import type { ToolCardData } from './ToolCard'
+import type { ActivityGroup } from '@maudecode/talaria-web-contracts'
 
 export type ActivityMode = 'compact_worklog' | 'transparent_stream' | 'hide_all_activity'
 
@@ -87,7 +88,24 @@ export function terminalOutcomeLabel(status: string): string | null {
   }
 }
 
-export function Worklog({ calls, status, children, sequenceKey, disclosureId = 'turn', active = false, activeLabel, expandedByDefault = false }: { calls: ToolCardData[]; status: string; children: ReactNode; sequenceKey?: string; /** A turn-level disclosure's key, one per phase of a steered turn. */ disclosureId?: string; active?: boolean; activeLabel?: string | undefined; expandedByDefault?: boolean }) {
+/**
+ * TAL-2332: a header's words from the server's record of the calls under it: each kind's phrase in the server's order,
+ * running while any call runs. Clients never count calls themselves when the server sent the record.
+ */
+function groupSummary(group: Pick<ActivityGroup, 'parts' | 'running'>, locale: string): string {
+  const text = toolText(locale)
+  return text.summaryJoin(group.parts.map((part) => text.worklogSummary(part.kind, group.running ? 'running' : 'done', part.count))) || m.thinking_label()
+}
+
+/** The record an older server's calls make, counted on the client (old-server fallback: delete once every server sends groups). */
+function countedGroup(calls: ToolCardData[]): Pick<ActivityGroup, 'parts' | 'running' | 'failed'> {
+  const parts = new Map<string, { kind: string; count: number; failed: number }>()
+  for (const c of calls) { const part = parts.get(c.kind) ?? { kind: c.kind, count: 0, failed: 0 }; part.count += 1; parts.set(c.kind, part) }
+  return { parts: [...parts.values()] as ActivityGroup['parts'], running: calls.some((c) => !c.done), failed: calls.filter((call) => call.isError).length }
+}
+
+/** `group`: the server's record of these calls (TAL-2332), which words the header; without it the calls are counted here. */
+export function Worklog({ calls, group, merged = false, status, children, sequenceKey, disclosureId = 'turn', active = false, activeLabel, expandedByDefault = false }: { calls: ToolCardData[]; group?: Pick<ActivityGroup, 'parts' | 'running' | 'failed'> | undefined; /** TAL-2332: a merged run's row, whose calls indent under it. */ merged?: boolean; status: string; children: ReactNode; sequenceKey?: string; /** A turn-level disclosure's key, one per phase of a steered turn. */ disclosureId?: string; active?: boolean; activeLabel?: string | undefined; expandedByDefault?: boolean }) {
   const locale = useLocale()
   const nested = sequenceKey !== undefined
   const running = status === 'running'
@@ -122,15 +140,13 @@ export function Worklog({ calls, status, children, sequenceKey, disclosureId = '
   const [resets] = useState(() => new Set<() => void>())
   const [all, setAll] = useState<boolean>()
   const setEvery = (next: boolean) => { for (const reset of resets) reset(); setAll(next) }
-  const text = toolText(locale)
-  const byKind = new Map<string, number>()
-  for (const c of calls) byKind.set(c.kind, (byKind.get(c.kind) ?? 0) + 1)
-  const failed = calls.filter((call) => call.isError).length
+  const record = group ?? countedGroup(calls)
+  const failed = record.failed
   const summary = activeLabel || (nested || (!running && status !== 'completed')
-    ? text.summaryJoin([...byKind.entries()].map(([kind, n]) => text.worklogSummary(kind, calls.some((c) => !c.done) ? 'running' : 'done', n))) || m.thinking_label()
-    : text.processedElapsed())
+    ? groupSummary(record, locale)
+    : toolText(locale).processedElapsed())
   return (
-    <div className={cn('tool-group tool-worklog-group agent-activity-group activity', nested && 'activity-sequence-group', open && 'open', running && 'running', !open && 'tool-worklog-tool-group-collapsed')} data-tool-worklog-group="1" data-worklog-status={status} data-activity-sequence-group={nested ? '1' : undefined} data-live-activity-current={active ? '1' : undefined} data-open={open ? '1' : '0'}>
+    <div className={cn('tool-group tool-worklog-group agent-activity-group activity', nested && 'activity-sequence-group', merged && 'activity-merged-run', open && 'open', running && 'running', !open && 'tool-worklog-tool-group-collapsed')} data-tool-worklog-group="1" data-worklog-status={status} data-activity-sequence-group={nested ? '1' : undefined} data-live-activity-current={active ? '1' : undefined} data-open={open ? '1' : '0'}>
       {!live && (
         <button type="button" className={cn('tool-call-group-summary tool-worklog-summary activity-summary', flash)} aria-expanded={open} aria-controls={bodyId} onClick={() => { clicked.current = true; toggle() }}>
           <span className="as-dot" aria-hidden="true" />

@@ -3,20 +3,24 @@ import { TalariaActivitySchema } from '@maudecode/talaria-web-contracts'
 import type { LiveTurn, Segment } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
 import type { ToolCardData } from './blocks/ToolCard'
-import { ApprovalAnsweredBySchema, BackgroundLinkSchema, DisplayMediaSchema, ToolFieldSchema, ToolKindSchema, ToolProgressSchema, ToolAppSchema, ToolResultViewSchema, ToolVerbSchema, type DisplayMedia, type ToolKind, type ToolResultView } from '@maudecode/talaria-web-contracts'
+import { ActivityGroupSchema, type ActivityGroup, ApprovalAnsweredBySchema, BackgroundLinkSchema, DisplayMediaSchema, ToolFieldSchema, ToolKindSchema, ToolProgressSchema, ToolAppSchema, ToolResultViewSchema, ToolVerbSchema, type DisplayMedia, type ToolKind, type ToolResultView } from '@maudecode/talaria-web-contracts'
 import { extractInlineThinking, messageText, stripToolCallXml } from './render/text'
 import type { VisibleMessage } from './useTranscript'
 
 /** TAL-186: the server's display text for a body, with its media references rewritten, and the media it references. */
 export interface DisplayBody { display?: string; media?: DisplayMedia[] }
 
-/** `createdAt`: the server's `created_at` (epoch seconds) on a scene row; live rows have none. */
+/**
+ * `createdAt`: the server's `created_at` (epoch seconds) on a scene row; live rows have none. TAL-2332: `groupId` is the
+ * server's activity group of a reasoning or tool item; a tool item's `mergedCount` heads a merged run of that many calls,
+ * which the items with `mergedInto` its key join. A steer's `phaseActivity` is the work phase it ends.
+ */
 export type ActivityItem = (
   | ({ key: string; kind: 'text'; text: string } & DisplayBody)
   | { key: string; kind: 'reasoning'; text: string; titles?: string[]; disclosureKey?: string }
-  | { key: string; kind: 'tool'; call: ToolCardData }
-  | { key: string; kind: 'steering'; text: string; consumed: boolean; activity?: import('@maudecode/talaria-web-contracts').TalariaActivity | undefined }
-) & { createdAt?: number }
+  | { key: string; kind: 'tool'; call: ToolCardData; mergedCount?: number; mergedInto?: string }
+  | { key: string; kind: 'steering'; text: string; consumed: boolean; activity?: import('@maudecode/talaria-web-contracts').TalariaActivity | undefined; phaseActivity?: ActivityGroup }
+) & { createdAt?: number; groupId?: string }
 
 export interface TurnActivity {
   key: string
@@ -35,6 +39,10 @@ export interface TurnActivity {
   continued?: boolean
   sceneRows?: unknown[]
   history?: { ref: string; index: number; before: number }
+  /** TAL-2332: the server's activity groups by `group_id`; absent from an older server, which groups on the client. */
+  groups?: Record<string, ActivityGroup>
+  /** TAL-2332: the work phase after the last consumed steer, which the turn's last "Worked" header words. */
+  finalPhase?: ActivityGroup
 }
 
 const record = (v: unknown): Record<string, unknown> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {}
@@ -104,20 +112,30 @@ function processedSegment(segment: Extract<Segment, { kind: 'text' | 'reasoning'
   return processed
 }
 
+/** TAL-2332: the server's activity groups by id, when it sent valid ones. */
+export function groupsById(value: unknown): Record<string, ActivityGroup> | undefined {
+  const groups = ActivityGroupSchema.array().safeParse(value).data
+  return groups && Object.fromEntries(groups.map((group) => [group.group_id, group]))
+}
+
 /** Server-normalized scene rows map one-to-one onto activity items; the server owns order, roles, and states. */
 export function sceneItems(value: unknown): ActivityItem[] {
   if (!Array.isArray(value)) return []
   return value.flatMap((raw): ActivityItem[] => {
     const row = record(raw)
     const key = text(row.row_id)
-    const at = typeof row.created_at === 'number' ? { createdAt: row.created_at } : {}
+    const at = { ...(typeof row.created_at === 'number' ? { createdAt: row.created_at } : {}), ...(text(row.group_id) ? { groupId: text(row.group_id) } : {}) }
     if (row.role === 'prose') return [{ key, kind: 'text', text: text(row.text), ...displayBody(row.display_text, row.media), ...at }]
     if (row.role === 'reasoning') return [{ key, kind: 'reasoning', text: text(row.text), titles: Array.isArray(row.titles) ? row.titles.map(text) : [], ...(text(row.disclosure_key) ? { disclosureKey: text(row.disclosure_key) } : {}), ...at }]
-    if (row.role === 'steering') return [{ key, kind: 'steering', text: text(row.text), consumed: record(row.steering).consumed === true, activity: TalariaActivitySchema.safeParse(row.talaria_activity).data, ...at }]
+    if (row.role === 'steering') {
+      const phase = ActivityGroupSchema.safeParse(row.phase_activity).data
+      return [{ key, kind: 'steering', text: text(row.text), consumed: record(row.steering).consumed === true, activity: TalariaActivitySchema.safeParse(row.talaria_activity).data, ...(phase ? { phaseActivity: phase } : {}), ...at }]
+    }
     const tool = record(row.tool)
     // TAL-2331: a call the server hides is left out of the turn and its tool group.
     if (row.role !== 'tool' || tool.hidden === true) return []
-    return [{ key, kind: 'tool', ...at, call: {
+    const merged = { ...(typeof row.merged_count === 'number' ? { mergedCount: row.merged_count } : {}), ...(text(row.merged_into) ? { mergedInto: text(row.merged_into) } : {}) }
+    return [{ key, kind: 'tool', ...at, ...merged, call: {
       progress: ToolProgressSchema.safeParse(tool.progress).data ?? null, id: text(tool.id), name: text(tool.name), kind: toolKindOf(tool.kind), ...verbOf(tool.verb), ...appOf(tool.app), target: text(tool.target), args: tool.args, ...argsFieldsOf(tool.args_fields), preview: typeof tool.preview === 'string' ? tool.preview : null, resultView: resultViewOf(tool.result_view), ...(tool.shows_card === true ? { showsCard: true as const } : {}),
       done: tool.done === true, isError: tool.is_error === true, duration: typeof tool.duration === 'number' ? tool.duration : null, costUsd: typeof tool.cost_usd === 'number' ? tool.cost_usd : null,
       ...backgroundOf(tool.background), ...answeredByOf(tool.approval_answered_by), ...(tool.result_truncated === true ? { resultTruncated: true } : {}),
@@ -140,10 +158,17 @@ export function persistedActivity(row: VisibleMessage): TurnActivity {
     return { key, items: [], finalAnswer: bodies.map((part) => messageText(part.message.content)).join('\n\n'), finalAnswerDisplay: displayBody(display, bodies.flatMap((part) => part.message._media ?? [])), status: 'completed' }
   }
   return {
-    key, items: sceneItems(scene.activity_rows), finalAnswer: text(scene.final_answer), finalAnswerDisplay: displayBody(scene.final_answer_display, scene.final_answer_media), ...(text(scene.final_answer_excerpt) ? { finalAnswerExcerpt: text(scene.final_answer_excerpt) } : {}), status: text(scene.terminal_state) || 'completed', expandedByDefault: scene.expanded_by_default === true,
+    key, items: sceneItems(scene.activity_rows), ...serverGroups(scene), finalAnswer: text(scene.final_answer), finalAnswerDisplay: displayBody(scene.final_answer_display, scene.final_answer_media), ...(text(scene.final_answer_excerpt) ? { finalAnswerExcerpt: text(scene.final_answer_excerpt) } : {}), status: text(scene.terminal_state) || 'completed', expandedByDefault: scene.expanded_by_default === true,
     sceneRows: scene.activity_rows,
     ...(typeof scene.activity_rows_offset === 'number' && scene.activity_rows_offset > 0 ? { history: { ref: text(scene.activity_scene_ref), index: row.index, before: scene.activity_rows_offset } } : {}),
   }
+}
+
+/** TAL-2332: a scene's activity groups and last work phase, when the server sent them. */
+function serverGroups(scene: Record<string, unknown>): Pick<TurnActivity, 'groups' | 'finalPhase'> {
+  const groups = groupsById(scene.activity_groups)
+  const finalPhase = ActivityGroupSchema.safeParse(scene.final_phase_activity).data
+  return { ...(groups ? { groups } : {}), ...(finalPhase ? { finalPhase } : {}) }
 }
 
 /** The text a turn copies and reads aloud: its final answer, or its text items when it has none. */
@@ -152,7 +177,7 @@ export function activityText(activity: TurnActivity): string {
 }
 
 /** `omitToolIds`: tools a running scene already shows (TAL-374); their live state updates that card (`continuedActivity`). */
-export function liveActivity(turn: Pick<LiveTurn, 'segments' | 'tools' | 'status' | 'terminalState' | 'turnId' | 'streamId'>, omitToolIds?: ReadonlySet<string>): TurnActivity {
+export function liveActivity(turn: Pick<LiveTurn, 'segments' | 'tools' | 'groups' | 'status' | 'terminalState' | 'turnId' | 'streamId'>, omitToolIds?: ReadonlySet<string>): TurnActivity {
   const items: ActivityItem[] = []
   const seen = new Set<string>()
   turn.segments.forEach((segment, i) => {
@@ -168,13 +193,13 @@ export function liveActivity(turn: Pick<LiveTurn, 'segments' | 'tools' | 'status
     else if (!seen.has(segment.toolId) && !omitToolIds?.has(segment.toolId)) {
       seen.add(segment.toolId)
       const call = turn.tools[segment.toolId]
-      if (call && !call.hidden) items.push({ key: `tool:${call.id}`, kind: 'tool', call })
+      if (call && !call.hidden) items.push({ key: `tool:${call.id}`, kind: 'tool', call, ...(call.groupId ? { groupId: call.groupId } : {}) })
     }
   })
   // Live rendering only: the server's scene decides the settled answer, outcome and fold. Until it replaces this view,
   // a finished turn stays as it streamed, labelled with the outcome the server's terminal event reported.
   const status = isTerminal(turn.status) ? (turn.terminalState ?? turn.status) : 'running'
-  return { key: turn.turnId ?? turn.streamId, items, finalAnswer: '', status, live: true }
+  return { key: turn.turnId ?? turn.streamId, items, finalAnswer: '', status, live: true, groups: turn.groups }
 }
 
 /** The ids of the tools a turn's items show. */
@@ -193,5 +218,5 @@ export function continuedActivity(activity: TurnActivity, turn: LiveTurn): TurnA
     const call = item.call
     return { ...item, call: { ...call, progress: live.progress ?? null, done: call.done || live.done, isError: live.isError, preview: live.preview ?? call.preview, duration: live.duration ?? call.duration, costUsd: live.costUsd ?? call.costUsd, resultView: live.resultView ?? call.resultView, approvalOutcome: live.approvalOutcome, approvalAnsweredBy: live.approvalAnsweredBy ?? call.approvalAnsweredBy } }
   })
-  return { ...activity, items, continued: liveActivity(turn, toolIdsOf(activity)).items.length > 0 }
+  return { ...activity, items, groups: { ...activity.groups, ...turn.groups }, continued: liveActivity(turn, toolIdsOf(activity)).items.length > 0 }
 }

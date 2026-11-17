@@ -196,6 +196,8 @@ public final class ChatViewModel {
     @ObservationIgnored private var pendingAssistantTokenText = ""
     @ObservationIgnored private var pendingReasoningText = ""
     @ObservationIgnored private var pendingReasoningTitles: [String] = []
+    /// TAL-2332: the activity group of the reasoning buffered in `pendingReasoningText`.
+    @ObservationIgnored private var pendingReasoningGroupID: String?
     @ObservationIgnored private var pendingStreamingContentFlushTask: Task<Void, Never>?
     @ObservationIgnored private var isDeferringTranscriptMapping = false
     private(set) var completedToolCallGroups: [ToolCallGroup] = []
@@ -6669,6 +6671,11 @@ public final class ChatViewModel {
         if !payload.titles.isEmpty {
             pendingReasoningTitles = payload.titles
         }
+        if let groupID = payload.groupID, groupID != pendingReasoningGroupID {
+            // A new group's reasoning starts its own row.
+            flushPendingStreamingContent()
+            pendingReasoningGroupID = groupID
+        }
         if payload.text.isEmpty, !payload.titles.isEmpty {
             if !pendingReasoningText.isEmpty {
                 flushPendingStreamingContent()
@@ -6690,7 +6697,7 @@ public final class ChatViewModel {
             reasoningAnchorMessageID = messageID
         }
 
-        liveAssistantActivity.appendReasoning(appendedText, titles: pendingReasoningTitles)
+        liveAssistantActivity.appendReasoning(appendedText, titles: pendingReasoningTitles, groupID: pendingReasoningGroupID)
         return true
     }
 
@@ -6718,7 +6725,9 @@ public final class ChatViewModel {
                 target: payload.target,
                 progress: payload.progress,
                 isHidden: payload.isHidden
-            )
+            ),
+            groupID: payload.groupID,
+            group: payload.group
         )
         scheduleStreamingScrollTrigger()
         return true
@@ -6794,7 +6803,9 @@ public final class ChatViewModel {
                     isError: payload.isError,
                     isCompleted: true,
                     isHidden: payload.isHidden
-                )
+                ),
+                groupID: payload.groupID,
+                group: payload.group
             )
             scheduleStreamingScrollTrigger()
             return true
@@ -6803,6 +6814,7 @@ public final class ChatViewModel {
         _ = liveAssistantActivity.updateTool(at: index) {
             $0.applyingCompletionPayload(payload)
         }
+        if let group = payload.group { liveAssistantActivity.setGroup(group) }
         scheduleStreamingScrollTrigger()
         return true
     }

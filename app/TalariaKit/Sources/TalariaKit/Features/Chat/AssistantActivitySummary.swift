@@ -23,6 +23,8 @@ public enum AssistantActivityHeaderSummary {
            let current = toolCalls.last(where: { !$0.isCompleted && $0.isError != true }) ?? toolCalls.last {
             return AssistantActivitySummary.label(for: current)
         }
+        // TAL-2332: the server's record of the group words it; an older server's calls are counted here.
+        if let group = rows.last(where: { $0.group != nil })?.group { return AssistantActivitySummary.title(for: group) }
         let tools = rows.flatMap(\.toolCalls)
         return tools.isEmpty ? String(localized: "Thinking") : AssistantActivitySummary.title(for: tools)
     }
@@ -43,13 +45,14 @@ public enum AssistantActivityHeaderSummary {
 }
 
 public enum AssistantActivityGroupPolicy: Sendable {
+    /// More than one row to show: a server-merged run (TAL-2332) shows as one row.
     public static func requiresGroup(for rows: [AssistantActivityRow]) -> Bool {
         rows.reduce(into: 0) { count, row in
             switch row.content {
             case .reasoning:
                 count += 1
             case .tools(let toolCalls):
-                count += toolCalls.count
+                count += ToolCallRun.runs(toolCalls).count
             case .prose, .steering:
                 break
             }
@@ -91,6 +94,38 @@ public enum AssistantActivitySummary: Sendable {
     /// TAL-2317: the Talaria mark (the shared `BrandAssets` sandal), the icon of Talaria's own tools; every other icon is an SF Symbol.
     public static let talariaMarkIcon = "Sandal"
 
+    /// TAL-2332: a group's header from the server's record: each kind's phrase in the server's order (kinds that share
+    /// wording read once), a failed kind as its failure.
+    public static func title(for group: AssistantActivityGroup) -> String {
+        var order: [Category] = []
+        var counts: [Category: Int] = [:]
+        var failed = Set<Category>()
+        for part in group.parts {
+            let category = category(for: part.kind)
+            if counts[category] == nil { order.append(category) }
+            counts[category, default: 0] += part.count
+            if part.failed > 0 { failed.insert(category) }
+        }
+        guard !order.isEmpty else { return String(localized: "Thinking") }
+        return joined(order.map { category in
+            failed.contains(category)
+                ? failedPhrase(for: category)
+                : phrase(for: category, count: counts[category] ?? 1, completed: !group.running)
+        })
+    }
+
+    /// TAL-2332: a merged run's row, named for its calls by the server's count.
+    public static func mergedTitle(for head: ToolCall, count: Int) -> String {
+        phrase(for: category(for: head), count: count, completed: true)
+    }
+
+    private static func joined(_ phrases: [String]) -> String {
+        phrases.enumerated().map { index, phrase in
+            guard index > 0, let first = phrase.first else { return phrase }
+            return first.lowercased() + phrase.dropFirst()
+        }.joined(separator: ", ")
+    }
+
     static func title(for toolCalls: [ToolCall]) -> String {
         guard !toolCalls.isEmpty else { return String(localized: "Thinking") }
         var order: [Category] = []
@@ -104,13 +139,11 @@ public enum AssistantActivitySummary: Sendable {
             if toolCall.isError == true { failed.insert(category) }
             if !toolCall.isCompleted && toolCall.isError != true { running.insert(category) }
         }
-        return order.enumerated().map { index, category in
-            let phrase = failed.contains(category)
+        return joined(order.map { category in
+            failed.contains(category)
                 ? failedPhrase(for: category)
                 : phrase(for: category, count: counts[category] ?? 1, completed: !running.contains(category))
-            guard index > 0, let first = phrase.first else { return phrase }
-            return first.lowercased() + phrase.dropFirst()
-        }.joined(separator: ", ")
+        })
     }
 
     public static func label(for toolCall: ToolCall) -> String {
@@ -291,7 +324,11 @@ public enum AssistantActivitySummary: Sendable {
     }
 
     private static func category(for toolCall: ToolCall) -> Category {
-        switch toolCall.kind ?? .unknown {
+        category(for: toolCall.kind ?? .unknown)
+    }
+
+    private static func category(for kind: ToolDisplayKind) -> Category {
+        switch kind {
         case .shell: .command
         case .read, .list: .read
         case .write: .edit
@@ -446,5 +483,29 @@ public enum AssistantActivitySummary: Sendable {
         case .connector: "cable.connector"
         case .generic: "wrench"
         }
+    }
+}
+
+/// TAL-2332: a group's calls as they show: a server-merged run is one entry holding its calls; any other call stands alone.
+/// A call whose merged row is not among `calls` (its first call paged out) stands alone too.
+public struct ToolCallRun: Identifiable, Equatable, Sendable {
+    public let calls: [ToolCall]
+    public var id: String { calls.first?.id ?? "" }
+    /// The server's count when this is a merged run.
+    public var mergedCount: Int? { calls.count > 1 ? calls.first?.mergedCount : nil }
+
+    public static func runs(_ calls: [ToolCall]) -> [ToolCallRun] {
+        let heads = Set(calls.compactMap { $0.mergedCount != nil ? $0.id : nil })
+        var runs: [ToolCallRun] = []
+        var index: [String: Int] = [:]
+        for call in calls {
+            if let head = call.mergedInto, heads.contains(head), let at = index[head] {
+                runs[at] = ToolCallRun(calls: runs[at].calls + [call])
+                continue
+            }
+            index[call.id] = runs.count
+            runs.append(ToolCallRun(calls: [call]))
+        }
+        return runs
     }
 }

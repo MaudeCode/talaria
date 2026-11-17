@@ -6,7 +6,7 @@ import { useInfiniteQuery } from '@tanstack/react-query'
 import { fetchAnchorScene } from '../../api/endpoints'
 import { m } from '../../paraglide/messages.js'
 import { Button } from '../../ui/Button'
-import { sceneItems } from './turnActivity'
+import { groupsById, sceneItems } from './turnActivity'
 import { Markdown } from './render/Markdown'
 import { ReasoningBlock } from './blocks/ReasoningBlock'
 import { ToolCard, toolCardLabel } from './blocks/ToolCard'
@@ -101,9 +101,11 @@ function ActivityHistory({ activity, history, mode, sessionId, scope }: { activi
   })
   const pages = query.data?.pages.slice().reverse() ?? []
   const items = pages.length ? sceneItems([...pages.flatMap((page) => page.rows), ...(activity.sceneRows ?? [])]) : activity.items
+  // TAL-2332: each page ships the records of its groups; the scene's own stay newest.
+  const groups = Object.assign({}, ...pages.map((page) => groupsById(page.activity_groups)), activity.groups) as NonNullable<TurnActivity['groups']>
   const remaining = query.data?.pages.at(-1)?.start ?? history.before
   const control = remaining > 0 ? <Button variant="ghost" disabled={query.isFetching} onClick={() => { void query.fetchNextPage() }}>{query.isFetching ? m.loading() : query.isError ? m.retry() : m.show_earlier_steps({ a0: String(remaining) })}</Button> : null
-  return <ActivityBody activity={{ ...activity, items }} mode={mode} earlier={control} sessionId={sessionId} />
+  return <ActivityBody activity={{ ...activity, items, groups }} mode={mode} earlier={control} sessionId={sessionId} />
 }
 
 function ActivityBody({ activity, mode, earlier, sessionId }: { activity: TurnActivity; mode: ActivityMode; earlier?: ReactNode; sessionId?: string | undefined }) {
@@ -131,25 +133,41 @@ function ActivityBody({ activity, mode, earlier, sessionId }: { activity: TurnAc
       case 'tool': return <ToolCard key={item.key} arrivalKey={item.key} call={item.call} sessionId={sessionId} />
     }
   }
+  // TAL-2332: the server's merged runs: each call that joins a loaded merged row, by that row's key. Transparent mode shows
+  // every call in order, so only the compact worklog merges.
+  const followers = new Map<string, ActivityItem[]>()
+  const heads = new Set(mode === 'compact_worklog' ? items.flatMap((item) => (item.kind === 'tool' && item.mergedCount ? [item.key] : [])) : [])
+  for (const item of items) if (item.kind === 'tool' && item.mergedInto && heads.has(item.mergedInto)) followers.set(item.mergedInto, [...(followers.get(item.mergedInto) ?? []), item])
+  const joinsMergedRow = (item: ActivityItem) => item.kind === 'tool' && item.mergedInto !== undefined && heads.has(item.mergedInto)
+  // A merged row is one row named for its calls (the server's count), which expands to each call.
+  const renderMerged = (item: ActivityItem, last: boolean): ReactNode => {
+    const joined = followers.get(item.key)
+    if (item.kind !== 'tool' || !item.mergedCount || !joined?.length) return render(item, last)
+    const run = [item, ...joined]
+    return <Worklog key={item.key} merged sequenceKey={`merged:${item.key}`} calls={run.flatMap((entry) => entry.kind === 'tool' ? [entry.call] : [])} group={{ parts: [{ kind: item.call.kind, count: item.mergedCount, failed: 0 }], running: false, failed: 0 }} status={status}>{run.map((entry) => render(entry, false))}</Worklog>
+  }
   // `tail` marks the list that ends the turn: only its last item can still be streaming.
-  const blocksOf = (list: ActivityItem[], tail: boolean): ReactNode[] => {
+  const blocksOf = (all: ActivityItem[], tail: boolean): ReactNode[] => {
+    const list = all.filter((item) => !joinsMergedRow(item))
     const blocks: ReactNode[] = []
     for (let i = 0; i < list.length;) {
       const item = list[i]
       if (!item) break
       // TAL-1968: a call whose card the user must see (server `shows_card`) stands alone, outside a folded run.
       const alone = (entry: ActivityItem | undefined) => entry?.kind === 'text' || entry?.kind === 'steering' || (entry?.kind === 'tool' && entry.call.showsCard === true)
-      if (alone(item) || mode !== 'compact_worklog') { blocks.push(render(item, tail && i === list.length - 1)); i++; continue }
+      if (alone(item) || mode !== 'compact_worklog') { blocks.push(renderMerged(item, tail && i === list.length - 1)); i++; continue }
       const start = i
-      while (i < list.length && !alone(list[i])) i++
+      // TAL-2332: the server's groups decide the run; an older server's rows (no `group_id`) run until prose or a steer.
+      while (i < list.length && !alone(list[i]) && list[i]?.groupId === item.groupId) i++
       const run = list.slice(start, i)
-      const contents = run.map((entry, j) => render(entry, tail && start + j === list.length - 1))
+      const contents = run.map((entry, j) => renderMerged(entry, tail && start + j === list.length - 1))
       const active = activeTail && tail && i === list.length
       const current = run.at(-1)
       const activeLabel = active && current?.kind === 'tool'
         ? toolCardLabel(current.call, locale)
         : active && current?.kind === 'reasoning' ? current.titles?.at(-1) ?? m.voice_thinking() : undefined
-      blocks.push(run.length === 1 ? contents[0] : <Worklog key={item.key} sequenceKey={`sequence:${item.key}`} calls={run.flatMap((entry) => entry.kind === 'tool' ? [entry.call] : [])} status={status} active={active} activeLabel={activeLabel}>{contents}</Worklog>)
+      const group = item.groupId === undefined ? undefined : activity.groups?.[item.groupId]
+      blocks.push(run.length === 1 ? contents[0] : <Worklog key={item.key} sequenceKey={`sequence:${item.key}`} calls={run.flatMap((entry) => entry.kind === 'tool' ? [entry.call] : [])} group={group} status={status} active={active} activeLabel={activeLabel}>{contents}</Worklog>)
     }
     return blocks
   }
@@ -168,7 +186,7 @@ function ActivityBody({ activity, mode, earlier, sessionId }: { activity: TurnAc
       {mode !== 'hide_all_activity' && (mode === 'compact_worklog' && (running || (hasWork && !activity.live))
         ? phases.map((phase, n) => (
           <Fragment key={n}>
-            {(phase.work.length > 0 || (n === 0 && earlier)) && <Worklog disclosureId={n === 0 ? 'turn' : `turn:phase:${n}`} calls={callsOf(phase.work)} status={status} expandedByDefault={activity.expandedByDefault === true}>{n === 0 && earlier}{blocksOf(phase.work, n === phases.length - 1)}</Worklog>}
+            {(phase.work.length > 0 || (n === 0 && earlier)) && <Worklog disclosureId={n === 0 ? 'turn' : `turn:phase:${n}`} calls={callsOf(phase.work)} group={phase.steer?.kind === 'steering' ? phase.steer.phaseActivity : activity.finalPhase} status={status} expandedByDefault={activity.expandedByDefault === true}>{n === 0 && earlier}{blocksOf(phase.work, n === phases.length - 1)}</Worklog>}
             {phase.steer && render(phase.steer, false)}
           </Fragment>
         ))

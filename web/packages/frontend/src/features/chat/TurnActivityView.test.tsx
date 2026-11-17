@@ -290,6 +290,60 @@ describe('turn worklog presentation', () => {
     expect(view.container.querySelector('[data-tool-id="b"] button')).toHaveAttribute('aria-expanded', 'false')
   })
 
+  it('splits and names activity groups as the server sends them, never by counting the calls itself (TAL-2332)', () => {
+    const grouped = (row: Record<string, unknown>, group_id: string) => ({ ...row, group_id })
+    // The server's record says more than these rows show (its group spans a paged-out row); the header follows the record.
+    const view = render(<View activity={settled({
+      terminal_state: 'error', expanded_by_default: true,
+      activity_rows: rows(grouped(toolRow('a'), 'group:0'), grouped(toolRow('b'), 'group:0'), grouped({ ...toolRow('t'), tool: { ...toolRow('t').tool, name: 'terminal', kind: 'shell' } }, 'group:1'), grouped(toolRow('c'), 'group:1')),
+      activity_groups: [
+        { group_id: 'group:0', parts: [{ kind: 'talaria', count: 5, failed: 0 }], failed: 0, running: false },
+        { group_id: 'group:1', parts: [{ kind: 'read', count: 3, failed: 1 }, { kind: 'web', count: 1, failed: 0 }], failed: 1, running: false },
+      ],
+      final_phase_activity: { group_id: 'phase:0', parts: [{ kind: 'web', count: 2, failed: 0 }], failed: 0, running: false },
+    })} />)
+    const headers = [...view.container.querySelectorAll('[data-activity-sequence-group] > button')]
+    // Two server groups with no prose between them stay two groups.
+    expect(headers.map((header) => header.textContent)).toEqual(['Used Talaria tools', 'Read files, searched the web1✕'])
+    expect(view.container.querySelector('.tool-worklog-summary:not([data-activity-sequence-group] *)')).toHaveTextContent('Searched the web')
+  })
+
+  it('shows a merged run as one row named for its calls that expands to each call (TAL-2332)', () => {
+    const shell = { ...toolRow('d'), tool: { ...toolRow('d').tool, name: 'terminal', kind: 'shell', target: 'ls' } }
+    const view = render(<View activity={settled({
+      final_answer: 'Done', expanded_by_default: true,
+      activity_rows: rows({ ...toolRow('a'), group_id: 'group:0', merged_count: 3 }, { ...toolRow('b'), group_id: 'group:0', merged_into: 'tool:a' }, { ...toolRow('c'), group_id: 'group:0', merged_into: 'tool:a' }, { ...shell, group_id: 'group:0' }),
+      activity_groups: [{ group_id: 'group:0', parts: [{ kind: 'read', count: 3, failed: 0 }, { kind: 'shell', count: 1, failed: 0 }], failed: 0, running: false }],
+    })} />)
+    const group = view.container.querySelector('[data-activity-sequence-group]')!
+    fireEvent.click(group.querySelector(':scope > button')!)
+    // Inside the group: one merged row for the three reads, then the command.
+    const merged = group.querySelector('[data-activity-sequence-group]')
+    expect(merged, 'The three reads fold into one merged row inside the group').not.toBeNull()
+    const header = merged!.querySelector(':scope > button')!
+    expect(header).toHaveTextContent('Read files')
+    expect(header).toHaveAttribute('aria-expanded', 'false')
+    expect(view.container.querySelector('[data-tool-id="d"]')).toBeVisible()
+    for (const id of ['a', 'b', 'c']) expect(view.container.querySelector(`[data-tool-id="${id}"]`)).not.toBeVisible()
+    fireEvent.click(header)
+    for (const id of ['a', 'b', 'c']) expect(view.container.querySelector(`[data-tool-id="${id}"]`)).toBeVisible()
+  })
+
+  it('groups live frames by the server\'s group and names the group from its latest record (TAL-2332)', () => {
+    const run = liveRun()
+    const group = (count: number, running: boolean) => ({ group_id: 'group:0', parts: [{ kind: 'read' as const, count, failed: 0 }], failed: 0, running })
+    run.emit({ event: 'tool', data: { ...tool('a').data, group_id: 'group:0', group: group(1, true) } })
+    run.emit({ event: 'tool_complete', data: { ...completed('a').data, group_id: 'group:0', group: group(1, false) } })
+    run.emit({ event: 'tool', data: { ...tool('b').data, group_id: 'group:1', group: { ...group(1, true), group_id: 'group:1' } } })
+    run.emit({ event: 'tool_complete', data: { ...completed('b').data, group_id: 'group:1', group: { ...group(1, false), group_id: 'group:1' } } })
+    run.emit({ event: 'tool', data: { ...tool('c').data, group_id: 'group:1', group: { group_id: 'group:1', parts: [{ kind: 'read', count: 2, failed: 0 }, { kind: 'web', count: 1, failed: 0 }], failed: 0, running: true } } })
+    run.emit({ event: 'token', data: { text: 'Next' } })
+    const view = render(<View activity={liveActivity(run.turn)} />)
+    // `a` is its own group; `b` and `c` share the server's second group, worded from its latest record.
+    expect(view.container.querySelector('[data-tool-id="a"]')?.closest('[data-activity-sequence-group]')).toBeNull()
+    expect(view.container.querySelector('[data-activity-sequence-group] > button')).toHaveTextContent('Reading files, searching the web')
+  })
+
   it('folds normal completion, keeps errors readable, and never calls cancellation or no-answer completion Worked', () => {
     const activity = settled({ terminal_state: 'no_response', expanded_by_default: true, activity_rows: rows(toolRow('a')) })
     const view = render(<View activity={activity} />)

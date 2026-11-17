@@ -5,8 +5,9 @@ import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { anchorActivitySceneTransportPreview, assistantAnchorSceneMessageRef, buildTurnScene, hydrateAnchorActivityScenes, normalizeSceneRows, turnsOf, turnTerminalState, withTurnIds } from './anchor.js'
+import { type SceneRow, anchorActivitySceneTransportPreview, assistantAnchorSceneMessageRef, buildTurnScene, hydrateAnchorActivityScenes, normalizeSceneRows, turnsOf, turnTerminalState, withTurnIds } from './anchor.js'
 import { splitDisplayText, withToolCallOutcomes } from './merge.js'
+import { withActivityGroups } from './activity-groups.js'
 import { withSceneToolDisplay } from '../redact.js'
 import { str } from '../util.js'
 
@@ -532,7 +533,8 @@ describe('anchor scenes over HTTP', () => {
     // TAL-1175: reasoning rows are numbered over the whole scene, so the preview and every page agree on each key.
     const turnId = String((detail.messages as Json[])[1]?._turn_id)
     let segment = 0
-    const all = (withSceneToolDisplay(normalized, normalized, true, null) as Json[]).map((row) => (row.role === 'reasoning' && !String(row.row_id).endsWith(':thinking') ? { ...row, disclosure_key: `${turnId}:reasoning:${String(segment++)}` } : row))
+    // TAL-2332: each with its activity group, counted over the whole scene.
+    const all = withActivityGroups((withSceneToolDisplay(normalized, normalized, true, null) as Json[]).map((row) => (row.role === 'reasoning' && !String(row.row_id).endsWith(':thinking') ? { ...row, disclosure_key: `${turnId}:reasoning:${String(segment++)}` } : row)) as unknown as SceneRow[]).rows as unknown as Json[]
     expect(scene).toMatchObject({ activity_rows_total: all.length, activity_rows_offset: all.length - 80, activity_rows_complete: false })
     expect(scene.activity_rows).toEqual(all.slice(-80))
 
