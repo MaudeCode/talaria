@@ -308,3 +308,43 @@ describe('Kanban rows (TAL-2327)', () => {
     }
   })
 })
+
+describe('browser and computer-use calls (TAL-2328)', () => {
+  const shot = [{ url: './api/media?path=%2Fsrv%2Fshot.png&session_id=s1', name: 'shot.png', mime: 'image/png', kind: 'image' as const }]
+  const code = { path: '', language: 'python', start_line: 1, lines: [{ n: 1, text: '# Open the pricing page' }, { n: 2, text: 'goto("https://example.com")' }], total_lines: 2, truncated: false }
+
+  it('shows browser code with the browser icon, its screenshot in view, and its code above its output when opened', async () => {
+    const view = render(<ToolCard call={{ ...call, name: 'browser_exec', kind: 'browser', verb: 'run', target: '', resultView: { file_excerpt: code, stdout: 'Pricing: $10', media: shot } }} sessionId="s1" />)
+    expect(view.container.querySelector('[data-tool-kind="browser"] svg.lucide-app-window')).not.toBeNull()
+    expect(view.container.querySelector('.tool-card-name')).toHaveTextContent('Ran browser code')
+    expect(within(view.container.querySelector<HTMLElement>('.tool-card-media')!).getByRole('img', { name: 'shot.png' })).toBeInTheDocument()
+    await userEvent.click(within(view.container).getAllByRole('button')[0]!)
+    const result = view.container.querySelector('.tool-card-result')!
+    expect(result.querySelector('.tool-file-excerpt')).toHaveTextContent('goto("https://example.com")')
+    expect(result.querySelector('.tool-file-excerpt button')).toBeNull()
+    expect(result.querySelector('.tool-file-excerpt + pre')?.textContent).toBe('Pricing: $10')
+  })
+
+  it('shows a computer capture with the computer icon, its screenshot and its rows, never its JSON', async () => {
+    const view = render(<ToolCard call={{ ...call, name: 'computer_use', kind: 'computer', verb: 'capture', target: '', resultView: { text: '{"mode": "som"}', media: shot, rows: { title: 'Safari', rows: [{ label: 'Safari', detail: 'Inbox · 12 elements' }] } } }} sessionId="s1" />)
+    expect(view.container.querySelector('[data-tool-kind="computer"] svg.lucide-monitor')).not.toBeNull()
+    expect(view.container.querySelector('.tool-card-name')).toHaveTextContent('Captured the screen')
+    expect(view.container.querySelector('.tool-card-media img')).not.toBeNull()
+    await userEvent.click(within(view.container).getAllByRole('button')[0]!)
+    const result = view.container.querySelector('.tool-card-result')!
+    expect(result).toHaveTextContent('Inbox · 12 elements')
+    expect(result.textContent).not.toContain('"mode"')
+  })
+
+  it('reads each browser and computer verb in every locale', () => {
+    const verbs = ['browser_run', 'browser_send', 'browser_answer', 'browser_fill', 'browser_list', 'computer_capture', 'computer_click', 'computer_type']
+    expect(verbs.map((verb) => toolText('en').actionLabel(verb, 'done', '', 'x'))).toEqual(['Ran browser code', 'Sent a browser command', 'Answered a dialog', 'Filled a login', 'Listed saved logins', 'Captured the screen', 'Clicked on the screen', 'Typed text'])
+    expect(toolText('en').actionLabel('browser_send', 'running', 'Page.navigate', 'x')).toBe('Sending Page.navigate')
+    for (const locale of ['en', 'ru', 'zh', 'zh-Hant', 'vi', 'pl', 'cs']) {
+      const text = toolText(locale)
+      const unknown = text.actionLabel('unknown', 'done', '', 'x')
+      for (const kind of ['browser', 'computer', ...verbs]) expect(text.actionLabel(kind, 'done', '', 'x'), `${locale} ${kind}`).not.toBe(unknown)
+      for (const kind of ['browser', 'computer']) expect(text.worklogSummary(kind, 'running', 2), `${locale} ${kind}`).not.toBe(text.worklogSummary('unknown', 'running', 2))
+    }
+  })
+})

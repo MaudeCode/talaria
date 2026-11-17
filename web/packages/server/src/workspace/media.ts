@@ -261,6 +261,51 @@ export function mediaRefPath(ref: string): string {
 /** TAL-2325: the Agent tools whose results name the media they made (`TOOL_PRESENTATIONS` presentation `media`). */
 const MEDIA_TOOLS = new Set(Object.entries(TOOL_PRESENTATIONS).flatMap(([name, entry]) => (entry.presentation === 'media' ? [name] : [])))
 const isMediaTool = (name: string): boolean => MEDIA_TOOLS.has(name)
+/** TAL-2328: the Agent tools whose results name a screenshot they saved. */
+const SCREENSHOT_TOOLS = new Set(['browser_exec', 'computer_use'])
+
+/**
+ * TAL-2328: where a `computer_use` capture summary says it saved its screenshot: its own note line
+ * (`  (shareable screenshot saved to /p.png)`), never an element line (`  #1 …`), whose label is on-screen text.
+ */
+const SCREENSHOT_SAVED_RE = /^ {2}\(shareable screenshot saved to (.+)\)$/m
+
+/**
+ * TAL-2328: the screenshot a browser or computer-use result saved, as written: its `screenshot_path`, a multimodal
+ * envelope's under `meta` (an object, or the JSON text the sidecar forwards it as), else the path its capture summary
+ * names, in a JSON result's text or a multimodal one's `text_summary`. Empty for a failed call or none.
+ */
+export function screenshotRefs(result: unknown): string[] {
+  // A native-vision result's text part is its JSON line, then a note that the screenshot is attached.
+  const data = typeof result === 'string' ? jsonObject(result) ?? jsonObject(result.split('\n', 1)[0]!) : result
+  if (typeof result === 'string' && !data) return [SCREENSHOT_SAVED_RE.exec(result)?.[1]?.trim() ?? ''].filter(Boolean)
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return []
+  const record = data as Record<string, unknown>
+  if (record.success === false || record.ok === false || record.error) return []
+  let meta = record.meta
+  if (typeof meta === 'string') try { meta = JSON.parse(meta) } catch { meta = undefined }
+  const metaPath = meta && typeof meta === 'object' && !Array.isArray(meta) ? (meta as Record<string, unknown>).screenshot_path : undefined
+  const refs = [...refList(record.screenshot_path), ...refList(metaPath), ...[str(record.summary), str(record.text_summary)].flatMap((text) => SCREENSHOT_SAVED_RE.exec(text)?.[1]?.trim() ?? [])]
+  return [...new Set(refs)].filter((ref) => !/^data:/i.test(ref))
+}
+
+function jsonObject(text: string): Record<string, unknown> | undefined {
+  if (!text.trimStart().startsWith('{')) return undefined
+  try {
+    const data: unknown = JSON.parse(text)
+    return data && typeof data === 'object' && !Array.isArray(data) ? data as Record<string, unknown> : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** TAL-2325/TAL-2328: the local files and URLs a media or screenshot tool's result names; nothing for any other tool. */
+function toolResultRefs(name: string, result: unknown): string[] {
+  if (SCREENSHOT_TOOLS.has(name)) return screenshotRefs(Array.isArray(result) ? messageContentText(result) : result)
+  if (!isMediaTool(name)) return []
+  const data = result && typeof result === 'object' && !Array.isArray(result) ? result as Record<string, unknown> : resultObject(result)
+  return data ? mediaResultRefs(data) : []
+}
 
 /** A result field's references: a list, the JSON text of one (the sidecar sends a nested value as text), or one string; an object item names its `url`, `image` or `path`. */
 function refList(value: unknown): string[] {
@@ -294,8 +339,8 @@ const LIVE_MEDIA_SESSIONS = 256
  * or cancelled turn's snapshot keeps the URLs its rows never grant. Nothing for any other tool or a failed call.
  */
 export function grantLiveMedia(sessionId: string, name: unknown, data: unknown): void {
-  if (!sessionId || typeof name !== 'string' || !isMediaTool(name) || !data || typeof data !== 'object' || Array.isArray(data)) return
-  const refs = mediaResultRefs(data as Record<string, unknown>).filter((ref) => !ref.includes('://'))
+  if (!sessionId || typeof name !== 'string') return
+  const refs = toolResultRefs(name, data).filter((ref) => !ref.includes('://'))
   if (!refs.length) return
   const granted = liveMediaGrants.get(sessionId) ?? new Set<string>()
   liveMediaGrants.delete(sessionId)
@@ -314,27 +359,30 @@ function resultObject(content: unknown): Record<string, unknown> | null {
   }
 }
 
-/** The ids of the media tool calls an assistant row made, from its `tool_calls` and `tool_use` blocks (`content`). */
-function mediaCallIds(message: Record<string, unknown>, content: unknown): string[] {
+/** The ids and names of the media (TAL-2328: and screenshot) tool calls an assistant row made, from its `tool_calls` and `tool_use` blocks (`content`). */
+function mediaCalls(message: Record<string, unknown>, content: unknown): [string, string][] {
   const calls = [...(Array.isArray(message.tool_calls) ? message.tool_calls as unknown[] : []), ...(Array.isArray(content) ? content as unknown[] : [])]
-  return calls.flatMap((call) => (call && typeof call === 'object' && isMediaTool(toolName(call as Record<string, unknown>)) ? [str((call as Record<string, unknown>).id)] : [])).filter(Boolean)
+  return calls.flatMap((call): [string, string][] => {
+    if (!call || typeof call !== 'object') return []
+    const name = toolName(call as Record<string, unknown>)
+    const id = str((call as Record<string, unknown>).id)
+    return id && (isMediaTool(name) || SCREENSHOT_TOOLS.has(name)) ? [[id, name]] : []
+  })
 }
 
 /** The `MEDIA:` references the assistant and tools wrote in these rows, as written, and (TAL-2325) the local files a media tool's result made. */
 function scanMediaRefs(rows: Session['messages']): Set<string> {
   const refs = new Set<string>()
-  const mediaCalls = new Set<string>()
+  const calls = new Map<string, string>()
   for (const message of rows) {
     if (!message || typeof message !== 'object') continue
     const role = str((message as { role?: unknown }).role).trim().toLowerCase()
     if (role === 'user') continue
     // Read once: a row's content may be a large transcript part.
     const content = (message as { content?: unknown }).content
-    if (role === 'assistant') for (const id of mediaCallIds(message, content)) mediaCalls.add(id)
-    if (role === 'tool' && mediaCalls.has(str((message as { tool_call_id?: unknown }).tool_call_id))) {
-      const data = resultObject(content)
-      for (const ref of data ? mediaResultRefs(data) : []) if (!ref.includes('://')) refs.add(ref)
-    }
+    if (role === 'assistant') for (const [id, name] of mediaCalls(message, content)) calls.set(id, name)
+    const call = role === 'tool' ? calls.get(str((message as { tool_call_id?: unknown }).tool_call_id)) : undefined
+    if (call) for (const ref of toolResultRefs(call, content)) if (!ref.includes('://')) refs.add(ref)
     const text = messageContentText(content)
     if (!text.includes('MEDIA:')) continue
     for (const m of text.matchAll(MEDIA_TOKEN_RE)) {

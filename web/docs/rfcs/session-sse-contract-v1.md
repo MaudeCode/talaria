@@ -261,6 +261,16 @@ back to the session file.
   each task row links `{ kind: kanban_task, id, board? }`, `board` from the
   call's arguments. The call itself carries `verb`, which clients show in place
   of the `kanban` kind's verb.
+  TAL-2328: a `browser_exec` call adds `file_excerpt` (the code it ran, `path`
+  empty, numbered from 1) above its `stdout`/`stderr`/`exit_code`, and `media`
+  for the screenshot it saved; its `code` leaves `args_fields`, a completion
+  frame then shipping `args_fields: []`. `browser_cdp`, `browser_dialog`,
+  `browser_vault` and `computer_use` add `rows`: a CDP method, an answered
+  dialog, saved logins (never an identifier) or the fields a fill filled, an
+  input action's outcome or a capture's app, window and element count, and a
+  capture's screenshot as `media`. A refusal because the user took control is a
+  `warn` row. Every run of base64 data in a tool result, its preview and its
+  row's content ships as `[binary data]`.
 - `args_fields` (TAL-2318): the call's redacted arguments as the same rows, one
   per top-level key in call order, each value capped at 4000 characters. A
   scalar shows inline, a nested object as indented `key: value` lines, a list as

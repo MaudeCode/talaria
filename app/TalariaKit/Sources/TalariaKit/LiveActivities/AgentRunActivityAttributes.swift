@@ -447,6 +447,8 @@ public enum ToolDisplayKind: String, Equatable, Sendable {
     case session, schedule, connection, question
     /// TAL-2327: a Kanban task read or changed; its `ToolVerb` picks the verb.
     case kanban
+    /// TAL-2328: the agent's browser (code, a CDP command, a dialog, saved logins) and the desktop (`computer_use`).
+    case browser, computer
 
     /// An older server sends no kind; an unrecognized one decodes as `.unknown`.
     public init?(serverValue: String?) {
@@ -456,9 +458,10 @@ public enum ToolDisplayKind: String, Equatable, Sendable {
 }
 
 /// TAL-2327: what a call of a kind whose tools act differently (`kanban`) does, which picks its verb; an unknown value
-/// decodes as nil and the call reads with its kind's own phrase.
+/// decodes as nil and the call reads with its kind's own phrase. TAL-2328: and what a `browser` or `computer` call does.
 public enum ToolVerb: String, Equatable, Sendable {
     case create, view, list, update, complete, block, comment
+    case run, send, answer, fill, capture, click, type
 
     public init?(serverValue: String?) {
         guard let serverValue, let verb = ToolVerb(rawValue: serverValue) else { return nil }

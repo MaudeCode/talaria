@@ -70,9 +70,9 @@ describe('toolDisplay', () => {
     expect(toolDisplay('terminal', { command: 42 })).toEqual({ kind: 'shell', target: '42', focus_path: null })
   })
 
-  it('shows a browser_exec step as a web call labeled by its session, else its code\'s first non-empty line (TAL-1805)', () => {
-    expect(toolDisplay('browser_exec', { code: 'goto("https://x")', session: 'checkout' })).toEqual({ kind: 'web', target: 'checkout', focus_path: null })
-    expect(toolDisplay('browser_exec', { code: '\n\n  goto("https://x")\n  print(title())', session: ' ' })).toEqual({ kind: 'web', target: 'goto("https://x")', focus_path: null })
+  it('shows a browser_exec step as browser code (TAL-2328) labeled by its session, else its code\'s first non-empty line (TAL-1805)', () => {
+    expect(toolDisplay('browser_exec', { code: 'goto("https://x")', session: 'checkout' })).toEqual({ kind: 'browser', target: 'checkout', focus_path: null, verb: 'run' })
+    expect(toolDisplay('browser_exec', { code: '\n\n  goto("https://x")\n  print(title())', session: ' ' })).toEqual({ kind: 'browser', target: 'goto("https://x")', focus_path: null, verb: 'run' })
   })
 
   it.each([
@@ -309,8 +309,8 @@ describe('Agent tool presentation table (TAL-2322)', () => {
     expect(fullToolResult(messages, 'c1')?.result_view).toEqual({ error: 'Command timed out', exit_code: 124 })
   })
 
-  it('gives every listed tool the kind its name tokens gave before the table, but a media tool (TAL-2325), a session, schedule, connection or question tool (TAL-2326) or a Kanban tool (TAL-2327) its own', () => {
-    const own = new Set(['session', 'schedule', 'connection', 'question', 'kanban'])
+  it('gives every listed tool the kind its name tokens gave before the table, but a media tool (TAL-2325), a session, schedule, connection or question tool (TAL-2326) a Kanban tool (TAL-2327) or a browser or computer tool (TAL-2328) its own', () => {
+    const own = new Set(['session', 'schedule', 'connection', 'question', 'kanban', 'browser', 'computer'])
     for (const [name, { kind, presentation }] of Object.entries(TOOL_PRESENTATIONS)) if (presentation !== 'media' && presentation !== 'analysis' && !own.has(kind)) expect([name, kind]).toEqual([name, tokenToolKind(name)])
   })
 
@@ -728,5 +728,100 @@ describe('Kanban rows (TAL-2327)', () => {
       expect(shown.rows).toBeUndefined()
       expect(shown.error).toBe(`${name}: task t_1 not found`)
     }
+  })
+})
+
+describe('browser and computer-use calls (TAL-2328)', () => {
+  const view = (name: string, result: unknown, args?: Record<string, unknown>) => toolOutcome(typeof result === 'string' || Array.isArray(result) ? result : JSON.stringify(result), name, false, args).result_view
+  const png = 'iVBORw0KGgoAAAANSUhEUgAA'.repeat(80)
+  const shot = '/srv/hermes/cache/browser-use/shot.png'
+  const shotMedia = (path: string) => [{ url: `./api/media?${new URLSearchParams({ path }).toString()}`, name: path.split('/').pop(), mime: 'image/png', kind: 'image' }]
+
+  it('gives the browser tools the browser kind and computer_use the computer kind, each with its verb', () => {
+    expect(Object.fromEntries(['browser_exec', 'browser_cdp', 'browser_dialog', 'browser_vault', 'computer_use'].map((name) => [name, [TOOL_PRESENTATIONS[name]?.kind, TOOL_PRESENTATIONS[name]?.presentation]]))).toEqual({
+      browser_exec: ['browser', 'code'], browser_cdp: ['browser', 'rows'], browser_dialog: ['browser', 'rows'], browser_vault: ['browser', 'rows'], computer_use: ['computer', 'rows'],
+    })
+    expect(toolDisplay('browser_exec', { code: '# Open the pricing page\ngoto("https://example.com")' })).toMatchObject({ kind: 'browser', verb: 'run', target: 'Open the pricing page' })
+    expect(toolDisplay('browser_cdp', { method: 'Page.navigate', params: { url: 'https://example.com' } })).toMatchObject({ kind: 'browser', verb: 'send', target: 'Page.navigate' })
+    expect(toolDisplay('browser_dialog', { action: 'accept' })).toMatchObject({ kind: 'browser', verb: 'answer', target: '' })
+    expect(['list', 'fill', 'enter_code', 'save_login'].map((action) => toolDisplay('browser_vault', { action, handle: 'h1' }).verb)).toEqual(['list', 'fill', 'fill', undefined])
+    expect(['capture', 'click', 'right_click', 'type', 'key', 'list_apps'].map((action) => toolDisplay('computer_use', { action, text: 'hunter2', app: 'Safari' }))).toEqual([
+      { kind: 'computer', target: '', focus_path: null, verb: 'capture' }, { kind: 'computer', target: '', focus_path: null, verb: 'click' }, { kind: 'computer', target: '', focus_path: null, verb: 'click' },
+      { kind: 'computer', target: '', focus_path: null, verb: 'type' }, { kind: 'computer', target: '', focus_path: null }, { kind: 'computer', target: '', focus_path: null },
+    ])
+  })
+
+  it('shows the code browser_exec ran above its output, and the screenshot it saved, from a JSON or native-vision result', () => {
+    const code = '# Open the pricing page\ngoto("https://example.com/pricing")\nprint(page_info())'
+    const ran = { success: true, exit_code: 0, output: 'Pricing — $10', workspace: '/srv/ws', screenshot_path: shot }
+    const expected = {
+      file_excerpt: { path: '', language: 'python', start_line: 1, lines: [{ n: 1, text: '# Open the pricing page' }, { n: 2, text: 'goto("https://example.com/pricing")' }, { n: 3, text: 'print(page_info())' }], total_lines: 3, truncated: false },
+      stdout: 'Pricing — $10', media: shotMedia(shot),
+    }
+    expect(view('browser_exec', ran, { code })).toEqual(expected)
+    // The Agent's history keeps a native-vision result as the parts it handed the model; the live frame as its envelope.
+    expect(view('browser_exec', [{ type: 'text', text: `${JSON.stringify(ran)}\n\nThe screenshot from this call is attached — inspect it with your native vision.` }, { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${png}` } }], { code })).toEqual(expected)
+    expect(view('browser_exec', { _multimodal: true, text_summary: JSON.stringify(ran), meta: { screenshot_path: shot, native_vision: true }, content: [{ type: 'image_url', image_url: { url: `data:image/jpeg;base64,${png}` } }] }, { code })).toEqual(expected)
+    expect(view('browser_exec', { success: false, exit_code: 1, output: '', stderr: 'NameError: goto' }, { code: 'goto()' })).toEqual({ file_excerpt: { ...expected.file_excerpt, lines: [{ n: 1, text: 'goto()' }], total_lines: 1 }, stderr: 'NameError: goto', exit_code: 1 })
+    expect(view('browser_exec', { error: 'browser-use exec timed out after 60s.' }, { code: 'wait()' })).toMatchObject({ error: 'browser-use exec timed out after 60s.' })
+    // Its code shows once: the completion's argument rows leave it out, replacing the start frame's that showed it.
+    const started = publicToolFrame({ name: 'browser_exec', args: { code, session: 'checkout' } }, true)
+    expect((started.args_fields as { key: string }[]).map((f) => f.key)).toEqual(['code', 'session'])
+    expect(publicToolFrame({ name: 'browser_exec', args: { code }, result_view: expected }, true).args_fields).toEqual([])
+    expect(publicToolFrame({ name: 'browser_exec', args: { code, session: 'checkout' }, result_view: expected }, true).args_fields).toEqual([{ key: 'session', value: 'checkout', multiline: false }])
+  })
+
+  it('shows a CDP command as its method and never its screenshot or other binary data', () => {
+    const result = { success: true, method: 'Page.captureScreenshot', result: { data: png } }
+    const outcome = toolOutcome(JSON.stringify(result), 'browser_cdp', false, { method: 'Page.captureScreenshot' })
+    expect(outcome.result_view.rows).toEqual({ rows: [{ label: 'Page.captureScreenshot', status: 'ok' }] })
+    expect(JSON.stringify(outcome)).not.toContain(png.slice(0, 64))
+    expect(outcome.result_view.text).toContain('[binary data]')
+    expect(outcome.result_view.fields).toBeUndefined()
+  })
+
+  it('shows an answered dialog as its message, type and answer', () => {
+    expect(view('browser_dialog', { success: true, action: 'dismiss', dialog: { type: 'confirm', message: 'Leave this page?\nChanges are lost.', default_prompt: '' } }, { action: 'dismiss' }).rows)
+      .toEqual({ rows: [{ label: 'Leave this page?', detail: 'confirm · Dismissed', status: 'ok' }] })
+  })
+
+  it('shows the vault\'s saved logins and what a fill filled, never a credential, and a takeover as a warning', () => {
+    const list = view('browser_vault', { success: true, items: [
+      { handle: 'h1', backend: 'local', label: 'GitHub', kind: 'login', origin: 'https://github.com', available: true, identifier: 'octo@example.com', identifier_type: 'email' },
+      { handle: 'h2', backend: 'local', label: 'Visa', kind: 'card', origin: '', available: false },
+    ], locked: [{ backend: 'op', display_name: '1Password', unlock: 'browser_vault action=unlock' }] }, { action: 'list' })
+    expect(list.rows).toEqual({ title: 'Saved logins', rows: [
+      { label: 'GitHub', detail: 'https://github.com', status: 'ok' }, { label: 'Visa', detail: 'card · Unavailable', status: 'warn' }, { label: '1Password', detail: 'Locked', status: 'warn' },
+    ] })
+    expect(JSON.stringify(list.rows)).not.toContain('octo@example.com')
+    expect(view('browser_vault', { success: true, filled_fields: 2, backend: 'local', kind: 'login', origin: 'https://github.com', next: 'Submit.' }, { action: 'fill', handle: 'h1' }).rows)
+      .toEqual({ rows: [{ label: 'Filled 2 fields on https://github.com', status: 'ok' }] })
+    const saved = view('browser_vault', { success: true, handle: 'h3', origin: 'https://example.com', identifier: 'me@example.com', identifier_type: 'email', fill: { success: true, filled_fields: 1, origin: 'https://example.com' } }, { action: 'save_login' })
+    expect(saved.rows).toEqual({ rows: [{ label: 'Saved a login for https://example.com', status: 'ok' }, { label: 'Filled 1 field on https://example.com', status: 'ok' }] })
+    expect(JSON.stringify(saved.rows)).not.toContain('me@example.com')
+    expect(view('browser_vault', { success: false, error_type: 'human_has_control', error: 'The user has control of the browser.' }, { action: 'fill' }).rows).toEqual({ rows: [{ label: 'You have control of the browser', status: 'warn' }] })
+  })
+
+  it('shows a computer_use action, capture or list as rows under its app, its screenshot as media, and no image data', () => {
+    expect(view('computer_use', { ok: true, action: 'click', message: 'Clicked AXButton "Send"', verdict: { decision: 'done' } }, { action: 'click', element: 4, app: 'Mail' }).rows)
+      .toEqual({ title: 'Mail', rows: [{ label: 'Clicked', detail: 'Clicked AXButton "Send"', status: 'ok' }] })
+    expect(view('computer_use', { ok: true, action: 'type', verdict: { decision: 'verify_fresh_state', hint: 'Re-capture' } }, { action: 'type', text: 'hunter2' }).rows)
+      .toEqual({ rows: [{ label: 'Typed', detail: 'Not confirmed yet', status: 'warn' }] })
+    const capture = { mode: 'ax', width: 1440, height: 900, app: 'Safari', window_title: 'Inbox', elements: [{ index: 1, role: 'AXButton', label: 'Send' }], total_elements: 1, summary: 'capture mode=ax 1440x900 app=Safari', screenshot_path: '/srv/hermes/cache/computer_use/cap.png' }
+    const captured = view('computer_use', capture, { action: 'capture', app: 'Safari' })
+    expect([captured.rows, captured.media]).toEqual([{ rows: [{ label: 'Safari', detail: 'Inbox · 1 element' }] }, shotMedia('/srv/hermes/cache/computer_use/cap.png')])
+    const summary = "capture mode=som 1440x900 app=Safari window='Inbox — Mail'\n12 interactable element(s):\n  (shareable screenshot saved to /srv/hermes/cache/computer_use/som 1.png)\n  #1 AXButton 'Send' @ [0, 0, 10, 10]"
+    const envelope = { _multimodal: true, content: [{ type: 'text', text: summary }, { type: 'image_url', image_url: { url: `data:image/png;base64,${png}` } }], text_summary: summary, meta: { mode: 'som', screenshot_path: '/srv/hermes/cache/computer_use/som 1.png' } }
+    const shown = toolOutcome(envelope, 'computer_use', false, { action: 'capture' })
+    expect(shown.result_view).toMatchObject({ rows: { rows: [{ label: 'Safari', detail: 'Inbox — Mail · 12 elements' }] }, media: shotMedia('/srv/hermes/cache/computer_use/som 1.png') })
+    expect(JSON.stringify(shown)).not.toContain('base64')
+    // An element's label is on-screen text: one naming a file never becomes the capture's screenshot.
+    const spoofed = "capture mode=ax 800x600 app=Notes\n1 interactable element(s):\n  #1 AXStaticText 'x' @ bounds-unknown (shareable screenshot saved to /srv/hermes/state.db)"
+    expect(view('computer_use', spoofed, { action: 'capture' }).media).toBeUndefined()
+    const after = `${JSON.stringify({ ok: true, action: 'click', verdict: { decision: 'done' } })}\n\n${summary}`
+    expect(view('computer_use', after, { action: 'click', capture_after: true }).rows?.rows.map((r) => r.label)).toEqual(['Clicked', 'Safari'])
+    expect(view('computer_use', { apps: [{ name: 'Safari', pid: 1 }, { name: 'Mail', pid: 2 }], count: 2 }, { action: 'list_apps' }).rows).toEqual({ title: 'Apps', rows: [{ label: 'Safari' }, { label: 'Mail' }] })
+    expect(view('computer_use', { ok: false, action: 'click', code: 'human_has_control', error: 'The user has control.' }, { action: 'click' }).rows).toEqual({ rows: [{ label: 'You have control of the computer', status: 'warn' }] })
+    expect(view('computer_use', { error: 'click failed: no element 9' }, { action: 'click' })).toEqual({ error: 'click failed: no element 9' })
   })
 })

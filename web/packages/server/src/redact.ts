@@ -2530,13 +2530,17 @@ function withToolDisplay<T>(raw: unknown, redacted: T, enabled: boolean, workspa
   }
   // TAL-2318: the argument rows, from the arguments redacted by key like `args` (a bridged call's own), each value capped.
   const args = redactArgs(toolArgs(record), enabled)
-  if (isDict(args)) out.args_fields = cappedFields(toolFields(args), TOOL_ARG_CONTENT_CAP)
+  // TAL-2328: a call whose result shows the code it ran (a pathless excerpt) leaves its `code` out of its argument rows.
+  if (isDict(args)) out.args_fields = cappedFields(toolFields(args), TOOL_ARG_CONTENT_CAP).filter((field) => !(field.key === 'code' && showsItsCode(out.result_view)))
   // TAL-1458: only a call naming a file carries `focus_path`, so a bare completion never clears its start frame's.
   const { focus_path: focusPath, ...display } = redactedToolDisplay(record, enabled, workspace)
   // TAL-2323: the files a read or search result names, located in the workspace from their redacted paths; TAL-2325: its local media served for this session.
   if (isDict(out.result_view)) out.result_view = withResultFocusPaths(out.result_view, workspace, sessionId)
   return { ...out, ...display, ...(focusPath ? { focus_path: focusPath } : {}) } as T
 }
+
+/** TAL-2328: a result view showing the code its call ran: an excerpt without a path (`code` presentation). */
+const showsItsCode = (view: unknown): boolean => isDict(view) && isDict(view.file_excerpt) && view.file_excerpt.path === ''
 
 /**
  * The target is derived in the live order: the sidecar's snapshot (first four arguments, capped) before redaction. TAL-1537:
@@ -2653,7 +2657,8 @@ export function publicToolFrame(data: Record<string, unknown>, enabled: boolean,
   // A frame without a displayable argument (a bare completion, or `args: {}`) has no target or argument rows of its own:
   // omitting them keeps the ones its start frame set.
   if (!frame.target) delete frame.target
-  if (Array.isArray(frame.args_fields) && !frame.args_fields.length) delete frame.args_fields
+  // A completion that moved its code into its result keeps its empty rows, which replace the start frame's.
+  if (Array.isArray(frame.args_fields) && !frame.args_fields.length && !showsItsCode(frame.result_view)) delete frame.args_fields
   return frame
 }
 

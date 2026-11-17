@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Browser and computer-use tool calls show browser and computer icons, the code a browser step ran with its output and screenshot, and readable rows for browser commands, dialogs, saved logins and desktop actions with their screenshots, on the App and the Web; no image data or raw JSON reaches either.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "app",
+        "web"
+      ]
+    }
+  ]
+}

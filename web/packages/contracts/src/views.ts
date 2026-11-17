@@ -49,14 +49,18 @@ export type Attachment = z.infer<typeof AttachmentSchema>
  * TAL-2326: `session` searches past chats (`session_search`), `schedule` manages scheduled jobs (`cronjob_manage`),
  * `connection` manages connected apps (`manage_connections`) and `question` asks the user (`clarify`).
  * TAL-2327: `kanban` reads or changes Kanban tasks (every `kanban_*` tool); its `ToolVerb` picks the verb.
+ * TAL-2328: `browser` drives the agent's browser (`browser_exec`, `browser_cdp`, `browser_dialog`, `browser_vault`) and
+ * `computer` the desktop (`computer_use`); a `ToolVerb` picks the verb of each.
  */
-export const ToolKindSchema = z.enum(['shell', 'read', 'list', 'search', 'web', 'write', 'skill', 'memory', 'delegate', 'talaria', 'image', 'audio', 'video', 'image_analysis', 'video_analysis', 'session', 'schedule', 'connection', 'question', 'kanban', 'unknown'])
+export const ToolKindSchema = z.enum(['shell', 'read', 'list', 'search', 'web', 'write', 'skill', 'memory', 'delegate', 'talaria', 'image', 'audio', 'video', 'image_analysis', 'video_analysis', 'session', 'schedule', 'connection', 'question', 'kanban', 'browser', 'computer', 'unknown'])
 export type ToolKind = z.infer<typeof ToolKindSchema>
 /**
  * TAL-2327: what a call of a kind whose tools act differently (`kanban`) does, which picks the verb clients show for it in
  * place of the kind's own: `create`d, `view`ed, `list`ed, `update`d, `complete`d, `block`ed or `comment`ed on.
+ * TAL-2328: a `browser` call `run`s code, `send`s a command, `answer`s a dialog, `fill`s a login or `list`s saved logins; a
+ * `computer` call `capture`s the screen, `click`s or `type`s. A browser or computer call with none reads as its kind's own.
  */
-export const ToolVerbSchema = z.enum(['create', 'view', 'list', 'update', 'complete', 'block', 'comment'])
+export const ToolVerbSchema = z.enum(['create', 'view', 'list', 'update', 'complete', 'block', 'comment', 'run', 'send', 'answer', 'fill', 'capture', 'click', 'type'])
 export type ToolVerb = z.infer<typeof ToolVerbSchema>
 /**
  * TAL-2317: the tools the sidecar's `talaria` and `harness` toolsets register, which the server shows as kind `talaria`.
@@ -81,8 +85,10 @@ export const TALARIA_TOOL_NAMES = [
  * reads the result's text, else its key/value fields (TAL-2318). `npm run fixtures` writes it to
  * `contracts/fixtures/tool-presentations.json`, which a sidecar test checks against the Agent's tool registry: a tool an
  * Agent release adds joins here as `generic` until its own view ships. TAL-2327: `verb`, where set, ships on each call.
+ * TAL-2328: `code` (`browser_exec`) shows the code its call ran as a `file_excerpt` without a path, then its terminal
+ * sections and the screenshot it saved as `media`; a `rows` tool's screenshot (`computer_use`) shows as `media` too.
  */
-export const ToolPresentationSchema = z.enum(['terminal', 'diff', 'todo', 'delegate', 'clarify', 'file_excerpt', 'matches', 'links', 'pages', 'media', 'analysis', 'rows', 'generic'])
+export const ToolPresentationSchema = z.enum(['terminal', 'diff', 'todo', 'delegate', 'clarify', 'file_excerpt', 'matches', 'links', 'pages', 'media', 'analysis', 'rows', 'code', 'generic'])
 export type ToolPresentation = z.infer<typeof ToolPresentationSchema>
 export const ToolPresentationEntrySchema = z.object({ kind: ToolKindSchema, presentation: ToolPresentationSchema, verb: ToolVerbSchema.optional() })
 export type ToolPresentationEntry = z.infer<typeof ToolPresentationEntrySchema>
@@ -93,13 +99,13 @@ export const TOOL_PRESENTATIONS: Readonly<Record<string, ToolPresentationEntry>>
   a2a_list: { kind: 'list', presentation: 'generic' },
   a2a_orchestrate: { kind: 'unknown', presentation: 'generic' },
   annotate_preview: { kind: 'unknown', presentation: 'generic' },
-  browser_cdp: { kind: 'web', presentation: 'generic' },
-  browser_dialog: { kind: 'web', presentation: 'generic' },
-  browser_exec: { kind: 'web', presentation: 'generic' },
-  browser_vault: { kind: 'web', presentation: 'generic' },
+  browser_cdp: { kind: 'browser', presentation: 'rows', verb: 'send' },
+  browser_dialog: { kind: 'browser', presentation: 'rows', verb: 'answer' },
+  browser_exec: { kind: 'browser', presentation: 'code', verb: 'run' },
+  browser_vault: { kind: 'browser', presentation: 'rows' },
   clarify: { kind: 'question', presentation: 'clarify' },
   close_terminal: { kind: 'shell', presentation: 'generic' },
-  computer_use: { kind: 'unknown', presentation: 'generic' },
+  computer_use: { kind: 'computer', presentation: 'rows' },
   cronjob_manage: { kind: 'schedule', presentation: 'rows' },
   delegate_task: { kind: 'delegate', presentation: 'delegate' },
   desktop_preview: { kind: 'unknown', presentation: 'generic' },
@@ -206,7 +212,7 @@ export type ToolField = z.infer<typeof ToolFieldSchema>
 export const ToolDisplayFields = {
   args_fields: z.array(ToolFieldSchema).optional().describe('TAL-2318: the call\'s redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server.'),
   progress: ToolProgressSchema.nullable().optional(), kind: ToolKindSchema.optional(), target: z.string().optional(), edit_diff: ToolEditDiffSchema.optional(),
-  verb: ToolVerbSchema.optional().describe('TAL-2327: what a `kanban` call does, the verb clients show in place of its kind\'s own. Absent for every other call.'),
+  verb: ToolVerbSchema.optional().describe('TAL-2327: what a `kanban` call does, the verb clients show in place of its kind\'s own. TAL-2328: likewise a `browser` or `computer` call\'s, from its tool or its `action`. Absent for every other call.'),
   focus_path: NullableString.optional().describe('TAL-1458: a read or write call\'s file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace.'),
   shows_card: z.literal(true).optional().describe('TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call.'),
   approval_answered_by: ApprovalAnsweredBySchema.optional().describe('TAL-1169: another session\'s agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked.'),
@@ -265,7 +271,7 @@ export type ToolRows = z.infer<typeof ToolRowsSchema>
  * `text`, in that order, then `approval_note` (TAL-1910: the Agent's note on why a flagged command ran), and never parse
  * result text. Each string is capped server-side; a client without the field shows `preview`.
  */
-export const ToolResultViewSchema = z.object({ outbound_draft: OutboundDraftRefSchema.optional(), /** TAL-1963: the review a `decision_review_put` result made or revised, as it stood then; the card follows `decision_review` events. */ decision_review: DecisionReviewRefSchema.optional(), /** TAL-1967: the proposal a `propose` result made; the card follows `proposal` events. */ proposal: ProposalRefSchema.optional(), /** TAL-1968: the block a `show` result stored; the card loads it from `/api/show/{block_id}`. */ block: ShowBlockRefSchema.optional(), /** TAL-1974: the terminal a `terminal_open` result started; the card opens the session's terminal pane. */ terminal: TerminalRefSchema.optional(), text: z.string().optional(), /** TAL-2323: a `read_file` result's lines; clients show it in place of `text`, which keeps the Agent's text for older clients. */ file_excerpt: FileExcerptSchema.optional(), /** TAL-2323: a `search_files` result's matches by file; clients show it in place of `text`, which keeps the result for older clients. */ matches: SearchMatchesSchema.optional(), /** TAL-2324: a `web_search` or `x_search` result's links (and answer); clients show it in place of `text`, which keeps the result for older clients. */ links: ResultLinksSchema.optional(), /** TAL-2324: a `web_extract` result's pages; clients show it in place of `text`, which keeps the result for older clients. */ pages: z.array(ResultPageSchema).optional(), /** TAL-2325: the images, speech or video a media tool made, in order: a remote URL as the Agent gave it or a local file as an `/api/media` URL; clients show them under the row without expanding it, images inline and the rest as playable tiles. Empty for a failed call, whose `error` shows instead. */ media: z.array(DisplayMediaSchema).optional(), /** TAL-2325: what `vision_analyze` or `video_analyze` said about its image or video, as Markdown; image data never ships. */ analysis: z.string().optional(), /** TAL-2326: a `rows`-presented result's rows; clients show it in place of `text`, which keeps the result (without any connect URL) for older clients. */ rows: ToolRowsSchema.optional(), /** TAL-2318: a JSON-object result's top-level keys, in order, rendered like `ToolCall.args_fields`; `text` keeps the whole result for copy. Absent for any other result. */ fields: z.array(ToolFieldSchema).optional(), stdout: z.string().optional(), stderr: z.string().optional(), error: z.string().optional(), exit_code: z.number().int().optional(), approval_note: z.string().optional() })
+export const ToolResultViewSchema = z.object({ outbound_draft: OutboundDraftRefSchema.optional(), /** TAL-1963: the review a `decision_review_put` result made or revised, as it stood then; the card follows `decision_review` events. */ decision_review: DecisionReviewRefSchema.optional(), /** TAL-1967: the proposal a `propose` result made; the card follows `proposal` events. */ proposal: ProposalRefSchema.optional(), /** TAL-1968: the block a `show` result stored; the card loads it from `/api/show/{block_id}`. */ block: ShowBlockRefSchema.optional(), /** TAL-1974: the terminal a `terminal_open` result started; the card opens the session's terminal pane. */ terminal: TerminalRefSchema.optional(), text: z.string().optional(), /** TAL-2323: a `read_file` result's lines; clients show it in place of `text`, which keeps the Agent's text for older clients. TAL-2328: a `code`-presented call's code, with an empty `path`, which clients show above its terminal sections. */ file_excerpt: FileExcerptSchema.optional(), /** TAL-2323: a `search_files` result's matches by file; clients show it in place of `text`, which keeps the result for older clients. */ matches: SearchMatchesSchema.optional(), /** TAL-2324: a `web_search` or `x_search` result's links (and answer); clients show it in place of `text`, which keeps the result for older clients. */ links: ResultLinksSchema.optional(), /** TAL-2324: a `web_extract` result's pages; clients show it in place of `text`, which keeps the result for older clients. */ pages: z.array(ResultPageSchema).optional(), /** TAL-2325: the images, speech or video a media tool made, in order: a remote URL as the Agent gave it or a local file as an `/api/media` URL; clients show them under the row without expanding it, images inline and the rest as playable tiles. Empty for a failed call, whose `error` shows instead. */ media: z.array(DisplayMediaSchema).optional(), /** TAL-2325: what `vision_analyze` or `video_analyze` said about its image or video, as Markdown; image data never ships. */ analysis: z.string().optional(), /** TAL-2326: a `rows`-presented result's rows; clients show it in place of `text`, which keeps the result (without any connect URL) for older clients. */ rows: ToolRowsSchema.optional(), /** TAL-2318: a JSON-object result's top-level keys, in order, rendered like `ToolCall.args_fields`; `text` keeps the whole result for copy. Absent for any other result. */ fields: z.array(ToolFieldSchema).optional(), stdout: z.string().optional(), stderr: z.string().optional(), error: z.string().optional(), exit_code: z.number().int().optional(), approval_note: z.string().optional() })
 export type ToolResultView = z.infer<typeof ToolResultViewSchema>
 
 /**

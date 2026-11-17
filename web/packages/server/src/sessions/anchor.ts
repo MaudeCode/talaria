@@ -9,7 +9,7 @@ import { reasoningDisclosureKey } from './reasoning-titles.js'
  */
 import { str } from '../util.js'
 import { createHash } from 'node:crypto'
-import { codexCommentary, withoutReasoningParts, hasToolUseBlocks, finalAnswerOf, agentRowKind, agentSteerText, isCompactionRow, isReasoningBlock, joinReasoning, markerKind, messageText, normalizeAssistantDisplay, normalizeUserDisplay, reasoningBlockText, reasoningFieldsText, splitDisplayText, stripToolCallXml, decidedResultView, toolResultView, toolOutcome, approvalAnsweredBy, projectedOutcome, withToolCallOutcomes, type ProjectedOutcome, type ToolResultView } from './merge.js'
+import { codexCommentary, withoutReasoningParts, hasToolUseBlocks, finalAnswerOf, agentRowKind, agentSteerText, isCompactionRow, isReasoningBlock, joinReasoning, markerKind, messageText, normalizeAssistantDisplay, normalizeUserDisplay, reasoningBlockText, reasoningFieldsText, splitDisplayText, stripToolCallXml, decidedResultView, toolResultView, toolOutcome, approvalAnsweredBy, projectedOutcome, withToolCallOutcomes, withoutImageData, type ProjectedOutcome, type ToolResultView } from './merge.js'
 import type { Session } from './session.js'
 import { toolMessageForLimitedPayload } from './window.js'
 import { decidedEditDiff, toolArgs, toolEditDiff, toolName } from './tool-display.js'
@@ -418,7 +418,8 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
       const reply = results.get(id)
       // Full results, except in a limited response, which clips them like its raw tool rows (the full detail keeps them).
       const shown = reply && opts.clipToolResults ? toolMessageForLimitedPayload(reply) as Record<string, unknown> : reply
-      const result = shown ? messageText(shown.content) : call.result ?? call.output ?? null
+      // TAL-2328: without the image or binary data a result carried, which never reaches a client.
+      const result = shown ? messageText(withoutImageData(shown.content)) : call.result ?? call.output ?? null
       const outcomeName = toolName(call)
       // TAL-1718: the projection (withToolCallOutcomes) already decided this exact reply unflagged; its outcome is this one.
       const reuse = reply !== undefined && decided !== undefined && !decided.flagged && decided.name === outcomeName && decided.content === reply.content && decided.display_metadata === reply.display_metadata

@@ -233,6 +233,8 @@ const hasSection = (view: ToolResultView | null): boolean => Boolean(view?.file_
 
 /** A result's typed section, else its rows when the server sent them (a JSON object), else its sections as text. */
 function ResultBody({ view, text, sessionId }: { view: ToolResultView | null; text: string; sessionId?: string | undefined }) {
+  // TAL-2328: code a call ran (an excerpt without a path) shows above its output.
+  if (view?.file_excerpt && !view.file_excerpt.path) return <><FileExcerptResult excerpt={view.file_excerpt} sessionId={sessionId} />{text && <pre className={cn(RESULT_PRE, 'mt-2')}>{text}</pre>}</>
   if (view?.file_excerpt) return <FileExcerptResult excerpt={view.file_excerpt} sessionId={sessionId} />
   if (view?.matches) return <MatchesResult matches={view.matches} sessionId={sessionId} />
   if (view?.links) return <LinksResult links={view.links} />

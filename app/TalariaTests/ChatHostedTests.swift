@@ -2329,6 +2329,39 @@ final class ChatHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "tool-kanban-rows")
     }
 
+    /// TAL-2328: an expanded browser-code call reads as its comment line under the browser icon and draws its code above
+    /// its output; a desktop capture reads as its verb under the computer icon and draws its rows, never its JSON.
+    func testExpandedBrowserAndComputerCardsDrawTheirCodeAndRows() async throws {
+        func view(_ json: String) throws -> ToolResultView { try JSONDecoder().decode(ToolResultView.self, from: Data(json.utf8)) }
+        let exec = ToolCall(
+            id: "browser-exec", name: "browser_exec", preview: nil, args: nil, kind: .browser, verb: .run, target: "Open the pricing page",
+            resultView: try view(##"{"file_excerpt": {"path": "", "language": "python", "start_line": 1, "lines": [{"n": 1, "text": "# Open the pricing page"}, {"n": 2, "text": "goto(\"https://example.com/pricing\")"}], "total_lines": 2, "truncated": false}, "stdout": "Pricing: $10/month"}"##),
+            isCompleted: true
+        )
+        let capture = ToolCall(
+            id: "computer-capture", name: "computer_use", preview: nil, args: nil, kind: .computer, verb: .capture, target: "",
+            resultView: try view(#"{"text": "{\"mode\": \"som\"}", "rows": {"title": "Safari", "rows": [{"label": "Safari", "detail": "Pricing · 2 elements"}]}}"#),
+            isCompleted: true
+        )
+        let suite = "TalariaTests.tool-browser.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: ChatTranscriptDisplaySettings.toolCardsStartExpandedKey)
+        let window = try hostWindow(
+            ScrollView { VStack { ToolCallCardView(toolCall: exec); ToolCallCardView(toolCall: capture) }.padding() }
+                .defaultAppStorage(defaults),
+            size: CGSize(width: 390, height: 700)
+        )
+        let labels = { HostedAccessibility.elements(in: window).compactMap { $0.accessibilityLabel } }
+        let expected = ["Ran Open the pricing page", "goto(\"https://example.com/pricing\")", "Pricing: $10/month", "Captured the screen", "Pricing · 2 elements"]
+        let drawn = await awaitCondition(timeout: 5) { expected.allSatisfy { label in labels().contains { $0.contains(label) } } }
+        XCTAssertTrue(drawn, "\(labels())")
+        XCTAssertFalse(labels().contains { $0.contains("\"mode\"") }, "\(labels())")
+        XCTAssertEqual(AssistantActivitySummary.icon(for: exec), "macwindow")
+        XCTAssertEqual(AssistantActivitySummary.icon(for: capture), "desktopcomputer")
+        attachHostedScreenshot(window, name: "tool-browser-computer")
+    }
+
     /// TAL-2325: a generated image shows under its call without opening it, loads through the transcript's media loader and
     /// opens the preview; an analysis shows as formatted text once the call opens.
     func testMediaCardShowsItsImageAndAnAnalysisItsText() async throws {

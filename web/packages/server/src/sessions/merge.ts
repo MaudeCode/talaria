@@ -12,8 +12,8 @@ import { stateDbMessageBucket, stateDbMessageKey, stateDbKeyFingerprint, stateDb
 import { stripAttachedFilesMarker, stripWorkspacePrefix, type Message } from './session.js'
 
 export { WORKSPACE_PREFIX_RE, stripWorkspacePrefix } from './session.js'
-import { toolResultMedia, type MediaProjection } from '../workspace/media-refs.js'
-import { decidedEditDiff, decisionReviewRef, outboundDraftRef, pageExcerpt, proposalRef, readFileView, resultAnalysisView, resultLinksView, resultPagesView, searchFilesView, showBlockRef, terminalRef, toolArgs, toolEditDiff, toolName, toolPresentation, toolRowsView } from './tool-display.js'
+import { toolResultMedia, toolScreenshotMedia, type MediaProjection } from '../workspace/media-refs.js'
+import { codeExcerpt, DATA_URL_RE, decidedEditDiff, decisionReviewRef, humanControlRows, outboundDraftRef, pageExcerpt, proposalRef, readFileView, resultAnalysisView, resultLinksView, resultPagesView, searchFilesView, showBlockRef, terminalRef, toolArgs, toolEditDiff, toolName, toolPresentation, toolRowsView, toolTextRows } from './tool-display.js'
 import { sourceKind } from './source-kind.js'
 
 const TOOL_RESULT_SNIPPET_MAX = 4000
@@ -702,13 +702,31 @@ const IMAGE_PART_TYPES = new Set(['image', 'image_url', 'input_image'])
 /**
  * TAL-2325: a tool result without the image data a model was handed: a multimodal result (`_multimodal`) as the text the
  * Agent persists for it, its `text_summary`, else its text parts; a content list (the Agent's history keeps one) without
- * its image parts. Any other result as it is.
+ * its image parts. TAL-2328: and every run of base64 too long to be text (a `browser_cdp` screenshot's `data`, a response
+ * body) as `[binary data]`, in a text result or any string of a structured one. Any other result as it is.
  */
 export function withoutImageData(raw: unknown): unknown {
-  if (Array.isArray(raw)) return raw.some((part) => isDict(part) && IMAGE_PART_TYPES.has(str(part.type))) ? raw.filter((part) => !(isDict(part) && IMAGE_PART_TYPES.has(str(part.type)))) : raw
+  if (Array.isArray(raw)) return withoutBinary(raw.some((part) => isDict(part) && IMAGE_PART_TYPES.has(str(part.type))) ? raw.filter((part) => !(isDict(part) && IMAGE_PART_TYPES.has(str(part.type)))) : raw)
   const data = typeof raw === 'string' && raw.includes('"_multimodal"') ? resultJson(raw) : raw
-  if (!isDict(data) || data._multimodal !== true) return raw
-  return str(data.text_summary).trim() || (Array.isArray(data.content) ? messageText(data.content) : '')
+  if (!isDict(data) || data._multimodal !== true) return withoutBinary(raw)
+  return withoutBinaryText(str(data.text_summary).trim() || (Array.isArray(data.content) ? messageText(data.content) : ''))
+}
+
+/** TAL-2328: a run of base64 characters this long, mixing cases and digits, is image or file data, never text a person reads. */
+const BINARY_RUN_RE = /[A-Za-z0-9+/]{256,}={0,2}/g
+const isBinaryRun = (run: string): boolean => /[a-z]/.test(run) && /[A-Z]/.test(run) && /[0-9]/.test(run)
+/** TAL-2328: text without its `data:` URLs (TAL-2325) and with each other run of base64 data as `[binary data]`. */
+export const withoutBinaryText = (text: string): string => (text.length < 256 ? text : text.replace(DATA_URL_RE, '').replace(BINARY_RUN_RE, (run) => (isBinaryRun(run) ? '[binary data]' : run)))
+/** TAL-2328: a value with every string's base64 runs replaced, its shape kept; unchanged parts stay the same objects. */
+function withoutBinary(value: unknown): unknown {
+  if (typeof value === 'string') return withoutBinaryText(value)
+  if (Array.isArray(value)) {
+    const items = value.map(withoutBinary)
+    return items.every((item, i) => item === value[i]) ? value : items
+  }
+  if (!isDict(value)) return value
+  const entries = Object.entries(value).map(([key, item]) => [key, withoutBinary(item)] as const)
+  return entries.every(([key, item]) => item === value[key]) ? value : Object.fromEntries(entries)
 }
 
 /**
@@ -726,21 +744,34 @@ function uncappedResultView(input: unknown, name?: unknown, args?: unknown): Too
   // Content parts read as their text; a list with no text (`[{ title }]`) is the result itself.
   const flat = Array.isArray(raw) ? messageText(raw) : raw
   const value = Array.isArray(raw) && !str(flat).trim() ? raw : flat
-  if (toolPresentation(name) === 'terminal') {
+  const presentation = toolPresentation(name)
+  if (presentation === 'terminal') {
     const data = typeof value === 'string' ? resultJson(value) : value
     const terminal = isDict(data) ? terminalView(data) : {}
     if (!isEmptyView(terminal)) return terminal
   }
-  const presentation = toolPresentation(name)
+  // TAL-2328: the code a `browser_exec` call ran, its output streams and the screenshot it saved; a failed call its error.
+  if (presentation === 'code') {
+    // A native-vision result's text part is its JSON line, then a note that the screenshot is attached.
+    const data = typeof value === 'string' ? resultJson(value) ?? resultJson(value.split('\n', 1)[0]!) : value
+    const terminal = isDict(data) ? terminalView(data) : {}
+    const excerpt = codeExcerpt(args)
+    const media = toolScreenshotMedia(value)
+    if (!isEmptyView(terminal) || excerpt) return { ...(excerpt ? { file_excerpt: excerpt } : {}), ...terminal, ...(media.length ? { media } : {}) }
+  }
   if (presentation === 'file_excerpt' || presentation === 'matches' || presentation === 'links' || presentation === 'pages' || presentation === 'media' || presentation === 'analysis' || presentation === 'rows' || presentation === 'clarify') {
     const data = typeof value === 'string' ? resultJson(value) : value
-    // TAL-2325: an analysis the Agent kept as text (a multimodal result's summary) is the analysis itself.
-    const typed = isDict(data) ? typedResultView(presentation, data, args, name) : presentation === 'analysis' && typeof value === 'string' ? wrapped('analysis', resultAnalysisView({ analysis: value })) : undefined
+    // TAL-2325: an analysis the Agent kept as text (a multimodal result's summary) is the analysis itself. TAL-2328: and a
+    // `computer_use` capture kept as text its capture summary.
+    const typed = isDict(data) ? typedResultView(presentation, data, args, name) : presentation === 'analysis' && typeof value === 'string' ? wrapped('analysis', resultAnalysisView({ analysis: value })) : presentation === 'rows' && typeof value === 'string' ? wrapped('rows', toolTextRows(name, value)) : undefined
+    // TAL-2328: the screenshot a `computer_use` capture saved shows above its rows.
+    const screenshot = typed?.rows ? toolScreenshotMedia(value) : []
+    if (typed && screenshot.length) typed.media = screenshot
     // A section joins the generic text, never its key/value rows (but media, which shows above its call's details, keeps the
     // rows that name its prompt and model); a one-line outcome (a repeat read, not found) replaces it.
     if (typed?.file_excerpt || typed?.matches || typed?.links || typed?.pages || typed?.media || typed?.analysis !== undefined || typed?.rows) {
       const generic = resultView(typed.rows && isDict(data) && Array.isArray(data.targets) ? { ...data, targets: (data.targets as unknown[]).map((t): unknown => (isDict(t) ? Object.fromEntries(Object.entries(t).filter(([key]) => key !== 'connect_url')) : t)) } : value, 0)
-      if (!typed.media) delete generic.fields
+      if (!typed.media || typed.rows) delete generic.fields
       return { ...generic, ...typed }
     }
     if (typed) return typed
@@ -751,8 +782,9 @@ function uncappedResultView(input: unknown, name?: unknown, args?: unknown): Too
 /** TAL-2323/TAL-2324: the typed section a presentation's parser reads from an object result; undefined for a shape it does not know. */
 function typedResultView(presentation: 'file_excerpt' | 'matches' | 'links' | 'pages' | 'media' | 'analysis' | 'rows' | 'clarify', data: Record<string, unknown>, args: unknown, name: unknown): ToolResultView | undefined {
   if (presentation === 'file_excerpt') return readFileView(data, args)
-  // TAL-2326: a failed call is its error on one line, as a media one is.
-  if (presentation === 'rows' || presentation === 'clarify') return data.success === false || data.error ? wrapped('error', str(data.error).trim() || undefined) : wrapped('rows', toolRowsView(name, data, args))
+  // TAL-2326: a failed call is its error on one line, as a media one is. TAL-2328: but one refused because the user took
+  // control of the browser or computer is that, as a warning.
+  if (presentation === 'rows' || presentation === 'clarify') return wrapped('rows', humanControlRows(name, data)) ?? (data.success === false || data.error ? wrapped('error', str(data.error).trim() || undefined) : wrapped('rows', toolRowsView(name, data, args)))
   if (presentation === 'analysis') return wrapped('analysis', resultAnalysisView(data))
   // A failed media call is its error on one line.
   if (presentation === 'media') return data.success === false || data.error ? wrapped('error', str(data.error).trim() || undefined) : wrapped('media', toolResultMedia(data))
@@ -949,7 +981,8 @@ export function extractToolCallsFromMessages(messages: unknown[], liveToolCalls:
   const liveRecords = new Map<string, Record<string, unknown>[]>()
   for (const tc of liveToolCalls) if (isDict(tc) && str(tc.tid)) liveRecords.set(str(tc.tid), [...(liveRecords.get(str(tc.tid)) ?? []), tc])
   const call = (msgIdx: number, name: string, tid: string, asstIdx: number, args: Record<string, string>, raw: unknown, flagged = false): Record<string, unknown> => {
-    const snippet = toolResultSnippet(raw)
+    // TAL-2328: without image or binary data, which never reaches a client.
+    const snippet = toolResultSnippet(withoutImageData(raw))
     const prior = msgIdx < settledBefore ? earlier.get(`${String(asstIdx)}\0${tid}`) : undefined
     const kept = prior?.name === name && prior.snippet === snippet && typeof prior.is_error === 'boolean' ? prior.is_error : undefined
     return { name, snippet, tid, assistant_msg_idx: asstIdx, args, is_error: kept ?? toolIsError(raw, name, flagged) }

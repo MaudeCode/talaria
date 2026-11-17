@@ -1262,6 +1262,39 @@ final class SharedContractTests: XCTestCase {
         }
     }
 
+    func testSharedWebSessionCarriesEachBrowserAndComputerCall() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
+        // A release checks this App against every retained Web; one from before TAL-2328 has no such example.
+        guard let example = object["tool_browser_views"] as? [String: Any] else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let session = try decoder.decode(SessionDetail.self, from: JSONSerialization.data(withJSONObject: example["session"] as Any))
+        let messages = try XCTUnwrap(session.messages)
+        let answer = try XCTUnwrap(messages.first { $0.messageId == "browser-answer" })
+        let timeline = try XCTUnwrap(AssistantActivityTimeline.authoritativeScene(message: answer))
+        let groups = ToolCallGroup.groups(messages: messages, messageOffset: nil)
+        for calls in [timeline.toolCalls, groups.first { $0.anchorMessageID == "browser-calls" }?.toolCalls ?? []] {
+            let byID = Dictionary(uniqueKeysWithValues: calls.map { ($0.id, $0) })
+            XCTAssertEqual(calls.map(\.kind), [.browser, .browser, .browser, .browser, .browser, .computer, .computer])
+            XCTAssertEqual(calls.map(\.verb), [.run, .send, .answer, .list, .fill, .capture, .click])
+            XCTAssertEqual(calls.map { AssistantActivitySummary.label(for: $0) }, [
+                "Ran Open the pricing page", "Sent Page.captureScreenshot", "Answered a dialog", "Listed saved logins", "Filled a login",
+                "Captured the screen", "Clicked on the screen",
+            ])
+            XCTAssertEqual(calls.map { AssistantActivitySummary.icon(for: $0) }, Array(repeating: "macwindow", count: 5) + ["desktopcomputer", "desktopcomputer"])
+            let ran = try XCTUnwrap(byID["call-exec"]?.resultView)
+            XCTAssertEqual(ran.fileExcerpt?.path, "")
+            XCTAssertEqual(ran.fileExcerpt?.lines.map(\.text), ["# Open the pricing page", "goto(\"https://example.com/pricing\")", "print(page_info())"])
+            XCTAssertEqual(ran.stdout, "Pricing: $10/month")
+            XCTAssertEqual(ran.media?.map(\.name), ["pricing.png"])
+            XCTAssertEqual(byID["call-cdp"]?.resultView?.rows?.rows.map(\.label), ["Page.captureScreenshot"])
+            XCTAssertEqual(byID["call-fill"]?.resultView?.rows?.rows.map(\.label), ["Filled 2 fields on https://example.com"])
+            let capture = try XCTUnwrap(byID["call-capture"]?.resultView)
+            XCTAssertEqual(capture.rows?.rows.map { [$0.label, $0.detail] }, [["Safari", "Pricing · 2 elements"]])
+            XCTAssertEqual(capture.media?.map(\.name), ["cap_1.png"])
+        }
+    }
+
     func testSharedWebSessionCarriesEachFileEditsDiff() throws {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
         // A release checks this App against every retained Web; one from before TAL-448 has no such example.
