@@ -144,8 +144,10 @@ final class FixtureApp {
 
 /// A process's first chat render takes 20 to 50 s on a hosted runner, against about 3 s for the next: the Swift runtime
 /// resolves the generic conformances SwiftUI asks for by scanning every loaded image. Its first Markdown transcript and
-/// keyboard add up to 40 s more, past the 10 s waits of whichever test comes first. They belong to the run, so they happen
-/// before any test starts (TAL-1891). The bundle's principal class.
+/// keyboard add up to 40 s more, past the 10 s waits of whichever test comes first. A chat opened from the Chats list
+/// then draws with a render pipeline the bare chat does not use; the runner compiles it on the main thread, which held
+/// the screen for 9 s (TAL-2275). They belong to the run, so they happen before any test starts (TAL-1891). The bundle's
+/// principal class.
 @objc(HostedTestBundle)
 final class HostedTestBundle: NSObject, XCTestObservation {
     override init() {
@@ -156,22 +158,36 @@ final class HostedTestBundle: NSObject, XCTestObservation {
     func testBundleWillStart(_ testBundle: Bundle) {
         MainActor.assumeIsolated {
             var finished = false
-            var window: UIWindow?
+            var windows: [UIWindow] = []
             // No test is running, so its teardown blocks never run; the same cleanup follows below.
             let warmer = XCTestCase()
             Task { @MainActor in
-                window = try? await warmer.hostFixtureChat(["--ui-test-long-bodies"])
-                if let window { _ = await warmer.awaitElement(in: window, label: "Short reply 25.", timeout: 60) }
-                if let window, let composer = await warmer.composerTextView(in: window) {
-                    composer.becomeFirstResponder()
-                    composer.resignFirstResponder()
+                if let window = try? await warmer.hostFixtureChat(["--ui-test-long-bodies"]) {
+                    windows.append(window)
+                    _ = await warmer.awaitElement(in: window, label: "Short reply 25.", timeout: 60)
+                    if let composer = await warmer.composerTextView(in: window) {
+                        composer.becomeFirstResponder()
+                        composer.resignFirstResponder()
+                    }
+                    window.isHidden = true
+                }
+                if let fixture = try? FixtureApp(for: warmer), let window = try? warmer.hostWindow(fixture.sessionList()) {
+                    windows.append(window)
+                    try? await warmer.openSidebar(in: window)
+                    if let row = await warmer.awaitElement(in: window, timeout: 60, where: {
+                        $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
+                    }), HostedAccessibility.activate(row) {
+                        _ = await warmer.awaitElement(in: window, timeout: 60, where: FixtureApp.isLoadedTranscriptRow)
+                    }
                 }
                 finished = true
             }
-            let deadline = Date(timeIntervalSinceNow: 120)
+            let deadline = Date(timeIntervalSinceNow: 180)
             while !finished, Date() < deadline { RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05)) }
-            window?.isHidden = true
-            window?.rootViewController = nil
+            for window in windows {
+                window.isHidden = true
+                window.rootViewController = nil
+            }
             UIView.setAnimationsEnabled(true)
             UITestFixtureHold.shared.release()
             FixtureLaunchArguments.scenario = []
