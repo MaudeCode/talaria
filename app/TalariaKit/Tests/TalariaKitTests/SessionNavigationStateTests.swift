@@ -671,6 +671,36 @@ final class SessionNavigationStateTests: XCTestCase {
             "second-session"
         )
     }
+
+    /// TAL-2387: each window restores its own chat; a window with no scene state takes the app's last chat only
+    /// when it is the only window, so a new window beside another opens at New Chat.
+    func testEachWindowRestoresItsOwnChatAndANewWindowBesideAnotherStartsAtNewChat() throws {
+        let suiteName = "SessionNavigationStateTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let server = try XCTUnwrap(URL(string: "https://first.example.com"))
+        let otherServer = try XCTUnwrap(URL(string: "https://second.example.com"))
+        SessionNavigationPersistence.save("last-chat", for: server, defaults: defaults)
+
+        var left = SessionNavigationPersistence.WindowSelections()
+        left.save("left-chat", for: server)
+        var right = SessionNavigationPersistence.WindowSelections()
+        right.save(nil, for: server)
+        // Scene state survives relaunch as its raw value.
+        left = try XCTUnwrap(.init(rawValue: left.rawValue))
+        right = try XCTUnwrap(.init(rawValue: right.rawValue))
+
+        XCTAssertEqual(left.restoredSessionID(for: server, hasOtherWindows: true, defaults: defaults), "left-chat")
+        XCTAssertNil(right.restoredSessionID(for: server, hasOtherWindows: true, defaults: defaults),
+                     "A window left at New Chat stays there")
+        let fresh = SessionNavigationPersistence.WindowSelections()
+        XCTAssertNil(fresh.restoredSessionID(for: server, hasOtherWindows: true, defaults: defaults),
+                     "A new window beside another opens at New Chat")
+        XCTAssertEqual(fresh.restoredSessionID(for: server, hasOtherWindows: false, defaults: defaults), "last-chat",
+                       "A single-window launch still restores the last chat")
+        XCTAssertNil(left.restoredSessionID(for: otherServer, hasOtherWindows: true, defaults: defaults),
+                     "A window's chat belongs to the server it was chosen on")
+    }
 }
 
 private enum ReturnRefreshEvent: Equatable {

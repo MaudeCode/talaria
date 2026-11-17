@@ -58,6 +58,15 @@ final class ForegroundReturnDetectorTests: XCTestCase {
         XCTAssertTrue(detector.didReturnToForeground(on: .active), "Back from the background")
         XCTAssertFalse(detector.didReturnToForeground(on: .active), "Counted once")
     }
+
+    /// TAL-2387: the app-wide pass reads the app's aggregate phase, so restored windows activating one after another
+    /// (the app blinking inactive between them) run the launch pass once.
+    func testTheLaunchPassRunsOncePerProcess() {
+        var detector = ForegroundReturnDetector()
+        let phases: [ScenePhase] = [.inactive, .active, .inactive, .active, .inactive, .background, .inactive, .active]
+        XCTAssertEqual(phases.compactMap { detector.activation(on: $0) },
+                       [.launch, .foreground(returned: false), .foreground(returned: true)])
+    }
 }
 
 final class SessionEventFrameDecoderTests: XCTestCase {

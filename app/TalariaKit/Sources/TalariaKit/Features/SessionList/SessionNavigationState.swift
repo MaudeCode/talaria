@@ -321,4 +321,37 @@ public enum SessionNavigationPersistence {
             defaults.removeObject(forKey: key)
         }
     }
+
+    /// One window's chat on each server, kept in its scene state so the system restores every window's own chat
+    /// (TAL-2387). The app-wide key above stays the fallback for a window the system has no state for.
+    public struct WindowSelections: RawRepresentable, Equatable, Sendable {
+        /// Session ID by server; an empty string is New Chat.
+        private var sessionIDs: [String: String]
+
+        public init() {
+            sessionIDs = [:]
+        }
+
+        public init?(rawValue: String) {
+            guard let decoded = try? JSONDecoder().decode([String: String].self, from: Data(rawValue.utf8)) else {
+                return nil
+            }
+            sessionIDs = decoded
+        }
+
+        public var rawValue: String {
+            (try? JSONEncoder().encode(sessionIDs)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+        }
+
+        public mutating func save(_ sessionID: String?, for server: URL) {
+            sessionIDs[server.absoluteString] = sessionID ?? ""
+        }
+
+        public func restoredSessionID(
+            for server: URL, hasOtherWindows: Bool, defaults: UserDefaults = .standard
+        ) -> String? {
+            if let own = sessionIDs[server.absoluteString] { return own.isEmpty ? nil : own }
+            return hasOtherWindows ? nil : SessionNavigationPersistence.load(for: server, defaults: defaults)
+        }
+    }
 }

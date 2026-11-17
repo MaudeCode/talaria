@@ -75,8 +75,9 @@ public final class AppLockModel {
     public private(set) var isEnabled: Bool
     public private(set) var isLocked: Bool
     public private(set) var isAuthenticating = false
-    /// Starts false: a launch is covered until its scene first activates.
-    public private(set) var isSceneActive = false
+    /// Each window's phase by its scene's persistent identifier. A window not listed has not activated yet, so a
+    /// launch is covered until its scene first activates.
+    private var scenePhases: [String: ScenePhase] = [:]
     public private(set) var queuedDeepLinks: [URL] = []
     /// The choice being authenticated, which the Settings switch shows until iOS answers.
     private var requestedEnabled: Bool?
@@ -104,14 +105,20 @@ public final class AppLockModel {
 
     public var method: AppLockMethod { authenticator.method }
     public var switchPosition: Bool { requestedEnabled ?? isEnabled }
-    public var showsCover: Bool { isEnabled && (isLocked || !isSceneActive) }
-    public var showsUnlockButton: Bool { isLocked && isSceneActive && !isAuthenticating }
+    /// A window's cover is up while the app is locked or that window is not active, so a window in use stays
+    /// uncovered while another one is away (TAL-2387).
+    public func showsCover(in scene: String) -> Bool { isEnabled && (isLocked || scenePhases[scene] != .active) }
+    public func showsUnlockButton(in scene: String) -> Bool {
+        isLocked && scenePhases[scene] == .active && !isAuthenticating
+    }
 
-    public func sceneDidChange(_ phase: ScenePhase) {
-        isSceneActive = phase == .active
+    /// `isLocked` and the minute away belong to the app: the minute starts when the last window leaves the
+    /// foreground, and one unlock clears every window.
+    public func sceneDidChange(_ phase: ScenePhase, scene: String) {
+        scenePhases[scene] = phase
         switch phase {
         case .background:
-            backgroundedAt = backgroundedAt ?? now()
+            startAwayTimeIfNoWindowIsInTheForeground()
         case .inactive:
             // Entering the foreground: a deep link arrives before the scene activates, so the lock holds by then.
             lockIfAwayTooLong()
@@ -125,6 +132,17 @@ public final class AppLockModel {
         @unknown default:
             break
         }
+    }
+
+    /// A closed window no longer holds the app in the foreground.
+    public func sceneDidDisconnect(_ scene: String) {
+        scenePhases[scene] = nil
+        startAwayTimeIfNoWindowIsInTheForeground()
+    }
+
+    private func startAwayTimeIfNoWindowIsInTheForeground() {
+        guard !scenePhases.isEmpty, scenePhases.values.allSatisfy({ $0 == .background }) else { return }
+        backgroundedAt = backgroundedAt ?? now()
     }
 
     /// Whether work done without the scene, such as an App Intent, finds the app locked (TAL-1470). The minute away

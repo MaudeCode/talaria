@@ -1,4 +1,3 @@
-import AuthenticationServices
 import SwiftData
 import SwiftUI
 import TalariaKit
@@ -8,15 +7,18 @@ struct ContentView: View {
     private let draftStore: ChatDraftStore
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.modelContext) private var modelContext
-    @AppStorage(ResponseCompletionNotifications.isEnabledKey) private var isResponseCompletionNotificationsEnabled = false
-    @State private var sharedImports = SharedImportRouter()
-    @State private var foregroundReturn = ForegroundReturnDetector()
+    /// This window, for the app-wide What's New and share routing that each pick one window (TAL-2387).
+    @State private var window = UUID()
+    /// This window's chat on each server, which the system restores with the window (TAL-2387).
+    @SceneStorage("sessionNavigation.windowSelections")
+    private var windowSelections = SessionNavigationPersistence.WindowSelections()
+    /// App-wide: `TalariaApp` imports shares once for every window.
+    @State private var sharedImports: SharedImportRouter
     @State private var pendingDeepLinkedSessionID: String?
     /// A widget's quota account or a push's decision review, pushed once above the current screen.
     @State private var pendingDestination: SessionListUtilityDestination?
     @State private var opensProviderQuotaWidgetSettings = false
     @State private var pendingNewChatRequest: NewChatRequest?
-    @State private var didCheckInitialPendingShare = false
     @State private var intentRouter: AppIntentRouter
     @Bindable private var whatsNew: WhatsNewPresenter
     private let appLock: AppLockModel
@@ -26,13 +28,15 @@ struct ContentView: View {
         draftStore: ChatDraftStore? = nil,
         whatsNew: WhatsNewPresenter? = nil,
         appLock: AppLockModel? = nil,
-        intentRouter: AppIntentRouter? = nil
+        intentRouter: AppIntentRouter? = nil,
+        sharedImports: SharedImportRouter? = nil
     ) {
         self.authManager = authManager
         self.draftStore = draftStore ?? .shared
         self.whatsNew = whatsNew ?? WhatsNewPresenter(pending: nil)
         self.appLock = appLock ?? .shared
         _intentRouter = State(initialValue: intentRouter ?? .shared)
+        _sharedImports = State(initialValue: sharedImports ?? SharedImportRouter())
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.openSessionArgument) {
             _pendingDeepLinkedSessionID = State(initialValue: UITestFixtureURLProtocol.sessionID)
@@ -54,23 +58,18 @@ struct ContentView: View {
 
     var body: some View {
         content
-            .whatsNewPresentation($whatsNew.presented, defaults: whatsNew.defaults)
+            .whatsNewPresentation(whatsNew.presentation(in: window), defaults: whatsNew.defaults)
             .task(id: leavesRoomForWhatsNew) {
                 guard leavesRoomForWhatsNew else { return }
-                await whatsNew.offerWhenNothingIsPresented()
+                await whatsNew.offerWhenNothingIsPresented(in: window)
             }
+            // A URL goes to a window already open rather than opening another (TAL-2387).
+            .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
             .onOpenURL(perform: handleOpenURL)
             .task {
-                guard !didCheckInitialPendingShare else { return }
-                didCheckInitialPendingShare = true
-                try? CacheStore.maintainCache(in: modelContext)
-                await importSharedDraftsUnlessLocked()
                 // Cold launch: an App Intent may have queued a deep link before this
                 // view appeared (e.g. Action button "New Chat"). Drain it now (#337).
                 drainPendingIntentDeepLink()
-                ConfigurationSyncCoordinator.shared.attach(authManager: authManager)
-                await refreshRelayIdentityAndActivity()
-                await ConfigurationSyncCoordinator.shared.refreshOnForeground()
             }
             .onChange(of: intentRouter.pendingDeepLink) {
                 // Warm launch: the intent set the deep link after the view appeared.
@@ -81,90 +80,11 @@ struct ContentView: View {
                 appLock.takeQueuedDeepLinks().forEach(route)
                 Task { await importSharedDraftsUnlessLocked() }
             }
-            .task {
-                // #246: on cold launch, end any Live Activity left "running" by a
-                // run that finished while the app was terminated. #248: this is also
-                // the one pass allowed to fire a recent run's "response complete"
-                // notification, since a relaunch means it finished while not active.
-                await reconcileOrphanedLiveActivities(notifiesOnCompletion: true)
+            // Inactive still counts: Control Center must not hand a share in flight to this window twice.
+            .onChange(of: scenePhase, initial: true) {
+                sharedImports.windowDidChange(window, isInForeground: scenePhase != .background)
             }
-            .onChange(of: scenePhase) {
-                if scenePhase != .active {
-                    // Save identity edits still waiting on their typing pause (TAL-123).
-                    authManager.flushServerIdentityEdits()
-                }
-                if foregroundReturn.didReturnToForeground(on: scenePhase) {
-                    // Every server-backed screen refreshes through `refreshesLive` (TAL-435).
-                    NotificationCenter.default.post(name: .talariaReturnedToForeground, object: nil)
-                }
-                if scenePhase == .background {
-                    ProviderQuotaBackgroundRefresh.schedule()
-                    return
-                }
-                guard scenePhase == .active else { return }
-                try? CacheStore.maintainCache(in: modelContext)
-                Task { await importSharedDraftsUnlessLocked() }
-                // #248: the foreground pass stays silent — the in-session completion
-                // paths own notifications while the app is alive.
-                Task { await reconcileOrphanedLiveActivities(notifiesOnCompletion: false) }
-                Task { await refreshRelayIdentityAndActivity() }
-                Task { await ConfigurationSyncCoordinator.shared.refreshOnForeground() }
-            }
-            .onReceive(NotificationCenter.default.publisher(
-                for: ASAuthorizationAppleIDProvider.credentialRevokedNotification
-            )) { _ in
-                ConfigurationSyncCoordinator.shared.handleAppleCredentialRevoked()
-                Task { await invalidateRelayIdentity() }
-            }
-    }
-
-    private func refreshRelayIdentityAndActivity() async {
-        guard let credentials = TalariaRelayConfigurationStore.load() else { return }
-        if credentials.pendingRevocation == true {
-            do {
-                try await TalariaAggregateLiveActivityManager.shared.disconnect()
-                try await TalariaRelayClient(credentials: credentials).revokeSession()
-                try TalariaRelayConfigurationStore.clear()
-            } catch {
-                return
-            }
-            return
-        }
-        let appleCredentialStatus = await TalariaRelayAppleCredentialState.status(
-            userID: credentials.appleUserID
-        )
-        guard appleCredentialStatus != .revoked else {
-            await invalidateRelayIdentity()
-            return
-        }
-        if credentials.isExpired {
-            try? await TalariaAggregateLiveActivityManager.shared.disconnect(preserveCompleted: true)
-            return
-        }
-        guard appleCredentialStatus == .authorized else { return }
-        try? await TalariaAggregateLiveActivityManager.shared.refresh()
-    }
-
-    private func invalidateRelayIdentity() async {
-        guard var credentials = TalariaRelayConfigurationStore.load() else { return }
-        do {
-            try await TalariaAggregateLiveActivityManager.shared.disconnect()
-            try await TalariaRelayClient(credentials: credentials).revokeSession()
-            try TalariaRelayConfigurationStore.clear()
-        } catch {
-            credentials.pendingRevocation = true
-            try? TalariaRelayConfigurationStore.save(credentials)
-        }
-    }
-
-    private func reconcileOrphanedLiveActivities(notifiesOnCompletion: Bool) async {
-        guard case let .loggedIn(server) = authManager.state else { return }
-        await LiveActivityReconciler.reconcileOrphanedActivities(
-            server: server,
-            notifiesOnCompletion: notifiesOnCompletion,
-            preferenceEnabled: isResponseCompletionNotificationsEnabled
-                && !TalariaRelayConfigurationStore.ownsCompletionAlerts(for: server)
-        )
+            .onDisappear { sharedImports.windowDidChange(window, isInForeground: false) }
     }
 
     @ViewBuilder
@@ -181,14 +101,18 @@ struct ContentView: View {
                 authManager: authManager,
                 server: server,
                 modelContext: modelContext,
-                pendingSharedImport: $sharedImports.pendingImport,
+                pendingSharedImport: Binding(
+                    get: { sharedImports.pendingImport(in: window) },
+                    set: { sharedImports.pendingImport = $0 }
+                ),
                 didRoutePendingSharedImport: { sharedImports.didRoute($0) },
-                hasWaitingSharedImport: sharedImports.hasWaitingImport,
+                hasWaitingSharedImport: sharedImports.hasWaitingImport(in: window),
                 openNextSharedImport: { sharedImports.openNext() },
                 pendingDeepLinkedSessionID: $pendingDeepLinkedSessionID,
                 pendingDestination: $pendingDestination,
                 opensProviderQuotaWidgetSettings: $opensProviderQuotaWidgetSettings,
                 requestedNewChat: $pendingNewChatRequest,
+                windowSelections: $windowSelections,
                 draftStore: draftStore
             )
             // Switching the active server keeps us in `.loggedIn`, so without a

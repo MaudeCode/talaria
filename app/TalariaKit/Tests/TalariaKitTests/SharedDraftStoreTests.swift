@@ -438,6 +438,31 @@ final class SharedDraftStoreTests: XCTestCase {
         XCTAssertFalse(router.hasWaitingImport)
     }
 
+    /// TAL-2387: one app-wide router serves every window, and only one window routes a share and offers the next.
+    @MainActor
+    func testOneForegroundWindowRoutesTheShareAndTheNextTakesOverWhenItLeaves() async throws {
+        let directory = try temporaryDirectory()
+        try TalariaShareDraft.savePendingDraft("First share", in: directory, now: Date(timeIntervalSinceNow: -2))
+        try TalariaShareDraft.savePendingDraft("Second share", in: directory, now: Date(timeIntervalSinceNow: -1))
+        let router = SharedImportRouter(directory: { directory })
+        let left = UUID(), right = UUID(), away = UUID()
+        router.windowDidChange(away, isInForeground: false)
+        router.windowDidChange(left, isInForeground: true)
+        router.windowDidChange(right, isInForeground: true)
+
+        await router.importIfAvailable()
+        XCTAssertEqual(router.pendingImport(in: left)?.sharedImport.draft, "First share")
+        XCTAssertNil(router.pendingImport(in: right), "The share opens in one window, not both")
+        XCTAssertNil(router.pendingImport(in: away))
+        XCTAssertTrue(router.hasWaitingImport(in: left))
+        XCTAssertFalse(router.hasWaitingImport(in: right))
+
+        router.windowDidChange(left, isInForeground: false)
+        XCTAssertEqual(router.pendingImport(in: right)?.sharedImport.draft, "First share",
+                       "A share left unrouted moves to the window still in use")
+        XCTAssertNil(router.pendingImport(in: left))
+    }
+
     func testPendingImportSaveRejectsAggregateOverflowWithoutReplacingExistingDraft() throws {
         let directory = try temporaryDirectory()
         try TalariaShareDraft.savePendingDraft("Keep me", in: directory)

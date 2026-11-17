@@ -33,6 +33,9 @@ final class AppLockTests: XCTestCase {
     private let authenticator = ScriptedAuthenticator()
     private let firstLink = URL(string: "talaria-test://first")!
     private let secondLink = URL(string: "talaria-test://second")!
+    /// Scene identifiers of two windows side by side.
+    private let window = "window-a"
+    private let otherWindow = "window-b"
 
     override func setUp() async throws {
         let name = "AppLockTests.\(UUID())"
@@ -45,9 +48,14 @@ final class AppLockTests: XCTestCase {
         return AppLockModel(defaults: defaults, now: { self.instant }, authenticator: authenticator)
     }
 
-    private func activate(_ model: AppLockModel) async {
-        model.sceneDidChange(.active)
+    private func activate(_ model: AppLockModel, _ scene: String? = nil) async {
+        model.sceneDidChange(.active, scene: scene ?? window)
         await model.authentication?.value
+    }
+
+    private func leave(_ model: AppLockModel, _ scene: String) {
+        model.sceneDidChange(.inactive, scene: scene)
+        model.sceneDidChange(.background, scene: scene)
     }
 
     /// A launch the user has unlocked, sitting in the foreground.
@@ -59,10 +67,10 @@ final class AppLockTests: XCTestCase {
     }
 
     private func background(_ model: AppLockModel, for seconds: Int) async {
-        model.sceneDidChange(.inactive)
-        model.sceneDidChange(.background)
+        model.sceneDidChange(.inactive, scene: window)
+        model.sceneDidChange(.background, scene: window)
         instant = instant.advanced(by: .seconds(seconds))
-        model.sceneDidChange(.inactive)
+        model.sceneDidChange(.inactive, scene: window)
         await activate(model)
     }
 
@@ -85,7 +93,7 @@ final class AppLockTests: XCTestCase {
 
     func testInactiveThenActiveNeverLocks() async {
         let model = await unlockedModel()
-        model.sceneDidChange(.inactive)
+        model.sceneDidChange(.inactive, scene: window)
         instant = instant.advanced(by: .seconds(3600))
         await activate(model)
         XCTAssertFalse(model.isLocked)
@@ -108,7 +116,7 @@ final class AppLockTests: XCTestCase {
     func testBackgroundWorkSeesTheLockBeforeTheSceneReturns() async {
         let model = await unlockedModel()
         XCTAssertFalse(model.locksBackgroundWork())
-        model.sceneDidChange(.background)
+        model.sceneDidChange(.background, scene: window)
         instant += .seconds(60)
         XCTAssertFalse(model.locksBackgroundWork(), "Within the grace period")
         instant += .seconds(1)
@@ -120,9 +128,9 @@ final class AppLockTests: XCTestCase {
     /// A deep link is delivered between entering the foreground and becoming active, so the lock must already hold.
     func testLockHoldsBeforeActivationSoAReturningDeepLinkQueues() async {
         let model = await unlockedModel()
-        model.sceneDidChange(.background)
+        model.sceneDidChange(.background, scene: window)
         instant = instant.advanced(by: .seconds(61))
-        model.sceneDidChange(.inactive)
+        model.sceneDidChange(.inactive, scene: window)
         XCTAssertTrue(model.isLocked)
         XCTAssertFalse(model.admitDeepLink(firstLink))
         XCTAssertEqual(authenticator.promptCount, 1, "The prompt waits for the scene to be active")
@@ -133,10 +141,10 @@ final class AppLockTests: XCTestCase {
         let model = coldLaunch()
         await activate(model)
         XCTAssertTrue(model.isLocked)
-        XCTAssertTrue(model.showsUnlockButton)
+        XCTAssertTrue(model.showsUnlockButton(in: window))
 
         // The system prompt itself takes the scene through inactive, and leaving and coming back is the same lock.
-        model.sceneDidChange(.inactive)
+        model.sceneDidChange(.inactive, scene: window)
         await activate(model)
         await background(model, for: 3600)
         XCTAssertEqual(authenticator.promptCount, 1, "One prompt per lock")
@@ -220,5 +228,62 @@ final class AppLockTests: XCTestCase {
         XCTAssertFalse(model.isLocked)
         XCTAssertFalse(model.isEnabled)
         XCTAssertFalse(defaults.bool(forKey: AppLockModel.isEnabledKey))
+    }
+
+    // MARK: - Two windows (TAL-2387)
+
+    func testOneWindowAwayNeitherCoversTheOtherNorStartsTheTimer() async {
+        let model = await unlockedModel()
+        await activate(model, otherWindow)
+        leave(model, otherWindow)
+        XCTAssertFalse(model.showsCover(in: window), "The window still in use stays uncovered")
+        XCTAssertTrue(model.showsCover(in: otherWindow), "The app switcher shows the away window covered")
+
+        instant += .seconds(3600)
+        model.sceneDidChange(.inactive, scene: otherWindow)
+        await activate(model, otherWindow)
+        XCTAssertFalse(model.isLocked, "The minute away starts only when the last window leaves")
+        XCTAssertFalse(model.showsCover(in: otherWindow))
+    }
+
+    func testBothWindowsAwayPastTheGraceLockBoth() async {
+        authenticator.results = [.succeeded, .cancelled]
+        let model = await unlockedModel()
+        await activate(model, otherWindow)
+        leave(model, window)
+        leave(model, otherWindow)
+        instant += .seconds(61)
+        model.sceneDidChange(.inactive, scene: window)
+        XCTAssertTrue(model.isLocked)
+        XCTAssertTrue(model.showsCover(in: window))
+        XCTAssertTrue(model.showsCover(in: otherWindow))
+    }
+
+    func testOneUnlockClearsEveryWindow() async {
+        authenticator.results = [.cancelled]
+        let model = coldLaunch()
+        await activate(model, window)
+        await activate(model, otherWindow)
+        XCTAssertEqual(authenticator.promptCount, 1, "One prompt for the app, not one per window")
+        XCTAssertTrue(model.showsUnlockButton(in: window))
+        XCTAssertTrue(model.showsUnlockButton(in: otherWindow))
+
+        model.unlock()
+        await model.authentication?.value
+        XCTAssertFalse(model.showsCover(in: window))
+        XCTAssertFalse(model.showsCover(in: otherWindow))
+    }
+
+    func testAClosedWindowNoLongerHoldsTheAppInTheForeground() async {
+        let model = await unlockedModel()
+        await activate(model, otherWindow)
+        leave(model, window)
+        instant += .seconds(30)
+        model.sceneDidChange(.inactive, scene: otherWindow)
+        model.sceneDidDisconnect(otherWindow)
+        instant += .seconds(31)
+        XCTAssertFalse(model.locksBackgroundWork(), "The minute away starts when the window in use closes")
+        instant += .seconds(30)
+        XCTAssertTrue(model.locksBackgroundWork())
     }
 }

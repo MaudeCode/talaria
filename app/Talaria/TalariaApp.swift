@@ -1,3 +1,4 @@
+import AuthenticationServices
 import BackgroundTasks
 import SwiftUI
 import SwiftData
@@ -14,6 +15,15 @@ final class TalariaAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
         UNUserNotificationCenter.current().setNotificationCategories(PendingActionNotificationCategory.all)
         // TAL-1488: a Deny a killed process left pending keeps the rest of its Undo window, then is sent.
         Task { @MainActor in await DeferredDenial.shared.resumePersisted() }
+        // App-wide, so it lives here rather than in a window's view (TAL-2387).
+        NotificationCenter.default.addObserver(
+            forName: ASAuthorizationAppleIDProvider.credentialRevokedNotification, object: nil, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated {
+                ConfigurationSyncCoordinator.shared.handleAppleCredentialRevoked()
+                Task { await TalariaApp.invalidateRelayIdentity() }
+            }
+        }
         if UserDefaults.standard.bool(forKey: TalariaRelayNotifications.isEnabledKey)
             || UserDefaults.standard.bool(forKey: ResponseCompletionNotifications.isEnabledKey) {
             application.registerForRemoteNotifications()
@@ -140,7 +150,13 @@ struct TalariaApp: App {
     @State private var authManager: AuthManager
     /// Read once per launch: an update's What's New waits here until the screen is free (TAL-182).
     @State private var whatsNew: WhatsNewPresenter
+    /// One for every window, so each share is imported once and opens in one window (TAL-2387).
+    @State private var sharedImports = SharedImportRouter()
+    @State private var foregroundReturn = ForegroundReturnDetector()
+    /// Aggregated across windows: active while any window is, background once all are (TAL-2387).
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage(AppTheme.storageKey) private var appThemeRawValue = AppTheme.system.rawValue
+    @AppStorage(ResponseCompletionNotifications.isEnabledKey) private var isResponseCompletionNotificationsEnabled = false
     private let usesUITestFixture: Bool
     /// Offline session/message cache. Held explicitly (not just via the
     /// `modelContainer(for:)` modifier) so `AuthManager` can drop a server's
@@ -198,7 +214,7 @@ struct TalariaApp: App {
         #endif
 
         // Registering only installs the launch handler, so the fixture needs it too: backgrounding
-        // the app submits a refresh request from `ContentView`, and submitting one whose
+        // the app submits a refresh request from `appPhaseDidChange`, and submitting one whose
         // identifier was never registered aborts the process (TAL-77).
         ProviderQuotaBackgroundRefresh.register()
         if !usesUITestFixture {
@@ -245,12 +261,13 @@ struct TalariaApp: App {
                 ContentView(
                     authManager: authManager,
                     draftStore: uiTestFixture?.draftStore,
-                    whatsNew: whatsNew
+                    whatsNew: whatsNew,
+                    sharedImports: sharedImports
                 )
                     .preferredColorScheme(AppTheme.storedValue(appThemeRawValue).colorScheme)
             }
             #else
-            ContentView(authManager: authManager, whatsNew: whatsNew)
+            ContentView(authManager: authManager, whatsNew: whatsNew, sharedImports: sharedImports)
                 .preferredColorScheme(AppTheme.storedValue(appThemeRawValue).colorScheme)
             #endif
         }
@@ -258,6 +275,90 @@ struct TalariaApp: App {
         .commands {
             TalariaCommands()
             SidebarCommands()
+        }
+        .onChange(of: scenePhase, initial: true) {
+            appPhaseDidChange(scenePhase)
+        }
+    }
+}
+
+/// App-wide work, driven by the app's aggregate scene phase so it runs once however many windows are open
+/// (TAL-2387). Each window's `ContentView` keeps only its own routing and presentation.
+extension TalariaApp {
+    private func appPhaseDidChange(_ phase: ScenePhase) {
+        if phase != .active {
+            // Save identity edits still waiting on their typing pause (TAL-123).
+            authManager.flushServerIdentityEdits()
+        }
+        if phase == .background {
+            ProviderQuotaBackgroundRefresh.schedule()
+        }
+        guard let activation = foregroundReturn.activation(on: phase) else { return }
+        if activation == .foreground(returned: true) {
+            // Every server-backed screen refreshes through `refreshesLive` (TAL-435).
+            NotificationCenter.default.post(name: .talariaReturnedToForeground, object: nil)
+        }
+        if activation == .launch {
+            ConfigurationSyncCoordinator.shared.attach(authManager: authManager)
+        }
+        try? CacheStore.maintainCache(in: cacheContainer.mainContext)
+        Task {
+            guard !AppLockModel.shared.isLocked else { return }
+            await sharedImports.importIfAvailable()
+        }
+        // #246: the launch pass ends any Live Activity left "running" by a run that finished while the app was
+        // terminated, and #248 lets only it fire a recent run's "response complete" notification, since a relaunch
+        // means it finished while not active. Later passes stay silent: the in-session completion paths own
+        // notifications while the app is alive.
+        Task { await reconcileOrphanedLiveActivities(notifiesOnCompletion: activation == .launch) }
+        Task { await Self.refreshRelayIdentityAndActivity() }
+        Task { await ConfigurationSyncCoordinator.shared.refreshOnForeground() }
+    }
+
+    private func reconcileOrphanedLiveActivities(notifiesOnCompletion: Bool) async {
+        guard case let .loggedIn(server) = authManager.state else { return }
+        await LiveActivityReconciler.reconcileOrphanedActivities(
+            server: server,
+            notifiesOnCompletion: notifiesOnCompletion,
+            preferenceEnabled: isResponseCompletionNotificationsEnabled
+                && !TalariaRelayConfigurationStore.ownsCompletionAlerts(for: server)
+        )
+    }
+
+    private static func refreshRelayIdentityAndActivity() async {
+        guard let credentials = TalariaRelayConfigurationStore.load() else { return }
+        if credentials.pendingRevocation == true {
+            do {
+                try await TalariaAggregateLiveActivityManager.shared.disconnect()
+                try await TalariaRelayClient(credentials: credentials).revokeSession()
+                try TalariaRelayConfigurationStore.clear()
+            } catch {}
+            return
+        }
+        let appleCredentialStatus = await TalariaRelayAppleCredentialState.status(
+            userID: credentials.appleUserID
+        )
+        guard appleCredentialStatus != .revoked else {
+            await invalidateRelayIdentity()
+            return
+        }
+        if credentials.isExpired {
+            try? await TalariaAggregateLiveActivityManager.shared.disconnect(preserveCompleted: true)
+            return
+        }
+        guard appleCredentialStatus == .authorized else { return }
+        try? await TalariaAggregateLiveActivityManager.shared.refresh()
+    }
+
+    static func invalidateRelayIdentity() async {
+        guard var credentials = TalariaRelayConfigurationStore.load() else { return }
+        do {
+            try await TalariaAggregateLiveActivityManager.shared.disconnect()
+            try await TalariaRelayClient(credentials: credentials).revokeSession()
+            try TalariaRelayConfigurationStore.clear()
+        } catch {
+            credentials.pendingRevocation = true
+            try? TalariaRelayConfigurationStore.save(credentials)
         }
     }
 }

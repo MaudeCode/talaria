@@ -264,7 +264,7 @@ final class WhatsNewHostedTests: XCTestCase {
         host.state.showsOther = true
         _ = try await requireElement(in: window, label: "Synthetic dialog")
 
-        let offer = Task { await presenter.offerWhenNothingIsPresented(interval: .milliseconds(50)) }
+        let offer = Task { await presenter.offerWhenNothingIsPresented(in: UUID(), interval: .milliseconds(50)) }
         addTeardownBlock { offer.cancel() }
         settle(0.5)
         XCTAssertNil(presenter.presented, "What's New never covers a sheet, alert or sign-in already up")
@@ -286,7 +286,7 @@ final class WhatsNewHostedTests: XCTestCase {
         let window = try hostWindow(host)
         host.state.showsOther = true
         _ = try await requireElement(in: window, label: "Synthetic dialog")
-        let offer = Task { await presenter.offerWhenNothingIsPresented(interval: .milliseconds(50)) }
+        let offer = Task { await presenter.offerWhenNothingIsPresented(in: UUID(), interval: .milliseconds(50)) }
         addTeardownBlock { offer.cancel() }
         settle(0.2)
 
@@ -320,6 +320,29 @@ final class WhatsNewHostedTests: XCTestCase {
         XCTAssertFalse(HostedAccessibility.elements(in: window, labelContaining: "Control your Hermes agent").isEmpty,
                        "Onboarding is still where it was")
         XCTAssertEqual(acknowledged, offered.rows.map(\.id))
+    }
+
+    /// TAL-2387: every window binds the one app-wide presenter, and the sheet comes up in one of them.
+    func testTwoWindowsPresentItInOneOnly() async throws {
+        let keychain = EmptyKeychain()
+        let registryDefaults = try XCTUnwrap(UserDefaults(suiteName: "WhatsNewHostedTests.registry.\(UUID())"))
+        let authManager = AuthManager(
+            keychain: keychain,
+            headerStore: .shared,
+            cookieStorage: URLSessionConfiguration.ephemeral.httpCookieStorage!,
+            profileEntityCache: ProfileEntityCache(defaults: nil),
+            serverRegistry: ServerRegistry(keychain: keychain, identityDefaults: registryDefaults)
+        )
+        let presenter = WhatsNewPresenter(pending: announcement(), defaults: defaults)
+        let windows = try (0..<2).map { _ in try hostLaunch(authManager: authManager, presenter: presenter) }
+        func showing() -> [UIWindow] {
+            windows.filter { HostedAccessibility.element(in: $0, label: WhatsNewSheet.title) != nil }
+        }
+
+        let offered = await awaitCondition { !showing().isEmpty }
+        XCTAssertTrue(offered)
+        settle(1.5)
+        XCTAssertEqual(showing().count, 1, "What's New presents in one window only")
     }
 
     func testSignedInAndSignedOutLaunchesOfferIt() async throws {

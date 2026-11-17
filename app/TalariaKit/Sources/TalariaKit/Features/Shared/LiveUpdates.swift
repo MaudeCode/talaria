@@ -68,9 +68,27 @@ public enum SessionsChangeTrigger: Equatable, Sendable {
 /// or the notification shade. iOS goes `.background` → `.inactive` → `.active`, so the return is
 /// the first `.active` after a `.background`.
 public struct ForegroundReturnDetector: Sendable {
+    /// What an `.active` phase starts in the app-wide pass (TAL-2387).
+    public enum Activation: Equatable, Sendable {
+        /// The process's first activation, however many windows it restores.
+        case launch
+        /// A later activation; `returned` when it follows the background.
+        case foreground(returned: Bool)
+    }
+
     private var wasInBackground = false
+    private var hasLaunched = false
 
     public init() {}
+
+    /// Feeds the app's aggregate scene phase, which stays active while any window is: the launch pass once per
+    /// process, then one foreground pass per activation, so neither repeats per window.
+    public mutating func activation(on phase: ScenePhase) -> Activation? {
+        let returned = didReturnToForeground(on: phase)
+        guard phase == .active else { return nil }
+        defer { hasLaunched = true }
+        return hasLaunched ? .foreground(returned: returned) : .launch
+    }
 
     /// Feeds each scene phase; true exactly once per return from the background.
     public mutating func didReturnToForeground(on phase: ScenePhase) -> Bool {
