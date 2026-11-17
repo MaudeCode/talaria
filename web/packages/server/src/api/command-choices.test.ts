@@ -22,16 +22,25 @@ it.each(['profile', 'principal'] as const)('bounds commands by %s before dispatc
   const root = await (await post('kimRoot', '/api/session/new', {})).json() as { session: { session_id: string } }
   const held: (() => void)[] = []
   let executed = 0
+  let released = false
+  let bothHeld!: () => void
+  const holding = new Promise<void>((resolve) => { bothHeld = resolve })
   sidecar.respond('commands.exec', () => {
     executed += 1
-    if (executed > 2) return { output: 'completed', source: 'plugin' }
-    return new Promise((resolve) => { held.push(() => { resolve({ output: 'completed', source: 'plugin' }) }) })
+    // Once cleanup starts, a handler that arrives late completes instead of parking forever.
+    if (released || executed > 2) return { output: 'completed', source: 'plugin' }
+    return new Promise((resolve) => {
+      held.push(() => { resolve({ output: 'completed', source: 'plugin' }) })
+      if (held.length === 2) bothHeld()
+    })
   })
   const run = (identity: string, sid: string) => post(identity, '/api/commands/exec', { command: '/probe-choice', session_id: sid })
   const first = run('kimWork', work.session.session_id)
   const second = run('kimWork', work.session.session_id)
+  // A request that answers before its handler is held never reaches the sidecar: fail with its status, not a timeout.
+  const answeredEarly = (request: Promise<Response>) => request.then((response) => { if (held.length < 2) throw new Error(`command answered ${response.status} before both handlers were held`) })
   try {
-    await expect.poll(() => held.length).toBe(2)
+    await Promise.race([holding, answeredEarly(first), answeredEarly(second)])
     const blocked = await run(boundary === 'profile' ? 'leeWork' : 'kimRoot', boundary === 'profile' ? work.session.session_id : root.session.session_id)
     expect(blocked.status).toBe(429)
     expect(executed).toBe(2)
@@ -41,6 +50,7 @@ it.each(['profile', 'principal'] as const)('bounds commands by %s before dispatc
     expect((await first).status).toBe(200)
     expect((await run('kimWork', work.session.session_id)).status).toBe(200)
   } finally {
+    released = true
     for (const finish of held) finish()
     await Promise.allSettled([first, second])
   }
