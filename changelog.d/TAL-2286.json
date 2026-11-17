@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Settings › MCP servers in Talaria Web shows each server's event subscription status again with Hermes Agent v0.23.2.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

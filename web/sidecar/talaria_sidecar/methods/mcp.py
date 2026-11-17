@@ -160,10 +160,12 @@ def events(servers: dict, now: float | None = None) -> dict:
 
     try:
         from hermes_cli.webhook import _get_webhook_config, _load_subscriptions
-        from tools.mcp_tool_events import EVENT_UTILITY_KEYS, _load_state, _server_routes
-        from tools.mcp_tool_schema import mcp_prefixed_tool_name
+        from tools.mcp_tool_events import _load_state, _server_routes
+        from tools.mcp_tool_schema import _UTILITY_CAPABILITY_ATTRS, mcp_prefixed_tool_name
     except (ImportError, AttributeError):
         return {"supported": False, "callback": "missing", "servers": []}
+    # The Agent's own utility -> capability map names the event utilities; v0.23.2 dropped EVENT_UTILITY_KEYS.
+    event_utilities = [key for key, capability in _UTILITY_CAPABILITY_ATTRS.items() if capability == "events"]
     webhook = _get_webhook_config()
     url = (webhook.get("extra") or {}).get("public_url") or webhook.get("public_url") or ""
     url = url.strip() if isinstance(url, str) else ""
@@ -176,7 +178,7 @@ def events(servers: dict, now: float | None = None) -> dict:
         counts = dict(_NO_SUBSCRIPTIONS)
         for route_name, route in _server_routes(routes, name).items():
             counts[_subscription_state(route, states.get(route_name, {}), now)] += 1
-        utilities = sum(1 for key in EVENT_UTILITY_KEYS if registered.get(mcp_prefixed_tool_name(name, key)) == name)
+        utilities = sum(1 for key in event_utilities if registered.get(mcp_prefixed_tool_name(name, key)) == name)
         rows.append({"name": name, "utilities": utilities, "subscriptions": counts})
     return {"supported": True, "callback": callback, "servers": rows}
 
