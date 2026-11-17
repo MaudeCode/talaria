@@ -20,7 +20,8 @@ public final class AppIntentRouter {
     /// appeared (cold launch) or after (warm launch).
     public var pendingDeepLink: URL?
     /// The window `pendingDeepLink` belongs to; nil while no window is known yet, when the first to drain takes it.
-    @ObservationIgnored private var pendingWindow: String?
+    /// Observed, so a link handed over from a closed window wakes the window it moves to.
+    public private(set) var pendingWindow: String?
     /// Window scenes by their session's persistent identifier, most recently active first.
     @ObservationIgnored private(set) var windows: [String] = []
     /// Asks the system to bring a window forward; the app sets it.

@@ -1,3 +1,4 @@
+import Observation
 import XCTest
 @testable import TalariaKit
 
@@ -73,14 +74,18 @@ final class WindowRoutingTests: XCTestCase {
         XCTAssertEqual(broughtForward(), [])
     }
 
-    func testAClosedWindowHandsItsPendingEventToTheMostRecentWindow() throws {
+    func testAClosedWindowHandsItsPendingEventToTheMostRecentWindowAndWakesIt() throws {
         try show("s1", in: "B")
         let (router, _) = router(windows: ["A", "B"])
         let url = try XCTUnwrap(TalariaDeepLink.sessionURL(sessionID: "s1"))
         router.requestDeepLink(url)
+        XCTAssertNil(router.takeDeepLink(in: "A"))
+        nonisolated(unsafe) var woke = false
+        withObservationTracking { _ = router.pendingWindow } onChange: { woke = true }
 
         router.windowDidClose("B")
 
+        XCTAssertTrue(woke, "A already passed on the link, so the handover must wake it")
         XCTAssertEqual(router.takeDeepLink(in: "A"), url)
     }
 

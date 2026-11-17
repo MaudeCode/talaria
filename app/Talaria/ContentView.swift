@@ -85,6 +85,8 @@ struct ContentView: View {
                 // Warm launch: the intent set the deep link after the view appeared.
                 drainPendingIntentDeepLink()
             }
+            // TAL-2388: a link handed over from a closed window.
+            .onChange(of: intentRouter.pendingWindow) { drainPendingIntentDeepLink() }
             .onChange(of: appLock.isLocked) {
                 guard !appLock.isLocked else { return }
                 // ponytail: one pending slot, so of several links queued behind the lock for other windows only the
