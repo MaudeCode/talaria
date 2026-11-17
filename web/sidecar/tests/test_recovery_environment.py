@@ -23,6 +23,9 @@ def recovery_layout(tmp_path):
     for name in ('__init__.py', 'environments.py', '_venv_entry.py'):
         shutil.copyfile(AGENT_DIR / 'pm' / name, root / 'pm' / name)
     shutil.copyfile(AGENT_DIR / 'hermes_constants.py', root / 'hermes_constants.py')
+    # From v0.23.2 hermes_constants imports the stdlib-only hermes_scope; older releases keep scope inline.
+    if (AGENT_DIR / 'hermes_scope.py').exists():
+        shutil.copyfile(AGENT_DIR / 'hermes_scope.py', root / 'hermes_scope.py')
     base = subprocess.check_output([AGENT_PYTHON, '-c', 'import sys; print(sys._base_executable)'], text=True).strip()
     (root / 'hermes_cli/_launchers.py').write_text(f'def resolve_store_python(root): return {base!r}\n')
     key = hashlib.sha256(str(root.resolve()).encode()).hexdigest()[:16]
