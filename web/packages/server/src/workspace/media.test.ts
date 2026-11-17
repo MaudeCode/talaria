@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { read } from 'node:fs'
 import type { RequestContext } from '../http/context.js'
 import type { Session } from '../sessions/session.js'
-import { mediaAnchorRoot, serveFileBytes, type MediaAccessDeps, type ServeFileOptions } from './media.js'
+import { grantLiveMedia, mediaAnchorRoot, serveFileBytes, type MediaAccessDeps, type ServeFileOptions } from './media.js'
 
 const io = vi.hoisted(() => ({ bytes: 0, syncBytes: 0 }))
 
@@ -306,6 +306,19 @@ describe('mediaAnchorRoot session MEDIA scan (TAL-573)', () => {
     // A failed call made nothing.
     const failed = { messages: [{ role: 'assistant', content: '', tool_calls: [call('f', 'image_generate')] }, { role: 'tool', tool_call_id: 'f', content: JSON.stringify({ success: false, image: image, error: 'quota' }) }] } as unknown as Session
     expect(await mediaAnchorRoot(image, failed, deps)).toBeNull()
+  })
+
+  it('grants a running turn\'s media file before its rows reach the transcript, to that session only (TAL-2325)', async () => {
+    const outside = join(base, 'outside')
+    const image = join(outside, 'live.png')
+    const session = (id: string) => ({ session_id: id, messages: [] }) as unknown as Session
+    grantLiveMedia('live-session', 'image_generate', { success: true, image })
+    grantLiveMedia('live-session', 'read_file', { image: join(outside, 'read.png') })
+    grantLiveMedia('live-session', 'image_generate', { success: false, image: join(outside, 'failed.png'), error: 'quota' })
+    expect(await mediaAnchorRoot(image, session('live-session'), deps)).toBe(outside)
+    expect(await mediaAnchorRoot(image, session('other-session'), deps)).toBeNull()
+    expect(await mediaAnchorRoot(join(outside, 'read.png'), session('live-session'), deps)).toBeNull()
+    expect(await mediaAnchorRoot(join(outside, 'failed.png'), session('live-session'), deps)).toBeNull()
   })
 
   it('scans a saved transcript once until it grows or its revision changes (TAL-1730)', async () => {

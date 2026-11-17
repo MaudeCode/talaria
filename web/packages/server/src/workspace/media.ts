@@ -283,6 +283,27 @@ export function mediaResultRefs(data: Record<string, unknown>): string[] {
   return [...new Set(refs)].filter((ref) => !/^data:/i.test(ref))
 }
 
+/** TAL-2325: the local files each session's running media tools made, by session id, newest last. */
+const liveMediaGrants = new Map<string, Set<string>>()
+// ponytail: in memory and capped by session; a restart drops a live grant, after which the settled rows grant their files.
+const LIVE_MEDIA_SESSIONS = 256
+
+/**
+ * TAL-2325: grant the local files a running turn's media tool made, before its completion frame ships their URLs: its rows
+ * reach the transcript, which the session scan reads, only when the turn settles. Kept after settlement too, since a failed
+ * or cancelled turn's snapshot keeps the URLs its rows never grant. Nothing for any other tool or a failed call.
+ */
+export function grantLiveMedia(sessionId: string, name: unknown, data: unknown): void {
+  if (!sessionId || typeof name !== 'string' || !isMediaTool(name) || !data || typeof data !== 'object' || Array.isArray(data)) return
+  const refs = mediaResultRefs(data as Record<string, unknown>).filter((ref) => !ref.includes('://'))
+  if (!refs.length) return
+  const granted = liveMediaGrants.get(sessionId) ?? new Set<string>()
+  liveMediaGrants.delete(sessionId)
+  for (const ref of refs) granted.add(ref)
+  liveMediaGrants.set(sessionId, granted)
+  if (liveMediaGrants.size > LIVE_MEDIA_SESSIONS) liveMediaGrants.delete(liveMediaGrants.keys().next().value!)
+}
+
 /** A tool row's result as an object, from its JSON text; null for any other result. */
 function resultObject(content: unknown): Record<string, unknown> | null {
   try {
@@ -354,6 +375,8 @@ function sessionMediaGrant(session: Session | null): (target: string, real: stri
   let scanned: SessionMediaRefs | null = null
   return (target, real) => {
     if (!session) return false
+    const live = liveMediaGrants.get(str(session.session_id))
+    if (live && (live.has(target) || Array.from(live, (ref) => mediaRefPath(ref)).includes(real))) return true
     scanned ??= sessionMediaRefs(session)
     if (scanned.refs.has(target)) return true
     // ponytail: a symlink retargeted after this resolve keeps its earlier answer until the next save; re-resolve on a miss if that ever bites.
@@ -590,3 +613,4 @@ export async function mediaAnchorRoot(target: string, session: Session | null | 
   if (root !== undefined) return root
   return sessionMediaGrant(typeof session === 'function' ? await session() : session)(target, real) ? dirname(target) : null
 }
+

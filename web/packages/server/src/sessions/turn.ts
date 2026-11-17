@@ -52,6 +52,7 @@ import { settledActivityPhase, startsBackgroundWork } from './background-tasks.j
 import { skillGeneration, successfulSkillViewName } from './skill-provenance.js'
 import { recordWakeupPause } from './wakeup-pause.js'
 import { displayName } from '../providers/catalog.js'
+import { grantLiveMedia } from '../workspace/media.js'
 
 export const CHAT_LOCK_WAIT_SECONDS = 2
 const IMAGE_MODE_TIMEOUT_MS = 15_000
@@ -1169,6 +1170,8 @@ export class TurnRunner {
                 if (startsBackgroundWork(data.name, rawResult)) deps.onBackgroundWork?.(sessionId, s.profile ?? null)
                 const id = (tc && toolIds.get(tc)) || str(data.tid) || mintToolId()
                 this.lastCompletedTool.set(streamId, id)
+                // TAL-2325: its media files load the moment this frame shows their URLs, before its rows reach the transcript.
+                if (!outcome.is_error) grantLiveMedia(sessionId, data.name, rawResult)
                 const redacted = deps.redactEnabled()
                 await emitFrame('tool_complete', publicToolFrame(withToolId(complete, id), redacted, s.workspace, sessionId), { redacted })
                 // TAL-1649: a successful skill_view is one load in this conversation (never an ephemeral clone's), counted while
