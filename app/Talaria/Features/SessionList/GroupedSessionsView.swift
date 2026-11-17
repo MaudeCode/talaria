@@ -30,7 +30,7 @@ struct GroupedSessionsView: View {
                 .padding(.horizontal, 24)
                 .sessionsScreenListRow()
             } else {
-                ForEach(rows, id: \.session.id) { $0.equatable() }
+                ForEach(rows, id: \.session.id) { SessionListRow(row: $0) }
             }
         }
         .navigationTitle(title)

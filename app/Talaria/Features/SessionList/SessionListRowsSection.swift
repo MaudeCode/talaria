@@ -44,10 +44,10 @@ struct SessionListRowsSection: View {
                     if showsHeading, let caption = row.caption {
                         SidebarSectionHeader(title: caption, isCompact: true) { EmptyView() }
                     }
-                    row.row.equatable()
+                    SessionListRow(row: row.row)
                 }
             } else {
-                ForEach(rows, id: \.session.id) { $0.equatable() }
+                ForEach(rows, id: \.session.id) { SessionListRow(row: $0) }
             }
         }
     }

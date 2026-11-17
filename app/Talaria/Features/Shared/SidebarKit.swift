@@ -177,6 +177,11 @@ extension View {
             .frame(minHeight: 44)
     }
 
+    /// A `SidebarList` row's List insets, hidden separator and background.
+    func sidebarListRow() -> some View {
+        sessionsScreenListRow(insets: EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))
+    }
+
     /// The shared selection chrome and VoiceOver trait, with optional List-specific insets.
     @ViewBuilder
     func sidebarRow(isSelected: Bool, isListRow: Bool = true) -> some View {
@@ -186,7 +191,7 @@ extension View {
         )
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         if isListRow {
-            row.sessionsScreenListRow(insets: EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))
+            row.sidebarListRow()
         } else {
             row
         }

@@ -7,11 +7,31 @@ extension EnvironmentValues {
     @Entry var sessionRowStyle = SessionRowStyle.regular
 }
 
-/// A list builds its rows in its own body and hands them to `ForEach` with `.equatable()`, so a list update re-runs only
-/// the rows whose own inputs changed. Built inside a `ForEach` closure instead, the row's list reads could land on the
-/// row itself and re-run it on every list change.
-struct SessionInteractiveRow: View, Equatable {
+/// A session row as its List sees it (TAL-2399). The List reads row traits (insets, separator, background, swipe
+/// actions, transition, identity) from the view `ForEach` hands it, and the `EquatableView` that lets an unchanged row
+/// skip its body hides traits set inside it, so they sit here, outside `.equatable()`.
+struct SessionListRow: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let row: SessionInteractiveRow
+
+    var body: some View {
+        row.equatable()
+            .sidebarListRow()
+            .id(row.session.id)
+            .transition(SessionListMotion.sessionRowTransition(reduceMotion: reduceMotion))
+            .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                row.sessionActions(placement: .leadingSwipe)
+            }
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                row.sessionActions(placement: .trailingSwipe)
+            }
+    }
+}
+
+/// A list builds its rows in its own body and hands each to `ForEach` as a `SessionListRow`, so a list update re-runs
+/// only the rows whose own inputs changed. Built inside a `ForEach` closure instead, the row's list reads could land on
+/// the row itself and re-run it on every list change.
+struct SessionInteractiveRow: View, Equatable {
     @Environment(\.sessionRowsMonitorRuns) private var monitorsRuns
     let viewModel: SessionListViewModel
     let session: SessionSummary
@@ -80,16 +100,8 @@ struct SessionInteractiveRow: View, Equatable {
         let _ = ChatBodyEvaluationRecorder.installed?("sessionRow:\(session.id)")
         #endif
         draggableRowContent
-            .id(session.id)
             // While picking chats the checkmarks carry selection, so the open chat stops reading as selected.
-            .sidebarRow(isSelected: !state.isSelectingSessions && state.isOpen)
-            .transition(SessionListMotion.sessionRowTransition(reduceMotion: reduceMotion))
-            .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                sessionActions(placement: .leadingSwipe)
-            }
-            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                sessionActions(placement: .trailingSwipe)
-            }
+            .sidebarRow(isSelected: !state.isSelectingSessions && state.isOpen, isListRow: false)
             .contextMenu { contextMenuContent(includesSelection: canEnterSelection) }
             .accessibilityActions {
                 rowMenu(placement: .menu).openBesideButton

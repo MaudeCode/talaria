@@ -43,7 +43,7 @@ struct GroupedSessionsDisclosure: View {
             let rows = SessionInteractiveRow.rows(displayedSessions, viewModel: viewModel, selectedSessionID: selectedSessionID,
                                                   actions: actions, searchText: searchText, style: rowStyle)
             ForEach(rows, id: \.session.id) { row in
-                row.equatable()
+                SessionListRow(row: row)
                     .transition(SessionListMotion.disclosureContentTransition(reduceMotion: reduceMotion))
             }
 
