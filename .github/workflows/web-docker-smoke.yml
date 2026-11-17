@@ -8,6 +8,23 @@ permissions:
   contents: read
 
 jobs:
+  # The smoke builds only the runner's own platform. A release builds amd64 and arm64, so the arm64 Node stage
+  # installs target packages on an amd64 build machine: compile that stage here so a release never meets it first
+  # (TAL-2345).
+  cross-build:
+    name: Build the Node stage for arm64 on amd64
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/docker-plugins
+      - name: Cross-build the Node stage
+        run: |
+          set -euo pipefail
+          [[ "$(uname -m)" == x86_64 ]] || { echo "the cross-build needs an amd64 runner" >&2; exit 1; }
+          docker buildx create --driver docker-container --use --bootstrap >/dev/null
+          docker buildx build --platform linux/arm64 --target node-build web
+
   smoke:
     name: Smoke Compose variant ${{ matrix.variant }} and container identity
     runs-on: ubuntu-latest

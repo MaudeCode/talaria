@@ -1,8 +1,8 @@
 # Interface (app-tests.yml's two package-test callers share it):
 #   uses: ./.github/actions/app-package-tests   (after checkout and setup-xcode; the job grants actions: read)
 #   with:
-#     contracts: "true" also waits for this run's "Web contract probe" job and runs the live decoding test against its
-#       contract-fixture artifact.
+#     contracts: "true" also waits for this run's "Web contract probe" job and runs the live decoding test against each
+#       fixture in its contract-fixture artifact: the current Web's and each retained Web release's.
 # TalariaKit's (models, networking, persistence, sync, view models) tests with `swift test`: no simulator and no app
 # host (TAL-399). Only the live contract test waits for the Web probe.
 name: App package tests
@@ -45,7 +45,13 @@ runs:
         LIVE_CONTRACT_TEST: TalariaKitTests.APIClientSessionListTests testLiveUpstreamContractResponsesDecodeWhenSupplied
       run: |
         set -euo pipefail
-        fixture="${RUNNER_TEMP}/contract-fixture/live-responses.json"
+        fixtures="${RUNNER_TEMP}/contract-fixture"
+        fixture="${fixtures}/live-responses.json"
+        # A missing fixture makes the live test skip, so require an explicit pass.
+        require_live_pass() {
+          grep -qF -- "Test Case '-[${LIVE_CONTRACT_TEST}]' passed" "$1" ||
+            { echo "The live Web contract test did not pass against $2" >&2; exit 1; }
+        }
         if [[ "${CONTRACTS_SELECTED}" == "true" ]]; then
           [[ -s "${fixture}" ]] || { echo "The probe artifact has no live-responses.json" >&2; exit 1; }
           export TALARIA_LIVE_CONTRACT_RESPONSES="${fixture}"
@@ -54,9 +60,20 @@ runs:
         swift test --package-path TalariaKit --skip-build --enable-code-coverage 2>&1 |
           tee package-tests.log
         if [[ "${CONTRACTS_SELECTED}" == "true" ]]; then
-          # A missing fixture makes the live test skip, so require an explicit pass.
-          grep -qF -- "Test Case '-[${LIVE_CONTRACT_TEST}]' passed" package-tests.log ||
-            { echo "The live Web contract test did not pass against the fixture" >&2; exit 1; }
+          require_live_pass package-tests.log "the fixture"
+          # A release pairs this App with each retained Web release: its live responses and its session fixture, which
+          # SharedContractTests reads from the checkout (TAL-2345). "Class test" becomes swift test's "Class/test".
+          for retained in "${fixtures}"/retained/*/; do
+            [[ -d "${retained}" ]] || continue
+            cp "${retained}web-session.json" ../contracts/fixtures/web-session.json
+            TALARIA_LIVE_CONTRACT_RESPONSES="${retained}responses.json" swift test --package-path TalariaKit --skip-build \
+              --enable-code-coverage --filter "^TalariaKitTests\.SharedContractTests/|^${LIVE_CONTRACT_TEST/ //}$" 2>&1 |
+              tee retained-tests.log
+            git checkout -- ../contracts/fixtures/web-session.json
+            grep -qF "Test Suite 'SharedContractTests' passed" retained-tests.log ||
+              { echo "SharedContractTests did not pass against $(basename "${retained}")" >&2; exit 1; }
+            require_live_pass retained-tests.log "retained Web $(basename "${retained}")"
+          done
         fi
         {
           echo "### Package tests"

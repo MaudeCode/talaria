@@ -79,7 +79,9 @@ def previous(args):
 
 
 def supported_web_sources(plan, previous, published):
-    """Keep the latest completed Web release in each published channel usable."""
+    """Keep the latest completed Web release in each published channel usable.
+
+    Without a plan, only lists them: CI probes each with its own harness, as a release's contract gate does (TAL-2345)."""
     retained = {}
     for release in sorted(published, key=lambda item: item["published_at"], reverse=True):
         if len(retained) == 2:
@@ -91,19 +93,23 @@ def supported_web_sources(plan, previous, published):
         channel = document["components"]["web"]["tag"].rsplit("-v", 1)[0]
         if channel in retained:
             continue
-        for contract, consumer in (("appWeb", "app"), ("webRelay", "relay")):
+        for contract, consumer in (("appWeb", "app"), ("webRelay", "relay")) if plan else ():
             if not set(document["contracts"][contract]["web"]) & set(plan["contracts"][contract][consumer]):
                 raise ValueError(f"retained {channel} is incompatible with {contract}")
         retained[channel] = document["components"]["web"]["sourceRevision"]
     return sorted(set(retained.values()))
 
 
-def require_latest_predecessor(previous):
+def published_releases():
     pages = json.loads(subprocess.check_output([
         "gh", "api", "--paginate", "--slurp", f"repos/{REPOSITORY}/releases?per_page=100",
     ]))
-    published = [release for page in pages for release in page
-                 if release.get("draft") is False and release.get("published_at")]
+    return [release for page in pages for release in page
+            if release.get("draft") is False and release.get("published_at")]
+
+
+def require_latest_predecessor(previous):
+    published = published_releases()
     sets = [release for release in published if re.fullmatch(r"release-set-[a-f0-9]{40}", release.get("tag_name", ""))]
     latest = max(sets, key=lambda release: release["published_at"]) if sets else None
     expected = latest["tag_name"].removeprefix("release-set-") if latest else None
@@ -216,6 +222,7 @@ def main():
     gate_parser.add_argument("--name", choices=("currentContracts", "previousAppContracts", "agentCompatibility"), required=True)
     gate_parser.add_argument("--output", type=Path, required=True)
     gate_parser.add_argument("command", nargs=argparse.REMAINDER)
+    commands.add_parser("retained-webs", help="Print each retained Web release's source revision.")
     assembly = commands.add_parser("assemble")
     assembly.add_argument("--plan", type=Path, required=True)
     assembly.add_argument("--previous", type=Path)
@@ -230,6 +237,8 @@ def main():
         prepare(args)
     elif args.action == "gate":
         gate(args)
+    elif args.action == "retained-webs":
+        print("\n".join(supported_web_sources(None, None, published_releases())))
     else:
         plan = load(args.plan)
         if args.complete and plan.get("dryRun"):

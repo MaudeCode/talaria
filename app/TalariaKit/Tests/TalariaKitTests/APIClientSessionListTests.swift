@@ -50,7 +50,6 @@ final class APIClientSessionListTests: APIClientTestCase {
         try decode(ProfilesResponse.self, fixture: "profiles")
         try decode(PersonalitiesResponse.self, fixture: "personalities")
         try decode(CommandsResponse.self, fixture: "commands")
-        try decode(LogsResponse.self, fixture: "logs")
         try decode(MemoryResponse.self, fixture: "memory")
         try decode(SessionMutationResponse.self, fixture: "session_new")
         try decode(SessionResponse.self, fixture: "session_detail")
@@ -60,6 +59,11 @@ final class APIClientSessionListTests: APIClientTestCase {
         try decode(SessionMutationResponse.self, fixture: "session_mutation")
         try decode(SessionBranchResponse.self, fixture: "session_branch")
         try decode(ChatStreamStatusResponse.self, fixture: "stream_status")
+
+        // A release checks this App against every retained Web; one from before TAL-2120 records no logs example.
+        if manifest["logs"] != nil {
+            try decode(LogsResponse.self, fixture: "logs")
+        }
 
         // A release checks this App against every retained Web; one from before TAL-367 has no such example.
         guard let clarificationExample = manifest["clarification_pending"] else { return }
