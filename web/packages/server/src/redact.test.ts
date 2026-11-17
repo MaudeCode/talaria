@@ -1670,3 +1670,23 @@ describe('keyword credentials in ANSI-coloured output (TAL-714)', () => {
     }
   })
 })
+
+describe('tool argument and result rows (TAL-2318)', () => {
+  it('ships redacted argument rows in call order, live and after reload, and masks a credential-keyed result row', () => {
+    const args = { names: ['a', 'b'], limit: 3, note: 'x\ny', password: 'hunter2' }
+    const rows = [
+      { key: 'names', value: '- a\n- b', multiline: true },
+      { key: 'limit', value: '3', multiline: false },
+      { key: 'note', value: 'x\ny', multiline: true },
+      { key: 'password', value: '***', multiline: false },
+    ]
+    const resultView = { text: '{}', fields: [{ key: 'api_token', value: 'abc123', multiline: false }, { key: 'count', value: '2', multiline: false }] }
+    const session = redactSessionData({ tool_calls: [{ id: 'c1', function: { name: 'session_search', arguments: JSON.stringify(args) }, result_view: resultView }] }, true)
+    const call = (session.tool_calls as Record<string, unknown>[])[0]!
+    expect(call.args_fields).toEqual(rows)
+    expect((call.result_view as { fields: unknown }).fields).toEqual([{ key: 'api_token', value: '***', multiline: false }, { key: 'count', value: '2', multiline: false }])
+    expect(publicToolFrame({ name: 'session_search', args }, true).args_fields).toEqual(rows)
+    // A bare completion carries no rows of its own, so its start frame's stay.
+    expect(publicToolFrame({ name: 'session_search', args: {} }, true)).not.toHaveProperty('args_fields')
+  })
+})

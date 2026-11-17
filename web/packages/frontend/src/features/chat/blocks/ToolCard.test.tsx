@@ -82,3 +82,20 @@ it('gives a running tool one animation class and removes its dot on completion (
   rerender(<ToolCard call={call} />)
   expect(container.querySelector('.tool-card-running-dot')).toBeNull()
 })
+
+it('shows the server argument and result rows as key/value rows, and JSON only from a server without them (TAL-2318)', async () => {
+  const args = { names: ['a', 'b'], limit: 3 }
+  const tool = { id: 'c2', name: 'session_list', kind: 'search', target: '', args, preview: null, done: true, is_error: false, duration: null, cost_usd: null, result_view: { text: '{\n  "total": 2\n}', fields: [{ key: 'total', value: '2', multiline: false }, { key: 'note', value: 'x\ny', multiline: true }] }, args_fields: [{ key: 'names', value: '- a\n- b', multiline: true }, { key: 'limit', value: '3', multiline: false }] }
+  const [withFields, older] = sceneItems([{ row_id: 'tool:c2', role: 'tool', tool }, { row_id: 'tool:c3', role: 'tool', tool: { ...tool, id: 'c3', args_fields: undefined, result_view: { text: tool.result_view.text } } }])
+  const view = render(<ToolCard call={(withFields as { call: ToolCardData }).call} />)
+  await userEvent.click(screen.getByRole('button'))
+  const detail = view.container.querySelector('.tool-card-detail')!
+  expect(Array.from(detail.querySelectorAll('dl dt'), (dt) => dt.textContent)).toEqual(['names', 'limit', 'total', 'note'])
+  expect(detail.querySelector('.tool-card-result pre')?.textContent).toBe('x\ny')
+  expect(detail.textContent).not.toMatch(/[{"]/)
+  view.unmount()
+  const fallback = render(<ToolCard call={(older as { call: ToolCardData }).call} />)
+  await userEvent.click(screen.getByRole('button'))
+  expect(fallback.container.querySelector('dl')).toBeNull()
+  expect(Array.from(fallback.container.querySelectorAll('pre'), (pre) => pre.textContent)).toEqual([JSON.stringify(args, null, 2), '{\n  "total": 2\n}'])
+})

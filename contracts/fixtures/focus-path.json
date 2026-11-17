@@ -5,6 +5,7 @@
       "id": "call-alpha",
       "name": "write_file",
       "args": { "path": "Sources/Demo/Alpha.swift", "content": "struct Alpha {}" },
+      "args_fields": [{ "key": "path", "value": "Sources/Demo/Alpha.swift", "multiline": false }, { "key": "content", "value": "struct Alpha {}", "multiline": false }],
       "kind": "write",
       "target": "Sources/Demo/Alpha.swift",
       "focus_path": "Sources/Demo/Alpha.swift"
@@ -16,6 +17,7 @@
       "id": "call-beta",
       "name": "patch",
       "args": { "path": "./Sources/Demo/Beta.swift", "old_string": "a", "new_string": "b" },
+      "args_fields": [{ "key": "path", "value": "./Sources/Demo/Beta.swift", "multiline": false }, { "key": "old_string", "value": "a", "multiline": false }, { "key": "new_string", "value": "b", "multiline": false }],
       "kind": "write",
       "target": "./Sources/Demo/Beta.swift",
       "focus_path": "Sources/Demo/Beta.swift"
@@ -27,6 +29,7 @@
       "id": "call-build",
       "name": "terminal",
       "args": { "command": "swift build" },
+      "args_fields": [{ "key": "command", "value": "swift build", "multiline": false }],
       "kind": "shell",
       "target": "swift build"
     }

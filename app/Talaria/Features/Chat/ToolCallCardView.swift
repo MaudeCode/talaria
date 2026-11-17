@@ -270,13 +270,24 @@ struct ToolCallCardView: View {
                 .font(AppFont.caption2(weight: .semibold))
                 .foregroundStyle(.secondary)
 
-            Text(result.text)
-                .font(result.isMonospaced ? AppFont.mono(style: .caption) : AppFont.caption())
-                .foregroundStyle(.primary)
-                .textSelection(.enabled)
+            if result.rows.isEmpty {
+                Text(result.text)
+                    .font(result.isMonospaced ? AppFont.mono(style: .caption) : AppFont.caption())
+                    .foregroundStyle(.primary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(7)
+                    .chatTimelineAccessoryInsetSurface()
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(result.rows) { row in
+                        argumentRow(row)
+                    }
+                }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(7)
                 .chatTimelineAccessoryInsetSurface()
+            }
         }
     }
 

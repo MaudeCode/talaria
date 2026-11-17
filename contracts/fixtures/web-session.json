@@ -37,7 +37,14 @@
                 "done": true,
                 "is_error": false,
                 "duration": null,
-                "cost_usd": null
+                "cost_usd": null,
+                "args_fields": [
+                  {
+                    "key": "path",
+                    "value": "fixture.txt",
+                    "multiline": false
+                  }
+                ]
               },
               "order_index": 1
             }
@@ -103,7 +110,14 @@
                 "done": true,
                 "is_error": true,
                 "duration": null,
-                "cost_usd": null
+                "cost_usd": null,
+                "args_fields": [
+                  {
+                    "key": "command",
+                    "value": "false",
+                    "multiline": false
+                  }
+                ]
               },
               "order_index": 1
             },
@@ -127,7 +141,14 @@
                 "done": true,
                 "is_error": false,
                 "duration": null,
-                "cost_usd": null
+                "cost_usd": null,
+                "args_fields": [
+                  {
+                    "key": "path",
+                    "value": "a.txt",
+                    "multiline": false
+                  }
+                ]
               },
               "order_index": 2
             },
@@ -275,7 +296,14 @@
             },
             "kind": "read",
             "target": "a.toml",
-            "focus_path": "a.toml"
+            "focus_path": "a.toml",
+            "args_fields": [
+              {
+                "key": "path",
+                "value": "a.toml",
+                "multiline": false
+              }
+            ]
           }
         ],
         "timestamp": 100,
@@ -340,7 +368,14 @@
                 "done": true,
                 "is_error": false,
                 "duration": null,
-                "cost_usd": null
+                "cost_usd": null,
+                "args_fields": [
+                  {
+                    "key": "path",
+                    "value": "a.toml",
+                    "multiline": false
+                  }
+                ]
               },
               "order_index": 2
             }
@@ -375,7 +410,14 @@
             "focus_path": "b.txt",
             "args": {
               "path": "b.txt"
-            }
+            },
+            "args_fields": [
+              {
+                "key": "path",
+                "value": "b.txt",
+                "multiline": false
+              }
+            ]
           }
         ],
         "_turn_id": "contract-run-d",
@@ -429,7 +471,14 @@
                 "done": true,
                 "is_error": false,
                 "duration": null,
-                "cost_usd": null
+                "cost_usd": null,
+                "args_fields": [
+                  {
+                    "key": "path",
+                    "value": "b.txt",
+                    "multiline": false
+                  }
+                ]
               },
               "order_index": 1
             }
@@ -463,7 +512,14 @@
             "target": "ls",
             "args": {
               "command": "ls"
-            }
+            },
+            "args_fields": [
+              {
+                "key": "command",
+                "value": "ls",
+                "multiline": false
+              }
+            ]
           }
         ],
         "_turn_id": "contract-run-e",
@@ -499,7 +555,14 @@
                 "done": true,
                 "is_error": false,
                 "duration": null,
-                "cost_usd": null
+                "cost_usd": null,
+                "args_fields": [
+                  {
+                    "key": "command",
+                    "value": "ls",
+                    "multiline": false
+                  }
+                ]
               },
               "order_index": 1
             }
@@ -542,7 +605,14 @@
             "focus_path": "a.txt",
             "args": {
               "path": "a.txt"
-            }
+            },
+            "args_fields": [
+              {
+                "key": "path",
+                "value": "a.txt",
+                "multiline": false
+              }
+            ]
           }
         ],
         "_turn_id": "contract-run-g",
@@ -583,7 +653,14 @@
             "focus_path": "b.txt",
             "args": {
               "path": "b.txt"
-            }
+            },
+            "args_fields": [
+              {
+                "key": "path",
+                "value": "b.txt",
+                "multiline": false
+              }
+            ]
           }
         ],
         "_turn_id": "contract-run-g",
@@ -652,7 +729,14 @@
                 "done": true,
                 "is_error": false,
                 "duration": null,
-                "cost_usd": null
+                "cost_usd": null,
+                "args_fields": [
+                  {
+                    "key": "path",
+                    "value": "a.txt",
+                    "multiline": false
+                  }
+                ]
               },
               "order_index": 1
             },
@@ -696,7 +780,14 @@
                 "done": true,
                 "is_error": false,
                 "duration": null,
-                "cost_usd": null
+                "cost_usd": null,
+                "args_fields": [
+                  {
+                    "key": "path",
+                    "value": "b.txt",
+                    "multiline": false
+                  }
+                ]
               },
               "order_index": 4
             },
@@ -977,7 +1068,14 @@
               "text": "A contents"
             },
             "duration": 1.25,
-            "type": "function"
+            "type": "function",
+            "args_fields": [
+              {
+                "key": "path",
+                "value": "a.txt",
+                "multiline": false
+              }
+            ]
           },
           {
             "kind": "shell",
@@ -995,7 +1093,14 @@
               "exit_code": 2
             },
             "duration": 3.5,
-            "type": "function"
+            "type": "function",
+            "args_fields": [
+              {
+                "key": "command",
+                "value": "make test",
+                "multiline": false
+              }
+            ]
           }
         ],
         "_turn_id": "tool-run-openai",
@@ -1047,7 +1152,14 @@
                 "done": true,
                 "is_error": false,
                 "duration": 1.25,
-                "cost_usd": null
+                "cost_usd": null,
+                "args_fields": [
+                  {
+                    "key": "path",
+                    "value": "a.txt",
+                    "multiline": false
+                  }
+                ]
               }
             },
             {
@@ -1072,7 +1184,14 @@
                 "done": true,
                 "is_error": true,
                 "duration": 3.5,
-                "cost_usd": null
+                "cost_usd": null,
+                "args_fields": [
+                  {
+                    "key": "command",
+                    "value": "make test",
+                    "multiline": false
+                  }
+                ]
               }
             }
           ],
@@ -1114,7 +1233,14 @@
               "pattern": "TODO"
             },
             "kind": "search",
-            "target": "TODO"
+            "target": "TODO",
+            "args_fields": [
+              {
+                "key": "pattern",
+                "value": "TODO",
+                "multiline": false
+              }
+            ]
           }
         ],
         "message_id": "tool-anthropic-calls",
@@ -1135,7 +1261,14 @@
               "error": "permission denied"
             },
             "duration": null,
-            "type": "function"
+            "type": "function",
+            "args_fields": [
+              {
+                "key": "pattern",
+                "value": "TODO",
+                "multiline": false
+              }
+            ]
           }
         ],
         "_turn_id": "tool-run-anthropic",
@@ -1185,7 +1318,14 @@
                 "done": true,
                 "is_error": true,
                 "duration": null,
-                "cost_usd": null
+                "cost_usd": null,
+                "args_fields": [
+                  {
+                    "key": "pattern",
+                    "value": "TODO",
+                    "multiline": false
+                  }
+                ]
               }
             }
           ],
@@ -1233,7 +1373,14 @@
               "text": "Sat Sep 27"
             },
             "duration": 0.42,
-            "type": "function"
+            "type": "function",
+            "args_fields": [
+              {
+                "key": "command",
+                "value": "date",
+                "multiline": false
+              }
+            ]
           }
         ],
         "_turn_id": "tool-run-session",
@@ -1282,7 +1429,14 @@
                 "done": true,
                 "is_error": false,
                 "duration": 0.42,
-                "cost_usd": null
+                "cost_usd": null,
+                "args_fields": [
+                  {
+                    "key": "command",
+                    "value": "date",
+                    "multiline": false
+                  }
+                ]
               }
             }
           ],
@@ -1328,7 +1482,14 @@
             "result": null,
             "result_view": null,
             "duration": null,
-            "type": "function"
+            "type": "function",
+            "args_fields": [
+              {
+                "key": "command",
+                "value": "make",
+                "multiline": false
+              }
+            ]
           }
         ],
         "_anchor_activity_scene": {
@@ -1360,7 +1521,14 @@
                 "done": false,
                 "is_error": false,
                 "duration": null,
-                "cost_usd": null
+                "cost_usd": null,
+                "args_fields": [
+                  {
+                    "key": "command",
+                    "value": "make",
+                    "multiline": false
+                  }
+                ]
               }
             }
           ],
@@ -1393,7 +1561,14 @@
         "duration": 1.25,
         "snippet": "A contents",
         "tid": "call-read",
-        "assistant_msg_idx": 1
+        "assistant_msg_idx": 1,
+        "args_fields": [
+          {
+            "key": "path",
+            "value": "a.txt",
+            "multiline": false
+          }
+        ]
       },
       {
         "kind": "shell",
@@ -1406,7 +1581,14 @@
         "duration": 3.5,
         "snippet": "{\"exit_code\": 2, \"output\": \"1 failed\"}",
         "tid": "call-exit",
-        "assistant_msg_idx": 1
+        "assistant_msg_idx": 1,
+        "args_fields": [
+          {
+            "key": "command",
+            "value": "make test",
+            "multiline": false
+          }
+        ]
       },
       {
         "kind": "search",
@@ -1417,7 +1599,14 @@
         },
         "snippet": "{\"error\": \"permission denied\"}",
         "tid": "toolu-search",
-        "assistant_msg_idx": 6
+        "assistant_msg_idx": 6,
+        "args_fields": [
+          {
+            "key": "pattern",
+            "value": "TODO",
+            "multiline": false
+          }
+        ]
       },
       {
         "kind": "shell",
@@ -1430,7 +1619,14 @@
         "duration": 0.42,
         "snippet": "Sat Sep 27",
         "tid": "call-date",
-        "assistant_msg_idx": 10
+        "assistant_msg_idx": 10,
+        "args_fields": [
+          {
+            "key": "command",
+            "value": "date",
+            "multiline": false
+          }
+        ]
       }
     ],
     "source_kind": "webui",
@@ -1708,7 +1904,13 @@
           ],
           "review_state": "unknown"
         },
-        "_talaria_activity": { "version": 1, "origin": "talaria", "id": "wake-contract", "kind": "process_wakeup", "summary": "Background update received" },
+        "_talaria_activity": {
+          "version": 1,
+          "origin": "talaria",
+          "id": "wake-contract",
+          "kind": "process_wakeup",
+          "summary": "Background update received"
+        },
         "_source": "process_wakeup",
         "_display": "row"
       },
@@ -1757,7 +1959,13 @@
           ],
           "review_state": "unknown"
         },
-        "_talaria_activity": { "version": 1, "origin": "talaria", "id": "wake-legacy", "kind": "process_wakeup", "summary": "Background update received" },
+        "_talaria_activity": {
+          "version": 1,
+          "origin": "talaria",
+          "id": "wake-legacy",
+          "kind": "process_wakeup",
+          "summary": "Background update received"
+        },
         "_source": "process_wakeup",
         "_display": "row"
       },
@@ -1807,7 +2015,13 @@
           ],
           "review_state": "unknown"
         },
-        "_talaria_activity": { "version": 1, "origin": "talaria", "id": "wake-silent", "kind": "process_wakeup", "summary": "Background update received" },
+        "_talaria_activity": {
+          "version": 1,
+          "origin": "talaria",
+          "id": "wake-silent",
+          "kind": "process_wakeup",
+          "summary": "Background update received"
+        },
         "_source": "process_wakeup",
         "_display": "row"
       },
@@ -1857,7 +2071,13 @@
           ],
           "review_state": "unknown"
         },
-        "_talaria_activity": { "version": 1, "origin": "talaria", "id": "continue-contract", "kind": "update_continuation", "summary": "Continued after Web update" },
+        "_talaria_activity": {
+          "version": 1,
+          "origin": "talaria",
+          "id": "continue-contract",
+          "kind": "update_continuation",
+          "summary": "Continued after Web update"
+        },
         "_source": "update_continuation",
         "_display": "row"
       },
@@ -3257,7 +3477,14 @@
                 "approval_note": "Command was flagged (synthetic pattern) and auto-approved by an approval the user gave earlier in this session."
               },
               "duration": null,
-              "type": "function"
+              "type": "function",
+              "args_fields": [
+                {
+                  "key": "command",
+                  "value": "make",
+                  "multiline": false
+                }
+              ]
             },
             {
               "kind": "read",
@@ -3275,7 +3502,14 @@
                 "text": "line one\nline two"
               },
               "duration": null,
-              "type": "function"
+              "type": "function",
+              "args_fields": [
+                {
+                  "key": "path",
+                  "value": "notes.txt",
+                  "multiline": false
+                }
+              ]
             },
             {
               "kind": "web",
@@ -3292,7 +3526,14 @@
                 "text": "first\nsecond"
               },
               "duration": null,
-              "type": "function"
+              "type": "function",
+              "args_fields": [
+                {
+                  "key": "query",
+                  "value": "hermes",
+                  "multiline": false
+                }
+              ]
             },
             {
               "kind": "shell",
@@ -3309,7 +3550,14 @@
                 "text": "Sat Sep 27"
               },
               "duration": null,
-              "type": "function"
+              "type": "function",
+              "args_fields": [
+                {
+                  "key": "command",
+                  "value": "date",
+                  "multiline": false
+                }
+              ]
             }
           ],
           "_turn_id": "view-run",
@@ -3379,7 +3627,14 @@
                   "done": true,
                   "is_error": true,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "args_fields": [
+                    {
+                      "key": "command",
+                      "value": "make",
+                      "multiline": false
+                    }
+                  ]
                 }
               },
               {
@@ -3404,7 +3659,14 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "args_fields": [
+                    {
+                      "key": "path",
+                      "value": "notes.txt",
+                      "multiline": false
+                    }
+                  ]
                 }
               },
               {
@@ -3428,7 +3690,14 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "args_fields": [
+                    {
+                      "key": "query",
+                      "value": "hermes",
+                      "multiline": false
+                    }
+                  ]
                 }
               },
               {
@@ -3452,7 +3721,14 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "args_fields": [
+                    {
+                      "key": "command",
+                      "value": "date",
+                      "multiline": false
+                    }
+                  ]
                 }
               }
             ],
@@ -3780,7 +4056,14 @@
             "function": {
               "name": "read_file",
               "arguments": "{\"path\":\"a.txt\"}"
-            }
+            },
+            "args_fields": [
+              {
+                "key": "path",
+                "value": "a.txt",
+                "multiline": false
+              }
+            ]
           }
         ],
         "message_id": "contract-run-r-1",
@@ -3864,7 +4147,14 @@
               "text": "A"
             },
             "duration": null,
-            "type": "function"
+            "type": "function",
+            "args_fields": [
+              {
+                "key": "path",
+                "value": "a.txt",
+                "multiline": false
+              }
+            ]
           }
         ],
         "reasoning": "Plan the read.",
@@ -3925,7 +4215,14 @@
                 "done": true,
                 "is_error": false,
                 "duration": null,
-                "cost_usd": null
+                "cost_usd": null,
+                "args_fields": [
+                  {
+                    "key": "path",
+                    "value": "a.txt",
+                    "multiline": false
+                  }
+                ]
               }
             },
             {
@@ -4081,10 +4378,34 @@
               "is_error": false,
               "result": "{\"success\":true,\"diff\":\"--- a/src/app.ts\\n+++ b/src/app.ts\\n@@ -1,3 +1,4 @@\\n import { run } from './run'\\n-run(1)\\n+run(2)\\n+run(3)\\n export {}\\n\",\"files_modified\":[\"src/app.ts\"]}",
               "result_view": {
-                "text": "{\n  \"success\": true,\n  \"diff\": \"--- a/src/app.ts\\n+++ b/src/app.ts\\n@@ -1,3 +1,4 @@\\n import { run } from './run'\\n-run(1)\\n+run(2)\\n+run(3)\\n export {}\\n\",\n  \"files_modified\": [\n    \"src/app.ts\"\n  ]\n}"
+                "text": "{\n  \"success\": true,\n  \"diff\": \"--- a/src/app.ts\\n+++ b/src/app.ts\\n@@ -1,3 +1,4 @@\\n import { run } from './run'\\n-run(1)\\n+run(2)\\n+run(3)\\n export {}\\n\",\n  \"files_modified\": [\n    \"src/app.ts\"\n  ]\n}",
+                "fields": [
+                  {
+                    "key": "success",
+                    "value": "true",
+                    "multiline": false
+                  },
+                  {
+                    "key": "diff",
+                    "value": "--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1,3 +1,4 @@\n import { run } from './run'\n-run(1)\n+run(2)\n+run(3)\n export {}\n",
+                    "multiline": true
+                  },
+                  {
+                    "key": "files_modified",
+                    "value": "- src/app.ts",
+                    "multiline": false
+                  }
+                ]
               },
               "duration": null,
-              "type": "function"
+              "type": "function",
+              "args_fields": [
+                {
+                  "key": "path",
+                  "value": "src/app.ts",
+                  "multiline": false
+                }
+              ]
             },
             {
               "kind": "write",
@@ -4099,10 +4420,29 @@
               "is_error": false,
               "result": "{\"bytes_written\":5,\"dirs_created\":false}",
               "result_view": {
-                "text": "{\n  \"bytes_written\": 5,\n  \"dirs_created\": false\n}"
+                "text": "{\n  \"bytes_written\": 5,\n  \"dirs_created\": false\n}",
+                "fields": [
+                  {
+                    "key": "bytes_written",
+                    "value": "5",
+                    "multiline": false
+                  },
+                  {
+                    "key": "dirs_created",
+                    "value": "false",
+                    "multiline": false
+                  }
+                ]
               },
               "duration": null,
-              "type": "function"
+              "type": "function",
+              "args_fields": [
+                {
+                  "key": "path",
+                  "value": "notes.txt",
+                  "multiline": false
+                }
+              ]
             }
           ],
           "_turn_id": "edit-run",
@@ -4197,12 +4537,36 @@
                   "preview": null,
                   "result": "{\"success\":true,\"diff\":\"--- a/src/app.ts\\n+++ b/src/app.ts\\n@@ -1,3 +1,4 @@\\n import { run } from './run'\\n-run(1)\\n+run(2)\\n+run(3)\\n export {}\\n\",\"files_modified\":[\"src/app.ts\"]}",
                   "result_view": {
-                    "text": "{\n  \"success\": true,\n  \"diff\": \"--- a/src/app.ts\\n+++ b/src/app.ts\\n@@ -1,3 +1,4 @@\\n import { run } from './run'\\n-run(1)\\n+run(2)\\n+run(3)\\n export {}\\n\",\n  \"files_modified\": [\n    \"src/app.ts\"\n  ]\n}"
+                    "text": "{\n  \"success\": true,\n  \"diff\": \"--- a/src/app.ts\\n+++ b/src/app.ts\\n@@ -1,3 +1,4 @@\\n import { run } from './run'\\n-run(1)\\n+run(2)\\n+run(3)\\n export {}\\n\",\n  \"files_modified\": [\n    \"src/app.ts\"\n  ]\n}",
+                    "fields": [
+                      {
+                        "key": "success",
+                        "value": "true",
+                        "multiline": false
+                      },
+                      {
+                        "key": "diff",
+                        "value": "--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1,3 +1,4 @@\n import { run } from './run'\n-run(1)\n+run(2)\n+run(3)\n export {}\n",
+                        "multiline": true
+                      },
+                      {
+                        "key": "files_modified",
+                        "value": "- src/app.ts",
+                        "multiline": false
+                      }
+                    ]
                   },
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "args_fields": [
+                    {
+                      "key": "path",
+                      "value": "src/app.ts",
+                      "multiline": false
+                    }
+                  ]
                 }
               },
               {
@@ -4222,12 +4586,31 @@
                   "preview": null,
                   "result": "{\"bytes_written\":5,\"dirs_created\":false}",
                   "result_view": {
-                    "text": "{\n  \"bytes_written\": 5,\n  \"dirs_created\": false\n}"
+                    "text": "{\n  \"bytes_written\": 5,\n  \"dirs_created\": false\n}",
+                    "fields": [
+                      {
+                        "key": "bytes_written",
+                        "value": "5",
+                        "multiline": false
+                      },
+                      {
+                        "key": "dirs_created",
+                        "value": "false",
+                        "multiline": false
+                      }
+                    ]
                   },
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "args_fields": [
+                    {
+                      "key": "path",
+                      "value": "notes.txt",
+                      "multiline": false
+                    }
+                  ]
                 }
               }
             ],
@@ -4486,7 +4869,14 @@
             "function": {
               "name": "terminal",
               "arguments": "{\"command\": \"make migrate\"}"
-            }
+            },
+            "args_fields": [
+              {
+                "key": "command",
+                "value": "make migrate",
+                "multiline": false
+              }
+            ]
           }
         ],
         "message_id": "notice-call",
@@ -4563,7 +4953,14 @@
               "text": "migrated"
             },
             "duration": null,
-            "type": "function"
+            "type": "function",
+            "args_fields": [
+              {
+                "key": "command",
+                "value": "make migrate",
+                "multiline": false
+              }
+            ]
           }
         ],
         "_anchor_activity_scene": {
@@ -4590,7 +4987,14 @@
                 "done": true,
                 "is_error": false,
                 "duration": null,
-                "cost_usd": null
+                "cost_usd": null,
+                "args_fields": [
+                  {
+                    "key": "command",
+                    "value": "make migrate",
+                    "multiline": false
+                  }
+                ]
               }
             }
           ],
@@ -5024,10 +5428,29 @@
               "is_error": false,
               "result": "{\"bytes_written\":10,\"dirs_created\":false}",
               "result_view": {
-                "text": "{\n  \"bytes_written\": 10,\n  \"dirs_created\": false\n}"
+                "text": "{\n  \"bytes_written\": 10,\n  \"dirs_created\": false\n}",
+                "fields": [
+                  {
+                    "key": "bytes_written",
+                    "value": "10",
+                    "multiline": false
+                  },
+                  {
+                    "key": "dirs_created",
+                    "value": "false",
+                    "multiline": false
+                  }
+                ]
               },
               "duration": null,
-              "type": "function"
+              "type": "function",
+              "args_fields": [
+                {
+                  "key": "path",
+                  "value": "notes.txt",
+                  "multiline": false
+                }
+              ]
             },
             {
               "kind": "skill",
@@ -5074,7 +5497,19 @@
                 "text": "Skill demo updated."
               },
               "duration": null,
-              "type": "function"
+              "type": "function",
+              "args_fields": [
+                {
+                  "key": "action",
+                  "value": "edit",
+                  "multiline": false
+                },
+                {
+                  "key": "name",
+                  "value": "demo",
+                  "multiline": false
+                }
+              ]
             }
           ],
           "_turn_id": "meta-run",
@@ -5157,12 +5592,31 @@
                   "preview": null,
                   "result": "{\"bytes_written\":10,\"dirs_created\":false}",
                   "result_view": {
-                    "text": "{\n  \"bytes_written\": 10,\n  \"dirs_created\": false\n}"
+                    "text": "{\n  \"bytes_written\": 10,\n  \"dirs_created\": false\n}",
+                    "fields": [
+                      {
+                        "key": "bytes_written",
+                        "value": "10",
+                        "multiline": false
+                      },
+                      {
+                        "key": "dirs_created",
+                        "value": "false",
+                        "multiline": false
+                      }
+                    ]
                   },
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "args_fields": [
+                    {
+                      "key": "path",
+                      "value": "notes.txt",
+                      "multiline": false
+                    }
+                  ]
                 }
               },
               {
@@ -5217,7 +5671,19 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "args_fields": [
+                    {
+                      "key": "action",
+                      "value": "edit",
+                      "multiline": false
+                    },
+                    {
+                      "key": "name",
+                      "value": "demo",
+                      "multiline": false
+                    }
+                  ]
                 }
               }
             ],

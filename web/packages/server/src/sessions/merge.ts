@@ -1,4 +1,4 @@
-import { ApprovalAnsweredBySchema, DecisionReviewRefSchema, OutboundDraftRefSchema, ProposalRefSchema, ShowBlockRefSchema, TerminalRefSchema, type ApprovalAnsweredBy } from '@maudecode/talaria-web-contracts'
+import { ApprovalAnsweredBySchema, DecisionReviewRefSchema, OutboundDraftRefSchema, ProposalRefSchema, ShowBlockRefSchema, TerminalRefSchema, ToolFieldSchema, type ApprovalAnsweredBy, type ToolField, type ToolResultView } from '@maudecode/talaria-web-contracts'
 import { randomUUID } from 'node:crypto'
 /**
  * Transcript settlement after an Agent turn (the core of Python
@@ -532,7 +532,7 @@ function presentError(v: unknown): boolean {
 }
 
 /** A tool result's display sections (TAL-315); clients label and render the fields present, in this order. */
-export interface ToolResultView { outbound_draft?: import('@maudecode/talaria-web-contracts').OutboundDraftRef; decision_review?: import('@maudecode/talaria-web-contracts').DecisionReviewRef; proposal?: import('@maudecode/talaria-web-contracts').ProposalRef; block?: import('@maudecode/talaria-web-contracts').ShowBlockRef; terminal?: import('@maudecode/talaria-web-contracts').TerminalRef; text?: string; stdout?: string; stderr?: string; error?: string; exit_code?: number; approval_note?: string }
+export type { ToolResultView } from '@maudecode/talaria-web-contracts'
 
 const RESULT_TEXT_KEYS = ['result', 'results', 'preview', 'content', 'text', 'message', 'summary', 'data', 'items']
 const RESULT_VIEW_MAX_DEPTH = 8
@@ -591,6 +591,69 @@ function textParts(items: unknown[]): string | undefined {
 
 const isEmptyView = (view: ToolResultView): boolean => Object.keys(view).length === 0
 
+/** Nesting below this renders as compact JSON on one line, so a hostile depth never grows the indentation without bound. */
+const FIELD_MAX_DEPTH = 32
+
+/** A value that fits on its key's line, else undefined: a non-empty object or list, or a string with a line break. */
+function inlineField(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const text = unescapeResultText(value)
+    return text.includes('\n') ? undefined : text
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (value === null || value === undefined) return 'null'
+  if (Array.isArray(value)) return value.length ? undefined : '[]'
+  return isDict(value) && Object.keys(value).length ? undefined : '{}'
+}
+
+/** A field value as lines: `key: value` for an object's entries, `- item` for a list's, nested ones indented two spaces. */
+function fieldText(value: unknown, depth = 0): string {
+  const inline = inlineField(value)
+  const indent = '  '.repeat(depth)
+  if (inline !== undefined) return indent + inline
+  if (typeof value === 'string') return unescapeResultText(value).split('\n').map((line) => indent + line).join('\n')
+  if (depth >= FIELD_MAX_DEPTH) return indent + toolResultSnippet(value, Infinity)
+  const line = (label: string, item: unknown): string => {
+    const text = inlineField(item)
+    return text !== undefined ? `${indent}${label} ${text}` : `${indent}${label}\n${fieldText(item, depth + 1)}`
+  }
+  // A nested list item starts on its `- ` line, its later lines under its first: `- id: a` / `  title: T`.
+  const item = (entry: unknown): string => {
+    const text = inlineField(entry)
+    return text !== undefined ? `${indent}- ${text}` : `${indent}- ${fieldText(entry, depth + 1).slice(indent.length + 2)}`
+  }
+  return Array.isArray(value) ? value.map(item).join('\n') : Object.entries(value as Record<string, unknown>).map(([key, entry]) => line(`${key}:`, entry)).join('\n')
+}
+
+/**
+ * TAL-2318: an object's top-level keys as display rows, in order (the iOS formatter's `toolDisplayText`, moved to the
+ * server), for a call's arguments and a JSON-object result.
+ */
+export function toolFields(value: Record<string, unknown>): ToolField[] {
+  return Object.entries(value).filter(([, item]) => item !== undefined).map(([key, item]) => {
+    const text = fieldText(item)
+    return { key, value: text, multiline: text.includes('\n') }
+  })
+}
+
+/** Each value cut at `limit` like a snippet, and the rows after `total` characters of keys and values dropped. */
+export function cappedFields(fields: readonly ToolField[], limit: number, total = Infinity): ToolField[] {
+  const out: ToolField[] = []
+  let left = total
+  for (const field of fields) {
+    if (left <= 0) break
+    const value = toolResultSnippet(field.value, Math.min(limit, left))
+    out.push({ key: field.key, value, multiline: value.includes('\n') })
+    left -= field.key.length + field.value.length
+  }
+  return out
+}
+
+const fieldChars = (fields: readonly ToolField[] | undefined): number => (fields ?? []).reduce((sum, field) => sum + field.key.length + field.value.length, 0)
+
+/** An object result's view: its pretty JSON for copy and older clients, and its rows. */
+const objectView = (value: Record<string, unknown>): ToolResultView => ({ text: prettyJson(value), fields: toolFields(value) })
+
 function resultView(value: unknown, depth: number): ToolResultView {
   if (typeof value === 'string') {
     const parsed = depth < RESULT_VIEW_MAX_DEPTH ? resultJson(value) : undefined
@@ -610,7 +673,7 @@ function resultView(value: unknown, depth: number): ToolResultView {
     const text = sectionText(value)
     return text ? { text } : {}
   }
-  if (depth >= RESULT_VIEW_MAX_DEPTH) return { text: prettyJson(value) }
+  if (depth >= RESULT_VIEW_MAX_DEPTH) return objectView(value)
   // A process result: its output streams, error and exit code.
   if (sectionText(value.output) ?? sectionText(value.stdout) ?? sectionText(value.stderr)) return terminalView(value)
   for (const key of RESULT_TEXT_KEYS) {
@@ -619,7 +682,7 @@ function resultView(value: unknown, depth: number): ToolResultView {
   }
   const terminal = terminalView(value)
   if (!isEmptyView(terminal)) return terminal
-  return Object.keys(value).length ? { text: prettyJson(value) } : {}
+  return Object.keys(value).length ? objectView(value) : {}
 }
 
 /**
@@ -640,7 +703,7 @@ function uncappedResultView(raw: unknown): ToolResultView {
   return resultView(Array.isArray(raw) && !str(flat).trim() ? raw : flat, 0)
 }
 
-const cappedView = (view: ToolResultView, limit: number): ToolResultView => Object.fromEntries(Object.entries(view).map(([key, field]) => [key, typeof field === 'string' ? toolResultSnippet(field, limit) : field]))
+const cappedView = (view: ToolResultView, limit: number): ToolResultView => Object.fromEntries(Object.entries(view).map(([key, field]) => [key, typeof field === 'string' ? toolResultSnippet(field, limit) : key === 'fields' ? cappedFields(field as ToolField[], limit, limit) : field]))
 
 /** A view the server already decided (a built scene row, or one stored with its scene): its known fields, capped. */
 export function decidedResultView(value: Record<string, unknown>): ToolResultView {
@@ -660,6 +723,8 @@ export function decidedResultView(value: Record<string, unknown>): ToolResultVie
   const terminal = TerminalRefSchema.safeParse(value.terminal).data
   if (terminal) view.terminal = terminal
   if (typeof value.exit_code === 'number' && Number.isSafeInteger(value.exit_code)) view.exit_code = value.exit_code
+  const fields = ToolFieldSchema.array().safeParse(value.fields).data
+  if (fields) view.fields = cappedFields(fields, TOOL_RESULT_SNIPPET_MAX, TOOL_RESULT_SNIPPET_MAX)
   return view
 }
 
@@ -706,7 +771,7 @@ export function toolOutcome(raw: unknown, toolName?: unknown, flagged = false): 
   const terminal = !failed ? terminalRef(toolName, data) : undefined
   // The whole view once: capped for display, and whether any section was cut (TAL-331's whole-result offer).
   const full = uncappedResultView(raw)
-  const capped = Object.values(full).some((field) => typeof field === 'string' && field.length > TOOL_RESULT_SNIPPET_MAX)
+  const capped = Object.values(full).some((field) => typeof field === 'string' && field.length > TOOL_RESULT_SNIPPET_MAX) || fieldChars(full.fields) > TOOL_RESULT_SNIPPET_MAX
   return { is_error, capped, result_text: toolResultSnippet(value), result_view: { ...cappedView(full, TOOL_RESULT_SNIPPET_MAX), ...(ref ? { outbound_draft: ref } : {}), ...(review ? { decision_review: review } : {}), ...(proposal ? { proposal } : {}), ...(block ? { block } : {}), ...(terminal ? { terminal } : {}) } }
 }
 

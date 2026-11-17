@@ -212,7 +212,15 @@ back to the session file.
   Agent's note on why a flagged command ran, and is absent without one; clients
   show it last. Each string is redacted and capped at 4000 characters. Clients show
   the fields present in that order, with localized `Error:` / `Exit code:`
-  labels, and show `preview` only when the field is absent.
+  labels, and show `preview` only when the field is absent. When the view falls
+  to pretty JSON of an object, `fields` (TAL-2318) also lists its top-level keys
+  in order as `{ key, value, multiline }` rows, and clients show those rows in
+  place of `text`; the 4000-character budget covers all rows together.
+- `args_fields` (TAL-2318): the call's redacted arguments as the same rows, one
+  per top-level key in call order, each value capped at 4000 characters. A
+  scalar shows inline, a nested object as indented `key: value` lines, a list as
+  `- item` lines. Live frames carry rows of the sidecar's argument snapshot; a
+  bare completion omits them so the start frame's stay.
 
 The session-level `tool_calls` list stays for older clients; its entries also
 carry `is_error` and `duration`.

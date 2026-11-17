@@ -5,6 +5,8 @@ public struct ToolCall: Identifiable, Equatable, Sendable {
     public var name: String?
     public var preview: String?
     public var args: [String: JSONValue]?
+    /// TAL-2318: the server's argument rows; nil from an older server, which formats `args` locally.
+    public var argsFields: [ToolField]?
     /// Server-derived display fields; nil from an older server (shown as an unknown tool with no target).
     public var kind: ToolDisplayKind?
     public var target: String?
@@ -27,6 +29,7 @@ public struct ToolCall: Identifiable, Equatable, Sendable {
         name: String?,
         preview: String?,
         args: [String: JSONValue]?,
+        argsFields: [ToolField]? = nil,
         kind: ToolDisplayKind? = nil,
         target: String? = nil,
         progress: ToolProgress? = nil,
@@ -41,6 +44,7 @@ public struct ToolCall: Identifiable, Equatable, Sendable {
         self.name = name
         self.preview = preview
         self.args = args
+        self.argsFields = argsFields
         self.kind = kind
         self.target = target
         self.progress = progress
@@ -83,6 +87,26 @@ public struct ToolProgress: Decodable, Equatable, Sendable {
     }
 }
 
+/// TAL-2318: one top-level key of a call's arguments or JSON-object result, rendered on the server; `multiline` is whether
+/// `value` holds a line break.
+public struct ToolField: Decodable, Equatable, Sendable {
+    public let key: String
+    public let value: String
+    public let multiline: Bool
+
+    public init(key: String, value: String, multiline: Bool) {
+        self.key = key
+        self.value = value
+        self.multiline = multiline
+    }
+
+    /// The rows a decoded JSON field holds; nil when the server sent none.
+    static func rows(_ value: JSONValue?) -> [ToolField]? {
+        guard case .array = value, let data = try? JSONEncoder().encode(value) else { return nil }
+        return try? JSONDecoder().decode([ToolField].self, from: data)
+    }
+}
+
 /// TAL-315: a tool result's display sections, decided on the server for every client. Shown in this order: `text`, or
 /// `stdout`, `stderr`, a labelled `error` and a labelled `exitCode` (sent only when worth showing).
 public struct ToolResultView: Decodable, Equatable, Sendable {
@@ -99,12 +123,15 @@ public struct ToolResultView: Decodable, Equatable, Sendable {
     public let block: ShowBlockRef?
     /// TAL-1997: the terminal a `terminal_open` result started.
     public let terminal: TerminalRef?
+    /// TAL-2318: a JSON-object result's rows, shown in place of `text`.
+    public let fields: [ToolField]?
 
     public init(
         text: String? = nil, stdout: String? = nil, stderr: String? = nil, error: String? = nil, exitCode: Int? = nil,
         decisionReview: DecisionReviewRef? = nil, proposal: ProposalRef? = nil, block: ShowBlockRef? = nil,
-        terminal: TerminalRef? = nil
+        terminal: TerminalRef? = nil, fields: [ToolField]? = nil
     ) {
+        self.fields = fields
         self.text = text
         self.stdout = stdout
         self.stderr = stderr
@@ -123,10 +150,12 @@ public struct ToolResultView: Decodable, Equatable, Sendable {
         case proposal
         case block
         case terminal
+        case fields
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        fields = try? container.decodeIfPresent([ToolField].self, forKey: .fields)
         text = container.decodeLossyStringIfPresent(forKey: .text)
         stdout = container.decodeLossyStringIfPresent(forKey: .stdout)
         stderr = container.decodeLossyStringIfPresent(forKey: .stderr)
@@ -310,6 +339,7 @@ public struct ToolCallGroup: Identifiable, Equatable, Sendable {
             name: nonEmpty(function?["name"]?.stringValue) ?? nonEmpty(object["name"]?.stringValue) ?? "tool",
             preview: nonEmpty(object["result"]?.stringValue) ?? nonEmpty(object["preview"]?.stringValue),
             args: arguments(from: function?["arguments"] ?? object["args"]),
+            argsFields: ToolField.rows(object["args_fields"]),
             kind: ToolDisplayKind(serverValue: object["kind"]?.stringValue),
             target: object["target"]?.stringValue,
             progress: ToolProgress(object["progress"]),

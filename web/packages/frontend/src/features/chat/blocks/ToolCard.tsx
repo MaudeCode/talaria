@@ -4,7 +4,7 @@ import { useApprovalFlash, useDisclosure } from './Worklog'
 import { ChevronRight } from 'lucide-react'
 import { cn } from '../../../ui/cn'
 import { ToolKindIcon } from '../toolKind'
-import type { ApprovalAnsweredBy, BackgroundLink, ToolApprovalOutcome, ToolKind, ToolProgress, ToolResultView } from '@maudecode/talaria-web-contracts'
+import type { ApprovalAnsweredBy, BackgroundLink, ToolApprovalOutcome, ToolField, ToolKind, ToolProgress, ToolResultView } from '@maudecode/talaria-web-contracts'
 import { agentsSummary, statusLabel } from '../../background/BackgroundWork'
 import { toolText } from '../../../i18n/toolText'
 import { useLocale } from '../../../i18n/useLocale'
@@ -22,6 +22,8 @@ export interface ToolCardData {
   kind: ToolKind
   target: string
   args: unknown
+  /** TAL-2318: the server's argument rows; absent from an older server, which shows `args` as JSON. */
+  argsFields?: ToolField[] | undefined
   preview: string | null
   done: boolean
   isError: boolean
@@ -45,6 +47,7 @@ export function toolCardLabel(call: ToolCardData, locale: string): string {
   return toolText(locale).actionLabel(call.kind, call.done ? 'done' : 'running', call.target, call.name, call.isError)
 }
 
+// ponytail: older-server fallback; delete once every supported server sends `args_fields`.
 function pretty(value: unknown): string {
   if (value === null || value === undefined) return ''
   if (typeof value === 'string') return value
@@ -61,14 +64,35 @@ function resultText(view: ToolResultView): string {
     .filter((section) => section !== undefined).join('\n')
 }
 
-const RESULT_PRE = 'max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-code-bg p-2 font-mono text-[12px] text-pre-text'
+const MONO = 'font-mono text-[12px] text-pre-text'
+const RESULT_PRE = `max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-code-bg p-2 ${MONO}`
+const LABEL = 'text-[11px] text-muted'
+
+/** TAL-2318: the server's key/value rows: a one-line value beside its key, a multi-line one in a scrolling block under it. */
+function FieldRows({ fields }: { fields: ToolField[] }) {
+  return (
+    <dl className="tool-card-fields grid grid-cols-[minmax(0,max-content)_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1">
+      {fields.map((field, i) => (
+        <div key={i} className={field.multiline ? 'col-span-2' : 'contents'}>
+          <dt className={cn(LABEL, 'break-words', field.multiline && 'mb-1')}>{field.key}</dt>
+          <dd className="min-w-0">{field.multiline ? <pre className={RESULT_PRE}>{field.value}</pre> : <span className={cn('break-words', MONO)}>{field.value}</span>}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+/** A result's rows when the server sent them (a JSON object), else its sections as text. */
+function ResultBody({ view, text }: { view: ToolResultView | null; text: string }) {
+  return view?.fields?.length ? <FieldRows fields={view.fields} /> : <pre className={RESULT_PRE}>{text}</pre>
+}
 
 /** A result the server clipped or capped: its sections until the reader asks for the whole view, which the server sends redacted. */
-function ClippedResult({ sessionId, callId, clipped }: { sessionId: string; callId: string; clipped: string }) {
+function ClippedResult({ sessionId, callId, view, clipped }: { sessionId: string; callId: string; view: ToolResultView | null; clipped: string }) {
   const query = useQuery({ queryKey: ['tool-result', sessionId, callId], queryFn: ({ signal }) => fetchToolResult(sessionId, callId, signal), enabled: false, staleTime: Infinity })
   return (
     <>
-      <pre className={RESULT_PRE}>{query.data ? resultText(query.data.result_view) : clipped}</pre>
+      {query.data ? <ResultBody view={query.data.result_view} text={resultText(query.data.result_view)} /> : <ResultBody view={view} text={clipped} />}
       {!query.data && <Button variant="ghost" className="mt-1" disabled={query.isFetching} onClick={() => { void query.refetch() }}>{query.isFetching ? m.loading() : query.isError ? m.retry() : m.tool_show_full_output()}</Button>}
     </>
   )
@@ -105,16 +129,16 @@ export function ToolCard({ call, timestamp, sessionId, arrivalKey }: { call: Too
       {sessionId && call.resultView?.outbound_draft && <OutboundDraftResult key={JSON.stringify([sessionId, call.id, call.resultView.outbound_draft])} sessionId={sessionId} callId={call.id} reference={call.resultView.outbound_draft} />}
       {open && (
         <div className="tool-card-detail border-t border-border-subtle px-2.5 py-2">
-          {args && args !== '{}' && (
+          {(call.argsFields ? call.argsFields.length > 0 : args && args !== '{}') && (
             <div className="tool-card-args mb-2">
               <div className="mb-1 text-[11px] uppercase tracking-wider text-muted">{m.tool_args_label()}</div>
-              <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-md bg-code-bg p-2 font-mono text-[12px] text-pre-text">{args}</pre>
+              {call.argsFields ? <FieldRows fields={call.argsFields} /> : <pre className={`max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-md bg-code-bg p-2 ${MONO}`}>{args}</pre>}
             </div>
           )}
           {result && (
             <div className="tool-card-result">
               <div className="mb-1 text-[11px] uppercase tracking-wider text-muted">{call.isError ? m.tool_error_label() : m.tool_result_label()}</div>
-              {call.resultTruncated && sessionId ? <ClippedResult sessionId={sessionId} callId={call.id} clipped={result} /> : <pre className={RESULT_PRE}>{result}</pre>}
+              {call.resultTruncated && sessionId ? <ClippedResult sessionId={sessionId} callId={call.id} view={call.resultView} clipped={result} /> : <ResultBody view={call.resultView} text={result} />}
             </div>
           )}
           {call.costUsd !== null && <div className="mt-1 text-[11px] text-muted">${call.costUsd.toFixed(4)}</div>}
