@@ -93,6 +93,9 @@ extension ChatViewModelSendTests {
         await viewModel.refreshBackgroundTasks()
         XCTAssertEqual(viewModel.backgroundTasks.map(\.taskId), ["task-1", "d-old"])
         XCTAssertEqual(viewModel.pinnedBackgroundTasks.map(\.taskId), ["task-1"])
+        // TAL-2333: a delegation row's subagent opens its finished unit in the sheet beside what the server pins.
+        XCTAssertEqual(viewModel.backgroundSheetTasks(focusing: "d-old").map(\.taskId), ["task-1", "d-old"])
+        XCTAssertEqual(viewModel.backgroundSheetTasks(focusing: nil).map(\.taskId), ["task-1"])
         let result = await viewModel.backgroundResult(taskID: "task-1")
         XCTAssertEqual(result, "All tests pass.")
 

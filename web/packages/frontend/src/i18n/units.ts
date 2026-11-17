@@ -5,6 +5,15 @@ export function formatDurationUnits(locale: string, ...parts: [number, DurationU
   return parts.map(([n, unit]) => new Intl.NumberFormat(locale, { style: 'unit', unit, unitDisplay: 'narrow' }).format(n)).join(' ')
 }
 
+/** Seconds as `42s`, `3m 5s` (`3m` without `showSeconds`) or `1h 4m`; formatting only, the seconds are the caller's. */
+export function formatElapsed(locale: string, totalSeconds: number, showSeconds = true): string {
+  const seconds = Math.max(0, Math.floor(totalSeconds))
+  const minutes = Math.floor(seconds / 60)
+  if (seconds < 60) return formatDurationUnits(locale, [seconds, 'second'])
+  if (minutes < 60) return formatDurationUnits(locale, [minutes, 'minute'], ...(showSeconds ? [[seconds % 60, 'second'] as [number, 'second']] : []))
+  return formatDurationUnits(locale, [Math.floor(minutes / 60), 'hour'], [minutes % 60, 'minute'])
+}
+
 /**
  * A reset time (ISO string or epoch ms) in the viewer's zone: the time alone today, with its weekday within the week,
  * else with its date (a monthly window's reset is not this week's Thursday).

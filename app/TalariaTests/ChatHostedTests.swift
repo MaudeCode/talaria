@@ -2375,6 +2375,32 @@ final class ChatHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "tool-kanban-rows")
     }
 
+    /// TAL-2333: a delegation row lists each subagent under its counts with its status, goal and seconds once finished, and
+    /// each row opens its unit in the Background tasks sheet.
+    func testDelegationRowListsEachSubagentAndOpensItsUnit() async throws {
+        var call = ToolCall(id: "delegate", name: "delegate_task", preview: nil, args: nil, kind: .delegate, target: "", isCompleted: true)
+        call.background = BackgroundLink(taskIds: ["call-1-1", "call-1-2", "call-1-3"], status: .running,
+                                         agents: BackgroundWorkTask.Agents(total: 3, completed: 1, failed: 1, running: 1), agentsDetail: [
+            .init(taskId: "call-1-1", goal: "Write docs", status: .completed, duration: 75, summary: "Docs written."),
+            .init(taskId: "call-1-2", goal: "Write tests", status: .failed, duration: 4),
+            .init(taskId: "call-1-3", goal: "Run tests", status: .running),
+        ])
+        var opened: [String] = []
+        let window = try hostWindow(
+            ScrollView { ToolCallCardView(toolCall: call).padding() }
+                .chatEnvironmentAction(\.chatOpenBackgroundTask) { opened.append($0) },
+            size: CGSize(width: 390, height: 400)
+        )
+        let labels = { HostedAccessibility.elements(in: window).compactMap { $0.accessibilityLabel } }
+        let expected = ["1 of 3 done · 1 failed", "Done, Write docs, Docs written., 1m 15s", "Failed, Write tests, 4s", "Running, Run tests"]
+        let drawn = await awaitCondition(timeout: 5) { expected.allSatisfy { label in labels().contains { $0.contains(label) } } }
+        XCTAssertTrue(drawn, "\(labels())")
+        attachHostedScreenshot(window, name: "tool-delegate-agents")
+        let row = try XCTUnwrap(HostedAccessibility.elements(in: window, labelContaining: "Write tests").first)
+        XCTAssertTrue(row.accessibilityActivate())
+        XCTAssertEqual(opened, ["call-1-2"])
+    }
+
     /// TAL-2330: an MCP call reads as its app and action under the MCP symbol; a connector call under its catalog logo, and
     /// under the connector symbol when it has none.
     func testMCPAndConnectorCardsReadAsTheirAppAndAction() async throws {
@@ -2688,6 +2714,32 @@ final class ApprovalOverlayLayoutTests: XCTestCase {
                                                      cardSize: CGSize(width: 2000, height: 2000))
         XCTAssertEqual(frame, CGRect(x: 220, y: 20, width: 520, height: 370))
         XCTAssertFalse(frame.intersects(fold))
+    }
+
+    /// TAL-2333: an approval heads its card with the held call's icon and label as its tool row reads them; a write shows
+    /// its arguments as key/value rows in place of the command, and a shell call keeps its command.
+    func testAnApprovalHeadsWithItsHeldCallAndShowsItsArgumentsAsRows() throws {
+        let write = ToolCall(id: "call-write", name: "write_file", preview: nil, args: nil,
+                             argsFields: [ToolField(key: "path", value: "/etc/hosts", multiline: false), ToolField(key: "content", value: "127.0.0.1 example", multiline: false)],
+                             kind: .write, target: "/etc/hosts")
+        let shell = ToolCall(id: "call-push", name: "terminal", preview: nil, args: nil, kind: .shell, target: "git push --force")
+        func host(_ tool: ToolCall, command: String) throws -> UIWindow {
+            let pending = PendingApproval(approvalId: "approval-\(tool.id)", command: command, description: "Protected path", tool: tool)
+            return try hostWindow(ApprovalRequestOverlay(
+                prompt: ApprovalPromptState(sessionID: "synthetic-tool-approval", pending: pending, pendingCount: 1),
+                isResponding: false, errorMessage: nil, onChoice: { _ in }, onSkipAll: {}, divisionFrames: []
+            ).ignoresSafeArea(), size: HostedSize.phone)
+        }
+        let written = try host(write, command: "write /etc/hosts")
+        attachHostedScreenshot(written, name: "approval-tool-write")
+        XCTAssertNotNil(HostedAccessibility.element(in: written, label: "Approval required: Editing /etc/hosts"))
+        XCTAssertNil(HostedAccessibility.element(in: written, label: "Approval required"))
+        XCTAssertNotNil(HostedAccessibility.element(in: written, label: "127.0.0.1 example"))
+        XCTAssertNil(HostedAccessibility.element(in: written, label: "write /etc/hosts"))
+        let pushed = try host(shell, command: "git push --force")
+        attachHostedScreenshot(pushed, name: "approval-tool-shell")
+        XCTAssertNotNil(HostedAccessibility.element(in: pushed, label: "Approval required: Running git push --force"))
+        XCTAssertNotNil(HostedAccessibility.element(in: pushed, label: "git push --force"))
     }
 
     func testAnApprovalOfferingNoChoiceSaysSoAndOffersNoAnswer() throws {

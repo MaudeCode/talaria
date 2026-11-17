@@ -10,6 +10,7 @@ vi.mock('../../api/endpoints', () => ({ fetchBackgroundTasks: vi.fn(), stopBackg
 vi.mock('@tanstack/react-router', () => ({ Link: ({ children }: { children: ReactNode }) => <a>{children}</a> }))
 import * as api from '../../api/endpoints'
 import { AgentsPage } from './AgentsPage'
+import { requestOpenAgent } from './openAgentRequest'
 
 /** The shared states the server ships (contracts/fixtures/delegation-status.json). */
 const states = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/delegation-status.json'), 'utf8')) as Record<string, DelegationStatus>
@@ -96,5 +97,21 @@ describe('Agents page on a native-owner chat (TAL-1336)', () => {
     vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ ...response(), tasks: [], owner_work })
     renderPage()
     expect(await screen.findByText(text)).toBeInTheDocument()
+  })
+})
+
+describe('Agents page opened from a delegation row (TAL-2333)', () => {
+  it('marks the unit a subagent row opened, whether the request came before or after the list loaded', async () => {
+    const other: BackgroundTask = { ...done, task_id: 'd2', title: 'Write docs' }
+    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ ...response(), tasks: [done, other] })
+    requestOpenAgent({ sessionId: 's1', taskId: 'd2' })
+    renderPage()
+    await screen.findByText('Write docs')
+    const current = () => Array.from(document.querySelectorAll('.agents-entry[aria-current="true"]'), (el) => el.getAttribute('data-task-id'))
+    await vi.waitFor(() => { expect(current()).toEqual(['d2']) })
+    act(() => { requestOpenAgent({ sessionId: 'other', taskId: 'd1' }) })
+    expect(current()).toEqual(['d2'])
+    act(() => { requestOpenAgent({ sessionId: 's1', taskId: 'd1' }) })
+    expect(current()).toEqual(['d1'])
   })
 })

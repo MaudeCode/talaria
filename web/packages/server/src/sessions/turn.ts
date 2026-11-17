@@ -30,7 +30,7 @@ import type { RunJournal, RunJournalWriter } from './journal.js'
 import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, COMPRESSION_RECOVERY_TERMINAL_STATE, CONTEXT_USAGE_FIELDS, Session, contextUsage, forgetModelFigures, promptCacheHitPercent, titleFrom, type Message } from './session.js'
 import { anchorMessageKey, markerSummary, insertCompactionRow, visibleMessagesForAnchor } from './compress.js'
 import { LiveActivityGroups } from './activity-groups.js'
-import { buildActiveTurnToken, completedToolIndex, publicToolFrame, redactNestedMessageContainers, redactString, withToolId } from '../redact.js'
+import { approvalTool, buildActiveTurnToken, completedToolIndex, publicToolFrame, redactNestedMessageContainers, redactString, withToolId } from '../redact.js'
 import { dict, findPersonality, type Config, type PersonalityRow } from '../config/agent-config.js'
 import { ReasoningTitleTracker, reasoningDisclosureKey, reasoningEventPayload } from './reasoning-titles.js'
 import { UNSETTLED_TODO_KEY, parseTodoToolResult, type PlanProgress } from './todo.js'
@@ -1210,7 +1210,9 @@ export class TurnRunner {
               }
               // Python: the live chat frame carries the queue head plus depth, not the entry that just arrived.
               case 'approval': {
-                deps.pending.submitApproval(sessionId, { ...data, session_id: sessionId, can_deny_with_instruction: true })
+                // TAL-2333: the card shows the call it holds as that call's row does.
+                const held = str(data.tool_call_id) ? liveToolCalls.findLast((call) => call.tid === data.tool_call_id) : undefined
+                deps.pending.submitApproval(sessionId, { ...data, session_id: sessionId, can_deny_with_instruction: true, ...(held ? { tool: approvalTool(held, deps.redactEnabled(), s.workspace) } : {}) })
                 const { pending, pending_count } = deps.pending.approvalPending(sessionId)
                 await emitFrame('approval', { ...(pending ?? data), pending_count })
                 return

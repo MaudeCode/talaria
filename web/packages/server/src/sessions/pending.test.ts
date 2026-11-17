@@ -43,6 +43,14 @@ describe('pending prompt streams', () => {
     expect(String(pending.clarifyPending('s1').pending?.head_id)).toMatch(/^[A-Za-z0-9_-]{22}$/)
   })
 
+  it('names one description for clients: the description, else the question, else the reason (TAL-2333)', () => {
+    const pending = new PendingPrompts(new SessionEventBus())
+    const head = (sid: string, approval: Record<string, unknown>) => { pending.submitApproval(sid, { approval_id: 'a', ...approval }); return pending.approvalPending(sid).pending?.description }
+    expect(head('s1', { description: 'Deletes files', question: 'Allow?', reason: 'Dangerous' })).toBe('Deletes files')
+    expect(head('s2', { description: ' ', question: 'Allow?', reason: 'Dangerous' })).toBe('Allow?')
+    expect(head('s3', { reason: 'Dangerous' })).toBe('Dangerous')
+    expect(head('s4', { command: 'rm -rf build' })).toBeUndefined()
+  })
   it('keeps an approval subscriber attached after answering empties the queue (TAL-556)', () => {
     const pending = new PendingPrompts(new SessionEventBus())
     const [sub] = pending.subscribeApprovals('s1')

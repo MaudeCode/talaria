@@ -4,7 +4,6 @@ import TalariaKit
 struct ToolCallCardView: View {
     let toolCall: ToolCall
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.chatDisclosureToggled) private var chatDisclosureToggled
     @Environment(\.chatFullToolResultLoader) private var loadFullToolResult
     @AppStorage(ChatTranscriptDisplaySettings.toolCardsStartExpandedKey) private var startsExpanded = false
@@ -44,6 +43,11 @@ struct ToolCallCardView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(Self.accessibilityText(for: toolCall, detail: statusDisplay.detailText))
             .accessibilityHint(isExpanded ? "Double tap to collapse details." : "Double tap to expand details.")
+
+            // TAL-2333: a delegation's subagents stay in view under its counts.
+            if let agents = toolCall.background?.agentsDetail, !agents.isEmpty {
+                DelegateAgentRows(agents: agents)
+            }
 
             // TAL-1965: a decision review stays in view whether or not the call's details are open.
             if let reference = toolCall.resultView?.decisionReview {
@@ -130,10 +134,6 @@ struct ToolCallCardView: View {
                 statusDetail(statusDisplay.detailText)
             }
         }
-    }
-
-    private var usesStackedHeader: Bool {
-        dynamicTypeSize.isAccessibilitySize
     }
 
     private var header: some View {
@@ -329,34 +329,119 @@ struct ToolCallCardView: View {
 
     @ViewBuilder
     private func argumentRow(_ row: ToolCallArgumentDisplay) -> some View {
-        if usesStackedHeader {
+        ToolArgumentRow(row: row)
+    }
+}
+
+/// One key/value row of a call's arguments or JSON result; an approval card (TAL-2333) shows the held call's the same way.
+struct ToolArgumentRow: View {
+    let row: ToolCallArgumentDisplay
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        if dynamicTypeSize.isAccessibilitySize {
             VStack(alignment: .leading, spacing: 2) {
-                argumentKey(row.key)
-                argumentValue(row.value)
+                key
+                value
             }
         } else {
             HStack(alignment: .top, spacing: 7) {
-                argumentKey(row.key)
+                key
                     .frame(width: 78, alignment: .leading)
 
-                argumentValue(row.value)
+                value
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
 
-    private func argumentKey(_ value: String) -> some View {
-        Text(value)
+    private var key: some View {
+        Text(row.key)
             .font(AppFont.mono(style: .caption2, weight: .semibold))
             .foregroundStyle(.secondary)
             .lineLimit(1)
     }
 
-    private func argumentValue(_ value: String) -> some View {
-        Text(value)
+    private var value: some View {
+        Text(row.value)
             .font(AppFont.mono(style: .caption))
             .foregroundStyle(.primary)
             .textSelection(.enabled)
+    }
+}
+
+/// TAL-2333: a delegation's subagents under its row: status, goal, seconds once finished and its summary's first line.
+/// Each opens its unit in the chat's Background tasks sheet.
+struct DelegateAgentRows: View {
+    let agents: [BackgroundLink.Agent]
+    @Environment(\.chatOpenBackgroundTask) private var openBackgroundTask
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(Array(agents.enumerated()), id: \.offset) { _, agent in
+                Button {
+                    openBackgroundTask?(agent.taskId)
+                } label: {
+                    row(agent)
+                }
+                .buttonStyle(.plain)
+                .disabled(openBackgroundTask == nil)
+                .accessibilityElement(children: .combine)
+                .accessibilityHint(String(localized: "Show in Background tasks"))
+                .accessibilityIdentifier("delegate-agent-\(agent.taskId)")
+                .contextMenu {
+                    if openBackgroundTask != nil {
+                        Button(String(localized: "Show in Background tasks"), systemImage: "list.bullet") { openBackgroundTask?(agent.taskId) }
+                    }
+                    Button(String(localized: "Copy"), systemImage: "doc.on.doc") { UIPasteboard.general.string = agent.goal }
+                }
+            }
+        }
+        .padding(.leading, 24)
+    }
+
+    private func row(_ agent: BackgroundLink.Agent) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: BackgroundWorkSheet.icon(agent.status))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(BackgroundWorkSheet.tint(agent.status))
+                .accessibilityLabel(BackgroundWorkSheet.statusLabel(agent.status))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(agent.goal)
+                    .font(AppFont.caption())
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                if let summary = agent.summary {
+                    Text(summary)
+                        .font(AppFont.caption2())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 6)
+            if let duration = agent.duration {
+                Text(Duration.seconds(duration).formatted(.units(allowed: [.hours, .minutes, .seconds], width: .narrow)))
+                    .font(AppFont.caption2())
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(minHeight: 32)
+        .contentShape(Rectangle())
+    }
+}
+
+/// TAL-2333: shows one delegation unit in the chat's Background tasks sheet; the chat screen supplies it.
+typealias ChatOpenBackgroundTask = ChatEnvironmentAction<String, Void>
+
+struct ChatOpenBackgroundTaskKey: EnvironmentKey {
+    static var defaultValue: ChatOpenBackgroundTask? { nil }
+}
+
+extension EnvironmentValues {
+    var chatOpenBackgroundTask: ChatOpenBackgroundTask? {
+        get { self[ChatOpenBackgroundTaskKey.self] }
+        set { self[ChatOpenBackgroundTaskKey.self] = newValue }
     }
 }
 

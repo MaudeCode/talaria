@@ -122,23 +122,56 @@ public struct BackgroundWorkTask: Decodable, Equatable, Identifiable, Sendable {
 
 /// TAL-372: a delegation tool row's link to the work it started, updated in place (scene `tool.background`).
 public struct BackgroundLink: Decodable, Equatable, Sendable {
+    /// TAL-2333: one subagent of a delegation row: the unit it ran in (`taskId`, a Background Work record), its goal,
+    /// status, seconds once finished and its result summary's first line.
+    public struct Agent: Decodable, Equatable, Sendable {
+        public let taskId: String
+        public let goal: String
+        public let status: BackgroundWorkTask.Status
+        public let duration: Double?
+        public let summary: String?
+
+        public init(taskId: String, goal: String, status: BackgroundWorkTask.Status, duration: Double? = nil, summary: String? = nil) {
+            self.taskId = taskId
+            self.goal = goal
+            self.status = status
+            self.duration = duration
+            self.summary = summary
+        }
+
+        enum CodingKeys: String, CodingKey { case taskId, goal, status, duration, summary }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            taskId = try container.decode(String.self, forKey: .taskId)
+            goal = container.decodeLossyStringIfPresent(forKey: .goal) ?? ""
+            status = container.decodeLossyStringIfPresent(forKey: .status).flatMap(BackgroundWorkTask.Status.init(rawValue:)) ?? .unknown
+            duration = try? container.decodeIfPresent(Double.self, forKey: .duration)
+            summary = container.decodeLossyStringIfPresent(forKey: .summary).flatMap { $0.isEmpty ? nil : $0 }
+        }
+    }
+
     public let taskIds: [String]
     public let status: BackgroundWorkTask.Status
     public let agents: BackgroundWorkTask.Agents
+    /// TAL-2333: each subagent in dispatch order; empty from an older server.
+    public let agentsDetail: [Agent]
 
-    public init(taskIds: [String], status: BackgroundWorkTask.Status, agents: BackgroundWorkTask.Agents) {
+    public init(taskIds: [String], status: BackgroundWorkTask.Status, agents: BackgroundWorkTask.Agents, agentsDetail: [Agent] = []) {
         self.taskIds = taskIds
         self.status = status
         self.agents = agents
+        self.agentsDetail = agentsDetail
     }
 
-    enum CodingKeys: String, CodingKey { case taskIds, status, agents }
+    enum CodingKeys: String, CodingKey { case taskIds, status, agents, agentsDetail }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         taskIds = (try? container.decodeIfPresent([String].self, forKey: .taskIds)) ?? []
         status = container.decodeLossyStringIfPresent(forKey: .status).flatMap(BackgroundWorkTask.Status.init(rawValue:)) ?? .unknown
         agents = try container.decode(BackgroundWorkTask.Agents.self, forKey: .agents)
+        agentsDetail = (try? container.decodeIfPresent([Agent].self, forKey: .agentsDetail)) ?? []
     }
 }
 

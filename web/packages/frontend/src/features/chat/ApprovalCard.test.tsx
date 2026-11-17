@@ -15,6 +15,26 @@ import { ApiError } from '../../contracts/common'
 const render = (ui: ReactElement) => renderView(ui, { wrapper: queryWrapper() })
 
 describe('ApprovalCard', () => {
+  it('heads the card with the held call\'s icon and label as its tool row shows them, its arguments as rows (TAL-2333)', () => {
+    const { container, unmount } = render(<ApprovalCard sessionId="s1" pending={{ approval_id: 'w1', command: 'write /etc/hosts', description: 'Protected path', question: 'Allow?', reason: 'Dangerous', tool: { name: 'write_file', kind: 'write', target: '/etc/hosts', args_fields: [{ key: 'path', value: '/etc/hosts', multiline: false }, { key: 'content', value: '127.0.0.1 example', multiline: false }] } }} onResolved={() => undefined} />)
+    expect(screen.getByRole('alertdialog')).toHaveAccessibleName('Approval required: Editing /etc/hosts')
+    expect(container.querySelector('.approval-header svg.lucide-file-pen')).not.toBeNull()
+    expect(container.querySelector('.approval-desc')).toHaveTextContent(/^Protected path$/)
+    expect(container.querySelector('.approval-args')).toHaveTextContent('path/etc/hostscontent127.0.0.1 example')
+    expect(container.querySelector('.approval-cmd')).toBeNull()
+    unmount()
+    // A shell call keeps its command in the code block; an app's call reads as its app and action.
+    const shell = render(<ApprovalCard sessionId="s1" pending={{ approval_id: 's1', command: 'git push', tool: { name: 'terminal', kind: 'shell', target: 'git push' } }} onResolved={() => undefined} />)
+    expect(shell.container.querySelector('.approval-cmd')).toHaveTextContent('git push')
+    expect(shell.container.querySelector('.approval-args')).toBeNull()
+    shell.unmount()
+    render(<ApprovalCard sessionId="s1" pending={{ approval_id: 'm1', tool: { name: 'mcp__linear__create_issue', kind: 'mcp', target: 'Create issue', app: { name: 'Linear', logo_url: null } } }} onResolved={() => undefined} />)
+    expect(screen.getByRole('alertdialog')).toHaveAccessibleName('Approval required: Linear · Create issue')
+  })
+  it('shows only the server\'s description, never a question or reason it did not pick (TAL-2333)', () => {
+    const { container } = render(<ApprovalCard sessionId="s1" pending={{ approval_id: 'q1', command: 'ls', question: 'Allow?', reason: 'Dangerous' }} onResolved={() => undefined} />)
+    expect(container.querySelector('.approval-desc')).toBeNull()
+  })
   it('offers only owner-approved choices and never offers native YOLO', () => {
     render(<ApprovalCard sessionId="native" pending={{ approval_id: 'native-control', command: 'echo fixture', allowed_choices: ['once', 'deny'], can_enable_yolo: false }} onResolved={() => undefined} />)
     expect(screen.getByRole('button', { name: /allow once/i })).toBeEnabled()

@@ -506,6 +506,8 @@ export const PROCESS_METHODS = {
         updated_at: z.number().nullable(), goals: z.array(z.string()), child_statuses: z.array(z.string()), has_result: z.boolean(), live_status: z.string().nullable(),
         /** TAL-494: the subagent sessions this unit ran (absent from a sidecar before TAL-494). */
         children: z.array(z.object({ goal: z.string(), session_id: z.string() })).optional(),
+        /** TAL-2333: each finished subagent's outcome, the start of its summary and its seconds, in `child_statuses` order (absent from an older sidecar). */
+        child_results: z.array(z.object({ status: z.string(), summary: z.string(), duration: z.number().nullable() })).optional(),
       })),
       processes: z.array(z.object({
         process_id: z.string(), session_key: z.string(), command: z.string(), started_at: z.number().nullable(), exited: z.boolean(), exited_at: z.number().nullable(),

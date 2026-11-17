@@ -585,7 +585,7 @@ public struct ToolCallGroup: Identifiable, Equatable, Sendable {
         }
     }
 
-    private static func toolCall(from value: JSONValue, fallbackID: String) -> ToolCall? {
+    static func toolCall(from value: JSONValue, fallbackID: String) -> ToolCall? {
         guard case .object(let object) = value else { return nil }
 
         let function = object["function"]?.objectValue

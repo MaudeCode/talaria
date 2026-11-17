@@ -62,6 +62,9 @@ public struct PendingApproval: Decodable, Equatable, Identifiable, Sendable {
     /// TAL-1469: what the approval runs, whole and on one line, for a one-tap Allow to sit beside; nil when the server
     /// offers no one-tap Allow for it.
     public let actionText: String?
+    /// TAL-2333: the call this approval holds, with its tool row's display fields, still running; nil when the server
+    /// names none. A shell call carries no argument rows: its `command` shows instead.
+    public let tool: ToolCall?
     let patternKey: String?
     let patternKeys: [String]?
     /// TAL-1043: the choices the approval's owner accepts; nil (an older server without the field) allows all four.
@@ -107,8 +110,10 @@ public struct PendingApproval: Decodable, Equatable, Identifiable, Sendable {
         allowedChoices: [ApprovalChoice]? = nil,
         canEnableYolo: Bool? = nil,
         headId: String? = nil,
-        actionText: String? = nil
+        actionText: String? = nil,
+        tool: ToolCall? = nil
     ) {
+        self.tool = tool
         self.approvalId = Self.normalizedApprovalId(approvalId)
         self.headId = headId
         self.actionText = actionText
@@ -138,6 +143,7 @@ public struct PendingApproval: Decodable, Equatable, Identifiable, Sendable {
         case headIdSnake = "head_id"
         case actionText
         case actionTextSnake = "action_text"
+        case tool
     }
 
     public init(from decoder: Decoder) throws {
@@ -150,12 +156,20 @@ public struct PendingApproval: Decodable, Equatable, Identifiable, Sendable {
         description = container.decodeLossyStringIfPresent(forKey: .description)
         actionText = (container.decodeLossyStringIfPresent(forKey: .actionText)
             ?? container.decodeLossyStringIfPresent(forKey: .actionTextSnake)).flatMap { $0.isEmpty ? nil : $0 }
+        tool = Self.heldCall((try? container.decodeIfPresent(JSONValue.self, forKey: .tool)) ?? nil)
         patternKey = container.decodeLossyStringIfPresent(forKey: .patternKey)
             ?? container.decodeLossyStringIfPresent(forKey: .patternKeySnake)
         patternKeys = Self.decodeStringArray(from: container, keys: [.patternKeys, .patternKeysSnake])
         allowedChoices = Self.decodeAllowedChoices(from: container)
         canEnableYolo = container.decodeLossyBoolIfPresent(forKey: .canEnableYolo)
             ?? container.decodeLossyBoolIfPresent(forKey: .canEnableYoloSnake)
+    }
+
+    /// The held call as a running tool row, from the server's `tool` object (its keys kept as sent).
+    private static func heldCall(_ value: JSONValue?) -> ToolCall? {
+        guard case .object(var object)? = value else { return nil }
+        object["done"] = .bool(false)
+        return ToolCallGroup.toolCall(from: .object(object), fallbackID: "approval-tool")
     }
 
     private static func decodeStringArray(

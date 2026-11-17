@@ -462,11 +462,15 @@ export function promptHeadId(sid: string, promptId: string): string {
   return createHash('sha256').update(`${sid}\0${promptId}`, 'utf8').digest('base64url').slice(0, 22)
 }
 
-/** An approval head with `head_id`, so a Live Activity or notification answers only it, and `action_text` (TAL-1469). */
+/**
+ * An approval head with `head_id`, so a Live Activity or notification answers only it, `action_text` (TAL-1469), and
+ * (TAL-2333) the one `description` clients show: the Agent's description, else its question, else its reason.
+ */
 function approvalHead(sid: string, head: Record<string, unknown>): Record<string, unknown> {
   const approvalId = str(head.approval_id)
   const actionText = approvalActionText(head)
-  return { ...head, ...(approvalId ? { head_id: promptHeadId(sid, approvalId) } : {}), ...(actionText ? { action_text: actionText } : {}) }
+  const description = [head.description, head.question, head.reason].find((text) => typeof text === 'string' && text.trim())
+  return { ...head, ...(approvalId ? { head_id: promptHeadId(sid, approvalId) } : {}), ...(actionText ? { action_text: actionText } : {}), ...(description ? { description } : {}) }
 }
 
 /** A question head with `head_id`, the identity Relay publishes as `inputHeadId`, so a notification's Reply answers only it. */

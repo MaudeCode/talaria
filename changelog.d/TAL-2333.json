@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "An approval card on the App and the Web now heads with the tool it holds, its icon and label as the tool's row shows them, and shows a file write or app call's arguments as key/value rows; a shell command stays in its code block. A delegate_task row lists each sub-agent under its count with its status, goal and run time as it finishes, and each opens that agent in Background tasks.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "app",
+        "web"
+      ]
+    }
+  ]
+}

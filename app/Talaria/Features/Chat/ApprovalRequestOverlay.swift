@@ -98,14 +98,36 @@ struct ApprovalRequestOverlay: View {
             .shadow(color: .black.opacity(0.22), radius: 18, x: 0, y: 12)
     }
 
+    /// TAL-2333: the held call's arguments as its tool row shows them; a shell call has none and shows its command.
+    private var toolArguments: [ToolCallArgumentDisplay] {
+        prompt.pending.tool.map { ToolCallDisplayFormatter.content(for: $0).argumentRows } ?? []
+    }
+
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.yellow)
+            // TAL-2333: the held call's icon and label, as its tool row shows them.
+            if let tool = prompt.pending.tool {
+                ToolActivityIcon(name: AssistantActivitySummary.icon(for: tool), logoURL: tool.app?.logoURL)
+                    .foregroundStyle(.yellow)
+                    .frame(width: 16, height: 16)
+                    .accessibilityHidden(true)
+            } else {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.yellow)
+            }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Approval required")
-                    .font(.headline)
+                Group {
+                    if let tool = prompt.pending.tool {
+                        Text(AssistantActivitySummary.label(for: tool))
+                            .lineLimit(2)
+                            .accessibilityLabel(String(localized: "Approval required: \(AssistantActivitySummary.label(for: tool))"))
+                    } else {
+                        Text("Approval required")
+                    }
+                }
+                .font(.headline)
+                .accessibilityAddTraits(.isHeader)
 
                 Text("Pending approvals: \(prompt.pendingCount)")
                     .font(.caption)
@@ -123,7 +145,15 @@ struct ApprovalRequestOverlay: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if let command = nonEmpty(prompt.pending.command) {
+            if !toolArguments.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(toolArguments) { ToolArgumentRow(row: $0) }
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+                .accessibilityIdentifier("approval-tool-arguments")
+            } else if let command = nonEmpty(prompt.pending.command) {
                 ScrollView(.horizontal, showsIndicators: false) {
                     Text(command)
                         .font(.system(.footnote, design: .monospaced))

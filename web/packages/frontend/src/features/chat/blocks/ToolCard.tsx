@@ -4,8 +4,10 @@ import { useApprovalFlash, useDisclosure } from './Worklog'
 import { ChevronRight } from 'lucide-react'
 import { cn } from '../../../ui/cn'
 import { ToolKindIcon } from '../toolKind'
-import type { ApprovalAnsweredBy, BackgroundLink, FileExcerpt, ResultLinks, ResultPage, SearchMatches, ToolApp, ToolApprovalOutcome, ToolField, ToolKind, ToolProgress, ToolResultView, ToolRow, ToolRows, ToolVerb } from '@maudecode/talaria-web-contracts'
-import { agentsSummary, statusLabel } from '../../background/BackgroundWork'
+import type { ApprovalAnsweredBy, BackgroundAgent, BackgroundLink, FileExcerpt, ResultLinks, ResultPage, SearchMatches, ToolApp, ToolApprovalOutcome, ToolField, ToolKind, ToolProgress, ToolResultView, ToolRow, ToolRows, ToolVerb } from '@maudecode/talaria-web-contracts'
+import { agentsSummary, statusLabel, StatusIcon } from '../../background/BackgroundWork'
+import { requestOpenAgent } from '../../background/openAgentRequest'
+import { formatElapsed } from '../../../i18n/units'
 import { toolText } from '../../../i18n/toolText'
 import { useLocale } from '../../../i18n/useLocale'
 import { m } from '../../../paraglide/messages.js'
@@ -55,7 +57,8 @@ export interface ToolCardData {
   showsCard?: true
 }
 
-export function toolCardLabel(call: ToolCardData, locale: string): string {
+/** The row's label from its server display fields; an approval card (TAL-2333) labels the call it holds the same way. */
+export function toolCardLabel(call: Pick<ToolCardData, 'app' | 'target' | 'isError' | 'kind' | 'verb' | 'done' | 'name'>, locale: string): string {
   // TAL-2330: an app's call reads "<App> · <Action>"; only a failure takes its kind's verb.
   if (call.app) {
     const named = [call.app.name, call.target].filter(Boolean).join(' · ')
@@ -87,7 +90,7 @@ const RESULT_PRE = `max-h-72 overflow-auto whitespace-pre-wrap break-words round
 const LABEL = 'text-[11px] text-muted'
 
 /** TAL-2318: the server's key/value rows: a one-line value beside its key, a multi-line one in a scrolling block under it. */
-function FieldRows({ fields }: { fields: ToolField[] }) {
+export function FieldRows({ fields }: { fields: ToolField[] }) {
   return (
     <dl className="tool-card-fields grid grid-cols-[minmax(0,max-content)_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1">
       {fields.map((field, i) => (
@@ -235,6 +238,38 @@ function ToolRowsResult({ rows }: { rows: ToolRows }) {
   )
 }
 
+/**
+ * TAL-2333: a delegation's subagents under its row, each with its status, goal, seconds once finished and its summary's
+ * first line; each opens its unit on the side panel's Agents page.
+ */
+function DelegateAgents({ agents, sessionId }: { agents: BackgroundAgent[]; sessionId?: string | undefined }) {
+  const locale = useLocale()
+  return (
+    <ul className="tool-card-agents space-y-1 px-2.5 pb-2" aria-label={m.panel_agents()}>
+      {agents.map((agent, i) => {
+        const open: RowAction | null = sessionId ? { label: m.show_open(), run: () => { requestOpenAgent({ sessionId, taskId: agent.task_id }) } } : null
+        const goal = open
+          ? <button type="button" className={cn(ROW_LINK, 'text-left')} title={agent.goal} onClick={open.run}>{agent.goal}</button>
+          : <span className="min-w-0 truncate text-text" title={agent.goal}>{agent.goal}</span>
+        return (
+          <li key={i} className="tool-row min-w-0" data-agent-status={agent.status}>
+            <RowContextMenu label={agent.goal} actions={[...(open ? [open] : []), { label: m.copy(), run: () => { copyWithToast(agent.goal) } }]} trigger={
+              <div className="flex min-w-0 items-center gap-1.5">
+                <span title={statusLabel(agent.status)} className="inline-flex shrink-0"><StatusIcon status={agent.status} /></span>
+                <span className="sr-only">{statusLabel(agent.status)}</span>
+                {goal}
+                <span className="flex-1" />
+                {agent.duration !== undefined && <span className="shrink-0 text-[11px] tabular-nums text-muted">{formatElapsed(locale, agent.duration)}</span>}
+              </div>
+            } />
+            {agent.summary && <div className="truncate pl-5 text-xs text-muted" title={agent.summary}>{agent.summary}</div>}
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
 /** The typed section a result view carries in place of its text (TAL-2323, TAL-2324, TAL-2325, TAL-2326). */
 const hasSection = (view: ToolResultView | null): boolean => Boolean(view?.file_excerpt ?? view?.matches ?? view?.links ?? view?.pages ?? view?.analysis ?? view?.rows)
 
@@ -290,6 +325,7 @@ export function ToolCard({ call, timestamp, sessionId, arrivalKey }: { call: Too
       {call.resultView?.decision_review && <DecisionReviewResult key={call.resultView.decision_review.review_id} reference={call.resultView.decision_review} />}
       {call.resultView?.proposal && <ProposalResult key={call.resultView.proposal.proposal_id} reference={call.resultView.proposal} />}
       {call.resultView?.block && <ShowBlockResult key={call.resultView.block.block_id} reference={call.resultView.block} />}
+      {call.background?.agents_detail?.length ? <DelegateAgents agents={call.background.agents_detail} sessionId={sessionId} /> : null}
       {/* TAL-2325: the images, speech or video a media tool made, in view without opening the call. */}
       {call.resultView?.media?.length ? <div className="tool-card-media px-2.5 pb-2"><MediaTiles media={call.resultView.media} sessionId={sessionId} images /></div> : null}
       {sessionId && call.resultView?.terminal && <TerminalResult key={call.resultView.terminal.terminal_id} sessionId={sessionId} reference={call.resultView.terminal} />}

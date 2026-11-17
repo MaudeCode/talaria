@@ -9,6 +9,8 @@ import { toolText } from '../../../i18n/toolText'
 import { renderRouted } from '../../../test/router'
 
 vi.mock('../../workspace/openFileRequest', () => ({ requestOpenFile: vi.fn() }))
+vi.mock('../../background/openAgentRequest', () => ({ requestOpenAgent: vi.fn() }))
+import { requestOpenAgent } from '../../background/openAgentRequest'
 
 const call: ToolCardData = { id: 'c1', name: 'terminal', kind: 'shell', target: 'make', args: {}, preview: 'flat preview', done: true, isError: false, duration: null, costUsd: null, resultView: null }
 
@@ -280,6 +282,24 @@ describe('memory, skill, session, scheduled job, connection and clarify rows (TA
         expect(text.worklogSummary(kind, 'running', 2), `${locale} ${kind}`).not.toBe(text.worklogSummary('unknown', 'running', 2))
       }
     }
+  })
+})
+
+describe('delegate rows (TAL-2333)', () => {
+  it('lists each subagent by goal with its status and seconds under the count, each opening its unit on Agents', async () => {
+    const background = { task_ids: ['call-1-1', 'call-1-2', 'call-1-3'], status: 'running' as const, agents: { total: 3, completed: 1, failed: 1, running: 1 }, agents_detail: [
+      { task_id: 'call-1-1', goal: 'Write docs', status: 'completed' as const, duration: 75, summary: 'Docs written.' },
+      { task_id: 'call-1-2', goal: 'Write tests', status: 'failed' as const, duration: 4 },
+      { task_id: 'call-1-3', goal: 'Run tests', status: 'running' as const },
+    ] }
+    const view = await renderRouted(<ToolCard call={{ ...call, name: 'delegate_task', kind: 'delegate', target: '', background }} sessionId="s1" />)
+    const rows = Array.from(view.container.querySelectorAll('.tool-card-agents > li'))
+    expect(rows.map((row) => [row.getAttribute('data-agent-status'), row.textContent])).toEqual([
+      ['completed', 'DoneWrite docs1m 15sDocs written.'], ['failed', 'FailedWrite tests4s'], ['running', 'RunningRun tests'],
+    ])
+    expect(view.container.querySelector('.tool-card-background')).toHaveTextContent('1 of 3 done · 1 failed')
+    await userEvent.click(within(rows[1] as HTMLElement).getByRole('button', { name: 'Write tests' }))
+    expect(requestOpenAgent).toHaveBeenCalledWith({ sessionId: 's1', taskId: 'call-1-2' })
   })
 })
 

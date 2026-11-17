@@ -1,0 +1,22 @@
+{
+  "approval_write": {
+    "approval_id": "w1", "session_id": "fixture-session", "tool_call_id": "call-write", "command": "write /etc/hosts", "description": "Protected path",
+    "tool": { "name": "write_file", "kind": "write", "target": "/etc/hosts", "args_fields": [{ "key": "path", "value": "/etc/hosts", "multiline": false }, { "key": "content", "value": "127.0.0.1 example\n::1 example", "multiline": true }] }
+  },
+  "approval_shell": {
+    "approval_id": "s1", "session_id": "fixture-session", "tool_call_id": "call-push", "command": "git push --force", "description": "Force push",
+    "tool": { "name": "terminal", "kind": "shell", "target": "git push --force" }
+  },
+  "approval_mcp": {
+    "approval_id": "m1", "session_id": "fixture-session", "tool_call_id": "call-issue",
+    "tool": { "name": "mcp__linear__create_issue", "kind": "mcp", "target": "Create issue", "app": { "name": "Linear", "logo_url": null }, "args_fields": [{ "key": "title", "value": "Ship it", "multiline": false }] }
+  },
+  "delegate_background": {
+    "task_ids": ["call-1-1", "call-1-2", "call-1-3"], "status": "running", "agents": { "total": 3, "completed": 1, "failed": 1, "running": 1 },
+    "agents_detail": [
+      { "task_id": "call-1-1", "goal": "Write docs", "status": "completed", "duration": 75, "summary": "Docs written." },
+      { "task_id": "call-1-2", "goal": "Write tests", "status": "failed", "duration": 4.5 },
+      { "task_id": "call-1-3", "goal": "Run tests", "status": "running" }
+    ]
+  }
+}

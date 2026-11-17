@@ -10,7 +10,9 @@ import { keys } from '../../api/queryKeys'
 import { ErrorState, LoadingState } from '../../ui/States'
 import { relativeTime } from '../sessions/SessionListPanel'
 import { m } from '../../paraglide/messages.js'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { onOpenAgentRequest, takeOpenAgentRequest } from './openAgentRequest'
+import { cn } from '../../ui/cn'
 import { SteerForm, TaskActionButtons, TaskHeading, agentsSummary, delegationSummary, statusLabel, useTaskActions } from './BackgroundWork'
 import { RowContextMenu } from '../../ui/Menu'
 
@@ -41,6 +43,16 @@ export function AgentsPage({ sessionId, active }: { sessionId: string; active: b
     enabled: active,
     refetchInterval: (q) => (active && (q.state.data?.tasks.some((t) => t.active) || q.state.data?.delegation_status?.refresh) ? LIVE_REFRESH_MS : false),
   })
+  // TAL-2333: the unit a delegation row's subagent opened, scrolled into view and marked once the list shows it.
+  const [focused, setFocused] = useState<string | null>(null)
+  const loaded = query.isSuccess
+  useEffect(() => {
+    if (!active || !loaded) return
+    const take = () => { const request = takeOpenAgentRequest(sessionId); if (request) setFocused(request.taskId) }
+    take()
+    return onOpenAgentRequest(take)
+  }, [active, loaded, sessionId])
+  useEffect(() => { if (focused) document.querySelector(`.agents-entry[data-task-id="${CSS.escape(focused)}"]`)?.scrollIntoView?.({ block: 'nearest' }) }, [focused])
   if (query.isPending) return <LoadingState />
   if (query.isError) return <ErrorState error={query.error} onRetry={() => { void query.refetch() }} />
   const { tasks, agent_available: available, delegation_status: delivery, owner_work: owner } = query.data
@@ -54,7 +66,7 @@ export function AgentsPage({ sessionId, active }: { sessionId: string; active: b
       ) : (
         <ul className="flex flex-col" aria-label={m.panel_agents()}>
           {tasks.map((t) => (
-            <AgentEntry key={t.task_id} sessionId={sessionId} task={t} />
+            <AgentEntry key={t.task_id} sessionId={sessionId} task={t} focused={focused === t.task_id} />
           ))}
         </ul>
       )}
@@ -62,11 +74,11 @@ export function AgentsPage({ sessionId, active }: { sessionId: string; active: b
   )
 }
 
-function AgentEntry({ sessionId, task: t }: { sessionId: string; task: BackgroundTask }) {
+function AgentEntry({ sessionId, task: t, focused }: { sessionId: string; task: BackgroundTask; focused: boolean }) {
   const [steering, setSteering] = useState(false)
   const { actions, error } = useTaskActions(sessionId, t, { onSteer: steering ? undefined : () => setSteering(true) })
   return (
-    <RowContextMenu label={t.title} actions={actions} trigger={<li className="agents-entry flex flex-col gap-0.5 border-b border-border-subtle px-3 py-2" data-task-id={t.task_id} data-status={t.status}>
+    <RowContextMenu label={t.title} actions={actions} trigger={<li className={cn('agents-entry flex flex-col gap-0.5 border-b border-border-subtle px-3 py-2', focused && 'bg-hover')} data-task-id={t.task_id} data-status={t.status} aria-current={focused || undefined}>
       <TaskHeading task={t} title={<span className="text-[13px] text-text">{t.title}</span>}>
         <span className="text-[11px] text-muted">{statusLabel(t.status)}</span>
         <TaskActionButtons actions={actions} error={error} />

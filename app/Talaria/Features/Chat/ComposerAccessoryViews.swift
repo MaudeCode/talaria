@@ -57,6 +57,8 @@ struct NoticeChip: View {
 /// summary has anything to say.
 struct BackgroundWorkSheet: View {
     let tasks: [BackgroundWorkTask]
+    /// TAL-2333: the unit a delegation row's subagent opened, scrolled to and marked.
+    var focusedTaskID: String?
     var ownerWork: BackgroundTasksResponse.OwnerWork?
     var delegationSummary: DelegationStatus?
     let loadResult: (String) async -> String?
@@ -77,11 +79,15 @@ struct BackgroundWorkSheet: View {
 
     var body: some View {
         NavigationStack {
+            ScrollViewReader { proxy in
             List {
                 Section {
                     ForEach(tasks) { task in
                         let actions = controlling.contains(task.taskId) ? [] : Self.actions(task)
                         row(task)
+                            .id(task.taskId)
+                            .listRowBackground(task.taskId == focusedTaskID ? Color.accentColor.opacity(0.12) : nil)
+                            .accessibilityAddTraits(task.taskId == focusedTaskID ? .isSelected : [])
                             // A full swipe never stops running work by accident.
                             .swipeActions(edge: .trailing, allowsFullSwipe: !task.canStop) {
                                 ForEach(actions, id: \.self) { actionButton($0, task: task) }
@@ -109,6 +115,8 @@ struct BackgroundWorkSheet: View {
                     .font(AppFont.caption())
                     .textCase(nil)
                 }
+            }
+            .onAppear { if let focusedTaskID { proxy.scrollTo(focusedTaskID, anchor: .center) } }
             }
             .navigationTitle(String(localized: "Background tasks"))
             .navigationBarTitleDisplayMode(.inline)
@@ -368,7 +376,7 @@ struct BackgroundWorkSheet: View {
         }
     }
 
-    private static func tint(_ status: BackgroundWorkTask.Status) -> Color {
+    static func tint(_ status: BackgroundWorkTask.Status) -> Color {
         switch status {
         case .running: .accentColor
         case .attention, .failed: .orange

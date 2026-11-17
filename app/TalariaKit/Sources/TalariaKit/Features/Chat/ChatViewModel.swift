@@ -766,6 +766,11 @@ public final class ChatViewModel {
     private var backgroundReadShown = 0
     /// What the card above the composer shows: the records the server pins.
     public var pinnedBackgroundTasks: [BackgroundWorkTask] { backgroundTasks.filter(\.pinned) }
+    /// TAL-2333: the Background tasks sheet's records: the pinned ones, and the unit a delegation row's subagent opened
+    /// when the server no longer pins it (finished work).
+    public func backgroundSheetTasks(focusing taskID: String?) -> [BackgroundWorkTask] {
+        backgroundTasks.filter { $0.pinned || $0.taskId == taskID }
+    }
     /// TAL-1531: the server's count of `pinnedBackgroundTasks`, kept with the records it came with.
     private var backgroundPinnedCount: Int?
     /// What the Background tasks toolbar badge, chip and sheet entry show. The recount covers a server older than

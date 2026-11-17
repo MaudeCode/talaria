@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { FileExcerptLineSchema, type RedactionPolicy, SearchMatchSchema, TurnUsageSchema } from '@maudecode/talaria-web-contracts'
+import { type ApprovalTool, FileExcerptLineSchema, type RedactionPolicy, SearchMatchSchema, TurnUsageSchema } from '@maudecode/talaria-web-contracts'
 import { channel } from 'node:diagnostics_channel'
 import { str } from './util.js'
 import { diffHunks } from './text/diff.js'
@@ -2669,6 +2669,20 @@ export function publicToolFrame(data: Record<string, unknown>, enabled: boolean,
   // A completion that moved its code into its result keeps its empty rows, which replace the start frame's.
   if (Array.isArray(frame.args_fields) && !frame.args_fields.length && !showsItsCode(frame.result_view)) delete frame.args_fields
   return frame
+}
+
+/**
+ * TAL-2333: the call an approval holds as its tool row shows it, from the frame its `tool` event carried. A shell call's
+ * argument rows stay out: its approval's `command` shows instead.
+ */
+export function approvalTool(call: Record<string, unknown>, enabled: boolean, workspace: string | null): ApprovalTool {
+  const frame = publicToolFrame(call, enabled, workspace)
+  const kind = frame.kind as ApprovalTool['kind']
+  return {
+    name: toolName(call), kind, target: str(frame.target),
+    ...(frame.verb ? { verb: frame.verb as ApprovalTool['verb'] } : {}), ...(frame.app ? { app: frame.app as ApprovalTool['app'] } : {}),
+    ...(kind !== 'shell' && Array.isArray(frame.args_fields) ? { args_fields: frame.args_fields as ApprovalTool['args_fields'] } : {}),
+  }
 }
 
 /** The open call a tool completion settles: the one with its Agent id, else the newest id-less call of the same name; -1 when none. */

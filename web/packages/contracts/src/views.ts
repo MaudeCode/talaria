@@ -306,10 +306,18 @@ export const MessageIdSchema = z.union([z.string(), z.number()])
  * TAL-372: the background work a delegation tool call started, on its scene row: the session's task ids it links to, their
  * combined status, and the subagent counts the row shows in place ("3 subagents · 2 done, 1 failed").
  */
+const BackgroundStatusSchema = z.enum(['running', 'attention', 'completed', 'failed', 'cancelled', 'unknown'])
+/**
+ * TAL-2333: one subagent of a delegation row: the unit record it ran in (`task_id`, which Background › Agents lists), the
+ * first line of its goal, its status, its seconds once finished, and the first line of its result summary.
+ */
+export const BackgroundAgentSchema = z.object({ task_id: z.string(), goal: z.string(), status: BackgroundStatusSchema, duration: z.number().optional(), summary: z.string().optional() })
+export type BackgroundAgent = z.infer<typeof BackgroundAgentSchema>
 export const BackgroundLinkSchema = z.object({
   task_ids: z.array(z.string()),
-  status: z.enum(['running', 'attention', 'completed', 'failed', 'cancelled', 'unknown']),
+  status: BackgroundStatusSchema,
   agents: z.object({ total: z.number().int(), completed: z.number().int(), failed: z.number().int(), running: z.number().int() }),
+  agents_detail: z.array(BackgroundAgentSchema).optional().describe('TAL-2333: each subagent, in dispatch order, which the row lists under its counts. Absent on an older server.'),
 })
 export type BackgroundLink = z.infer<typeof BackgroundLinkSchema>
 
@@ -824,6 +832,12 @@ export const SteerResponseSchema = z.looseObject({ accepted: z.boolean(), fallba
   outcome_unknown: z.boolean().optional().describe('The steer lost its acknowledgment and may have landed; `accepted` is false only because it is unconfirmed.') })
 export type SteerResponse = z.infer<typeof SteerResponseSchema>
 
+/**
+ * TAL-2333: the call an approval holds, with its tool row's display fields (`ToolDisplayFields`). `args_fields` is absent for
+ * a `shell` call, whose `command` the card shows instead, and when the arguments are not an object.
+ */
+export const ApprovalToolSchema = z.object({ name: z.string(), kind: ToolKindSchema, target: z.string(), verb: ToolDisplayFields.verb, app: ToolDisplayFields.app, args_fields: ToolDisplayFields.args_fields })
+export type ApprovalTool = z.infer<typeof ApprovalToolSchema>
 export const ApprovalPendingSchema = z.looseObject({
   allowed_choices: z.array(z.enum(['once', 'session', 'always', 'deny'])).optional()
     .describe('The answers this approval accepts; empty when its owner offered none Talaria can send. Absent (older servers, direct sessions) accepts all four.'),
@@ -832,11 +846,15 @@ export const ApprovalPendingSchema = z.looseObject({
     .describe('This approval offers deny and its turn can take a steer, so a deny may carry an instruction. Absent means no.'),
   tool_call_id: z.string().optional()
     .describe('The running tool call this approval holds, the `id` of its `tool` frame. Absent when the Agent names none.'),
+  tool: ApprovalToolSchema.optional()
+    .describe('TAL-2333: the held call as its tool row shows it, which the card draws as its header. Absent when the approval names no call this server saw start.'),
   head_id: z.string().optional()
     .describe('The identity Relay publishes as `approvalHeadId` for this approval, so a Live Activity answers only the approval it showed (TAL-1463). Absent without an `approval_id`.'),
   action_text: z.string().optional()
     .describe('What this approval runs on one line, its command or else its description, whole and at most 80 characters: the text a one-tap Allow on a notification or Live Activity sits beside (TAL-1469). Absent when the approval names neither, the text is longer, or `once` is not an allowed choice.'),
-  approval_id: z.string().optional(), session_id: z.string().optional(), command: z.string().optional(), description: z.string().optional(), title: z.string().optional(), name: z.string().optional(), kind: z.string().optional(),
+  description: z.string().optional()
+    .describe('TAL-2333: what the approval asks, the Agent\'s description, else its question, else its reason. Clients show only this.'),
+  approval_id: z.string().optional(), session_id: z.string().optional(), command: z.string().optional(), title: z.string().optional(), name: z.string().optional(), kind: z.string().optional(),
   reason: z.string().optional(), action: z.string().optional(), question: z.string().optional(), status: z.string().optional(), pending_count: z.number().optional(), run_id: z.string().optional(), mirror_token: z.string().optional(),
 })
 export type ApprovalPending = z.infer<typeof ApprovalPendingSchema>

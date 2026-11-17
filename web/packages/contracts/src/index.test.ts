@@ -1,4 +1,4 @@
-import { AcceptedSourceReferenceSchema, ApprovalPendingSchema, ApprovalRespondRequestSchema, ApprovalRespondResponseSchema, AuxiliaryReasoningSchema, SessionNewRequestSchema } from './views.js'
+import { AcceptedSourceReferenceSchema, ApprovalPendingSchema, BackgroundLinkSchema, ApprovalRespondRequestSchema, ApprovalRespondResponseSchema, AuxiliaryReasoningSchema, SessionNewRequestSchema } from './views.js'
 import { settingsContract, ReasoningUnsupportedSchema } from './routes/settings.js'
 import { SessionStreamEventSchema } from './sse.js'
 import { RpcRequestSchema } from './sidecar/rpc.js'
@@ -150,6 +150,13 @@ describe('contracts package', () => {
     // An older server omits the field, and the attachment stays valid.
     expect(OwnerAttachmentSchema.parse((shared('fixtures/gateway-owner.json') as { normal: unknown }).normal)).not.toHaveProperty('reasoning_control')
     expect(ModelChangeSchema.parse({ state: 'confirmation_required', confirm: 'token', model: 'picked', reasoning: 'high' }).reasoning).toBe('high')
+  })
+  it('carries an approval\'s held call and a delegation row\'s subagents (TAL-2333)', () => {
+    const fixture = shared('fixtures/tool-approval-and-agents.json') as Record<'approval_write' | 'approval_shell' | 'approval_mcp' | 'delegate_background', unknown>
+    for (const pending of [fixture.approval_write, fixture.approval_shell, fixture.approval_mcp]) expect(ApprovalPendingSchema.parse(pending)).toEqual(pending)
+    expect(BackgroundLinkSchema.parse(fixture.delegate_background)).toEqual(fixture.delegate_background)
+    // An older server sends neither.
+    expect(BackgroundLinkSchema.parse({ task_ids: [], status: 'running', agents: { total: 1, completed: 0, failed: 0, running: 1 } }).agents_detail).toBeUndefined()
   })
   it('carries a deny with an instruction and the owner verdict on its steer (TAL-1912)', () => {
     const { approval_instruction: fixture } = shared('fixtures/gateway-owner.json') as { approval_instruction: { pending: unknown; request: unknown; responses: Record<string, unknown>; steer_receipt: unknown } }
