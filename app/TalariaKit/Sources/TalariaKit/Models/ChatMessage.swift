@@ -424,6 +424,9 @@ public struct AssistantActivityScene: Codable, Equatable, Sendable {
     /// that predates the field (TAL-355), which then shows no recap.
     public let fileChanges: [AssistantTurnFileChange]?
 
+    /// TAL-2332: read only to give each row its group's record.
+    private enum GroupKeys: String, CodingKey { case activityGroups }
+
     enum CodingKeys: String, CodingKey {
         case version
         case finalAnswer
@@ -458,8 +461,9 @@ public struct AssistantActivityScene: Codable, Equatable, Sendable {
         fileChanges = (try? container.decodeIfPresent([JSONValue].self, forKey: .fileChanges))
             .map(AssistantTurnFileChange.decodeLossily)
 
+        let groups = AssistantActivityGroup.byID(try? decoder.container(keyedBy: GroupKeys.self).decodeIfPresent([JSONValue].self, forKey: .activityGroups))
         activityRows = (try? container.decodeIfPresent([JSONValue].self, forKey: .activityRows))
-            .map(AssistantActivitySceneRow.decodeLossily)
+            .map { AssistantActivitySceneRow.decodeLossily($0, groups: groups) }
     }
 }
 
@@ -471,11 +475,13 @@ public struct AnchorScenePageResponse: Decodable, Equatable, Sendable {
     enum CodingKeys: String, CodingKey {
         case rows
         case start
+        case activityGroups
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        rows = AssistantActivitySceneRow.decodeLossily((try? container.decodeIfPresent([JSONValue].self, forKey: .rows)) ?? [])
+        let groups = AssistantActivityGroup.byID(try? container.decodeIfPresent([JSONValue].self, forKey: .activityGroups))
+        rows = AssistantActivitySceneRow.decodeLossily((try? container.decodeIfPresent([JSONValue].self, forKey: .rows)) ?? [], groups: groups)
         start = max(0, container.decodeLossyIntIfPresent(forKey: .start) ?? 0)
     }
 }
@@ -525,8 +531,17 @@ public struct AssistantActivitySceneRow: Codable, Equatable, Sendable {
     /// A prose row's text as the server rewrote it for display, and its media (TAL-186); see `display`.
     let displayText: String?
     let media: [JSONValue]?
+    /// TAL-2332: the server's activity group of a reasoning or tool row, and that group's record from its scene or page.
+    public let groupID: String?
+    public internal(set) var group: AssistantActivityGroup?
+    /// TAL-2332: a tool row that heads a merged run of this many calls, or the row id of the merged row it folds into.
+    public let mergedCount: Int?
+    public let mergedInto: String?
 
     enum CodingKeys: String, CodingKey {
+        case groupID = "groupId"
+        case mergedCount
+        case mergedInto
         case rowID = "rowId"
         case talariaActivity
         case orderIndex
@@ -553,6 +568,9 @@ public struct AssistantActivitySceneRow: Codable, Equatable, Sendable {
         steering = try? container.decodeIfPresent([String: JSONValue].self, forKey: .steering)
         displayText = container.decodeLossyStringIfPresent(forKey: .displayText)
         media = try? container.decodeIfPresent([JSONValue].self, forKey: .media)
+        groupID = container.decodeLossyStringIfPresent(forKey: .groupID)
+        mergedCount = container.decodeLossyIntIfPresent(forKey: .mergedCount)
+        mergedInto = container.decodeLossyStringIfPresent(forKey: .mergedInto)
     }
 
     /// A prose row's text as the server rewrote it for display, with its media (TAL-186).
@@ -561,14 +579,16 @@ public struct AssistantActivitySceneRow: Codable, Equatable, Sendable {
     }
 
     /// Rows decode one by one, so a malformed row never drops its neighbours.
-    static func decodeLossily(_ values: [JSONValue]) -> [AssistantActivitySceneRow] {
+    static func decodeLossily(_ values: [JSONValue], groups: [String: AssistantActivityGroup] = [:]) -> [AssistantActivitySceneRow] {
         let rowDecoder = JSONDecoder()
         rowDecoder.keyDecodingStrategy = .convertFromSnakeCase
         return values.compactMap { value in
             guard case .object = value,
-                  let data = try? JSONEncoder().encode(value)
+                  let data = try? JSONEncoder().encode(value),
+                  var row = try? rowDecoder.decode(AssistantActivitySceneRow.self, from: data)
             else { return nil }
-            return try? rowDecoder.decode(AssistantActivitySceneRow.self, from: data)
+            row.group = row.groupID.flatMap { groups[$0] }
+            return row
         }
     }
 

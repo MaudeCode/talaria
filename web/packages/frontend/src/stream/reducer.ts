@@ -17,7 +17,7 @@ import type { AgentRuntimeMetadata } from '@maudecode/talaria-web-contracts'
 import type { ChatEvent } from '../contracts/sse'
 import type { ApprovalPending, Attachment, ClarifyPending, Session } from '../contracts'
 import type { ConnectorOperationView } from '@maudecode/talaria-web-contracts'
-import type { ApprovalAnsweredBy, PendingSteer, RunStatus, RateLimitWait, ToolApprovalOutcome, ToolField, ToolKind, ToolApp, ToolProgress, ToolResultView, ToolVerb } from '@maudecode/talaria-web-contracts'
+import type { ActivityGroup, ApprovalAnsweredBy, PendingSteer, RunStatus, RateLimitWait, ToolApprovalOutcome, ToolField, ToolKind, ToolApp, ToolProgress, ToolResultView, ToolVerb } from '@maudecode/talaria-web-contracts'
 
 export type TurnStatus = 'starting' | 'connecting' | 'streaming' | 'reconnecting' | 'done' | 'error' | 'cancelled'
 
@@ -50,13 +50,15 @@ export interface LiveToolCall {
   showsCard?: true
   /** TAL-2331: the transcript leaves it out (server `hidden`); a failed lookup's completion clears it. */
   hidden?: true | undefined
+  /** TAL-2332: the server's activity group for the call; absent from an older server, which groups on the client. */
+  groupId?: string | undefined
   startedAt: number
 }
 
 export type Segment =
   | { kind: 'text'; text: string; interim?: boolean }
   /** `disclosureKey`: the server's segment identity (TAL-1175), shared with the settled scene row. */
-  | { kind: 'reasoning'; text: string; titles: string[]; disclosureKey?: string }
+  | { kind: 'reasoning'; text: string; titles: string[]; disclosureKey?: string; /** TAL-2332: the server's activity group. */ groupId?: string }
   | { kind: 'tool'; toolId: string }
   /** A consumed steer, at the place the server will persist it: after the tool that had completed. */
   | { kind: 'steering'; steerId: string; text: string; activity?: import('@maudecode/talaria-web-contracts').TalariaActivity | undefined }
@@ -79,6 +81,8 @@ export interface LiveTurn {
   status: TurnStatus
   segments: Segment[]
   tools: Record<string, LiveToolCall>
+  /** TAL-2332: each activity group as the latest tool frame of it reported, by `group_id`. */
+  groups: Record<string, ActivityGroup>
   toolOrder: string[]
   reasoningText: string
   reasoningTitles: string[]
@@ -166,7 +170,7 @@ export function runStart(serverStartedAt: number | null | undefined, fallback: n
 function newTurn(sessionId: string, streamId: string, now: number, serverStartedAt?: number | null): LiveTurn {
   return {
     sessionId, streamId, turnId: null, userMessageId: null, userText: '', userAttachments: [], startedAt: runStart(serverStartedAt, now, now), status: 'starting',
-    segments: [], tools: {}, toolOrder: [], reasoningText: '', reasoningTitles: [], lastEventId: '', lastSeq: 0,
+    segments: [], tools: {}, groups: {}, toolOrder: [], reasoningText: '', reasoningTitles: [], lastEventId: '', lastSeq: 0,
     usage: null, tps: null, contextStatus: null, warning: null, error: null, cancelledMessage: null, approval: null, clarify: null, connectCard: null,
     pendingSteers: [], closedSteerIds: [], compressionStartedAt: null, rateLimitWait: null, runStatus: null, title: null, doneSession: null, doneAt: null, streamEnded: false, goal: null, replayed: false, claimsPersistedRows: true,
   }
@@ -190,11 +194,16 @@ function appendText(segments: Segment[], text: string): Segment[] {
 }
 
 /** A delta continues the open reasoning segment unless the server names a different one. */
-function appendReasoning(segments: Segment[], text: string, titles: string[] | null, disclosureKey: string | undefined): Segment[] {
+function appendReasoning(segments: Segment[], text: string, titles: string[] | null, disclosureKey: string | undefined, groupId: string | undefined): Segment[] {
   const last = segments[segments.length - 1]
-  if (last?.kind === 'reasoning' && (disclosureKey === undefined || last.disclosureKey === undefined || disclosureKey === last.disclosureKey)) return [...segments.slice(0, -1), { ...last, text: last.text + text, titles: titles ?? last.titles }]
+  if (last?.kind === 'reasoning' && (disclosureKey === undefined || last.disclosureKey === undefined || disclosureKey === last.disclosureKey)) return [...segments.slice(0, -1), { ...last, text: last.text + text, titles: titles ?? last.titles, ...(last.groupId === undefined && groupId !== undefined ? { groupId } : {}) }]
   if (!text && !titles) return segments
-  return [...segments, { kind: 'reasoning', text, titles: titles ?? [], ...(disclosureKey === undefined ? {} : { disclosureKey }) }]
+  return [...segments, { kind: 'reasoning', text, titles: titles ?? [], ...(disclosureKey === undefined ? {} : { disclosureKey }), ...(groupId === undefined ? {} : { groupId }) }]
+}
+
+/** TAL-2332: a tool frame's activity group, as the server now reports it. */
+function withGroup(groups: Record<string, ActivityGroup>, group: ActivityGroup | undefined): Record<string, ActivityGroup> {
+  return group ? { ...groups, [group.group_id]: group } : groups
 }
 
 function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event' }>): LiveTurn {
@@ -233,7 +242,7 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       const t = live()
       const text = event.data.text ?? ''
       const titles = Array.isArray(event.data.titles) ? event.data.titles.filter((x) => x.trim()).slice(0, 8) : null
-      return { ...t, reasoningText: t.reasoningText + text, reasoningTitles: titles ?? t.reasoningTitles, segments: appendReasoning(t.segments, text, titles, event.data.disclosure_key) }
+      return { ...t, reasoningText: t.reasoningText + text, reasoningTitles: titles ?? t.reasoningTitles, segments: appendReasoning(t.segments, text, titles, event.data.disclosure_key, event.data.group_id) }
     }
     case 'tool': {
       if (terminal) return stamped
@@ -242,11 +251,11 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       const id = event.data.id
       const existing = t.tools[id]
       const progress = event.data.progress === undefined ? existing?.progress ?? null : event.data.progress
-      const call: LiveToolCall = existing ?? { id, progress, name: event.data.name ?? 'tool', kind: event.data.kind ?? 'unknown', ...(event.data.verb ? { verb: event.data.verb } : {}), ...(event.data.app ? { app: event.data.app } : {}), target: event.data.target ?? '', args: event.data.args ?? {}, ...(event.data.args_fields ? { argsFields: event.data.args_fields } : {}), preview: event.data.preview ?? null, done: false, isError: false, duration: null, costUsd: null, resultView: null, startedAt: event.data.timestamp ?? now, ...(event.data.shows_card ? { showsCard: true as const } : {}), ...(event.data.hidden ? { hidden: true as const } : {}) }
-      const tools = { ...t.tools, [id]: existing ? { ...existing, progress, kind: event.data.kind ?? existing.kind, verb: event.data.verb ?? existing.verb, app: event.data.app ?? existing.app, target: event.data.target ?? existing.target, args: event.data.args ?? existing.args, argsFields: event.data.args_fields ?? existing.argsFields, preview: event.data.preview ?? existing.preview } : call }
+      const call: LiveToolCall = existing ?? { id, progress, name: event.data.name ?? 'tool', kind: event.data.kind ?? 'unknown', ...(event.data.verb ? { verb: event.data.verb } : {}), ...(event.data.app ? { app: event.data.app } : {}), target: event.data.target ?? '', args: event.data.args ?? {}, ...(event.data.args_fields ? { argsFields: event.data.args_fields } : {}), preview: event.data.preview ?? null, done: false, isError: false, duration: null, costUsd: null, resultView: null, startedAt: event.data.timestamp ?? now, ...(event.data.shows_card ? { showsCard: true as const } : {}), ...(event.data.hidden ? { hidden: true as const } : {}), ...(event.data.group_id ? { groupId: event.data.group_id } : {}) }
+      const tools = { ...t.tools, [id]: existing ? { ...existing, groupId: event.data.group_id ?? existing.groupId, progress, kind: event.data.kind ?? existing.kind, verb: event.data.verb ?? existing.verb, app: event.data.app ?? existing.app, target: event.data.target ?? existing.target, args: event.data.args ?? existing.args, argsFields: event.data.args_fields ?? existing.argsFields, preview: event.data.preview ?? existing.preview } : call }
       const toolOrder = existing ? t.toolOrder : [...t.toolOrder, id]
       const segments = existing ? t.segments : [...t.segments, { kind: 'tool' as const, toolId: id }]
-      return { ...t, tools, toolOrder, segments }
+      return { ...t, tools, toolOrder, segments, groups: withGroup(t.groups, event.data.group) }
     }
     case 'tool_progress': {
       if (terminal || stamped.streamEnded) return stamped
@@ -260,9 +269,9 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       const t = live()
       const id = event.data.id
       const existing = t.tools[id] ?? { id, name: event.data.name ?? 'tool', kind: 'unknown', target: '', args: event.data.args ?? {}, preview: null, done: false, isError: false, duration: null, costUsd: null, resultView: null, startedAt: now }
-      const call: LiveToolCall = { ...existing, progress: null, kind: event.data.kind ?? existing.kind, verb: event.data.verb ?? existing.verb, app: event.data.app ?? existing.app, target: event.data.target ?? existing.target, done: true, isError: !!event.data.is_error, preview: event.data.preview ?? existing.preview, duration: event.data.duration ?? null, costUsd: event.data.cost_usd ?? null, resultView: event.data.result_view ?? existing.resultView, args: event.data.args ?? existing.args, argsFields: event.data.args_fields ?? existing.argsFields, hidden: event.data.hidden }
+      const call: LiveToolCall = { ...existing, progress: null, kind: event.data.kind ?? existing.kind, verb: event.data.verb ?? existing.verb, app: event.data.app ?? existing.app, target: event.data.target ?? existing.target, done: true, isError: !!event.data.is_error, preview: event.data.preview ?? existing.preview, duration: event.data.duration ?? null, costUsd: event.data.cost_usd ?? null, resultView: event.data.result_view ?? existing.resultView, args: event.data.args ?? existing.args, argsFields: event.data.args_fields ?? existing.argsFields, hidden: event.data.hidden, groupId: event.data.group_id ?? existing.groupId }
       const known = id in t.tools
-      return { ...t, tools: { ...t.tools, [id]: call }, toolOrder: known ? t.toolOrder : [...t.toolOrder, id], segments: known ? t.segments : [...t.segments, { kind: 'tool', toolId: id }] }
+      return { ...t, groups: withGroup(t.groups, event.data.group), tools: { ...t.tools, [id]: call }, toolOrder: known ? t.toolOrder : [...t.toolOrder, id], segments: known ? t.segments : [...t.segments, { kind: 'tool', toolId: id }] }
     }
     case 'tool_approval': {
       const call = stamped.tools[event.data.id]

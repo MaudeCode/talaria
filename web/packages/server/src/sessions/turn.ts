@@ -29,6 +29,7 @@ import { materializeTurnAttachments, type BlobStore } from './storage/blobs.js'
 import type { RunJournal, RunJournalWriter } from './journal.js'
 import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, COMPRESSION_RECOVERY_TERMINAL_STATE, CONTEXT_USAGE_FIELDS, Session, contextUsage, forgetModelFigures, promptCacheHitPercent, titleFrom, type Message } from './session.js'
 import { anchorMessageKey, markerSummary, insertCompactionRow, visibleMessagesForAnchor } from './compress.js'
+import { LiveActivityGroups } from './activity-groups.js'
 import { buildActiveTurnToken, completedToolIndex, publicToolFrame, redactNestedMessageContainers, redactString, withToolId } from '../redact.js'
 import { dict, findPersonality, type Config, type PersonalityRow } from '../config/agent-config.js'
 import { ReasoningTitleTracker, reasoningDisclosureKey, reasoningEventPayload } from './reasoning-titles.js'
@@ -382,6 +383,8 @@ export class TurnRunner {
   private readonly steers = new Map<string, SteerRecord[]>()
   /** TAL-1912: approvals committed to a deny with an instruction, by session and approval: mid-steer, or where its text went. */
   private readonly approvalTells = new Map<string, 'steering' | ApprovalInstructionOutcome>()
+  /** TAL-2332: each running turn's live activity groups, so a consumed steer can end the open one. */
+  private readonly liveGroups = new Map<string, LiveActivityGroups>()
   /** TAL-1912: instructions a turn refused, per session; they go on as its next turn, sent once by the server. */
   private readonly queuedInstructions = new Map<string, string[]>()
   private readonly consumedSteers = new Map<string, ConsumedSteer[]>()
@@ -960,6 +963,9 @@ export class TurnRunner {
     let reasoningSegment = -1
     let reasoningOpen = false
     const liveToolCalls = this.registry.liveToolCalls.get(streamId) ?? []
+    // TAL-2332: the turn's activity groups, numbered as its settled scene numbers them.
+    const groups = new LiveActivityGroups()
+    this.liveGroups.set(streamId, groups)
     // TAL-1649: completions already counted as skill loads; a redelivered completion never counts twice.
     const countedSkillLoads = new Set<string>()
     // Each call's public `id`: the Agent's call id, else one minted here that its completion inherits through the pairing.
@@ -1088,6 +1094,7 @@ export class TurnRunner {
                 reasoningOpen = false
                 finalStreamedText += str(data.text)
                 live.text += str(data.text)
+                if (str(data.text).trim()) groups.close()
                 if (holdSilence && mayBecomeSilentReply(live.text)) { heldText += str(data.text); (await meterDelta(receivedAt)); return }
                 await emitFrame('token', { text: heldText + str(data.text) })
                 heldText = ''
@@ -1101,7 +1108,7 @@ export class TurnRunner {
                 reasoningChanged = true
                 if (!reasoningOpen) { reasoningSegment += 1; reasoningOpen = true }
                 // Python `reasoning_event_payload`: bold or first-line titles ride on the delta they complete.
-                await emitFrame('reasoning', { ...titles.prepare(reasoningEventPayload(str(data.text), live.reasoning)), disclosure_key: reasoningDisclosureKey(streamId, reasoningSegment) })
+                await emitFrame('reasoning', { ...titles.prepare(reasoningEventPayload(str(data.text), live.reasoning)), disclosure_key: reasoningDisclosureKey(streamId, reasoningSegment), ...groups.reasoning() })
                 await meterDelta(receivedAt)
                 return
               }
@@ -1122,6 +1129,7 @@ export class TurnRunner {
               case 'interim_assistant': {
                 finalStreamedText = ''
                 reasoningOpen = false
+                if (str(data.text).trim() && !data.already_streamed && !data.reasoning_echo) groups.close()
                 await emitFrame(frame.event, data)
                 return
               }
@@ -1139,7 +1147,7 @@ export class TurnRunner {
                   void sidecar.call('connectors.catalog', { profile_home: home }).then((r) => rememberCatalogNames(home, r.connectors), () => undefined)
                 }
                 const redacted = deps.redactEnabled()
-                await emitFrame('tool', publicToolFrame(withToolId(data, toolIds.get(call)!), redacted, s.workspace, sessionId), { redacted })
+                await emitFrame('tool', { ...publicToolFrame(withToolId(data, toolIds.get(call)!), redacted, s.workspace, sessionId), ...groups.start(toolIds.get(call)!, data.name) }, { redacted })
                 return
               }
               case 'tool_progress': {
@@ -1180,7 +1188,7 @@ export class TurnRunner {
                 // TAL-2325: its media files load the moment this frame shows their URLs, before its rows reach the transcript.
                 if (!outcome.is_error) grantLiveMedia(sessionId, data.name, rawResult)
                 const redacted = deps.redactEnabled()
-                await emitFrame('tool_complete', publicToolFrame(withToolId(complete, id), redacted, s.workspace, sessionId), { redacted })
+                await emitFrame('tool_complete', { ...publicToolFrame(withToolId(complete, id), redacted, s.workspace, sessionId), ...groups.complete(id, data.name, complete.is_error === true) }, { redacted })
                 // TAL-1649: a successful skill_view is one load in this conversation (never an ephemeral clone's), counted while
                 // this run still owns the session under the clear generation it started with.
                 const skillName = opts.ephemeral ? null : successfulSkillViewName(data.name, rawResult)
@@ -1941,6 +1949,7 @@ export class TurnRunner {
     this.steers.delete(streamId)
     this.consumedSteers.delete(streamId)
     this.lastCompletedTool.delete(streamId)
+    this.liveGroups.delete(streamId)
     this.settledStreams.delete(streamId)
     this.stopTerminals.delete(streamId)
     this.stopTerminalWrites.delete(streamId)
@@ -2517,7 +2526,10 @@ export class TurnRunner {
 
   /** The Agent's pending steer text settles which steers it has taken: those become `steer_consumed` and their rows. */
   private async settleConsumedSteers(sessionId: string, streamId: string, pendingText: string): Promise<void> {
-    for (const record of this.takeConsumedSteers(streamId, pendingText, { keepLeftovers: true })) (await this.emitToSession(sessionId, 'steer_consumed', record))
+    const consumed = this.takeConsumedSteers(streamId, pendingText, { keepLeftovers: true })
+    // TAL-2332: a steer the Agent took ends the open activity group, as it does on the settled scene.
+    if (consumed.length) this.liveGroups.get(streamId)?.close()
+    for (const record of consumed) (await this.emitToSession(sessionId, 'steer_consumed', record))
     await this.saveConsumedSteers(sessionId, streamId)
   }
 

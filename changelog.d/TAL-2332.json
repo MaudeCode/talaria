@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Tool activity groups on the App and the Web now follow the server: it decides where each group starts and ends and counts its calls, so a group's header names what happened (\"Used Talaria tools\", \"Read files, searched the web\") the same way on both. Two or more successful calls of the same kind in a row show as one row, such as \"Read files\", that opens to each call.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "app",
+        "web"
+      ]
+    }
+  ]
+}

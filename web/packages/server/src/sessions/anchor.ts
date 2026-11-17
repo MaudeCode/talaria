@@ -1,5 +1,6 @@
 import { reasoningProjection } from './reasoning-display.js'
-import { TalariaActivitySchema, type TalariaActivity } from '@maudecode/talaria-web-contracts'
+import { groupsOf, withActivityGroups } from './activity-groups.js'
+import { TalariaActivitySchema, type ActivityGroup, type TalariaActivity } from '@maudecode/talaria-web-contracts'
 import { reasoningDisclosureKey } from './reasoning-titles.js'
 /**
  * Anchor activity scenes: the compacted worklog the browser settles onto an
@@ -187,6 +188,12 @@ export interface SceneRow {
   disclosure_key?: string
   tool?: SceneTool
   steering?: SceneSteering
+  /** TAL-2332: the activity group, merged-run size and merged row, decided as the scene leaves (`withActivityGroups`). */
+  group_id?: string
+  merged_count?: number
+  merged_into?: string
+  /** TAL-2332: on a consumed steer, the activity of the work phase it ends, for that phase's "Worked" header. */
+  phase_activity?: ActivityGroup
 }
 
 const finite = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
@@ -285,10 +292,12 @@ export function anchorActivitySceneTransportPreview(stored: Record<string, unkno
   const preview: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(scene)) if (k !== 'activity_rows' && k !== 'final_answer_excerpt') preview[k] = structuredClone(v)
   if ('turn_duration' in scene) preview.turn_duration = finite(Number(scene.turn_duration ?? NaN))
-  const rows = reasoningProjection(transportRows(scene, turnId), showReasoning)
+  const { rows, groups, finalPhase } = withActivityGroups(reasoningProjection(transportRows(scene, turnId), showReasoning))
   const total = rows.length
   const offset = Math.max(0, total - ANCHOR_SCENE_PREVIEW_ROWS)
   preview.activity_rows = rows.slice(offset)
+  preview.activity_groups = groupsOf(preview.activity_rows as SceneRow[], groups)
+  preview.final_phase_activity = finalPhase
   preview.activity_rows_total = total
   preview.activity_rows_offset = offset
   preview.activity_rows_complete = offset === 0
@@ -692,12 +701,13 @@ export function readAnchorSceneRows(session: Session, query: { messageRef: strin
   const scene = stored ?? built
   const sceneRef = record ? str(record.message_ref || query.messageRef) : query.messageRef
   if (!scene || !Array.isArray(scene.activity_rows)) return null
-  const rows = reasoningProjection(stored ? withBuiltToolFlags(transportRows(scene, turnId), built) : transportRows(scene, turnId), showReasoning)
+  const { rows, groups } = withActivityGroups(reasoningProjection(stored ? withBuiltToolFlags(transportRows(scene, turnId), built) : transportRows(scene, turnId), showReasoning))
   const total = rows.length
   const before = Math.max(0, Math.min(total, query.before ?? total))
   const limit = Math.max(1, Math.min(200, query.limit ?? 80))
   const start = Math.max(0, before - limit)
-  return { scene_ref: sceneRef, rows: rows.slice(start, before), start, end: before, total, complete: start === 0 }
+  const page = rows.slice(start, before)
+  return { scene_ref: sceneRef, rows: page, activity_groups: groupsOf(page, groups), start, end: before, total, complete: start === 0 }
 }
 
 /** A turn opens at a user message the reader sees (text or attachments); hidden prompts, the Agent's hidden rows and marker rows do not. */

@@ -29,6 +29,10 @@ public struct ToolCall: Identifiable, Equatable, Sendable {
     public var resultTruncated = false
     /// TAL-2331: the transcript leaves this call out (server `hidden`): a tool lookup while Settings hides them.
     public var isHidden: Bool
+    /// TAL-2332: on the first call of a server-merged run, how many calls the merged row stands for.
+    public var mergedCount: Int?
+    /// TAL-2332: the id of the call whose merged row this call folds into.
+    public var mergedInto: String?
 
     public init(
         id: String = "live-tool-\(UUID().uuidString)",
@@ -101,6 +105,69 @@ public struct ToolApp: Decodable, Equatable, Sendable {
               let app = try? JSONDecoder().decode(Self.self, from: data)
         else { return nil }
         self = app
+    }
+}
+
+/// TAL-2332: a run of reasoning and tool rows the server folds under one header: its calls by kind in the server's order,
+/// its failed calls, and whether any still runs. The app words the header from these alone.
+public struct AssistantActivityGroup: Decodable, Equatable, Sendable {
+    public struct Part: Decodable, Equatable, Sendable {
+        public let kind: ToolDisplayKind
+        public let count: Int
+        public let failed: Int
+
+        enum CodingKeys: String, CodingKey { case kind, count, failed }
+
+        public init(kind: ToolDisplayKind, count: Int, failed: Int = 0) {
+            self.kind = kind
+            self.count = count
+            self.failed = failed
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            kind = ToolDisplayKind(serverValue: container.decodeLossyStringIfPresent(forKey: .kind)) ?? .unknown
+            count = max(0, container.decodeLossyIntIfPresent(forKey: .count) ?? 0)
+            failed = max(0, container.decodeLossyIntIfPresent(forKey: .failed) ?? 0)
+        }
+    }
+
+    public let groupID: String
+    public let parts: [Part]
+    public let failed: Int
+    public let running: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case groupID = "group_id"
+        case parts, failed, running
+    }
+
+    public init(groupID: String, parts: [Part], failed: Int = 0, running: Bool = false) {
+        self.groupID = groupID
+        self.parts = parts
+        self.failed = failed
+        self.running = running
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        groupID = try container.decode(String.self, forKey: .groupID)
+        parts = (try? container.decodeIfPresent([Part].self, forKey: .parts)) ?? []
+        failed = max(0, container.decodeLossyIntIfPresent(forKey: .failed) ?? 0)
+        running = container.decodeLossyBoolIfPresent(forKey: .running) == true
+    }
+
+    init?(_ value: JSONValue?) {
+        guard case .object = value,
+              let data = try? JSONEncoder().encode(value),
+              let group = try? JSONDecoder().decode(Self.self, from: data)
+        else { return nil }
+        self = group
+    }
+
+    /// The groups of a scene or page by id; a malformed record is left out.
+    static func byID(_ values: [JSONValue]?) -> [String: AssistantActivityGroup] {
+        Dictionary((values ?? []).compactMap(Self.init).map { ($0.groupID, $0) }, uniquingKeysWith: { $1 })
     }
 }
 

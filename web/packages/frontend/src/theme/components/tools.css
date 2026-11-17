@@ -37,6 +37,8 @@
 @media (hover:none) and (pointer:coarse){.tool-worklog-control{min-height:44px}}
 .tool-worklog-list{--worklog-rail:24px;margin:3px 0 0 0;padding-left:0;border-left:0;background:transparent;display:flex;flex-direction:column;gap:1px}
 .tool-worklog-list .tool-card-row{margin:0}
+/* TAL-2332: a merged run's calls sit under its row, so the calls after it read as the group's own. */
+.activity-merged-run > .tool-worklog-body > .worklog > .tool-worklog-list{padding-left:16px}
 .tool-worklog-list .tool-card{margin:0;border:0;border-radius:0;background:transparent}
 .tool-worklog-list .tool-card-row + .tool-card-row{border-top:0}
 .tool-worklog-list .tool-card-header{display:flex;align-items:center;padding:3px 8px;margin-left:-8px;border-radius:7px;min-width:0;overflow:hidden;white-space:nowrap;gap:7px}

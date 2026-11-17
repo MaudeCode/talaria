@@ -637,6 +637,65 @@ final class TranscriptHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "running-subagent-settled")
     }
 
+    /// TAL-2332: a settled turn splits and names its activity groups from the server's fields, and a run of calls the server
+    /// merged shows as one row named for them that opens to each call.
+    func testServerActivityGroupsSplitNameAndMergeTheTurnsCalls() async throws {
+        let fixture = try FixtureApp(for: self)
+        let detail = try Self.activityGroupDetail()
+        UITestFixtureURLProtocol.sessionDetail.withLock { $0 = detail }
+        let window = try hostWindow(fixture.chat(try await fixture.session()), size: HostedSize.phone)
+
+        let first = try await requireElement(in: window, label: "Completed activity, Read files, ran a command", "The first group is not named from its record")
+        // The web search is its own group of one call, shown inline after the prose rather than folded into the first group.
+        let search = await awaitElement(in: window) { $0.accessibilityLabel?.contains("swift concurrency") == true }
+        XCTAssertNotNil(search, "The second group's call is not shown on its own")
+        settle(0.3)
+        attachHostedScreenshot(window, name: "activity-groups-collapsed")
+        HostedAccessibility.activate(first)
+        let merged = try await requireElement(in: window, label: "Read files", "The merged reads are not one row")
+        let labels = { HostedAccessibility.elements(in: window).compactMap(\.accessibilityLabel) }
+        let shell = await awaitCondition { labels().contains { $0.contains("ls -la") } }
+        XCTAssertTrue(shell, "The command is not its own row in the group")
+        XCTAssertFalse(labels().contains { $0.contains("beta.swift") }, "The merged reads are not folded into their row")
+        settle(0.3)
+        attachHostedScreenshot(window, name: "activity-groups-merged-folded")
+        HostedAccessibility.activate(merged)
+        let opened = await awaitCondition { ["alpha.swift", "beta.swift", "gamma.swift"].allSatisfy { target in labels().contains { $0.contains(target) } } }
+        XCTAssertTrue(opened, "The merged row does not open to each call: \(labels())")
+        settle(0.3)
+        attachHostedScreenshot(window, name: "activity-groups-merged-open")
+    }
+
+    /// A settled turn as the server ships it: three merged reads and a command in one group, prose, then a web search.
+    private nonisolated static func activityGroupDetail() throws -> Data {
+        func tool(_ id: String, name: String, kind: String, target: String, group: String, extra: [String: Any] = [:]) -> [String: Any] {
+            ["row_id": "tool:\(id)", "order_index": 0, "role": "tool", "group_id": group,
+             "tool": ["id": id, "name": name, "kind": kind, "target": target, "args": [:], "done": true, "is_error": false]].merging(extra) { $1 }
+        }
+        let rows: [[String: Any]] = [
+            tool("alpha", name: "read_file", kind: "read", target: "alpha.swift", group: "group:0", extra: ["merged_count": 3]),
+            tool("beta", name: "read_file", kind: "read", target: "beta.swift", group: "group:0", extra: ["merged_into": "tool:alpha"]),
+            tool("gamma", name: "read_file", kind: "read", target: "gamma.swift", group: "group:0", extra: ["merged_into": "tool:alpha"]),
+            tool("list", name: "terminal", kind: "shell", target: "ls -la", group: "group:0"),
+            ["row_id": "reply:prose", "order_index": 0, "role": "prose", "text": "Read the sources; checking the docs next."],
+            tool("docs", name: "web_search", kind: "web", target: "swift concurrency", group: "group:1"),
+        ].enumerated().map { index, row in row.merging(["order_index": index]) { $1 } }
+        let groups: [[String: Any]] = [
+            ["group_id": "group:0", "parts": [["kind": "read", "count": 3, "failed": 0], ["kind": "shell", "count": 1, "failed": 0]], "failed": 0, "running": false],
+            ["group_id": "group:1", "parts": [["kind": "web", "count": 1, "failed": 0]], "failed": 0, "running": false],
+        ]
+        let session: [String: Any] = [
+            "session_id": UITestFixtureURLProtocol.sessionID, "title": "Activity groups",
+            "messages": [
+                ["role": "user", "content": "Read the sources", "message_id": "groups-goal", "_turn_id": "groups"],
+                ["role": "assistant", "content": "All read.", "message_id": "groups-reply", "_turn_id": "groups",
+                 "_anchor_activity_scene": ["version": "activity_scene_v1", "terminal_state": "completed", "final_answer": "All read.",
+                                            "expanded_by_default": true, "turn_duration": 9, "activity_rows": rows, "activity_groups": groups]],
+            ],
+        ]
+        return try JSONSerialization.data(withJSONObject: ["session": session])
+    }
+
     /// The shared fixture's `key` detail for the fixture chat: an earlier turn the server opens, then the last turn,
     /// running or settled as `key` says.
     private nonisolated static func subagentDetail(_ key: String) throws -> Data {

@@ -327,6 +327,17 @@ export type TalariaActivity = z.infer<typeof TalariaActivitySchema>
 /** Malformed optional presentation never discards the underlying message or stream event. */
 export const OptionalTalariaActivitySchema = TalariaActivitySchema.optional().catch(undefined)
 
+/** TAL-2332: one kind's calls in an activity group: how many there are and how many failed. Hidden lookups (TAL-2331) are not counted. */
+export const ActivityGroupPartSchema = z.object({ kind: ToolKindSchema, count: z.number().int(), failed: z.number().int() })
+export type ActivityGroupPart = z.infer<typeof ActivityGroupPartSchema>
+/**
+ * TAL-2332: a run of reasoning and tool rows the server folds under one header, ended by prose, a steer or a call whose card
+ * stands alone (`shows_card`, which forms a group of its own). `parts` are its calls by kind in first-seen order; `failed`
+ * counts its failed calls; `running` holds while any call is unfinished. Clients word the header from these alone.
+ */
+export const ActivityGroupSchema = z.object({ group_id: z.string(), parts: z.array(ActivityGroupPartSchema), failed: z.number().int(), running: z.boolean() })
+export type ActivityGroup = z.infer<typeof ActivityGroupSchema>
+
 /** One normalized activity row: the server decides role, order, tool completion/error, and steering consumption. */
 export const ActivitySceneRowSchema = z.looseObject({
   talaria_activity: OptionalTalariaActivitySchema,
@@ -340,6 +351,10 @@ export const ActivitySceneRowSchema = z.looseObject({
     /** TAL-331: a limited response clipped `result` (originally `result_chars` long); `GET /api/session/tool-result` serves it whole. */
     result_truncated: z.literal(true).optional(), result_chars: z.number().int().nullable().optional() }).optional(),
   steering: z.looseObject({ steer_id: z.string(), consumed: z.boolean(), submitted_at: z.number().nullable(), consumed_at: z.number().nullable(), phase_duration: z.number().nullable().optional() }).optional(),
+  group_id: z.string().optional().describe('TAL-2332: the activity group (`ActivityScene.activity_groups`) a reasoning or tool row belongs to; consecutive rows sharing it fold under one header. Absent on prose and steering rows, and on an older server.'),
+  merged_count: z.number().int().min(2).optional().describe('TAL-2332: on the first of two or more consecutive successful calls of one kind and presentation in a group: how many calls the merged row stands for. Clients show one row with the plural summary that expands to each call.'),
+  phase_activity: ActivityGroupSchema.optional().describe('TAL-2332: on a consumed steer, the calls of the work phase it ends (counted like a group, `group_id` `phase:<n>`), which that phase\'s "Worked" header words. Absent on any other row.'),
+  merged_into: z.string().optional().describe('TAL-2332: the `row_id` of the merged row this call folds into; clients show it only inside that row. A call whose merged row is not loaded shows on its own.'),
 })
 export type ActivitySceneRow = z.infer<typeof ActivitySceneRowSchema>
 
@@ -367,6 +382,10 @@ export const ActivitySceneSchema = z.looseObject({
   has_consumed_steering: z.boolean().optional(),
   /** The files the whole turn's file-mutating calls changed, in first-touch order; clients join them to `git/status` for line counts. */
   file_changes: z.array(TurnFileChangeSchema).optional(),
+  /** TAL-2332: the activity groups of the shipped rows, counted over each whole group (paged-out rows included). */
+  activity_groups: z.array(ActivityGroupSchema).optional(),
+  /** TAL-2332: the calls of the work phase after the turn's last consumed steer (the whole turn without one), which its "Worked" header words. */
+  final_phase_activity: ActivityGroupSchema.optional(),
   activity_rows_total: z.number().int().optional(), activity_rows_offset: z.number().int().optional(), activity_rows_complete: z.boolean().optional(), activity_rows_omitted: z.number().int().optional(), activity_scene_ref: z.string().optional(),
 })
 export type ActivityScene = z.infer<typeof ActivitySceneSchema>

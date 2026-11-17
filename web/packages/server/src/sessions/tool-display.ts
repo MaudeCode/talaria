@@ -247,7 +247,7 @@ function delegateTarget(arg: (keys: string[]) => string): string {
  */
 export function toolDisplay(name: unknown, args: unknown, workspace: string | null = null): { kind: ToolKind; target: string; focus_path: string | null; shows_card?: true; verb?: ToolVerb; app?: ToolApp } {
   const bridge = BRIDGES.get(str(name))
-  const kind = bridge?.kind ?? toolKind(name)
+  const kind = displayKind(name)
   const a = isDict(args) ? args : {}
   const arg = (keys: string[]) => keys.map((k) => snapshotArg(a, k)).find((v): v is string => typeof v === 'string' && Boolean(v.trim())) ?? ''
   // TAL-2330: an MCP or connector call reads as its app and action; a connector's names the account alias the call picked.
@@ -273,6 +273,17 @@ export function toolDisplay(name: unknown, args: unknown, workspace: string | nu
     ...(typeof name === 'string' && CARD_TOOLS.has(name) ? { shows_card: true as const } : {}),
     ...(verb ? { verb } : {}),
   }
+}
+
+/** The kind a call shows: a lookup bridge's own, else its name's. */
+const displayKind = (name: unknown): ToolKind => BRIDGES.get(str(name))?.kind ?? toolKind(name)
+
+/**
+ * TAL-2332: what activity grouping reads of a call, from its name alone: the kind it shows, how its result shows (`generic`
+ * for a name the table does not list) and whether its card stands alone (`shows_card`).
+ */
+export function toolGrouping(name: unknown): { kind: ToolKind; presentation: string; card: boolean } {
+  return { kind: displayKind(name), presentation: toolPresentation(name) ?? 'generic', card: typeof name === 'string' && CARD_TOOLS.has(name) }
 }
 
 /** TAL-2328: the verb of a tool whose `action` decides what it does; an action not listed reads as its kind's own phrase. */

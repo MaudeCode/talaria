@@ -683,6 +683,49 @@ describe('chat turns through the sidecar', () => {
     expect((list.sessions as Json[]).find((r) => r.session_id === sid)).toMatchObject({ title: 'Greeting exchange', message_count: 4 })
   })
 
+  it('groups live reasoning and tool frames as the settled scene groups their rows (TAL-2332)', async () => {
+    const call = (id: string, name: string, args: Json) => ({ id, type: 'function', function: { name, arguments: JSON.stringify(args) } })
+    const sid = await newSession(s)
+    sidecar.respond('chat.start', (params, emit) => {
+      emit({ event: 'reasoning', data: { text: 'look' } })
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'read_file', args: { path: 'a' }, tid: 'r1' } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'read_file', preview: 'a', args: { path: 'a' }, tid: 'r1', is_error: false } })
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'read_file', args: { path: 'b' }, tid: 'r2' } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'read_file', preview: 'b', args: { path: 'b' }, tid: 'r2', is_error: false } })
+      emit({ event: 'token', data: { text: 'Read both. ' } })
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'terminal', args: { command: 'false' }, tid: 't1' } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'terminal', preview: 'failed', args: { command: 'false' }, tid: 't1', raw_result: { output: '', exit_code: 1, error: 'failed' } } })
+      emit({ event: 'token', data: { text: 'Done.' } })
+      return completed([
+        { role: 'user', content: str(params.user_message) },
+        { role: 'assistant', content: '', tool_calls: [call('r1', 'read_file', { path: 'a' }), call('r2', 'read_file', { path: 'b' })] },
+        { role: 'tool', tool_call_id: 'r1', content: 'a' },
+        { role: 'tool', tool_call_id: 'r2', content: 'b' },
+        { role: 'assistant', content: 'Read both. ', tool_calls: [call('t1', 'terminal', { command: 'false' })] },
+        { role: 'tool', tool_call_id: 't1', content: JSON.stringify({ output: '', exit_code: 1, error: 'failed' }) },
+        { role: 'assistant', content: 'Done.' },
+      ])
+    })
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Group"', usage: null }))
+    const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'read' }))).stream_id)
+    const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')
+    const delta = frames.find((f) => f.event === 'reasoning' && (f.data as Json).text === 'look')?.data as Json
+    const tools = frames.filter((f) => f.event === 'tool' || f.event === 'tool_complete').map((f) => f.data as Json)
+    expect(delta.group_id).toBe('group:0')
+    expect(tools.map((frame) => [frame.id, frame.group_id])).toEqual([['r1', 'group:0'], ['r1', 'group:0'], ['r2', 'group:0'], ['r2', 'group:0'], ['t1', 'group:1'], ['t1', 'group:1']])
+    // The header updates as calls arrive: running while a call runs, then settled with its failures.
+    expect(tools[2]?.group).toEqual({ group_id: 'group:0', parts: [{ kind: 'read', count: 2, failed: 0 }], failed: 0, running: true })
+    const liveGroups = [tools[3]?.group, tools[5]?.group]
+    expect(liveGroups).toEqual([
+      { group_id: 'group:0', parts: [{ kind: 'read', count: 2, failed: 0 }], failed: 0, running: false },
+      { group_id: 'group:1', parts: [{ kind: 'shell', count: 1, failed: 1 }], failed: 1, running: false },
+    ])
+    const messages = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
+    const scene = messages.at(-1)?._anchor_activity_scene as Json
+    expect((scene.activity_rows as Json[]).map((row) => [row.row_id, row.group_id ?? null])).toEqual([[expect.stringMatching(/:reasoning$/) as string, 'group:0'], ['tool:r1', 'group:0'], ['tool:r2', 'group:0'], [expect.stringMatching(/:prose$/) as string, null], ['tool:t1', 'group:1']])
+    expect(scene.activity_groups).toEqual(liveGroups)
+  })
+
   it('names a read call\'s absolute path inside the session workspace as its focus path on live frames and the session (TAL-1537)', async () => {
     const sid = await newSession(s)
     const workspace = str(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).workspace)

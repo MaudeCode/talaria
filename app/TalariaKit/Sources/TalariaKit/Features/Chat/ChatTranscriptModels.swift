@@ -34,6 +34,9 @@ public struct AssistantActivityRow: Identifiable, Equatable, Sendable {
     var isFinalAnswer = false
     /// A prose row's text as the server rewrote it for display, with its media (TAL-186).
     public var display: TranscriptDisplayBody? = nil
+    /// TAL-2332: a reasoning or tool row's server activity group, and that group's latest record; nil from an older server.
+    public var groupID: String? = nil
+    public var group: AssistantActivityGroup? = nil
 
     var kind: String {
         switch content {
@@ -250,6 +253,8 @@ public struct CompletedAssistantTurn: Equatable, Sendable {
                     resolvedFinalSegmentIndex = segments.index(before: segments.endIndex)
                 }
             case .reasoning, .tools:
+                // TAL-2332: the server's groups split the run; an older server's rows run until prose or a steer.
+                if let last = pendingActivity.last, last.groupID != row.groupID { appendActivity() }
                 pendingActivity.append(row)
             case .steering(let steering):
                 appendActivity()
@@ -387,10 +392,11 @@ public struct AssistantActivityTimeline: Equatable, Sendable {
         appendText(text, kind: "prose", id: id) { .prose($0) }
     }
 
-    mutating func appendReasoning(_ text: String, titles: [String] = [], id: String? = nil) {
+    mutating func appendReasoning(_ text: String, titles: [String] = [], id: String? = nil, groupID: String? = nil) {
         let normalizedTitles = ReasoningTitleMetadata.normalize(titles)
         if let lastIndex = rows.indices.last,
-           case .reasoning(var reasoning) = rows[lastIndex].content {
+           case .reasoning(var reasoning) = rows[lastIndex].content,
+           groupID == nil || rows[lastIndex].groupID == nil || rows[lastIndex].groupID == groupID {
             reasoning.text.append(contentsOf: text)
             if !normalizedTitles.isEmpty {
                 reasoning.titles = normalizedTitles
@@ -401,12 +407,15 @@ public struct AssistantActivityTimeline: Equatable, Sendable {
         guard !text.isEmpty else { return }
         rows.append(AssistantActivityRow(
             id: id ?? "reasoning:\(rows.count)",
-            content: .reasoning(AssistantActivityRow.Reasoning(text: text, titles: normalizedTitles))
+            content: .reasoning(AssistantActivityRow.Reasoning(text: text, titles: normalizedTitles)),
+            groupID: groupID
         ))
     }
 
-    mutating func appendTool(_ toolCall: ToolCall, id: String? = nil) {
-        if case .tools(var toolCalls)? = rows.last?.content {
+    /// TAL-2332: a tool row holds the consecutive calls of one server group; a call of another group starts a new row.
+    mutating func appendTool(_ toolCall: ToolCall, id: String? = nil, groupID: String? = nil, group: AssistantActivityGroup? = nil) {
+        defer { if let group { setGroup(group) } }
+        if case .tools(var toolCalls)? = rows.last?.content, rows.last?.groupID == groupID || groupID == nil {
             if let matchingIndex = toolCalls.lastIndex(where: { $0.id == toolCall.id }) {
                 toolCalls[matchingIndex] = toolCall
             } else {
@@ -418,8 +427,16 @@ public struct AssistantActivityTimeline: Equatable, Sendable {
 
         rows.append(AssistantActivityRow(
             id: id ?? "tools:\(rows.count)",
-            content: .tools([toolCall])
+            content: .tools([toolCall]),
+            groupID: groupID
         ))
+    }
+
+    /// TAL-2332: a group's record as the server now reports it, on every row of that group.
+    mutating func setGroup(_ group: AssistantActivityGroup) {
+        for index in rows.indices where rows[index].groupID == group.groupID {
+            rows[index].group = group
+        }
     }
 
     func tool(at index: Int) -> ToolCall? {
@@ -535,10 +552,15 @@ public struct AssistantActivityTimeline: Equatable, Sendable {
 
         var timeline = AssistantActivityTimeline()
         // Paged earlier rows come first, then the tail preview; both are already in server order.
-        for (sourceIndex, row) in (earlierRows + (scene.activityRows ?? [])).enumerated().sorted(by: { lhs, rhs in
+        let sceneRows = earlierRows + (scene.activityRows ?? [])
+        // TAL-2332: a merged run names its first row; its calls refer to that row's call.
+        let callIDs = Dictionary(sceneRows.compactMap { row in
+            row.rowID.flatMap { rowID in Self.nonEmpty(Self.string(row.tool?["id"])).map { (rowID, $0) } }
+        }, uniquingKeysWith: { first, _ in first })
+        for (sourceIndex, row) in sceneRows.enumerated().sorted(by: { lhs, rhs in
             (lhs.element.orderIndex ?? lhs.offset) < (rhs.element.orderIndex ?? rhs.offset)
         }) {
-            timeline.appendSceneRow(row, sourceIndex: sourceIndex)
+            timeline.appendSceneRow(row, sourceIndex: sourceIndex, mergedInto: row.mergedInto.flatMap { callIDs[$0] })
         }
         // The server's rows exclude the answer, which it sends as `final_answer` (possibly empty).
         if let finalAnswer = Self.nonEmpty(scene.finalAnswer) {
@@ -599,7 +621,7 @@ public struct AssistantActivityTimeline: Equatable, Sendable {
         ))
     }
 
-    private mutating func appendSceneRow(_ row: AssistantActivitySceneRow, sourceIndex: Int) {
+    private mutating func appendSceneRow(_ row: AssistantActivitySceneRow, sourceIndex: Int, mergedInto: String? = nil) {
         let rowID = row.rowID ?? "scene:\(sourceIndex)"
         switch row.role {
         case "prose":
@@ -618,12 +640,15 @@ public struct AssistantActivityTimeline: Equatable, Sendable {
                 }
             }
         case "reasoning":
-            if appendReasoningIfPresent(row.text, titles: row.titles ?? [], id: rowID) {
+            if appendReasoningIfPresent(row.text, titles: row.titles ?? [], id: rowID, groupID: row.groupID) {
                 rows[rows.index(before: rows.endIndex)].createdAt = row.createdAt
+                if let group = row.group { setGroup(group) }
             }
         case "tool":
-            if let toolCall = Self.sceneToolCall(row.tool, fallbackID: rowID) {
-                appendTool(toolCall, id: rowID)
+            if var toolCall = Self.sceneToolCall(row.tool, fallbackID: rowID) {
+                toolCall.mergedCount = row.mergedCount
+                toolCall.mergedInto = mergedInto
+                appendTool(toolCall, id: rowID, groupID: row.groupID, group: row.group)
                 if rows[rows.index(before: rows.endIndex)].createdAt == nil {
                     rows[rows.index(before: rows.endIndex)].createdAt = row.createdAt
                 }
@@ -716,10 +741,11 @@ public struct AssistantActivityTimeline: Equatable, Sendable {
     private mutating func appendReasoningIfPresent(
         _ text: String?,
         titles: [String] = [],
-        id: String
+        id: String,
+        groupID: String? = nil
     ) -> Bool {
         guard let text = Self.nonEmpty(text) else { return false }
-        appendReasoning(text, titles: titles, id: id)
+        appendReasoning(text, titles: titles, id: id, groupID: groupID)
         return true
     }
 

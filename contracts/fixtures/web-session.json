@@ -46,7 +46,8 @@
                   }
                 ]
               },
-              "order_index": 1
+              "order_index": 1,
+              "group_id": "group:0"
             }
           ],
           "activity_rows_total": 2,
@@ -61,7 +62,33 @@
               "path": "fixture.txt",
               "action": "edited"
             }
-          ]
+          ],
+          "activity_groups": [
+            {
+              "group_id": "group:0",
+              "parts": [
+                {
+                  "kind": "write",
+                  "count": 1,
+                  "failed": 0
+                }
+              ],
+              "failed": 0,
+              "running": false
+            }
+          ],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [
+              {
+                "kind": "write",
+                "count": 1,
+                "failed": 0
+              }
+            ],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:start",
         "_display": "row"
@@ -89,7 +116,8 @@
               "titles": [
                 "Plan"
               ],
-              "order_index": 0
+              "order_index": 0,
+              "group_id": "group:0"
             },
             {
               "row_id": "tool:legacy-failed",
@@ -119,7 +147,8 @@
                   }
                 ]
               },
-              "order_index": 1
+              "order_index": 1,
+              "group_id": "group:0"
             },
             {
               "row_id": "tool:legacy-nostatus",
@@ -150,7 +179,8 @@
                   }
                 ]
               },
-              "order_index": 2
+              "order_index": 2,
+              "group_id": "group:0"
             },
             {
               "row_id": "steering:legacy-steer",
@@ -173,7 +203,43 @@
           "has_consumed_steering": false,
           "terminal_state": "completed",
           "expanded_by_default": false,
-          "file_changes": []
+          "file_changes": [],
+          "activity_groups": [
+            {
+              "group_id": "group:0",
+              "parts": [
+                {
+                  "kind": "shell",
+                  "count": 1,
+                  "failed": 1
+                },
+                {
+                  "kind": "read",
+                  "count": 1,
+                  "failed": 0
+                }
+              ],
+              "failed": 1,
+              "running": false
+            }
+          ],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [
+              {
+                "kind": "shell",
+                "count": 1,
+                "failed": 1
+              },
+              {
+                "kind": "read",
+                "count": 1,
+                "failed": 0
+              }
+            ],
+            "failed": 1,
+            "running": false
+          }
         },
         "_turn_id": "legacy:1",
         "_display": "row"
@@ -233,7 +299,14 @@
           "activity_rows_omitted": 0,
           "has_consumed_steering": false,
           "activity_scene_ref": "f9928a710235ec20fd940085c6f26e7b37d1f1b0d3d52aba0664371eefd9fb8f",
-          "file_changes": []
+          "file_changes": [],
+          "activity_groups": [],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_display": "row"
       },
@@ -256,7 +329,14 @@
           "activity_rows_omitted": 0,
           "has_consumed_steering": false,
           "activity_scene_ref": "12bef384f788f810bccc2f1750a8a6cfd29aea0184d0bfb135420e7ed6e0aabc",
-          "file_changes": []
+          "file_changes": [],
+          "activity_groups": [],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_display": "row"
       },
@@ -338,7 +418,8 @@
               "role": "reasoning",
               "text": "Plan the lookup.",
               "titles": [],
-              "order_index": 0
+              "order_index": 0,
+              "group_id": "group:0"
             },
             {
               "row_id": "contract-run-c-1:prose",
@@ -377,7 +458,8 @@
                   }
                 ]
               },
-              "order_index": 2
+              "order_index": 2,
+              "group_id": "group:1"
             }
           ],
           "activity_rows_total": 3,
@@ -386,7 +468,39 @@
           "activity_rows_omitted": 0,
           "has_consumed_steering": false,
           "activity_scene_ref": "e47b99c9f7978ea6c1dbce5894c55d1724a6b10e70874ac245908af12a982075",
-          "file_changes": []
+          "file_changes": [],
+          "activity_groups": [
+            {
+              "group_id": "group:0",
+              "parts": [],
+              "failed": 0,
+              "running": false
+            },
+            {
+              "group_id": "group:1",
+              "parts": [
+                {
+                  "kind": "read",
+                  "count": 1,
+                  "failed": 0
+                }
+              ],
+              "failed": 0,
+              "running": false
+            }
+          ],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [
+              {
+                "kind": "read",
+                "count": 1,
+                "failed": 0
+              }
+            ],
+            "failed": 0,
+            "running": false
+          }
         },
         "_display": "row"
       },
@@ -480,7 +594,8 @@
                   }
                 ]
               },
-              "order_index": 1
+              "order_index": 1,
+              "group_id": "group:0"
             }
           ],
           "activity_rows_total": 2,
@@ -489,7 +604,33 @@
           "activity_rows_omitted": 0,
           "has_consumed_steering": false,
           "activity_scene_ref": "9d328184a056a90fee315a9711c8f475bee7b3b9cf2e075576e67c283b7b8aeb",
-          "file_changes": []
+          "file_changes": [],
+          "activity_groups": [
+            {
+              "group_id": "group:0",
+              "parts": [
+                {
+                  "kind": "read",
+                  "count": 1,
+                  "failed": 0
+                }
+              ],
+              "failed": 0,
+              "running": false
+            }
+          ],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [
+              {
+                "kind": "read",
+                "count": 1,
+                "failed": 0
+              }
+            ],
+            "failed": 0,
+            "running": false
+          }
         },
         "_display": "row"
       },
@@ -564,7 +705,8 @@
                   }
                 ]
               },
-              "order_index": 1
+              "order_index": 1,
+              "group_id": "group:0"
             }
           ],
           "activity_rows_total": 2,
@@ -573,7 +715,33 @@
           "activity_rows_omitted": 0,
           "has_consumed_steering": false,
           "activity_scene_ref": "a9c678a881acc3f427bdd7fcf546980c993682b3412aee746d19dcf1d298c43a",
-          "file_changes": []
+          "file_changes": [],
+          "activity_groups": [
+            {
+              "group_id": "group:0",
+              "parts": [
+                {
+                  "kind": "shell",
+                  "count": 1,
+                  "failed": 0
+                }
+              ],
+              "failed": 0,
+              "running": false
+            }
+          ],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [
+              {
+                "kind": "shell",
+                "count": 1,
+                "failed": 0
+              }
+            ],
+            "failed": 0,
+            "running": false
+          }
         },
         "_display": "row"
       },
@@ -738,7 +906,8 @@
                   }
                 ]
               },
-              "order_index": 1
+              "order_index": 1,
+              "group_id": "group:0"
             },
             {
               "row_id": "steering:contract-steer-1",
@@ -752,7 +921,19 @@
                 "consumed_at": 205,
                 "phase_duration": 5
               },
-              "order_index": 2
+              "order_index": 2,
+              "phase_activity": {
+                "group_id": "phase:0",
+                "parts": [
+                  {
+                    "kind": "read",
+                    "count": 1,
+                    "failed": 0
+                  }
+                ],
+                "failed": 0,
+                "running": false
+              }
             },
             {
               "row_id": "contract-run-g-2:prose",
@@ -789,7 +970,8 @@
                   }
                 ]
               },
-              "order_index": 4
+              "order_index": 4,
+              "group_id": "group:1"
             },
             {
               "row_id": "steering:contract-steer-2",
@@ -803,7 +985,19 @@
                 "consumed_at": 209,
                 "phase_duration": 4
               },
-              "order_index": 5
+              "order_index": 5,
+              "phase_activity": {
+                "group_id": "phase:1",
+                "parts": [
+                  {
+                    "kind": "read",
+                    "count": 1,
+                    "failed": 0
+                  }
+                ],
+                "failed": 0,
+                "running": false
+              }
             }
           ],
           "activity_rows_total": 6,
@@ -812,7 +1006,39 @@
           "activity_rows_omitted": 0,
           "has_consumed_steering": true,
           "activity_scene_ref": "d17054d885c35cd26205697b2c00128d79ea43ef67f732a08a06e55043265ad7",
-          "file_changes": []
+          "file_changes": [],
+          "activity_groups": [
+            {
+              "group_id": "group:0",
+              "parts": [
+                {
+                  "kind": "read",
+                  "count": 1,
+                  "failed": 0
+                }
+              ],
+              "failed": 0,
+              "running": false
+            },
+            {
+              "group_id": "group:1",
+              "parts": [
+                {
+                  "kind": "read",
+                  "count": 1,
+                  "failed": 0
+                }
+              ],
+              "failed": 0,
+              "running": false
+            }
+          ],
+          "final_phase_activity": {
+            "group_id": "phase:2",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_display": "row"
       },
@@ -842,7 +1068,14 @@
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
           "has_consumed_steering": false,
-          "activity_scene_ref": "contract-cancelled-scene"
+          "activity_scene_ref": "contract-cancelled-scene",
+          "activity_groups": [],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_display": "row"
       },
@@ -873,7 +1106,14 @@
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
           "has_consumed_steering": false,
-          "activity_scene_ref": "contract-error-scene"
+          "activity_scene_ref": "contract-error-scene",
+          "activity_groups": [],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_display": "row"
       },
@@ -904,7 +1144,14 @@
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
           "has_consumed_steering": false,
-          "activity_scene_ref": "contract-legacy-cancelled-scene"
+          "activity_scene_ref": "contract-legacy-cancelled-scene",
+          "activity_groups": [],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_display": "row"
       },
@@ -1160,7 +1407,8 @@
                     "multiline": false
                   }
                 ]
-              }
+              },
+              "group_id": "group:0"
             },
             {
               "row_id": "tool:call-exit",
@@ -1192,7 +1440,8 @@
                     "multiline": false
                   }
                 ]
-              }
+              },
+              "group_id": "group:0"
             }
           ],
           "final_answer": "a.txt is read; one test fails.",
@@ -1205,7 +1454,43 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "c3fcd1d20b6bc3e357a08300f6083b8edb3e14964428a5fe73101fcb6405ae22"
+          "activity_scene_ref": "c3fcd1d20b6bc3e357a08300f6083b8edb3e14964428a5fe73101fcb6405ae22",
+          "activity_groups": [
+            {
+              "group_id": "group:0",
+              "parts": [
+                {
+                  "kind": "read",
+                  "count": 1,
+                  "failed": 0
+                },
+                {
+                  "kind": "shell",
+                  "count": 1,
+                  "failed": 1
+                }
+              ],
+              "failed": 1,
+              "running": false
+            }
+          ],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [
+              {
+                "kind": "read",
+                "count": 1,
+                "failed": 0
+              },
+              {
+                "kind": "shell",
+                "count": 1,
+                "failed": 1
+              }
+            ],
+            "failed": 1,
+            "running": false
+          }
         },
         "_turn_id": "tool-run-openai",
         "_display": "row"
@@ -1326,7 +1611,8 @@
                     "multiline": false
                   }
                 ]
-              }
+              },
+              "group_id": "group:0"
             }
           ],
           "final_answer": "The search failed.",
@@ -1339,7 +1625,33 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "125b3c9393e18c980353cd67b774b4272b18a35d947a6243f743be6ed2ccf8f6"
+          "activity_scene_ref": "125b3c9393e18c980353cd67b774b4272b18a35d947a6243f743be6ed2ccf8f6",
+          "activity_groups": [
+            {
+              "group_id": "group:0",
+              "parts": [
+                {
+                  "kind": "search",
+                  "count": 1,
+                  "failed": 1
+                }
+              ],
+              "failed": 1,
+              "running": false
+            }
+          ],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [
+              {
+                "kind": "search",
+                "count": 1,
+                "failed": 1
+              }
+            ],
+            "failed": 1,
+            "running": false
+          }
         },
         "_turn_id": "tool-run-anthropic",
         "_display": "row"
@@ -1437,7 +1749,8 @@
                     "multiline": false
                   }
                 ]
-              }
+              },
+              "group_id": "group:0"
             }
           ],
           "final_answer": "It is Saturday.",
@@ -1450,7 +1763,33 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "23134fbc4afa32ca0a29c3f00951f08af005beefcb792b2429beeabb4ef3525b"
+          "activity_scene_ref": "23134fbc4afa32ca0a29c3f00951f08af005beefcb792b2429beeabb4ef3525b",
+          "activity_groups": [
+            {
+              "group_id": "group:0",
+              "parts": [
+                {
+                  "kind": "shell",
+                  "count": 1,
+                  "failed": 0
+                }
+              ],
+              "failed": 0,
+              "running": false
+            }
+          ],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [
+              {
+                "kind": "shell",
+                "count": 1,
+                "failed": 0
+              }
+            ],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "tool-run-session",
         "_display": "row"
@@ -1529,7 +1868,8 @@
                     "multiline": false
                   }
                 ]
-              }
+              },
+              "group_id": "group:0"
             }
           ],
           "final_answer": "",
@@ -1542,7 +1882,33 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "36332fda38ec5646428dd5e35a70de2cc90dc9b8291acc0273037ff8343f23ab"
+          "activity_scene_ref": "36332fda38ec5646428dd5e35a70de2cc90dc9b8291acc0273037ff8343f23ab",
+          "activity_groups": [
+            {
+              "group_id": "group:0",
+              "parts": [
+                {
+                  "kind": "shell",
+                  "count": 1,
+                  "failed": 0
+                }
+              ],
+              "failed": 0,
+              "running": true
+            }
+          ],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [
+              {
+                "kind": "shell",
+                "count": 1,
+                "failed": 0
+              }
+            ],
+            "failed": 0,
+            "running": true
+          }
         },
         "_turn_id": "tool-run-live",
         "_display": "row"
@@ -1666,7 +2032,14 @@
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
           "activity_scene_ref": "080b21d067f38ffc14c572711348c88b96ea73d6bdc1c8263be4eec5ebfdc42a",
-          "final_answer_excerpt": "Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report"
+          "final_answer_excerpt": "Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report",
+          "activity_groups": [],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:0",
         "_display_excerpt": "Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report",
@@ -1699,7 +2072,14 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "69136d435ef9cd7d0dfade1866b7092a962c8d2650c42dae4dcbc160500d1cb2"
+          "activity_scene_ref": "69136d435ef9cd7d0dfade1866b7092a962c8d2650c42dae4dcbc160500d1cb2",
+          "activity_groups": [],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:2",
         "_display": "row"
@@ -1730,7 +2110,14 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "2c051a4d5f211497d8905647163ccc3c9126ff0f399255f8e79f1cc0056293d7"
+          "activity_scene_ref": "2c051a4d5f211497d8905647163ccc3c9126ff0f399255f8e79f1cc0056293d7",
+          "activity_groups": [],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:4",
         "_display": "row"
@@ -1769,7 +2156,14 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "cb5db9e31114abaaeb2b0d43da2548aaa8c72c82043dfa48f2f0b6774fa30f3a"
+          "activity_scene_ref": "cb5db9e31114abaaeb2b0d43da2548aaa8c72c82043dfa48f2f0b6774fa30f3a",
+          "activity_groups": [],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:0",
         "_display": "row"
@@ -1800,7 +2194,14 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "f712ef733cad586909c2a5904f792ac5e855995fd635e4b3b3c5c1e6884d8285"
+          "activity_scene_ref": "f712ef733cad586909c2a5904f792ac5e855995fd635e4b3b3c5c1e6884d8285",
+          "activity_groups": [],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:2",
         "_display": "row"
@@ -1871,7 +2272,14 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "35adb76679f1bef805c4ffc861566c752887aadf278fabf7b73773d45193f656"
+          "activity_scene_ref": "35adb76679f1bef805c4ffc861566c752887aadf278fabf7b73773d45193f656",
+          "activity_groups": [],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:0",
         "_display": "row"
@@ -1932,7 +2340,14 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "b3db2f3cb57acae4a6faf19f0dde1c7b5f6cbd665f3b31efba522388961c41f9"
+          "activity_scene_ref": "b3db2f3cb57acae4a6faf19f0dde1c7b5f6cbd665f3b31efba522388961c41f9",
+          "activity_groups": [],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "wake-contract",
         "_background_reply": true,
@@ -1987,7 +2402,14 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "204102a5062ace423c9cf6ce25c757318f56e00b76181cb4e69baef967868857"
+          "activity_scene_ref": "204102a5062ace423c9cf6ce25c757318f56e00b76181cb4e69baef967868857",
+          "activity_groups": [],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "wake-legacy",
         "_background_reply": true,
@@ -2043,7 +2465,14 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "5da3a61e1cdfe54f9ae068de5d09c0490c389d4bdc85bebca8f5d8bcf02cab14"
+          "activity_scene_ref": "5da3a61e1cdfe54f9ae068de5d09c0490c389d4bdc85bebca8f5d8bcf02cab14",
+          "activity_groups": [],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "wake-silent",
         "_background_reply": true,
@@ -2099,7 +2528,14 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "42dc140e5804552088503bdcc94709828bc74389acf85be731d73f4614387329"
+          "activity_scene_ref": "42dc140e5804552088503bdcc94709828bc74389acf85be731d73f4614387329",
+          "activity_groups": [],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "continue-contract",
         "_background_reply": true,
@@ -2131,7 +2567,14 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "b3438d7ef679e5d59aa403c94d03d28e170727e32d4b9206bc57c7257370120c"
+          "activity_scene_ref": "b3438d7ef679e5d59aa403c94d03d28e170727e32d4b9206bc57c7257370120c",
+          "activity_groups": [],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "user-no-reply",
         "_display": "row"
@@ -2605,7 +3048,8 @@
               "role": "reasoning",
               "created_at": 2001,
               "text": "Plan think.",
-              "titles": []
+              "titles": [],
+              "group_id": "group:0"
             }
           ],
           "final_answer": "Answer think.",
@@ -2618,7 +3062,21 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "c82a3c21523c81fbd5e75c36d2701eaf2d95bd25d681aea833ff83ad7daa385d"
+          "activity_scene_ref": "c82a3c21523c81fbd5e75c36d2701eaf2d95bd25d681aea833ff83ad7daa385d",
+          "activity_groups": [
+            {
+              "group_id": "group:0",
+              "parts": [],
+              "failed": 0,
+              "running": false
+            }
+          ],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:0",
         "_display": "row"
@@ -2646,7 +3104,8 @@
               "role": "reasoning",
               "created_at": 2003,
               "text": "Plan think.",
-              "titles": []
+              "titles": [],
+              "group_id": "group:0"
             }
           ],
           "final_answer": "Lead think. Answer think.",
@@ -2659,7 +3118,21 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "a69ba2650a040b382eafd702c38fa7c53b097c2da4b431f55c68aaaad2c5cf2b"
+          "activity_scene_ref": "a69ba2650a040b382eafd702c38fa7c53b097c2da4b431f55c68aaaad2c5cf2b",
+          "activity_groups": [
+            {
+              "group_id": "group:0",
+              "parts": [],
+              "failed": 0,
+              "running": false
+            }
+          ],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:2",
         "_display": "row"
@@ -2687,7 +3160,8 @@
               "role": "reasoning",
               "created_at": 2005,
               "text": "Plan think.",
-              "titles": []
+              "titles": [],
+              "group_id": "group:0"
             }
           ],
           "final_answer": "Answer think.",
@@ -2700,7 +3174,21 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "89bb03801f7ab8ca2abfb1d02c62c6e7cafe85a33730aadd5948a07254152919"
+          "activity_scene_ref": "89bb03801f7ab8ca2abfb1d02c62c6e7cafe85a33730aadd5948a07254152919",
+          "activity_groups": [
+            {
+              "group_id": "group:0",
+              "parts": [],
+              "failed": 0,
+              "running": false
+            }
+          ],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:4",
         "_display": "row"
@@ -2728,7 +3216,8 @@
               "role": "reasoning",
               "created_at": 2007,
               "text": "Plan thinking.",
-              "titles": []
+              "titles": [],
+              "group_id": "group:0"
             }
           ],
           "final_answer": "Answer thinking.",
@@ -2741,7 +3230,21 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "b4cceb63793578d97a2453254294932f93cf0111a9c4a4bba1ed50a2498b5d6a"
+          "activity_scene_ref": "b4cceb63793578d97a2453254294932f93cf0111a9c4a4bba1ed50a2498b5d6a",
+          "activity_groups": [
+            {
+              "group_id": "group:0",
+              "parts": [],
+              "failed": 0,
+              "running": false
+            }
+          ],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:6",
         "_display": "row"
@@ -2769,7 +3272,8 @@
               "role": "reasoning",
               "created_at": 2009,
               "text": "Plan thinking.",
-              "titles": []
+              "titles": [],
+              "group_id": "group:0"
             }
           ],
           "final_answer": "Lead thinking. Answer thinking.",
@@ -2782,7 +3286,21 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "f63dd22df8e632e15a1b03898006eba550912e9f29aa0ba93052c1b477d90562"
+          "activity_scene_ref": "f63dd22df8e632e15a1b03898006eba550912e9f29aa0ba93052c1b477d90562",
+          "activity_groups": [
+            {
+              "group_id": "group:0",
+              "parts": [],
+              "failed": 0,
+              "running": false
+            }
+          ],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:8",
         "_display": "row"
@@ -2810,7 +3328,8 @@
               "role": "reasoning",
               "created_at": 2011,
               "text": "Plan thinking.",
-              "titles": []
+              "titles": [],
+              "group_id": "group:0"
             }
           ],
           "final_answer": "Answer thinking.",
@@ -2823,7 +3342,21 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "dc30d34853a7818f0a3b0a5dce20868f324e994c36be7735f765af1c54f2e058"
+          "activity_scene_ref": "dc30d34853a7818f0a3b0a5dce20868f324e994c36be7735f765af1c54f2e058",
+          "activity_groups": [
+            {
+              "group_id": "group:0",
+              "parts": [],
+              "failed": 0,
+              "running": false
+            }
+          ],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:10",
         "_display": "row"
@@ -2851,7 +3384,8 @@
               "role": "reasoning",
               "created_at": 2013,
               "text": "Plan channel.",
-              "titles": []
+              "titles": [],
+              "group_id": "group:0"
             }
           ],
           "final_answer": "Answer channel.",
@@ -2864,7 +3398,21 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "862ab91624a1d62da0f03b0b123f3c7526a4557c3cf620fd4a0b7cac92054dfd"
+          "activity_scene_ref": "862ab91624a1d62da0f03b0b123f3c7526a4557c3cf620fd4a0b7cac92054dfd",
+          "activity_groups": [
+            {
+              "group_id": "group:0",
+              "parts": [],
+              "failed": 0,
+              "running": false
+            }
+          ],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:12",
         "_display": "row"
@@ -2892,7 +3440,8 @@
               "role": "reasoning",
               "created_at": 2015,
               "text": "Plan channel.",
-              "titles": []
+              "titles": [],
+              "group_id": "group:0"
             }
           ],
           "final_answer": "Lead channel. Answer channel.",
@@ -2905,7 +3454,21 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "c9ba90eab5c8e80e2dcf24c08d1f21f728a4ae3414c7198e5b93583ccc8b9a04"
+          "activity_scene_ref": "c9ba90eab5c8e80e2dcf24c08d1f21f728a4ae3414c7198e5b93583ccc8b9a04",
+          "activity_groups": [
+            {
+              "group_id": "group:0",
+              "parts": [],
+              "failed": 0,
+              "running": false
+            }
+          ],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:14",
         "_display": "row"
@@ -2933,7 +3496,8 @@
               "role": "reasoning",
               "created_at": 2017,
               "text": "Plan channel.",
-              "titles": []
+              "titles": [],
+              "group_id": "group:0"
             }
           ],
           "final_answer": "Answer channel.",
@@ -2946,7 +3510,21 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "8d1d3a5bcfed6aab95f581aa7d97ab9e23bc0cb454856d4cc00f20b5ed802da6"
+          "activity_scene_ref": "8d1d3a5bcfed6aab95f581aa7d97ab9e23bc0cb454856d4cc00f20b5ed802da6",
+          "activity_groups": [
+            {
+              "group_id": "group:0",
+              "parts": [],
+              "failed": 0,
+              "running": false
+            }
+          ],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:16",
         "_display": "row"
@@ -2974,7 +3552,8 @@
               "role": "reasoning",
               "created_at": 2019,
               "text": "Plan turn.",
-              "titles": []
+              "titles": [],
+              "group_id": "group:0"
             }
           ],
           "final_answer": "Answer turn.",
@@ -2987,7 +3566,21 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "9da46706066c5c68165eb9b2ad5511f42b574c1d5fdff5bf7ae693ee20a5b7ad"
+          "activity_scene_ref": "9da46706066c5c68165eb9b2ad5511f42b574c1d5fdff5bf7ae693ee20a5b7ad",
+          "activity_groups": [
+            {
+              "group_id": "group:0",
+              "parts": [],
+              "failed": 0,
+              "running": false
+            }
+          ],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:18",
         "_display": "row"
@@ -3015,7 +3608,8 @@
               "role": "reasoning",
               "created_at": 2021,
               "text": "Plan turn.",
-              "titles": []
+              "titles": [],
+              "group_id": "group:0"
             }
           ],
           "final_answer": "Lead turn. Answer turn.",
@@ -3028,7 +3622,21 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "ee7b733cd793d1b0a26a86369400899626b22eb3c1db359c76f74a9aa3e3b47c"
+          "activity_scene_ref": "ee7b733cd793d1b0a26a86369400899626b22eb3c1db359c76f74a9aa3e3b47c",
+          "activity_groups": [
+            {
+              "group_id": "group:0",
+              "parts": [],
+              "failed": 0,
+              "running": false
+            }
+          ],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:20",
         "_display": "row"
@@ -3056,7 +3664,8 @@
               "role": "reasoning",
               "created_at": 2023,
               "text": "Plan turn.",
-              "titles": []
+              "titles": [],
+              "group_id": "group:0"
             }
           ],
           "final_answer": "Answer turn.",
@@ -3069,7 +3678,21 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "df9087368ad93530dd835479db28af3299ccc17ffd4ee3671010444ae5b57895"
+          "activity_scene_ref": "df9087368ad93530dd835479db28af3299ccc17ffd4ee3671010444ae5b57895",
+          "activity_groups": [
+            {
+              "group_id": "group:0",
+              "parts": [],
+              "failed": 0,
+              "running": false
+            }
+          ],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:22",
         "_display": "row"
@@ -3100,7 +3723,14 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "2303399cd47bcae15ff06f33df0c1bdf23f85a7cd59f016b38d0b254d46f9760"
+          "activity_scene_ref": "2303399cd47bcae15ff06f33df0c1bdf23f85a7cd59f016b38d0b254d46f9760",
+          "activity_groups": [],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:24",
         "_display": "row"
@@ -3131,7 +3761,14 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "1375df68369408819ffa8e67e8c9273164ed7b6e381cf06b712e09bb21bb8c56"
+          "activity_scene_ref": "1375df68369408819ffa8e67e8c9273164ed7b6e381cf06b712e09bb21bb8c56",
+          "activity_groups": [],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:26",
         "_display": "row"
@@ -3162,7 +3799,14 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "8797e1b9d7f1bf88439e579c9652cb7866e2952bfae5130d92d54c62206b9ef1"
+          "activity_scene_ref": "8797e1b9d7f1bf88439e579c9652cb7866e2952bfae5130d92d54c62206b9ef1",
+          "activity_groups": [],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:28",
         "_display": "row"
@@ -3196,7 +3840,8 @@
               "created_at": 2031,
               "text": "Plan typed.",
               "titles": [],
-              "disclosure_key": "legacy:30:reasoning:0"
+              "disclosure_key": "legacy:30:reasoning:0",
+              "group_id": "group:0"
             }
           ],
           "final_answer": "Answer typed.",
@@ -3209,7 +3854,21 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "57bb1e547902436777a4a1271126bb7b8fc38c5de824fed3e5da8312e6200ad0"
+          "activity_scene_ref": "57bb1e547902436777a4a1271126bb7b8fc38c5de824fed3e5da8312e6200ad0",
+          "activity_groups": [
+            {
+              "group_id": "group:0",
+              "parts": [],
+              "failed": 0,
+              "running": false
+            }
+          ],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:30",
         "_display": "row"
@@ -3238,7 +3897,8 @@
               "created_at": 2033,
               "text": "Plan shared.\n\nPlan extra.",
               "titles": [],
-              "disclosure_key": "legacy:32:reasoning:0"
+              "disclosure_key": "legacy:32:reasoning:0",
+              "group_id": "group:0"
             }
           ],
           "final_answer": "Answer fields.",
@@ -3251,7 +3911,21 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "40d6fc4e80a96243a2da667dc50632247811db14a866947640728060b6e2fe97"
+          "activity_scene_ref": "40d6fc4e80a96243a2da667dc50632247811db14a866947640728060b6e2fe97",
+          "activity_groups": [
+            {
+              "group_id": "group:0",
+              "parts": [],
+              "failed": 0,
+              "running": false
+            }
+          ],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:32",
         "_display": "row"
@@ -3287,7 +3961,14 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "7162b01e41ec7d4e052a24330d74295ceaaa6e7e066519d080d07cf34c137e6e"
+          "activity_scene_ref": "7162b01e41ec7d4e052a24330d74295ceaaa6e7e066519d080d07cf34c137e6e",
+          "activity_groups": [],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:0",
         "_display": "row"
@@ -3337,7 +4018,14 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "37f0ec046ba08a1aaf805c66b1fa7e485e00464e03b0d5cc93f744000e054f7f"
+          "activity_scene_ref": "37f0ec046ba08a1aaf805c66b1fa7e485e00464e03b0d5cc93f744000e054f7f",
+          "activity_groups": [],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:4",
         "_display": "row"
@@ -3403,7 +4091,14 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "2271294fb4472d1ea620b9381fa038c0ff8c4c574c36498f928120ca2c304141"
+          "activity_scene_ref": "2271294fb4472d1ea620b9381fa038c0ff8c4c574c36498f928120ca2c304141",
+          "activity_groups": [],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:0",
         "_display_content": "Here is the run:\n\n- ![chart.png](./api/media?path=%2Ftalaria-contract%2Fout%2Fchart.png&session_id=contract-media-session)\n- **Before ![Chart](./api/media?path=%2Ftalaria-contract%2Fout%2Fchart.png&session_id=contract-media-session) after**\n- Narration: [narration.mp3](./api/media?path=%2Ftalaria-contract%2Fout%2Fnarration.mp3&session_id=contract-media-session)\n\n```text\nMEDIA:/talaria-contract/out/secret.png\n```",
@@ -3635,7 +4330,8 @@
                       "multiline": false
                     }
                   ]
-                }
+                },
+                "group_id": "group:0"
               },
               {
                 "row_id": "tool:call-nested",
@@ -3667,7 +4363,8 @@
                       "multiline": false
                     }
                   ]
-                }
+                },
+                "group_id": "group:0"
               },
               {
                 "row_id": "tool:call-parts",
@@ -3698,7 +4395,8 @@
                       "multiline": false
                     }
                   ]
-                }
+                },
+                "group_id": "group:0"
               },
               {
                 "row_id": "tool:call-date",
@@ -3729,7 +4427,8 @@
                       "multiline": false
                     }
                   ]
-                }
+                },
+                "group_id": "group:0"
               }
             ],
             "final_answer": "Done.",
@@ -3742,7 +4441,53 @@
             "activity_rows_offset": 0,
             "activity_rows_complete": true,
             "activity_rows_omitted": 0,
-            "activity_scene_ref": "9864e85142b590b8ac94eaf71ed1e755af59bbeed18623aba529548febade674"
+            "activity_scene_ref": "9864e85142b590b8ac94eaf71ed1e755af59bbeed18623aba529548febade674",
+            "activity_groups": [
+              {
+                "group_id": "group:0",
+                "parts": [
+                  {
+                    "kind": "shell",
+                    "count": 2,
+                    "failed": 1
+                  },
+                  {
+                    "kind": "read",
+                    "count": 1,
+                    "failed": 0
+                  },
+                  {
+                    "kind": "web",
+                    "count": 1,
+                    "failed": 0
+                  }
+                ],
+                "failed": 1,
+                "running": false
+              }
+            ],
+            "final_phase_activity": {
+              "group_id": "phase:0",
+              "parts": [
+                {
+                  "kind": "shell",
+                  "count": 2,
+                  "failed": 1
+                },
+                {
+                  "kind": "read",
+                  "count": 1,
+                  "failed": 0
+                },
+                {
+                  "kind": "web",
+                  "count": 1,
+                  "failed": 0
+                }
+              ],
+              "failed": 1,
+              "running": false
+            }
           },
           "_turn_id": "view-run",
           "_display": "row"
@@ -4112,7 +4857,14 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "a8aa29b2fd9e93af93f9e8acc30be5fa89e09c95278b2d61997dd4cc4390b1a3"
+          "activity_scene_ref": "a8aa29b2fd9e93af93f9e8acc30be5fa89e09c95278b2d61997dd4cc4390b1a3",
+          "activity_groups": [],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:0",
         "_display": "row"
@@ -4184,7 +4936,8 @@
               "created_at": 1003,
               "text": "Plan the read.",
               "titles": [],
-              "disclosure_key": "contract-run-r:reasoning:0"
+              "disclosure_key": "contract-run-r:reasoning:0",
+              "group_id": "group:0"
             },
             {
               "row_id": "contract-run-r-1:prose",
@@ -4223,7 +4976,8 @@
                     "multiline": false
                   }
                 ]
-              }
+              },
+              "group_id": "group:1"
             },
             {
               "row_id": "contract-run-r-2:prose",
@@ -4243,7 +4997,39 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "b0cea88295f24ceabb949c4de61b263ce24512304832d2bcf46064d3f1e790d6"
+          "activity_scene_ref": "b0cea88295f24ceabb949c4de61b263ce24512304832d2bcf46064d3f1e790d6",
+          "activity_groups": [
+            {
+              "group_id": "group:0",
+              "parts": [],
+              "failed": 0,
+              "running": false
+            },
+            {
+              "group_id": "group:1",
+              "parts": [
+                {
+                  "kind": "read",
+                  "count": 1,
+                  "failed": 0
+                }
+              ],
+              "failed": 0,
+              "running": false
+            }
+          ],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [
+              {
+                "kind": "read",
+                "count": 1,
+                "failed": 0
+              }
+            ],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "contract-run-r",
         "_display": "row"
@@ -4567,7 +5353,9 @@
                       "multiline": false
                     }
                   ]
-                }
+                },
+                "group_id": "group:0",
+                "merged_count": 2
               },
               {
                 "row_id": "tool:call-write",
@@ -4611,7 +5399,9 @@
                       "multiline": false
                     }
                   ]
-                }
+                },
+                "group_id": "group:0",
+                "merged_into": "tool:call-patch"
               }
             ],
             "final_answer": "Done.",
@@ -4633,7 +5423,33 @@
             "activity_rows_offset": 0,
             "activity_rows_complete": true,
             "activity_rows_omitted": 0,
-            "activity_scene_ref": "bf09e287ec6d6c164a72756617d81100e9aa4b4ea9acdf2d98cbae38cda5faf5"
+            "activity_scene_ref": "bf09e287ec6d6c164a72756617d81100e9aa4b4ea9acdf2d98cbae38cda5faf5",
+            "activity_groups": [
+              {
+                "group_id": "group:0",
+                "parts": [
+                  {
+                    "kind": "write",
+                    "count": 2,
+                    "failed": 0
+                  }
+                ],
+                "failed": 0,
+                "running": false
+              }
+            ],
+            "final_phase_activity": {
+              "group_id": "phase:0",
+              "parts": [
+                {
+                  "kind": "write",
+                  "count": 2,
+                  "failed": 0
+                }
+              ],
+              "failed": 0,
+              "running": false
+            }
           },
           "_turn_id": "edit-run",
           "_display": "row"
@@ -4713,7 +5529,14 @@
             "activity_rows_offset": 0,
             "activity_rows_complete": true,
             "activity_rows_omitted": 0,
-            "activity_scene_ref": "3161398959e089c3f46f848bd0d02f61706f17e834ef508e0744b4043008d563"
+            "activity_scene_ref": "3161398959e089c3f46f848bd0d02f61706f17e834ef508e0744b4043008d563",
+            "activity_groups": [],
+            "final_phase_activity": {
+              "group_id": "phase:0",
+              "parts": [],
+              "failed": 0,
+              "running": false
+            }
           },
           "_turn_id": "legacy:2",
           "_display": "row"
@@ -4753,7 +5576,14 @@
             "activity_rows_offset": 0,
             "activity_rows_complete": true,
             "activity_rows_omitted": 0,
-            "activity_scene_ref": "1c4812a172d364e25bb516167cf271da2599fb33b7101cbacecd4861dd1edc16"
+            "activity_scene_ref": "1c4812a172d364e25bb516167cf271da2599fb33b7101cbacecd4861dd1edc16",
+            "activity_groups": [],
+            "final_phase_activity": {
+              "group_id": "phase:0",
+              "parts": [],
+              "failed": 0,
+              "running": false
+            }
           },
           "_turn_id": "legacy:5",
           "_display": "row"
@@ -4995,7 +5825,8 @@
                     "multiline": false
                   }
                 ]
-              }
+              },
+              "group_id": "group:0"
             }
           ],
           "final_answer": "",
@@ -5008,7 +5839,33 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "3d4187eb8109b8422d0e63039df40a851f5d604a4a68f46eb39c134d3029fc5c"
+          "activity_scene_ref": "3d4187eb8109b8422d0e63039df40a851f5d604a4a68f46eb39c134d3029fc5c",
+          "activity_groups": [
+            {
+              "group_id": "group:0",
+              "parts": [
+                {
+                  "kind": "shell",
+                  "count": 1,
+                  "failed": 0
+                }
+              ],
+              "failed": 0,
+              "running": false
+            }
+          ],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [
+              {
+                "kind": "shell",
+                "count": 1,
+                "failed": 0
+              }
+            ],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:0",
         "_display": "row"
@@ -5230,7 +6087,14 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "1ba4eb14f6dd95d7556f3c7c2967af89a0877cec51a6e4a5ecca40a1f739de8d"
+          "activity_scene_ref": "1ba4eb14f6dd95d7556f3c7c2967af89a0877cec51a6e4a5ecca40a1f739de8d",
+          "activity_groups": [],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:0",
         "_display": "row"
@@ -5287,7 +6151,14 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "d49c428c04f712e206313b41f633224f4252350a15c173ac6a5f6d3210dacb77"
+          "activity_scene_ref": "d49c428c04f712e206313b41f633224f4252350a15c173ac6a5f6d3210dacb77",
+          "activity_groups": [],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:4",
         "_display": "row"
@@ -5628,7 +6499,8 @@
                       "multiline": false
                     }
                   ]
-                }
+                },
+                "group_id": "group:0"
               },
               {
                 "row_id": "tool:call-skill",
@@ -5706,7 +6578,8 @@
                       "multiline": false
                     }
                   ]
-                }
+                },
+                "group_id": "group:0"
               }
             ],
             "final_answer": "Done.",
@@ -5724,7 +6597,43 @@
             "activity_rows_offset": 0,
             "activity_rows_complete": true,
             "activity_rows_omitted": 0,
-            "activity_scene_ref": "177921a07b3152b28c822ef0608f8bf43b3ddf65520ed0f3cda50a4127604238"
+            "activity_scene_ref": "177921a07b3152b28c822ef0608f8bf43b3ddf65520ed0f3cda50a4127604238",
+            "activity_groups": [
+              {
+                "group_id": "group:0",
+                "parts": [
+                  {
+                    "kind": "write",
+                    "count": 1,
+                    "failed": 0
+                  },
+                  {
+                    "kind": "skill",
+                    "count": 1,
+                    "failed": 0
+                  }
+                ],
+                "failed": 0,
+                "running": false
+              }
+            ],
+            "final_phase_activity": {
+              "group_id": "phase:0",
+              "parts": [
+                {
+                  "kind": "write",
+                  "count": 1,
+                  "failed": 0
+                },
+                {
+                  "kind": "skill",
+                  "count": 1,
+                  "failed": 0
+                }
+              ],
+              "failed": 0,
+              "running": false
+            }
           },
           "_turn_id": "meta-run",
           "_display": "row"
@@ -5776,7 +6685,14 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "54ea70e22dc263983471fb8334919572b3c3bce318d1dd85bce3f0fd41ee9d55"
+          "activity_scene_ref": "54ea70e22dc263983471fb8334919572b3c3bce318d1dd85bce3f0fd41ee9d55",
+          "activity_groups": [],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:0",
         "_display": "row"
@@ -5805,7 +6721,14 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "abdaf1566e56dcf1ceac0e1fa5369b77037eae95065c57e302ed7d258441714a"
+          "activity_scene_ref": "abdaf1566e56dcf1ceac0e1fa5369b77037eae95065c57e302ed7d258441714a",
+          "activity_groups": [],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          }
         },
         "_turn_id": "legacy:2",
         "_display": "row"
@@ -6369,7 +7292,8 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0"
               },
               {
                 "row_id": "tool:call-search",
@@ -6438,7 +7362,9 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0",
+                "merged_count": 2
               },
               {
                 "row_id": "tool:call-count",
@@ -6493,7 +7419,9 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0",
+                "merged_into": "tool:call-search"
               },
               {
                 "row_id": "tool:call-again",
@@ -6537,7 +7465,8 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0"
               }
             ],
             "final_answer": "Done.",
@@ -6550,7 +7479,43 @@
             "activity_rows_offset": 0,
             "activity_rows_complete": true,
             "activity_rows_omitted": 0,
-            "activity_scene_ref": "325e6e9b8e2e9c24a84b940387ae56336ff77947a70e0b5742f10b81a86c1836"
+            "activity_scene_ref": "325e6e9b8e2e9c24a84b940387ae56336ff77947a70e0b5742f10b81a86c1836",
+            "activity_groups": [
+              {
+                "group_id": "group:0",
+                "parts": [
+                  {
+                    "kind": "read",
+                    "count": 2,
+                    "failed": 0
+                  },
+                  {
+                    "kind": "search",
+                    "count": 2,
+                    "failed": 0
+                  }
+                ],
+                "failed": 0,
+                "running": false
+              }
+            ],
+            "final_phase_activity": {
+              "group_id": "phase:0",
+              "parts": [
+                {
+                  "kind": "read",
+                  "count": 2,
+                  "failed": 0
+                },
+                {
+                  "kind": "search",
+                  "count": 2,
+                  "failed": 0
+                }
+              ],
+              "failed": 0,
+              "running": false
+            }
           },
           "_turn_id": "file-run",
           "_display": "row"
@@ -6831,7 +7796,8 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0"
               },
               {
                 "row_id": "tool:call-x",
@@ -6877,7 +7843,8 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0"
               },
               {
                 "row_id": "tool:call-extract",
@@ -6926,7 +7893,8 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0"
               }
             ],
             "final_answer": "Done.",
@@ -6939,7 +7907,43 @@
             "activity_rows_offset": 0,
             "activity_rows_complete": true,
             "activity_rows_omitted": 0,
-            "activity_scene_ref": "c2931ec77f08b2b44c83eda98e92791a4307d6aa59ecb6f530d885b649f1dce6"
+            "activity_scene_ref": "c2931ec77f08b2b44c83eda98e92791a4307d6aa59ecb6f530d885b649f1dce6",
+            "activity_groups": [
+              {
+                "group_id": "group:0",
+                "parts": [
+                  {
+                    "kind": "web",
+                    "count": 2,
+                    "failed": 0
+                  },
+                  {
+                    "kind": "search",
+                    "count": 1,
+                    "failed": 0
+                  }
+                ],
+                "failed": 0,
+                "running": false
+              }
+            ],
+            "final_phase_activity": {
+              "group_id": "phase:0",
+              "parts": [
+                {
+                  "kind": "web",
+                  "count": 2,
+                  "failed": 0
+                },
+                {
+                  "kind": "search",
+                  "count": 1,
+                  "failed": 0
+                }
+              ],
+              "failed": 0,
+              "running": false
+            }
           },
           "_turn_id": "web-run",
           "_display": "row"
@@ -7600,7 +8604,8 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0"
               },
               {
                 "row_id": "tool:call-speech",
@@ -7672,7 +8677,8 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:1"
               },
               {
                 "row_id": "tool:call-video",
@@ -7754,7 +8760,8 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:2"
               },
               {
                 "row_id": "tool:call-failed",
@@ -7786,7 +8793,8 @@
                   "is_error": true,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:3"
               },
               {
                 "row_id": "tool:call-vision",
@@ -7824,7 +8832,9 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:4",
+                "merged_count": 2
               },
               {
                 "row_id": "tool:call-native",
@@ -7862,7 +8872,9 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:4",
+                "merged_into": "tool:call-vision"
               }
             ],
             "final_answer": "Done.",
@@ -7875,7 +8887,96 @@
             "activity_rows_offset": 0,
             "activity_rows_complete": true,
             "activity_rows_omitted": 0,
-            "activity_scene_ref": "af171865c433990af0bd40f4e3d1961a400f38c0a0cf60eb2dd154a0d59d27be"
+            "activity_scene_ref": "af171865c433990af0bd40f4e3d1961a400f38c0a0cf60eb2dd154a0d59d27be",
+            "activity_groups": [
+              {
+                "group_id": "group:0",
+                "parts": [
+                  {
+                    "kind": "image",
+                    "count": 1,
+                    "failed": 0
+                  }
+                ],
+                "failed": 0,
+                "running": false
+              },
+              {
+                "group_id": "group:1",
+                "parts": [
+                  {
+                    "kind": "audio",
+                    "count": 1,
+                    "failed": 0
+                  }
+                ],
+                "failed": 0,
+                "running": false
+              },
+              {
+                "group_id": "group:2",
+                "parts": [
+                  {
+                    "kind": "video",
+                    "count": 1,
+                    "failed": 0
+                  }
+                ],
+                "failed": 0,
+                "running": false
+              },
+              {
+                "group_id": "group:3",
+                "parts": [
+                  {
+                    "kind": "image",
+                    "count": 1,
+                    "failed": 1
+                  }
+                ],
+                "failed": 1,
+                "running": false
+              },
+              {
+                "group_id": "group:4",
+                "parts": [
+                  {
+                    "kind": "image_analysis",
+                    "count": 2,
+                    "failed": 0
+                  }
+                ],
+                "failed": 0,
+                "running": false
+              }
+            ],
+            "final_phase_activity": {
+              "group_id": "phase:0",
+              "parts": [
+                {
+                  "kind": "image",
+                  "count": 2,
+                  "failed": 1
+                },
+                {
+                  "kind": "audio",
+                  "count": 1,
+                  "failed": 0
+                },
+                {
+                  "kind": "video",
+                  "count": 1,
+                  "failed": 0
+                },
+                {
+                  "kind": "image_analysis",
+                  "count": 2,
+                  "failed": 0
+                }
+              ],
+              "failed": 1,
+              "running": false
+            }
           },
           "_turn_id": "media-run",
           "_display": "row"
@@ -8412,7 +9513,8 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0"
               },
               {
                 "row_id": "tool:call-skill",
@@ -8472,7 +9574,9 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0",
+                "merged_count": 2
               },
               {
                 "row_id": "tool:call-view",
@@ -8521,7 +9625,9 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0",
+                "merged_into": "tool:call-skill"
               },
               {
                 "row_id": "tool:call-search",
@@ -8565,7 +9671,8 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0"
               },
               {
                 "row_id": "tool:call-cron",
@@ -8616,7 +9723,8 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0"
               },
               {
                 "row_id": "tool:call-connect",
@@ -8667,7 +9775,8 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0"
               },
               {
                 "row_id": "tool:call-clarify",
@@ -8714,7 +9823,8 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0"
               }
             ],
             "final_answer": "Done.",
@@ -8727,7 +9837,83 @@
             "activity_rows_offset": 0,
             "activity_rows_complete": true,
             "activity_rows_omitted": 0,
-            "activity_scene_ref": "7b0b0466add55cdf409a40ed305787f721be86a846c92fb04b6fbdccf76e5d60"
+            "activity_scene_ref": "7b0b0466add55cdf409a40ed305787f721be86a846c92fb04b6fbdccf76e5d60",
+            "activity_groups": [
+              {
+                "group_id": "group:0",
+                "parts": [
+                  {
+                    "kind": "memory",
+                    "count": 1,
+                    "failed": 0
+                  },
+                  {
+                    "kind": "skill",
+                    "count": 2,
+                    "failed": 0
+                  },
+                  {
+                    "kind": "session",
+                    "count": 1,
+                    "failed": 0
+                  },
+                  {
+                    "kind": "schedule",
+                    "count": 1,
+                    "failed": 0
+                  },
+                  {
+                    "kind": "connection",
+                    "count": 1,
+                    "failed": 0
+                  },
+                  {
+                    "kind": "question",
+                    "count": 1,
+                    "failed": 0
+                  }
+                ],
+                "failed": 0,
+                "running": false
+              }
+            ],
+            "final_phase_activity": {
+              "group_id": "phase:0",
+              "parts": [
+                {
+                  "kind": "memory",
+                  "count": 1,
+                  "failed": 0
+                },
+                {
+                  "kind": "skill",
+                  "count": 2,
+                  "failed": 0
+                },
+                {
+                  "kind": "session",
+                  "count": 1,
+                  "failed": 0
+                },
+                {
+                  "kind": "schedule",
+                  "count": 1,
+                  "failed": 0
+                },
+                {
+                  "kind": "connection",
+                  "count": 1,
+                  "failed": 0
+                },
+                {
+                  "kind": "question",
+                  "count": 1,
+                  "failed": 0
+                }
+              ],
+              "failed": 0,
+              "running": false
+            }
           },
           "_turn_id": "rows-run",
           "_display": "row"
@@ -9068,7 +10254,9 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0",
+                "merged_count": 4
               },
               {
                 "row_id": "tool:call-create",
@@ -9125,7 +10313,9 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0",
+                "merged_into": "tool:call-list"
               },
               {
                 "row_id": "tool:call-complete",
@@ -9174,7 +10364,9 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0",
+                "merged_into": "tool:call-list"
               },
               {
                 "row_id": "tool:call-comment",
@@ -9224,7 +10416,9 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0",
+                "merged_into": "tool:call-list"
               }
             ],
             "final_answer": "Done.",
@@ -9237,7 +10431,33 @@
             "activity_rows_offset": 0,
             "activity_rows_complete": true,
             "activity_rows_omitted": 0,
-            "activity_scene_ref": "7dbb745ff9bd3c5657823e2f162c25ea5ca137ebdf2f891f9df0f4d2dcc66409"
+            "activity_scene_ref": "7dbb745ff9bd3c5657823e2f162c25ea5ca137ebdf2f891f9df0f4d2dcc66409",
+            "activity_groups": [
+              {
+                "group_id": "group:0",
+                "parts": [
+                  {
+                    "kind": "kanban",
+                    "count": 4,
+                    "failed": 0
+                  }
+                ],
+                "failed": 0,
+                "running": false
+              }
+            ],
+            "final_phase_activity": {
+              "group_id": "phase:0",
+              "parts": [
+                {
+                  "kind": "kanban",
+                  "count": 4,
+                  "failed": 0
+                }
+              ],
+              "failed": 0,
+              "running": false
+            }
           },
           "_turn_id": "kanban-run",
           "_display": "row"
@@ -9790,7 +11010,8 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0"
               },
               {
                 "row_id": "tool:call-cdp",
@@ -9836,7 +11057,9 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0",
+                "merged_count": 4
               },
               {
                 "row_id": "tool:call-dialog",
@@ -9877,7 +11100,9 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0",
+                "merged_into": "tool:call-cdp"
               },
               {
                 "row_id": "tool:call-list",
@@ -9919,7 +11144,9 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0",
+                "merged_into": "tool:call-cdp"
               },
               {
                 "row_id": "tool:call-fill",
@@ -9965,7 +11192,9 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0",
+                "merged_into": "tool:call-cdp"
               },
               {
                 "row_id": "tool:call-capture",
@@ -10019,7 +11248,9 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0",
+                "merged_count": 2
               },
               {
                 "row_id": "tool:call-click",
@@ -10073,7 +11304,9 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0",
+                "merged_into": "tool:call-capture"
               }
             ],
             "final_answer": "Done.",
@@ -10086,7 +11319,43 @@
             "activity_rows_offset": 0,
             "activity_rows_complete": true,
             "activity_rows_omitted": 0,
-            "activity_scene_ref": "bca37b152cd9cbe419ec1ff1b1dff9bb90715a068d63e7694afe0a197d56c0e8"
+            "activity_scene_ref": "bca37b152cd9cbe419ec1ff1b1dff9bb90715a068d63e7694afe0a197d56c0e8",
+            "activity_groups": [
+              {
+                "group_id": "group:0",
+                "parts": [
+                  {
+                    "kind": "browser",
+                    "count": 5,
+                    "failed": 0
+                  },
+                  {
+                    "kind": "computer",
+                    "count": 2,
+                    "failed": 0
+                  }
+                ],
+                "failed": 0,
+                "running": false
+              }
+            ],
+            "final_phase_activity": {
+              "group_id": "phase:0",
+              "parts": [
+                {
+                  "kind": "browser",
+                  "count": 5,
+                  "failed": 0
+                },
+                {
+                  "kind": "computer",
+                  "count": 2,
+                  "failed": 0
+                }
+              ],
+              "failed": 0,
+              "running": false
+            }
           },
           "_turn_id": "browser-run",
           "_display": "row"
@@ -10323,7 +11592,8 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0"
               },
               {
                 "row_id": "tool:call-mail",
@@ -10377,7 +11647,9 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0",
+                "merged_count": 2
               },
               {
                 "row_id": "tool:call-notion",
@@ -10419,7 +11691,9 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0",
+                "merged_into": "tool:call-mail"
               }
             ],
             "final_answer": "Filed #42 and told the team.",
@@ -10432,7 +11706,43 @@
             "activity_rows_offset": 0,
             "activity_rows_complete": true,
             "activity_rows_omitted": 0,
-            "activity_scene_ref": "9a4e6f66dd1de9caf2f8e1fecbbcf7372a9c281c252216d934a79cd6317f1f5b"
+            "activity_scene_ref": "9a4e6f66dd1de9caf2f8e1fecbbcf7372a9c281c252216d934a79cd6317f1f5b",
+            "activity_groups": [
+              {
+                "group_id": "group:0",
+                "parts": [
+                  {
+                    "kind": "mcp",
+                    "count": 1,
+                    "failed": 0
+                  },
+                  {
+                    "kind": "connector",
+                    "count": 2,
+                    "failed": 0
+                  }
+                ],
+                "failed": 0,
+                "running": false
+              }
+            ],
+            "final_phase_activity": {
+              "group_id": "phase:0",
+              "parts": [
+                {
+                  "kind": "mcp",
+                  "count": 1,
+                  "failed": 0
+                },
+                {
+                  "kind": "connector",
+                  "count": 2,
+                  "failed": 0
+                }
+              ],
+              "failed": 0,
+              "running": false
+            }
           },
           "_turn_id": "app-run",
           "_display": "row"
@@ -10652,7 +11962,8 @@
                   "is_error": true,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0"
               },
               {
                 "row_id": "tool:call-list",
@@ -10690,7 +12001,8 @@
                   "is_error": false,
                   "duration": null,
                   "cost_usd": null
-                }
+                },
+                "group_id": "group:0"
               }
             ],
             "final_answer": "One chat mentions the deploy: Deploy notes.",
@@ -10703,7 +12015,43 @@
             "activity_rows_offset": 0,
             "activity_rows_complete": true,
             "activity_rows_omitted": 0,
-            "activity_scene_ref": "a80d1022621c7c267b14db1b26855d7338433fc5ab2bca18bef9f8392edf2771"
+            "activity_scene_ref": "a80d1022621c7c267b14db1b26855d7338433fc5ab2bca18bef9f8392edf2771",
+            "activity_groups": [
+              {
+                "group_id": "group:0",
+                "parts": [
+                  {
+                    "kind": "search",
+                    "count": 1,
+                    "failed": 1
+                  },
+                  {
+                    "kind": "talaria",
+                    "count": 1,
+                    "failed": 0
+                  }
+                ],
+                "failed": 1,
+                "running": false
+              }
+            ],
+            "final_phase_activity": {
+              "group_id": "phase:0",
+              "parts": [
+                {
+                  "kind": "search",
+                  "count": 1,
+                  "failed": 1
+                },
+                {
+                  "kind": "talaria",
+                  "count": 1,
+                  "failed": 0
+                }
+              ],
+              "failed": 1,
+              "running": false
+            }
           },
           "_turn_id": "lookup-run",
           "_display": "row"
