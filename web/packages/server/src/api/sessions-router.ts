@@ -1,5 +1,5 @@
 /** Session, project, share, workspace, and file procedures. */
-import { implement } from '@orpc/server'
+import { implement, type Router } from '@orpc/server'
 import { sessionsContract, workspacesContract, type Attachment, type SessionDeleteRefused, type SessionsListQuery } from '@maudecode/talaria-web-contracts'
 import { mkdirSync } from 'node:fs'
 import { closeSync, existsSync, lstatSync, statSync } from 'node:fs'
@@ -270,7 +270,8 @@ export async function workspaceRename(deps: AppDeps, input: { path: string; name
   return { ok: true as const, workspaces: list }
 }
 
-export const sessionsRouter = os.router({
+/** TAL-2326: typed by its contract, so the declaration names it rather than inlining every procedure's output past TS7056's limit. */
+export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesContract, ApiContext> = os.router({
   sessions: {
     references: os.sessions.references.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.sessions.referenceSearch(input.q ?? '', await sidebarListParams(ctx, {})))),
     list: os.sessions.list.handler(({ input, context: { ctx } }) => run(async () => {

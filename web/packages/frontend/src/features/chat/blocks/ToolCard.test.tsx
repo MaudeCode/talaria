@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ToolResultView } from '@maudecode/talaria-web-contracts'
+import type { ToolKind, ToolResultView } from '@maudecode/talaria-web-contracts'
 import { ToolCard, type ToolCardData } from './ToolCard'
 import { sceneItems } from '../turnActivity'
 import { requestOpenFile } from '../../workspace/openFileRequest'
@@ -237,7 +237,7 @@ describe('media and analysis results (TAL-2325)', () => {
 })
 
 describe('memory, skill, session, scheduled job, connection and clarify rows (TAL-2326)', () => {
-  const open = async (name: string, kind: string, resultView: ToolResultView) => {
+  const open = async (name: string, kind: ToolKind, resultView: ToolResultView) => {
     const view = await renderRouted(<ToolCard call={{ ...call, name, kind, target: '', resultView }} sessionId="s1" />)
     await userEvent.click(within(view.container).getAllByRole('button')[0]!)
     return view.container.querySelector('.tool-card-result')!
@@ -267,7 +267,7 @@ describe('memory, skill, session, scheduled job, connection and clarify rows (TA
 
   it('gives sessions, scheduled jobs, connections and questions their own icons and words in every locale', async () => {
     const icons = { session: 'lucide-messages-square', schedule: 'lucide-calendar-clock', connection: 'lucide-plug', question: 'lucide-message-circle-question' }
-    for (const [kind, icon] of Object.entries(icons)) {
+    for (const [kind, icon] of Object.entries(icons) as [ToolKind, string][]) {
       const view = await renderRouted(<ToolCard call={{ ...call, kind, target: '' }} />)
       expect(view.container.querySelector(`[data-tool-kind="${kind}"] svg.${icon}`), kind).not.toBeNull()
       view.unmount()
