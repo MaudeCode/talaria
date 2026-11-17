@@ -1120,6 +1120,37 @@ final class SharedContractTests: XCTestCase {
         }
     }
 
+    func testSharedWebSessionCarriesEachWebSearchAndExtractSection() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
+        // A release checks this App against every retained Web; one from before TAL-2324 has no such example.
+        guard let example = object["tool_web_views"] as? [String: Any] else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let session = try decoder.decode(SessionDetail.self, from: JSONSerialization.data(withJSONObject: example["session"] as Any))
+        let messages = try XCTUnwrap(session.messages)
+        let answer = try XCTUnwrap(messages.first { $0.messageId == "web-answer" })
+        let timeline = try XCTUnwrap(AssistantActivityTimeline.authoritativeScene(message: answer))
+        let groups = ToolCallGroup.groups(messages: messages, messageOffset: nil)
+        for calls in [timeline.toolCalls, groups.first { $0.anchorMessageID == "web-calls" }?.toolCalls ?? []] {
+            let views = Dictionary(uniqueKeysWithValues: calls.map { ($0.id, $0.resultView) })
+            let search = try XCTUnwrap(views["call-web"]??.links)
+            XCTAssertNil(search.answer)
+            XCTAssertEqual(search.items.map(\.title), ["Hermes Agent", "Docs"])
+            XCTAssertEqual(search.items.first?.url, "https://www.example.com/hermes")
+            XCTAssertEqual(search.items.map(\.domain), ["example.com", "docs.example.org"])
+            XCTAssertEqual(search.items.first?.snippet, "An open agent.")
+            let x = try XCTUnwrap(views["call-x"]??.links)
+            XCTAssertEqual(x.answer, "People **like** it.")
+            XCTAssertEqual(x.items.map(\.url), ["https://x.com/b/status/2", "https://x.com/a/status/1"])
+            XCTAssertNil(x.items.first?.snippet)
+            let pages = try XCTUnwrap(views["call-extract"]??.pages)
+            XCTAssertEqual(pages.map(\.title), ["Hermes", "https://blocked.example/"])
+            XCTAssertEqual(pages.first?.excerpt, "# Hermes\n\nAn open agent.")
+            XCTAssertNil(pages.first?.error)
+            XCTAssertEqual(pages.last?.error, "Blocked by website policy")
+        }
+    }
+
     func testSharedWebSessionCarriesEachFileEditsDiff() throws {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
         // A release checks this App against every retained Web; one from before TAL-448 has no such example.

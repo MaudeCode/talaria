@@ -148,6 +148,30 @@ public struct SearchMatches: Decodable, Equatable, Sendable {
     public let files: [SearchMatchFile]
 }
 
+/// TAL-2324: one link a `web_search` result listed or an `x_search` answer cited: its title, the host it opens and the
+/// search's one-line description.
+public struct ResultLink: Decodable, Equatable, Sendable {
+    public let title: String
+    public let url: String
+    public let domain: String
+    public let snippet: String?
+}
+
+/// TAL-2324: a search's links in the Agent's order, under an `x_search` result's Markdown `answer`.
+public struct ResultLinks: Decodable, Equatable, Sendable {
+    public let answer: String?
+    public let items: [ResultLink]
+}
+
+/// TAL-2324: one page a `web_extract` result read: its title, host and the start of its Markdown, or the error it failed with.
+public struct ResultPage: Decodable, Equatable, Sendable {
+    public let url: String
+    public let domain: String
+    public let title: String
+    public let excerpt: String
+    public let error: String?
+}
+
 /// TAL-315: a tool result's display sections, decided on the server for every client. Shown in this order: `text`, or
 /// `stdout`, `stderr`, a labelled `error` and a labelled `exitCode` (sent only when worth showing).
 public struct ToolResultView: Decodable, Equatable, Sendable {
@@ -170,12 +194,19 @@ public struct ToolResultView: Decodable, Equatable, Sendable {
     public let fileExcerpt: FileExcerpt?
     /// TAL-2323: a `search_files` result's matches by file, shown in place of `text`.
     public let matches: SearchMatches?
+    /// TAL-2324: a `web_search` or `x_search` result's links (and answer), shown in place of `text`.
+    public let links: ResultLinks?
+    /// TAL-2324: a `web_extract` result's pages, shown in place of `text`.
+    public let pages: [ResultPage]?
 
     public init(
         text: String? = nil, stdout: String? = nil, stderr: String? = nil, error: String? = nil, exitCode: Int? = nil,
         decisionReview: DecisionReviewRef? = nil, proposal: ProposalRef? = nil, block: ShowBlockRef? = nil,
-        terminal: TerminalRef? = nil, fields: [ToolField]? = nil, fileExcerpt: FileExcerpt? = nil, matches: SearchMatches? = nil
+        terminal: TerminalRef? = nil, fields: [ToolField]? = nil, fileExcerpt: FileExcerpt? = nil, matches: SearchMatches? = nil,
+        links: ResultLinks? = nil, pages: [ResultPage]? = nil
     ) {
+        self.links = links
+        self.pages = pages
         self.fields = fields
         self.fileExcerpt = fileExcerpt
         self.matches = matches
@@ -200,6 +231,8 @@ public struct ToolResultView: Decodable, Equatable, Sendable {
         case fields
         case fileExcerpt = "file_excerpt"
         case matches
+        case links
+        case pages
     }
 
     public init(from decoder: Decoder) throws {
@@ -216,6 +249,8 @@ public struct ToolResultView: Decodable, Equatable, Sendable {
         terminal = DecisionReview.decode(TerminalRef.self, from: try? container.decodeIfPresent(JSONValue.self, forKey: .terminal))
         fileExcerpt = DecisionReview.decode(FileExcerpt.self, from: try? container.decodeIfPresent(JSONValue.self, forKey: .fileExcerpt))
         matches = DecisionReview.decode(SearchMatches.self, from: try? container.decodeIfPresent(JSONValue.self, forKey: .matches))
+        links = DecisionReview.decode(ResultLinks.self, from: try? container.decodeIfPresent(JSONValue.self, forKey: .links))
+        pages = try? container.decodeIfPresent([ResultPage].self, forKey: .pages)
     }
 
     /// The view a decoded JSON field holds; nil when the server sent none.

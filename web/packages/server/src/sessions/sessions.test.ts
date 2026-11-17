@@ -3170,6 +3170,47 @@ describe('session detail ships read_file and search_files sections (TAL-2323)', 
   })
 })
 
+describe('session detail ships web_search, x_search and web_extract sections (TAL-2324)', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  const fixturePath = join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json')
+  const call = (id: string, name: string, args: Json): Json => ({ id, type: 'function', function: { name, arguments: JSON.stringify(args) } })
+  /** A web search, an X search with an inline citation, and an extract with one page read and one blocked, as Agent v0.23 returns them. */
+  const transcript: Json[] = [
+    { role: 'user', content: 'Search for Hermes', message_id: 'web-user', timestamp: 7000, _turn_id: 'web-run' },
+    { role: 'assistant', content: '', message_id: 'web-calls', timestamp: 7001, _turn_id: 'web-run', tool_calls: [
+      call('call-web', 'web_search', { query: 'hermes agent' }), call('call-x', 'x_search', { query: 'hermes agent' }),
+      call('call-extract', 'web_extract', { urls: ['https://example.com/hermes', 'https://blocked.example/'] }),
+    ] },
+    { role: 'tool', tool_call_id: 'call-web', content: JSON.stringify({ success: true, data: { web: [{ title: 'Hermes Agent', url: 'https://www.example.com/hermes', description: 'An open agent.', position: 1 }, { title: 'Docs', url: 'https://docs.example.org/start', description: 'Getting started.', position: 2 }] } }), timestamp: 7002, _turn_id: 'web-run' },
+    { role: 'tool', tool_call_id: 'call-x', content: JSON.stringify({ success: true, provider: 'xai', tool: 'x_search', query: 'hermes agent', answer: 'People **like** it.', citations: ['https://x.com/a/status/1', 'https://x.com/b/status/2'], inline_citations: [{ url: 'https://x.com/b/status/2', title: 'Post by b', start_index: 0, end_index: 6 }], degraded: false, degraded_reason: null }), timestamp: 7003, _turn_id: 'web-run' },
+    { role: 'tool', tool_call_id: 'call-extract', content: JSON.stringify({ results: [{ url: 'https://example.com/hermes', title: 'Hermes', content: '# Hermes\n\nAn open agent.', error: null }, { url: 'https://blocked.example/', title: '', content: '', error: 'Blocked by website policy', blocked_by_policy: { host: 'blocked.example', rule: 'blocked.example', source: 'config' } }] }), timestamp: 7004, _turn_id: 'web-run' },
+    { role: 'assistant', content: 'Done.', message_id: 'web-answer', timestamp: 7005, _turn_id: 'web-run' },
+  ]
+
+  it('matches the shared contract fixture in full detail and every window, on the calls and the scene alike', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const session = (await s.deps.sessionStore.get(sid))
+    session.messages = structuredClone(transcript)
+    session.title = 'Tool web views'
+    await s.deps.sessionStore.save(session)
+    const fixture = (JSON.parse(readFileSync(fixturePath, 'utf8')) as Json).tool_web_views as Json
+    const expected = fixture.expected as Json
+    expect((expected['call-x'] as Json).links).toMatchObject({ answer: 'People **like** it.' })
+    for (const query of ['', '&msg_limit=50']) {
+      const served = (await json(await s.get(`/api/session?session_id=${sid}&messages=1${query}`))).session as Json
+      const messages = served.messages as Json[]
+      expect(messages, query).toEqual((fixture.session as Json).messages)
+      const calls = messages.find((m) => m.message_id === 'web-calls')?.tool_calls as Json[]
+      expect(Object.fromEntries(calls.map((c) => [c.id, c.result_view])), query).toEqual(expected)
+      const rows = ((messages.find((m) => m.message_id === 'web-answer')?._anchor_activity_scene as Json).activity_rows as Json[]).filter((r) => r.role === 'tool')
+      expect(Object.fromEntries(rows.map((r) => [(r.tool as Json).id, (r.tool as Json).result_view])), query).toEqual(expected)
+    }
+  })
+})
+
 describe('session detail ships each file edit\'s diff (TAL-448)', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })

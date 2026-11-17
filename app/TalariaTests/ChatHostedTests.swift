@@ -2188,6 +2188,47 @@ final class ChatHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "tool-read-and-search")
     }
 
+    /// TAL-2324: an expanded web search draws its links, an X search its answer above its links, and an extract each page's
+    /// excerpt or error; a link opens its page where transcript links open.
+    func testExpandedWebCardsDrawTheirLinksAndPagesAndOpenTheURL() async throws {
+        func view(_ json: String) throws -> ToolResultView { try JSONDecoder().decode(ToolResultView.self, from: Data(json.utf8)) }
+        let search = ToolCall(
+            id: "web-search", name: "web_search", preview: nil, args: nil, kind: .web, target: "hermes",
+            resultView: try view(#"{"text": "{\"web\": []}", "links": {"items": [{"title": "Hermes Agent", "url": "https://www.example.com/hermes", "domain": "example.com", "snippet": "An open agent."}, {"title": "Docs", "url": "https://docs.example.org/start", "domain": "docs.example.org"}]}}"#),
+            isCompleted: true
+        )
+        let x = ToolCall(
+            id: "x-search", name: "x_search", preview: nil, args: nil, kind: .search, target: "hermes",
+            resultView: try view(#"{"text": "{}", "links": {"answer": "People **like** it.", "items": [{"title": "Post by b", "url": "https://x.com/b/status/2", "domain": "x.com"}]}}"#),
+            isCompleted: true
+        )
+        let extract = ToolCall(
+            id: "web-extract", name: "web_extract", preview: nil, args: nil, kind: .web, target: "example.com",
+            resultView: try view(#"{"text": "[]", "pages": [{"url": "https://example.com/hermes", "domain": "example.com", "title": "Hermes", "excerpt": "An open agent for your server."}, {"url": "https://blocked.example/", "domain": "blocked.example", "title": "https://blocked.example/", "excerpt": "", "error": "Blocked by website policy"}]}"#),
+            isCompleted: true
+        )
+        let suite = "TalariaTests.tool-web.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: ChatTranscriptDisplaySettings.toolCardsStartExpandedKey)
+        var opened: [URL] = []
+        let window = try hostWindow(
+            ScrollView { VStack { ToolCallCardView(toolCall: search); ToolCallCardView(toolCall: x); ToolCallCardView(toolCall: extract) }.padding() }
+                .defaultAppStorage(defaults)
+                .environment(\.openURL, OpenURLAction { opened.append($0); return .handled }),
+            size: CGSize(width: 390, height: 1100)
+        )
+        let labels = { HostedAccessibility.elements(in: window).compactMap { $0.accessibilityLabel } }
+        let expected = ["Open Hermes Agent", "example.com", "An open agent.", "Open Docs", "People", "Open Post by b", "Open Hermes", "An open agent for your server.", "Blocked by website policy"]
+        let drawn = await awaitCondition(timeout: 5) { expected.allSatisfy { label in labels().contains { $0.contains(label) } } }
+        XCTAssertTrue(drawn, "\(labels())")
+        XCTAssertFalse(labels().contains { $0.contains("**") || $0.contains("\"web\"") }, "\(labels())")
+        let link = try XCTUnwrap(HostedAccessibility.elements(in: window, labelContaining: "Open Hermes Agent").first)
+        XCTAssertTrue(link.accessibilityActivate())
+        XCTAssertEqual(opened, [URL(string: "https://www.example.com/hermes")!])
+        attachHostedScreenshot(window, name: "tool-web-links-and-pages")
+    }
+
     /// TAL-2318: an expanded call draws the server's argument and result rows, not its raw JSON.
     func testExpandedToolCardDrawsTheServerRows() async throws {
         let call = ToolCall(

@@ -1,4 +1,4 @@
-import { ApprovalAnsweredBySchema, DecisionReviewRefSchema, FileExcerptSchema, OutboundDraftRefSchema, ProposalRefSchema, SearchMatchesSchema, ShowBlockRefSchema, TerminalRefSchema, ToolFieldSchema, type ApprovalAnsweredBy, type FileExcerpt, type SearchMatches, type ToolField, type ToolResultView } from '@maudecode/talaria-web-contracts'
+import { ApprovalAnsweredBySchema, DecisionReviewRefSchema, FileExcerptSchema, OutboundDraftRefSchema, ProposalRefSchema, ResultLinksSchema, ResultPageSchema, SearchMatchesSchema, ShowBlockRefSchema, TerminalRefSchema, ToolFieldSchema, type ApprovalAnsweredBy, type FileExcerpt, type ResultLinks, type ResultPage, type SearchMatches, type ToolField, type ToolResultView } from '@maudecode/talaria-web-contracts'
 import { randomUUID } from 'node:crypto'
 /**
  * Transcript settlement after an Agent turn (the core of Python
@@ -13,7 +13,7 @@ import { stripAttachedFilesMarker, stripWorkspacePrefix, type Message } from './
 
 export { WORKSPACE_PREFIX_RE, stripWorkspacePrefix } from './session.js'
 import type { MediaProjection } from '../workspace/media-refs.js'
-import { decidedEditDiff, decisionReviewRef, outboundDraftRef, proposalRef, readFileView, searchFilesView, showBlockRef, terminalRef, toolArgs, toolEditDiff, toolName, toolPresentation } from './tool-display.js'
+import { decidedEditDiff, decisionReviewRef, outboundDraftRef, proposalRef, readFileView, resultLinksView, resultPagesView, searchFilesView, showBlockRef, terminalRef, toolArgs, toolEditDiff, toolName, toolPresentation } from './tool-display.js'
 import { sourceKind } from './source-kind.js'
 
 const TOOL_RESULT_SNIPPET_MAX = 4000
@@ -701,6 +701,7 @@ export function toolResultView(raw: unknown, limit = TOOL_RESULT_SNIPPET_MAX, na
  * TAL-2322: a `terminal`-presented Agent tool's object result shows its terminal sections when it has any; every other result the rule above.
  * TAL-2323: a `file_excerpt` or `matches` presented one adds that section (a `read_file` excerpt names the file its call's
  * `args` read) in place of the generic key/value rows; `text` stays for older clients.
+ * TAL-2324: `links` and `pages` presented ones likewise add their `links` or `pages` section.
  */
 function uncappedResultView(raw: unknown, name?: unknown, args?: unknown): ToolResultView {
   // Content parts read as their text; a list with no text (`[{ title }]`) is the result itself.
@@ -712,12 +713,11 @@ function uncappedResultView(raw: unknown, name?: unknown, args?: unknown): ToolR
     if (!isEmptyView(terminal)) return terminal
   }
   const presentation = toolPresentation(name)
-  if (presentation === 'file_excerpt' || presentation === 'matches') {
+  if (presentation === 'file_excerpt' || presentation === 'matches' || presentation === 'links' || presentation === 'pages') {
     const data = typeof value === 'string' ? resultJson(value) : value
-    const matches = presentation === 'matches' && isDict(data) ? searchFilesView(data) : undefined
-    const typed: ToolResultView | undefined = matches ? { matches } : presentation === 'file_excerpt' && isDict(data) ? readFileView(data, args) : undefined
+    const typed = isDict(data) ? typedResultView(presentation, data, args) : undefined
     // A section joins the generic text, never its key/value rows; a one-line outcome (a repeat read, not found) replaces it.
-    if (typed?.file_excerpt || typed?.matches) {
+    if (typed?.file_excerpt || typed?.matches || typed?.links || typed?.pages) {
       const generic = resultView(value, 0)
       delete generic.fields
       return { ...generic, ...typed }
@@ -726,6 +726,35 @@ function uncappedResultView(raw: unknown, name?: unknown, args?: unknown): ToolR
   }
   return resultView(value, 0)
 }
+
+/** TAL-2323/TAL-2324: the typed section a presentation's parser reads from an object result; undefined for a shape it does not know. */
+function typedResultView(presentation: 'file_excerpt' | 'matches' | 'links' | 'pages', data: Record<string, unknown>, args: unknown): ToolResultView | undefined {
+  if (presentation === 'file_excerpt') return readFileView(data, args)
+  if (presentation === 'matches') return wrapped('matches', searchFilesView(data))
+  if (presentation === 'links') return wrapped('links', resultLinksView(data))
+  return wrapped('pages', resultPagesView(data))
+}
+const wrapped = <K extends keyof ToolResultView>(key: K, section: ToolResultView[K] | undefined): ToolResultView | undefined => (section ? { [key]: section } : undefined)
+
+/** TAL-2324: a list's whole rows (a cut URL would open the wrong page) while characters of `limit` are left. */
+function cappedRows<T extends Record<string, unknown>>(rows: readonly T[], limit: number): T[] {
+  const out: T[] = []
+  let left = limit
+  for (const row of rows) {
+    if (left <= 0) break
+    out.push(row)
+    left -= rowChars(row)
+  }
+  return out
+}
+const rowChars = (row: Record<string, unknown>): number => Object.values(row).reduce<number>((sum, field) => sum + (typeof field === 'string' ? field.length + 1 : 0), 0)
+/** TAL-2324: a links section's answer and the links that fit after it in `limit` characters. */
+function cappedLinks(links: ResultLinks, limit: number): ResultLinks {
+  const answer = links.answer === undefined ? undefined : toolResultSnippet(links.answer, limit)
+  return { ...(answer !== undefined ? { answer } : {}), items: cappedRows(links.items, limit - (links.answer?.length ?? 0)) }
+}
+const linksChars = (links: ResultLinks | undefined): number => (links ? (links.answer?.length ?? 0) + links.items.reduce((sum, item) => sum + rowChars(item), 0) : 0)
+const pagesChars = (pages: ResultPage[] | undefined): number => (pages ?? []).reduce((sum, page) => sum + rowChars(page), 0)
 
 /** TAL-2323: an excerpt's whole lines while their text fits `limit` characters, the last one cut to fit. */
 function cappedExcerpt(excerpt: FileExcerpt, limit: number): FileExcerpt {
@@ -760,7 +789,7 @@ function cappedMatches(matches: SearchMatches, limit: number): SearchMatches {
 const excerptChars = (excerpt: FileExcerpt | undefined): number => (excerpt?.lines ?? []).reduce((sum, line) => sum + line.text.length + 1, 0)
 const matchesChars = (matches: SearchMatches | undefined): number => (matches?.files ?? []).reduce((sum, file) => file.matches.reduce((chars, match) => chars + match.text.length + 1, sum + file.path.length + 1), 0)
 
-const cappedView = (view: ToolResultView, limit: number): ToolResultView => Object.fromEntries(Object.entries(view).map(([key, field]) => [key, typeof field === 'string' ? toolResultSnippet(field, limit) : key === 'fields' ? cappedFields(field as ToolField[], limit, limit) : key === 'file_excerpt' ? cappedExcerpt(field as FileExcerpt, limit) : key === 'matches' ? cappedMatches(field as SearchMatches, limit) : field]))
+const cappedView = (view: ToolResultView, limit: number): ToolResultView => Object.fromEntries(Object.entries(view).map(([key, field]) => [key, typeof field === 'string' ? toolResultSnippet(field, limit) : key === 'fields' ? cappedFields(field as ToolField[], limit, limit) : key === 'file_excerpt' ? cappedExcerpt(field as FileExcerpt, limit) : key === 'matches' ? cappedMatches(field as SearchMatches, limit) : key === 'links' ? cappedLinks(field as ResultLinks, limit) : key === 'pages' ? cappedRows(field as ResultPage[], limit) : field]))
 
 /** A view the server already decided (a built scene row, or one stored with its scene): its known fields, capped. */
 export function decidedResultView(value: Record<string, unknown>): ToolResultView {
@@ -786,6 +815,10 @@ export function decidedResultView(value: Record<string, unknown>): ToolResultVie
   if (excerpt) view.file_excerpt = cappedExcerpt(excerpt, TOOL_RESULT_SNIPPET_MAX)
   const matches = SearchMatchesSchema.safeParse(value.matches).data
   if (matches) view.matches = cappedMatches(matches, TOOL_RESULT_SNIPPET_MAX)
+  const links = ResultLinksSchema.safeParse(value.links).data
+  if (links) view.links = cappedLinks(links, TOOL_RESULT_SNIPPET_MAX)
+  const pages = ResultPageSchema.array().safeParse(value.pages).data
+  if (pages) view.pages = cappedRows(pages, TOOL_RESULT_SNIPPET_MAX)
   return view
 }
 
@@ -832,7 +865,7 @@ export function toolOutcome(raw: unknown, toolName?: unknown, flagged = false, a
   const terminal = !failed ? terminalRef(toolName, data) : undefined
   // The whole view once: capped for display, and whether any section was cut (TAL-331's whole-result offer).
   const full = uncappedResultView(raw, toolName, args)
-  const capped = Object.values(full).some((field) => typeof field === 'string' && field.length > TOOL_RESULT_SNIPPET_MAX) || [fieldChars(full.fields), excerptChars(full.file_excerpt), matchesChars(full.matches)].some((chars) => chars > TOOL_RESULT_SNIPPET_MAX)
+  const capped = Object.values(full).some((field) => typeof field === 'string' && field.length > TOOL_RESULT_SNIPPET_MAX) || [fieldChars(full.fields), excerptChars(full.file_excerpt), matchesChars(full.matches), linksChars(full.links), pagesChars(full.pages)].some((chars) => chars > TOOL_RESULT_SNIPPET_MAX)
   return { is_error, capped, result_text: toolResultSnippet(value), result_view: { ...cappedView(full, TOOL_RESULT_SNIPPET_MAX), ...(ref ? { outbound_draft: ref } : {}), ...(review ? { decision_review: review } : {}), ...(proposal ? { proposal } : {}), ...(block ? { block } : {}), ...(terminal ? { terminal } : {}) } }
 }
 

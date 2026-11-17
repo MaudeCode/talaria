@@ -3,7 +3,7 @@
  * module computes for live frames and the public projection of persisted calls (`redact.ts` stamps them). Callers pass
  * redacted args, so the target never shows more than the arguments it came from.
  */
-import type { FileExcerpt, FileExcerptLine, SearchMatches, SearchMatchFile, ToolEditDiff, ToolKind, ToolPresentation, ToolPresentationEntry, ToolProgress } from '@maudecode/talaria-web-contracts'
+import type { FileExcerpt, FileExcerptLine, ResultLink, ResultLinks, ResultPage, SearchMatches, SearchMatchFile, ToolEditDiff, ToolKind, ToolPresentation, ToolPresentationEntry, ToolProgress } from '@maudecode/talaria-web-contracts'
 import { DecisionReviewRefSchema, FileExcerptSchema, OutboundDraftRefSchema, SearchMatchesSchema, ProposalRefSchema, ShowBlockRefSchema, TALARIA_TOOL_NAMES, TerminalRefSchema, TOOL_PRESENTATIONS, type DecisionReviewRef, type OutboundDraftRef, type ProposalRef, type ShowBlockRef, type TerminalRef } from '@maudecode/talaria-web-contracts'
 import { posix } from 'node:path'
 import { str } from '../util.js'
@@ -400,6 +400,75 @@ export function searchFilesView(data: Record<string, unknown>): SearchMatches | 
   for (const path of Array.isArray(data.files) ? data.files : []) if (typeof path === 'string') file(path)
   if (isDict(data.counts)) for (const [path, count] of Object.entries(data.counts)) if (safeInt(count) !== undefined) file(path).count = count as number
   return { total, truncated: data.truncated === true, files }
+}
+
+/** TAL-2324: an http(s) URL as written, the only kind a link row opens; undefined for any other scheme or text. */
+function webUrl(value: unknown): URL | undefined {
+  if (typeof value !== 'string') return undefined
+  try {
+    const url = new URL(value.trim())
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** TAL-2324: a URL's host without a leading `www.`, the domain a link or page row shows. */
+const urlDomain = (url: URL): string => url.hostname.replace(/^www\./, '')
+
+const resultLink = (title: string, url: URL, snippet = ''): ResultLink => ({ title: title.trim() || url.href, url: url.href, domain: urlDomain(url), ...(snippet.trim() ? { snippet: snippet.trim() } : {}) })
+
+/**
+ * TAL-2324: a `web_search` result's `data.web` rows in order (any extra keys a backend adds ignored), or an `x_search`
+ * result's answer above the links it cited: its titled inline citations, then the bare `citations` they did not name, each
+ * URL once. Only http(s) URLs become links. Undefined for an error or any other shape, which the generic rule shows.
+ */
+export function resultLinksView(data: Record<string, unknown>): ResultLinks | undefined {
+  if (data.success === false || data.error) return undefined
+  if (isDict(data.data) && Array.isArray(data.data.web)) {
+    return { items: data.data.web.flatMap((row) => {
+      const url = isDict(row) ? webUrl(row.url) : undefined
+      return url && isDict(row) ? [resultLink(str(row.title), url, str(row.description))] : []
+    }) }
+  }
+  if (typeof data.answer !== 'string') return undefined
+  const cited = new Map<string, ResultLink>()
+  const cite = (title: string, value: unknown) => {
+    const url = webUrl(value)
+    if (url && !cited.has(url.href)) cited.set(url.href, resultLink(title, url))
+  }
+  for (const inline of Array.isArray(data.inline_citations) ? data.inline_citations : []) if (isDict(inline)) cite(str(inline.title), inline.url)
+  for (const url of Array.isArray(data.citations) ? data.citations : []) cite('', url)
+  return { ...(data.answer.trim() ? { answer: data.answer.trim() } : {}), items: [...cited.values()] }
+}
+
+/** TAL-2324: how much of a page's Markdown a `web_extract` row shows; the whole result stays behind "Show full output". */
+export const PAGE_EXCERPT_CHARS = 600
+/** TAL-2324: where the Agent's cut of a long page begins (`web_tools_truncate._truncate_with_footer`): its middle marker, else its footer. */
+const PAGE_CUT_RE = /\n\n\[\.\.\. middle omitted|\n─+ \[TRUNCATED\] ─+/
+
+/** TAL-2324: a page's Markdown up to its cut, its first `PAGE_EXCERPT_CHARS` characters ending at a word where one is near. */
+function pageExcerpt(content: string): string {
+  const page = content.split(PAGE_CUT_RE)[0]!.trim()
+  if (page.length <= PAGE_EXCERPT_CHARS) return page
+  const head = page.slice(0, PAGE_EXCERPT_CHARS)
+  const word = head.search(/\s\S*$/)
+  return `${(word > PAGE_EXCERPT_CHARS * 0.8 ? head.slice(0, word) : head).trimEnd()}…`
+}
+
+/**
+ * TAL-2324: a `web_extract` result's `results`, one page each with its excerpt, or the error that page failed with (a policy
+ * block carries its message there too). Undefined for a whole-call error or any other shape, which the generic rule shows.
+ */
+export function resultPagesView(data: Record<string, unknown>): ResultPage[] | undefined {
+  if (!Array.isArray(data.results) || data.error) return undefined
+  return data.results.flatMap((row): ResultPage[] => {
+    if (!isDict(row)) return []
+    const url = webUrl(row.url)
+    const error = typeof row.error === 'string' && row.error.trim() ? row.error.trim() : undefined
+    // A URL the Agent refused as invalid still names its row, as text.
+    return [{ url: url?.href ?? '', domain: url ? urlDomain(url) : '', title: str(row.title).trim() || str(row.url).trim(), excerpt: error ? '' : pageExcerpt(str(row.content)), ...(error ? { error } : {}) }]
+  })
 }
 
 /**

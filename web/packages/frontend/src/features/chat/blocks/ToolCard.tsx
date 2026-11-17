@@ -4,7 +4,7 @@ import { useApprovalFlash, useDisclosure } from './Worklog'
 import { ChevronRight } from 'lucide-react'
 import { cn } from '../../../ui/cn'
 import { ToolKindIcon } from '../toolKind'
-import type { ApprovalAnsweredBy, BackgroundLink, FileExcerpt, SearchMatches, ToolApprovalOutcome, ToolField, ToolKind, ToolProgress, ToolResultView } from '@maudecode/talaria-web-contracts'
+import type { ApprovalAnsweredBy, BackgroundLink, FileExcerpt, ResultLinks, ResultPage, SearchMatches, ToolApprovalOutcome, ToolField, ToolKind, ToolProgress, ToolResultView } from '@maudecode/talaria-web-contracts'
 import { agentsSummary, statusLabel } from '../../background/BackgroundWork'
 import { toolText } from '../../../i18n/toolText'
 import { useLocale } from '../../../i18n/useLocale'
@@ -18,6 +18,7 @@ import { lazy, Suspense } from 'react'
 import { requestOpenFile } from '../../workspace/openFileRequest'
 import { RowContextMenu, type RowAction } from '../../../ui/Menu'
 import { copyWithToast } from '../../../lib/clipboard'
+import { Markdown } from '../render/Markdown'
 
 export interface ToolCardData {
   id: string
@@ -148,10 +149,55 @@ function MatchesResult({ matches, sessionId }: { matches: SearchMatches; session
   )
 }
 
-/** A result's file excerpt or matches, else its rows when the server sent them (a JSON object), else its sections as text. */
+/** TAL-2324: a link's title opening its page in a new tab, beside the host it opens; text when the server sent no web URL. */
+function ResultLinkTitle({ title, url, domain }: { title: string; url: string; domain: string }) {
+  return (
+    <div className="flex min-w-0 items-baseline gap-2">
+      {url ? <a href={url} target="_blank" rel="noopener noreferrer" title={url} className="min-w-0 truncate text-accent-text hover:underline">{title}</a> : <span className="min-w-0 truncate text-text">{title}</span>}
+      {domain && <span className={cn(LABEL, 'shrink-0')}>{domain}</span>}
+    </div>
+  )
+}
+
+/** TAL-2324: a search's links as title, domain and a one-line snippet; an X search's answer, formatted, above the links it cited. */
+function LinksResult({ links }: { links: ResultLinks }) {
+  return (
+    <div className="tool-links max-h-72 space-y-2 overflow-auto">
+      {links.answer && <Markdown text={links.answer} className="hermes-prose text-[13px]" />}
+      {!links.answer && !links.items.length && <div className={LABEL}>{m.tool_links_none()}</div>}
+      {links.items.map((item, i) => (
+        <div key={i} className="tool-link min-w-0">
+          <ResultLinkTitle title={item.title} url={item.url} domain={item.domain} />
+          {item.snippet && <div className="truncate text-xs text-muted" title={item.snippet}>{item.snippet}</div>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** TAL-2324: each extracted page's title and domain over the start of its text; a page that failed as its error on one line. */
+function PagesResult({ pages }: { pages: ResultPage[] }) {
+  return (
+    <div className="tool-pages max-h-72 space-y-3 overflow-auto">
+      {pages.map((page, i) => (
+        <div key={i} className="tool-page min-w-0">
+          <ResultLinkTitle title={page.title} url={page.url} domain={page.domain} />
+          {page.error ? <div className="truncate text-xs text-error" title={page.error}>{page.error}</div> : page.excerpt && <Markdown text={page.excerpt} className="hermes-prose text-[13px] text-muted" />}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** The typed section a result view carries in place of its text (TAL-2323, TAL-2324). */
+const hasSection = (view: ToolResultView | null): boolean => Boolean(view?.file_excerpt ?? view?.matches ?? view?.links ?? view?.pages)
+
+/** A result's typed section, else its rows when the server sent them (a JSON object), else its sections as text. */
 function ResultBody({ view, text, sessionId }: { view: ToolResultView | null; text: string; sessionId?: string | undefined }) {
   if (view?.file_excerpt) return <FileExcerptResult excerpt={view.file_excerpt} sessionId={sessionId} />
   if (view?.matches) return <MatchesResult matches={view.matches} sessionId={sessionId} />
+  if (view?.links) return <LinksResult links={view.links} />
+  if (view?.pages) return <PagesResult pages={view.pages} />
   return view?.fields?.length ? <FieldRows fields={view.fields} /> : <pre className={RESULT_PRE}>{text}</pre>
 }
 
@@ -203,7 +249,7 @@ export function ToolCard({ call, timestamp, sessionId, arrivalKey }: { call: Too
               {call.argsFields ? <FieldRows fields={call.argsFields} /> : <pre className={`max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-md bg-code-bg p-2 ${MONO}`}>{args}</pre>}
             </div>
           )}
-          {(result || call.resultView?.file_excerpt || call.resultView?.matches) && (
+          {(result || hasSection(call.resultView)) && (
             <div className="tool-card-result">
               <div className="mb-1 text-[11px] uppercase tracking-wider text-muted">{call.isError ? m.tool_error_label() : m.tool_result_label()}</div>
               {call.resultTruncated && sessionId ? <ClippedResult sessionId={sessionId} callId={call.id} view={call.resultView} clipped={result} /> : <ResultBody view={call.resultView} text={result} sessionId={sessionId} />}
