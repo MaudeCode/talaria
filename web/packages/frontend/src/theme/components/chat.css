@@ -82,10 +82,18 @@
 .msg-body a{color:var(--link-color);text-decoration:underline}
 .msg-body hr{border:none;border-top:1px solid var(--border);margin:14px 0}
 .msg-body table{border-collapse:collapse;display:block;width:max-content;max-width:100%;overflow-x:auto;margin:8px 0;font-size:12px}
-.msg-body th{padding:6px 10px;text-align:left;font-weight:600;color:var(--muted);border:0;border-bottom:1px solid var(--table-head-border)}
+.msg-body th{padding:6px 10px;text-align:left;font-weight:600;color:var(--strong);border:0;border-bottom:1px solid var(--table-head-border)}
 .msg-body td{padding:5px 10px;border:0;border-bottom:1px solid var(--table-border)}
 .msg-body tbody tr:last-child td{border-bottom:0}
 .msg-body th,.msg-body td{min-width:10ch}
+/* TAL-2319: a chat table is a reading table (UIUX-GUIDE): Streamdown's card, inner frame and header fill go; the
+   wrapper fits the table so its controls end at the table's right edge, shown on hover or focus, always on touch. */
+.msg-body [data-streamdown="table-wrapper"]{width:fit-content;max-width:100%;margin-block:calc(var(--message-body-font-size) * .65);padding:0;border:0;border-radius:0;background:none;gap:2px}
+.msg-body [data-streamdown="table-wrapper"] > :last-child{border:0;border-radius:0;background:none}
+.msg-body [data-streamdown="table-wrapper"] > :first-child:not(:last-child){opacity:0;transition:opacity var(--dur) var(--ease)}
+.msg-body [data-streamdown="table-wrapper"]:is(:hover,:focus-within) > :first-child:not(:last-child){opacity:1}
+@media (hover:none){.msg-body [data-streamdown="table-wrapper"] > :first-child:not(:last-child){opacity:1}}
+.msg-body [data-streamdown="table-header"]{background:none}
 .msg-body td code,.msg-body th code{font-size:0.85em;padding:1px 4px;vertical-align:baseline}
 .msg-body .katex{font-size:1.1em}
 textarea#msg{width:100%;background:transparent;border:none;outline:none;color:var(--text);font-size:var(--composer-font-size);line-height:var(--composer-line-height);padding:12px 16px 6px;resize:none;min-height:72px;max-height:208px;font-family:inherit;letter-spacing:var(--composer-tracking);font-weight:var(--body-weight);overflow-y:auto;scrollbar-width:var(--composer-scrollbar-width)}
@@ -108,7 +116,7 @@ textarea#msg::placeholder{color:var(--muted)}
 @media (pointer: coarse){.msg-row{contain:layout style}}
 @media (pointer: coarse){.msg-row[data-live-assistant-turn],.msg-row[data-live-assistant]{content-visibility:visible}}
 .msg-body{padding-left:var(--msg-rail);padding-top:8px;max-width:var(--msg-max)}
-.msg-body code,.msg-body pre,.msg-body table{font-family:var(--font-mono)}
+.msg-body code,.msg-body pre{font-family:var(--font-mono)}
 .msg-body:empty{display:none}
 .assistant-turn{width:100%}
 .assistant-turn-blocks{display:flex;flex-direction:column}
@@ -171,7 +179,6 @@ textarea#msg::placeholder{color:var(--muted)}
 .msg-row[data-role="user"] .msg-body code{background:var(--user-msg-code-bg)}
 .msg-body pre{border:var(--pre-border);border-radius:var(--r-md);box-shadow:none}
 .msg-body code{border-radius:4px}
-.msg-body table{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}
 #msg,#msg:hover,#msg:focus,#msg:focus-visible{background:transparent;border:0;box-shadow:none;border-radius:0;outline:none}
 .msg-row{animation:none}
 .chat-header-meta:empty{display:none}
