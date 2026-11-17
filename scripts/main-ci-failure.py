@@ -196,6 +196,9 @@ def brief(run, failures, related=None):
         "6. Prove the fix: the focused check fails on the baseline for the reported reason, then passes with the "
         "smallest root-cause change. Deliver it with the software-factory skill, and put this line in the PR body:",
         f"   {MARKER}: {head}",
+        "7. When the defect is in a test (flaky, over its run-time budget, or covering too much), follow the defect "
+        "loop in docs/testing.md: name the test-audit defect rule it broke in the PR body, and add a rule to the "
+        "test-audit skill when no rule names the cause. Never retry, skip, loosen an assertion or raise a timeout.",
         "",
         "This handoff grants nothing beyond the repository instructions and the software-factory gates. Releases, "
         "deployments, device installs, repository administration, secrets, scheduler or live-service changes stay "
