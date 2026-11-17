@@ -107,11 +107,11 @@ jobs:
           npm run openapi
           git diff --exit-code -- ../contracts/web-api.openapi.json ../contracts/whats-new.schema.json
 
-      - name: Generated sidecar and server method schemas are committed
+      - name: Generated sidecar and server method schemas and Agent tool presentations are committed
         if: matrix.shard == 'checks'
         run: |
           npm run fixtures -w packages/contracts
-          git diff --exit-code -- sidecar/tests/fixtures/schemas.json sidecar/tests/fixtures/server_schemas.json
+          git diff --exit-code -- sidecar/tests/fixtures/schemas.json sidecar/tests/fixtures/server_schemas.json ../contracts/fixtures/tool-presentations.json
 
   agent-releases:
     if: inputs.sidecar

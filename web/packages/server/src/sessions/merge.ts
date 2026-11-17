@@ -13,7 +13,7 @@ import { stripAttachedFilesMarker, stripWorkspacePrefix, type Message } from './
 
 export { WORKSPACE_PREFIX_RE, stripWorkspacePrefix } from './session.js'
 import type { MediaProjection } from '../workspace/media-refs.js'
-import { decidedEditDiff, decisionReviewRef, outboundDraftRef, proposalRef, showBlockRef, terminalRef, toolArgs, toolEditDiff, toolName } from './tool-display.js'
+import { decidedEditDiff, decisionReviewRef, outboundDraftRef, proposalRef, showBlockRef, terminalRef, toolArgs, toolEditDiff, toolName, toolPresentation } from './tool-display.js'
 import { sourceKind } from './source-kind.js'
 
 const TOOL_RESULT_SNIPPET_MAX = 4000
@@ -693,14 +693,21 @@ function resultView(value: unknown, depth: number): ToolResultView {
  * by line; a scalar shows as text, and a result that is not JSON exactly as written. Each field is capped like the snippet
  * (`limit`; TAL-331's whole-result read passes `Infinity`).
  */
-export function toolResultView(raw: unknown, limit = TOOL_RESULT_SNIPPET_MAX): ToolResultView {
-  return cappedView(uncappedResultView(raw), limit)
+export function toolResultView(raw: unknown, limit = TOOL_RESULT_SNIPPET_MAX, name?: unknown): ToolResultView {
+  return cappedView(uncappedResultView(raw, name), limit)
 }
 
-function uncappedResultView(raw: unknown): ToolResultView {
+/** TAL-2322: a `terminal`-presented Agent tool's object result shows its terminal sections when it has any; every other result the rule above. */
+function uncappedResultView(raw: unknown, name?: unknown): ToolResultView {
   // Content parts read as their text; a list with no text (`[{ title }]`) is the result itself.
   const flat = Array.isArray(raw) ? messageText(raw) : raw
-  return resultView(Array.isArray(raw) && !str(flat).trim() ? raw : flat, 0)
+  const value = Array.isArray(raw) && !str(flat).trim() ? raw : flat
+  if (toolPresentation(name) === 'terminal') {
+    const data = typeof value === 'string' ? resultJson(value) : value
+    const terminal = isDict(data) ? terminalView(data) : {}
+    if (!isEmptyView(terminal)) return terminal
+  }
+  return resultView(value, 0)
 }
 
 const cappedView = (view: ToolResultView, limit: number): ToolResultView => Object.fromEntries(Object.entries(view).map(([key, field]) => [key, typeof field === 'string' ? toolResultSnippet(field, limit) : key === 'fields' ? cappedFields(field as ToolField[], limit, limit) : field]))
@@ -770,7 +777,7 @@ export function toolOutcome(raw: unknown, toolName?: unknown, flagged = false): 
   // TAL-1974: a terminal the agent opened links the session's terminal pane.
   const terminal = !failed ? terminalRef(toolName, data) : undefined
   // The whole view once: capped for display, and whether any section was cut (TAL-331's whole-result offer).
-  const full = uncappedResultView(raw)
+  const full = uncappedResultView(raw, toolName)
   const capped = Object.values(full).some((field) => typeof field === 'string' && field.length > TOOL_RESULT_SNIPPET_MAX) || fieldChars(full.fields) > TOOL_RESULT_SNIPPET_MAX
   return { is_error, capped, result_text: toolResultSnippet(value), result_view: { ...cappedView(full, TOOL_RESULT_SNIPPET_MAX), ...(ref ? { outbound_draft: ref } : {}), ...(review ? { decision_review: review } : {}), ...(proposal ? { proposal } : {}), ...(block ? { block } : {}), ...(terminal ? { terminal } : {}) } }
 }
@@ -860,7 +867,7 @@ export function extractToolCallsFromMessages(messages: unknown[], liveToolCalls:
       }
     }
   })
-  const live = liveToolCalls.filter((tc) => isDict(tc) && str(tc.name) && tc.name !== 'clarify')
+  const live = liveToolCalls.filter((tc) => isDict(tc) && str(tc.name) && toolPresentation(tc.name) !== 'clarify')
   if (live.length) {
     toolSeq.forEach((seq, i) => {
       if (seq.resolved || i >= live.length) return
@@ -956,7 +963,7 @@ export function withToolCallOutcomes<T>(messages: T[], sessionToolCalls: unknown
         done: Boolean(reply) || answered || !running, is_error: outcome ? outcome.is_error : rec?.is_error === true,
         ...approvalAnsweredBy(rec?.approval_answered_by),
         duration: finiteOrNull(rec?.duration), result: outcome ? outcome.result_text : typeof rec?.snippet === 'string' ? rec.snippet : null,
-        result_view: outcome ? outcome.result_view : isDict(rec?.result_view) ? decidedResultView(rec.result_view) : typeof rec?.snippet === 'string' ? toolResultView(rec.snippet) : null,
+        result_view: outcome ? outcome.result_view : isDict(rec?.result_view) ? decidedResultView(rec.result_view) : typeof rec?.snippet === 'string' ? toolResultView(rec.snippet, undefined, name) : null,
       }
       if (reply && outcome) projectedOutcomes.set(out, { content: reply.content, name: str(name), flagged: reply.is_error, display_metadata: reply.display_metadata, outcome, edit_diff: editDiff })
       return out

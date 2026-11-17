@@ -720,6 +720,26 @@ Both chat and manual compression forward the profile's parsed `agent.disabled_to
 `AIAgent`. The cached chat Agent identity includes this policy so changing it replaces the Agent
 on the next turn. The Agent's filter also scopes deferred tool search and calls.
 
+## Agent tool presentations
+
+`TOOL_PRESENTATIONS` in `packages/contracts` (TAL-2322) lists every tool a supported Agent
+registers, with two columns: `kind`, the icon and verb clients map, and `presentation`, how the
+server shows the call's result. `terminal` (`terminal`, `process_manage`, `execute_code`) shows the
+output streams, error and exit code; `diff` (`patch`, `write_file`) the file edit; `clarify` shows
+as the question dialog, never a tool row; `todo` and `delegate` show in the session's todo list and
+subagent rows; every other tool is `generic`, its result's text, else its key/value fields. The
+server reads a listed tool's kind and presentation from the table; MCP, connector and plugin tools
+keep the name-token rules and the generic result parser, and Talaria's own tools stay in
+`TALARIA_TOOL_NAMES`.
+
+`npm run fixtures -w packages/contracts` writes the table to `contracts/fixtures/tool-presentations.json`,
+and `sidecar/tests/test_agent_tool_presentations.py` checks it against the Agent's registry
+(`model_tools` imported in a disposable home). Every supported Agent must have an entry for each
+tool it registers; on the newest supported Agent the table may list no tool it dropped, except tools
+an older supported release still registers, which the test lists by release. The check runs in the
+sidecar suite, so `scripts/check-agent-compatibility.py --release <tag>` fails a candidate that adds
+a tool. Its support ticket lists the tool as `generic` and files a display ticket for its icon and view.
+
 ## Skill secret setup
 
 A client must explicitly advertise `skill_secret: true` on `chat.start`. The Web

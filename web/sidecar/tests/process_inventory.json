@@ -1,6 +1,13 @@
 {
   "schemaVersion": 1,
   "families": {
+    "tests/test_agent_tool_presentations.py::test_every_registered_agent_tool_has_a_presentation": {
+      "layer": "compatibility",
+      "reason": "The supported Agent's real tool registry (a model_tools import in a disposable home) must match the Talaria presentation table, so an Agent release that adds or drops a tool fails before its pin lands. A separate Agent interpreter loads the registry; no network or providers.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_cron_room_delivery.py::test_real_agent_room_delivery_posts_one_scheduled_message": {
       "layer": "compatibility",
       "reason": "Supported-Agent room delivery API: the advertised parser must correspond to _deliver_result appending one scheduled user event to a disposable real room store. The real Agent interpreter and store are required.",
