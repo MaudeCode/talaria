@@ -6535,5 +6535,394 @@
         }
       ]
     }
+  },
+  "tool_web_views": {
+    "expected": {
+      "call-web": {
+        "text": "{\n  \"web\": [\n    {\n      \"title\": \"Hermes Agent\",\n      \"url\": \"https://www.example.com/hermes\",\n      \"description\": \"An open agent.\",\n      \"position\": 1\n    },\n    {\n      \"title\": \"Docs\",\n      \"url\": \"https://docs.example.org/start\",\n      \"description\": \"Getting started.\",\n      \"position\": 2\n    }\n  ]\n}",
+        "links": {
+          "items": [
+            {
+              "title": "Hermes Agent",
+              "url": "https://www.example.com/hermes",
+              "domain": "example.com",
+              "snippet": "An open agent."
+            },
+            {
+              "title": "Docs",
+              "url": "https://docs.example.org/start",
+              "domain": "docs.example.org",
+              "snippet": "Getting started."
+            }
+          ]
+        }
+      },
+      "call-x": {
+        "text": "{\n  \"success\": true,\n  \"provider\": \"xai\",\n  \"tool\": \"x_search\",\n  \"query\": \"hermes agent\",\n  \"answer\": \"People **like** it.\",\n  \"citations\": [\n    \"https://x.com/a/status/1\",\n    \"https://x.com/b/status/2\"\n  ],\n  \"inline_citations\": [\n    {\n      \"url\": \"https://x.com/b/status/2\",\n      \"title\": \"Post by b\",\n      \"start_index\": 0,\n      \"end_index\": 6\n    }\n  ],\n  \"degraded\": false,\n  \"degraded_reason\": null\n}",
+        "links": {
+          "answer": "People **like** it.",
+          "items": [
+            {
+              "title": "Post by b",
+              "url": "https://x.com/b/status/2",
+              "domain": "x.com"
+            },
+            {
+              "title": "https://x.com/a/status/1",
+              "url": "https://x.com/a/status/1",
+              "domain": "x.com"
+            }
+          ]
+        }
+      },
+      "call-extract": {
+        "text": "[\n  {\n    \"url\": \"https://example.com/hermes\",\n    \"title\": \"Hermes\",\n    \"content\": \"# Hermes\\n\\nAn open agent.\",\n    \"error\": null\n  },\n  {\n    \"url\": \"https://blocked.example/\",\n    \"title\": \"\",\n    \"content\": \"\",\n    \"error\": \"Blocked by website policy\",\n    \"blocked_by_policy\": {\n      \"host\": \"blocked.example\",\n      \"rule\": \"blocked.example\",\n      \"source\": \"config\"\n    }\n  }\n]",
+        "pages": [
+          {
+            "url": "https://example.com/hermes",
+            "domain": "example.com",
+            "title": "Hermes",
+            "excerpt": "# Hermes\n\nAn open agent."
+          },
+          {
+            "url": "https://blocked.example/",
+            "domain": "blocked.example",
+            "title": "https://blocked.example/",
+            "excerpt": "",
+            "error": "Blocked by website policy"
+          }
+        ]
+      }
+    },
+    "session": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Search for Hermes",
+          "message_id": "web-user",
+          "timestamp": 7000,
+          "_turn_id": "web-run",
+          "_display": "row"
+        },
+        {
+          "role": "assistant",
+          "content": "",
+          "message_id": "web-calls",
+          "timestamp": 7001,
+          "tool_calls": [
+            {
+              "args_fields": [
+                {
+                  "key": "query",
+                  "value": "hermes agent",
+                  "multiline": false
+                }
+              ],
+              "kind": "web",
+              "target": "hermes agent",
+              "function": {
+                "name": "web_search",
+                "arguments": "{\"query\":\"hermes agent\"}"
+              },
+              "id": "call-web",
+              "done": true,
+              "is_error": false,
+              "result": "{\"success\":true,\"data\":{\"web\":[{\"title\":\"Hermes Agent\",\"url\":\"https://www.example.com/hermes\",\"description\":\"An open agent.\",\"position\":1},{\"title\":\"Docs\",\"url\":\"https://docs.example.org/start\",\"description\":\"Getting started.\",\"position\":2}]}}",
+              "result_view": {
+                "text": "{\n  \"web\": [\n    {\n      \"title\": \"Hermes Agent\",\n      \"url\": \"https://www.example.com/hermes\",\n      \"description\": \"An open agent.\",\n      \"position\": 1\n    },\n    {\n      \"title\": \"Docs\",\n      \"url\": \"https://docs.example.org/start\",\n      \"description\": \"Getting started.\",\n      \"position\": 2\n    }\n  ]\n}",
+                "links": {
+                  "items": [
+                    {
+                      "title": "Hermes Agent",
+                      "url": "https://www.example.com/hermes",
+                      "domain": "example.com",
+                      "snippet": "An open agent."
+                    },
+                    {
+                      "title": "Docs",
+                      "url": "https://docs.example.org/start",
+                      "domain": "docs.example.org",
+                      "snippet": "Getting started."
+                    }
+                  ]
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "query",
+                  "value": "hermes agent",
+                  "multiline": false
+                }
+              ],
+              "kind": "search",
+              "target": "hermes agent",
+              "function": {
+                "name": "x_search",
+                "arguments": "{\"query\":\"hermes agent\"}"
+              },
+              "id": "call-x",
+              "done": true,
+              "is_error": false,
+              "result": "{\"success\":true,\"provider\":\"xai\",\"tool\":\"x_search\",\"query\":\"hermes agent\",\"answer\":\"People **like** it.\",\"citations\":[\"https://x.com/a/status/1\",\"https://x.com/b/status/2\"],\"inline_citations\":[{\"url\":\"https://x.com/b/status/2\",\"title\":\"Post by b\",\"start_index\":0,\"end_index\":6}],\"degraded\":false,\"degraded_reason\":null}",
+              "result_view": {
+                "text": "{\n  \"success\": true,\n  \"provider\": \"xai\",\n  \"tool\": \"x_search\",\n  \"query\": \"hermes agent\",\n  \"answer\": \"People **like** it.\",\n  \"citations\": [\n    \"https://x.com/a/status/1\",\n    \"https://x.com/b/status/2\"\n  ],\n  \"inline_citations\": [\n    {\n      \"url\": \"https://x.com/b/status/2\",\n      \"title\": \"Post by b\",\n      \"start_index\": 0,\n      \"end_index\": 6\n    }\n  ],\n  \"degraded\": false,\n  \"degraded_reason\": null\n}",
+                "links": {
+                  "answer": "People **like** it.",
+                  "items": [
+                    {
+                      "title": "Post by b",
+                      "url": "https://x.com/b/status/2",
+                      "domain": "x.com"
+                    },
+                    {
+                      "title": "https://x.com/a/status/1",
+                      "url": "https://x.com/a/status/1",
+                      "domain": "x.com"
+                    }
+                  ]
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "urls",
+                  "value": "- https://example.com/hermes\n- https://blocked.example/",
+                  "multiline": true
+                }
+              ],
+              "kind": "web",
+              "target": "",
+              "function": {
+                "name": "web_extract",
+                "arguments": "{\"urls\":[\"https://example.com/hermes\",\"https://blocked.example/\"]}"
+              },
+              "id": "call-extract",
+              "done": true,
+              "is_error": false,
+              "result": "{\"results\":[{\"url\":\"https://example.com/hermes\",\"title\":\"Hermes\",\"content\":\"# Hermes\\n\\nAn open agent.\",\"error\":null},{\"url\":\"https://blocked.example/\",\"title\":\"\",\"content\":\"\",\"error\":\"Blocked by website policy\",\"blocked_by_policy\":{\"host\":\"blocked.example\",\"rule\":\"blocked.example\",\"source\":\"config\"}}]}",
+              "result_view": {
+                "text": "[\n  {\n    \"url\": \"https://example.com/hermes\",\n    \"title\": \"Hermes\",\n    \"content\": \"# Hermes\\n\\nAn open agent.\",\n    \"error\": null\n  },\n  {\n    \"url\": \"https://blocked.example/\",\n    \"title\": \"\",\n    \"content\": \"\",\n    \"error\": \"Blocked by website policy\",\n    \"blocked_by_policy\": {\n      \"host\": \"blocked.example\",\n      \"rule\": \"blocked.example\",\n      \"source\": \"config\"\n    }\n  }\n]",
+                "pages": [
+                  {
+                    "url": "https://example.com/hermes",
+                    "domain": "example.com",
+                    "title": "Hermes",
+                    "excerpt": "# Hermes\n\nAn open agent."
+                  },
+                  {
+                    "url": "https://blocked.example/",
+                    "domain": "blocked.example",
+                    "title": "https://blocked.example/",
+                    "excerpt": "",
+                    "error": "Blocked by website policy"
+                  }
+                ]
+              },
+              "duration": null,
+              "type": "function"
+            }
+          ],
+          "_turn_id": "web-run",
+          "_display": "row"
+        },
+        {
+          "role": "tool",
+          "content": "{\"success\":true,\"data\":{\"web\":[{\"title\":\"Hermes Agent\",\"url\":\"https://www.example.com/hermes\",\"description\":\"An open agent.\",\"position\":1},{\"title\":\"Docs\",\"url\":\"https://docs.example.org/start\",\"description\":\"Getting started.\",\"position\":2}]}}",
+          "timestamp": 7002,
+          "tool_call_id": "call-web",
+          "_turn_id": "web-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"success\":true,\"provider\":\"xai\",\"tool\":\"x_search\",\"query\":\"hermes agent\",\"answer\":\"People **like** it.\",\"citations\":[\"https://x.com/a/status/1\",\"https://x.com/b/status/2\"],\"inline_citations\":[{\"url\":\"https://x.com/b/status/2\",\"title\":\"Post by b\",\"start_index\":0,\"end_index\":6}],\"degraded\":false,\"degraded_reason\":null}",
+          "timestamp": 7003,
+          "tool_call_id": "call-x",
+          "_turn_id": "web-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"results\":[{\"url\":\"https://example.com/hermes\",\"title\":\"Hermes\",\"content\":\"# Hermes\\n\\nAn open agent.\",\"error\":null},{\"url\":\"https://blocked.example/\",\"title\":\"\",\"content\":\"\",\"error\":\"Blocked by website policy\",\"blocked_by_policy\":{\"host\":\"blocked.example\",\"rule\":\"blocked.example\",\"source\":\"config\"}}]}",
+          "timestamp": 7004,
+          "tool_call_id": "call-extract",
+          "_turn_id": "web-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "assistant",
+          "content": "Done.",
+          "message_id": "web-answer",
+          "timestamp": 7005,
+          "_anchor_activity_scene": {
+            "version": "activity_scene_v1",
+            "activity_rows": [
+              {
+                "row_id": "tool:call-web",
+                "order_index": 0,
+                "role": "tool",
+                "created_at": 7001,
+                "tool": {
+                  "id": "call-web",
+                  "name": "web_search",
+                  "args_fields": [
+                    {
+                      "key": "query",
+                      "value": "hermes agent",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "web",
+                  "target": "hermes agent",
+                  "args": {
+                    "query": "hermes agent"
+                  },
+                  "preview": null,
+                  "result": "{\"success\":true,\"data\":{\"web\":[{\"title\":\"Hermes Agent\",\"url\":\"https://www.example.com/hermes\",\"description\":\"An open agent.\",\"position\":1},{\"title\":\"Docs\",\"url\":\"https://docs.example.org/start\",\"description\":\"Getting started.\",\"position\":2}]}}",
+                  "result_view": {
+                    "text": "{\n  \"web\": [\n    {\n      \"title\": \"Hermes Agent\",\n      \"url\": \"https://www.example.com/hermes\",\n      \"description\": \"An open agent.\",\n      \"position\": 1\n    },\n    {\n      \"title\": \"Docs\",\n      \"url\": \"https://docs.example.org/start\",\n      \"description\": \"Getting started.\",\n      \"position\": 2\n    }\n  ]\n}",
+                    "links": {
+                      "items": [
+                        {
+                          "title": "Hermes Agent",
+                          "url": "https://www.example.com/hermes",
+                          "domain": "example.com",
+                          "snippet": "An open agent."
+                        },
+                        {
+                          "title": "Docs",
+                          "url": "https://docs.example.org/start",
+                          "domain": "docs.example.org",
+                          "snippet": "Getting started."
+                        }
+                      ]
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-x",
+                "order_index": 1,
+                "role": "tool",
+                "created_at": 7001,
+                "tool": {
+                  "id": "call-x",
+                  "name": "x_search",
+                  "args_fields": [
+                    {
+                      "key": "query",
+                      "value": "hermes agent",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "search",
+                  "target": "hermes agent",
+                  "args": {
+                    "query": "hermes agent"
+                  },
+                  "preview": null,
+                  "result": "{\"success\":true,\"provider\":\"xai\",\"tool\":\"x_search\",\"query\":\"hermes agent\",\"answer\":\"People **like** it.\",\"citations\":[\"https://x.com/a/status/1\",\"https://x.com/b/status/2\"],\"inline_citations\":[{\"url\":\"https://x.com/b/status/2\",\"title\":\"Post by b\",\"start_index\":0,\"end_index\":6}],\"degraded\":false,\"degraded_reason\":null}",
+                  "result_view": {
+                    "text": "{\n  \"success\": true,\n  \"provider\": \"xai\",\n  \"tool\": \"x_search\",\n  \"query\": \"hermes agent\",\n  \"answer\": \"People **like** it.\",\n  \"citations\": [\n    \"https://x.com/a/status/1\",\n    \"https://x.com/b/status/2\"\n  ],\n  \"inline_citations\": [\n    {\n      \"url\": \"https://x.com/b/status/2\",\n      \"title\": \"Post by b\",\n      \"start_index\": 0,\n      \"end_index\": 6\n    }\n  ],\n  \"degraded\": false,\n  \"degraded_reason\": null\n}",
+                    "links": {
+                      "answer": "People **like** it.",
+                      "items": [
+                        {
+                          "title": "Post by b",
+                          "url": "https://x.com/b/status/2",
+                          "domain": "x.com"
+                        },
+                        {
+                          "title": "https://x.com/a/status/1",
+                          "url": "https://x.com/a/status/1",
+                          "domain": "x.com"
+                        }
+                      ]
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-extract",
+                "order_index": 2,
+                "role": "tool",
+                "created_at": 7001,
+                "tool": {
+                  "id": "call-extract",
+                  "name": "web_extract",
+                  "args_fields": [
+                    {
+                      "key": "urls",
+                      "value": "- https://example.com/hermes\n- https://blocked.example/",
+                      "multiline": true
+                    }
+                  ],
+                  "kind": "web",
+                  "target": "",
+                  "args": {
+                    "urls": [
+                      "https://example.com/hermes",
+                      "https://blocked.example/"
+                    ]
+                  },
+                  "preview": null,
+                  "result": "{\"results\":[{\"url\":\"https://example.com/hermes\",\"title\":\"Hermes\",\"content\":\"# Hermes\\n\\nAn open agent.\",\"error\":null},{\"url\":\"https://blocked.example/\",\"title\":\"\",\"content\":\"\",\"error\":\"Blocked by website policy\",\"blocked_by_policy\":{\"host\":\"blocked.example\",\"rule\":\"blocked.example\",\"source\":\"config\"}}]}",
+                  "result_view": {
+                    "text": "[\n  {\n    \"url\": \"https://example.com/hermes\",\n    \"title\": \"Hermes\",\n    \"content\": \"# Hermes\\n\\nAn open agent.\",\n    \"error\": null\n  },\n  {\n    \"url\": \"https://blocked.example/\",\n    \"title\": \"\",\n    \"content\": \"\",\n    \"error\": \"Blocked by website policy\",\n    \"blocked_by_policy\": {\n      \"host\": \"blocked.example\",\n      \"rule\": \"blocked.example\",\n      \"source\": \"config\"\n    }\n  }\n]",
+                    "pages": [
+                      {
+                        "url": "https://example.com/hermes",
+                        "domain": "example.com",
+                        "title": "Hermes",
+                        "excerpt": "# Hermes\n\nAn open agent."
+                      },
+                      {
+                        "url": "https://blocked.example/",
+                        "domain": "blocked.example",
+                        "title": "https://blocked.example/",
+                        "excerpt": "",
+                        "error": "Blocked by website policy"
+                      }
+                    ]
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              }
+            ],
+            "final_answer": "Done.",
+            "turn_duration": null,
+            "terminal_state": "completed",
+            "expanded_by_default": false,
+            "has_consumed_steering": false,
+            "file_changes": [],
+            "activity_rows_total": 3,
+            "activity_rows_offset": 0,
+            "activity_rows_complete": true,
+            "activity_rows_omitted": 0,
+            "activity_scene_ref": "c2931ec77f08b2b44c83eda98e92791a4307d6aa59ecb6f530d885b649f1dce6"
+          },
+          "_turn_id": "web-run",
+          "_display": "row"
+        }
+      ]
+    }
   }
 }

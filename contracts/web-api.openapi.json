@@ -8515,6 +8515,71 @@
                                                 "files"
                                               ]
                                             },
+                                            "links": {
+                                              "type": "object",
+                                              "properties": {
+                                                "answer": {
+                                                  "type": "string"
+                                                },
+                                                "items": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "title": {
+                                                        "type": "string"
+                                                      },
+                                                      "url": {
+                                                        "type": "string"
+                                                      },
+                                                      "domain": {
+                                                        "type": "string"
+                                                      },
+                                                      "snippet": {
+                                                        "type": "string"
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "title",
+                                                      "url",
+                                                      "domain"
+                                                    ]
+                                                  }
+                                                }
+                                              },
+                                              "required": [
+                                                "items"
+                                              ]
+                                            },
+                                            "pages": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "url": {
+                                                    "type": "string"
+                                                  },
+                                                  "domain": {
+                                                    "type": "string"
+                                                  },
+                                                  "title": {
+                                                    "type": "string"
+                                                  },
+                                                  "excerpt": {
+                                                    "type": "string"
+                                                  },
+                                                  "error": {
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "url",
+                                                  "domain",
+                                                  "title",
+                                                  "excerpt"
+                                                ]
+                                              }
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -9203,6 +9268,41 @@
                                                         "truncated",
                                                         "files"
                                                       ]
+                                                    },
+                                                    "links": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "answer": {
+                                                          "type": "string"
+                                                        },
+                                                        "items": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "anyOf": [
+                                                              {},
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "items"
+                                                      ]
+                                                    },
+                                                    "pages": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "url": {},
+                                                          "domain": {},
+                                                          "title": {},
+                                                          "excerpt": {},
+                                                          "error": {}
+                                                        }
+                                                      }
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -10494,6 +10594,71 @@
                                           "truncated",
                                           "files"
                                         ]
+                                      },
+                                      "links": {
+                                        "type": "object",
+                                        "properties": {
+                                          "answer": {
+                                            "type": "string"
+                                          },
+                                          "items": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "url": {
+                                                  "type": "string"
+                                                },
+                                                "domain": {
+                                                  "type": "string"
+                                                },
+                                                "snippet": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "title",
+                                                "url",
+                                                "domain"
+                                              ]
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "items"
+                                        ]
+                                      },
+                                      "pages": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "url": {
+                                              "type": "string"
+                                            },
+                                            "domain": {
+                                              "type": "string"
+                                            },
+                                            "title": {
+                                              "type": "string"
+                                            },
+                                            "excerpt": {
+                                              "type": "string"
+                                            },
+                                            "error": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "url",
+                                            "domain",
+                                            "title",
+                                            "excerpt"
+                                          ]
+                                        }
                                       },
                                       "fields": {
                                         "type": "array",
@@ -14959,6 +15124,71 @@
                                                 "files"
                                               ]
                                             },
+                                            "links": {
+                                              "type": "object",
+                                              "properties": {
+                                                "answer": {
+                                                  "type": "string"
+                                                },
+                                                "items": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "title": {
+                                                        "type": "string"
+                                                      },
+                                                      "url": {
+                                                        "type": "string"
+                                                      },
+                                                      "domain": {
+                                                        "type": "string"
+                                                      },
+                                                      "snippet": {
+                                                        "type": "string"
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "title",
+                                                      "url",
+                                                      "domain"
+                                                    ]
+                                                  }
+                                                }
+                                              },
+                                              "required": [
+                                                "items"
+                                              ]
+                                            },
+                                            "pages": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "url": {
+                                                    "type": "string"
+                                                  },
+                                                  "domain": {
+                                                    "type": "string"
+                                                  },
+                                                  "title": {
+                                                    "type": "string"
+                                                  },
+                                                  "excerpt": {
+                                                    "type": "string"
+                                                  },
+                                                  "error": {
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "url",
+                                                  "domain",
+                                                  "title",
+                                                  "excerpt"
+                                                ]
+                                              }
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -15647,6 +15877,41 @@
                                                         "truncated",
                                                         "files"
                                                       ]
+                                                    },
+                                                    "links": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "answer": {
+                                                          "type": "string"
+                                                        },
+                                                        "items": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "anyOf": [
+                                                              {},
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "items"
+                                                      ]
+                                                    },
+                                                    "pages": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "url": {},
+                                                          "domain": {},
+                                                          "title": {},
+                                                          "excerpt": {},
+                                                          "error": {}
+                                                        }
+                                                      }
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -16938,6 +17203,71 @@
                                           "truncated",
                                           "files"
                                         ]
+                                      },
+                                      "links": {
+                                        "type": "object",
+                                        "properties": {
+                                          "answer": {
+                                            "type": "string"
+                                          },
+                                          "items": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "url": {
+                                                  "type": "string"
+                                                },
+                                                "domain": {
+                                                  "type": "string"
+                                                },
+                                                "snippet": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "title",
+                                                "url",
+                                                "domain"
+                                              ]
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "items"
+                                        ]
+                                      },
+                                      "pages": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "url": {
+                                              "type": "string"
+                                            },
+                                            "domain": {
+                                              "type": "string"
+                                            },
+                                            "title": {
+                                              "type": "string"
+                                            },
+                                            "excerpt": {
+                                              "type": "string"
+                                            },
+                                            "error": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "url",
+                                            "domain",
+                                            "title",
+                                            "excerpt"
+                                          ]
+                                        }
                                       },
                                       "fields": {
                                         "type": "array",
@@ -20074,6 +20404,71 @@
                                                 "files"
                                               ]
                                             },
+                                            "links": {
+                                              "type": "object",
+                                              "properties": {
+                                                "answer": {
+                                                  "type": "string"
+                                                },
+                                                "items": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "title": {
+                                                        "type": "string"
+                                                      },
+                                                      "url": {
+                                                        "type": "string"
+                                                      },
+                                                      "domain": {
+                                                        "type": "string"
+                                                      },
+                                                      "snippet": {
+                                                        "type": "string"
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "title",
+                                                      "url",
+                                                      "domain"
+                                                    ]
+                                                  }
+                                                }
+                                              },
+                                              "required": [
+                                                "items"
+                                              ]
+                                            },
+                                            "pages": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "url": {
+                                                    "type": "string"
+                                                  },
+                                                  "domain": {
+                                                    "type": "string"
+                                                  },
+                                                  "title": {
+                                                    "type": "string"
+                                                  },
+                                                  "excerpt": {
+                                                    "type": "string"
+                                                  },
+                                                  "error": {
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "url",
+                                                  "domain",
+                                                  "title",
+                                                  "excerpt"
+                                                ]
+                                              }
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -20762,6 +21157,41 @@
                                                         "truncated",
                                                         "files"
                                                       ]
+                                                    },
+                                                    "links": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "answer": {
+                                                          "type": "string"
+                                                        },
+                                                        "items": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "anyOf": [
+                                                              {},
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "items"
+                                                      ]
+                                                    },
+                                                    "pages": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "url": {},
+                                                          "domain": {},
+                                                          "title": {},
+                                                          "excerpt": {},
+                                                          "error": {}
+                                                        }
+                                                      }
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -22053,6 +22483,71 @@
                                           "truncated",
                                           "files"
                                         ]
+                                      },
+                                      "links": {
+                                        "type": "object",
+                                        "properties": {
+                                          "answer": {
+                                            "type": "string"
+                                          },
+                                          "items": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "url": {
+                                                  "type": "string"
+                                                },
+                                                "domain": {
+                                                  "type": "string"
+                                                },
+                                                "snippet": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "title",
+                                                "url",
+                                                "domain"
+                                              ]
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "items"
+                                        ]
+                                      },
+                                      "pages": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "url": {
+                                              "type": "string"
+                                            },
+                                            "domain": {
+                                              "type": "string"
+                                            },
+                                            "title": {
+                                              "type": "string"
+                                            },
+                                            "excerpt": {
+                                              "type": "string"
+                                            },
+                                            "error": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "url",
+                                            "domain",
+                                            "title",
+                                            "excerpt"
+                                          ]
+                                        }
                                       },
                                       "fields": {
                                         "type": "array",
@@ -28321,6 +28816,71 @@
                                                 "files"
                                               ]
                                             },
+                                            "links": {
+                                              "type": "object",
+                                              "properties": {
+                                                "answer": {
+                                                  "type": "string"
+                                                },
+                                                "items": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "title": {
+                                                        "type": "string"
+                                                      },
+                                                      "url": {
+                                                        "type": "string"
+                                                      },
+                                                      "domain": {
+                                                        "type": "string"
+                                                      },
+                                                      "snippet": {
+                                                        "type": "string"
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "title",
+                                                      "url",
+                                                      "domain"
+                                                    ]
+                                                  }
+                                                }
+                                              },
+                                              "required": [
+                                                "items"
+                                              ]
+                                            },
+                                            "pages": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "url": {
+                                                    "type": "string"
+                                                  },
+                                                  "domain": {
+                                                    "type": "string"
+                                                  },
+                                                  "title": {
+                                                    "type": "string"
+                                                  },
+                                                  "excerpt": {
+                                                    "type": "string"
+                                                  },
+                                                  "error": {
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "url",
+                                                  "domain",
+                                                  "title",
+                                                  "excerpt"
+                                                ]
+                                              }
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -29009,6 +29569,41 @@
                                                         "truncated",
                                                         "files"
                                                       ]
+                                                    },
+                                                    "links": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "answer": {
+                                                          "type": "string"
+                                                        },
+                                                        "items": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "anyOf": [
+                                                              {},
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "items"
+                                                      ]
+                                                    },
+                                                    "pages": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "url": {},
+                                                          "domain": {},
+                                                          "title": {},
+                                                          "excerpt": {},
+                                                          "error": {}
+                                                        }
+                                                      }
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -30300,6 +30895,71 @@
                                           "truncated",
                                           "files"
                                         ]
+                                      },
+                                      "links": {
+                                        "type": "object",
+                                        "properties": {
+                                          "answer": {
+                                            "type": "string"
+                                          },
+                                          "items": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "url": {
+                                                  "type": "string"
+                                                },
+                                                "domain": {
+                                                  "type": "string"
+                                                },
+                                                "snippet": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "title",
+                                                "url",
+                                                "domain"
+                                              ]
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "items"
+                                        ]
+                                      },
+                                      "pages": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "url": {
+                                              "type": "string"
+                                            },
+                                            "domain": {
+                                              "type": "string"
+                                            },
+                                            "title": {
+                                              "type": "string"
+                                            },
+                                            "excerpt": {
+                                              "type": "string"
+                                            },
+                                            "error": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "url",
+                                            "domain",
+                                            "title",
+                                            "excerpt"
+                                          ]
+                                        }
                                       },
                                       "fields": {
                                         "type": "array",
@@ -35879,6 +36539,71 @@
                                                 "files"
                                               ]
                                             },
+                                            "links": {
+                                              "type": "object",
+                                              "properties": {
+                                                "answer": {
+                                                  "type": "string"
+                                                },
+                                                "items": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "title": {
+                                                        "type": "string"
+                                                      },
+                                                      "url": {
+                                                        "type": "string"
+                                                      },
+                                                      "domain": {
+                                                        "type": "string"
+                                                      },
+                                                      "snippet": {
+                                                        "type": "string"
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "title",
+                                                      "url",
+                                                      "domain"
+                                                    ]
+                                                  }
+                                                }
+                                              },
+                                              "required": [
+                                                "items"
+                                              ]
+                                            },
+                                            "pages": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "url": {
+                                                    "type": "string"
+                                                  },
+                                                  "domain": {
+                                                    "type": "string"
+                                                  },
+                                                  "title": {
+                                                    "type": "string"
+                                                  },
+                                                  "excerpt": {
+                                                    "type": "string"
+                                                  },
+                                                  "error": {
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "url",
+                                                  "domain",
+                                                  "title",
+                                                  "excerpt"
+                                                ]
+                                              }
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -36567,6 +37292,41 @@
                                                         "truncated",
                                                         "files"
                                                       ]
+                                                    },
+                                                    "links": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "answer": {
+                                                          "type": "string"
+                                                        },
+                                                        "items": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "anyOf": [
+                                                              {},
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "items"
+                                                      ]
+                                                    },
+                                                    "pages": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "url": {},
+                                                          "domain": {},
+                                                          "title": {},
+                                                          "excerpt": {},
+                                                          "error": {}
+                                                        }
+                                                      }
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -37858,6 +38618,71 @@
                                           "truncated",
                                           "files"
                                         ]
+                                      },
+                                      "links": {
+                                        "type": "object",
+                                        "properties": {
+                                          "answer": {
+                                            "type": "string"
+                                          },
+                                          "items": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "url": {
+                                                  "type": "string"
+                                                },
+                                                "domain": {
+                                                  "type": "string"
+                                                },
+                                                "snippet": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "title",
+                                                "url",
+                                                "domain"
+                                              ]
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "items"
+                                        ]
+                                      },
+                                      "pages": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "url": {
+                                              "type": "string"
+                                            },
+                                            "domain": {
+                                              "type": "string"
+                                            },
+                                            "title": {
+                                              "type": "string"
+                                            },
+                                            "excerpt": {
+                                              "type": "string"
+                                            },
+                                            "error": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "url",
+                                            "domain",
+                                            "title",
+                                            "excerpt"
+                                          ]
+                                        }
                                       },
                                       "fields": {
                                         "type": "array",
@@ -44069,6 +44894,71 @@
                                                 "files"
                                               ]
                                             },
+                                            "links": {
+                                              "type": "object",
+                                              "properties": {
+                                                "answer": {
+                                                  "type": "string"
+                                                },
+                                                "items": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "title": {
+                                                        "type": "string"
+                                                      },
+                                                      "url": {
+                                                        "type": "string"
+                                                      },
+                                                      "domain": {
+                                                        "type": "string"
+                                                      },
+                                                      "snippet": {
+                                                        "type": "string"
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "title",
+                                                      "url",
+                                                      "domain"
+                                                    ]
+                                                  }
+                                                }
+                                              },
+                                              "required": [
+                                                "items"
+                                              ]
+                                            },
+                                            "pages": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "url": {
+                                                    "type": "string"
+                                                  },
+                                                  "domain": {
+                                                    "type": "string"
+                                                  },
+                                                  "title": {
+                                                    "type": "string"
+                                                  },
+                                                  "excerpt": {
+                                                    "type": "string"
+                                                  },
+                                                  "error": {
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "url",
+                                                  "domain",
+                                                  "title",
+                                                  "excerpt"
+                                                ]
+                                              }
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -44757,6 +45647,41 @@
                                                         "truncated",
                                                         "files"
                                                       ]
+                                                    },
+                                                    "links": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "answer": {
+                                                          "type": "string"
+                                                        },
+                                                        "items": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "anyOf": [
+                                                              {},
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "items"
+                                                      ]
+                                                    },
+                                                    "pages": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "url": {},
+                                                          "domain": {},
+                                                          "title": {},
+                                                          "excerpt": {},
+                                                          "error": {}
+                                                        }
+                                                      }
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -46048,6 +46973,71 @@
                                           "truncated",
                                           "files"
                                         ]
+                                      },
+                                      "links": {
+                                        "type": "object",
+                                        "properties": {
+                                          "answer": {
+                                            "type": "string"
+                                          },
+                                          "items": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "url": {
+                                                  "type": "string"
+                                                },
+                                                "domain": {
+                                                  "type": "string"
+                                                },
+                                                "snippet": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "title",
+                                                "url",
+                                                "domain"
+                                              ]
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "items"
+                                        ]
+                                      },
+                                      "pages": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "url": {
+                                              "type": "string"
+                                            },
+                                            "domain": {
+                                              "type": "string"
+                                            },
+                                            "title": {
+                                              "type": "string"
+                                            },
+                                            "excerpt": {
+                                              "type": "string"
+                                            },
+                                            "error": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "url",
+                                            "domain",
+                                            "title",
+                                            "excerpt"
+                                          ]
+                                        }
                                       },
                                       "fields": {
                                         "type": "array",
@@ -49129,6 +50119,71 @@
                                                 "files"
                                               ]
                                             },
+                                            "links": {
+                                              "type": "object",
+                                              "properties": {
+                                                "answer": {
+                                                  "type": "string"
+                                                },
+                                                "items": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "title": {
+                                                        "type": "string"
+                                                      },
+                                                      "url": {
+                                                        "type": "string"
+                                                      },
+                                                      "domain": {
+                                                        "type": "string"
+                                                      },
+                                                      "snippet": {
+                                                        "type": "string"
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "title",
+                                                      "url",
+                                                      "domain"
+                                                    ]
+                                                  }
+                                                }
+                                              },
+                                              "required": [
+                                                "items"
+                                              ]
+                                            },
+                                            "pages": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "url": {
+                                                    "type": "string"
+                                                  },
+                                                  "domain": {
+                                                    "type": "string"
+                                                  },
+                                                  "title": {
+                                                    "type": "string"
+                                                  },
+                                                  "excerpt": {
+                                                    "type": "string"
+                                                  },
+                                                  "error": {
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "url",
+                                                  "domain",
+                                                  "title",
+                                                  "excerpt"
+                                                ]
+                                              }
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -49817,6 +50872,41 @@
                                                         "truncated",
                                                         "files"
                                                       ]
+                                                    },
+                                                    "links": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "answer": {
+                                                          "type": "string"
+                                                        },
+                                                        "items": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "anyOf": [
+                                                              {},
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "items"
+                                                      ]
+                                                    },
+                                                    "pages": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "url": {},
+                                                          "domain": {},
+                                                          "title": {},
+                                                          "excerpt": {},
+                                                          "error": {}
+                                                        }
+                                                      }
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -51108,6 +52198,71 @@
                                           "truncated",
                                           "files"
                                         ]
+                                      },
+                                      "links": {
+                                        "type": "object",
+                                        "properties": {
+                                          "answer": {
+                                            "type": "string"
+                                          },
+                                          "items": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "url": {
+                                                  "type": "string"
+                                                },
+                                                "domain": {
+                                                  "type": "string"
+                                                },
+                                                "snippet": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "title",
+                                                "url",
+                                                "domain"
+                                              ]
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "items"
+                                        ]
+                                      },
+                                      "pages": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "url": {
+                                              "type": "string"
+                                            },
+                                            "domain": {
+                                              "type": "string"
+                                            },
+                                            "title": {
+                                              "type": "string"
+                                            },
+                                            "excerpt": {
+                                              "type": "string"
+                                            },
+                                            "error": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "url",
+                                            "domain",
+                                            "title",
+                                            "excerpt"
+                                          ]
+                                        }
                                       },
                                       "fields": {
                                         "type": "array",
@@ -54251,6 +55406,71 @@
                                                 "files"
                                               ]
                                             },
+                                            "links": {
+                                              "type": "object",
+                                              "properties": {
+                                                "answer": {
+                                                  "type": "string"
+                                                },
+                                                "items": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "title": {
+                                                        "type": "string"
+                                                      },
+                                                      "url": {
+                                                        "type": "string"
+                                                      },
+                                                      "domain": {
+                                                        "type": "string"
+                                                      },
+                                                      "snippet": {
+                                                        "type": "string"
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "title",
+                                                      "url",
+                                                      "domain"
+                                                    ]
+                                                  }
+                                                }
+                                              },
+                                              "required": [
+                                                "items"
+                                              ]
+                                            },
+                                            "pages": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "url": {
+                                                    "type": "string"
+                                                  },
+                                                  "domain": {
+                                                    "type": "string"
+                                                  },
+                                                  "title": {
+                                                    "type": "string"
+                                                  },
+                                                  "excerpt": {
+                                                    "type": "string"
+                                                  },
+                                                  "error": {
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "url",
+                                                  "domain",
+                                                  "title",
+                                                  "excerpt"
+                                                ]
+                                              }
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -54939,6 +56159,41 @@
                                                         "truncated",
                                                         "files"
                                                       ]
+                                                    },
+                                                    "links": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "answer": {
+                                                          "type": "string"
+                                                        },
+                                                        "items": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "anyOf": [
+                                                              {},
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "items"
+                                                      ]
+                                                    },
+                                                    "pages": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "url": {},
+                                                          "domain": {},
+                                                          "title": {},
+                                                          "excerpt": {},
+                                                          "error": {}
+                                                        }
+                                                      }
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -56230,6 +57485,71 @@
                                           "truncated",
                                           "files"
                                         ]
+                                      },
+                                      "links": {
+                                        "type": "object",
+                                        "properties": {
+                                          "answer": {
+                                            "type": "string"
+                                          },
+                                          "items": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "url": {
+                                                  "type": "string"
+                                                },
+                                                "domain": {
+                                                  "type": "string"
+                                                },
+                                                "snippet": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "title",
+                                                "url",
+                                                "domain"
+                                              ]
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "items"
+                                        ]
+                                      },
+                                      "pages": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "url": {
+                                              "type": "string"
+                                            },
+                                            "domain": {
+                                              "type": "string"
+                                            },
+                                            "title": {
+                                              "type": "string"
+                                            },
+                                            "excerpt": {
+                                              "type": "string"
+                                            },
+                                            "error": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "url",
+                                            "domain",
+                                            "title",
+                                            "excerpt"
+                                          ]
+                                        }
                                       },
                                       "fields": {
                                         "type": "array",
@@ -59371,6 +60691,71 @@
                                                 "files"
                                               ]
                                             },
+                                            "links": {
+                                              "type": "object",
+                                              "properties": {
+                                                "answer": {
+                                                  "type": "string"
+                                                },
+                                                "items": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "title": {
+                                                        "type": "string"
+                                                      },
+                                                      "url": {
+                                                        "type": "string"
+                                                      },
+                                                      "domain": {
+                                                        "type": "string"
+                                                      },
+                                                      "snippet": {
+                                                        "type": "string"
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "title",
+                                                      "url",
+                                                      "domain"
+                                                    ]
+                                                  }
+                                                }
+                                              },
+                                              "required": [
+                                                "items"
+                                              ]
+                                            },
+                                            "pages": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "url": {
+                                                    "type": "string"
+                                                  },
+                                                  "domain": {
+                                                    "type": "string"
+                                                  },
+                                                  "title": {
+                                                    "type": "string"
+                                                  },
+                                                  "excerpt": {
+                                                    "type": "string"
+                                                  },
+                                                  "error": {
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "url",
+                                                  "domain",
+                                                  "title",
+                                                  "excerpt"
+                                                ]
+                                              }
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -60059,6 +61444,41 @@
                                                         "truncated",
                                                         "files"
                                                       ]
+                                                    },
+                                                    "links": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "answer": {
+                                                          "type": "string"
+                                                        },
+                                                        "items": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "anyOf": [
+                                                              {},
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "items"
+                                                      ]
+                                                    },
+                                                    "pages": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "url": {},
+                                                          "domain": {},
+                                                          "title": {},
+                                                          "excerpt": {},
+                                                          "error": {}
+                                                        }
+                                                      }
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -61350,6 +62770,71 @@
                                           "truncated",
                                           "files"
                                         ]
+                                      },
+                                      "links": {
+                                        "type": "object",
+                                        "properties": {
+                                          "answer": {
+                                            "type": "string"
+                                          },
+                                          "items": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "url": {
+                                                  "type": "string"
+                                                },
+                                                "domain": {
+                                                  "type": "string"
+                                                },
+                                                "snippet": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "title",
+                                                "url",
+                                                "domain"
+                                              ]
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "items"
+                                        ]
+                                      },
+                                      "pages": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "url": {
+                                              "type": "string"
+                                            },
+                                            "domain": {
+                                              "type": "string"
+                                            },
+                                            "title": {
+                                              "type": "string"
+                                            },
+                                            "excerpt": {
+                                              "type": "string"
+                                            },
+                                            "error": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "url",
+                                            "domain",
+                                            "title",
+                                            "excerpt"
+                                          ]
+                                        }
                                       },
                                       "fields": {
                                         "type": "array",
@@ -64282,6 +65767,71 @@
                                           "files"
                                         ]
                                       },
+                                      "links": {
+                                        "type": "object",
+                                        "properties": {
+                                          "answer": {
+                                            "type": "string"
+                                          },
+                                          "items": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "url": {
+                                                  "type": "string"
+                                                },
+                                                "domain": {
+                                                  "type": "string"
+                                                },
+                                                "snippet": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "title",
+                                                "url",
+                                                "domain"
+                                              ]
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "items"
+                                        ]
+                                      },
+                                      "pages": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "url": {
+                                              "type": "string"
+                                            },
+                                            "domain": {
+                                              "type": "string"
+                                            },
+                                            "title": {
+                                              "type": "string"
+                                            },
+                                            "excerpt": {
+                                              "type": "string"
+                                            },
+                                            "error": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "url",
+                                            "domain",
+                                            "title",
+                                            "excerpt"
+                                          ]
+                                        }
+                                      },
                                       "fields": {
                                         "type": "array",
                                         "items": {
@@ -65394,6 +66944,71 @@
                             "truncated",
                             "files"
                           ]
+                        },
+                        "links": {
+                          "type": "object",
+                          "properties": {
+                            "answer": {
+                              "type": "string"
+                            },
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "url": {
+                                    "type": "string"
+                                  },
+                                  "domain": {
+                                    "type": "string"
+                                  },
+                                  "snippet": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "title",
+                                  "url",
+                                  "domain"
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "items"
+                          ]
+                        },
+                        "pages": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "url": {
+                                "type": "string"
+                              },
+                              "domain": {
+                                "type": "string"
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "excerpt": {
+                                "type": "string"
+                              },
+                              "error": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "url",
+                              "domain",
+                              "title",
+                              "excerpt"
+                            ]
+                          }
                         },
                         "fields": {
                           "type": "array",
@@ -76357,6 +77972,71 @@
                                                 "files"
                                               ]
                                             },
+                                            "links": {
+                                              "type": "object",
+                                              "properties": {
+                                                "answer": {
+                                                  "type": "string"
+                                                },
+                                                "items": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "title": {
+                                                        "type": "string"
+                                                      },
+                                                      "url": {
+                                                        "type": "string"
+                                                      },
+                                                      "domain": {
+                                                        "type": "string"
+                                                      },
+                                                      "snippet": {
+                                                        "type": "string"
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "title",
+                                                      "url",
+                                                      "domain"
+                                                    ]
+                                                  }
+                                                }
+                                              },
+                                              "required": [
+                                                "items"
+                                              ]
+                                            },
+                                            "pages": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "url": {
+                                                    "type": "string"
+                                                  },
+                                                  "domain": {
+                                                    "type": "string"
+                                                  },
+                                                  "title": {
+                                                    "type": "string"
+                                                  },
+                                                  "excerpt": {
+                                                    "type": "string"
+                                                  },
+                                                  "error": {
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "url",
+                                                  "domain",
+                                                  "title",
+                                                  "excerpt"
+                                                ]
+                                              }
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -77045,6 +78725,41 @@
                                                         "truncated",
                                                         "files"
                                                       ]
+                                                    },
+                                                    "links": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "answer": {
+                                                          "type": "string"
+                                                        },
+                                                        "items": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "anyOf": [
+                                                              {},
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "items"
+                                                      ]
+                                                    },
+                                                    "pages": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "url": {},
+                                                          "domain": {},
+                                                          "title": {},
+                                                          "excerpt": {},
+                                                          "error": {}
+                                                        }
+                                                      }
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -78336,6 +80051,71 @@
                                           "truncated",
                                           "files"
                                         ]
+                                      },
+                                      "links": {
+                                        "type": "object",
+                                        "properties": {
+                                          "answer": {
+                                            "type": "string"
+                                          },
+                                          "items": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "url": {
+                                                  "type": "string"
+                                                },
+                                                "domain": {
+                                                  "type": "string"
+                                                },
+                                                "snippet": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "title",
+                                                "url",
+                                                "domain"
+                                              ]
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "items"
+                                        ]
+                                      },
+                                      "pages": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "url": {
+                                              "type": "string"
+                                            },
+                                            "domain": {
+                                              "type": "string"
+                                            },
+                                            "title": {
+                                              "type": "string"
+                                            },
+                                            "excerpt": {
+                                              "type": "string"
+                                            },
+                                            "error": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "url",
+                                            "domain",
+                                            "title",
+                                            "excerpt"
+                                          ]
+                                        }
                                       },
                                       "fields": {
                                         "type": "array",
@@ -81469,6 +83249,71 @@
                                                 "files"
                                               ]
                                             },
+                                            "links": {
+                                              "type": "object",
+                                              "properties": {
+                                                "answer": {
+                                                  "type": "string"
+                                                },
+                                                "items": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "title": {
+                                                        "type": "string"
+                                                      },
+                                                      "url": {
+                                                        "type": "string"
+                                                      },
+                                                      "domain": {
+                                                        "type": "string"
+                                                      },
+                                                      "snippet": {
+                                                        "type": "string"
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "title",
+                                                      "url",
+                                                      "domain"
+                                                    ]
+                                                  }
+                                                }
+                                              },
+                                              "required": [
+                                                "items"
+                                              ]
+                                            },
+                                            "pages": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "url": {
+                                                    "type": "string"
+                                                  },
+                                                  "domain": {
+                                                    "type": "string"
+                                                  },
+                                                  "title": {
+                                                    "type": "string"
+                                                  },
+                                                  "excerpt": {
+                                                    "type": "string"
+                                                  },
+                                                  "error": {
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "url",
+                                                  "domain",
+                                                  "title",
+                                                  "excerpt"
+                                                ]
+                                              }
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -82157,6 +84002,41 @@
                                                         "truncated",
                                                         "files"
                                                       ]
+                                                    },
+                                                    "links": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "answer": {
+                                                          "type": "string"
+                                                        },
+                                                        "items": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "anyOf": [
+                                                              {},
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "items"
+                                                      ]
+                                                    },
+                                                    "pages": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "url": {},
+                                                          "domain": {},
+                                                          "title": {},
+                                                          "excerpt": {},
+                                                          "error": {}
+                                                        }
+                                                      }
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -83448,6 +85328,71 @@
                                           "truncated",
                                           "files"
                                         ]
+                                      },
+                                      "links": {
+                                        "type": "object",
+                                        "properties": {
+                                          "answer": {
+                                            "type": "string"
+                                          },
+                                          "items": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "url": {
+                                                  "type": "string"
+                                                },
+                                                "domain": {
+                                                  "type": "string"
+                                                },
+                                                "snippet": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "title",
+                                                "url",
+                                                "domain"
+                                              ]
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "items"
+                                        ]
+                                      },
+                                      "pages": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "url": {
+                                              "type": "string"
+                                            },
+                                            "domain": {
+                                              "type": "string"
+                                            },
+                                            "title": {
+                                              "type": "string"
+                                            },
+                                            "excerpt": {
+                                              "type": "string"
+                                            },
+                                            "error": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "url",
+                                            "domain",
+                                            "title",
+                                            "excerpt"
+                                          ]
+                                        }
                                       },
                                       "fields": {
                                         "type": "array",
@@ -87267,6 +89212,71 @@
                                                 "files"
                                               ]
                                             },
+                                            "links": {
+                                              "type": "object",
+                                              "properties": {
+                                                "answer": {
+                                                  "type": "string"
+                                                },
+                                                "items": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "title": {
+                                                        "type": "string"
+                                                      },
+                                                      "url": {
+                                                        "type": "string"
+                                                      },
+                                                      "domain": {
+                                                        "type": "string"
+                                                      },
+                                                      "snippet": {
+                                                        "type": "string"
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "title",
+                                                      "url",
+                                                      "domain"
+                                                    ]
+                                                  }
+                                                }
+                                              },
+                                              "required": [
+                                                "items"
+                                              ]
+                                            },
+                                            "pages": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "url": {
+                                                    "type": "string"
+                                                  },
+                                                  "domain": {
+                                                    "type": "string"
+                                                  },
+                                                  "title": {
+                                                    "type": "string"
+                                                  },
+                                                  "excerpt": {
+                                                    "type": "string"
+                                                  },
+                                                  "error": {
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "url",
+                                                  "domain",
+                                                  "title",
+                                                  "excerpt"
+                                                ]
+                                              }
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -87955,6 +89965,41 @@
                                                         "truncated",
                                                         "files"
                                                       ]
+                                                    },
+                                                    "links": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "answer": {
+                                                          "type": "string"
+                                                        },
+                                                        "items": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "anyOf": [
+                                                              {},
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "items"
+                                                      ]
+                                                    },
+                                                    "pages": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "url": {},
+                                                          "domain": {},
+                                                          "title": {},
+                                                          "excerpt": {},
+                                                          "error": {}
+                                                        }
+                                                      }
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -89246,6 +91291,71 @@
                                           "truncated",
                                           "files"
                                         ]
+                                      },
+                                      "links": {
+                                        "type": "object",
+                                        "properties": {
+                                          "answer": {
+                                            "type": "string"
+                                          },
+                                          "items": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "url": {
+                                                  "type": "string"
+                                                },
+                                                "domain": {
+                                                  "type": "string"
+                                                },
+                                                "snippet": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "title",
+                                                "url",
+                                                "domain"
+                                              ]
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "items"
+                                        ]
+                                      },
+                                      "pages": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "url": {
+                                              "type": "string"
+                                            },
+                                            "domain": {
+                                              "type": "string"
+                                            },
+                                            "title": {
+                                              "type": "string"
+                                            },
+                                            "excerpt": {
+                                              "type": "string"
+                                            },
+                                            "error": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "url",
+                                            "domain",
+                                            "title",
+                                            "excerpt"
+                                          ]
+                                        }
                                       },
                                       "fields": {
                                         "type": "array",
@@ -92902,6 +95012,58 @@
                                                     "files"
                                                   ]
                                                 },
+                                                "links": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "answer": {
+                                                      "type": "string"
+                                                    },
+                                                    "items": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "title": {},
+                                                          "url": {},
+                                                          "domain": {},
+                                                          "snippet": {}
+                                                        }
+                                                      }
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "items"
+                                                  ]
+                                                },
+                                                "pages": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "url": {
+                                                        "type": "string"
+                                                      },
+                                                      "domain": {
+                                                        "type": "string"
+                                                      },
+                                                      "title": {
+                                                        "type": "string"
+                                                      },
+                                                      "excerpt": {
+                                                        "type": "string"
+                                                      },
+                                                      "error": {
+                                                        "type": "string"
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "url",
+                                                      "domain",
+                                                      "title",
+                                                      "excerpt"
+                                                    ]
+                                                  }
+                                                },
                                                 "fields": {
                                                   "type": "array",
                                                   "items": {
@@ -93408,6 +95570,24 @@
                                                             "total": {},
                                                             "truncated": {},
                                                             "files": {}
+                                                          }
+                                                        },
+                                                        "links": {
+                                                          "type": "object",
+                                                          "properties": {
+                                                            "answer": {},
+                                                            "items": {}
+                                                          }
+                                                        },
+                                                        "pages": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "anyOf": [
+                                                              {},
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
                                                           }
                                                         },
                                                         "fields": {
@@ -94673,6 +96853,71 @@
                                               "truncated",
                                               "files"
                                             ]
+                                          },
+                                          "links": {
+                                            "type": "object",
+                                            "properties": {
+                                              "answer": {
+                                                "type": "string"
+                                              },
+                                              "items": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "title": {
+                                                      "type": "string"
+                                                    },
+                                                    "url": {
+                                                      "type": "string"
+                                                    },
+                                                    "domain": {
+                                                      "type": "string"
+                                                    },
+                                                    "snippet": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "title",
+                                                    "url",
+                                                    "domain"
+                                                  ]
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "items"
+                                            ]
+                                          },
+                                          "pages": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "url": {
+                                                  "type": "string"
+                                                },
+                                                "domain": {
+                                                  "type": "string"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "excerpt": {
+                                                  "type": "string"
+                                                },
+                                                "error": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "url",
+                                                "domain",
+                                                "title",
+                                                "excerpt"
+                                              ]
+                                            }
                                           },
                                           "fields": {
                                             "type": "array",
@@ -143054,6 +145299,71 @@
                                                 "files"
                                               ]
                                             },
+                                            "links": {
+                                              "type": "object",
+                                              "properties": {
+                                                "answer": {
+                                                  "type": "string"
+                                                },
+                                                "items": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "title": {
+                                                        "type": "string"
+                                                      },
+                                                      "url": {
+                                                        "type": "string"
+                                                      },
+                                                      "domain": {
+                                                        "type": "string"
+                                                      },
+                                                      "snippet": {
+                                                        "type": "string"
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "title",
+                                                      "url",
+                                                      "domain"
+                                                    ]
+                                                  }
+                                                }
+                                              },
+                                              "required": [
+                                                "items"
+                                              ]
+                                            },
+                                            "pages": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "url": {
+                                                    "type": "string"
+                                                  },
+                                                  "domain": {
+                                                    "type": "string"
+                                                  },
+                                                  "title": {
+                                                    "type": "string"
+                                                  },
+                                                  "excerpt": {
+                                                    "type": "string"
+                                                  },
+                                                  "error": {
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "url",
+                                                  "domain",
+                                                  "title",
+                                                  "excerpt"
+                                                ]
+                                              }
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -143742,6 +146052,41 @@
                                                         "truncated",
                                                         "files"
                                                       ]
+                                                    },
+                                                    "links": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "answer": {
+                                                          "type": "string"
+                                                        },
+                                                        "items": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "anyOf": [
+                                                              {},
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "items"
+                                                      ]
+                                                    },
+                                                    "pages": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "url": {},
+                                                          "domain": {},
+                                                          "title": {},
+                                                          "excerpt": {},
+                                                          "error": {}
+                                                        }
+                                                      }
                                                     },
                                                     "fields": {
                                                       "type": "array",

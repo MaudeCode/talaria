@@ -269,11 +269,11 @@
   },
   "web_extract": {
     "kind": "web",
-    "presentation": "generic"
+    "presentation": "pages"
   },
   "web_search": {
     "kind": "web",
-    "presentation": "generic"
+    "presentation": "links"
   },
   "write_file": {
     "kind": "write",
@@ -281,7 +281,7 @@
   },
   "x_search": {
     "kind": "search",
-    "presentation": "generic"
+    "presentation": "links"
   },
   "xai_video_edit": {
     "kind": "write",

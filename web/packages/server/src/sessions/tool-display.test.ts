@@ -386,3 +386,90 @@ describe('read_file and search_files sections (TAL-2323)', () => {
     expect(located.matches.files).toEqual([expect.objectContaining({ path: '/repo/src/a.ts', focus_path: 'src/a.ts' }), expect.not.objectContaining({ focus_path: expect.anything() as unknown })])
   })
 })
+
+describe('web_search, x_search and web_extract sections (TAL-2324)', () => {
+  const view = (name: string, result: Record<string, unknown>) => toolOutcome(JSON.stringify(result), name).result_view
+
+  it('lists a search\'s results as title, domain and snippet, ignoring a backend\'s extra keys', () => {
+    const shown = view('web_search', { success: true, data: { web: [
+      { title: 'Hermes Agent', url: 'https://www.example.com/hermes', description: 'The agent.', position: 1 },
+      // A Firecrawl-style row: extra keys, no description.
+      { url: 'https://docs.example.org/a?b=1', title: '', markdown: '# A', metadata: { sourceURL: 'x' }, position: 2 },
+      { title: 'No URL', description: 'dropped', position: 3 },
+      { title: 'Script', url: 'javascript:alert(1)', description: 'dropped', position: 4 },
+    ], served_by: 'brave' } })
+    expect(shown.links).toEqual({ items: [
+      { title: 'Hermes Agent', url: 'https://www.example.com/hermes', domain: 'example.com', snippet: 'The agent.' },
+      { title: 'https://docs.example.org/a?b=1', url: 'https://docs.example.org/a?b=1', domain: 'docs.example.org' },
+    ] })
+    expect(shown.fields).toBeUndefined()
+    expect(shown.text).toContain('Hermes Agent')
+    expect(view('web_search', { success: true, data: { web: [] } }).links).toEqual({ items: [] })
+    expect(view('web_search', { success: false, error: 'No web search provider configured.' }).links).toBeUndefined()
+  })
+
+  it('shows an X search\'s answer above its titled inline citations, then the bare citations they did not name', () => {
+    const answer = { success: true, query: 'q', answer: '**Yes.** See the thread.', degraded: false, degraded_reason: null }
+    expect(view('x_search', { ...answer, citations: ['https://x.com/a/status/1', 'https://x.com/b/status/2'], inline_citations: [
+      { url: 'https://x.com/b/status/2', title: 'Post by b', start_index: 0, end_index: 4 }, { url: 'https://x.com/b/status/2', title: 'again', start_index: 5, end_index: 8 },
+    ] }).links).toEqual({ answer: '**Yes.** See the thread.', items: [
+      { title: 'Post by b', url: 'https://x.com/b/status/2', domain: 'x.com' },
+      { title: 'https://x.com/a/status/1', url: 'https://x.com/a/status/1', domain: 'x.com' },
+    ] })
+    expect(view('x_search', { ...answer, citations: ['https://x.com/a/status/1', 'data:text/html,x'], inline_citations: [] }).links?.items.map((item) => item.url)).toEqual(['https://x.com/a/status/1'])
+  })
+
+  it('shows each extracted page as title, domain and an excerpt without the Agent\'s cut, and a failed page as its error', () => {
+    const long = `# Title\n\n${'word '.repeat(300)}`
+    const footer = '\n\n[... middle omitted — see footer ...]\n\ntail\n\n──────── [TRUNCATED] ────────\nShowing 9 chars (head) + 4 chars (tail) of 999 total clean characters.\nFull text saved to: /cache/page.md'
+    const pages = view('web_extract', { results: [
+      { url: 'https://example.com/long', title: 'Long', content: long, error: null },
+      { url: 'https://example.com/cut', title: 'Cut', content: `Head text.${footer}`, error: null },
+      { url: 'https://blocked.example/', title: '', content: '', error: 'Blocked by website policy: blocked.example', blocked_by_policy: { host: 'blocked.example', rule: 'blocked.example', source: 'config' } },
+      { url: 'https://example.com/bin', title: 'Bin', content: '', error: 'URL returned binary content (sqlite), not a page.' },
+    ] }).pages
+    expect(pages?.[0]).toMatchObject({ url: 'https://example.com/long', domain: 'example.com', title: 'Long' })
+    expect(pages?.[0]?.excerpt.length).toBeLessThanOrEqual(601)
+    expect(pages?.[0]?.excerpt).toMatch(/^# Title\n\nword word .* word…$/s)
+    expect(pages?.[1]).toEqual({ url: 'https://example.com/cut', domain: 'example.com', title: 'Cut', excerpt: 'Head text.' })
+    expect(pages?.[2]).toEqual({ url: 'https://blocked.example/', domain: 'blocked.example', title: 'https://blocked.example/', excerpt: '', error: 'Blocked by website policy: blocked.example' })
+    expect(pages?.[3]?.error).toBe('URL returned binary content (sqlite), not a page.')
+    // A URL the Agent refused as invalid names its row as text, with no link.
+    expect(view('web_extract', { results: [{ url: 'file:///etc/passwd', title: '', content: '', error: 'Invalid URL' }] }).pages).toEqual([{ url: '', domain: '', title: 'file:///etc/passwd', excerpt: '', error: 'Invalid URL' }])
+    expect(view('web_extract', { success: false, error: 'Content was inaccessible or not found' })).toEqual({ error: 'Content was inaccessible or not found' })
+  })
+
+  it('offers a cut page whole, which the whole-result read returns', () => {
+    const content = `# Title\n\n${'word '.repeat(300)}`
+    const result = JSON.stringify({ results: [{ url: 'https://example.com/long', title: 'Long', content, error: null }] })
+    const outcome = toolOutcome(result, 'web_extract')
+    expect(outcome.capped).toBe(true)
+    expect(outcome.result_view.pages?.[0]?.excerpt.length).toBeLessThanOrEqual(600)
+    const messages = [{ role: 'assistant', tool_calls: [{ id: 'e1', type: 'function', function: { name: 'web_extract', arguments: '{}' } }] }, { role: 'tool', tool_call_id: 'e1', content: result }]
+    expect(fullToolResult(messages, 'e1')?.result_view.pages?.[0]?.excerpt).toBe(content)
+    // A short page shows whole, with nothing more to offer.
+    expect(toolOutcome(JSON.stringify({ results: [{ url: 'https://example.com/', title: 'Short', content: 'All of it.', error: null }] }), 'web_extract').capped).toBe(false)
+  })
+
+  it('cuts an oversized row\'s text to the budget and keeps its URL whole', () => {
+    const url = 'https://example.com/a?b=1'
+    const outcome = toolOutcome(JSON.stringify({ success: true, data: { web: [{ title: 't'.repeat(1_000_000), url, description: 'd'.repeat(10_000) }, { title: 'Next', url: 'https://example.com/next', description: '' }] } }), 'web_search')
+    const items = outcome.result_view.links!.items
+    expect(outcome.capped).toBe(true)
+    expect(items).toHaveLength(1)
+    expect(items[0]!.url).toBe(url)
+    expect(JSON.stringify(items).length).toBeLessThan(4200)
+  })
+
+  it('ships links and pages redacted, their domains too', () => {
+    const token = `ghp_${'abcdef0123'.repeat(3)}abcdef`
+    const url = `https://${token}.example.com/page?access_token=${token}`
+    const search = view('web_search', { success: true, data: { web: [{ title: `Key ${token}`, url, description: `uses ${token}` }] } })
+    const extract = view('web_extract', { results: [{ url, title: 'Page', content: `token=${token}`, error: null }] })
+    for (const [name, resultView] of [['web_search', search], ['web_extract', extract]] as const) {
+      const shown = JSON.stringify(publicToolFrame({ name, args: {}, result_view: resultView }, true, '/repo').result_view)
+      expect(shown).toContain('example.com')
+      expect(shown).not.toContain(token)
+    }
+  })
+})

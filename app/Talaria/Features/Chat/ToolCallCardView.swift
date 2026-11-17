@@ -96,6 +96,11 @@ struct ToolCallCardView: View {
                     FileExcerptSection(excerpt: excerpt)
                 } else if let matches = shownCall.resultView?.matches {
                     SearchMatchesSection(matches: matches)
+                } else if let links = shownCall.resultView?.links {
+                    // TAL-2324: a search's links and an extract's pages likewise.
+                    ResultLinksSection(links: links)
+                } else if let pages = shownCall.resultView?.pages {
+                    ResultPagesSection(pages: pages)
                 } else if let result = displayContent.result {
                     resultSection(result)
                 }

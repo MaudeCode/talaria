@@ -63,12 +63,12 @@ export const TALARIA_TOOL_NAMES = [
  * name-token rules and the generic result parser, and Talaria's own tools stay in `TALARIA_TOOL_NAMES`.
  * `terminal` shows a result's output streams, error and exit code; `diff` its file edit; `clarify` shows as the question
  * dialog, never a tool row; `todo` and `delegate` show in the session's todo list and subagent rows; `file_excerpt` and
- * `matches` show the result's `ToolResultView` section of that name (TAL-2323); `generic` reads the result's text, else its
- * key/value fields (TAL-2318). `npm run fixtures` writes it to
+ * `matches` (TAL-2323), `links` and `pages` (TAL-2324) show the result's `ToolResultView` section of that name; `generic`
+ * reads the result's text, else its key/value fields (TAL-2318). `npm run fixtures` writes it to
  * `contracts/fixtures/tool-presentations.json`, which a sidecar test checks against the Agent's tool registry: a tool an
  * Agent release adds joins here as `generic` until its own view ships.
  */
-export const ToolPresentationSchema = z.enum(['terminal', 'diff', 'todo', 'delegate', 'clarify', 'file_excerpt', 'matches', 'generic'])
+export const ToolPresentationSchema = z.enum(['terminal', 'diff', 'todo', 'delegate', 'clarify', 'file_excerpt', 'matches', 'links', 'pages', 'generic'])
 export type ToolPresentation = z.infer<typeof ToolPresentationSchema>
 export const ToolPresentationEntrySchema = z.object({ kind: ToolKindSchema, presentation: ToolPresentationSchema })
 export type ToolPresentationEntry = z.infer<typeof ToolPresentationEntrySchema>
@@ -140,10 +140,10 @@ export const TOOL_PRESENTATIONS: Readonly<Record<string, ToolPresentationEntry>>
   video_analyze: { kind: 'unknown', presentation: 'generic' },
   video_generate: { kind: 'unknown', presentation: 'generic' },
   vision_analyze: { kind: 'read', presentation: 'generic' },
-  web_extract: { kind: 'web', presentation: 'generic' },
-  web_search: { kind: 'web', presentation: 'generic' },
+  web_extract: { kind: 'web', presentation: 'pages' },
+  web_search: { kind: 'web', presentation: 'links' },
   write_file: { kind: 'write', presentation: 'diff' },
-  x_search: { kind: 'search', presentation: 'generic' },
+  x_search: { kind: 'search', presentation: 'links' },
   xai_video_edit: { kind: 'write', presentation: 'generic' },
   xai_video_extend: { kind: 'unknown', presentation: 'generic' },
   yb_query_group_info: { kind: 'unknown', presentation: 'generic' },
@@ -218,6 +218,15 @@ export type SearchMatchFile = z.infer<typeof SearchMatchFileSchema>
 /** TAL-2323: a `search_files` result grouped by file, in the Agent's order: `total` as it counted, and whether it stopped at its limit (`truncated`). */
 export const SearchMatchesSchema = z.object({ total: z.number().int(), truncated: z.boolean(), files: z.array(SearchMatchFileSchema) })
 export type SearchMatches = z.infer<typeof SearchMatchesSchema>
+/** TAL-2324: one link a `web_search` result listed or an `x_search` answer cited: its title (the URL when the Agent gave none), the host it opens (`domain`, without `www.`) and the search's one-line description. `url` is always http(s). */
+export const ResultLinkSchema = z.object({ title: z.string(), url: z.string(), domain: z.string(), snippet: z.string().optional() })
+export type ResultLink = z.infer<typeof ResultLinkSchema>
+/** TAL-2324: a `web_search` result's links in the Agent's order, or an `x_search` result's Markdown `answer` above the links it cited. */
+export const ResultLinksSchema = z.object({ answer: z.string().optional(), items: z.array(ResultLinkSchema) })
+export type ResultLinks = z.infer<typeof ResultLinksSchema>
+/** TAL-2324: one page a `web_extract` result read: its title, host and the start of its Markdown (`excerpt`), or the `error` that page failed with. `url` is http(s), empty for a URL the Agent refused as invalid, which shows as text. */
+export const ResultPageSchema = z.object({ url: z.string(), domain: z.string(), title: z.string(), excerpt: z.string(), error: z.string().optional() })
+export type ResultPage = z.infer<typeof ResultPageSchema>
 
 /**
  * TAL-315: a tool result's display sections, decided by the server's one rule for live, replayed and persisted results
@@ -225,7 +234,7 @@ export type SearchMatches = z.infer<typeof SearchMatchesSchema>
  * `text`, in that order, then `approval_note` (TAL-1910: the Agent's note on why a flagged command ran), and never parse
  * result text. Each string is capped server-side; a client without the field shows `preview`.
  */
-export const ToolResultViewSchema = z.object({ outbound_draft: OutboundDraftRefSchema.optional(), /** TAL-1963: the review a `decision_review_put` result made or revised, as it stood then; the card follows `decision_review` events. */ decision_review: DecisionReviewRefSchema.optional(), /** TAL-1967: the proposal a `propose` result made; the card follows `proposal` events. */ proposal: ProposalRefSchema.optional(), /** TAL-1968: the block a `show` result stored; the card loads it from `/api/show/{block_id}`. */ block: ShowBlockRefSchema.optional(), /** TAL-1974: the terminal a `terminal_open` result started; the card opens the session's terminal pane. */ terminal: TerminalRefSchema.optional(), text: z.string().optional(), /** TAL-2323: a `read_file` result's lines; clients show it in place of `text`, which keeps the Agent's text for older clients. */ file_excerpt: FileExcerptSchema.optional(), /** TAL-2323: a `search_files` result's matches by file; clients show it in place of `text`, which keeps the result for older clients. */ matches: SearchMatchesSchema.optional(), /** TAL-2318: a JSON-object result's top-level keys, in order, rendered like `ToolCall.args_fields`; `text` keeps the whole result for copy. Absent for any other result. */ fields: z.array(ToolFieldSchema).optional(), stdout: z.string().optional(), stderr: z.string().optional(), error: z.string().optional(), exit_code: z.number().int().optional(), approval_note: z.string().optional() })
+export const ToolResultViewSchema = z.object({ outbound_draft: OutboundDraftRefSchema.optional(), /** TAL-1963: the review a `decision_review_put` result made or revised, as it stood then; the card follows `decision_review` events. */ decision_review: DecisionReviewRefSchema.optional(), /** TAL-1967: the proposal a `propose` result made; the card follows `proposal` events. */ proposal: ProposalRefSchema.optional(), /** TAL-1968: the block a `show` result stored; the card loads it from `/api/show/{block_id}`. */ block: ShowBlockRefSchema.optional(), /** TAL-1974: the terminal a `terminal_open` result started; the card opens the session's terminal pane. */ terminal: TerminalRefSchema.optional(), text: z.string().optional(), /** TAL-2323: a `read_file` result's lines; clients show it in place of `text`, which keeps the Agent's text for older clients. */ file_excerpt: FileExcerptSchema.optional(), /** TAL-2323: a `search_files` result's matches by file; clients show it in place of `text`, which keeps the result for older clients. */ matches: SearchMatchesSchema.optional(), /** TAL-2324: a `web_search` or `x_search` result's links (and answer); clients show it in place of `text`, which keeps the result for older clients. */ links: ResultLinksSchema.optional(), /** TAL-2324: a `web_extract` result's pages; clients show it in place of `text`, which keeps the result for older clients. */ pages: z.array(ResultPageSchema).optional(), /** TAL-2318: a JSON-object result's top-level keys, in order, rendered like `ToolCall.args_fields`; `text` keeps the whole result for copy. Absent for any other result. */ fields: z.array(ToolFieldSchema).optional(), stdout: z.string().optional(), stderr: z.string().optional(), error: z.string().optional(), exit_code: z.number().int().optional(), approval_note: z.string().optional() })
 export type ToolResultView = z.infer<typeof ToolResultViewSchema>
 
 /**

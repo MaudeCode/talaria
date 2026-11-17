@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ToolResultView } from '@maudecode/talaria-web-contracts'
 import { ToolCard, type ToolCardData } from './ToolCard'
@@ -144,5 +144,45 @@ describe('read_file and search_files results (TAL-2323)', () => {
 
   it('says a search found nothing', async () => {
     expect(await open({ text: '{"total_count": 0}', matches: { total: 0, truncated: false, files: [] } })).toHaveTextContent('No matches')
+  })
+})
+
+describe('web_search, x_search and web_extract results (TAL-2324)', () => {
+  const open = async (name: string, resultView: ToolResultView) => {
+    const view = render(<ToolCard call={{ ...call, name, kind: 'web', resultView }} sessionId="s1" />)
+    await userEvent.click(within(view.container).getAllByRole('button')[0]!)
+    return view.container.querySelector('.tool-card-result')!
+  }
+  const anchors = (result: Element) => Array.from(result.querySelectorAll('a'), (a) => [a.textContent, a.getAttribute('href'), a.getAttribute('target'), a.getAttribute('rel')])
+
+  it('lists a search as title, domain and snippet rows, each opening its page in a new tab, never the JSON', async () => {
+    const result = await open('web_search', { text: '{"web": []}', links: { items: [{ title: 'Hermes Agent', url: 'https://www.example.com/hermes', domain: 'example.com', snippet: 'An open agent.' }, { title: 'https://docs.example.org/a', url: 'https://docs.example.org/a', domain: 'docs.example.org' }] } })
+    expect(anchors(result)).toEqual([['Hermes Agent', 'https://www.example.com/hermes', '_blank', 'noopener noreferrer'], ['https://docs.example.org/a', 'https://docs.example.org/a', '_blank', 'noopener noreferrer']])
+    expect(result).toHaveTextContent('Hermes Agentexample.comAn open agent.')
+    expect(result.textContent).not.toContain('"web"')
+    expect(await open('web_search', { text: '{}', links: { items: [] } })).toHaveTextContent('No results')
+  })
+
+  it('shows an X search\'s answer as formatted text above its cited links', async () => {
+    const result = await open('x_search', { text: '{}', links: { answer: 'People **like** it.', items: [{ title: 'Post by b', url: 'https://x.com/b/status/2', domain: 'x.com' }] } })
+    // The first Markdown mount loads the renderer chunk.
+    await vi.waitFor(() => { expect(result.querySelector('.tool-links [data-streamdown="strong"]')?.textContent).toBe('like') }, { timeout: 5000 })
+    expect(anchors(result)).toEqual([['Post by b', 'https://x.com/b/status/2', '_blank', 'noopener noreferrer']])
+  })
+
+  it('shows each extracted page\'s title, domain and excerpt, and a failed page as its error on one line', async () => {
+    const result = await open('web_extract', { text: '[]', pages: [
+      { url: 'https://example.com/hermes', domain: 'example.com', title: 'Hermes', excerpt: '# Hermes\n\nAn *open* agent.' },
+      { url: 'https://blocked.example/', domain: 'blocked.example', title: 'https://blocked.example/', excerpt: '', error: 'Blocked by website policy' },
+      { url: '', domain: '', title: 'not a url', excerpt: '', error: 'Invalid URL' },
+    ] })
+    await vi.waitFor(() => { expect(result.querySelector('.tool-page em')?.textContent).toBe('open') }, { timeout: 5000 })
+    expect(anchors(result).map(([title, href]) => [title, href])).toEqual([['Hermes', 'https://example.com/hermes'], ['https://blocked.example/', 'https://blocked.example/']])
+    const failed = result.querySelectorAll('.tool-page')[1]!
+    expect(failed).toHaveTextContent('https://blocked.example/blocked.exampleBlocked by website policy')
+    expect(failed.querySelector('.text-error')).toHaveTextContent('Blocked by website policy')
+    // A URL the Agent refused shows as text, never a link.
+    expect(result.querySelectorAll('.tool-page')[2]).toHaveTextContent('not a urlInvalid URL')
+    expect(result.querySelectorAll('.tool-page')[2]!.querySelector('a')).toBeNull()
   })
 })

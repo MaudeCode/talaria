@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "An expanded web search lists its results as title, site and snippet, an X search shows its answer above the posts it cited, and a page extract shows each page's start or why it failed; a tap opens the page, on the App and the Web.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "app",
+        "web"
+      ]
+    }
+  ]
+}

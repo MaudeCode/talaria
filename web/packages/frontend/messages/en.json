@@ -3273,6 +3273,7 @@
 	"tool_approval_denied_by": "Denied by {title}",
 	"tool_args_label": "Arguments",
 	"tool_error_label": "Error",
+	"tool_links_none": "No results",
 	"tool_match_count": "Matches: {count}",
 	"tool_matches_more": "More results not shown",
 	"tool_matches_none": "No matches",

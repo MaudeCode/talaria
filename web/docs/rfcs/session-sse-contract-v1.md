@@ -225,6 +225,15 @@ back to the session file.
   its `focus_path`. An excerpt's lines are redacted as the one text they came
   from, and both sections share the 4000-character budget. A repeat read shows
   as `text`, a missing file or blocked call as `error`.
+  TAL-2324: a `web_search` result adds `links` (`items` of `{ title, url, domain,
+  snippet? }` from `data.web`; `domain` is the URL's host without `www.`), an
+  `x_search` result `links` with its Markdown `answer` above the links it cited
+  (titled inline citations, then the other citations, each URL once, an untitled
+  link titled with its URL), and a `web_extract` result `pages` (`{ url, domain,
+  title, excerpt, error? }`: the first 600 characters of each page's Markdown
+  without the Agent's truncation footer, or the error that page failed with), in
+  place of `fields`; `text` stays for older clients. Whole rows share the
+  4000-character budget.
 - `args_fields` (TAL-2318): the call's redacted arguments as the same rows, one
   per top-level key in call order, each value capped at 4000 characters. A
   scalar shows inline, a nested object as indented `key: value` lines, a list as
