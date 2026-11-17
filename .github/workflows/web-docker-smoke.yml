@@ -8,31 +8,22 @@ permissions:
   contents: read
 
 jobs:
-  # The smoke builds only the runner's own platform. A release builds amd64 and arm64, so its foreign platform's
-  # Node stage installs target packages on the build machine: compile that stage here so a release never meets it
-  # first (TAL-2345).
+  # The smoke builds only the runner's own platform. A release builds amd64 and arm64, so the arm64 Node stage
+  # installs target packages on an amd64 build machine: compile that stage here so a release never meets it first
+  # (TAL-2345).
   cross-build:
-    name: Build the Node stage for the runner's foreign platform
+    name: Build the Node stage for arm64 on amd64
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/docker-plugins
-      - name: Expose the Actions cache service to Buildx
-        uses: actions/github-script@v9
-        with:
-          script: |
-            for (const name of ['ACTIONS_RUNTIME_TOKEN', 'ACTIONS_RESULTS_URL', 'ACTIONS_CACHE_URL', 'ACTIONS_CACHE_SERVICE_V2']) {
-              if (process.env[name]) core.exportVariable(name, process.env[name])
-            }
       - name: Cross-build the Node stage
         run: |
           set -euo pipefail
-          case "$(uname -m)" in x86_64) foreign=arm64 ;; aarch64) foreign=amd64 ;; *) echo "unknown runner arch" >&2; exit 1 ;; esac
+          [[ "$(uname -m)" == x86_64 ]] || { echo "the cross-build needs an amd64 runner" >&2; exit 1; }
           docker buildx create --driver docker-container --use --bootstrap >/dev/null
-          cache="type=gha,scope=web-cross-${foreign}"
-          docker buildx build --platform "linux/${foreign}" --target node-build \
-            --cache-from "$cache" --cache-to "$cache,mode=max,ignore-error=true" web
+          docker buildx build --platform linux/arm64 --target node-build web
 
   smoke:
     name: Smoke Compose variant ${{ matrix.variant }} and container identity

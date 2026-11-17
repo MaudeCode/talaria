@@ -265,7 +265,7 @@ class TestIOSRunnerTest < Minitest::Test
     assert_equal("contract-fixture", steps.fetch(names[fetch])["with"]["name"])
     # A missing fixture makes the live test skip, so the job requires its explicit pass.
     ['export TALARIA_LIVE_CONTRACT_RESPONSES="${fixture}"', "swift test --package-path TalariaKit --skip-build",
-     %(grep -qF -- "Test Case '-[${LIVE_CONTRACT_TEST}]' passed" package-tests.log)]
+     %(grep -qF -- "Test Case '-[${LIVE_CONTRACT_TEST}]' passed" "$1"), "require_live_pass package-tests.log"]
       .each { |required| assert_includes(steps.fetch(names[suite])["run"], required) }
     assert_equal("TalariaKitTests.APIClientSessionListTests testLiveUpstreamContractResponsesDecodeWhenSupplied",
                  steps.fetch("Test the package")["env"]["LIVE_CONTRACT_TEST"])

@@ -10,6 +10,7 @@ import os
 import plistlib
 import re
 import subprocess
+import sys
 import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -189,10 +190,27 @@ def probe_web(web_sha, responses, log):
         ], cwd=source / "app", stdout=log, stderr=subprocess.STDOUT, check=True)
 
 
+def web_session_fixture(web_sha):
+    """The shared App/Web session fixture as the selected Web revision commits it."""
+    return subprocess.check_output(["git", "-C", str(ROOT), "show", f"{web_sha}:contracts/fixtures/web-session.json"])
+
+
+def probe_only(web_sha, output):
+    """Record a Web's live responses and its session fixture, with nothing of the App (TAL-2345).
+
+    CI does this for each retained Web release, so the App package job meets the inputs a release pairs it with."""
+    output.mkdir(parents=True, exist_ok=False)
+    (output / "web-session.json").write_bytes(web_session_fixture(web_sha))
+    sys.stdout.flush()
+    probe_web(web_sha, output / "responses.json", sys.stdout)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--app-ref", required=True)
+    parser.add_argument("--app-ref", help="Required unless --probe-only.")
     parser.add_argument("--web-ref", required=True)
+    parser.add_argument("--probe-only", action="store_true",
+                        help="Only record the Web's responses.json and web-session.json in --output.")
     parser.add_argument("--shared-contracts", action="store_true", help="Also exercise monorepo App/Relay fixtures.")
     parser.add_argument("--output", type=Path, required=True, help="New directory for retained verification evidence.")
     parser.add_argument("--app-checkout", type=Path,
@@ -200,6 +218,11 @@ def main():
     parser.add_argument("--package-suite", action="store_true",
                         help="Also run every TalariaKit test against the live fixture (app-tests.yml's package job).")
     args = parser.parse_args()
+    if args.probe_only:
+        probe_only(commit(args.web_ref), args.output.resolve())
+        return
+    if not args.app_ref:
+        parser.error("--app-ref is required unless --probe-only")
     tests = [*TESTS, *(["SharedContractTests"] if args.shared_contracts else [])]
     app_sha, web_sha = commit(args.app_ref), commit(args.web_ref)
     output = args.output.resolve()
@@ -221,8 +244,7 @@ def main():
         if not runner_avoids_clones(app_sha) and os.environ.get("TALARIA_TEST_WORKER_COUNT", "2") == "1":
             disable_simulator_clones(app)
         if args.shared_contracts:
-            web_fixture = subprocess.check_output(["git", "-C", str(ROOT), "show", f"{web_sha}:contracts/fixtures/web-session.json"])
-            (checkout / "contracts/fixtures/web-session.json").write_bytes(web_fixture)
+            (checkout / "contracts/fixtures/web-session.json").write_bytes(web_session_fixture(web_sha))
         packaged = package_classes(app, tests)
         hosted = [name for name in tests if name not in packaged]
         if args.package_suite and not packaged:

@@ -13,6 +13,8 @@ import sys
 SUITES = {"app", "app_tooling", "web_server", "web_frontend", "web_sidecar", "docker", "relay", "contracts", "tooling"}
 CONSUMERS = {"app", "web_server", "web_frontend", "web_sidecar", "relay", "contracts"}
 # The sidecar job builds the server too, so the workspace build inputs select it (TAL-1161).
+IMAGE_WORKSPACE_BUILD_INPUTS = tuple(f"packages/{name}/{file}" for name in ("contracts", "server")
+                                     for file in ("package.json", "tsconfig.json", "tsconfig.build.json"))
 WEB_BUILD = {"web_server", "web_frontend", "web_sidecar", "docker", "contracts"}
 # web_sidecar is the Agent-release pytest matrix. It loads the built server only through the recovery proof's entry
 # points and reads one server fixture; every other server file skips it on a pull request. A main push with any server
@@ -143,6 +145,8 @@ def path_suites(path):
         return CONSUMERS
     if path == "releases/agent_probe.py":
         return {"web_server", "web_sidecar", "docker", "tooling"}
+    if path == "releases/cli.py":
+        return {"contracts", "tooling"}  # The Web contract probe lists the retained Web releases with it (TAL-2345).
     if path.startswith(".github/workflows/"):
         return WORKFLOWS.get(local.removeprefix("workflows/"), SUITES)
     if path == ".github/actions/docker-plugins/action.yml":
@@ -177,6 +181,10 @@ def path_suites(path):
             return {"app_tooling", "tooling"}
         return {"app"}
     if component == "web":
+        # The lockfile, Node version and the image's workspace builds feed both the workspace builds and the
+        # container image, which compiles them for both release platforms (TAL-2345).
+        if local in ("package.json", "package-lock.json", ".nvmrc", *IMAGE_WORKSPACE_BUILD_INPUTS):
+            return WEB_BUILD
         if local.startswith(("packages/frontend/", "static/dist/")):
             return {"web_frontend"}
         # The sidecar's result schemas are generated from the contracts.
@@ -200,9 +208,6 @@ def path_suites(path):
         # Only the contracts/server and frontend lint steps read the shared lint config.
         if local == ".oxlintrc.json":
             return {"web_server", "web_frontend"}
-        # The lockfile and Node version feed both the workspace builds and the container image.
-        if local in ("package.json", "package-lock.json", ".nvmrc"):
-            return WEB_BUILD
         if local.startswith("static/"):
             return {"web_frontend", "web_server"}
         if local.startswith(("Dockerfile", "docker", ".docker", ".env.docker", "scripts/lib/")):

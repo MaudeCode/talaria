@@ -56,7 +56,10 @@ contract scripts themselves. In `ci.yml`:
 
 - The Linux `Web contract probe` job runs
   `scripts/validate-upstream-contract --server-only --responses-output ...` and
-  uploads the live responses as the run's `contract-fixture` artifact.
+  uploads the live responses as the run's `contract-fixture` artifact. It also
+  probes each retained Web release (`releases/cli.py retained-webs`) with that
+  release's own harness through `scripts/check-previous-app.py --probe-only`,
+  and adds its responses and `web-session.json` to the artifact.
 - The App package tests (`app-tests.yml`, called by `ci.yml`) wait for
   the probe, download that artifact, and run the TalariaKit tests with `swift test`
   on macOS, including every native contract class (`ContractReadinessTests`,
@@ -65,6 +68,10 @@ contract scripts themselves. In `ci.yml`:
   `APIClientSessionListTests/testLiveUpstreamContractResponsesDecodeWhenSupplied`
   against the fixture. A missing fixture skips that test, so they require an
   explicit pass.
+  For each retained Web they then run `SharedContractTests` and the live test
+  again with that Web's responses and `web-session.json`, as a release pairs
+  them, so an App that needs more than a retained Web provides fails the pull
+  request instead of the release.
 
 Releases repeat the gate in `release-set.yml`: `scripts/check-release-contracts.py`
 checks the selected App against the selected and still-supported Web sources and

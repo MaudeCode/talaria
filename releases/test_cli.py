@@ -37,6 +37,8 @@ class WorkflowCommandTests(unittest.TestCase):
             plan["contracts"]["webRelay"]["relay"] = [3]
             with self.assertRaisesRegex(ValueError, "webRelay"):
                 cli.supported_web_sources(plan, experimental, published)
+            # Without a plan, CI only lists them to probe (TAL-2345).
+            self.assertEqual(cli.supported_web_sources(None, experimental, published), ["a" * 40, "b" * 40])
 
     def test_reused_components_do_not_need_retained_ci_runs(self):
         from test_release_set import candidate, complete

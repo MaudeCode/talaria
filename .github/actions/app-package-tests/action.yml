@@ -45,7 +45,13 @@ runs:
         LIVE_CONTRACT_TEST: TalariaKitTests.APIClientSessionListTests testLiveUpstreamContractResponsesDecodeWhenSupplied
       run: |
         set -euo pipefail
-        fixture="${RUNNER_TEMP}/contract-fixture/live-responses.json"
+        fixtures="${RUNNER_TEMP}/contract-fixture"
+        fixture="${fixtures}/live-responses.json"
+        # A missing fixture makes the live test skip, so require an explicit pass.
+        require_live_pass() {
+          grep -qF -- "Test Case '-[${LIVE_CONTRACT_TEST}]' passed" "$1" ||
+            { echo "The live Web contract test did not pass against $2" >&2; exit 1; }
+        }
         if [[ "${CONTRACTS_SELECTED}" == "true" ]]; then
           [[ -s "${fixture}" ]] || { echo "The probe artifact has no live-responses.json" >&2; exit 1; }
           export TALARIA_LIVE_CONTRACT_RESPONSES="${fixture}"
@@ -54,16 +60,19 @@ runs:
         swift test --package-path TalariaKit --skip-build --enable-code-coverage 2>&1 |
           tee package-tests.log
         if [[ "${CONTRACTS_SELECTED}" == "true" ]]; then
-          # A missing fixture makes the live test skip, so require an explicit pass.
-          grep -qF -- "Test Case '-[${LIVE_CONTRACT_TEST}]' passed" package-tests.log ||
-            { echo "The live Web contract test did not pass against the fixture" >&2; exit 1; }
-          # A release runs it against each retained Web release's fixture too (TAL-2345).
-          for retained in "${RUNNER_TEMP}"/contract-fixture/retained-*.json; do
-            [[ -e "${retained}" ]] || continue
-            TALARIA_LIVE_CONTRACT_RESPONSES="${retained}" swift test --package-path TalariaKit --skip-build \
-              --filter "^${LIVE_CONTRACT_TEST/ //}$" 2>&1 | tee retained-tests.log
-            grep -qF -- "Test Case '-[${LIVE_CONTRACT_TEST}]' passed" retained-tests.log ||
-              { echo "The live Web contract test did not pass against ${retained##*/}" >&2; exit 1; }
+          require_live_pass package-tests.log "the fixture"
+          # A release pairs this App with each retained Web release: its live responses and its session fixture, which
+          # SharedContractTests reads from the checkout (TAL-2345). "Class test" becomes swift test's "Class/test".
+          for retained in "${fixtures}"/retained/*/; do
+            [[ -d "${retained}" ]] || continue
+            cp "${retained}web-session.json" ../contracts/fixtures/web-session.json
+            TALARIA_LIVE_CONTRACT_RESPONSES="${retained}responses.json" swift test --package-path TalariaKit --skip-build \
+              --enable-code-coverage --filter "^TalariaKitTests\.SharedContractTests/|^${LIVE_CONTRACT_TEST/ //}$" 2>&1 |
+              tee retained-tests.log
+            git checkout -- ../contracts/fixtures/web-session.json
+            grep -qF "Test Suite 'SharedContractTests' passed" retained-tests.log ||
+              { echo "SharedContractTests did not pass against $(basename "${retained}")" >&2; exit 1; }
+            require_live_pass retained-tests.log "retained Web $(basename "${retained}")"
           done
         fi
         {

@@ -58,8 +58,8 @@ class RoutingTests(unittest.TestCase):
             (["web/packages/server/src/tools/updates.ts"], {"web_server", "web_frontend", "web_sidecar", "contracts"}),
             (["web/packages/server/src/test/fixtures/local-reset.json"],
              {"web_server", "web_frontend", "web_sidecar", "contracts"}),
-            (["web/packages/server/package.json"], {"web_server", "web_frontend", "web_sidecar", "contracts"}),
-            (["web/packages/server/tsconfig.build.json"], {"web_server", "web_frontend", "web_sidecar", "contracts"}),
+            (["web/packages/server/package.json"], {"web_server", "web_frontend", "web_sidecar", "docker", "contracts"}),
+            (["web/packages/server/tsconfig.build.json"], {"web_server", "web_frontend", "web_sidecar", "docker", "contracts"}),
             (["web/sidecar/talaria_sidecar/x.py"], {"web_server", "web_frontend", "web_sidecar", "contracts"}),
             (["web/sidecar/tests/test_x.py"], {"web_sidecar"}),
             # Server tests read the sidecar fixtures, and the server job checks schemas.json against the contracts.
@@ -79,6 +79,9 @@ class RoutingTests(unittest.TestCase):
             (["web/packages/server/src/sessions/workers.test.ts", "changelog.d/TAL-975.json"], {"web_server"}),
             (["web/packages/server/src/sidecar/client.test.ts"], {"web_server", "web_frontend", "web_sidecar", "contracts"}),
             (["web/package-lock.json"], {"web_server", "web_frontend", "web_sidecar", "docker", "contracts"}),
+            # The image compiles the contracts and server workspaces for both release platforms (TAL-2345).
+            (["web/packages/contracts/package.json"], {"web_server", "web_frontend", "web_sidecar", "docker", "contracts"}),
+            (["web/packages/contracts/tsconfig.build.json"], {"web_server", "web_frontend", "web_sidecar", "docker", "contracts"}),
             (["web/skills/runtime/SKILL.md"], {"web_server", "web_frontend", "web_sidecar", "docker", "contracts"}),
             (["web/packages/frontend/src/guide.md"], {"web_frontend"}),
             (["web/docker-compose.yml", "web/scripts/lib/health_probe.sh"], {"docker", "web_server"}),
@@ -137,6 +140,7 @@ class RoutingTests(unittest.TestCase):
             # The support record selects the sidecar suite on every supported Agent release.
             (["web/sidecar/agent_support.json"], {"web_server", "web_frontend", "web_sidecar", "contracts"}),
             (["releases/publish.py"], {"tooling"}),
+            (["releases/cli.py"], {"contracts", "tooling"}),
             ([".github/workflows/release-set.yml"], {"tooling"}),
             ([".github/workflows/nightly.yml", "releases/README.md", "changelog.d/TAL-1615.json"], {"tooling"}),
             ([".github/workflows/unknown.yml"], ALL),

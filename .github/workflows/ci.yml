@@ -160,21 +160,24 @@ jobs:
       - name: Probe local Web HTTP and SSE contracts and record the live responses
         run: scripts/validate-upstream-contract --server-only --responses-output "$RUNNER_TEMP/contract-fixture/live-responses.json"
       - uses: ./.github/actions/release-python
-      # A release checks the App against each retained Web release's live fixture too, recorded by that release's own
-      # harness. Record them here so a fixture the App newly requires fails the pull request, not the release (TAL-2345).
+      # A release checks the App against each retained Web release too: that Web's live responses, recorded by its own
+      # harness, and its session fixture. Record them here so an App that newly needs more fails the pull request, not
+      # the release (TAL-2345).
       - name: Probe each retained Web release with its own harness
         working-directory: .
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          for sha in $("$RELEASE_PYTHON" releases/cli.py retained-webs); do
-            git fetch --quiet --depth=1 origin "$sha"
-            git worktree add --quiet --detach "$RUNNER_TEMP/retained-web-$sha" "$sha"
-            # Harnesses from before TAL-2190 run under zsh.
-            command -v zsh >/dev/null || { sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends zsh; }
-            (cd "$RUNNER_TEMP/retained-web-$sha/app" &&
-              scripts/validate-upstream-contract --server-only --responses-output "$RUNNER_TEMP/contract-fixture/retained-$sha.json")
+          # Assigned first: a failing command substitution in a for list would not stop the step.
+          retained=$("$RELEASE_PYTHON" releases/cli.py retained-webs)
+          # Harnesses from before TAL-2190 run under zsh.
+          command -v zsh >/dev/null || { sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends zsh; }
+          for sha in $retained; do
+            # A ref, not FETCH_HEAD: the probe's shared clone of this shallow checkout reaches the commit only through one.
+            git fetch --quiet --depth=1 origin "+$sha:refs/heads/retained-web-$sha"
+            "$RELEASE_PYTHON" scripts/check-previous-app.py --probe-only --web-ref "$sha" \
+              --output "$RUNNER_TEMP/contract-fixture/retained/$sha"
           done
       # The App package tests start without waiting for this job. Before `swift test` they wait for it through the jobs
       # API, download this artifact and run the native live decoding test against each fixture in it.

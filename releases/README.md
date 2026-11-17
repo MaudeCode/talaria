@@ -199,11 +199,12 @@ creates under `$RUNNER_TEMP` with a random, masked password, searches it first,
 and deletes it in an `always()` step. Provisioning profiles come from
 `apple-actions/download-provisioning-profiles`.
 
-CI's Web contract probe uploads its live responses as the run's
-`contract-fixture` artifact for the App package tests (see
-[contract validation](../CONTRACT_TESTS.md)); the Web end-to-end suite runs in
-six Playwright shards and the Docker smoke in one job per Compose variant
-(five). Release-plan preparation, Web/Relay fixture suites, Agent verification,
+CI's Web contract probe uploads its live responses, and each retained Web
+release's, as the run's `contract-fixture` artifact for the App package tests
+(see [contract validation](../CONTRACT_TESTS.md)); the Web end-to-end suite runs
+in six Playwright shards and the Docker smoke in one job per Compose variant
+(six), beside a job that cross-builds the image's Node stage for arm64, as the
+release's two-platform build does. Release-plan preparation, Web/Relay fixture suites, Agent verification,
 Relay/Web builds, publication receipt jobs, manifest assembly, TestFlight
 inspection and cutover recovery run on Linux too.
 The Web image build caches its layers in the GitHub Actions cache
