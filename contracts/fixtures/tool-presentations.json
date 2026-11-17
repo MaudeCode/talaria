@@ -116,64 +116,79 @@
     "presentation": "media"
   },
   "kanban_attach": {
-    "kind": "unknown",
-    "presentation": "generic"
+    "kind": "kanban",
+    "presentation": "rows",
+    "verb": "update"
   },
   "kanban_attach_url": {
-    "kind": "unknown",
-    "presentation": "generic"
+    "kind": "kanban",
+    "presentation": "rows",
+    "verb": "update"
   },
   "kanban_attachments": {
-    "kind": "unknown",
-    "presentation": "generic"
+    "kind": "kanban",
+    "presentation": "rows",
+    "verb": "view"
   },
   "kanban_block": {
-    "kind": "unknown",
-    "presentation": "generic"
+    "kind": "kanban",
+    "presentation": "rows",
+    "verb": "block"
   },
   "kanban_comment": {
-    "kind": "unknown",
-    "presentation": "generic"
+    "kind": "kanban",
+    "presentation": "rows",
+    "verb": "comment"
   },
   "kanban_complete": {
-    "kind": "unknown",
-    "presentation": "generic"
+    "kind": "kanban",
+    "presentation": "rows",
+    "verb": "complete"
   },
   "kanban_create": {
-    "kind": "unknown",
-    "presentation": "generic"
+    "kind": "kanban",
+    "presentation": "rows",
+    "verb": "create"
   },
   "kanban_heartbeat": {
-    "kind": "unknown",
-    "presentation": "generic"
+    "kind": "kanban",
+    "presentation": "rows",
+    "verb": "update"
   },
   "kanban_link": {
-    "kind": "unknown",
-    "presentation": "generic"
+    "kind": "kanban",
+    "presentation": "rows",
+    "verb": "update"
   },
   "kanban_list": {
-    "kind": "list",
-    "presentation": "generic"
+    "kind": "kanban",
+    "presentation": "rows",
+    "verb": "list"
   },
   "kanban_request_changes": {
-    "kind": "unknown",
-    "presentation": "generic"
+    "kind": "kanban",
+    "presentation": "rows",
+    "verb": "update"
   },
   "kanban_request_review": {
-    "kind": "unknown",
-    "presentation": "generic"
+    "kind": "kanban",
+    "presentation": "rows",
+    "verb": "update"
   },
   "kanban_schedule": {
-    "kind": "unknown",
-    "presentation": "generic"
+    "kind": "kanban",
+    "presentation": "rows",
+    "verb": "update"
   },
   "kanban_show": {
-    "kind": "unknown",
-    "presentation": "generic"
+    "kind": "kanban",
+    "presentation": "rows",
+    "verb": "view"
   },
   "kanban_unblock": {
-    "kind": "unknown",
-    "presentation": "generic"
+    "kind": "kanban",
+    "presentation": "rows",
+    "verb": "update"
   },
   "manage_catalog": {
     "kind": "unknown",

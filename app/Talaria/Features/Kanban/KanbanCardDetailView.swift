@@ -23,6 +23,44 @@ struct KanbanCardDetailView: View {
     }
 }
 
+/// TAL-2327: one Kanban card a transcript row opens: its board is selected first (the current one when the link names none
+/// or one the server no longer lists), then the card's detail shows as it does from the board.
+struct KanbanCardLinkView: View {
+    let cardID: String
+    let board: String?
+    @State private var model: KanbanFeatureState
+    @State private var boardSelected = false
+
+    init(server: URL, cardID: String, board: String?, onAPIError: @escaping (Error) -> Void) {
+        self.init(model: KanbanFeatureState(server: server, onAPIError: onAPIError, responseCache: .app(server: server)), cardID: cardID, board: board)
+    }
+
+    init(model: KanbanFeatureState, cardID: String, board: String?) {
+        self.cardID = cardID
+        self.board = board
+        _model = State(initialValue: model)
+    }
+
+    var body: some View {
+        Group {
+            if boardSelected, model.selectedBoardSlug != nil {
+                KanbanCardDetailView(featureModel: model, cardID: cardID)
+            } else if boardSelected {
+                ContentUnavailableView("Unavailable", systemImage: "exclamationmark.triangle")
+            } else {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .navigationTitle(String(localized: "Loading"))
+                    .navigationBarTitleDisplayMode(.inline)
+            }
+        }
+        .task {
+            await model.loadIfNeeded()
+            if let board { await model.selectBoard(board) }
+            boardSelected = true
+        }
+    }
+}
 
 enum KanbanDetailDateFormatter {
     static func format(_ value: String?) -> String? {

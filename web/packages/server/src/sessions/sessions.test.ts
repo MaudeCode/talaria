@@ -3264,6 +3264,52 @@ describe('session detail ships memory, skill, session, scheduled job, connection
   })
 })
 
+describe('session detail ships Kanban rows (TAL-2327)', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  const fixturePath = join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json')
+  const call = (id: string, name: string, args: Json): Json => ({ id, type: 'function', function: { name, arguments: JSON.stringify(args) } })
+  /** A Kanban list, a new task on a named board, a completion and a comment, as Agent v0.23 returns them. */
+  const transcript: Json[] = [
+    { role: 'user', content: 'Plan the release', message_id: 'kanban-user', timestamp: 9100, _turn_id: 'kanban-run' },
+    { role: 'assistant', content: '', message_id: 'kanban-calls', timestamp: 9101, _turn_id: 'kanban-run', tool_calls: [
+      call('call-list', 'kanban_list', { status: 'ready' }),
+      call('call-create', 'kanban_create', { title: 'Write release notes', assignee: 'scout', board: 'ops' }),
+      call('call-complete', 'kanban_complete', { task_id: 't_1', summary: 'Shipped' }),
+      call('call-comment', 'kanban_comment', { task_id: 't_1', body: 'Looks good' }),
+    ] },
+    { role: 'tool', tool_call_id: 'call-list', content: JSON.stringify({ tasks: [{ id: 't_1', title: 'Fix login', assignee: 'scout', status: 'ready', priority: 0 }], count: 1, limit: 50, truncated: false, next_limit: null, promoted: 0 }), timestamp: 9102, _turn_id: 'kanban-run' },
+    { role: 'tool', tool_call_id: 'call-create', content: JSON.stringify({ ok: true, task_id: 't_9', status: 'running', workspace_kind: null, workspace_path: null, project_id: null, gated: false, subscribed: false }), timestamp: 9103, _turn_id: 'kanban-run' },
+    { role: 'tool', tool_call_id: 'call-complete', content: JSON.stringify({ ok: true, task_id: 't_1', run_id: 4, attachments: [] }), timestamp: 9104, _turn_id: 'kanban-run' },
+    { role: 'tool', tool_call_id: 'call-comment', content: JSON.stringify({ ok: true, task_id: 't_1', comment_id: 7 }), timestamp: 9105, _turn_id: 'kanban-run' },
+    { role: 'assistant', content: 'Done.', message_id: 'kanban-answer', timestamp: 9106, _turn_id: 'kanban-run' },
+  ]
+
+  it('matches the shared contract fixture in full detail and every window, on the calls and the scene alike', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const session = (await s.deps.sessionStore.get(sid))
+    session.messages = structuredClone(transcript)
+    session.title = 'Kanban rows'
+    await s.deps.sessionStore.save(session)
+    const fixture = (JSON.parse(readFileSync(fixturePath, 'utf8')) as Json).tool_kanban_views as Json
+    const expected = fixture.expected as Json
+    expect((expected['call-create'] as Json).rows).toMatchObject({ rows: [{ label: 'Write release notes', link: { kind: 'kanban_task', id: 't_9', board: 'ops' } }] })
+    for (const query of ['', '&msg_limit=50']) {
+      const served = (await json(await s.get(`/api/session?session_id=${sid}&messages=1${query}`))).session as Json
+      const messages = served.messages as Json[]
+      expect(messages, query).toEqual((fixture.session as Json).messages)
+      const calls = messages.find((m) => m.message_id === 'kanban-calls')?.tool_calls as Json[]
+      expect(Object.fromEntries(calls.map((c) => [c.id, c.result_view])), query).toEqual(expected)
+      expect(Object.fromEntries(calls.map((c) => [c.id, [c.kind, c.verb]])), query).toEqual({ 'call-list': ['kanban', 'list'], 'call-create': ['kanban', 'create'], 'call-complete': ['kanban', 'complete'], 'call-comment': ['kanban', 'comment'] })
+      const rows = ((messages.find((m) => m.message_id === 'kanban-answer')?._anchor_activity_scene as Json).activity_rows as Json[]).filter((r) => r.role === 'tool')
+      expect(Object.fromEntries(rows.map((r) => [(r.tool as Json).id, (r.tool as Json).result_view])), query).toEqual(expected)
+      expect(rows.map((r) => (r.tool as Json).verb), query).toEqual(['list', 'create', 'complete', 'comment'])
+    }
+  })
+})
+
 describe('session detail ships media and analysis sections (TAL-2325)', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })

@@ -19,6 +19,8 @@ public enum SessionListUtilityDestination: Hashable, Identifiable, Sendable {
     /// TAL-1966: the Decisions list, and one review pushed once above the current root (its push alert).
     case decisions
     case decisionReview(String)
+    /// TAL-2327: one Kanban card (on a board, else the current one) pushed once above the current root, from a transcript row.
+    case kanbanCard(id: String, board: String?)
 
     public var id: Self { self }
 

@@ -1,17 +1,15 @@
 import type { ReactNode } from 'react'
 import type { PanelId } from '../../shell/nav'
 import { useLocale } from '../../i18n/useLocale'
-import { KanbanPage } from '../kanban/KanbanPage'
 import { SkillsPage } from '../skills/SkillsPage'
 import { MemoryPage } from '../memory/MemoryPage'
 import { TodosPage } from '../todos/TodosPage'
 import { DecisionsPage } from '../decisions/DecisionsPage'
 import { InsightsPage } from '../insights/InsightsPage'
 
-export type HubPanel = Exclude<PanelId, 'chat' | 'settings' | 'tasks' | 'groups'>
+export type HubPanel = Exclude<PanelId, 'chat' | 'settings' | 'tasks' | 'groups' | 'kanban'>
 
 const PAGES: Record<HubPanel, (skill?: string) => ReactNode> = {
-  kanban: () => <KanbanPage />,
   // TAL-2326: a skill link opens that skill.
   skills: (skill) => <SkillsPage key={skill} initialSkill={skill} />,
   memory: () => <MemoryPage />,

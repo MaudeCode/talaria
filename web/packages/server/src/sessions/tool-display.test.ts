@@ -309,8 +309,8 @@ describe('Agent tool presentation table (TAL-2322)', () => {
     expect(fullToolResult(messages, 'c1')?.result_view).toEqual({ error: 'Command timed out', exit_code: 124 })
   })
 
-  it('gives every listed tool the kind its name tokens gave before the table, but a media tool (TAL-2325) or a session, schedule, connection or question tool (TAL-2326) its own', () => {
-    const own = new Set(['session', 'schedule', 'connection', 'question'])
+  it('gives every listed tool the kind its name tokens gave before the table, but a media tool (TAL-2325), a session, schedule, connection or question tool (TAL-2326) or a Kanban tool (TAL-2327) its own', () => {
+    const own = new Set(['session', 'schedule', 'connection', 'question', 'kanban'])
     for (const [name, { kind, presentation }] of Object.entries(TOOL_PRESENTATIONS)) if (presentation !== 'media' && presentation !== 'analysis' && !own.has(kind)) expect([name, kind]).toEqual([name, tokenToolKind(name)])
   })
 
@@ -671,5 +671,62 @@ describe('memory, skills, session search, scheduled job, connection and clarify 
     const setup = toolOutcome(JSON.stringify({ success: true, name: 'pdf', description: 'Read PDFs', content: '# PDF', setup_needed: true, setup_note: 'x'.repeat(5000) }), 'skill_view').result_view.rows!
     expect(setup.rows.map((row) => row.status ?? null)).toEqual([null, 'warn'])
     expect(decidedResultView({ rows: setup }).rows).toEqual(setup)
+  })
+})
+
+describe('Kanban rows (TAL-2327)', () => {
+  const view = (name: string, result: Record<string, unknown>, args?: Record<string, unknown>) => toolOutcome(JSON.stringify(result), name, false, args).result_view
+  const task = (id: string, board?: string) => ({ kind: 'kanban_task', id, ...(board ? { board } : {}) })
+
+  it('gives every kanban tool the kanban kind, the rows presentation and its verb, and names the task it acts on', () => {
+    const names = Object.keys(TOOL_PRESENTATIONS).filter((name) => name.startsWith('kanban_'))
+    expect(names).toHaveLength(15)
+    for (const name of names) expect([name, TOOL_PRESENTATIONS[name]?.kind, TOOL_PRESENTATIONS[name]?.presentation]).toEqual([name, 'kanban', 'rows'])
+    expect(Object.fromEntries(names.map((name) => [name, toolDisplay(name, {}).verb]))).toEqual({
+      kanban_attach: 'update', kanban_attach_url: 'update', kanban_attachments: 'view', kanban_block: 'block', kanban_comment: 'comment', kanban_complete: 'complete',
+      kanban_create: 'create', kanban_heartbeat: 'update', kanban_link: 'update', kanban_list: 'list', kanban_request_changes: 'update', kanban_request_review: 'update',
+      kanban_schedule: 'update', kanban_show: 'view', kanban_unblock: 'update',
+    })
+    expect(toolDisplay('kanban_create', { title: 'Write release notes', assignee: 'scout' })).toMatchObject({ kind: 'kanban', verb: 'create', target: 'Write release notes' })
+    expect(toolDisplay('kanban_complete', { task_id: 't_1', summary: 'done' })).toMatchObject({ kind: 'kanban', verb: 'complete', target: 't_1' })
+    expect(toolDisplay('kanban_list', { status: 'ready' })).toMatchObject({ kind: 'kanban', verb: 'list', target: '' })
+    expect(toolDisplay('read_file', { path: 'a.ts' })).not.toHaveProperty('verb')
+  })
+
+  it('shows a shown or listed task as its title, status and assignee, opening it on the call\'s board', () => {
+    expect(view('kanban_show', { task: { id: 't_1', title: 'Fix login', status: 'running', assignee: 'scout', priority: 0 }, parents: [], children: ['t_2'], comments: [], events: [], runs: [] }, { task_id: 't_1', board: 'ops' }).rows)
+      .toEqual({ rows: [{ label: 'Fix login', detail: 'running · scout', link: task('t_1', 'ops') }] })
+    const shown = view('kanban_list', { tasks: [{ id: 't_1', title: 'Fix login', status: 'running', assignee: 'scout' }, { id: 't_2', title: null, status: 'todo', assignee: null }], count: 2, truncated: false }, {})
+    expect(shown.rows).toEqual({ rows: [{ label: 'Fix login', detail: 'running · scout', link: task('t_1') }, { label: 't_2', detail: 'todo', link: task('t_2') }] })
+    expect(shown.fields).toBeUndefined()
+  })
+
+  it('shows the task a write acted on: a new one by its title, a state change with where it landed, a comment, a file and a link', () => {
+    expect(view('kanban_create', { ok: true, task_id: 't_9', status: 'todo', gated: true, gated_by: 't_1', subscribed: false }, { title: 'Write notes', assignee: 'scout', parents: ['t_1'] }).rows)
+      .toEqual({ rows: [{ label: 'Write notes', detail: 'todo · waiting on parent', link: task('t_9') }] })
+    expect(view('kanban_block', { ok: true, task_id: 't_1', run_id: 4, status: 'blocked', block_kind: 'needs_input' }, { task_id: 't_1', reason: 'Which API key?' }).rows)
+      .toEqual({ rows: [{ label: 't_1', detail: 'blocked · needs input', link: task('t_1') }] })
+    for (const [name, status] of [['kanban_complete', 'done'], ['kanban_request_review', 'review'], ['kanban_request_changes', 'ready'], ['kanban_schedule', 'scheduled'], ['kanban_unblock', 'ready']]) {
+      expect(view(name!, { ok: true, task_id: 't_1', status }, { task_id: 't_1' }).rows, name).toEqual({ rows: [{ label: 't_1', detail: status, link: task('t_1') }] })
+    }
+    expect(view('kanban_heartbeat', { ok: true, task_id: 't_1' }, { task_id: 't_1', note: 'still going' }).rows).toEqual({ rows: [{ label: 't_1', link: task('t_1') }] })
+    expect(view('kanban_comment', { ok: true, task_id: 't_1', comment_id: 7 }, { task_id: 't_1', body: 'Looks good\nsecond line', board: 'ops' }).rows)
+      .toEqual({ rows: [{ label: 't_1', detail: 'Looks good', link: task('t_1', 'ops') }] })
+    expect(view('kanban_attach', { ok: true, task_id: 't_1', attachment_id: 3, size: 12 }, { task_id: 't_1', filename: 'log.txt', content_base64: 'aGk=' }).rows)
+      .toEqual({ rows: [{ label: 't_1', detail: 'log.txt', link: task('t_1') }] })
+    expect(view('kanban_attach_url', { ok: true, task_id: 't_1', attachment_id: 4, size: 99 }, { task_id: 't_1', url: 'https://example.invalid/r.pdf' }).rows)
+      .toEqual({ rows: [{ label: 't_1', detail: 'https://example.invalid/r.pdf', link: task('t_1') }] })
+    expect(view('kanban_attachments', { ok: true, task_id: 't_1', attachments: [{ id: 3, filename: 'log.txt', content_type: 'text/plain', size: 12 }] }, { task_id: 't_1' }).rows)
+      .toEqual({ rows: [{ label: 't_1', link: task('t_1') }, { label: 'log.txt', detail: 'text/plain' }] })
+    expect(view('kanban_link', { ok: true, parent_id: 't_1', child_id: 't_2', gated: true, gated_by: 't_1' }, { parent_id: 't_1', child_id: 't_2' }).rows)
+      .toEqual({ rows: [{ label: 't_1', detail: 'Parent', link: task('t_1') }, { label: 't_2', detail: 'Child · waiting on parent', link: task('t_2') }] })
+  })
+
+  it('shows a failed call as its error on one line, never rows', () => {
+    for (const name of ['kanban_show', 'kanban_complete', 'kanban_list']) {
+      const shown = view(name, { error: `${name}: task t_1 not found` }, { task_id: 't_1' })
+      expect(shown.rows).toBeUndefined()
+      expect(shown.error).toBe(`${name}: task t_1 not found`)
+    }
   })
 })

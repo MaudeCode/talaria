@@ -1236,6 +1236,32 @@ final class SharedContractTests: XCTestCase {
         }
     }
 
+    func testSharedWebSessionCarriesEachKanbanRow() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
+        // A release checks this App against every retained Web; one from before TAL-2327 has no such example.
+        guard let example = object["tool_kanban_views"] as? [String: Any] else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let session = try decoder.decode(SessionDetail.self, from: JSONSerialization.data(withJSONObject: example["session"] as Any))
+        let messages = try XCTUnwrap(session.messages)
+        let answer = try XCTUnwrap(messages.first { $0.messageId == "kanban-answer" })
+        let timeline = try XCTUnwrap(AssistantActivityTimeline.authoritativeScene(message: answer))
+        let groups = ToolCallGroup.groups(messages: messages, messageOffset: nil)
+        for calls in [timeline.toolCalls, groups.first { $0.anchorMessageID == "kanban-calls" }?.toolCalls ?? []] {
+            let byID = Dictionary(uniqueKeysWithValues: calls.map { ($0.id, $0) })
+            XCTAssertEqual(calls.map(\.kind), Array(repeating: .kanban, count: 4))
+            XCTAssertEqual(calls.map(\.verb), [.list, .create, .complete, .comment])
+            XCTAssertEqual(calls.map { AssistantActivitySummary.label(for: $0) }, ["Listed tasks", "Created Write release notes", "Completed t_1", "Commented on t_1"])
+            XCTAssertEqual(calls.map { AssistantActivitySummary.icon(for: $0) }, Array(repeating: "rectangle.split.3x1", count: 4))
+            let created = try XCTUnwrap(byID["call-create"]?.resultView?.rows?.rows.first)
+            XCTAssertEqual(created.label, "Write release notes")
+            XCTAssertEqual(created.link?.destinationURL, TalariaDeepLink.kanbanCardURL(cardID: "t_9", board: "ops"))
+            let listed = try XCTUnwrap(byID["call-list"]?.resultView?.rows?.rows)
+            XCTAssertEqual(listed.map { [$0.label, $0.detail] }, [["Fix login", "ready · scout"]])
+            XCTAssertEqual(listed.first?.link?.destinationURL, TalariaDeepLink.kanbanCardURL(cardID: "t_1"))
+        }
+    }
+
     func testSharedWebSessionCarriesEachFileEditsDiff() throws {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
         // A release checks this App against every retained Web; one from before TAL-448 has no such example.

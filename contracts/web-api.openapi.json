@@ -8050,6 +8050,7 @@
                                         "schedule",
                                         "connection",
                                         "question",
+                                        "kanban",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -8162,6 +8163,19 @@
                                         "truncated",
                                         "hunks"
                                       ]
+                                    },
+                                    "verb": {
+                                      "enum": [
+                                        "create",
+                                        "view",
+                                        "list",
+                                        "update",
+                                        "complete",
+                                        "block",
+                                        "comment"
+                                      ],
+                                      "type": "string",
+                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -8669,7 +8683,8 @@
                                                         "type": "object",
                                                         "properties": {
                                                           "kind": {},
-                                                          "id": {}
+                                                          "id": {},
+                                                          "board": {}
                                                         }
                                                       }
                                                     },
@@ -9056,6 +9071,7 @@
                                                 "schedule",
                                                 "connection",
                                                 "question",
+                                                "kanban",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -9105,6 +9121,19 @@
                                                 "truncated",
                                                 "hunks"
                                               ]
+                                            },
+                                            "verb": {
+                                              "enum": [
+                                                "create",
+                                                "view",
+                                                "list",
+                                                "update",
+                                                "complete",
+                                                "block",
+                                                "comment"
+                                              ],
+                                              "type": "string",
+                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -10240,6 +10269,7 @@
                                   "schedule",
                                   "connection",
                                   "question",
+                                  "kanban",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -10389,6 +10419,19 @@
                                   "truncated",
                                   "hunks"
                                 ]
+                              },
+                              "verb": {
+                                "enum": [
+                                  "create",
+                                  "view",
+                                  "list",
+                                  "update",
+                                  "complete",
+                                  "block",
+                                  "comment"
+                                ],
+                                "type": "string",
+                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -10909,11 +10952,15 @@
                                                         "session",
                                                         "crons",
                                                         "connectors",
-                                                        "skill"
+                                                        "skill",
+                                                        "kanban_task"
                                                       ],
                                                       "type": "string"
                                                     },
                                                     "id": {
+                                                      "type": "string"
+                                                    },
+                                                    "board": {
                                                       "type": "string"
                                                     }
                                                   },
@@ -14934,6 +14981,7 @@
                                         "schedule",
                                         "connection",
                                         "question",
+                                        "kanban",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -15046,6 +15094,19 @@
                                         "truncated",
                                         "hunks"
                                       ]
+                                    },
+                                    "verb": {
+                                      "enum": [
+                                        "create",
+                                        "view",
+                                        "list",
+                                        "update",
+                                        "complete",
+                                        "block",
+                                        "comment"
+                                      ],
+                                      "type": "string",
+                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -15553,7 +15614,8 @@
                                                         "type": "object",
                                                         "properties": {
                                                           "kind": {},
-                                                          "id": {}
+                                                          "id": {},
+                                                          "board": {}
                                                         }
                                                       }
                                                     },
@@ -15940,6 +16002,7 @@
                                                 "schedule",
                                                 "connection",
                                                 "question",
+                                                "kanban",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -15989,6 +16052,19 @@
                                                 "truncated",
                                                 "hunks"
                                               ]
+                                            },
+                                            "verb": {
+                                              "enum": [
+                                                "create",
+                                                "view",
+                                                "list",
+                                                "update",
+                                                "complete",
+                                                "block",
+                                                "comment"
+                                              ],
+                                              "type": "string",
+                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -17124,6 +17200,7 @@
                                   "schedule",
                                   "connection",
                                   "question",
+                                  "kanban",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -17273,6 +17350,19 @@
                                   "truncated",
                                   "hunks"
                                 ]
+                              },
+                              "verb": {
+                                "enum": [
+                                  "create",
+                                  "view",
+                                  "list",
+                                  "update",
+                                  "complete",
+                                  "block",
+                                  "comment"
+                                ],
+                                "type": "string",
+                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -17793,11 +17883,15 @@
                                                         "session",
                                                         "crons",
                                                         "connectors",
-                                                        "skill"
+                                                        "skill",
+                                                        "kanban_task"
                                                       ],
                                                       "type": "string"
                                                     },
                                                     "id": {
+                                                      "type": "string"
+                                                    },
+                                                    "board": {
                                                       "type": "string"
                                                     }
                                                   },
@@ -20489,6 +20583,7 @@
                                         "schedule",
                                         "connection",
                                         "question",
+                                        "kanban",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -20601,6 +20696,19 @@
                                         "truncated",
                                         "hunks"
                                       ]
+                                    },
+                                    "verb": {
+                                      "enum": [
+                                        "create",
+                                        "view",
+                                        "list",
+                                        "update",
+                                        "complete",
+                                        "block",
+                                        "comment"
+                                      ],
+                                      "type": "string",
+                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -21108,7 +21216,8 @@
                                                         "type": "object",
                                                         "properties": {
                                                           "kind": {},
-                                                          "id": {}
+                                                          "id": {},
+                                                          "board": {}
                                                         }
                                                       }
                                                     },
@@ -21495,6 +21604,7 @@
                                                 "schedule",
                                                 "connection",
                                                 "question",
+                                                "kanban",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -21544,6 +21654,19 @@
                                                 "truncated",
                                                 "hunks"
                                               ]
+                                            },
+                                            "verb": {
+                                              "enum": [
+                                                "create",
+                                                "view",
+                                                "list",
+                                                "update",
+                                                "complete",
+                                                "block",
+                                                "comment"
+                                              ],
+                                              "type": "string",
+                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -22679,6 +22802,7 @@
                                   "schedule",
                                   "connection",
                                   "question",
+                                  "kanban",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -22828,6 +22952,19 @@
                                   "truncated",
                                   "hunks"
                                 ]
+                              },
+                              "verb": {
+                                "enum": [
+                                  "create",
+                                  "view",
+                                  "list",
+                                  "update",
+                                  "complete",
+                                  "block",
+                                  "comment"
+                                ],
+                                "type": "string",
+                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -23348,11 +23485,15 @@
                                                         "session",
                                                         "crons",
                                                         "connectors",
-                                                        "skill"
+                                                        "skill",
+                                                        "kanban_task"
                                                       ],
                                                       "type": "string"
                                                     },
                                                     "id": {
+                                                      "type": "string"
+                                                    },
+                                                    "board": {
                                                       "type": "string"
                                                     }
                                                   },
@@ -29176,6 +29317,7 @@
                                         "schedule",
                                         "connection",
                                         "question",
+                                        "kanban",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -29288,6 +29430,19 @@
                                         "truncated",
                                         "hunks"
                                       ]
+                                    },
+                                    "verb": {
+                                      "enum": [
+                                        "create",
+                                        "view",
+                                        "list",
+                                        "update",
+                                        "complete",
+                                        "block",
+                                        "comment"
+                                      ],
+                                      "type": "string",
+                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -29795,7 +29950,8 @@
                                                         "type": "object",
                                                         "properties": {
                                                           "kind": {},
-                                                          "id": {}
+                                                          "id": {},
+                                                          "board": {}
                                                         }
                                                       }
                                                     },
@@ -30182,6 +30338,7 @@
                                                 "schedule",
                                                 "connection",
                                                 "question",
+                                                "kanban",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -30231,6 +30388,19 @@
                                                 "truncated",
                                                 "hunks"
                                               ]
+                                            },
+                                            "verb": {
+                                              "enum": [
+                                                "create",
+                                                "view",
+                                                "list",
+                                                "update",
+                                                "complete",
+                                                "block",
+                                                "comment"
+                                              ],
+                                              "type": "string",
+                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -31366,6 +31536,7 @@
                                   "schedule",
                                   "connection",
                                   "question",
+                                  "kanban",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -31515,6 +31686,19 @@
                                   "truncated",
                                   "hunks"
                                 ]
+                              },
+                              "verb": {
+                                "enum": [
+                                  "create",
+                                  "view",
+                                  "list",
+                                  "update",
+                                  "complete",
+                                  "block",
+                                  "comment"
+                                ],
+                                "type": "string",
+                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -32035,11 +32219,15 @@
                                                         "session",
                                                         "crons",
                                                         "connectors",
-                                                        "skill"
+                                                        "skill",
+                                                        "kanban_task"
                                                       ],
                                                       "type": "string"
                                                     },
                                                     "id": {
+                                                      "type": "string"
+                                                    },
+                                                    "board": {
                                                       "type": "string"
                                                     }
                                                   },
@@ -37174,6 +37362,7 @@
                                         "schedule",
                                         "connection",
                                         "question",
+                                        "kanban",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -37286,6 +37475,19 @@
                                         "truncated",
                                         "hunks"
                                       ]
+                                    },
+                                    "verb": {
+                                      "enum": [
+                                        "create",
+                                        "view",
+                                        "list",
+                                        "update",
+                                        "complete",
+                                        "block",
+                                        "comment"
+                                      ],
+                                      "type": "string",
+                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -37793,7 +37995,8 @@
                                                         "type": "object",
                                                         "properties": {
                                                           "kind": {},
-                                                          "id": {}
+                                                          "id": {},
+                                                          "board": {}
                                                         }
                                                       }
                                                     },
@@ -38180,6 +38383,7 @@
                                                 "schedule",
                                                 "connection",
                                                 "question",
+                                                "kanban",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -38229,6 +38433,19 @@
                                                 "truncated",
                                                 "hunks"
                                               ]
+                                            },
+                                            "verb": {
+                                              "enum": [
+                                                "create",
+                                                "view",
+                                                "list",
+                                                "update",
+                                                "complete",
+                                                "block",
+                                                "comment"
+                                              ],
+                                              "type": "string",
+                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -39364,6 +39581,7 @@
                                   "schedule",
                                   "connection",
                                   "question",
+                                  "kanban",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -39513,6 +39731,19 @@
                                   "truncated",
                                   "hunks"
                                 ]
+                              },
+                              "verb": {
+                                "enum": [
+                                  "create",
+                                  "view",
+                                  "list",
+                                  "update",
+                                  "complete",
+                                  "block",
+                                  "comment"
+                                ],
+                                "type": "string",
+                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -40033,11 +40264,15 @@
                                                         "session",
                                                         "crons",
                                                         "connectors",
-                                                        "skill"
+                                                        "skill",
+                                                        "kanban_task"
                                                       ],
                                                       "type": "string"
                                                     },
                                                     "id": {
+                                                      "type": "string"
+                                                    },
+                                                    "board": {
                                                       "type": "string"
                                                     }
                                                   },
@@ -45804,6 +46039,7 @@
                                         "schedule",
                                         "connection",
                                         "question",
+                                        "kanban",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -45916,6 +46152,19 @@
                                         "truncated",
                                         "hunks"
                                       ]
+                                    },
+                                    "verb": {
+                                      "enum": [
+                                        "create",
+                                        "view",
+                                        "list",
+                                        "update",
+                                        "complete",
+                                        "block",
+                                        "comment"
+                                      ],
+                                      "type": "string",
+                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -46423,7 +46672,8 @@
                                                         "type": "object",
                                                         "properties": {
                                                           "kind": {},
-                                                          "id": {}
+                                                          "id": {},
+                                                          "board": {}
                                                         }
                                                       }
                                                     },
@@ -46810,6 +47060,7 @@
                                                 "schedule",
                                                 "connection",
                                                 "question",
+                                                "kanban",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -46859,6 +47110,19 @@
                                                 "truncated",
                                                 "hunks"
                                               ]
+                                            },
+                                            "verb": {
+                                              "enum": [
+                                                "create",
+                                                "view",
+                                                "list",
+                                                "update",
+                                                "complete",
+                                                "block",
+                                                "comment"
+                                              ],
+                                              "type": "string",
+                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -47994,6 +48258,7 @@
                                   "schedule",
                                   "connection",
                                   "question",
+                                  "kanban",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -48143,6 +48408,19 @@
                                   "truncated",
                                   "hunks"
                                 ]
+                              },
+                              "verb": {
+                                "enum": [
+                                  "create",
+                                  "view",
+                                  "list",
+                                  "update",
+                                  "complete",
+                                  "block",
+                                  "comment"
+                                ],
+                                "type": "string",
+                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -48663,11 +48941,15 @@
                                                         "session",
                                                         "crons",
                                                         "connectors",
-                                                        "skill"
+                                                        "skill",
+                                                        "kanban_task"
                                                       ],
                                                       "type": "string"
                                                     },
                                                     "id": {
+                                                      "type": "string"
+                                                    },
+                                                    "board": {
                                                       "type": "string"
                                                     }
                                                   },
@@ -51304,6 +51586,7 @@
                                         "schedule",
                                         "connection",
                                         "question",
+                                        "kanban",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -51416,6 +51699,19 @@
                                         "truncated",
                                         "hunks"
                                       ]
+                                    },
+                                    "verb": {
+                                      "enum": [
+                                        "create",
+                                        "view",
+                                        "list",
+                                        "update",
+                                        "complete",
+                                        "block",
+                                        "comment"
+                                      ],
+                                      "type": "string",
+                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -51923,7 +52219,8 @@
                                                         "type": "object",
                                                         "properties": {
                                                           "kind": {},
-                                                          "id": {}
+                                                          "id": {},
+                                                          "board": {}
                                                         }
                                                       }
                                                     },
@@ -52310,6 +52607,7 @@
                                                 "schedule",
                                                 "connection",
                                                 "question",
+                                                "kanban",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -52359,6 +52657,19 @@
                                                 "truncated",
                                                 "hunks"
                                               ]
+                                            },
+                                            "verb": {
+                                              "enum": [
+                                                "create",
+                                                "view",
+                                                "list",
+                                                "update",
+                                                "complete",
+                                                "block",
+                                                "comment"
+                                              ],
+                                              "type": "string",
+                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -53494,6 +53805,7 @@
                                   "schedule",
                                   "connection",
                                   "question",
+                                  "kanban",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -53643,6 +53955,19 @@
                                   "truncated",
                                   "hunks"
                                 ]
+                              },
+                              "verb": {
+                                "enum": [
+                                  "create",
+                                  "view",
+                                  "list",
+                                  "update",
+                                  "complete",
+                                  "block",
+                                  "comment"
+                                ],
+                                "type": "string",
+                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -54163,11 +54488,15 @@
                                                         "session",
                                                         "crons",
                                                         "connectors",
-                                                        "skill"
+                                                        "skill",
+                                                        "kanban_task"
                                                       ],
                                                       "type": "string"
                                                     },
                                                     "id": {
+                                                      "type": "string"
+                                                    },
+                                                    "board": {
                                                       "type": "string"
                                                     }
                                                   },
@@ -56866,6 +57195,7 @@
                                         "schedule",
                                         "connection",
                                         "question",
+                                        "kanban",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -56978,6 +57308,19 @@
                                         "truncated",
                                         "hunks"
                                       ]
+                                    },
+                                    "verb": {
+                                      "enum": [
+                                        "create",
+                                        "view",
+                                        "list",
+                                        "update",
+                                        "complete",
+                                        "block",
+                                        "comment"
+                                      ],
+                                      "type": "string",
+                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -57485,7 +57828,8 @@
                                                         "type": "object",
                                                         "properties": {
                                                           "kind": {},
-                                                          "id": {}
+                                                          "id": {},
+                                                          "board": {}
                                                         }
                                                       }
                                                     },
@@ -57872,6 +58216,7 @@
                                                 "schedule",
                                                 "connection",
                                                 "question",
+                                                "kanban",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -57921,6 +58266,19 @@
                                                 "truncated",
                                                 "hunks"
                                               ]
+                                            },
+                                            "verb": {
+                                              "enum": [
+                                                "create",
+                                                "view",
+                                                "list",
+                                                "update",
+                                                "complete",
+                                                "block",
+                                                "comment"
+                                              ],
+                                              "type": "string",
+                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -59056,6 +59414,7 @@
                                   "schedule",
                                   "connection",
                                   "question",
+                                  "kanban",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -59205,6 +59564,19 @@
                                   "truncated",
                                   "hunks"
                                 ]
+                              },
+                              "verb": {
+                                "enum": [
+                                  "create",
+                                  "view",
+                                  "list",
+                                  "update",
+                                  "complete",
+                                  "block",
+                                  "comment"
+                                ],
+                                "type": "string",
+                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -59725,11 +60097,15 @@
                                                         "session",
                                                         "crons",
                                                         "connectors",
-                                                        "skill"
+                                                        "skill",
+                                                        "kanban_task"
                                                       ],
                                                       "type": "string"
                                                     },
                                                     "id": {
+                                                      "type": "string"
+                                                    },
+                                                    "board": {
                                                       "type": "string"
                                                     }
                                                   },
@@ -62426,6 +62802,7 @@
                                         "schedule",
                                         "connection",
                                         "question",
+                                        "kanban",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -62538,6 +62915,19 @@
                                         "truncated",
                                         "hunks"
                                       ]
+                                    },
+                                    "verb": {
+                                      "enum": [
+                                        "create",
+                                        "view",
+                                        "list",
+                                        "update",
+                                        "complete",
+                                        "block",
+                                        "comment"
+                                      ],
+                                      "type": "string",
+                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -63045,7 +63435,8 @@
                                                         "type": "object",
                                                         "properties": {
                                                           "kind": {},
-                                                          "id": {}
+                                                          "id": {},
+                                                          "board": {}
                                                         }
                                                       }
                                                     },
@@ -63432,6 +63823,7 @@
                                                 "schedule",
                                                 "connection",
                                                 "question",
+                                                "kanban",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -63481,6 +63873,19 @@
                                                 "truncated",
                                                 "hunks"
                                               ]
+                                            },
+                                            "verb": {
+                                              "enum": [
+                                                "create",
+                                                "view",
+                                                "list",
+                                                "update",
+                                                "complete",
+                                                "block",
+                                                "comment"
+                                              ],
+                                              "type": "string",
+                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -64616,6 +65021,7 @@
                                   "schedule",
                                   "connection",
                                   "question",
+                                  "kanban",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -64765,6 +65171,19 @@
                                   "truncated",
                                   "hunks"
                                 ]
+                              },
+                              "verb": {
+                                "enum": [
+                                  "create",
+                                  "view",
+                                  "list",
+                                  "update",
+                                  "complete",
+                                  "block",
+                                  "comment"
+                                ],
+                                "type": "string",
+                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -65285,11 +65704,15 @@
                                                         "session",
                                                         "crons",
                                                         "connectors",
-                                                        "skill"
+                                                        "skill",
+                                                        "kanban_task"
                                                       ],
                                                       "type": "string"
                                                     },
                                                     "id": {
+                                                      "type": "string"
+                                                    },
+                                                    "board": {
                                                       "type": "string"
                                                     }
                                                   },
@@ -67759,6 +68182,7 @@
                                   "schedule",
                                   "connection",
                                   "question",
+                                  "kanban",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -67908,6 +68332,19 @@
                                   "truncated",
                                   "hunks"
                                 ]
+                              },
+                              "verb": {
+                                "enum": [
+                                  "create",
+                                  "view",
+                                  "list",
+                                  "update",
+                                  "complete",
+                                  "block",
+                                  "comment"
+                                ],
+                                "type": "string",
+                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -68400,11 +68837,15 @@
                                                         "session",
                                                         "crons",
                                                         "connectors",
-                                                        "skill"
+                                                        "skill",
+                                                        "kanban_task"
                                                       ],
                                                       "type": "string"
                                                     },
                                                     "id": {
+                                                      "type": "string"
+                                                    },
+                                                    "board": {
                                                       "type": "string"
                                                     }
                                                   },
@@ -69688,11 +70129,15 @@
                                           "session",
                                           "crons",
                                           "connectors",
-                                          "skill"
+                                          "skill",
+                                          "kanban_task"
                                         ],
                                         "type": "string"
                                       },
                                       "id": {
+                                        "type": "string"
+                                      },
+                                      "board": {
                                         "type": "string"
                                       }
                                     },
@@ -80211,6 +80656,7 @@
                                         "schedule",
                                         "connection",
                                         "question",
+                                        "kanban",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -80323,6 +80769,19 @@
                                         "truncated",
                                         "hunks"
                                       ]
+                                    },
+                                    "verb": {
+                                      "enum": [
+                                        "create",
+                                        "view",
+                                        "list",
+                                        "update",
+                                        "complete",
+                                        "block",
+                                        "comment"
+                                      ],
+                                      "type": "string",
+                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -80830,7 +81289,8 @@
                                                         "type": "object",
                                                         "properties": {
                                                           "kind": {},
-                                                          "id": {}
+                                                          "id": {},
+                                                          "board": {}
                                                         }
                                                       }
                                                     },
@@ -81217,6 +81677,7 @@
                                                 "schedule",
                                                 "connection",
                                                 "question",
+                                                "kanban",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -81266,6 +81727,19 @@
                                                 "truncated",
                                                 "hunks"
                                               ]
+                                            },
+                                            "verb": {
+                                              "enum": [
+                                                "create",
+                                                "view",
+                                                "list",
+                                                "update",
+                                                "complete",
+                                                "block",
+                                                "comment"
+                                              ],
+                                              "type": "string",
+                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -82401,6 +82875,7 @@
                                   "schedule",
                                   "connection",
                                   "question",
+                                  "kanban",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -82550,6 +83025,19 @@
                                   "truncated",
                                   "hunks"
                                 ]
+                              },
+                              "verb": {
+                                "enum": [
+                                  "create",
+                                  "view",
+                                  "list",
+                                  "update",
+                                  "complete",
+                                  "block",
+                                  "comment"
+                                ],
+                                "type": "string",
+                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -83070,11 +83558,15 @@
                                                         "session",
                                                         "crons",
                                                         "connectors",
-                                                        "skill"
+                                                        "skill",
+                                                        "kanban_task"
                                                       ],
                                                       "type": "string"
                                                     },
                                                     "id": {
+                                                      "type": "string"
+                                                    },
+                                                    "board": {
                                                       "type": "string"
                                                     }
                                                   },
@@ -85763,6 +86255,7 @@
                                         "schedule",
                                         "connection",
                                         "question",
+                                        "kanban",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -85875,6 +86368,19 @@
                                         "truncated",
                                         "hunks"
                                       ]
+                                    },
+                                    "verb": {
+                                      "enum": [
+                                        "create",
+                                        "view",
+                                        "list",
+                                        "update",
+                                        "complete",
+                                        "block",
+                                        "comment"
+                                      ],
+                                      "type": "string",
+                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -86382,7 +86888,8 @@
                                                         "type": "object",
                                                         "properties": {
                                                           "kind": {},
-                                                          "id": {}
+                                                          "id": {},
+                                                          "board": {}
                                                         }
                                                       }
                                                     },
@@ -86769,6 +87276,7 @@
                                                 "schedule",
                                                 "connection",
                                                 "question",
+                                                "kanban",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -86818,6 +87326,19 @@
                                                 "truncated",
                                                 "hunks"
                                               ]
+                                            },
+                                            "verb": {
+                                              "enum": [
+                                                "create",
+                                                "view",
+                                                "list",
+                                                "update",
+                                                "complete",
+                                                "block",
+                                                "comment"
+                                              ],
+                                              "type": "string",
+                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -87953,6 +88474,7 @@
                                   "schedule",
                                   "connection",
                                   "question",
+                                  "kanban",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -88102,6 +88624,19 @@
                                   "truncated",
                                   "hunks"
                                 ]
+                              },
+                              "verb": {
+                                "enum": [
+                                  "create",
+                                  "view",
+                                  "list",
+                                  "update",
+                                  "complete",
+                                  "block",
+                                  "comment"
+                                ],
+                                "type": "string",
+                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -88622,11 +89157,15 @@
                                                         "session",
                                                         "crons",
                                                         "connectors",
-                                                        "skill"
+                                                        "skill",
+                                                        "kanban_task"
                                                       ],
                                                       "type": "string"
                                                     },
                                                     "id": {
+                                                      "type": "string"
+                                                    },
+                                                    "board": {
                                                       "type": "string"
                                                     }
                                                   },
@@ -92001,6 +92540,7 @@
                                         "schedule",
                                         "connection",
                                         "question",
+                                        "kanban",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -92113,6 +92653,19 @@
                                         "truncated",
                                         "hunks"
                                       ]
+                                    },
+                                    "verb": {
+                                      "enum": [
+                                        "create",
+                                        "view",
+                                        "list",
+                                        "update",
+                                        "complete",
+                                        "block",
+                                        "comment"
+                                      ],
+                                      "type": "string",
+                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -92620,7 +93173,8 @@
                                                         "type": "object",
                                                         "properties": {
                                                           "kind": {},
-                                                          "id": {}
+                                                          "id": {},
+                                                          "board": {}
                                                         }
                                                       }
                                                     },
@@ -93007,6 +93561,7 @@
                                                 "schedule",
                                                 "connection",
                                                 "question",
+                                                "kanban",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -93056,6 +93611,19 @@
                                                 "truncated",
                                                 "hunks"
                                               ]
+                                            },
+                                            "verb": {
+                                              "enum": [
+                                                "create",
+                                                "view",
+                                                "list",
+                                                "update",
+                                                "complete",
+                                                "block",
+                                                "comment"
+                                              ],
+                                              "type": "string",
+                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -94191,6 +94759,7 @@
                                   "schedule",
                                   "connection",
                                   "question",
+                                  "kanban",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -94340,6 +94909,19 @@
                                   "truncated",
                                   "hunks"
                                 ]
+                              },
+                              "verb": {
+                                "enum": [
+                                  "create",
+                                  "view",
+                                  "list",
+                                  "update",
+                                  "complete",
+                                  "block",
+                                  "comment"
+                                ],
+                                "type": "string",
+                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -94860,11 +95442,15 @@
                                                         "session",
                                                         "crons",
                                                         "connectors",
-                                                        "skill"
+                                                        "skill",
+                                                        "kanban_task"
                                                       ],
                                                       "type": "string"
                                                     },
                                                     "id": {
+                                                      "type": "string"
+                                                    },
+                                                    "board": {
                                                       "type": "string"
                                                     }
                                                   },
@@ -98110,6 +98696,7 @@
                                             "schedule",
                                             "connection",
                                             "question",
+                                            "kanban",
                                             "unknown"
                                           ],
                                           "type": "string"
@@ -98221,6 +98808,19 @@
                                             "truncated",
                                             "hunks"
                                           ]
+                                        },
+                                        "verb": {
+                                          "enum": [
+                                            "create",
+                                            "view",
+                                            "list",
+                                            "update",
+                                            "complete",
+                                            "block",
+                                            "comment"
+                                          ],
+                                          "type": "string",
+                                          "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                                         },
                                         "focus_path": {
                                           "anyOf": [
@@ -99023,6 +99623,7 @@
                                                     "schedule",
                                                     "connection",
                                                     "question",
+                                                    "kanban",
                                                     "unknown"
                                                   ],
                                                   "type": "string"
@@ -99068,6 +99669,19 @@
                                                     "truncated",
                                                     "hunks"
                                                   ]
+                                                },
+                                                "verb": {
+                                                  "enum": [
+                                                    "create",
+                                                    "view",
+                                                    "list",
+                                                    "update",
+                                                    "complete",
+                                                    "block",
+                                                    "comment"
+                                                  ],
+                                                  "type": "string",
+                                                  "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                                                 },
                                                 "focus_path": {
                                                   "anyOf": [
@@ -99991,6 +100605,7 @@
                                       "schedule",
                                       "connection",
                                       "question",
+                                      "kanban",
                                       "unknown"
                                     ],
                                     "type": "string"
@@ -100140,6 +100755,19 @@
                                       "truncated",
                                       "hunks"
                                     ]
+                                  },
+                                  "verb": {
+                                    "enum": [
+                                      "create",
+                                      "view",
+                                      "list",
+                                      "update",
+                                      "complete",
+                                      "block",
+                                      "comment"
+                                    ],
+                                    "type": "string",
+                                    "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                                   },
                                   "focus_path": {
                                     "anyOf": [
@@ -100650,11 +101278,15 @@
                                                             "session",
                                                             "crons",
                                                             "connectors",
-                                                            "skill"
+                                                            "skill",
+                                                            "kanban_task"
                                                           ],
                                                           "type": "string"
                                                         },
                                                         "id": {
+                                                          "type": "string"
+                                                        },
+                                                        "board": {
                                                           "type": "string"
                                                         }
                                                       },
@@ -148591,6 +149223,7 @@
                                         "schedule",
                                         "connection",
                                         "question",
+                                        "kanban",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -148703,6 +149336,19 @@
                                         "truncated",
                                         "hunks"
                                       ]
+                                    },
+                                    "verb": {
+                                      "enum": [
+                                        "create",
+                                        "view",
+                                        "list",
+                                        "update",
+                                        "complete",
+                                        "block",
+                                        "comment"
+                                      ],
+                                      "type": "string",
+                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -149210,7 +149856,8 @@
                                                         "type": "object",
                                                         "properties": {
                                                           "kind": {},
-                                                          "id": {}
+                                                          "id": {},
+                                                          "board": {}
                                                         }
                                                       }
                                                     },
@@ -149597,6 +150244,7 @@
                                                 "schedule",
                                                 "connection",
                                                 "question",
+                                                "kanban",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -149646,6 +150294,19 @@
                                                 "truncated",
                                                 "hunks"
                                               ]
+                                            },
+                                            "verb": {
+                                              "enum": [
+                                                "create",
+                                                "view",
+                                                "list",
+                                                "update",
+                                                "complete",
+                                                "block",
+                                                "comment"
+                                              ],
+                                              "type": "string",
+                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [

@@ -1,6 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { HubRoute } from '../features/hub/HubRoute'
+import { KanbanSearchSchema } from '../contracts/url'
+import { KanbanRoute } from '../features/kanban/KanbanPage'
 
 export const Route = createFileRoute('/_app/kanban')({
-  component: () => <HubRoute panel="kanban" />,
+  validateSearch: KanbanSearchSchema,
+  component: () => <KanbanRoute />,
 })

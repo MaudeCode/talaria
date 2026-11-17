@@ -2291,6 +2291,44 @@ final class ChatHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "tool-rows-expanded")
     }
 
+    /// TAL-2327: an expanded Kanban call reads as its verb and task under the Kanban icon, draws the tasks it touched as rows
+    /// (never its JSON), and a task row opens that card on its board through the app's router.
+    func testExpandedKanbanCardDrawsItsTasksAndOpensTheCard() async throws {
+        func view(_ json: String) throws -> ToolResultView { try JSONDecoder().decode(ToolResultView.self, from: Data(json.utf8)) }
+        let complete = ToolCall(
+            id: "kanban-complete", name: "kanban_complete", preview: nil, args: nil, kind: .kanban, verb: .complete, target: "t_1",
+            resultView: try view(#"{"text": "{\"ok\": true}", "rows": {"rows": [{"label": "Fix login", "detail": "done", "link": {"kind": "kanban_task", "id": "t_1", "board": "ops"}}]}}"#),
+            isCompleted: true
+        )
+        let list = ToolCall(
+            id: "kanban-list", name: "kanban_list", preview: nil, args: nil, kind: .kanban, verb: .list, target: "",
+            resultView: try view(#"{"text": "{\"tasks\": []}", "rows": {"rows": [{"label": "Write release notes", "detail": "ready · scout", "link": {"kind": "kanban_task", "id": "t_2"}}]}}"#),
+            isCompleted: true
+        )
+        let suite = "TalariaTests.tool-kanban.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: ChatTranscriptDisplaySettings.toolCardsStartExpandedKey)
+        var opened: [URL] = []
+        let window = try hostWindow(
+            ScrollView { VStack { ToolCallCardView(toolCall: complete); ToolCallCardView(toolCall: list) }.padding() }
+                .defaultAppStorage(defaults)
+                .environment(\.openURL, OpenURLAction { opened.append($0); return .handled }),
+            size: CGSize(width: 390, height: 600)
+        )
+        let labels = { HostedAccessibility.elements(in: window).compactMap { $0.accessibilityLabel } }
+        let expected = ["Completed t_1", "Fix login", "Listed tasks", "Write release notes"]
+        let drawn = await awaitCondition(timeout: 5) { expected.allSatisfy { label in labels().contains { $0.contains(label) } } }
+        XCTAssertTrue(drawn, "\(labels())")
+        XCTAssertFalse(labels().contains { $0.contains("\"ok\"") || $0.contains("\"tasks\"") }, "\(labels())")
+        for (label, destination) in [("Fix login", TalariaDeepLink.kanbanCardURL(cardID: "t_1", board: "ops")), ("Write release notes", TalariaDeepLink.kanbanCardURL(cardID: "t_2"))] {
+            let row = try XCTUnwrap(HostedAccessibility.elements(in: window, labelContaining: label).first, label)
+            XCTAssertTrue(row.accessibilityActivate(), label)
+            XCTAssertEqual(opened.last, destination, label)
+        }
+        attachHostedScreenshot(window, name: "tool-kanban-rows")
+    }
+
     /// TAL-2325: a generated image shows under its call without opening it, loads through the transcript's media loader and
     /// opens the preview; an analysis shows as formatted text once the call opens.
     func testMediaCardShowsItsImageAndAnAnalysisItsText() async throws {

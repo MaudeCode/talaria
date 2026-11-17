@@ -4,7 +4,7 @@ import { useApprovalFlash, useDisclosure } from './Worklog'
 import { ChevronRight } from 'lucide-react'
 import { cn } from '../../../ui/cn'
 import { ToolKindIcon } from '../toolKind'
-import type { ApprovalAnsweredBy, BackgroundLink, FileExcerpt, ResultLinks, ResultPage, SearchMatches, ToolApprovalOutcome, ToolField, ToolKind, ToolProgress, ToolResultView, ToolRow, ToolRows } from '@maudecode/talaria-web-contracts'
+import type { ApprovalAnsweredBy, BackgroundLink, FileExcerpt, ResultLinks, ResultPage, SearchMatches, ToolApprovalOutcome, ToolField, ToolKind, ToolProgress, ToolResultView, ToolRow, ToolRows, ToolVerb } from '@maudecode/talaria-web-contracts'
 import { agentsSummary, statusLabel } from '../../background/BackgroundWork'
 import { toolText } from '../../../i18n/toolText'
 import { useLocale } from '../../../i18n/useLocale'
@@ -28,6 +28,8 @@ export interface ToolCardData {
   progress?: ToolProgress | null
   name: string
   kind: ToolKind
+  /** TAL-2327: the verb a `kanban` call shows in place of its kind's own (server field). */
+  verb?: ToolVerb | undefined
   target: string
   args: unknown
   /** TAL-2318: the server's argument rows; absent from an older server, which shows `args` as JSON. */
@@ -52,7 +54,8 @@ export interface ToolCardData {
 }
 
 export function toolCardLabel(call: ToolCardData, locale: string): string {
-  return toolText(locale).actionLabel(call.kind, call.done ? 'done' : 'running', call.target, call.name, call.isError)
+  // TAL-2327: a call the server gave a verb reads with that verb's phrase of its kind (`kanban_create`).
+  return toolText(locale).actionLabel(call.verb ? `${call.kind}_${call.verb}` : call.kind, call.done ? 'done' : 'running', call.target, call.name, call.isError)
 }
 
 // ponytail: older-server fallback; delete once every supported server sends `args_fields`.
@@ -195,13 +198,14 @@ function PagesResult({ pages }: { pages: ResultPage[] }) {
 const ROW_DOT: Record<NonNullable<ToolRow['status']>, DotState> = { ok: 'ok', warn: 'warning', error: 'error', pending: 'changed' }
 const ROW_LINK = 'min-w-0 truncate text-accent-text hover:underline'
 
-/** TAL-2326: a row's label, opening the Talaria page the server named: a chat, the scheduled jobs page, connections or a skill. */
+/** TAL-2326: a row's label, opening the Talaria page the server named: a chat, the scheduled jobs page, connections, a skill or (TAL-2327) a Kanban task. */
 function ToolRowLabel({ row }: { row: ToolRow }) {
   const link = row.link
   if (link?.kind === 'session' && link.id) return <Link to="/session/$sessionId" params={{ sessionId: link.id }} className={ROW_LINK} title={row.label}>{row.label}</Link>
   if (link?.kind === 'crons') return <Link to="/tasks" search={link.id ? { job: link.id } : {}} className={ROW_LINK} title={row.label}>{row.label}</Link>
   if (link?.kind === 'connectors') return <Link to="/settings/$section" params={{ section: 'tools' }} search={{ tab: 'connectors' }} className={ROW_LINK} title={row.label}>{row.label}</Link>
   if (link?.kind === 'skill' && link.id) return <Link to="/skills" search={{ skill: link.id }} className={ROW_LINK} title={row.label}>{row.label}</Link>
+  if (link?.kind === 'kanban_task' && link.id) return <Link to="/kanban" search={{ ...(link.board ? { board: link.board } : {}), task: link.id }} className={ROW_LINK} title={row.label}>{row.label}</Link>
   return <span className="min-w-0 truncate text-text" title={row.label}>{row.label}</span>
 }
 

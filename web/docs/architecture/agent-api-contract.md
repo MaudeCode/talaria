@@ -734,7 +734,9 @@ with their real numbers, and `matches` (`search_files`) the matches grouped by f
 `xai_video_edit`, `xai_video_extend`, TAL-2325) the images, speech or video the tool made, under its row, and `analysis`
 (`vision_analyze`, `video_analyze`) what it said about its image or video; `rows` (`memory`, `skills_list`,
 `skill_view`, `skill_manage`, `session_search`, `cronjob_manage`, `manage_connections`, TAL-2326) a titled list of
-rows, each opening the chat, scheduled job, connected apps or skill it names, and a viewed skill's Markdown; every other tool is `generic`, its result's text, else its key/value fields. The
+rows, each opening the chat, scheduled job, connected apps or skill it names, and a viewed skill's Markdown; every `kanban_*` tool
+(TAL-2327) is kind `kanban` and `rows`, the task or tasks it touched each opening that task, with the entry's `verb`
+(`create`, `view`, `list`, `update`, `complete`, `block`, `comment`) shipped on each call; every other tool is `generic`, its result's text, else its key/value fields. The
 server reads a listed tool's kind and presentation from the table; MCP, connector and plugin tools
 keep the name-token rules and the generic result parser, and Talaria's own tools stay in
 `TALARIA_TOOL_NAMES`.

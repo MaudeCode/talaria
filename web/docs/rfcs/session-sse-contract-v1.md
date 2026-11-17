@@ -255,6 +255,12 @@ back to the session file.
   with its answer. A failed call is its `error` alone. A connection's
   `connect_url` never ships in the view, `text` included. Whole rows share the
   4000-character budget; a row's link is never cut.
+  TAL-2327: every `kanban_*` call adds `rows` too: a shown or listed task with
+  its status and assignee, a new task by its title, a linked parent and child,
+  a task's files, or the task a state change, comment or attachment acted on;
+  each task row links `{ kind: kanban_task, id, board? }`, `board` from the
+  call's arguments. The call itself carries `verb`, which clients show in place
+  of the `kanban` kind's verb.
 - `args_fields` (TAL-2318): the call's redacted arguments as the same rows, one
   per top-level key in call order, each value capped at 4000 characters. A
   scalar shows inline, a nested object as indented `key: value` lines, a list as

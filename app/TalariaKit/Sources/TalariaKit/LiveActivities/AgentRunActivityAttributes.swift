@@ -445,11 +445,24 @@ public enum ToolDisplayKind: String, Equatable, Sendable {
     case videoAnalysis = "video_analysis"
     /// TAL-2326: a past-chat search, a scheduled job, a connected app and a question to the user.
     case session, schedule, connection, question
+    /// TAL-2327: a Kanban task read or changed; its `ToolVerb` picks the verb.
+    case kanban
 
     /// An older server sends no kind; an unrecognized one decodes as `.unknown`.
     public init?(serverValue: String?) {
         guard let serverValue else { return nil }
         self = ToolDisplayKind(rawValue: serverValue) ?? .unknown
+    }
+}
+
+/// TAL-2327: what a call of a kind whose tools act differently (`kanban`) does, which picks its verb; an unknown value
+/// decodes as nil and the call reads with its kind's own phrase.
+public enum ToolVerb: String, Equatable, Sendable {
+    case create, view, list, update, complete, block, comment
+
+    public init?(serverValue: String?) {
+        guard let serverValue, let verb = ToolVerb(rawValue: serverValue) else { return nil }
+        self = verb
     }
 }
 

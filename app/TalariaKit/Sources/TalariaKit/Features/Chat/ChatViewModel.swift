@@ -6713,6 +6713,7 @@ public final class ChatViewModel {
                 args: payload.args,
                 argsFields: payload.argsFields,
                 kind: payload.kind,
+                verb: payload.verb,
                 target: payload.target,
                 progress: payload.progress
             )
@@ -6782,6 +6783,7 @@ public final class ChatViewModel {
                     args: payload.args,
                     argsFields: payload.argsFields,
                     kind: payload.kind,
+                    verb: payload.verb,
                     target: payload.target,
                     resultView: payload.resultView,
                     editDiff: payload.editDiff,

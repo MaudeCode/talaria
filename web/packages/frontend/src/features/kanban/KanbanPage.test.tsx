@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { teardownAll } from '../../stream/connection'
 import { ApiError } from '../../contracts/common'
 
@@ -13,7 +13,9 @@ vi.mock('../../api/sse', () => ({ SSE_CLOSED: 2, openKanbanEventStream: vi.fn(()
 vi.mock('../../api/endpoints', () => ({ saveSettings: vi.fn(), fetchKanbanInspection: vi.fn(), fetchKanbanBoards: vi.fn(), fetchKanbanBoard: vi.fn(), fetchKanbanStats: vi.fn(), fetchKanbanTask: vi.fn(), fetchKanbanTaskLog: vi.fn(), kanbanTaskAction: vi.fn(), linkKanbanTasks: vi.fn(), unlinkKanbanTasks: vi.fn(), bulkKanbanStatus: vi.fn(), switchKanbanBoard: vi.fn(), updateKanbanConfig: vi.fn(), createKanbanTask: vi.fn(), archiveKanbanBoard: vi.fn() }))
 import * as api from '../../api/endpoints'
 import { openKanbanEventStream } from '../../api/sse'
-import { KanbanPage } from './KanbanPage'
+import { KanbanPage, KanbanRoute } from './KanbanPage'
+import { createMemoryHistory, createRootRoute, createRoute, createRouter, Outlet, RouterProvider } from '@tanstack/react-router'
+import { KanbanSearchSchema } from '../../contracts/url'
 import { stubAnimate } from '../../test/animate'
 
 function deferred<T>() {
@@ -25,9 +27,14 @@ const task = (id = 'A', status = 'todo') => ({ id, title: `Task ${id}`, status, 
 const STATUSES = ['todo', 'ready', 'running', 'blocked', 'done']
 const byStatus = (tasks: ReturnType<typeof task>[]) => STATUSES.map((name) => ({ name, label: name, tasks: tasks.filter((t) => t.status === name) }))
 const snapshot = (tasks = [task(), task('B')], lanes = false) => ({ columns: byStatus(tasks), bulk_move_targets: ['done'], create_statuses: ['todo'], lane_by_profile: lanes, latest_event_id: 7, read_only: false, ...(lanes ? { lanes: [{ assignee: 'scout', count: tasks.length, columns: byStatus(tasks) }] } : {}) })
+/** The page with its open task in state, as the route keeps it in the address. */
+function Page() {
+  const [open, setOpen] = useState<string | null>(null)
+  return <KanbanPage openTaskId={open} onOpenTask={(id) => setOpen(id)} />
+}
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-  return { qc, ...render(<QueryClientProvider client={qc}><KanbanPage /></QueryClientProvider>) }
+  return { qc, ...render(<QueryClientProvider client={qc}><Page /></QueryClientProvider>) }
 }
 async function choose(label: string, value: string) {
   await userEvent.click(screen.getByRole('combobox', { name: label }))
@@ -375,7 +382,7 @@ describe('Kanban writes show their result while the server is held (TAL-1179)', 
     await choose('Column', 'done')
     act(() => { teardownAll(); qc.clear() })
     // The profile owner rerenders the shell after replacing its connection context and cache.
-    rerender(<QueryClientProvider client={qc}><KanbanPage /></QueryClientProvider>)
+    rerender(<QueryClientProvider client={qc}><Page /></QueryClientProvider>)
     await screen.findByRole('dialog')
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Column' })).toHaveTextContent('todo'))
     await choose('Column', 'ready')
@@ -688,5 +695,44 @@ describe('TAL-1851: pinned board tabs', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Board actions' }))
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Unpin board' }))
     await waitFor(() => expect(screen.queryByRole('tab', { name: 'Other' })).toBeNull())
+  })
+})
+
+describe('a task has an address (TAL-2327)', () => {
+  /** The Kanban route at `path`, as the app mounts it under its layout. */
+  async function renderRoute(path: string) {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    const root = createRootRoute({ component: () => <QueryClientProvider client={qc}><Outlet /></QueryClientProvider> })
+    const app = createRoute({ getParentRoute: () => root, id: '_app' })
+    const kanban = createRoute({ getParentRoute: () => app, path: 'kanban', validateSearch: KanbanSearchSchema, component: KanbanRoute })
+    const router = createRouter({ routeTree: root.addChildren([app.addChildren([kanban])]), history: createMemoryHistory({ initialEntries: [path] }) })
+    await router.load()
+    render(<RouterProvider router={router} />)
+    return router
+  }
+
+  it('opens the task the address names, and closing it removes it from the address', async () => {
+    const router = await renderRoute('/kanban?task=B')
+    expect(await within(await screen.findByRole('dialog')).findByText('Task B')).toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(router.state.location.search).toEqual({})
+  })
+
+  it('writes an opened task and its board to the address', async () => {
+    const router = await renderRoute('/kanban')
+    await openTask('A')
+    expect(router.state.location.search).toEqual({ board: 'default', task: 'A' })
+  })
+
+  it('switches to the board a task link names before opening its task', async () => {
+    let current = 'default'
+    vi.mocked(api.fetchKanbanBoards).mockImplementation(() => Promise.resolve({ current, pinned: [], boards: [{ slug: 'default', name: 'Default', removable: false }, { slug: 'other', name: 'Other', removable: true }], read_only: false }))
+    vi.mocked(api.switchKanbanBoard).mockImplementation((slug) => { current = slug; return Promise.resolve({ current: slug, read_only: false }) })
+    vi.mocked(api.fetchKanbanBoard).mockImplementation((slug) => Promise.resolve(slug === 'other' ? snapshot([task('C')]) : snapshot()))
+    await renderRoute('/kanban?board=other&task=C')
+    expect(await within(await screen.findByRole('dialog')).findByText('Task C')).toBeInTheDocument()
+    expect(api.switchKanbanBoard).toHaveBeenCalledTimes(1)
+    expect(api.switchKanbanBoard).toHaveBeenCalledWith('other')
   })
 })

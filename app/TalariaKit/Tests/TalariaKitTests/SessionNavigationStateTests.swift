@@ -539,6 +539,24 @@ final class SessionNavigationStateTests: XCTestCase {
         XCTAssertNil(state.selectedSessionID)
     }
 
+    /// TAL-2327: a transcript row's Kanban card link pushes that card, on its board, above the chat it was tapped in.
+    func testKanbanCardLinkPushesTheCardAboveTheCurrentRoot() throws {
+        var state = SessionNavigationState()
+        state.select(SessionSummary(sessionId: "chat"))
+        let url = try XCTUnwrap(TalariaDeepLink.kanbanCardURL(cardID: "t_1", board: "ops"))
+        let card = try XCTUnwrap(TalariaDeepLink.kanbanCard(from: url))
+        XCTAssertEqual(card.id, "t_1")
+        XCTAssertEqual(card.board, "ops")
+        XCTAssertNil(TalariaDeepLink.kanbanCard(from: try XCTUnwrap(TalariaDeepLink.kanbanCardURL(cardID: "t_2")))?.board)
+        XCTAssertNil(TalariaDeepLink.kanbanCardURL(cardID: " "))
+
+        state.select(SessionListUtilityDestination.kanbanCard(id: card.id, board: card.board))
+
+        XCTAssertEqual(state.selectedItem, .kanbanCard(id: "t_1", board: "ops"))
+        XCTAssertEqual(state.selectedSessionID, "chat")
+        XCTAssertNil(AppSection(.kanbanCard(id: "t_1", board: nil)))
+    }
+
     func testSidebarDestinationsReplaceTheRootAndClearInnerPages() {
         var state = SessionNavigationState()
         for utility: SessionListUtilityDestination in [.kanban, .archived, .webhook, .scheduled, .memory, .tasks, .skills, .insights] {
