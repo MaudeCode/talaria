@@ -59,6 +59,19 @@ describe('activity groups', () => {
     expect(scene.activity_groups).toEqual([{ group_id: 'group:0', parts: [{ kind: 'web', count: 4, failed: 0 }], failed: 0, running: true }])
   })
 
+  it('keeps calls with different verbs or apps, and a call showing media, out of a merged run', () => {
+    const scene = sceneOf([
+      { role: 'assistant', id: 'a1', content: '', tool_calls: [
+        call('v1', 'browser_vault', { action: 'list' }), call('v2', 'browser_vault', { action: 'fill' }),
+        call('m1', 'mcp__github__list_issues', {}), call('m2', 'mcp__linear__list_issues', {}),
+        call('k1', 'kanban_show', { task_id: 't1' }), call('k2', 'kanban_show', { task_id: 't2' }),
+      ] },
+      reply('v1', '{"entries":[]}'), reply('v2', '{"filled_fields":[]}'), reply('m1', '[]'), reply('m2', '[]'), reply('k1', '{}'), reply('k2', '{}'),
+      { role: 'assistant', id: 'a2', content: 'Done.' },
+    ])
+    expect(scene.activity_rows.map((row) => row.merged_count ?? row.merged_into ?? null)).toEqual([null, null, null, null, 2, 'tool:k1'])
+  })
+
   it('leaves a hidden lookup out of the counts and merges across it, and a card call stands in a group of its own', () => {
     const scene = sceneOf([
       { role: 'assistant', id: 'a1', content: '', tool_calls: [call('r1', 'read_file', { path: 'a' }), call('l1', 'tool_search', { queries: ['x'] }), call('r2', 'read_file', { path: 'b' }), call('s1', 'show', {}), call('r3', 'read_file', { path: 'c' })] },

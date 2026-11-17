@@ -1,6 +1,6 @@
 import type { ActivityGroup, ToolKind } from '@maudecode/talaria-web-contracts'
 import type { SceneRow } from './anchor.js'
-import { hiddenLookup, toolGrouping } from './tool-display.js'
+import { hiddenLookup, toolDisplay, toolGrouping } from './tool-display.js'
 
 /**
  * TAL-2332: the server's one activity-grouping rule, for settled scenes and live frames alike. Reasoning and tool rows run
@@ -28,7 +28,7 @@ function groupRecord(id: string, calls: GroupCall[]): ActivityGroup {
 
 /**
  * A scene's rows with their `group_id`s and merged runs, and the record of every group. Two or more consecutive completed,
- * successful calls of one kind and presentation in a group merge: the first carries `merged_count`, the rest `merged_into`
+ * successful calls of one kind, presentation, verb and app in a group merge, unless their result shows media: the first carries `merged_count`, the rest `merged_into`
  * its row id. Reasoning between calls ends a run; a hidden lookup is skipped. Rows are copied, never changed in place.
  */
 export function withActivityGroups(rows: readonly SceneRow[]): { rows: SceneRow[]; groups: ActivityGroup[]; finalPhase: ActivityGroup } {
@@ -87,8 +87,11 @@ function mergeRuns(rows: SceneRow[]): void {
     const tool = row.tool
     if (row.role === 'tool' && tool && hiddenLookup(tool.name, tool.is_error)) continue
     const grouping = tool && row.role === 'tool' ? toolGrouping(tool.name) : null
-    const mergeable = grouping && tool && row.group_id && tool.done && !tool.is_error && !grouping.card
-    const next = mergeable ? JSON.stringify([row.group_id, grouping.kind, grouping.presentation]) : ''
+    // A call whose result shows media inline (a screenshot, an image) keeps its own row, so the media stays in view.
+    const mergeable = grouping && tool && row.group_id && tool.done && !tool.is_error && !grouping.card && !tool.result_view?.media?.length
+    // Calls merge only when they read alike: one kind and presentation, and one verb and app (`send` and `fill` stay apart).
+    const display = mergeable ? toolDisplay(tool.name, tool.args) : null
+    const next = display && grouping ? JSON.stringify([row.group_id, grouping.kind, grouping.presentation, display.verb ?? '', display.app?.name ?? '']) : ''
     if (!next || next !== key) flush()
     if (next) { run.push(row); key = next }
   }

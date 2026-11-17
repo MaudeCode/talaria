@@ -10255,8 +10255,7 @@
                   "duration": null,
                   "cost_usd": null
                 },
-                "group_id": "group:0",
-                "merged_count": 4
+                "group_id": "group:0"
               },
               {
                 "row_id": "tool:call-create",
@@ -10314,8 +10313,7 @@
                   "duration": null,
                   "cost_usd": null
                 },
-                "group_id": "group:0",
-                "merged_into": "tool:call-list"
+                "group_id": "group:0"
               },
               {
                 "row_id": "tool:call-complete",
@@ -10365,8 +10363,7 @@
                   "duration": null,
                   "cost_usd": null
                 },
-                "group_id": "group:0",
-                "merged_into": "tool:call-list"
+                "group_id": "group:0"
               },
               {
                 "row_id": "tool:call-comment",
@@ -10417,8 +10414,7 @@
                   "duration": null,
                   "cost_usd": null
                 },
-                "group_id": "group:0",
-                "merged_into": "tool:call-list"
+                "group_id": "group:0"
               }
             ],
             "final_answer": "Done.",
@@ -11058,8 +11054,7 @@
                   "duration": null,
                   "cost_usd": null
                 },
-                "group_id": "group:0",
-                "merged_count": 4
+                "group_id": "group:0"
               },
               {
                 "row_id": "tool:call-dialog",
@@ -11101,8 +11096,7 @@
                   "duration": null,
                   "cost_usd": null
                 },
-                "group_id": "group:0",
-                "merged_into": "tool:call-cdp"
+                "group_id": "group:0"
               },
               {
                 "row_id": "tool:call-list",
@@ -11145,8 +11139,7 @@
                   "duration": null,
                   "cost_usd": null
                 },
-                "group_id": "group:0",
-                "merged_into": "tool:call-cdp"
+                "group_id": "group:0"
               },
               {
                 "row_id": "tool:call-fill",
@@ -11193,8 +11186,7 @@
                   "duration": null,
                   "cost_usd": null
                 },
-                "group_id": "group:0",
-                "merged_into": "tool:call-cdp"
+                "group_id": "group:0"
               },
               {
                 "row_id": "tool:call-capture",
@@ -11249,8 +11241,7 @@
                   "duration": null,
                   "cost_usd": null
                 },
-                "group_id": "group:0",
-                "merged_count": 2
+                "group_id": "group:0"
               },
               {
                 "row_id": "tool:call-click",
@@ -11305,8 +11296,7 @@
                   "duration": null,
                   "cost_usd": null
                 },
-                "group_id": "group:0",
-                "merged_into": "tool:call-capture"
+                "group_id": "group:0"
               }
             ],
             "final_answer": "Done.",
@@ -11648,8 +11638,7 @@
                   "duration": null,
                   "cost_usd": null
                 },
-                "group_id": "group:0",
-                "merged_count": 2
+                "group_id": "group:0"
               },
               {
                 "row_id": "tool:call-notion",
@@ -11692,8 +11681,7 @@
                   "duration": null,
                   "cost_usd": null
                 },
-                "group_id": "group:0",
-                "merged_into": "tool:call-mail"
+                "group_id": "group:0"
               }
             ],
             "final_answer": "Filed #42 and told the team.",

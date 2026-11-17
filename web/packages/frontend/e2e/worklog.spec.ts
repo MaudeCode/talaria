@@ -217,8 +217,11 @@ test(`live tool batches settle once: ${limited ? 'tool limit' : 'completed'}`, a
   await settled.click()
   await expect(page.getByText('First pass', { exact: true })).toBeVisible()
   await expect(page.getByText('Second pass', { exact: true })).toBeVisible()
-  // Tier-2 groups form once the turn settles, collapsed by default.
-  await expect(page.locator('[data-activity-sequence-group] > button')).toHaveAttribute('aria-expanded', 'false')
+  // Tier-2 groups form once the turn settles, collapsed by default; the two reads in the second merge into one row (TAL-2332).
+  const groups = page.locator('[data-activity-sequence-group] > button')
+  await expect(groups).toHaveCount(2)
+  await expect(groups.first()).toHaveAttribute('aria-expanded', 'false')
+  await expect(groups.nth(1)).toContainText('Read files')
   await page.reload()
   await expect(settled).toHaveAttribute('aria-expanded', 'true')
   } finally {
