@@ -965,7 +965,7 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        "$RELEASE_PYTHON" releases/publish.py tags --plan "$RUNNER_TEMP/release-results/release-plan/plan.json" \
+        "$RELEASE_PYTHON" releases/publish.py tag-components --plan "$RUNNER_TEMP/release-results/release-plan/plan.json" \
           --directory "$RUNNER_TEMP/release-results"
     - name: Tag the release
       uses: MaudeCode/.github/actions/release-tag@3e8fc1995784e2d3004e4de05205a767472efb7c

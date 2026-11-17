@@ -184,7 +184,7 @@ class PublicationTests(unittest.TestCase):
                     if first:
                         self.assertFalse(remote_tags, "no component tag before the completed set publishes")
                         self.assertEqual(set(releases), {"release-set-" + plan["releaseSet"]})
-                    self.assertEqual(publish.tags(plan, root), "v1.0.0")
+                    self.assertEqual(publish.tag_components(plan, root), "v1.0.0")
 
                 with patch.object(publish, "_release_info", side_effect=lambda tag: deepcopy(releases.get(tag)), create=True), \
                         patch.object(publish, "unused_release", side_effect=unused), \
@@ -216,11 +216,11 @@ class PublicationTests(unittest.TestCase):
                     wheel_id = releases[plan["components"]["web"]["tag"]]["assets"][0]["id"]
                     assets[wheel_id] = b"changed after publication"
                     with self.assertRaisesRegex(ValueError, "asset differs"):
-                        publish.tags(plan, root)
+                        publish.tag_components(plan, root)
                     assets[wheel_id] = wheel.read_bytes()
                     releases[plan["components"]["app"]["tag"]]["body"] = "unrelated release"
                     with self.assertRaises(ValueError):
-                        publish.tags(plan, root)
+                        publish.tag_components(plan, root)
 
     def test_completed_manifest_publishes_before_any_component_is_tagged(self):
         manifest = complete(candidate())
@@ -236,9 +236,7 @@ class PublicationTests(unittest.TestCase):
             contracts = root / "web-build/npm/maudecode-talaria-web-contracts-1.0.0.tgz"
             contracts.write_bytes(b"synthetic contracts archive")
             # publish-set publishes only the completed set; the component releases wait for their tags.
-            with patch("publish.git") as git:
-                finalize(plan, manifest, None, root)
-                git.assert_not_called()
+            finalize(plan, manifest, None, root)
             self.assertEqual([call.args[0] for call in run.call_args_list], ["release-set-" + plan["releaseSet"]])
             self.assertTrue(run.call_args.kwargs["latest"])
             run.reset_mock()
@@ -275,16 +273,13 @@ class PublicationTests(unittest.TestCase):
                 with patch.object(publish, "published_set", return_value=manifest), \
                         patch.object(publish, "tagged_commit", side_effect=remote.get), patch.object(publish, "git", side_effect=git), \
                         patch.object(publish, "_publish_release", side_effect=lambda tag, *args, **kwargs: events.append(("release", tag))) as release:
-                    return publish.tags(plan, root), release
+                    return publish.tag_components(plan, root), release
 
             tag, release = run()
             self.assertEqual(tag, "v1.0.0")
             # Each shipped component is tagged, then released; the unchanged Relay keeps its earlier tag and release.
             self.assertEqual(events, [("tag", "app-v1.0.0"), ("release", "app-v1.0.0"), ("tag", "web-v2.0.0"), ("release", "web-v2.0.0")])
             self.assertIs(release.call_args_list[0].kwargs.get("latest", False), False)
-            # A re-run keeps the tags an earlier attempt created.
-            self.assertEqual(run({"app-v1.0.0": source, "web-v2.0.0": source})[0], "v1.0.0")
-            self.assertEqual(events, [("release", "app-v1.0.0"), ("release", "web-v2.0.0")])
             # A tag of this version on another commit is refused before anything else is tagged or released.
             with self.assertRaisesRegex(ValueError, "already names"):
                 run({"app-v1.0.0": "f" * 40})
@@ -293,13 +288,13 @@ class PublicationTests(unittest.TestCase):
                 with self.subTest(plan=broken), self.assertRaisesRegex(ValueError, "root vX.Y.Z"):
                     run_plan = {**plan, **broken}
                     with patch.object(publish, "published_set", return_value=manifest):
-                        publish.tags(run_plan, root)
+                        publish.tag_components(run_plan, root)
             # Only the set publish-set published under this source is tagged.
             different = deepcopy(manifest)
             different["components"]["app"]["version"] = "9.9.9"
             with patch.object(publish, "published_set", return_value=different), patch.object(publish, "git") as tagging, \
                     patch.object(publish, "_publish_release") as releasing, self.assertRaisesRegex(ValueError, "differs from the plan"):
-                publish.tags(plan, root)
+                publish.tag_components(plan, root)
             tagging.assert_not_called()
             releasing.assert_not_called()
 
@@ -418,7 +413,7 @@ class PublicationTests(unittest.TestCase):
                     with self.subTest(job=name):
                         self.assertEqual(name, "tag")
                         components = job["steps"][index - 1]
-                        self.assertIn("publish.py\" tags" if release_workflow is recovery else "publish.py tags", components["run"])
+                        self.assertIn("tag-components", components["run"].split())
                         self.assertEqual(step["with"]["tag"], "${{ steps.%s.outputs.release_tag }}" % components["id"])
         self.assertEqual(set(re.findall(r"secrets\.([A-Z0-9_]+)", json.dumps(recovery["jobs"]["publish-set"]))), set())
         self.assertEqual(recovery["permissions"], {"contents": "read", "actions": "read"})

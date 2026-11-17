@@ -8,7 +8,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from plan import VERSION, assemble, git, resolve, validate_request
+from plan import ROOT_TAG, VERSION, assemble, git, resolve, validate_request
 from release_set import COMPONENTS, VALIDATOR, require_version_advance
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -63,14 +63,19 @@ def published_manifest(release):
     return document
 
 
-def previous(args):
-    if not re.fullmatch(r"[a-f0-9]{40}", args.source):
-        raise ValueError("previous release set must be an immutable commit")
-    tag = "release-set-" + args.source
+def published_set(source):
+    """The completed manifest published as release-set-<source>."""
+    if not re.fullmatch(r"[a-f0-9]{40}", source):
+        raise ValueError("a release set must be an immutable commit")
+    tag = "release-set-" + source
     release = json.loads(subprocess.check_output(["gh", "api", f"repos/{REPOSITORY}/releases/tags/{tag}"]))
     if release.get("tag_name") != tag:
-        raise ValueError("previous release identity is inconsistent")
-    write(args.output, published_manifest(release))
+        raise ValueError("release set identity is inconsistent")
+    return published_manifest(release)
+
+
+def previous(args):
+    write(args.output, published_set(args.source))
 
 
 def supported_web_sources(plan, previous, published):
@@ -120,7 +125,7 @@ def require_component_versions(tags, previous, published):
 
 def release_tag(tag, plan):
     """The root vX.Y.Z tag the release creates last; every changed component ships under its version."""
-    if not re.fullmatch("v" + VERSION, tag):
+    if not ROOT_TAG.fullmatch(tag):
         raise ValueError(f"release tag must be vX.Y.Z, got {tag}")
     for name, component in plan["components"].items():
         if plan["changed"][name] and component["version"] != tag[1:]:

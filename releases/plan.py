@@ -11,12 +11,21 @@ from release_set import COMPONENTS, SCHEMA, VALIDATOR, require_compatible_contra
 
 SHA = re.compile(r"[a-f0-9]{40}")
 VERSION = r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+# The release's root tag, vX.Y.Z: created last, after everything published (TAL-2342).
+ROOT_TAG = re.compile("v" + VERSION)
 CONTRACT_PEERS = {"appWeb": ("app", "web"), "webRelay": ("web", "relay"),
                   "appRelay": ("app", "relay"), "activityScene": ("app", "relay")}
 
 
 def git(root, *args):
     return subprocess.check_output(["git", "-C", str(root), *args], text=True).strip()
+
+
+def tag_commit(root, tag):
+    """The commit a local tag names, or None when there is no such tag."""
+    result = subprocess.run(["git", "-C", str(root), "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}^{{commit}}"],
+                            capture_output=True, text=True, check=False)
+    return result.stdout.strip() or None
 
 
 def read_at(root, source, path):
@@ -64,7 +73,7 @@ def resolve(root, request, previous=None):
         changed = prior is None or tag != prior["tag"]
         plan["changed"][name] = changed
         if not changed:
-            if git(root, "rev-parse", f"refs/tags/{tag}^{{commit}}") != prior["sourceRevision"]:
+            if tag_commit(root, tag) != prior["sourceRevision"]:
                 raise ValueError(f"reused {name} tag moved")
             component = deepcopy(prior)
             capabilities = {contract: previous["contracts"][contract][name]
@@ -82,8 +91,7 @@ def resolve(root, request, previous=None):
                     raise ValueError(f"changed {name} source must descend from its released source") from error
             # Tags last (TAL-2342): a changed component's tag is created after publication. One that already names
             # another commit is a version an earlier release used, and would only fail after this one published.
-            existing = subprocess.run(["git", "-C", str(root), "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}^{{commit}}"],
-                                      capture_output=True, text=True).stdout.strip()
+            existing = tag_commit(root, tag)
             if existing and existing != source:
                 raise ValueError(f"{tag} already names {existing}; release a new version")
             component = {"tag": tag, "version": tag.split("-v")[-1],

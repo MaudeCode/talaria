@@ -8,7 +8,6 @@ import hashlib
 import json
 import os
 import plistlib
-import re
 import subprocess
 import sys
 import tempfile
@@ -17,8 +16,8 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-from cli import REPOSITORY, ROOT, load, published_manifest, receipt, require_latest_predecessor, run_url, unused_release, write
-from plan import VERSION, git
+from cli import REPOSITORY, ROOT, load, published_set, receipt, require_latest_predecessor, run_url, unused_release, write
+from plan import ROOT_TAG, git
 from release_set import BRIDGE_IMAGE, validate
 
 # This publisher's own tree. Recovery runs a reviewed copy against an older source checkout (ROOT), so the upload
@@ -388,8 +387,8 @@ def finalize(plan, manifest, previous, artifacts):
     root_tag = "release-set-" + plan["releaseSet"]
     require_current_predecessor(plan, previous)
     web_tarballs(plan, artifacts)
-    # The updater consumes only this completed manifest. The component releases follow in the tag job (tags()),
-    # because their tags are created only once the set has published (TAL-2342).
+    # The updater consumes only this completed manifest. The component releases follow in the tag job
+    # (tag_components()), because their tags are created only once the set has published (TAL-2342).
     with tempfile.TemporaryDirectory(prefix="talaria-completed-set-") as temporary:
         directory = Path(temporary)
         write(directory / "release-set.json", manifest)
@@ -427,17 +426,11 @@ def ensure_tag(tag, source, message):
     git(ROOT, "push", "origin", f"refs/tags/{tag}")
 
 
-def published_set(source):
-    """The completed manifest publish-set published for this source."""
-    release = subprocess.check_output(["gh", "api", f"repos/{REPOSITORY}/releases/tags/release-set-{source}"], text=True)
-    return published_manifest(json.loads(release))
-
-
-def tags(plan, artifacts):
+def tag_components(plan, artifacts):
     """Tags last (TAL-2342): after publish-set, tag and release each component that shipped, from the published
     manifest. Returns the root vX.Y.Z tag, which the workflow creates next with release-tag."""
     release_tag, source = plan.get("releaseTag"), plan["releaseSet"]
-    if not isinstance(release_tag, str) or not re.fullmatch("v" + VERSION, release_tag):
+    if not isinstance(release_tag, str) or not ROOT_TAG.fullmatch(release_tag):
         raise ValueError("the release plan names no root vX.Y.Z tag")
     manifest = published_set(source)
     for name, component in plan["components"].items():
@@ -455,7 +448,7 @@ def tags(plan, artifacts):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("relay", "bridge", "web-npm", "web", "build-app-receipt", "verify-app", "app", "finalize", "tags"))
+    parser.add_argument("operation", choices=("relay", "bridge", "web-npm", "web", "build-app-receipt", "verify-app", "app", "finalize", "tag-components"))
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--build", type=Path)
     parser.add_argument("--directory", type=Path)
@@ -467,7 +460,7 @@ def main():
     plan = load(args.plan)
     authorize(plan)
     component_name = {"relay": "relay", "bridge": "relay", "web-npm": "web", "web": "web"}.get(args.operation, "app")
-    if args.operation not in ("finalize", "tags") and not plan["changed"][component_name]:
+    if args.operation not in ("finalize", "tag-components") and not plan["changed"][component_name]:
         raise ValueError("unchanged components must not be republished")
     if args.operation == "relay":
         relay(plan, args.output)
@@ -498,8 +491,8 @@ def main():
             result = upload_testflight(files[0], component, build["ipaSha256"])
             write(args.output.with_name("apple-build.json"), result)
             write(args.output, receipt("uploadApp", plan["releaseSet"], tag=component["tag"], buildNumber=component["buildNumber"], ipaSha256=build["ipaSha256"]))
-    elif args.operation == "tags":
-        release_tag = tags(plan, args.directory)
+    elif args.operation == "tag-components":
+        release_tag = tag_components(plan, args.directory)
         with open(os.environ["GITHUB_OUTPUT"], "a") as stream:
             stream.write(f"release_tag={release_tag}\n")
     else:

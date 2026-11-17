@@ -161,14 +161,13 @@ main CI's hosted tests needs two:
   compiled file is valid for both.
 
 The planned critical path of a release that reuses main CI's hosted tests, in
-minutes from the release run's start, measured before tags-last (TAL-2342)
-moved planning into the run's `preflight` job. The times come from the
+minutes from the start of the release workflow's `prepare` job. The times come from the
 measured jobs of cutover run 40795594849 and the sharded Agent gate's plan;
 the `timeline` job measures each run:
 
 | Time | Event |
 |---|---|
-| 0:00-2:10 | `authorization` (now `preflight`), then `prepare` (plan and the Agent jobs) |
+| 0:00-2:10 | `prepare` (plan and the Agent jobs) |
 | 2:10 | every gate and build starts; `app-hosted-tests-lookup` finds main CI's hosted tests within a minute |
 | 8:50 | `contracts` done; the signed App build at 10:45 |
 | about 10:00 | the slowest `agent-release` shard done (setup, the selected server build, provisioning and the probe, then its third of the suite beside the image check); `agent` about 0:40 later |

@@ -8,13 +8,12 @@ creates the changed components' tags and then the root tag, once everything publ
 
 import argparse
 import json
-import re
 import subprocess
 from pathlib import Path
 
+from plan import ROOT_TAG, SHA
 from release_set import COMPONENTS
 
-ROOT_TAG = re.compile(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
 PATHS = {"app": "app/", "web": "web/", "relay": "relay/"}
 
 
@@ -22,7 +21,7 @@ def request_for(root, tag, source, previous):
     """The cutover request and the components this release changes."""
     if not ROOT_TAG.fullmatch(tag):
         raise ValueError(f"release tag must be vX.Y.Z, got {tag}")
-    if not re.fullmatch(r"[a-f0-9]{40}", source):
+    if not SHA.fullmatch(source):
         raise ValueError("release source must be a full commit SHA")
     if previous is None:
         raise ValueError("a release needs the previous published release set")

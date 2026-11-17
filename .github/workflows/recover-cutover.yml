@@ -170,7 +170,7 @@ jobs:
         run: |
           set -euo pipefail
           git show "${GITHUB_WORKFLOW_SHA}:releases/publish.py" > "$RUNNER_TEMP/publish.py"
-          PYTHONPATH="$PWD/releases" "$RELEASE_PYTHON" "$RUNNER_TEMP/publish.py" tags \
+          PYTHONPATH="$PWD/releases" "$RELEASE_PYTHON" "$RUNNER_TEMP/publish.py" tag-components \
             --plan "$RUNNER_TEMP/recovered/release-plan/plan.json" --directory "$RUNNER_TEMP/recovered"
       - name: Tag the release
         uses: MaudeCode/.github/actions/release-tag@3e8fc1995784e2d3004e4de05205a767472efb7c

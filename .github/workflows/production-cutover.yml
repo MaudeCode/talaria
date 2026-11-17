@@ -6,8 +6,8 @@ run-name: Release ${{ inputs.tag }}
 # the components that changed since the last published release set. The release job builds, gates and publishes
 # Relay, Web, the App and the release-set manifest; its last job creates the changed components' tags and then the
 # root vX.Y.Z tag. A release that fails before then leaves no version tag, so the same version is dispatched again.
-# The file keeps its name: npm's trusted publisher, release-set.yml, publish.py, ios-release-build.yml and recover.py
-# all authorize production-cutover.yml@refs/heads/main.
+# npm's trusted publisher, release-set.yml, publish.py, ios-release-build.yml and recover.py all authorize this file
+# by name: production-cutover.yml@refs/heads/main.
 
 on:
   workflow_dispatch:
@@ -42,7 +42,6 @@ jobs:
       previous: ${{ steps.plan.outputs.previous }}
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: ${{ inputs.tag }}
     steps:
       - id: check
         uses: MaudeCode/.github/actions/release-preflight@3e8fc1995784e2d3004e4de05205a767472efb7c
@@ -67,6 +66,7 @@ jobs:
       - name: Plan the components that changed
         id: plan
         env:
+          RELEASE_TAG: ${{ steps.check.outputs.tag }}
           SOURCE: ${{ steps.check.outputs.sha }}
         run: |
           set -euo pipefail
