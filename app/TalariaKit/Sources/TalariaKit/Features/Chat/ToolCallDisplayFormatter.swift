@@ -28,10 +28,12 @@ public enum ToolCallDisplayFormatter {
         )
     }
 
-    /// TAL-2338: what Copy copies in the formatted view: the argument rows, then the result as the card shows it (a read's
-    /// lines under its path, a search's `line: text` matches under each file, links, pages, an analysis, rows), else the
-    /// result's rows or text. A row's multi-line value goes under its key.
+    /// TAL-2338: what Copy copies in the formatted view: a file edit's diff, which the card shows alone (TAL-448); else the
+    /// argument rows, then the result as the card shows it (a read's lines under its path, a search's `line: text` matches
+    /// under each file, links, pages, an analysis, rows), else the result's rows or text. A row's multi-line value goes
+    /// under its key.
     public static func copyText(for toolCall: ToolCall) -> String {
+        if let editDiff = toolCall.editDiff { return editDiff.diff }
         func joined(_ parts: [String?], _ separator: String = "\n") -> String {
             parts.compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: separator)
         }

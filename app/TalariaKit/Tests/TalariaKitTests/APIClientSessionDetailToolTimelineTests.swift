@@ -279,6 +279,11 @@ func testTheRowCarriesTheServerRawViewAndCopiesWhatShows() throws {
     let memory = try JSONDecoder().decode(ToolStreamEvent.self, from: Data(#"{"id":"call-memory","name":"memory","result_view":{"text":"Applied 1 operation(s).","rows":{"title":"User memory","rows":[{"label":"Added","detail":"Prefers short replies"}]}}}"#.utf8))
     let saved = ToolCall(id: "call-memory", name: "memory", preview: nil, args: nil).applyingCompletionPayload(memory)
     XCTAssertEqual(ToolCallDisplayFormatter.copyText(for: saved), "User memory\nAdded: Prefers short replies")
+    // A file edit shows only its change, so Copy copies that diff, not the arguments and result it hides.
+    let write = try JSONDecoder().decode(ToolStreamEvent.self, from: Data(#"{"id":"call-write","name":"write_file","args_fields":[{"key":"path","value":"a.txt","multiline":false}],"result_view":{"text":"{}","fields":[{"key":"bytes_written","value":"3","multiline":false}]},"edit_diff":{"added":1,"removed":0,"diff":"--- a/a.txt\n+++ b/a.txt\n@@ -0,0 +1 @@\n+abc","truncated":false,"hunks":[]}}"#.utf8))
+    let written = ToolCall(id: "call-write", name: "write_file", preview: nil, args: nil).applyingCompletionPayload(write)
+    XCTAssertNotNil(written.editDiff)
+    XCTAssertEqual(ToolCallDisplayFormatter.copyText(for: written), "--- a/a.txt\n+++ b/a.txt\n@@ -0,0 +1 @@\n+abc")
 }
 
 /// TAL-1965: a `decision_review_put` result's review, from a tool frame and from a session detail.
