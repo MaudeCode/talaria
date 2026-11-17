@@ -208,6 +208,8 @@ struct ChatView: View {
     @State private var noticeChipHeight: CGFloat = 0
     @State private var showsQueuedMessagesSheet = false
     @State private var showsBackgroundWorkSheet = false
+    /// TAL-2333: the unit a delegation row's subagent opened in the Background tasks sheet.
+    @State private var focusedBackgroundTaskID: String?
     @State private var selectableResponseText: SelectableTextPresentation?
     @State private var attachmentPreviewItem: ChatAttachmentPreviewItem?
     @State private var transcriptMediaPreviewItem: TranscriptMediaPreviewItem?
@@ -1356,9 +1358,10 @@ struct ChatView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
             }
-            .sheet(isPresented: $showsBackgroundWorkSheet) {
+            .sheet(isPresented: $showsBackgroundWorkSheet, onDismiss: { focusedBackgroundTaskID = nil }) {
                 BackgroundWorkSheet(
-                    tasks: viewModel.pinnedBackgroundTasks,
+                    tasks: viewModel.backgroundSheetTasks(focusing: focusedBackgroundTaskID),
+                    focusedTaskID: focusedBackgroundTaskID,
                     ownerWork: viewModel.backgroundOwnerWork,
                     delegationSummary: viewModel.backgroundDelegationSummary,
                     loadResult: { await viewModel.backgroundResult(taskID: $0) },
@@ -2149,6 +2152,10 @@ struct ChatView: View {
             }
             .chatEnvironmentAction(\.chatOpenDecisionReview) { reviewID in
                 chat.openedDecisionReviewID = reviewID
+            }
+            .chatEnvironmentAction(\.chatOpenBackgroundTask) { taskID in
+                chat.focusedBackgroundTaskID = taskID
+                chat.showsBackgroundWorkSheet = true
             }
             .chatEnvironmentAction(\.chatOpenTerminal) { reference in
                 chat.openedTerminal = viewModel.terminalFollowModel(reference)

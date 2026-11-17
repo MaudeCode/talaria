@@ -40,6 +40,8 @@ export interface Receipt {
   agents: Agents | null
   /** TAL-494: the subagent sessions a delegation ran, kept once seen (the Agent forgets a child's id when it ends). */
   children?: ChildSession[]
+  /** TAL-2333: each subagent a delegation unit ran, in its goals' order (absent from a receipt kept before TAL-2333). */
+  subagents?: SubagentReceipt[]
   result: string | null
   /** The Agent has the full result (a delegation's ledger row). */
   agent_result: boolean
@@ -49,7 +51,11 @@ export interface Receipt {
 }
 
 export interface ChildSession { goal: string; session_id: string }
-export interface DelegationRow { delegation_id: string; state: string; dispatched_at: number | null; completed_at: number | null; updated_at: number | null; goals: string[]; child_statuses: string[]; has_result: boolean; live_status: string | null; children?: ChildSession[] | undefined }
+/** TAL-2333: one subagent of a unit: its goal's first line, its status, its seconds and its summary's first line once it finished. */
+export interface SubagentReceipt { goal: string; status: Status; duration?: number; summary?: string }
+/** TAL-2333: a finished subagent as the Agent reported it, in `child_statuses` order. */
+export interface ChildResult { status: string; summary: string; duration: number | null }
+export interface DelegationRow { delegation_id: string; state: string; dispatched_at: number | null; completed_at: number | null; updated_at: number | null; goals: string[]; child_statuses: string[]; has_result: boolean; live_status: string | null; children?: ChildSession[] | undefined; child_results?: ChildResult[] | undefined }
 export interface ProcessRow { process_id: string; command: string; started_at: number | null; exited: boolean; exited_at: number | null; exit_code: number | null; completion_reason: string; watched: boolean }
 
 const RECORD_LIMIT = 200
@@ -94,6 +100,24 @@ function unitStatus(state: string, childStatuses: string[]): Status {
   return CHILD_DONE.has(state) ? 'completed' : 'failed'
 }
 
+/** TAL-2333: a finished subagent's status from the Agent's: done is completed, interrupted is cancelled, the rest failed. */
+function childStatus(status: string, unit: Status): Status {
+  if (CHILD_DONE.has(status)) return 'completed'
+  if (CHILD_CANCELLED.has(status)) return 'cancelled'
+  if (status === 'unknown') return 'unknown'
+  return status ? 'failed' : unit
+}
+
+/** TAL-2333: a unit's subagents: while it runs each shares its status; once finished each has its own outcome and time. */
+function subagentReceipts(goals: string[], status: Status, running: boolean, childStatuses: string[], results: ChildResult[]): SubagentReceipt[] {
+  return goals.map((goal, i) => {
+    const result = results[i]
+    if (running) return { goal: taskTitle(goal), status }
+    const summary = taskTitle(result?.summary)
+    return { goal: taskTitle(goal), status: childStatus(result?.status ?? childStatuses[i] ?? '', status), ...(typeof result?.duration === 'number' ? { duration: result.duration } : {}), ...(summary ? { summary } : {}) }
+  })
+}
+
 /** The record a ledger row describes; a live `stalling`/`stalled` unit needs attention. */
 export function delegationReceipt(row: DelegationRow, now: number): Partial<Receipt> & Pick<Receipt, 'task_id' | 'kind'> {
   const running = RUNNING_STATES.has(row.state)
@@ -103,6 +127,7 @@ export function delegationReceipt(row: DelegationRow, now: number): Partial<Rece
     task_id: row.delegation_id, kind: 'delegation', status, title: taskTitle(goals.length > 1 ? `${goals.length} subagents: ${goals.join('; ')}` : goals[0]),
     started_at: row.dispatched_at, completed_at: running ? null : row.completed_at ?? row.updated_at ?? now,
     agents: agentCounts(goals.length, running ? [] : row.child_statuses, running), agent_result: row.has_result,
+    subagents: subagentReceipts(goals, status, running, row.child_statuses, row.child_results ?? []),
     ...(row.children?.length ? { children: row.children } : {}),
   }
 }
@@ -124,8 +149,9 @@ export function eventReceipt(evt: Dict, prompt: string, now: number): (Partial<R
     const results = Array.isArray(evt.results) ? evt.results.filter(isDict) : []
     // A split unit's results index the call's goals; a whole call or a single task is all of them.
     const unitGoals = results.length && results.every((r) => typeof r.task_index === 'number') ? results.map((r) => goals[Number(r.task_index)] ?? str(r.goal)) : goals.length ? goals : [str(evt.goal)]
-    const childStatuses = results.length ? results.map((r) => str(r.status)) : [str(evt.status)]
-    return { ...delegationReceipt({ delegation_id: id, state: str(evt.status) || 'completed', dispatched_at: Number(evt.dispatched_at) || null, completed_at: Number(evt.completed_at) || now, updated_at: now, goals: unitGoals, child_statuses: childStatuses, has_result: true, live_status: null }, now), result: prompt ? bounded(prompt) : null }
+    const children = results.length ? results : [evt]
+    const childResults = children.map((r) => ({ status: str(r.status), summary: str(r.summary), duration: typeof r.duration_seconds === 'number' ? r.duration_seconds : null }))
+    return { ...delegationReceipt({ delegation_id: id, state: str(evt.status) || 'completed', dispatched_at: Number(evt.dispatched_at) || null, completed_at: Number(evt.completed_at) || now, updated_at: now, goals: unitGoals, child_statuses: childResults.map((r) => r.status), child_results: childResults, has_result: true, live_status: null }, now), result: prompt ? bounded(prompt) : null }
   }
   if (kind === 'completion') {
     return { ...processReceipt({ process_id: id, command: str(evt.command), started_at: null, exited: true, exited_at: now, exit_code: evt.exit_code === undefined || evt.exit_code === null ? null : Number(evt.exit_code), completion_reason: str(evt.completion_reason) || 'exited', watched: false }), result: prompt ? bounded(prompt) : null }
@@ -142,6 +168,8 @@ function mergeChildren(known: ChildSession[] | undefined, reported: ChildSession
   return out
 }
 
+const detailed = (subagents: SubagentReceipt[] | undefined): boolean => Boolean(subagents?.some((a) => a.duration !== undefined || a.summary))
+
 /** Fold an update into a receipt: a terminal record never reopens, and fields an update leaves out are kept. */
 export function mergeReceipt(prev: Receipt | undefined, next: Partial<Receipt> & Pick<Receipt, 'task_id' | 'kind'>, now: number): Receipt {
   const base: Receipt = prev ?? { task_id: next.task_id, kind: next.kind, status: 'running', title: '', started_at: null, updated_at: now, completed_at: null, exit_code: null, agents: null, result: null, agent_result: false, stream_id: null, dismissed_at: null }
@@ -149,7 +177,11 @@ export function mergeReceipt(prev: Receipt | undefined, next: Partial<Receipt> &
   const children = mergeChildren(base.children, defined.children)
   if (isTerminal(base.status)) {
     // Settled once: later reports may add detail (the full result, counts, child sessions) but never change the outcome.
-    return { ...base, result: base.result ?? defined.result ?? null, agent_result: base.agent_result || Boolean(defined.agent_result), agents: base.agents ?? defined.agents ?? null, ...(children.length ? { children } : {}), updated_at: base.updated_at }
+    // TAL-2333: a settled report's subagents carry their outcomes and times; a running one never reopens them, and one
+    // without times or summaries never replaces subagents that have them.
+    const settled = defined.status && isTerminal(defined.status) ? defined.subagents : undefined
+    const subagents = settled && (detailed(settled) || !detailed(base.subagents)) ? settled : base.subagents
+    return { ...base, result: base.result ?? defined.result ?? null, agent_result: base.agent_result || Boolean(defined.agent_result), agents: base.agents ?? defined.agents ?? null, ...(children.length ? { children } : {}), ...(subagents ? { subagents } : {}), updated_at: base.updated_at }
   }
   // A running report must preserve both a watch alert and the matched output explaining it until the process ends.
   if (base.kind === 'process' && base.status === 'attention' && defined.status === 'running') {
@@ -372,7 +404,13 @@ export function backgroundLink(ids: string[], receipts: Receipt[]): BackgroundLi
   const statuses = new Set(linked.map((r) => r.status))
   const status: Status = statuses.has('attention') ? 'attention' : statuses.has('running') ? 'running' : statuses.has('unknown') ? 'unknown'
     : statuses.size === 1 ? linked[0]!.status : statuses.has('completed') ? 'completed' : 'failed'
-  return { task_ids: linked.map((r) => r.task_id), status, agents }
+  // TAL-2333: each subagent in dispatch order (a split call's units by their `-<n>`); a receipt kept before its subagents
+  // were recorded lists its one subagent by its title. An unsettled unit's subagents read as the unit does now (running,
+  // needing attention, or unknown when the Agent cannot confirm it).
+  const ordered = [...linked].sort((a, b) => (a.started_at ?? 0) - (b.started_at ?? 0) || a.task_id.localeCompare(b.task_id, 'en', { numeric: true }))
+  const agents_detail = ordered.flatMap((r) => (r.subagents ?? ((r.agents?.total ?? 1) <= 1 ? [{ goal: r.title, status: r.status }] : []))
+    .map((a) => ({ task_id: r.task_id, ...a, ...(isTerminal(r.status) ? {} : { status: r.status }) })))
+  return { task_ids: linked.map((r) => r.task_id), status, agents, agents_detail }
 }
 
 /** Stamps `tool.background` on delegation rows of every turn's scene. Returns copies; stored rows are untouched. */

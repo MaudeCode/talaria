@@ -433,11 +433,21 @@ def _unit_goals(task: dict) -> list[str]:
     return [str(task.get("goal") or "")]
 
 
-def _child_statuses(result: dict) -> list[str]:
-    """Per-subagent outcome of a finished unit: a batch carries ``results``, a single task is its own result."""
+def _child_entries(result: dict) -> list[dict]:
+    """Per-subagent results of a finished unit: a batch carries ``results``, a single task is its own result."""
     if isinstance(result.get("results"), list):
-        return [str(r.get("status") or "") for r in result["results"] if isinstance(r, dict)]
-    return [str(result.get("status") or "")] if result else []
+        return [r for r in result["results"] if isinstance(r, dict)]
+    return [result] if result else []
+
+
+_CHILD_SUMMARY_LIMIT = 500
+
+
+def _child_result(entry: dict) -> dict:
+    """TAL-2333: one subagent's outcome, the start of its summary and its run time, for the delegation row's agent list."""
+    duration = entry.get("duration_seconds")
+    return {"status": str(entry.get("status") or ""), "summary": str(entry.get("summary") or "")[:_CHILD_SUMMARY_LIMIT],
+            "duration": float(duration) if isinstance(duration, (int, float)) and not isinstance(duration, bool) else None}
 
 
 def _ledger_rows(home: Path, session_ids: list[str]) -> list[dict]:
@@ -457,7 +467,8 @@ def _ledger_rows(home: Path, session_ids: list[str]) -> list[dict]:
         out.append({
             "delegation_id": delegation_id, "origin_ui_session_id": origin, "state": state, "dispatched_at": dispatched_at,
             "completed_at": completed_at, "updated_at": updated_at, "goals": goals,
-            "child_statuses": _child_statuses(result), "has_result": bool(has_event),
+            "child_statuses": [str(r.get("status") or "") for r in _child_entries(result)],
+            "child_results": [_child_result(r) for r in _child_entries(result)], "has_result": bool(has_event),
         })
     return out
 

@@ -85,7 +85,7 @@ def _dispatch(home: pathlib.Path, delegation_id: str, session: str, goals: str, 
 
 def _complete(home: pathlib.Path, delegation_id: str, statuses: str) -> None:
     _agent(home, (
-        "results = [{'task_index': i, 'status': s, 'summary': 'done ' + s} for i, s in enumerate(sys.argv[3].split(','))]\n"
+        "results = [{'task_index': i, 'status': s, 'summary': 'done ' + s, 'duration_seconds': 1.5 + i} for i, s in enumerate(sys.argv[3].split(','))]\n"
         "event = {'type': 'async_delegation', 'delegation_id': sys.argv[2], 'status': 'completed', 'goal': 'g', 'goals': ['a', 'b'], 'is_batch': True, 'results': results}\n"
         "ad._persist_completion(event, {'results': results})\n"
     ), delegation_id, statuses)
@@ -104,6 +104,7 @@ def test_lists_only_the_sessions_own_units_with_their_goals_and_outcomes(handsha
     assert units["call-1-1"]["goals"] == ["Write docs"] and units["call-1-1"]["state"] == "running"
     assert units["call-1-2"]["goals"] == ["Write tests", "Run tests"]
     assert units["call-1-2"]["state"] == "completed" and units["call-1-2"]["child_statuses"] == ["completed", "error"] and units["call-1-2"]["has_result"]
+    assert units["call-1-2"]["child_results"] == [{"status": "completed", "summary": "done completed", "duration": 1.5}, {"status": "error", "summary": "done error", "duration": 2.5}]
     assert units["solo"]["goals"] == ["Check logs"] and units["solo"]["child_statuses"] == []
     assert listed["processes"] == []
 

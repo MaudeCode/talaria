@@ -3010,14 +3010,16 @@ describe('chat turns through the sidecar', () => {
       const rows = ((detail.session as Json).messages as Json[]).flatMap((m) => ((m._anchor_activity_scene as Json | undefined)?.activity_rows as Json[] | undefined) ?? [])
       return (rows.find((r) => (r.tool as Json | undefined)?.name === 'delegate_task')?.tool as Json | undefined)?.background
     }
-    expect(await link()).toEqual({ task_ids: ['call-1-1', 'call-1-2'], status: 'running', agents: { total: 3, completed: 0, failed: 0, running: 3 } })
+    const detail = (status: string, ...rest: Json[]) => [{ task_id: 'call-1-1', goal: 'Write docs', status }, { task_id: 'call-1-2', goal: 'Write tests', status }, { task_id: 'call-1-2', goal: 'Run tests', status }].map((a, i) => ({ ...a, ...rest[i] }))
+    expect(await link()).toEqual({ task_ids: ['call-1-1', 'call-1-2'], status: 'running', agents: { total: 3, completed: 0, failed: 0, running: 3 }, agents_detail: detail('running') })
     // TAL-494: the sidecar names each unit's subagent sessions; the record links each one to its read-only transcript.
     delegations = [unit('call-1-1', ['Write docs'], { children: [{ goal: 'Write docs', session_id: 'child-docs' }] }), unit('call-1-2', ['Write tests', 'Run tests'])]
     const linked = ((await json(await s.get(`/api/background/tasks?session_id=${sid}&kind=delegation`))).tasks as Json[]).map((t) => [t.task_id, t.child_sessions])
     expect(linked).toEqual(expect.arrayContaining([['call-1-1', [{ goal: 'Write docs', session_id: 'child-docs' }]], ['call-1-2', []]]))
     // The Agent cannot be asked: the running unit's row says unknown, like the card.
     sidecar.respond('process.background_list', () => { throw new SidecarError('agent down', { condition: 'sidecar_error' }) })
-    expect(await link()).toMatchObject({ status: 'unknown' })
+    // TAL-2333: its subagents read unknown with it, never the running status their unit last reported.
+    expect(await link()).toMatchObject({ status: 'unknown', agents_detail: detail('unknown') })
     sidecar.respond('process.background_list', () => ({ delegations, processes: [] }) as never)
     expect(await link()).toMatchObject({ status: 'running' })
     // An Agent restart lost one unit: the row says what the card says.
@@ -3025,7 +3027,9 @@ describe('chat turns through the sidecar', () => {
     expect(await link()).toMatchObject({ status: 'unknown' })
     expect(((await json(await s.get(`/api/background/tasks?session_id=${sid}`))).tasks as Json[]).find((t) => t.task_id === 'call-1-2')).toMatchObject({ status: 'unknown' })
     delegations = [unit('call-1-1', ['Write docs'], { state: 'completed', child_statuses: ['completed'] }), unit('call-1-2', ['Write tests', 'Run tests'], { state: 'completed', child_statuses: ['completed', 'error'] })]
-    expect(await link()).toEqual({ task_ids: ['call-1-1', 'call-1-2'], status: 'completed', agents: { total: 3, completed: 2, failed: 1, running: 0 } })
+    expect(await link()).toEqual({ task_ids: ['call-1-1', 'call-1-2'], status: 'completed', agents: { total: 3, completed: 2, failed: 1, running: 0 }, agents_detail: [
+      { task_id: 'call-1-1', goal: 'Write docs', status: 'completed' }, { task_id: 'call-1-2', goal: 'Write tests', status: 'completed' }, { task_id: 'call-1-2', goal: 'Run tests', status: 'failed' },
+    ] })
   })
 
   it('serves the session-list, per-session, and prompt streams with initial frames', async () => {
@@ -3307,6 +3311,36 @@ describe('chat turns through the sidecar', () => {
     expect((await json(await s.get(`/api/clarify/pending?session_id=${sid}`))).pending_count).toBe(0)
     release()
     await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&after_event_id=${String(start.stream_id)}:0`, (f) => f.event === 'stream_end')
+  })
+
+  it.each([
+    ['terminal', { command: 'git push' }, { name: 'terminal', kind: 'shell', target: 'git push' }],
+    ['write_file', { path: '/etc/hosts', content: '127.0.0.1 example' }, { name: 'write_file', kind: 'write', target: '/etc/hosts', args_fields: [{ key: 'path', value: '/etc/hosts', multiline: false }, { key: 'content', value: '127.0.0.1 example', multiline: false }] }],
+    ['mcp__linear__create_issue', { title: 'Ship it' }, { name: 'mcp__linear__create_issue', kind: 'mcp', app: { name: 'Linear', logo_url: null }, args_fields: [{ key: 'title', value: 'Ship it', multiline: false }] }],
+  ])('shows the call an approval holds as its tool row does: %s (TAL-2333)', async (name, args, tool) => {
+    const sid = await newSession(s)
+    let release: () => void = () => undefined
+    sidecar.respond('chat.start', async (params, emit) => {
+      emit({ event: 'tool', data: { event_type: 'tool.started', name, preview: null, args, tid: 'call-held' } })
+      emit({ event: 'approval', data: { request_id: 'held', command: 'held call', reason: 'Protected', tool_call_id: 'call-held', session_id: sid } })
+      await new Promise<void>((resolve) => { release = resolve })
+      return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'done' }])
+    })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'go' }))
+    const streamId = String(start.stream_id)
+    const asked = await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'approval')
+    const row = asked.find((f) => f.event === 'tool')?.data as Record<string, unknown>
+    const frame = asked.find((f) => f.event === 'approval')?.data as Record<string, unknown>
+    const { pending } = await json(await s.get(`/api/approval/pending?session_id=${sid}`)) as { pending: Record<string, unknown> }
+    // The stream and the pending route carry the same call, with the row's own label fields.
+    expect(frame.tool).toMatchObject(tool)
+    expect(pending.tool).toEqual(frame.tool)
+    expect(pending.tool).toMatchObject({ kind: row.kind, target: row.target, ...(row.app ? { app: row.app } : {}) })
+    // A shell call shows its command, not argument rows.
+    expect('args_fields' in (pending.tool as object)).toBe(name !== 'terminal')
+    expect(pending.description).toBe('Protected')
+    release()
+    await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')
   })
 
   it.each([['once', 'allowed'], ['session', 'allowed'], ['always', 'allowed'], ['deny', 'denied']])('tells the turn which tool row an approval answered with %s unlocked: %s (TAL-1783)', async (choice, outcome) => {

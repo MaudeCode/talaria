@@ -9885,6 +9885,32 @@
                 ],
                 "additionalProperties": false
               }
+            },
+            "child_results": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string"
+                  },
+                  "summary": {
+                    "type": "string"
+                  },
+                  "duration": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "status",
+                  "summary",
+                  "duration"
+                ],
+                "additionalProperties": false
+              }
             }
           },
           "required": [

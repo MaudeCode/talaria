@@ -62,12 +62,26 @@ public struct PendingApproval: Decodable, Equatable, Identifiable, Sendable {
     /// TAL-1469: what the approval runs, whole and on one line, for a one-tap Allow to sit beside; nil when the server
     /// offers no one-tap Allow for it.
     public let actionText: String?
+    /// TAL-2333: the call this approval holds, with its tool row's display fields, still running; nil when the server
+    /// names none. A shell call carries no argument rows: its `command` shows instead.
+    public let tool: ToolCall?
+    /// TAL-2333: the server's `allow_text`; `sendsAllowText` is false only for an older server without the field.
+    let allowText: String?
+    let sendsAllowText: Bool
     let patternKey: String?
     let patternKeys: [String]?
     /// TAL-1043: the choices the approval's owner accepts; nil (an older server without the field) allows all four.
     let allowedChoices: [ApprovalChoice]?
     /// TAL-1043: false when the owner cannot turn on approval bypass for the session.
     let canEnableYolo: Bool?
+
+    /// TAL-2333: what an Allow outside the card (Siri, Shortcuts) confirms, as the server words it: the command or the
+    /// Agent's own description, never a question or reason; nil sends the user to the chat. An older server's
+    /// `description` is the Agent's own, so its command or description stands in.
+    public var allowAction: String? {
+        let text = sendsAllowText ? allowText : [command, description].compactMap { $0 }.first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        return text.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.flatMap { $0.isEmpty ? nil : $0 }
+    }
 
     public func allows(_ choice: ApprovalChoice) -> Bool {
         allowedChoices?.contains(choice) ?? true
@@ -107,8 +121,14 @@ public struct PendingApproval: Decodable, Equatable, Identifiable, Sendable {
         allowedChoices: [ApprovalChoice]? = nil,
         canEnableYolo: Bool? = nil,
         headId: String? = nil,
-        actionText: String? = nil
+        actionText: String? = nil,
+        tool: ToolCall? = nil,
+        allowText: String? = nil,
+        sendsAllowText: Bool = false
     ) {
+        self.tool = tool
+        self.allowText = allowText
+        self.sendsAllowText = sendsAllowText
         self.approvalId = Self.normalizedApprovalId(approvalId)
         self.headId = headId
         self.actionText = actionText
@@ -138,6 +158,9 @@ public struct PendingApproval: Decodable, Equatable, Identifiable, Sendable {
         case headIdSnake = "head_id"
         case actionText
         case actionTextSnake = "action_text"
+        case tool
+        case allowText
+        case allowTextSnake = "allow_text"
     }
 
     public init(from decoder: Decoder) throws {
@@ -150,12 +173,22 @@ public struct PendingApproval: Decodable, Equatable, Identifiable, Sendable {
         description = container.decodeLossyStringIfPresent(forKey: .description)
         actionText = (container.decodeLossyStringIfPresent(forKey: .actionText)
             ?? container.decodeLossyStringIfPresent(forKey: .actionTextSnake)).flatMap { $0.isEmpty ? nil : $0 }
+        tool = Self.heldCall((try? container.decodeIfPresent(JSONValue.self, forKey: .tool)) ?? nil)
+        sendsAllowText = container.contains(.allowText) || container.contains(.allowTextSnake)
+        allowText = container.decodeLossyStringIfPresent(forKey: .allowText) ?? container.decodeLossyStringIfPresent(forKey: .allowTextSnake)
         patternKey = container.decodeLossyStringIfPresent(forKey: .patternKey)
             ?? container.decodeLossyStringIfPresent(forKey: .patternKeySnake)
         patternKeys = Self.decodeStringArray(from: container, keys: [.patternKeys, .patternKeysSnake])
         allowedChoices = Self.decodeAllowedChoices(from: container)
         canEnableYolo = container.decodeLossyBoolIfPresent(forKey: .canEnableYolo)
             ?? container.decodeLossyBoolIfPresent(forKey: .canEnableYoloSnake)
+    }
+
+    /// The held call as a running tool row, from the server's `tool` object (its keys kept as sent).
+    private static func heldCall(_ value: JSONValue?) -> ToolCall? {
+        guard case .object(var object)? = value else { return nil }
+        object["done"] = .bool(false)
+        return ToolCallGroup.toolCall(from: .object(object), fallbackID: "approval-tool")
     }
 
     private static func decodeStringArray(

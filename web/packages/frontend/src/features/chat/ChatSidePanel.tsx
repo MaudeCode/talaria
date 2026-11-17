@@ -16,6 +16,7 @@ import { CheckpointsPage } from '../workspace/CheckpointsPage'
 import { AgentsPage, useHasActiveAgents } from '../background/AgentsPage'
 import { SessionSkillsPage } from '../skills/SessionSkillsPage'
 import { onOpenFileRequest, peekOpenFileRequest } from '../workspace/openFileRequest'
+import { onOpenAgentRequest, peekOpenAgentRequest } from '../background/openAgentRequest'
 
 const PAGE_KEY = 'talaria-right-panel-page'
 
@@ -31,9 +32,11 @@ export function ChatSidePanel({ sessionId, workspace, todoState, open, onToggle,
   // TAL-571: the files the latest checkpoint restore rewrote; Files drops an unsaved draft of one.
   const [restored, setRestored] = useState<RestoredFiles | null>(null)
   // The first open picks this session's page once the agents are known, before its children render.
-  if (open && chosen === null && hasActiveAgents !== undefined) setChosen(peekOpenFileRequest(sessionId) ? 'files' : hasActiveAgents ? 'agents' : fallback)
+  if (open && chosen === null && hasActiveAgents !== undefined) setChosen(peekOpenFileRequest(sessionId) ? 'files' : peekOpenAgentRequest(sessionId) || hasActiveAgents ? 'agents' : fallback)
   // TAL-1968: a file a transcript block opens shows on Files.
   useEffect(() => onOpenFileRequest(() => { if (peekOpenFileRequest(sessionId)) setChosen('files') }), [sessionId])
+  // TAL-2333: a subagent a delegation row lists shows on Agents.
+  useEffect(() => onOpenAgentRequest(() => { if (peekOpenAgentRequest(sessionId)) setChosen('agents') }), [sessionId])
   const pages: PanelPage[] = [
     { id: 'files', label: m.ws_panel_files(), render: (active) => <FilesPage workspace={workspace} sessionId={sessionId} active={active} restored={restored} /> },
     { id: 'agents', label: m.panel_agents(), render: (active) => <AgentsPage sessionId={sessionId} active={active} /> },

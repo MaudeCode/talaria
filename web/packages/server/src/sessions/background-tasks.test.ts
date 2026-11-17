@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { BackgroundActivity, BackgroundTaskStore, backgroundLink, delegationStatus, dispatchedDelegationIds, eventReceipt, startsBackgroundWork, taskView } from './background-tasks.js'
+import { BackgroundActivity, BackgroundTaskStore, backgroundLink, delegationReceipt, delegationStatus, dispatchedDelegationIds, eventReceipt, startsBackgroundWork, taskView } from './background-tasks.js'
 import type { SidecarLike } from '../sidecar/client.js'
 import type { DocumentBackend } from './storage/backend.js'
 
@@ -72,7 +72,26 @@ describe('background task records (TAL-372)', () => {
     expect(dispatchedDelegationIds('{"status": "completed", "delegation_id": "x"}')).toEqual([])
     const store = new BackgroundTaskStore(testSessionDocuments(tempDir()), () => 1)
     await store.update('s', [{ task_id: 'call-1-1', kind: 'delegation', status: 'attention', agents: { total: 1, completed: 0, failed: 0, running: 1 } }, { task_id: 'call-10', kind: 'delegation', status: 'running' }])
-    expect(backgroundLink(['call-1'], (await store.list('s')))).toEqual({ task_ids: ['call-1-1'], status: 'attention', agents: { total: 1, completed: 0, failed: 0, running: 1 } })
+    expect(backgroundLink(['call-1'], (await store.list('s')))).toEqual({ task_ids: ['call-1-1'], status: 'attention', agents: { total: 1, completed: 0, failed: 0, running: 1 }, agents_detail: [{ task_id: 'call-1-1', goal: '', status: 'attention' }] })
+  })
+
+  it('list each subagent of a delegation row by goal, with its status, seconds and summary as each finishes (TAL-2333)', async () => {
+    const store = new BackgroundTaskStore(testSessionDocuments(tempDir()), () => 100)
+    const row = (id: string, state: string, goals: string[], results: { status: string; summary: string; duration: number | null }[] = []) =>
+      delegationReceipt({ delegation_id: id, state, dispatched_at: 10, completed_at: state === 'running' ? null : 40, updated_at: 40, goals, child_statuses: results.map((r) => r.status), child_results: results, has_result: state !== 'running', live_status: null }, 100)
+    await store.update('s', [row('call-1-2', 'running', ['Write tests\nwith fixtures']), row('call-1-1', 'running', ['Write docs'])])
+    const detail = async () => backgroundLink(['call-1'], await store.list('s'))?.agents_detail
+    expect(await detail()).toEqual([{ task_id: 'call-1-1', goal: 'Write docs', status: 'running' }, { task_id: 'call-1-2', goal: 'Write tests', status: 'running' }])
+    await store.update('s', [row('call-1-2', 'completed', ['Write tests\nwith fixtures'], [{ status: 'error', summary: '', duration: 2.5 }])])
+    await store.update('s', [row('call-1-1', 'completed', ['Write docs'], [{ status: 'completed', summary: 'Docs written.\nDetails follow', duration: 12 }])])
+    expect(await detail()).toEqual([
+      { task_id: 'call-1-1', goal: 'Write docs', status: 'completed', duration: 12, summary: 'Docs written.' },
+      { task_id: 'call-1-2', goal: 'Write tests', status: 'failed', duration: 2.5 },
+    ])
+    // A later running report never reopens a finished unit's subagents, and a settled one without results keeps their times.
+    await store.update('s', [row('call-1-1', 'running', ['Write docs'])])
+    await store.update('s', [row('call-1-1', 'completed', ['Write docs'])])
+    expect((await detail())?.[0]).toEqual({ task_id: 'call-1-1', goal: 'Write docs', status: 'completed', duration: 12, summary: 'Docs written.' })
   })
 
   it('let anyone dismiss work nobody can confirm, which then leaves the card until it is confirmed running again', async () => {

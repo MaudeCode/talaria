@@ -12,6 +12,9 @@ import { isImeEnter } from '../../lib/isImeEnter'
 import { showToast } from '../toast/toast'
 import { prefersReducedMotion } from '../../lib/motion'
 import { Keys } from '../../ui/Keys'
+import { ToolKindIcon } from './toolKind'
+import { FieldRows, toolCardLabel } from './blocks/ToolCard'
+import { useLocale } from '../../i18n/useLocale'
 
 // Focusable, editable and ARIA widget ancestors own their keyboard activation, including nested icons.
 const interactiveTarget = [
@@ -35,6 +38,7 @@ const EXIT_FALLBACK_MS = 500
  */
 export function ApprovalCard({ sessionId, pending, onResolved, onLeaving, onDismissed, transport }: { sessionId: string; pending: ApprovalPending; onResolved: () => void; onLeaving?: (leaving: boolean) => void; onDismissed?: () => void; transport?: { send: (choice: 'once' | 'session' | 'always' | 'deny') => Promise<unknown>; waiting: () => Promise<boolean> } }) {
   const headingId = useId(), descriptionId = useId()
+  const locale = useLocale()
   const [collapsed, setCollapsed] = useState(false)
   const [dismissed, setDismissed] = useState(false)
   // The server says whether this deny can carry an instruction (TAL-1912); the text stays through a refusal or Esc.
@@ -91,20 +95,32 @@ export function ApprovalCard({ sessionId, pending, onResolved, onLeaving, onDism
   }, [sessionId, pending.approval_id, dismissed, answered, offersOnce, telling])
   if (dismissed || gone) return null
   const command = pending.command ?? pending.action ?? ''
+  // TAL-2333: the held call as its tool row shows it; a shell call keeps its command, any other call shows its argument rows.
+  const tool = pending.tool
+  const fields = tool?.args_fields?.length ? tool.args_fields : null
   return (
     <div className={cn(answered ? 'leaving' : 'visible', collapsed && 'collapsed', "approval-card mx-auto mb-2 w-full max-w-[var(--msg-max)] rounded-xl border border-warning bg-surface shadow-md")} role="alertdialog" aria-labelledby={headingId} aria-describedby={descriptionId} aria-hidden={answered || undefined} inert={answered} id="approvalCard">
       <div className="approval-inner p-3" onTransitionEnd={(e) => { if (answered && e.target === e.currentTarget && e.propertyName === 'transform') setExited(true) }}>
         <div className="approval-header flex items-center gap-2 text-sm font-semibold text-text">
-          <AlertTriangle size={14} className="text-warning" aria-hidden="true" />
-          <span id={headingId}>{pending.title ?? m.approval_heading()}</span>
+          {tool ? <>
+            <span className="tool-card-icon shrink-0"><ToolKindIcon kind={tool.kind} logoUrl={tool.app?.logo_url} /></span>
+            <span id={headingId} className="min-w-0 truncate"><span className="sr-only">{`${pending.title ?? m.approval_heading()}:`}</span>{' '}{toolCardLabel({ ...tool, done: false, isError: false }, locale)}</span>
+          </> : <>
+            <AlertTriangle size={14} className="text-warning" aria-hidden="true" />
+            <span id={headingId}>{pending.title ?? m.approval_heading()}</span>
+          </>}
           {pending.pending_count && pending.pending_count > 1 && <span className="approval-counter text-xs text-muted">{m.approval_pending_count({ n: pending.pending_count })}</span>}
           <span className="flex-1" />
           <IconButton label={collapsed ? m.approval_expand() : m.approval_collapse()} className="h-7 w-7" aria-expanded={!collapsed} onClick={() => setCollapsed((c) => !c)}>{collapsed ? <ChevronUp size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}</IconButton>
           <IconButton label={m.approval_dismiss()} className="h-7 w-7" onClick={() => { setDismissed(true); onDismissed?.() }}><X size={14} aria-hidden="true" /></IconButton>
         </div>
         <div className={cn(collapsed && 'hidden')}>
-          {(pending.description ?? pending.question ?? pending.reason) && <div className="approval-desc mt-1 text-[13px] text-muted" id={descriptionId}>{pending.description ?? pending.question ?? pending.reason}</div>}
-          {command && <pre className="approval-cmd mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md bg-code-bg p-2 font-mono text-[12.5px] text-pre-text">{command}</pre>}
+          {/* TAL-2333: what the approval holds scrolls in a short viewport (a folded phone's landscape), so its answers stay in view.
+            ponytail: 290px is the chat header, tab bar, card chrome and two rows of answers; measure them if the layout moves. */}
+          <div className="approval-body max-h-[max(4rem,calc(100dvh-290px))] overflow-y-auto">
+            {pending.description && <div className="approval-desc mt-1 text-[13px] text-muted" id={descriptionId}>{pending.description}</div>}
+            {fields ? <div className="approval-args mt-2 max-h-40 overflow-auto"><FieldRows fields={fields} /></div> : command && <pre className="approval-cmd mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md bg-code-bg p-2 font-mono text-[12.5px] text-pre-text">{command}</pre>}
+          </div>
           {telling ? <form className="approval-tell mt-3 flex flex-col gap-2" onSubmit={(e) => { e.preventDefault(); tell() }}>
             <textarea
               autoFocus rows={2} aria-label={m.approval_tell_placeholder()} placeholder={m.approval_tell_placeholder()} value={instruction}
