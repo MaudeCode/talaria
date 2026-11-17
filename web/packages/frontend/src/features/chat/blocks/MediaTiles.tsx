@@ -8,10 +8,11 @@ const MeshyModelCard = lazy(() => import('../../meshy/MeshyModelCard').then((mod
 
 /**
  * TAL-186: the media a body references that is not an inline image, after the body: audio and video play in place, a
- * PDF or other file opens from its name, and a model shows in the shared 3D preview. Images render inline from the display text.
+ * PDF or other file opens from its name, and a model shows in the shared 3D preview. Images render inline from the display text;
+ * with `images` (TAL-2325: a media tool's, outside any body) they show here too, each opening whole.
  */
-export function MediaTiles({ media, sessionId }: { media: DisplayMedia[] | undefined; sessionId?: string | undefined }) {
-  const tiles = (media ?? []).filter((item) => item.kind !== 'image' && (item.kind !== 'model' || (sessionId && item.model)))
+export function MediaTiles({ media, sessionId, images = false }: { media: DisplayMedia[] | undefined; sessionId?: string | undefined; images?: boolean }) {
+  const tiles = (media ?? []).filter((item) => (images || item.kind !== 'image') && (item.kind !== 'model' || (sessionId && item.model)))
   if (tiles.length === 0) return null
   return (
     <ul className="media-tiles flex flex-col gap-2">
@@ -20,6 +21,7 @@ export function MediaTiles({ media, sessionId }: { media: DisplayMedia[] | undef
         if (item.kind === 'model' && sessionId) return <li key={`model:${item.model?.ref ?? ''}`}><Suspense fallback={<figure aria-label={item.name}><LoadingState compact /></figure>}><MeshyModelCard sessionId={sessionId} media={item} /></Suspense></li>
         // Relative to the app root (`./api/media?…`) or remote.
         const href = appUrl(item.url.replace(/^\.\//, '')).href
+        if (item.kind === 'image') return <li key={item.url} className="w-fit max-w-full"><a href={href} target="_blank" rel="noopener noreferrer"><img src={href} alt={item.name} loading="lazy" className="max-h-80 max-w-full rounded" /></a></li>
         return (
           <li key={item.url} className="attachment-chip w-fit max-w-full rounded-md border border-border bg-surface px-2 py-1 text-[12px] text-text">
             {item.kind === 'audio' ? <figure className="flex flex-col gap-1"><figcaption className="truncate">{item.name}</figcaption><audio controls preload="none" src={href} aria-label={item.name} /></figure>

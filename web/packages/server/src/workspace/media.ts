@@ -12,6 +12,8 @@ import { NotFoundError, openAnchoredFd } from './fs.js'
 import { isWithin, resolvePathLikePython } from './paths.js'
 import { str } from '../util.js'
 import type { Session } from '../sessions/session.js'
+import { TOOL_PRESENTATIONS } from '@maudecode/talaria-web-contracts'
+import { toolName } from '../sessions/tool-display.js'
 
 export const MIME_MAP: Record<string, string> = {
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.svg': 'image/svg+xml', '.webp': 'image/webp', '.ico': 'image/x-icon', '.bmp': 'image/bmp',
@@ -256,14 +258,63 @@ export function mediaRefPath(ref: string): string {
   return resolvePathLikePython(ref.replace(/^~(?=$|\/)/, process.env.HOME ?? ''))
 }
 
-/** The `MEDIA:` references the assistant and tools wrote in these rows, as written. */
+/** TAL-2325: the Agent tools whose results name the media they made (`TOOL_PRESENTATIONS` presentation `media`). */
+const MEDIA_TOOLS = new Set(Object.entries(TOOL_PRESENTATIONS).flatMap(([name, entry]) => (entry.presentation === 'media' ? [name] : [])))
+const isMediaTool = (name: string): boolean => MEDIA_TOOLS.has(name)
+
+/** A result field's references: a list, the JSON text of one (the sidecar sends a nested value as text), or one string; an object item names its `url`, `image` or `path`. */
+function refList(value: unknown): string[] {
+  let items = value
+  if (typeof value === 'string' && value.trimStart().startsWith('[')) try { items = JSON.parse(value) } catch { /* one path that starts with `[` */ }
+  return (Array.isArray(items) ? items : [items])
+    .map((item) => (item && typeof item === 'object' ? str((item as Record<string, unknown>).url ?? (item as Record<string, unknown>).image ?? (item as Record<string, unknown>).path) : typeof item === 'string' ? item : '').trim())
+    .filter(Boolean)
+}
+
+/**
+ * TAL-2325: what a media tool's result made, as written, in order and once each: `image_generate`'s `image` and
+ * `additional_images`, `text_to_speech`'s `file_paths` (else `file_path`), a video tool's `video` (else its `public_url`).
+ * A `data:` URL is never a reference. Empty for a failed call.
+ */
+export function mediaResultRefs(data: Record<string, unknown>): string[] {
+  if (data.success === false || data.error) return []
+  const video = refList(data.video)
+  const refs = [...refList(data.image), ...refList(data.additional_images), ...refList(data.file_paths), ...refList(data.file_path), ...(video.length ? video : refList(data.public_url))]
+  return [...new Set(refs)].filter((ref) => !/^data:/i.test(ref))
+}
+
+/** A tool row's result as an object, from its JSON text; null for any other result. */
+function resultObject(content: unknown): Record<string, unknown> | null {
+  try {
+    const data: unknown = JSON.parse(messageContentText(content))
+    return data && typeof data === 'object' && !Array.isArray(data) ? data as Record<string, unknown> : null
+  } catch {
+    return null
+  }
+}
+
+/** The ids of the media tool calls an assistant row made, from its `tool_calls` and `tool_use` blocks (`content`). */
+function mediaCallIds(message: Record<string, unknown>, content: unknown): string[] {
+  const calls = [...(Array.isArray(message.tool_calls) ? message.tool_calls as unknown[] : []), ...(Array.isArray(content) ? content as unknown[] : [])]
+  return calls.flatMap((call) => (call && typeof call === 'object' && isMediaTool(toolName(call as Record<string, unknown>)) ? [str((call as Record<string, unknown>).id)] : [])).filter(Boolean)
+}
+
+/** The `MEDIA:` references the assistant and tools wrote in these rows, as written, and (TAL-2325) the local files a media tool's result made. */
 function scanMediaRefs(rows: Session['messages']): Set<string> {
   const refs = new Set<string>()
+  const mediaCalls = new Set<string>()
   for (const message of rows) {
     if (!message || typeof message !== 'object') continue
     const role = str((message as { role?: unknown }).role).trim().toLowerCase()
     if (role === 'user') continue
-    const text = messageContentText((message as { content?: unknown }).content)
+    // Read once: a row's content may be a large transcript part.
+    const content = (message as { content?: unknown }).content
+    if (role === 'assistant') for (const id of mediaCallIds(message, content)) mediaCalls.add(id)
+    if (role === 'tool' && mediaCalls.has(str((message as { tool_call_id?: unknown }).tool_call_id))) {
+      const data = resultObject(content)
+      for (const ref of data ? mediaResultRefs(data) : []) if (!ref.includes('://')) refs.add(ref)
+    }
+    const text = messageContentText(content)
     if (!text.includes('MEDIA:')) continue
     for (const m of text.matchAll(MEDIA_TOKEN_RE)) {
       const ref = m[1] ?? ''

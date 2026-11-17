@@ -3522,7 +3522,7 @@ export class SessionService {
     // Paged rows come from the raw transcript, so they take the same credential redaction as the detail's preview.
     const enabled = this.deps.redactEnabled()
     const redacted = redactValue(result, enabled) as typeof result
-    const rows = withSceneToolDisplay(result.rows, redacted.rows as unknown[], enabled, session.workspace)
+    const rows = withSceneToolDisplay(result.rows, redacted.rows as unknown[], enabled, session.workspace, session.session_id)
     // `/api/media` serves stored sessions only, so a state.db-only session's rows stay as written, as its detail does.
     return { ...redacted, rows: stored ? withSceneRowMedia(rows, (await this.mediaProjector(session))) : rows }
   }
@@ -3537,7 +3537,7 @@ export class SessionService {
     if (full === null) throw new HttpFailure(404, 'Tool result not found')
     const redacted = redactValue(full, this.deps.redactEnabled()) as typeof full
     // TAL-2323: located like the capped view the call's row shows (`withToolDisplay`).
-    return { tool_call_id: id, result: redacted.result, result_view: withResultFocusPaths(redacted.result_view, session.workspace) }
+    return { tool_call_id: id, result: redacted.result, result_view: withResultFocusPaths(redacted.result_view, session.workspace, session.session_id) }
   }
 
   /**

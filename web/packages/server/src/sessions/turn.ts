@@ -1133,7 +1133,7 @@ export class TurnRunner {
                 toolStartedAt.set(call, receivedAt)
                 this.registry.noteToolEvent(streamId, receivedAt, true)
                 const redacted = deps.redactEnabled()
-                await emitFrame('tool', publicToolFrame(withToolId(data, toolIds.get(call)!), redacted, s.workspace), { redacted })
+                await emitFrame('tool', publicToolFrame(withToolId(data, toolIds.get(call)!), redacted, s.workspace, sessionId), { redacted })
                 return
               }
               case 'tool_progress': {
@@ -1170,7 +1170,7 @@ export class TurnRunner {
                 const id = (tc && toolIds.get(tc)) || str(data.tid) || mintToolId()
                 this.lastCompletedTool.set(streamId, id)
                 const redacted = deps.redactEnabled()
-                await emitFrame('tool_complete', publicToolFrame(withToolId(complete, id), redacted, s.workspace), { redacted })
+                await emitFrame('tool_complete', publicToolFrame(withToolId(complete, id), redacted, s.workspace, sessionId), { redacted })
                 // TAL-1649: a successful skill_view is one load in this conversation (never an ephemeral clone's), counted while
                 // this run still owns the session under the clear generation it started with.
                 const skillName = opts.ephemeral ? null : successfulSkillViewName(data.name, rawResult)

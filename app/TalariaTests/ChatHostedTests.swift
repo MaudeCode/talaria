@@ -2229,6 +2229,65 @@ final class ChatHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "tool-web-links-and-pages")
     }
 
+    /// TAL-2325: a generated image shows under its call without opening it, loads through the transcript's media loader and
+    /// opens the preview; an analysis shows as formatted text once the call opens.
+    func testMediaCardShowsItsImageAndAnAnalysisItsText() async throws {
+        func view(_ json: String) throws -> ToolResultView { try JSONDecoder().decode(ToolResultView.self, from: Data(json.utf8)) }
+        let image = ToolCall(
+            id: "image", name: "image_generate", preview: nil, args: nil, kind: .image, target: "",
+            resultView: try view(#"{"text": "{}", "media": [{"url": "./api/media?path=%2Fsrv%2Fcat.png&session_id=s1", "name": "cat.png", "mime": "image/png", "kind": "image"}]}"#),
+            isCompleted: true
+        )
+        let analysis = ToolCall(
+            id: "vision", name: "vision_analyze", preview: nil, args: nil, kind: .imageAnalysis, target: "",
+            resultView: try view(#"{"text": "{\"analysis\": \"A cat.\"}", "analysis": "A **cat** on a sofa."}"#),
+            isCompleted: true
+        )
+        let png = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).pngData { context in
+            UIColor.systemOrange.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+        }
+        var loaded: [String] = []
+        var previewed: [String] = []
+        let media = ChatTranscriptMedia(
+            cacheNamespace: "tool-media-\(UUID().uuidString)",
+            loadImage: { loaded.append($0.url); return png },
+            loadData: { _ in nil },
+            preview: { previewed.append($0.name) }
+        )
+        let window = try hostWindow(
+            ScrollView { VStack { ToolCallCardView(toolCall: image); ToolCallCardView(toolCall: analysis) }.padding() }
+                .environment(\.chatTranscriptMedia, media),
+            size: CGSize(width: 390, height: 500)
+        )
+        let labels = { HostedAccessibility.elements(in: window).compactMap { $0.accessibilityLabel } }
+        let shown = await awaitCondition(timeout: 5) { labels().contains { $0.contains("Open media image cat.png") } && !loaded.isEmpty }
+        XCTAssertTrue(shown, "\(labels())")
+        XCTAssertEqual(loaded, ["./api/media?path=%2Fsrv%2Fcat.png&session_id=s1"])
+        XCTAssertTrue(labels().contains { $0.contains("Generated an image") }, "\(labels())")
+        let thumbnail = try XCTUnwrap(HostedAccessibility.elements(in: window, labelContaining: "Open media image cat.png").first)
+        XCTAssertTrue(thumbnail.accessibilityActivate())
+        XCTAssertEqual(previewed, ["cat.png"])
+        // Folded, the analysis stays out of view; opened, it reads as formatted text, never its JSON.
+        XCTAssertFalse(labels().contains { $0.contains("on a sofa") }, "\(labels())")
+        attachHostedScreenshot(window, name: "tool-media-folded")
+        let suite = "TalariaTests.tool-media.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: ChatTranscriptDisplaySettings.toolCardsStartExpandedKey)
+        let expanded = try hostWindow(
+            ScrollView { VStack { ToolCallCardView(toolCall: image); ToolCallCardView(toolCall: analysis) }.padding() }
+                .defaultAppStorage(defaults)
+                .environment(\.chatTranscriptMedia, media),
+            size: CGSize(width: 390, height: 900)
+        )
+        let expandedLabels = { HostedAccessibility.elements(in: expanded).compactMap { $0.accessibilityLabel } }
+        let opened = await awaitCondition(timeout: 5) { expandedLabels().contains { $0.contains("on a sofa") } }
+        XCTAssertTrue(opened, "\(expandedLabels())")
+        XCTAssertFalse(expandedLabels().contains { $0.contains("**") || $0.contains("\"analysis\"") }, "\(expandedLabels())")
+        attachHostedScreenshot(expanded, name: "tool-media-and-analysis-expanded")
+    }
+
     /// TAL-2318: an expanded call draws the server's argument and result rows, not its raw JSON.
     func testExpandedToolCardDrawsTheServerRows() async throws {
         let call = ToolCall(

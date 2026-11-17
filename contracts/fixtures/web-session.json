@@ -6924,5 +6924,941 @@
         }
       ]
     }
+  },
+  "tool_media_views": {
+    "expected": {
+      "call-image": {
+        "text": "{\n  \"success\": true,\n  \"image\": \"/srv/hermes/cache/generated/images/cat.png\",\n  \"additional_images\": [\n    \"https://cdn.example/cat-2.png\"\n  ],\n  \"model\": \"flux\",\n  \"prompt\": \"a cat\",\n  \"aspect_ratio\": \"square\",\n  \"modality\": \"text\",\n  \"provider\": \"fal\"\n}",
+        "media": [
+          {
+            "url": "./api/media?path=%2Fsrv%2Fhermes%2Fcache%2Fgenerated%2Fimages%2Fcat.png&session_id=media-session",
+            "name": "cat.png",
+            "mime": "image/png",
+            "kind": "image"
+          },
+          {
+            "url": "https://cdn.example/cat-2.png",
+            "name": "cat-2.png",
+            "mime": "image/png",
+            "kind": "image"
+          }
+        ],
+        "fields": [
+          {
+            "key": "success",
+            "value": "true",
+            "multiline": false
+          },
+          {
+            "key": "image",
+            "value": "/srv/hermes/cache/generated/images/cat.png",
+            "multiline": false
+          },
+          {
+            "key": "additional_images",
+            "value": "- https://cdn.example/cat-2.png",
+            "multiline": false
+          },
+          {
+            "key": "model",
+            "value": "flux",
+            "multiline": false
+          },
+          {
+            "key": "prompt",
+            "value": "a cat",
+            "multiline": false
+          },
+          {
+            "key": "aspect_ratio",
+            "value": "square",
+            "multiline": false
+          },
+          {
+            "key": "modality",
+            "value": "text",
+            "multiline": false
+          },
+          {
+            "key": "provider",
+            "value": "fal",
+            "multiline": false
+          }
+        ]
+      },
+      "call-speech": {
+        "text": "{\n  \"success\": true,\n  \"file_path\": \"/srv/hermes/cache/audio/tts_1.mp3\",\n  \"file_paths\": [\n    \"/srv/hermes/cache/audio/tts_1.mp3\"\n  ],\n  \"media_tag\": \"MEDIA:/srv/hermes/cache/audio/tts_1.mp3\",\n  \"provider\": \"edge\",\n  \"voice_compatible\": false\n}",
+        "media": [
+          {
+            "url": "./api/media?path=%2Fsrv%2Fhermes%2Fcache%2Faudio%2Ftts_1.mp3&session_id=media-session",
+            "name": "tts_1.mp3",
+            "mime": "audio/mpeg",
+            "kind": "audio"
+          }
+        ],
+        "fields": [
+          {
+            "key": "success",
+            "value": "true",
+            "multiline": false
+          },
+          {
+            "key": "file_path",
+            "value": "/srv/hermes/cache/audio/tts_1.mp3",
+            "multiline": false
+          },
+          {
+            "key": "file_paths",
+            "value": "- /srv/hermes/cache/audio/tts_1.mp3",
+            "multiline": false
+          },
+          {
+            "key": "media_tag",
+            "value": "MEDIA:/srv/hermes/cache/audio/tts_1.mp3",
+            "multiline": false
+          },
+          {
+            "key": "provider",
+            "value": "edge",
+            "multiline": false
+          },
+          {
+            "key": "voice_compatible",
+            "value": "false",
+            "multiline": false
+          }
+        ]
+      },
+      "call-video": {
+        "text": "{\n  \"success\": true,\n  \"video\": \"https://cdn.example/wave.mp4\",\n  \"model\": \"grok\",\n  \"prompt\": \"a wave\",\n  \"modality\": \"text\",\n  \"aspect_ratio\": \"16:9\",\n  \"duration\": 5,\n  \"provider\": \"xai\"\n}",
+        "media": [
+          {
+            "url": "https://cdn.example/wave.mp4",
+            "name": "wave.mp4",
+            "mime": "video/mp4",
+            "kind": "video"
+          }
+        ],
+        "fields": [
+          {
+            "key": "success",
+            "value": "true",
+            "multiline": false
+          },
+          {
+            "key": "video",
+            "value": "https://cdn.example/wave.mp4",
+            "multiline": false
+          },
+          {
+            "key": "model",
+            "value": "grok",
+            "multiline": false
+          },
+          {
+            "key": "prompt",
+            "value": "a wave",
+            "multiline": false
+          },
+          {
+            "key": "modality",
+            "value": "text",
+            "multiline": false
+          },
+          {
+            "key": "aspect_ratio",
+            "value": "16:9",
+            "multiline": false
+          },
+          {
+            "key": "duration",
+            "value": "5",
+            "multiline": false
+          },
+          {
+            "key": "provider",
+            "value": "xai",
+            "multiline": false
+          }
+        ]
+      },
+      "call-failed": {
+        "error": "FAL_KEY is not set"
+      },
+      "call-vision": {
+        "text": "{\n  \"success\": true,\n  \"analysis\": \"A **cat** on a sofa.\"\n}",
+        "analysis": "A **cat** on a sofa."
+      },
+      "call-native": {
+        "text": "Image loaded into your context.",
+        "analysis": "Image loaded into your context."
+      }
+    },
+    "session": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Make media",
+          "message_id": "media-user",
+          "timestamp": 8000,
+          "_turn_id": "media-run",
+          "_display": "row"
+        },
+        {
+          "role": "assistant",
+          "content": "",
+          "message_id": "media-calls",
+          "timestamp": 8001,
+          "tool_calls": [
+            {
+              "args_fields": [
+                {
+                  "key": "prompt",
+                  "value": "a cat",
+                  "multiline": false
+                },
+                {
+                  "key": "aspect_ratio",
+                  "value": "square",
+                  "multiline": false
+                }
+              ],
+              "kind": "image",
+              "target": "",
+              "shows_card": true,
+              "function": {
+                "name": "image_generate",
+                "arguments": "{\"prompt\":\"a cat\",\"aspect_ratio\":\"square\"}"
+              },
+              "id": "call-image",
+              "done": true,
+              "is_error": false,
+              "result": "{\"success\":true,\"image\":\"/srv/hermes/cache/generated/images/cat.png\",\"additional_images\":[\"https://cdn.example/cat-2.png\"],\"model\":\"flux\",\"prompt\":\"a cat\",\"aspect_ratio\":\"square\",\"modality\":\"text\",\"provider\":\"fal\"}",
+              "result_view": {
+                "text": "{\n  \"success\": true,\n  \"image\": \"/srv/hermes/cache/generated/images/cat.png\",\n  \"additional_images\": [\n    \"https://cdn.example/cat-2.png\"\n  ],\n  \"model\": \"flux\",\n  \"prompt\": \"a cat\",\n  \"aspect_ratio\": \"square\",\n  \"modality\": \"text\",\n  \"provider\": \"fal\"\n}",
+                "media": [
+                  {
+                    "url": "./api/media?path=%2Fsrv%2Fhermes%2Fcache%2Fgenerated%2Fimages%2Fcat.png&session_id=media-session",
+                    "name": "cat.png",
+                    "mime": "image/png",
+                    "kind": "image"
+                  },
+                  {
+                    "url": "https://cdn.example/cat-2.png",
+                    "name": "cat-2.png",
+                    "mime": "image/png",
+                    "kind": "image"
+                  }
+                ],
+                "fields": [
+                  {
+                    "key": "success",
+                    "value": "true",
+                    "multiline": false
+                  },
+                  {
+                    "key": "image",
+                    "value": "/srv/hermes/cache/generated/images/cat.png",
+                    "multiline": false
+                  },
+                  {
+                    "key": "additional_images",
+                    "value": "- https://cdn.example/cat-2.png",
+                    "multiline": false
+                  },
+                  {
+                    "key": "model",
+                    "value": "flux",
+                    "multiline": false
+                  },
+                  {
+                    "key": "prompt",
+                    "value": "a cat",
+                    "multiline": false
+                  },
+                  {
+                    "key": "aspect_ratio",
+                    "value": "square",
+                    "multiline": false
+                  },
+                  {
+                    "key": "modality",
+                    "value": "text",
+                    "multiline": false
+                  },
+                  {
+                    "key": "provider",
+                    "value": "fal",
+                    "multiline": false
+                  }
+                ]
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "text",
+                  "value": "Hello",
+                  "multiline": false
+                }
+              ],
+              "kind": "audio",
+              "target": "",
+              "shows_card": true,
+              "function": {
+                "name": "text_to_speech",
+                "arguments": "{\"text\":\"Hello\"}"
+              },
+              "id": "call-speech",
+              "done": true,
+              "is_error": false,
+              "result": "{\"success\":true,\"file_path\":\"/srv/hermes/cache/audio/tts_1.mp3\",\"file_paths\":[\"/srv/hermes/cache/audio/tts_1.mp3\"],\"media_tag\":\"MEDIA:/srv/hermes/cache/audio/tts_1.mp3\",\"provider\":\"edge\",\"voice_compatible\":false}",
+              "result_view": {
+                "text": "{\n  \"success\": true,\n  \"file_path\": \"/srv/hermes/cache/audio/tts_1.mp3\",\n  \"file_paths\": [\n    \"/srv/hermes/cache/audio/tts_1.mp3\"\n  ],\n  \"media_tag\": \"MEDIA:/srv/hermes/cache/audio/tts_1.mp3\",\n  \"provider\": \"edge\",\n  \"voice_compatible\": false\n}",
+                "media": [
+                  {
+                    "url": "./api/media?path=%2Fsrv%2Fhermes%2Fcache%2Faudio%2Ftts_1.mp3&session_id=media-session",
+                    "name": "tts_1.mp3",
+                    "mime": "audio/mpeg",
+                    "kind": "audio"
+                  }
+                ],
+                "fields": [
+                  {
+                    "key": "success",
+                    "value": "true",
+                    "multiline": false
+                  },
+                  {
+                    "key": "file_path",
+                    "value": "/srv/hermes/cache/audio/tts_1.mp3",
+                    "multiline": false
+                  },
+                  {
+                    "key": "file_paths",
+                    "value": "- /srv/hermes/cache/audio/tts_1.mp3",
+                    "multiline": false
+                  },
+                  {
+                    "key": "media_tag",
+                    "value": "MEDIA:/srv/hermes/cache/audio/tts_1.mp3",
+                    "multiline": false
+                  },
+                  {
+                    "key": "provider",
+                    "value": "edge",
+                    "multiline": false
+                  },
+                  {
+                    "key": "voice_compatible",
+                    "value": "false",
+                    "multiline": false
+                  }
+                ]
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "prompt",
+                  "value": "a wave",
+                  "multiline": false
+                }
+              ],
+              "kind": "video",
+              "target": "",
+              "shows_card": true,
+              "function": {
+                "name": "video_generate",
+                "arguments": "{\"prompt\":\"a wave\"}"
+              },
+              "id": "call-video",
+              "done": true,
+              "is_error": false,
+              "result": "{\"success\":true,\"video\":\"https://cdn.example/wave.mp4\",\"model\":\"grok\",\"prompt\":\"a wave\",\"modality\":\"text\",\"aspect_ratio\":\"16:9\",\"duration\":5,\"provider\":\"xai\"}",
+              "result_view": {
+                "text": "{\n  \"success\": true,\n  \"video\": \"https://cdn.example/wave.mp4\",\n  \"model\": \"grok\",\n  \"prompt\": \"a wave\",\n  \"modality\": \"text\",\n  \"aspect_ratio\": \"16:9\",\n  \"duration\": 5,\n  \"provider\": \"xai\"\n}",
+                "media": [
+                  {
+                    "url": "https://cdn.example/wave.mp4",
+                    "name": "wave.mp4",
+                    "mime": "video/mp4",
+                    "kind": "video"
+                  }
+                ],
+                "fields": [
+                  {
+                    "key": "success",
+                    "value": "true",
+                    "multiline": false
+                  },
+                  {
+                    "key": "video",
+                    "value": "https://cdn.example/wave.mp4",
+                    "multiline": false
+                  },
+                  {
+                    "key": "model",
+                    "value": "grok",
+                    "multiline": false
+                  },
+                  {
+                    "key": "prompt",
+                    "value": "a wave",
+                    "multiline": false
+                  },
+                  {
+                    "key": "modality",
+                    "value": "text",
+                    "multiline": false
+                  },
+                  {
+                    "key": "aspect_ratio",
+                    "value": "16:9",
+                    "multiline": false
+                  },
+                  {
+                    "key": "duration",
+                    "value": "5",
+                    "multiline": false
+                  },
+                  {
+                    "key": "provider",
+                    "value": "xai",
+                    "multiline": false
+                  }
+                ]
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "prompt",
+                  "value": "a dog",
+                  "multiline": false
+                }
+              ],
+              "kind": "image",
+              "target": "",
+              "shows_card": true,
+              "function": {
+                "name": "image_generate",
+                "arguments": "{\"prompt\":\"a dog\"}"
+              },
+              "id": "call-failed",
+              "done": true,
+              "is_error": true,
+              "result": "{\"success\":false,\"image\":null,\"error\":\"FAL_KEY is not set\",\"error_type\":\"auth_required\"}",
+              "result_view": {
+                "error": "FAL_KEY is not set"
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "image_url",
+                  "value": "/srv/hermes/in.png",
+                  "multiline": false
+                },
+                {
+                  "key": "question",
+                  "value": "What is it?",
+                  "multiline": false
+                }
+              ],
+              "kind": "image_analysis",
+              "target": "",
+              "function": {
+                "name": "vision_analyze",
+                "arguments": "{\"image_url\":\"/srv/hermes/in.png\",\"question\":\"What is it?\"}"
+              },
+              "id": "call-vision",
+              "done": true,
+              "is_error": false,
+              "result": "{\"success\":true,\"analysis\":\"A **cat** on a sofa.\"}",
+              "result_view": {
+                "text": "{\n  \"success\": true,\n  \"analysis\": \"A **cat** on a sofa.\"\n}",
+                "analysis": "A **cat** on a sofa."
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "image_url",
+                  "value": "/srv/hermes/in.png",
+                  "multiline": false
+                },
+                {
+                  "key": "question",
+                  "value": "And now?",
+                  "multiline": false
+                }
+              ],
+              "kind": "image_analysis",
+              "target": "",
+              "function": {
+                "name": "vision_analyze",
+                "arguments": "{\"image_url\":\"/srv/hermes/in.png\",\"question\":\"And now?\"}"
+              },
+              "id": "call-native",
+              "done": true,
+              "is_error": false,
+              "result": "Image loaded into your context.",
+              "result_view": {
+                "text": "Image loaded into your context.",
+                "analysis": "Image loaded into your context."
+              },
+              "duration": null,
+              "type": "function"
+            }
+          ],
+          "_turn_id": "media-run",
+          "_display": "row"
+        },
+        {
+          "role": "tool",
+          "content": "{\"success\":true,\"image\":\"/srv/hermes/cache/generated/images/cat.png\",\"additional_images\":[\"https://cdn.example/cat-2.png\"],\"model\":\"flux\",\"prompt\":\"a cat\",\"aspect_ratio\":\"square\",\"modality\":\"text\",\"provider\":\"fal\"}",
+          "timestamp": 8002,
+          "tool_call_id": "call-image",
+          "_turn_id": "media-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"success\":true,\"file_path\":\"/srv/hermes/cache/audio/tts_1.mp3\",\"file_paths\":[\"/srv/hermes/cache/audio/tts_1.mp3\"],\"media_tag\":\"MEDIA:/srv/hermes/cache/audio/tts_1.mp3\",\"provider\":\"edge\",\"voice_compatible\":false}",
+          "timestamp": 8003,
+          "tool_call_id": "call-speech",
+          "_turn_id": "media-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"success\":true,\"video\":\"https://cdn.example/wave.mp4\",\"model\":\"grok\",\"prompt\":\"a wave\",\"modality\":\"text\",\"aspect_ratio\":\"16:9\",\"duration\":5,\"provider\":\"xai\"}",
+          "timestamp": 8004,
+          "tool_call_id": "call-video",
+          "_turn_id": "media-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"success\":false,\"image\":null,\"error\":\"FAL_KEY is not set\",\"error_type\":\"auth_required\"}",
+          "timestamp": 8005,
+          "tool_call_id": "call-failed",
+          "_turn_id": "media-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"success\":true,\"analysis\":\"A **cat** on a sofa.\"}",
+          "timestamp": 8006,
+          "tool_call_id": "call-vision",
+          "_turn_id": "media-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": [
+            {
+              "type": "text",
+              "text": "Image loaded into your context."
+            }
+          ],
+          "timestamp": 8007,
+          "tool_call_id": "call-native",
+          "_turn_id": "media-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "assistant",
+          "content": "Done.",
+          "message_id": "media-answer",
+          "timestamp": 8008,
+          "_anchor_activity_scene": {
+            "version": "activity_scene_v1",
+            "activity_rows": [
+              {
+                "row_id": "tool:call-image",
+                "order_index": 0,
+                "role": "tool",
+                "created_at": 8001,
+                "tool": {
+                  "id": "call-image",
+                  "name": "image_generate",
+                  "args_fields": [
+                    {
+                      "key": "prompt",
+                      "value": "a cat",
+                      "multiline": false
+                    },
+                    {
+                      "key": "aspect_ratio",
+                      "value": "square",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "image",
+                  "target": "",
+                  "shows_card": true,
+                  "args": {
+                    "prompt": "a cat",
+                    "aspect_ratio": "square"
+                  },
+                  "preview": null,
+                  "result": "{\"success\":true,\"image\":\"/srv/hermes/cache/generated/images/cat.png\",\"additional_images\":[\"https://cdn.example/cat-2.png\"],\"model\":\"flux\",\"prompt\":\"a cat\",\"aspect_ratio\":\"square\",\"modality\":\"text\",\"provider\":\"fal\"}",
+                  "result_view": {
+                    "text": "{\n  \"success\": true,\n  \"image\": \"/srv/hermes/cache/generated/images/cat.png\",\n  \"additional_images\": [\n    \"https://cdn.example/cat-2.png\"\n  ],\n  \"model\": \"flux\",\n  \"prompt\": \"a cat\",\n  \"aspect_ratio\": \"square\",\n  \"modality\": \"text\",\n  \"provider\": \"fal\"\n}",
+                    "media": [
+                      {
+                        "url": "./api/media?path=%2Fsrv%2Fhermes%2Fcache%2Fgenerated%2Fimages%2Fcat.png&session_id=media-session",
+                        "name": "cat.png",
+                        "mime": "image/png",
+                        "kind": "image"
+                      },
+                      {
+                        "url": "https://cdn.example/cat-2.png",
+                        "name": "cat-2.png",
+                        "mime": "image/png",
+                        "kind": "image"
+                      }
+                    ],
+                    "fields": [
+                      {
+                        "key": "success",
+                        "value": "true",
+                        "multiline": false
+                      },
+                      {
+                        "key": "image",
+                        "value": "/srv/hermes/cache/generated/images/cat.png",
+                        "multiline": false
+                      },
+                      {
+                        "key": "additional_images",
+                        "value": "- https://cdn.example/cat-2.png",
+                        "multiline": false
+                      },
+                      {
+                        "key": "model",
+                        "value": "flux",
+                        "multiline": false
+                      },
+                      {
+                        "key": "prompt",
+                        "value": "a cat",
+                        "multiline": false
+                      },
+                      {
+                        "key": "aspect_ratio",
+                        "value": "square",
+                        "multiline": false
+                      },
+                      {
+                        "key": "modality",
+                        "value": "text",
+                        "multiline": false
+                      },
+                      {
+                        "key": "provider",
+                        "value": "fal",
+                        "multiline": false
+                      }
+                    ]
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-speech",
+                "order_index": 1,
+                "role": "tool",
+                "created_at": 8001,
+                "tool": {
+                  "id": "call-speech",
+                  "name": "text_to_speech",
+                  "args_fields": [
+                    {
+                      "key": "text",
+                      "value": "Hello",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "audio",
+                  "target": "",
+                  "shows_card": true,
+                  "args": {
+                    "text": "Hello"
+                  },
+                  "preview": null,
+                  "result": "{\"success\":true,\"file_path\":\"/srv/hermes/cache/audio/tts_1.mp3\",\"file_paths\":[\"/srv/hermes/cache/audio/tts_1.mp3\"],\"media_tag\":\"MEDIA:/srv/hermes/cache/audio/tts_1.mp3\",\"provider\":\"edge\",\"voice_compatible\":false}",
+                  "result_view": {
+                    "text": "{\n  \"success\": true,\n  \"file_path\": \"/srv/hermes/cache/audio/tts_1.mp3\",\n  \"file_paths\": [\n    \"/srv/hermes/cache/audio/tts_1.mp3\"\n  ],\n  \"media_tag\": \"MEDIA:/srv/hermes/cache/audio/tts_1.mp3\",\n  \"provider\": \"edge\",\n  \"voice_compatible\": false\n}",
+                    "media": [
+                      {
+                        "url": "./api/media?path=%2Fsrv%2Fhermes%2Fcache%2Faudio%2Ftts_1.mp3&session_id=media-session",
+                        "name": "tts_1.mp3",
+                        "mime": "audio/mpeg",
+                        "kind": "audio"
+                      }
+                    ],
+                    "fields": [
+                      {
+                        "key": "success",
+                        "value": "true",
+                        "multiline": false
+                      },
+                      {
+                        "key": "file_path",
+                        "value": "/srv/hermes/cache/audio/tts_1.mp3",
+                        "multiline": false
+                      },
+                      {
+                        "key": "file_paths",
+                        "value": "- /srv/hermes/cache/audio/tts_1.mp3",
+                        "multiline": false
+                      },
+                      {
+                        "key": "media_tag",
+                        "value": "MEDIA:/srv/hermes/cache/audio/tts_1.mp3",
+                        "multiline": false
+                      },
+                      {
+                        "key": "provider",
+                        "value": "edge",
+                        "multiline": false
+                      },
+                      {
+                        "key": "voice_compatible",
+                        "value": "false",
+                        "multiline": false
+                      }
+                    ]
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-video",
+                "order_index": 2,
+                "role": "tool",
+                "created_at": 8001,
+                "tool": {
+                  "id": "call-video",
+                  "name": "video_generate",
+                  "args_fields": [
+                    {
+                      "key": "prompt",
+                      "value": "a wave",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "video",
+                  "target": "",
+                  "shows_card": true,
+                  "args": {
+                    "prompt": "a wave"
+                  },
+                  "preview": null,
+                  "result": "{\"success\":true,\"video\":\"https://cdn.example/wave.mp4\",\"model\":\"grok\",\"prompt\":\"a wave\",\"modality\":\"text\",\"aspect_ratio\":\"16:9\",\"duration\":5,\"provider\":\"xai\"}",
+                  "result_view": {
+                    "text": "{\n  \"success\": true,\n  \"video\": \"https://cdn.example/wave.mp4\",\n  \"model\": \"grok\",\n  \"prompt\": \"a wave\",\n  \"modality\": \"text\",\n  \"aspect_ratio\": \"16:9\",\n  \"duration\": 5,\n  \"provider\": \"xai\"\n}",
+                    "media": [
+                      {
+                        "url": "https://cdn.example/wave.mp4",
+                        "name": "wave.mp4",
+                        "mime": "video/mp4",
+                        "kind": "video"
+                      }
+                    ],
+                    "fields": [
+                      {
+                        "key": "success",
+                        "value": "true",
+                        "multiline": false
+                      },
+                      {
+                        "key": "video",
+                        "value": "https://cdn.example/wave.mp4",
+                        "multiline": false
+                      },
+                      {
+                        "key": "model",
+                        "value": "grok",
+                        "multiline": false
+                      },
+                      {
+                        "key": "prompt",
+                        "value": "a wave",
+                        "multiline": false
+                      },
+                      {
+                        "key": "modality",
+                        "value": "text",
+                        "multiline": false
+                      },
+                      {
+                        "key": "aspect_ratio",
+                        "value": "16:9",
+                        "multiline": false
+                      },
+                      {
+                        "key": "duration",
+                        "value": "5",
+                        "multiline": false
+                      },
+                      {
+                        "key": "provider",
+                        "value": "xai",
+                        "multiline": false
+                      }
+                    ]
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-failed",
+                "order_index": 3,
+                "role": "tool",
+                "created_at": 8001,
+                "tool": {
+                  "id": "call-failed",
+                  "name": "image_generate",
+                  "args_fields": [
+                    {
+                      "key": "prompt",
+                      "value": "a dog",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "image",
+                  "target": "",
+                  "shows_card": true,
+                  "args": {
+                    "prompt": "a dog"
+                  },
+                  "preview": null,
+                  "result": "{\"success\":false,\"image\":null,\"error\":\"FAL_KEY is not set\",\"error_type\":\"auth_required\"}",
+                  "result_view": {
+                    "error": "FAL_KEY is not set"
+                  },
+                  "done": true,
+                  "is_error": true,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-vision",
+                "order_index": 4,
+                "role": "tool",
+                "created_at": 8001,
+                "tool": {
+                  "id": "call-vision",
+                  "name": "vision_analyze",
+                  "args_fields": [
+                    {
+                      "key": "image_url",
+                      "value": "/srv/hermes/in.png",
+                      "multiline": false
+                    },
+                    {
+                      "key": "question",
+                      "value": "What is it?",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "image_analysis",
+                  "target": "",
+                  "args": {
+                    "image_url": "/srv/hermes/in.png",
+                    "question": "What is it?"
+                  },
+                  "preview": null,
+                  "result": "{\"success\":true,\"analysis\":\"A **cat** on a sofa.\"}",
+                  "result_view": {
+                    "text": "{\n  \"success\": true,\n  \"analysis\": \"A **cat** on a sofa.\"\n}",
+                    "analysis": "A **cat** on a sofa."
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-native",
+                "order_index": 5,
+                "role": "tool",
+                "created_at": 8001,
+                "tool": {
+                  "id": "call-native",
+                  "name": "vision_analyze",
+                  "args_fields": [
+                    {
+                      "key": "image_url",
+                      "value": "/srv/hermes/in.png",
+                      "multiline": false
+                    },
+                    {
+                      "key": "question",
+                      "value": "And now?",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "image_analysis",
+                  "target": "",
+                  "args": {
+                    "image_url": "/srv/hermes/in.png",
+                    "question": "And now?"
+                  },
+                  "preview": null,
+                  "result": "Image loaded into your context.",
+                  "result_view": {
+                    "text": "Image loaded into your context.",
+                    "analysis": "Image loaded into your context."
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              }
+            ],
+            "final_answer": "Done.",
+            "turn_duration": null,
+            "terminal_state": "completed",
+            "expanded_by_default": true,
+            "has_consumed_steering": false,
+            "file_changes": [],
+            "activity_rows_total": 6,
+            "activity_rows_offset": 0,
+            "activity_rows_complete": true,
+            "activity_rows_omitted": 0,
+            "activity_scene_ref": "af171865c433990af0bd40f4e3d1961a400f38c0a0cf60eb2dd154a0d59d27be"
+          },
+          "_turn_id": "media-run",
+          "_display": "row"
+        }
+      ]
+    }
   }
 }

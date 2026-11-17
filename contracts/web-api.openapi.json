@@ -8041,6 +8041,11 @@
                                         "memory",
                                         "delegate",
                                         "talaria",
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "image_analysis",
+                                        "video_analysis",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -8580,6 +8585,56 @@
                                                 ]
                                               }
                                             },
+                                            "media": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "url": {
+                                                    "type": "string"
+                                                  },
+                                                  "name": {
+                                                    "type": "string"
+                                                  },
+                                                  "mime": {
+                                                    "type": "string"
+                                                  },
+                                                  "kind": {
+                                                    "enum": [
+                                                      "image",
+                                                      "audio",
+                                                      "video",
+                                                      "pdf",
+                                                      "file",
+                                                      "model"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "model": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "ref": {
+                                                        "type": "string",
+                                                        "minLength": 1,
+                                                        "maxLength": 4096
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "ref"
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "url",
+                                                  "name",
+                                                  "mime",
+                                                  "kind"
+                                                ]
+                                              }
+                                            },
+                                            "analysis": {
+                                              "type": "string"
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -8941,6 +8996,11 @@
                                                 "memory",
                                                 "delegate",
                                                 "talaria",
+                                                "image",
+                                                "audio",
+                                                "video",
+                                                "image_analysis",
+                                                "video_analysis",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -9303,6 +9363,22 @@
                                                           "error": {}
                                                         }
                                                       }
+                                                    },
+                                                    "media": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "url": {},
+                                                          "name": {},
+                                                          "mime": {},
+                                                          "kind": {},
+                                                          "model": {}
+                                                        }
+                                                      }
+                                                    },
+                                                    "analysis": {
+                                                      "type": "string"
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -10075,6 +10151,11 @@
                                   "memory",
                                   "delegate",
                                   "talaria",
+                                  "image",
+                                  "audio",
+                                  "video",
+                                  "image_analysis",
+                                  "video_analysis",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -10659,6 +10740,56 @@
                                             "excerpt"
                                           ]
                                         }
+                                      },
+                                      "media": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "url": {
+                                              "type": "string"
+                                            },
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "mime": {
+                                              "type": "string"
+                                            },
+                                            "kind": {
+                                              "enum": [
+                                                "image",
+                                                "audio",
+                                                "video",
+                                                "pdf",
+                                                "file",
+                                                "model"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "model": {
+                                              "type": "object",
+                                              "properties": {
+                                                "ref": {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 4096
+                                                }
+                                              },
+                                              "required": [
+                                                "ref"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "url",
+                                            "name",
+                                            "mime",
+                                            "kind"
+                                          ]
+                                        }
+                                      },
+                                      "analysis": {
+                                        "type": "string"
                                       },
                                       "fields": {
                                         "type": "array",
@@ -14650,6 +14781,11 @@
                                         "memory",
                                         "delegate",
                                         "talaria",
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "image_analysis",
+                                        "video_analysis",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -15189,6 +15325,56 @@
                                                 ]
                                               }
                                             },
+                                            "media": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "url": {
+                                                    "type": "string"
+                                                  },
+                                                  "name": {
+                                                    "type": "string"
+                                                  },
+                                                  "mime": {
+                                                    "type": "string"
+                                                  },
+                                                  "kind": {
+                                                    "enum": [
+                                                      "image",
+                                                      "audio",
+                                                      "video",
+                                                      "pdf",
+                                                      "file",
+                                                      "model"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "model": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "ref": {
+                                                        "type": "string",
+                                                        "minLength": 1,
+                                                        "maxLength": 4096
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "ref"
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "url",
+                                                  "name",
+                                                  "mime",
+                                                  "kind"
+                                                ]
+                                              }
+                                            },
+                                            "analysis": {
+                                              "type": "string"
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -15550,6 +15736,11 @@
                                                 "memory",
                                                 "delegate",
                                                 "talaria",
+                                                "image",
+                                                "audio",
+                                                "video",
+                                                "image_analysis",
+                                                "video_analysis",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -15912,6 +16103,22 @@
                                                           "error": {}
                                                         }
                                                       }
+                                                    },
+                                                    "media": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "url": {},
+                                                          "name": {},
+                                                          "mime": {},
+                                                          "kind": {},
+                                                          "model": {}
+                                                        }
+                                                      }
+                                                    },
+                                                    "analysis": {
+                                                      "type": "string"
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -16684,6 +16891,11 @@
                                   "memory",
                                   "delegate",
                                   "talaria",
+                                  "image",
+                                  "audio",
+                                  "video",
+                                  "image_analysis",
+                                  "video_analysis",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -17268,6 +17480,56 @@
                                             "excerpt"
                                           ]
                                         }
+                                      },
+                                      "media": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "url": {
+                                              "type": "string"
+                                            },
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "mime": {
+                                              "type": "string"
+                                            },
+                                            "kind": {
+                                              "enum": [
+                                                "image",
+                                                "audio",
+                                                "video",
+                                                "pdf",
+                                                "file",
+                                                "model"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "model": {
+                                              "type": "object",
+                                              "properties": {
+                                                "ref": {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 4096
+                                                }
+                                              },
+                                              "required": [
+                                                "ref"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "url",
+                                            "name",
+                                            "mime",
+                                            "kind"
+                                          ]
+                                        }
+                                      },
+                                      "analysis": {
+                                        "type": "string"
                                       },
                                       "fields": {
                                         "type": "array",
@@ -19930,6 +20192,11 @@
                                         "memory",
                                         "delegate",
                                         "talaria",
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "image_analysis",
+                                        "video_analysis",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -20469,6 +20736,56 @@
                                                 ]
                                               }
                                             },
+                                            "media": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "url": {
+                                                    "type": "string"
+                                                  },
+                                                  "name": {
+                                                    "type": "string"
+                                                  },
+                                                  "mime": {
+                                                    "type": "string"
+                                                  },
+                                                  "kind": {
+                                                    "enum": [
+                                                      "image",
+                                                      "audio",
+                                                      "video",
+                                                      "pdf",
+                                                      "file",
+                                                      "model"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "model": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "ref": {
+                                                        "type": "string",
+                                                        "minLength": 1,
+                                                        "maxLength": 4096
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "ref"
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "url",
+                                                  "name",
+                                                  "mime",
+                                                  "kind"
+                                                ]
+                                              }
+                                            },
+                                            "analysis": {
+                                              "type": "string"
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -20830,6 +21147,11 @@
                                                 "memory",
                                                 "delegate",
                                                 "talaria",
+                                                "image",
+                                                "audio",
+                                                "video",
+                                                "image_analysis",
+                                                "video_analysis",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -21192,6 +21514,22 @@
                                                           "error": {}
                                                         }
                                                       }
+                                                    },
+                                                    "media": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "url": {},
+                                                          "name": {},
+                                                          "mime": {},
+                                                          "kind": {},
+                                                          "model": {}
+                                                        }
+                                                      }
+                                                    },
+                                                    "analysis": {
+                                                      "type": "string"
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -21964,6 +22302,11 @@
                                   "memory",
                                   "delegate",
                                   "talaria",
+                                  "image",
+                                  "audio",
+                                  "video",
+                                  "image_analysis",
+                                  "video_analysis",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -22548,6 +22891,56 @@
                                             "excerpt"
                                           ]
                                         }
+                                      },
+                                      "media": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "url": {
+                                              "type": "string"
+                                            },
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "mime": {
+                                              "type": "string"
+                                            },
+                                            "kind": {
+                                              "enum": [
+                                                "image",
+                                                "audio",
+                                                "video",
+                                                "pdf",
+                                                "file",
+                                                "model"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "model": {
+                                              "type": "object",
+                                              "properties": {
+                                                "ref": {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 4096
+                                                }
+                                              },
+                                              "required": [
+                                                "ref"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "url",
+                                            "name",
+                                            "mime",
+                                            "kind"
+                                          ]
+                                        }
+                                      },
+                                      "analysis": {
+                                        "type": "string"
                                       },
                                       "fields": {
                                         "type": "array",
@@ -28342,6 +28735,11 @@
                                         "memory",
                                         "delegate",
                                         "talaria",
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "image_analysis",
+                                        "video_analysis",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -28881,6 +29279,56 @@
                                                 ]
                                               }
                                             },
+                                            "media": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "url": {
+                                                    "type": "string"
+                                                  },
+                                                  "name": {
+                                                    "type": "string"
+                                                  },
+                                                  "mime": {
+                                                    "type": "string"
+                                                  },
+                                                  "kind": {
+                                                    "enum": [
+                                                      "image",
+                                                      "audio",
+                                                      "video",
+                                                      "pdf",
+                                                      "file",
+                                                      "model"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "model": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "ref": {
+                                                        "type": "string",
+                                                        "minLength": 1,
+                                                        "maxLength": 4096
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "ref"
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "url",
+                                                  "name",
+                                                  "mime",
+                                                  "kind"
+                                                ]
+                                              }
+                                            },
+                                            "analysis": {
+                                              "type": "string"
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -29242,6 +29690,11 @@
                                                 "memory",
                                                 "delegate",
                                                 "talaria",
+                                                "image",
+                                                "audio",
+                                                "video",
+                                                "image_analysis",
+                                                "video_analysis",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -29604,6 +30057,22 @@
                                                           "error": {}
                                                         }
                                                       }
+                                                    },
+                                                    "media": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "url": {},
+                                                          "name": {},
+                                                          "mime": {},
+                                                          "kind": {},
+                                                          "model": {}
+                                                        }
+                                                      }
+                                                    },
+                                                    "analysis": {
+                                                      "type": "string"
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -30376,6 +30845,11 @@
                                   "memory",
                                   "delegate",
                                   "talaria",
+                                  "image",
+                                  "audio",
+                                  "video",
+                                  "image_analysis",
+                                  "video_analysis",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -30960,6 +31434,56 @@
                                             "excerpt"
                                           ]
                                         }
+                                      },
+                                      "media": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "url": {
+                                              "type": "string"
+                                            },
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "mime": {
+                                              "type": "string"
+                                            },
+                                            "kind": {
+                                              "enum": [
+                                                "image",
+                                                "audio",
+                                                "video",
+                                                "pdf",
+                                                "file",
+                                                "model"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "model": {
+                                              "type": "object",
+                                              "properties": {
+                                                "ref": {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 4096
+                                                }
+                                              },
+                                              "required": [
+                                                "ref"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "url",
+                                            "name",
+                                            "mime",
+                                            "kind"
+                                          ]
+                                        }
+                                      },
+                                      "analysis": {
+                                        "type": "string"
                                       },
                                       "fields": {
                                         "type": "array",
@@ -36065,6 +36589,11 @@
                                         "memory",
                                         "delegate",
                                         "talaria",
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "image_analysis",
+                                        "video_analysis",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -36604,6 +37133,56 @@
                                                 ]
                                               }
                                             },
+                                            "media": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "url": {
+                                                    "type": "string"
+                                                  },
+                                                  "name": {
+                                                    "type": "string"
+                                                  },
+                                                  "mime": {
+                                                    "type": "string"
+                                                  },
+                                                  "kind": {
+                                                    "enum": [
+                                                      "image",
+                                                      "audio",
+                                                      "video",
+                                                      "pdf",
+                                                      "file",
+                                                      "model"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "model": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "ref": {
+                                                        "type": "string",
+                                                        "minLength": 1,
+                                                        "maxLength": 4096
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "ref"
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "url",
+                                                  "name",
+                                                  "mime",
+                                                  "kind"
+                                                ]
+                                              }
+                                            },
+                                            "analysis": {
+                                              "type": "string"
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -36965,6 +37544,11 @@
                                                 "memory",
                                                 "delegate",
                                                 "talaria",
+                                                "image",
+                                                "audio",
+                                                "video",
+                                                "image_analysis",
+                                                "video_analysis",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -37327,6 +37911,22 @@
                                                           "error": {}
                                                         }
                                                       }
+                                                    },
+                                                    "media": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "url": {},
+                                                          "name": {},
+                                                          "mime": {},
+                                                          "kind": {},
+                                                          "model": {}
+                                                        }
+                                                      }
+                                                    },
+                                                    "analysis": {
+                                                      "type": "string"
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -38099,6 +38699,11 @@
                                   "memory",
                                   "delegate",
                                   "talaria",
+                                  "image",
+                                  "audio",
+                                  "video",
+                                  "image_analysis",
+                                  "video_analysis",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -38683,6 +39288,56 @@
                                             "excerpt"
                                           ]
                                         }
+                                      },
+                                      "media": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "url": {
+                                              "type": "string"
+                                            },
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "mime": {
+                                              "type": "string"
+                                            },
+                                            "kind": {
+                                              "enum": [
+                                                "image",
+                                                "audio",
+                                                "video",
+                                                "pdf",
+                                                "file",
+                                                "model"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "model": {
+                                              "type": "object",
+                                              "properties": {
+                                                "ref": {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 4096
+                                                }
+                                              },
+                                              "required": [
+                                                "ref"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "url",
+                                            "name",
+                                            "mime",
+                                            "kind"
+                                          ]
+                                        }
+                                      },
+                                      "analysis": {
+                                        "type": "string"
                                       },
                                       "fields": {
                                         "type": "array",
@@ -44420,6 +45075,11 @@
                                         "memory",
                                         "delegate",
                                         "talaria",
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "image_analysis",
+                                        "video_analysis",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -44959,6 +45619,56 @@
                                                 ]
                                               }
                                             },
+                                            "media": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "url": {
+                                                    "type": "string"
+                                                  },
+                                                  "name": {
+                                                    "type": "string"
+                                                  },
+                                                  "mime": {
+                                                    "type": "string"
+                                                  },
+                                                  "kind": {
+                                                    "enum": [
+                                                      "image",
+                                                      "audio",
+                                                      "video",
+                                                      "pdf",
+                                                      "file",
+                                                      "model"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "model": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "ref": {
+                                                        "type": "string",
+                                                        "minLength": 1,
+                                                        "maxLength": 4096
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "ref"
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "url",
+                                                  "name",
+                                                  "mime",
+                                                  "kind"
+                                                ]
+                                              }
+                                            },
+                                            "analysis": {
+                                              "type": "string"
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -45320,6 +46030,11 @@
                                                 "memory",
                                                 "delegate",
                                                 "talaria",
+                                                "image",
+                                                "audio",
+                                                "video",
+                                                "image_analysis",
+                                                "video_analysis",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -45682,6 +46397,22 @@
                                                           "error": {}
                                                         }
                                                       }
+                                                    },
+                                                    "media": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "url": {},
+                                                          "name": {},
+                                                          "mime": {},
+                                                          "kind": {},
+                                                          "model": {}
+                                                        }
+                                                      }
+                                                    },
+                                                    "analysis": {
+                                                      "type": "string"
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -46454,6 +47185,11 @@
                                   "memory",
                                   "delegate",
                                   "talaria",
+                                  "image",
+                                  "audio",
+                                  "video",
+                                  "image_analysis",
+                                  "video_analysis",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -47038,6 +47774,56 @@
                                             "excerpt"
                                           ]
                                         }
+                                      },
+                                      "media": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "url": {
+                                              "type": "string"
+                                            },
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "mime": {
+                                              "type": "string"
+                                            },
+                                            "kind": {
+                                              "enum": [
+                                                "image",
+                                                "audio",
+                                                "video",
+                                                "pdf",
+                                                "file",
+                                                "model"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "model": {
+                                              "type": "object",
+                                              "properties": {
+                                                "ref": {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 4096
+                                                }
+                                              },
+                                              "required": [
+                                                "ref"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "url",
+                                            "name",
+                                            "mime",
+                                            "kind"
+                                          ]
+                                        }
+                                      },
+                                      "analysis": {
+                                        "type": "string"
                                       },
                                       "fields": {
                                         "type": "array",
@@ -49645,6 +50431,11 @@
                                         "memory",
                                         "delegate",
                                         "talaria",
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "image_analysis",
+                                        "video_analysis",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -50184,6 +50975,56 @@
                                                 ]
                                               }
                                             },
+                                            "media": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "url": {
+                                                    "type": "string"
+                                                  },
+                                                  "name": {
+                                                    "type": "string"
+                                                  },
+                                                  "mime": {
+                                                    "type": "string"
+                                                  },
+                                                  "kind": {
+                                                    "enum": [
+                                                      "image",
+                                                      "audio",
+                                                      "video",
+                                                      "pdf",
+                                                      "file",
+                                                      "model"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "model": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "ref": {
+                                                        "type": "string",
+                                                        "minLength": 1,
+                                                        "maxLength": 4096
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "ref"
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "url",
+                                                  "name",
+                                                  "mime",
+                                                  "kind"
+                                                ]
+                                              }
+                                            },
+                                            "analysis": {
+                                              "type": "string"
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -50545,6 +51386,11 @@
                                                 "memory",
                                                 "delegate",
                                                 "talaria",
+                                                "image",
+                                                "audio",
+                                                "video",
+                                                "image_analysis",
+                                                "video_analysis",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -50907,6 +51753,22 @@
                                                           "error": {}
                                                         }
                                                       }
+                                                    },
+                                                    "media": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "url": {},
+                                                          "name": {},
+                                                          "mime": {},
+                                                          "kind": {},
+                                                          "model": {}
+                                                        }
+                                                      }
+                                                    },
+                                                    "analysis": {
+                                                      "type": "string"
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -51679,6 +52541,11 @@
                                   "memory",
                                   "delegate",
                                   "talaria",
+                                  "image",
+                                  "audio",
+                                  "video",
+                                  "image_analysis",
+                                  "video_analysis",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -52263,6 +53130,56 @@
                                             "excerpt"
                                           ]
                                         }
+                                      },
+                                      "media": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "url": {
+                                              "type": "string"
+                                            },
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "mime": {
+                                              "type": "string"
+                                            },
+                                            "kind": {
+                                              "enum": [
+                                                "image",
+                                                "audio",
+                                                "video",
+                                                "pdf",
+                                                "file",
+                                                "model"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "model": {
+                                              "type": "object",
+                                              "properties": {
+                                                "ref": {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 4096
+                                                }
+                                              },
+                                              "required": [
+                                                "ref"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "url",
+                                            "name",
+                                            "mime",
+                                            "kind"
+                                          ]
+                                        }
+                                      },
+                                      "analysis": {
+                                        "type": "string"
                                       },
                                       "fields": {
                                         "type": "array",
@@ -54932,6 +55849,11 @@
                                         "memory",
                                         "delegate",
                                         "talaria",
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "image_analysis",
+                                        "video_analysis",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -55471,6 +56393,56 @@
                                                 ]
                                               }
                                             },
+                                            "media": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "url": {
+                                                    "type": "string"
+                                                  },
+                                                  "name": {
+                                                    "type": "string"
+                                                  },
+                                                  "mime": {
+                                                    "type": "string"
+                                                  },
+                                                  "kind": {
+                                                    "enum": [
+                                                      "image",
+                                                      "audio",
+                                                      "video",
+                                                      "pdf",
+                                                      "file",
+                                                      "model"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "model": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "ref": {
+                                                        "type": "string",
+                                                        "minLength": 1,
+                                                        "maxLength": 4096
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "ref"
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "url",
+                                                  "name",
+                                                  "mime",
+                                                  "kind"
+                                                ]
+                                              }
+                                            },
+                                            "analysis": {
+                                              "type": "string"
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -55832,6 +56804,11 @@
                                                 "memory",
                                                 "delegate",
                                                 "talaria",
+                                                "image",
+                                                "audio",
+                                                "video",
+                                                "image_analysis",
+                                                "video_analysis",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -56194,6 +57171,22 @@
                                                           "error": {}
                                                         }
                                                       }
+                                                    },
+                                                    "media": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "url": {},
+                                                          "name": {},
+                                                          "mime": {},
+                                                          "kind": {},
+                                                          "model": {}
+                                                        }
+                                                      }
+                                                    },
+                                                    "analysis": {
+                                                      "type": "string"
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -56966,6 +57959,11 @@
                                   "memory",
                                   "delegate",
                                   "talaria",
+                                  "image",
+                                  "audio",
+                                  "video",
+                                  "image_analysis",
+                                  "video_analysis",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -57550,6 +58548,56 @@
                                             "excerpt"
                                           ]
                                         }
+                                      },
+                                      "media": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "url": {
+                                              "type": "string"
+                                            },
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "mime": {
+                                              "type": "string"
+                                            },
+                                            "kind": {
+                                              "enum": [
+                                                "image",
+                                                "audio",
+                                                "video",
+                                                "pdf",
+                                                "file",
+                                                "model"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "model": {
+                                              "type": "object",
+                                              "properties": {
+                                                "ref": {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 4096
+                                                }
+                                              },
+                                              "required": [
+                                                "ref"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "url",
+                                            "name",
+                                            "mime",
+                                            "kind"
+                                          ]
+                                        }
+                                      },
+                                      "analysis": {
+                                        "type": "string"
                                       },
                                       "fields": {
                                         "type": "array",
@@ -60217,6 +61265,11 @@
                                         "memory",
                                         "delegate",
                                         "talaria",
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "image_analysis",
+                                        "video_analysis",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -60756,6 +61809,56 @@
                                                 ]
                                               }
                                             },
+                                            "media": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "url": {
+                                                    "type": "string"
+                                                  },
+                                                  "name": {
+                                                    "type": "string"
+                                                  },
+                                                  "mime": {
+                                                    "type": "string"
+                                                  },
+                                                  "kind": {
+                                                    "enum": [
+                                                      "image",
+                                                      "audio",
+                                                      "video",
+                                                      "pdf",
+                                                      "file",
+                                                      "model"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "model": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "ref": {
+                                                        "type": "string",
+                                                        "minLength": 1,
+                                                        "maxLength": 4096
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "ref"
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "url",
+                                                  "name",
+                                                  "mime",
+                                                  "kind"
+                                                ]
+                                              }
+                                            },
+                                            "analysis": {
+                                              "type": "string"
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -61117,6 +62220,11 @@
                                                 "memory",
                                                 "delegate",
                                                 "talaria",
+                                                "image",
+                                                "audio",
+                                                "video",
+                                                "image_analysis",
+                                                "video_analysis",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -61479,6 +62587,22 @@
                                                           "error": {}
                                                         }
                                                       }
+                                                    },
+                                                    "media": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "url": {},
+                                                          "name": {},
+                                                          "mime": {},
+                                                          "kind": {},
+                                                          "model": {}
+                                                        }
+                                                      }
+                                                    },
+                                                    "analysis": {
+                                                      "type": "string"
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -62251,6 +63375,11 @@
                                   "memory",
                                   "delegate",
                                   "talaria",
+                                  "image",
+                                  "audio",
+                                  "video",
+                                  "image_analysis",
+                                  "video_analysis",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -62835,6 +63964,56 @@
                                             "excerpt"
                                           ]
                                         }
+                                      },
+                                      "media": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "url": {
+                                              "type": "string"
+                                            },
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "mime": {
+                                              "type": "string"
+                                            },
+                                            "kind": {
+                                              "enum": [
+                                                "image",
+                                                "audio",
+                                                "video",
+                                                "pdf",
+                                                "file",
+                                                "model"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "model": {
+                                              "type": "object",
+                                              "properties": {
+                                                "ref": {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 4096
+                                                }
+                                              },
+                                              "required": [
+                                                "ref"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "url",
+                                            "name",
+                                            "mime",
+                                            "kind"
+                                          ]
+                                        }
+                                      },
+                                      "analysis": {
+                                        "type": "string"
                                       },
                                       "fields": {
                                         "type": "array",
@@ -65275,6 +66454,11 @@
                                   "memory",
                                   "delegate",
                                   "talaria",
+                                  "image",
+                                  "audio",
+                                  "video",
+                                  "image_analysis",
+                                  "video_analysis",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -65831,6 +67015,56 @@
                                             "excerpt"
                                           ]
                                         }
+                                      },
+                                      "media": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "url": {
+                                              "type": "string"
+                                            },
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "mime": {
+                                              "type": "string"
+                                            },
+                                            "kind": {
+                                              "enum": [
+                                                "image",
+                                                "audio",
+                                                "video",
+                                                "pdf",
+                                                "file",
+                                                "model"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "model": {
+                                              "type": "object",
+                                              "properties": {
+                                                "ref": {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 4096
+                                                }
+                                              },
+                                              "required": [
+                                                "ref"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "url",
+                                            "name",
+                                            "mime",
+                                            "kind"
+                                          ]
+                                        }
+                                      },
+                                      "analysis": {
+                                        "type": "string"
                                       },
                                       "fields": {
                                         "type": "array",
@@ -67009,6 +68243,56 @@
                               "excerpt"
                             ]
                           }
+                        },
+                        "media": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "url": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "mime": {
+                                "type": "string"
+                              },
+                              "kind": {
+                                "enum": [
+                                  "image",
+                                  "audio",
+                                  "video",
+                                  "pdf",
+                                  "file",
+                                  "model"
+                                ],
+                                "type": "string"
+                              },
+                              "model": {
+                                "type": "object",
+                                "properties": {
+                                  "ref": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 4096
+                                  }
+                                },
+                                "required": [
+                                  "ref"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "url",
+                              "name",
+                              "mime",
+                              "kind"
+                            ]
+                          }
+                        },
+                        "analysis": {
+                          "type": "string"
                         },
                         "fields": {
                           "type": "array",
@@ -77498,6 +78782,11 @@
                                         "memory",
                                         "delegate",
                                         "talaria",
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "image_analysis",
+                                        "video_analysis",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -78037,6 +79326,56 @@
                                                 ]
                                               }
                                             },
+                                            "media": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "url": {
+                                                    "type": "string"
+                                                  },
+                                                  "name": {
+                                                    "type": "string"
+                                                  },
+                                                  "mime": {
+                                                    "type": "string"
+                                                  },
+                                                  "kind": {
+                                                    "enum": [
+                                                      "image",
+                                                      "audio",
+                                                      "video",
+                                                      "pdf",
+                                                      "file",
+                                                      "model"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "model": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "ref": {
+                                                        "type": "string",
+                                                        "minLength": 1,
+                                                        "maxLength": 4096
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "ref"
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "url",
+                                                  "name",
+                                                  "mime",
+                                                  "kind"
+                                                ]
+                                              }
+                                            },
+                                            "analysis": {
+                                              "type": "string"
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -78398,6 +79737,11 @@
                                                 "memory",
                                                 "delegate",
                                                 "talaria",
+                                                "image",
+                                                "audio",
+                                                "video",
+                                                "image_analysis",
+                                                "video_analysis",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -78760,6 +80104,22 @@
                                                           "error": {}
                                                         }
                                                       }
+                                                    },
+                                                    "media": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "url": {},
+                                                          "name": {},
+                                                          "mime": {},
+                                                          "kind": {},
+                                                          "model": {}
+                                                        }
+                                                      }
+                                                    },
+                                                    "analysis": {
+                                                      "type": "string"
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -79532,6 +80892,11 @@
                                   "memory",
                                   "delegate",
                                   "talaria",
+                                  "image",
+                                  "audio",
+                                  "video",
+                                  "image_analysis",
+                                  "video_analysis",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -80116,6 +81481,56 @@
                                             "excerpt"
                                           ]
                                         }
+                                      },
+                                      "media": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "url": {
+                                              "type": "string"
+                                            },
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "mime": {
+                                              "type": "string"
+                                            },
+                                            "kind": {
+                                              "enum": [
+                                                "image",
+                                                "audio",
+                                                "video",
+                                                "pdf",
+                                                "file",
+                                                "model"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "model": {
+                                              "type": "object",
+                                              "properties": {
+                                                "ref": {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 4096
+                                                }
+                                              },
+                                              "required": [
+                                                "ref"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "url",
+                                            "name",
+                                            "mime",
+                                            "kind"
+                                          ]
+                                        }
+                                      },
+                                      "analysis": {
+                                        "type": "string"
                                       },
                                       "fields": {
                                         "type": "array",
@@ -82775,6 +84190,11 @@
                                         "memory",
                                         "delegate",
                                         "talaria",
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "image_analysis",
+                                        "video_analysis",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -83314,6 +84734,56 @@
                                                 ]
                                               }
                                             },
+                                            "media": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "url": {
+                                                    "type": "string"
+                                                  },
+                                                  "name": {
+                                                    "type": "string"
+                                                  },
+                                                  "mime": {
+                                                    "type": "string"
+                                                  },
+                                                  "kind": {
+                                                    "enum": [
+                                                      "image",
+                                                      "audio",
+                                                      "video",
+                                                      "pdf",
+                                                      "file",
+                                                      "model"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "model": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "ref": {
+                                                        "type": "string",
+                                                        "minLength": 1,
+                                                        "maxLength": 4096
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "ref"
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "url",
+                                                  "name",
+                                                  "mime",
+                                                  "kind"
+                                                ]
+                                              }
+                                            },
+                                            "analysis": {
+                                              "type": "string"
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -83675,6 +85145,11 @@
                                                 "memory",
                                                 "delegate",
                                                 "talaria",
+                                                "image",
+                                                "audio",
+                                                "video",
+                                                "image_analysis",
+                                                "video_analysis",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -84037,6 +85512,22 @@
                                                           "error": {}
                                                         }
                                                       }
+                                                    },
+                                                    "media": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "url": {},
+                                                          "name": {},
+                                                          "mime": {},
+                                                          "kind": {},
+                                                          "model": {}
+                                                        }
+                                                      }
+                                                    },
+                                                    "analysis": {
+                                                      "type": "string"
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -84809,6 +86300,11 @@
                                   "memory",
                                   "delegate",
                                   "talaria",
+                                  "image",
+                                  "audio",
+                                  "video",
+                                  "image_analysis",
+                                  "video_analysis",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -85393,6 +86889,56 @@
                                             "excerpt"
                                           ]
                                         }
+                                      },
+                                      "media": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "url": {
+                                              "type": "string"
+                                            },
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "mime": {
+                                              "type": "string"
+                                            },
+                                            "kind": {
+                                              "enum": [
+                                                "image",
+                                                "audio",
+                                                "video",
+                                                "pdf",
+                                                "file",
+                                                "model"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "model": {
+                                              "type": "object",
+                                              "properties": {
+                                                "ref": {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 4096
+                                                }
+                                              },
+                                              "required": [
+                                                "ref"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "url",
+                                            "name",
+                                            "mime",
+                                            "kind"
+                                          ]
+                                        }
+                                      },
+                                      "analysis": {
+                                        "type": "string"
                                       },
                                       "fields": {
                                         "type": "array",
@@ -88738,6 +90284,11 @@
                                         "memory",
                                         "delegate",
                                         "talaria",
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "image_analysis",
+                                        "video_analysis",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -89277,6 +90828,56 @@
                                                 ]
                                               }
                                             },
+                                            "media": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "url": {
+                                                    "type": "string"
+                                                  },
+                                                  "name": {
+                                                    "type": "string"
+                                                  },
+                                                  "mime": {
+                                                    "type": "string"
+                                                  },
+                                                  "kind": {
+                                                    "enum": [
+                                                      "image",
+                                                      "audio",
+                                                      "video",
+                                                      "pdf",
+                                                      "file",
+                                                      "model"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "model": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "ref": {
+                                                        "type": "string",
+                                                        "minLength": 1,
+                                                        "maxLength": 4096
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "ref"
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "url",
+                                                  "name",
+                                                  "mime",
+                                                  "kind"
+                                                ]
+                                              }
+                                            },
+                                            "analysis": {
+                                              "type": "string"
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -89638,6 +91239,11 @@
                                                 "memory",
                                                 "delegate",
                                                 "talaria",
+                                                "image",
+                                                "audio",
+                                                "video",
+                                                "image_analysis",
+                                                "video_analysis",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -90000,6 +91606,22 @@
                                                           "error": {}
                                                         }
                                                       }
+                                                    },
+                                                    "media": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "url": {},
+                                                          "name": {},
+                                                          "mime": {},
+                                                          "kind": {},
+                                                          "model": {}
+                                                        }
+                                                      }
+                                                    },
+                                                    "analysis": {
+                                                      "type": "string"
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -90772,6 +92394,11 @@
                                   "memory",
                                   "delegate",
                                   "talaria",
+                                  "image",
+                                  "audio",
+                                  "video",
+                                  "image_analysis",
+                                  "video_analysis",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -91356,6 +92983,56 @@
                                             "excerpt"
                                           ]
                                         }
+                                      },
+                                      "media": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "url": {
+                                              "type": "string"
+                                            },
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "mime": {
+                                              "type": "string"
+                                            },
+                                            "kind": {
+                                              "enum": [
+                                                "image",
+                                                "audio",
+                                                "video",
+                                                "pdf",
+                                                "file",
+                                                "model"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "model": {
+                                              "type": "object",
+                                              "properties": {
+                                                "ref": {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 4096
+                                                }
+                                              },
+                                              "required": [
+                                                "ref"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "url",
+                                            "name",
+                                            "mime",
+                                            "kind"
+                                          ]
+                                        }
+                                      },
+                                      "analysis": {
+                                        "type": "string"
                                       },
                                       "fields": {
                                         "type": "array",
@@ -94572,6 +96249,11 @@
                                             "memory",
                                             "delegate",
                                             "talaria",
+                                            "image",
+                                            "audio",
+                                            "video",
+                                            "image_analysis",
+                                            "video_analysis",
                                             "unknown"
                                           ],
                                           "type": "string"
@@ -95064,6 +96746,49 @@
                                                     ]
                                                   }
                                                 },
+                                                "media": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "url": {
+                                                        "type": "string"
+                                                      },
+                                                      "name": {
+                                                        "type": "string"
+                                                      },
+                                                      "mime": {
+                                                        "type": "string"
+                                                      },
+                                                      "kind": {
+                                                        "enum": [
+                                                          "image",
+                                                          "audio",
+                                                          "video",
+                                                          "pdf",
+                                                          "file",
+                                                          "model"
+                                                        ],
+                                                        "type": "string"
+                                                      },
+                                                      "model": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "ref": {}
+                                                        }
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "url",
+                                                      "name",
+                                                      "mime",
+                                                      "kind"
+                                                    ]
+                                                  }
+                                                },
+                                                "analysis": {
+                                                  "type": "string"
+                                                },
                                                 "fields": {
                                                   "type": "array",
                                                   "items": {
@@ -95407,6 +97132,11 @@
                                                     "memory",
                                                     "delegate",
                                                     "talaria",
+                                                    "image",
+                                                    "audio",
+                                                    "video",
+                                                    "image_analysis",
+                                                    "video_analysis",
                                                     "unknown"
                                                   ],
                                                   "type": "string"
@@ -95589,6 +97319,20 @@
                                                               }
                                                             ]
                                                           }
+                                                        },
+                                                        "media": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "anyOf": [
+                                                              {},
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
+                                                        },
+                                                        "analysis": {
+                                                          "type": "string"
                                                         },
                                                         "fields": {
                                                           "type": "array",
@@ -96344,6 +98088,11 @@
                                       "memory",
                                       "delegate",
                                       "talaria",
+                                      "image",
+                                      "audio",
+                                      "video",
+                                      "image_analysis",
+                                      "video_analysis",
                                       "unknown"
                                     ],
                                     "type": "string"
@@ -96918,6 +98667,56 @@
                                                 "excerpt"
                                               ]
                                             }
+                                          },
+                                          "media": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "url": {
+                                                  "type": "string"
+                                                },
+                                                "name": {
+                                                  "type": "string"
+                                                },
+                                                "mime": {
+                                                  "type": "string"
+                                                },
+                                                "kind": {
+                                                  "enum": [
+                                                    "image",
+                                                    "audio",
+                                                    "video",
+                                                    "pdf",
+                                                    "file",
+                                                    "model"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "model": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "ref": {
+                                                      "type": "string",
+                                                      "minLength": 1,
+                                                      "maxLength": 4096
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "ref"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "url",
+                                                "name",
+                                                "mime",
+                                                "kind"
+                                              ]
+                                            }
+                                          },
+                                          "analysis": {
+                                            "type": "string"
                                           },
                                           "fields": {
                                             "type": "array",
@@ -144825,6 +146624,11 @@
                                         "memory",
                                         "delegate",
                                         "talaria",
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "image_analysis",
+                                        "video_analysis",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -145364,6 +147168,56 @@
                                                 ]
                                               }
                                             },
+                                            "media": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "url": {
+                                                    "type": "string"
+                                                  },
+                                                  "name": {
+                                                    "type": "string"
+                                                  },
+                                                  "mime": {
+                                                    "type": "string"
+                                                  },
+                                                  "kind": {
+                                                    "enum": [
+                                                      "image",
+                                                      "audio",
+                                                      "video",
+                                                      "pdf",
+                                                      "file",
+                                                      "model"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "model": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "ref": {
+                                                        "type": "string",
+                                                        "minLength": 1,
+                                                        "maxLength": 4096
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "ref"
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "url",
+                                                  "name",
+                                                  "mime",
+                                                  "kind"
+                                                ]
+                                              }
+                                            },
+                                            "analysis": {
+                                              "type": "string"
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -145725,6 +147579,11 @@
                                                 "memory",
                                                 "delegate",
                                                 "talaria",
+                                                "image",
+                                                "audio",
+                                                "video",
+                                                "image_analysis",
+                                                "video_analysis",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -146087,6 +147946,22 @@
                                                           "error": {}
                                                         }
                                                       }
+                                                    },
+                                                    "media": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "url": {},
+                                                          "name": {},
+                                                          "mime": {},
+                                                          "kind": {},
+                                                          "model": {}
+                                                        }
+                                                      }
+                                                    },
+                                                    "analysis": {
+                                                      "type": "string"
                                                     },
                                                     "fields": {
                                                       "type": "array",

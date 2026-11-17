@@ -2135,6 +2135,12 @@ struct ChatView: View {
             )
             .environment(\.chatShowsReasoning, viewModel.showsReasoning)
             .transcriptLinks(perform: chat.handleTranscriptLink)
+            .environment(\.chatTranscriptMedia, ChatTranscriptMedia(
+                cacheNamespace: chat.transcriptMediaCacheNamespace,
+                loadImage: { reference in await viewModel.transcriptMediaThumbnailData(for: reference) },
+                loadData: { reference in await viewModel.transcriptMediaData(for: reference) },
+                preview: { reference in chat.transcriptMediaPreviewItem = TranscriptMediaPreviewItem(reference: reference) }
+            ))
             .chatEnvironmentAction(\.chatFullToolResultLoader) { toolCallID in
                 { try await viewModel.fullToolResult(toolCallID: toolCallID) }
             }

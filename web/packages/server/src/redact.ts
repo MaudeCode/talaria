@@ -5,7 +5,7 @@ import { str } from './util.js'
 import { diffHunks } from './text/diff.js'
 import { isRasterDataUri } from './raster-image.js'
 import { gutterLines, gutterText, snapshotArgs, toolArgs, toolDisplay, toolName, withResultFocusPaths } from './sessions/tool-display.js'
-import { cappedFields, codexCommentary, hasNativeImages, isDict, messageText, normalizeAssistantDisplay, normalizeUserDisplay, toolFields, TOOL_ARG_CONTENT_CAP, withoutReasoningParts } from './sessions/merge.js'
+import { cappedFields, codexCommentary, hasNativeImages, isDict, messageText, normalizeAssistantDisplay, normalizeUserDisplay, toolFields, TOOL_ARG_CONTENT_CAP, withoutImageData, withoutReasoningParts } from './sessions/merge.js'
 import { REASONING_FIELDS } from './sessions/reasoning-display.js'
 import { stripAttachedFilesMarker } from './sessions/session.js'
 
@@ -2472,7 +2472,7 @@ function withoutWithheldText(message: unknown): unknown {
   return { ...Object.fromEntries(Object.entries(display).filter(([key]) => !REASONING_FIELDS.has(key))), content: Array.isArray(message.content) ? message.content.filter(isToolUse) : '' }
 }
 
-function publicMessageProjection(message: unknown, enabled: boolean, activeTurnToken: string | null, workspace: string | null): unknown {
+function publicMessageProjection(message: unknown, enabled: boolean, activeTurnToken: string | null, workspace: string | null, sessionId: string | null): unknown {
   const isActive = Boolean(message && typeof message === 'object' && (message as Record<string, unknown>).role === 'user' && activeTurnToken !== null && (message as Record<string, unknown>)._active_turn_token === activeTurnToken)
   // Exports and nested public documents bypass scene hydration; project their user content at this boundary too.
   const scrubbed = withoutWithheldText(normalizeUserDisplay((scrubInternalReplayFields([message], { messageRecords: true }) as unknown[])[0]))
@@ -2483,8 +2483,10 @@ function publicMessageProjection(message: unknown, enabled: boolean, activeTurnT
     // TAL-909: a tool row's metadata carries the whole edit diff, which ships capped and redacted as its call's `edit_diff`.
     if (key === 'display_metadata' && (scrubbed as Record<string, unknown>).role === 'tool') continue
     const userParts = key === 'content' && Array.isArray(value) && (scrubbed as Record<string, unknown>).role === 'user'
+    // TAL-2325: a tool row ships without the image data its model was handed.
+    const shipped = key === 'content' && (scrubbed as Record<string, unknown>).role === 'tool' ? withoutImageData(value) : value
     // Preserve the string/parts/null contract and redact JSON credential fields with their key context intact.
-    const publicValue = key === 'content' && value != null && typeof value !== 'string' && !Array.isArray(value) ? JSON.stringify(value) : value
+    const publicValue = key === 'content' && shipped != null && typeof shipped !== 'string' && !Array.isArray(shipped) ? JSON.stringify(shipped) : shipped
     item[key] = userParts ? value.map((part) => redactUserContentPart(part, enabled)) : redactValue(publicValue, enabled)
   }
   if (isActive) item._active_turn_user = true
@@ -2505,14 +2507,14 @@ function publicMessageProjection(message: unknown, enabled: boolean, activeTurnT
     if (titles.length) item.reasoning_titles = titles
     else delete item.reasoning_titles
   }
-  return withMessageToolDisplay(scrubbed as Record<string, unknown>, item, enabled, workspace)
+  return withMessageToolDisplay(scrubbed as Record<string, unknown>, item, enabled, workspace, sessionId)
 }
 
 /**
  * A redacted call with its server `kind` and `target`, taken from the raw call's parsed args redacted once (never a
  * redacted JSON string, which masks a different span), so a call shows one target live, after replay and after reload.
  */
-function withToolDisplay<T>(raw: unknown, redacted: T, enabled: boolean, workspace: string | null): T {
+function withToolDisplay<T>(raw: unknown, redacted: T, enabled: boolean, workspace: string | null, sessionId: string | null): T {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !redacted || typeof redacted !== 'object' || Array.isArray(redacted)) return redacted
   const record = raw as Record<string, unknown>
   const out = { ...redacted } as Record<string, unknown>
@@ -2531,8 +2533,8 @@ function withToolDisplay<T>(raw: unknown, redacted: T, enabled: boolean, workspa
   if (isDict(args)) out.args_fields = cappedFields(toolFields(args), TOOL_ARG_CONTENT_CAP)
   // TAL-1458: only a call naming a file carries `focus_path`, so a bare completion never clears its start frame's.
   const { focus_path: focusPath, ...display } = redactedToolDisplay(record, enabled, workspace)
-  // TAL-2323: the files a read or search result names, located in the workspace from their redacted paths.
-  if (isDict(out.result_view)) out.result_view = withResultFocusPaths(out.result_view, workspace)
+  // TAL-2323: the files a read or search result names, located in the workspace from their redacted paths; TAL-2325: its local media served for this session.
+  if (isDict(out.result_view)) out.result_view = withResultFocusPaths(out.result_view, workspace, sessionId)
   return { ...out, ...display, ...(focusPath ? { focus_path: focusPath } : {}) } as T
 }
 
@@ -2603,51 +2605,51 @@ function redactArgs(value: unknown, enabled: boolean): unknown {
 const isToolUse = (part: unknown): boolean => Boolean(part && typeof part === 'object' && (part as Record<string, unknown>).type === 'tool_use')
 
 /** Every tool call a redacted message carries (OpenAI `tool_calls`, `tool_use` blocks, scene rows), stamped from its raw twin. */
-function withMessageToolDisplay(raw: Record<string, unknown>, item: Record<string, unknown>, enabled: boolean, workspace: string | null): Record<string, unknown> {
+function withMessageToolDisplay(raw: Record<string, unknown>, item: Record<string, unknown>, enabled: boolean, workspace: string | null, sessionId: string | null): Record<string, unknown> {
   if (Array.isArray(raw.tool_calls) && Array.isArray(item.tool_calls)) {
     const calls = raw.tool_calls as unknown[]
-    item.tool_calls = item.tool_calls.map((call: unknown, i) => withToolDisplay(calls[i], call, enabled, workspace))
+    item.tool_calls = item.tool_calls.map((call: unknown, i) => withToolDisplay(calls[i], call, enabled, workspace, sessionId))
   }
   if (Array.isArray(raw.content) && Array.isArray(item.content)) {
     const parts = raw.content as unknown[]
-    item.content = item.content.map((part: unknown, i) => (isToolUse(parts[i]) ? withToolDisplay(parts[i], part, enabled, workspace) : part))
+    item.content = item.content.map((part: unknown, i) => (isToolUse(parts[i]) ? withToolDisplay(parts[i], part, enabled, workspace, sessionId) : part))
   }
   const rawScene = raw._anchor_activity_scene
   const scene = item._anchor_activity_scene
   if (rawScene && typeof rawScene === 'object' && scene && typeof scene === 'object' && Array.isArray((scene as Record<string, unknown>).activity_rows)) {
-    item._anchor_activity_scene = { ...scene, activity_rows: withSceneToolDisplay((rawScene as Record<string, unknown>).activity_rows, (scene as Record<string, unknown>).activity_rows as unknown[], enabled, workspace) }
+    item._anchor_activity_scene = { ...scene, activity_rows: withSceneToolDisplay((rawScene as Record<string, unknown>).activity_rows, (scene as Record<string, unknown>).activity_rows as unknown[], enabled, workspace, sessionId) }
   }
   return item
 }
 
 /** Redacted scene rows (the detail preview and the paged rows) stamped from their raw twins the same way. */
-export function withSceneToolDisplay(rawRows: unknown, rows: unknown[], enabled: boolean, workspace: string | null): unknown[] {
+export function withSceneToolDisplay(rawRows: unknown, rows: unknown[], enabled: boolean, workspace: string | null, sessionId: string | null = null): unknown[] {
   const raws = Array.isArray(rawRows) ? rawRows : []
   return rows.map((row, i) => {
     const rawTool = (raws[i] as Record<string, unknown> | undefined)?.tool
     if (!row || typeof row !== 'object' || Array.isArray(row) || !rawTool) return row
-    return { ...row, tool: withToolDisplay(rawTool, (row as Record<string, unknown>).tool, enabled, workspace) }
+    return { ...row, tool: withToolDisplay(rawTool, (row as Record<string, unknown>).tool, enabled, workspace, sessionId) }
   })
 }
 
-function redactMessages(messages: unknown, enabled: boolean, activeTurnToken: string | null, workspace: string | null): unknown {
+function redactMessages(messages: unknown, enabled: boolean, activeTurnToken: string | null, workspace: string | null, sessionId: string | null): unknown {
   if (!Array.isArray(messages)) return redactValue(messages, enabled)
-  return messages.map((m) => publicMessageProjection(m, enabled, activeTurnToken, workspace))
+  return messages.map((m) => publicMessageProjection(m, enabled, activeTurnToken, workspace, sessionId))
 }
 
-function redactToolCalls(toolCalls: unknown, enabled: boolean, workspace: string | null): unknown {
+function redactToolCalls(toolCalls: unknown, enabled: boolean, workspace: string | null, sessionId: string | null): unknown {
   const scrubbed = scrubInternalReplayFields(toolCalls, { messageRecords: false })
   const redacted = redactValue(scrubbed, enabled)
-  return Array.isArray(scrubbed) && Array.isArray(redacted) ? redacted.map((call: unknown, i) => withToolDisplay(scrubbed[i], call, enabled, workspace)) : redacted
+  return Array.isArray(scrubbed) && Array.isArray(redacted) ? redacted.map((call: unknown, i) => withToolDisplay(scrubbed[i], call, enabled, workspace, sessionId)) : redacted
 }
 
 /**
  * A live `tool` / `tool_complete` frame as it leaves the server (SSE, journal, legacy replay): redacted like session detail, then
  * stamped. TAL-1537: without the session `workspace` (a native gateway frame, a replay restamp) only a relative path is a
- * `focus_path`; a replayed frame keeps the one it was stamped with live.
+ * `focus_path`; a replayed frame keeps the one it was stamped with live. TAL-2325: `sessionId` joins its local media URLs.
  */
-export function publicToolFrame(data: Record<string, unknown>, enabled: boolean, workspace: string | null = null): Record<string, unknown> {
-  const frame = withToolDisplay(data, redactValue(data, enabled) as Record<string, unknown>, enabled, workspace)
+export function publicToolFrame(data: Record<string, unknown>, enabled: boolean, workspace: string | null = null, sessionId: string | null = null): Record<string, unknown> {
+  const frame = withToolDisplay(data, redactValue(data, enabled) as Record<string, unknown>, enabled, workspace, sessionId)
   // A frame without a displayable argument (a bare completion, or `args: {}`) has no target or argument rows of its own:
   // omitting them keeps the ones its start frame set.
   if (!frame.target) delete frame.target
@@ -2668,14 +2670,14 @@ export function withToolId(data: Record<string, unknown>, id: string): Record<st
   return frame
 }
 
-export function redactNestedMessageContainers(value: unknown, enabled: boolean, workspace: string | null = null): unknown {
+export function redactNestedMessageContainers(value: unknown, enabled: boolean, workspace: string | null = null, sessionId: string | null = null): unknown {
   const scrubbed = scrubInternalReplayFields(value)
   if (!scrubbed || typeof scrubbed !== 'object' || Array.isArray(scrubbed)) return redactValue(scrubbed, enabled)
   const result: Record<string, unknown> = {}
   for (const [key, child] of Object.entries(scrubbed as Record<string, unknown>)) {
-    if ((key === 'messages' || key === 'context_messages') && Array.isArray(child)) result[key] = redactMessages(child, enabled, null, workspace)
-    else if (key === 'tool_calls' && Array.isArray(child)) result[key] = redactToolCalls(child, enabled, workspace)
-    else if (key === 'runtime_journal_snapshot' && child && typeof child === 'object') result[key] = redactNestedMessageContainers(child, enabled, workspace)
+    if ((key === 'messages' || key === 'context_messages') && Array.isArray(child)) result[key] = redactMessages(child, enabled, null, workspace, sessionId)
+    else if (key === 'tool_calls' && Array.isArray(child)) result[key] = redactToolCalls(child, enabled, workspace, sessionId)
+    else if (key === 'runtime_journal_snapshot' && child && typeof child === 'object') result[key] = redactNestedMessageContainers(child, enabled, workspace, sessionId)
     else result[key] = redactValue(child, enabled)
   }
   return result
@@ -2687,12 +2689,14 @@ export function redactSessionData(session: Record<string, unknown>, enabled: boo
   const activeTurnToken = buildActiveTurnToken(session.active_stream_id, session.pending_started_at)
   // TAL-1537: the session's own root decides which absolute tool paths are its `focus_path` files.
   const workspace = typeof session.workspace === 'string' && session.workspace ? session.workspace : null
+  // TAL-2325: and its id serves its tool results' local media.
+  const sessionId = typeof session.session_id === 'string' && session.session_id ? session.session_id : null
   for (const [key, value] of Object.entries(session)) {
     if (PUBLIC_MESSAGE_INTERNAL_FIELDS.has(key)) continue
     if (key === 'title' && typeof value === 'string') result[key] = redactText(value, enabled)
-    else if (key === 'messages' || key === 'context_messages') result[key] = redactMessages(value, enabled, activeTurnToken, workspace)
-    else if (key === 'tool_calls' && Array.isArray(value)) result[key] = redactToolCalls(value, enabled, workspace)
-    else if (key === 'todo_state' || key === 'runtime_journal_snapshot') result[key] = redactNestedMessageContainers(value, enabled, workspace)
+    else if (key === 'messages' || key === 'context_messages') result[key] = redactMessages(value, enabled, activeTurnToken, workspace, sessionId)
+    else if (key === 'tool_calls' && Array.isArray(value)) result[key] = redactToolCalls(value, enabled, workspace, sessionId)
+    else if (key === 'todo_state' || key === 'runtime_journal_snapshot') result[key] = redactNestedMessageContainers(value, enabled, workspace, sessionId)
     else result[key] = copyJson(value)
   }
   return result

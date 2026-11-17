@@ -1151,6 +1151,45 @@ final class SharedContractTests: XCTestCase {
         }
     }
 
+    func testSharedWebSessionCarriesEachMediaAndAnalysisSection() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
+        // A release checks this App against every retained Web; one from before TAL-2325 has no such example.
+        guard let example = object["tool_media_views"] as? [String: Any] else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let session = try decoder.decode(SessionDetail.self, from: JSONSerialization.data(withJSONObject: example["session"] as Any))
+        let messages = try XCTUnwrap(session.messages)
+        let answer = try XCTUnwrap(messages.first { $0.messageId == "media-answer" })
+        let timeline = try XCTUnwrap(AssistantActivityTimeline.authoritativeScene(message: answer))
+        let groups = ToolCallGroup.groups(messages: messages, messageOffset: nil)
+        for calls in [timeline.toolCalls, groups.first { $0.anchorMessageID == "media-calls" }?.toolCalls ?? []] {
+            let byID = Dictionary(uniqueKeysWithValues: calls.map { ($0.id, $0) })
+            let image = try XCTUnwrap(byID["call-image"])
+            XCTAssertEqual(image.kind, .image)
+            XCTAssertEqual(image.resultView?.media?.map(\.mediaKind), [.image, .image])
+            XCTAssertEqual(image.resultView?.media?.first?.url, "./api/media?path=%2Fsrv%2Fhermes%2Fcache%2Fgenerated%2Fimages%2Fcat.png&session_id=media-session")
+            XCTAssertEqual(image.resultView?.media?.last?.url, "https://cdn.example/cat-2.png")
+            XCTAssertEqual(AssistantActivitySummary.label(for: image), "Generated an image")
+            XCTAssertEqual(AssistantActivitySummary.icon(for: image), "photo")
+            let speech = try XCTUnwrap(byID["call-speech"])
+            XCTAssertEqual(speech.kind, .audio)
+            XCTAssertEqual(speech.resultView?.media?.map(\.mediaKind), [.audio])
+            XCTAssertEqual(AssistantActivitySummary.icon(for: speech), "waveform")
+            let video = try XCTUnwrap(byID["call-video"])
+            XCTAssertEqual(video.kind, .video)
+            XCTAssertEqual(video.resultView?.media?.map(\.url), ["https://cdn.example/wave.mp4"])
+            let failed = try XCTUnwrap(byID["call-failed"])
+            XCTAssertEqual(failed.resultView?.error, "FAL_KEY is not set")
+            XCTAssertNil(failed.resultView?.media)
+            XCTAssertEqual(AssistantActivitySummary.label(for: failed), "Failed to generate an image")
+            let vision = try XCTUnwrap(byID["call-vision"])
+            XCTAssertEqual(vision.kind, .imageAnalysis)
+            XCTAssertEqual(vision.resultView?.analysis, "A **cat** on a sofa.")
+            XCTAssertEqual(AssistantActivitySummary.label(for: vision), "Analyzed an image")
+            XCTAssertEqual(byID["call-native"]?.resultView?.analysis, "Image loaded into your context.")
+        }
+    }
+
     func testSharedWebSessionCarriesEachFileEditsDiff() throws {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
         // A release checks this App against every retained Web; one from before TAL-448 has no such example.

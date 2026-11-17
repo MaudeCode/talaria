@@ -66,6 +66,12 @@ public enum AssistantActivitySummary: Sendable {
         case web
         case load
         case talaria
+        // TAL-2325: media a tool generates, and the analysis of an image or a video.
+        case image
+        case audio
+        case video
+        case imageAnalysis
+        case videoAnalysis
         case generic
     }
 
@@ -122,6 +128,8 @@ public enum AssistantActivitySummary: Sendable {
             case .memory: return String(localized: "Failed to save \(target)")
             case .delegate: return String(localized: "Failed to delegate \(target)")
             case .talaria: return String(localized: "Failed to use \(target)")
+            // A media tool reads as its kind's phrase; the server sends it no target.
+            case .image, .audio, .video, .imageAnalysis, .videoAnalysis: return failedPhrase(for: category(for: toolCall))
             }
         }
         switch (kind, toolCall.isCompleted) {
@@ -145,6 +153,8 @@ public enum AssistantActivitySummary: Sendable {
         case (.delegate, false): return String(localized: "Delegating \(target)")
         case (.talaria, true): return String(localized: "Used \(target)")
         case (.talaria, false): return String(localized: "Using \(target)")
+        case (.image, _), (.audio, _), (.video, _), (.imageAnalysis, _), (.videoAnalysis, _):
+            return phrase(for: category(for: toolCall), count: 1, completed: toolCall.isCompleted)
         }
     }
 
@@ -185,6 +195,11 @@ public enum AssistantActivitySummary: Sendable {
         case .web: .web
         case .skill: .load
         case .talaria: .talaria
+        case .image: .image
+        case .audio: .audio
+        case .video: .video
+        case .imageAnalysis: .imageAnalysis
+        case .videoAnalysis: .videoAnalysis
         case .memory, .delegate, .unknown: .generic
         }
     }
@@ -215,6 +230,24 @@ public enum AssistantActivitySummary: Sendable {
         case (.talaria, false, true): String(localized: "Used Talaria tools")
         case (.talaria, true, false): String(localized: "Using a Talaria tool")
         case (.talaria, false, false): String(localized: "Using Talaria tools")
+        case (.image, true, true): String(localized: "Generated an image")
+        case (.image, false, true): String(localized: "Generated images")
+        case (.image, true, false): String(localized: "Generating an image")
+        case (.image, false, false): String(localized: "Generating images")
+        case (.audio, _, true): String(localized: "Spoke aloud")
+        case (.audio, _, false): String(localized: "Speaking aloud")
+        case (.video, true, true): String(localized: "Generated a video")
+        case (.video, false, true): String(localized: "Generated videos")
+        case (.video, true, false): String(localized: "Generating a video")
+        case (.video, false, false): String(localized: "Generating videos")
+        case (.imageAnalysis, true, true): String(localized: "Analyzed an image")
+        case (.imageAnalysis, false, true): String(localized: "Analyzed images")
+        case (.imageAnalysis, true, false): String(localized: "Analyzing an image")
+        case (.imageAnalysis, false, false): String(localized: "Analyzing images")
+        case (.videoAnalysis, true, true): String(localized: "Analyzed a video")
+        case (.videoAnalysis, false, true): String(localized: "Analyzed videos")
+        case (.videoAnalysis, true, false): String(localized: "Analyzing a video")
+        case (.videoAnalysis, false, false): String(localized: "Analyzing videos")
         case (.generic, true, true): String(localized: "Called a tool")
         case (.generic, false, true): String(localized: "Called tools")
         case (.generic, true, false): String(localized: "Calling a tool")
@@ -231,6 +264,11 @@ public enum AssistantActivitySummary: Sendable {
         case .web: String(localized: "Failed to search the web")
         case .load: String(localized: "Failed to load a tool")
         case .talaria: String(localized: "Failed to use a Talaria tool")
+        case .image: String(localized: "Failed to generate an image")
+        case .audio: String(localized: "Failed to speak aloud")
+        case .video: String(localized: "Failed to generate a video")
+        case .imageAnalysis: String(localized: "Failed to analyze an image")
+        case .videoAnalysis: String(localized: "Failed to analyze a video")
         case .generic: String(localized: "Tool failed")
         }
     }
@@ -244,6 +282,9 @@ public enum AssistantActivitySummary: Sendable {
         case .web: "globe"
         case .load: "puzzlepiece.extension"
         case .talaria: talariaMarkIcon
+        case .image, .imageAnalysis: "photo"
+        case .audio: "waveform"
+        case .video, .videoAnalysis: "video"
         case .generic: "wrench"
         }
     }

@@ -234,6 +234,16 @@ back to the session file.
   without the Agent's truncation footer, or the error that page failed with), in
   place of `fields`; `text` stays for older clients. Whole rows share the
   4000-character budget.
+  TAL-2325: a media tool's result adds `media` (`DisplayMedia` items: `image`
+  and `additional_images`, `file_paths` else `file_path`, `video` else
+  `public_url`; a remote http(s) URL as written, a local path as its
+  `./api/media?path=…&session_id=…` URL, which the session's media grant serves
+  for that tool's result) and keeps its key/value `fields`; a failed one is its
+  `error` alone. `vision_analyze` and `video_analyze` add `analysis`, its
+  Markdown (`analysis`, else a multimodal result's `text_summary`), in place of
+  `fields`. A multimodal result (`_multimodal`) reads as its `text_summary` and a
+  tool row's content list ships without its image parts: no image data reaches a
+  client. A call that made media is `shows_card` and opens its worklog.
 - `args_fields` (TAL-2318): the call's redacted arguments as the same rows, one
   per top-level key in call order, each value capped at 4000 characters. A
   scalar shows inline, a nested object as indented `key: value` lines, a list as

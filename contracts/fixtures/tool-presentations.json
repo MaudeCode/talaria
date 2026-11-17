@@ -112,8 +112,8 @@
     "presentation": "generic"
   },
   "image_generate": {
-    "kind": "unknown",
-    "presentation": "generic"
+    "kind": "image",
+    "presentation": "media"
   },
   "kanban_attach": {
     "kind": "unknown",
@@ -248,24 +248,24 @@
     "presentation": "terminal"
   },
   "text_to_speech": {
-    "kind": "unknown",
-    "presentation": "generic"
+    "kind": "audio",
+    "presentation": "media"
   },
   "todo_list": {
     "kind": "list",
     "presentation": "todo"
   },
   "video_analyze": {
-    "kind": "unknown",
-    "presentation": "generic"
+    "kind": "video_analysis",
+    "presentation": "analysis"
   },
   "video_generate": {
-    "kind": "unknown",
-    "presentation": "generic"
+    "kind": "video",
+    "presentation": "media"
   },
   "vision_analyze": {
-    "kind": "read",
-    "presentation": "generic"
+    "kind": "image_analysis",
+    "presentation": "analysis"
   },
   "web_extract": {
     "kind": "web",
@@ -284,12 +284,12 @@
     "presentation": "links"
   },
   "xai_video_edit": {
-    "kind": "write",
-    "presentation": "generic"
+    "kind": "video",
+    "presentation": "media"
   },
   "xai_video_extend": {
-    "kind": "unknown",
-    "presentation": "generic"
+    "kind": "video",
+    "presentation": "media"
   },
   "yb_query_group_info": {
     "kind": "unknown",

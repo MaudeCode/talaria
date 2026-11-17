@@ -258,7 +258,10 @@ def _snippet(raw: Any, limit: int = _TOOL_RESULT_SNIPPET_MAX, parsed: Any = _UNP
         return ""
     text = str(raw or "")
     data = _result_object(raw, parsed)
-    if data is not None:
+    if data is not None and data.get("_multimodal") is True:
+        # TAL-2325: a multimodal result (image data handed to the model) previews as its text summary, never its image data.
+        text = str(data.get("text_summary") or "")
+    elif data is not None:
         text = str(data.get("output") or data.get("result") or data.get("error") or text)
     return text[:limit]
 
