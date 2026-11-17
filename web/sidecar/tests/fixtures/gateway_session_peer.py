@@ -793,9 +793,13 @@ async def probe_batch_unavailable(home, peer, desc):
 
 
 async def probe_restart(home, peer, desc, proc):
-    """``hermes gateway restart`` waits for a turn parked on an approval; Web answers it, then the restart completes."""
+    """``hermes gateway restart`` waits for a turn parked on an approval; Web answers it, then the restart completes.
+
+    An owner shipping ``gateway/restart_when_idle.py`` restarts when idle: it stays ready and keeps admitting work until
+    nothing is live. An older one drains at once, refusing new work while the parked turn stays answerable."""
     import signal
     from hermes_cli.gateway_runtime import discover_gateway_endpoint
+    when_idle = (agent / "gateway/restart_when_idle.py").exists()
     sidecar = SidecarProcess(home)
     viewer = SidecarProcess(home)
     try:
@@ -825,47 +829,87 @@ async def probe_restart(home, peer, desc, proc):
             if frame["params"]["event"] == "event":
                 seen.append(frame["params"]["data"].get("type"))
                 break
+        owner = discover_gateway_endpoint(home)
+        assert owner.state == "ready", owner
         proc.send_signal(signal.SIGUSR1)  # the service restart path `hermes gateway restart` takes
-        deadline = time.monotonic() + 30
-        while (found := discover_gateway_endpoint(home)).reason_code != "restart_wait":
-            assert time.monotonic() < deadline, found
-            await asyncio.sleep(.05)
-        # The watch learns the transition itself, so the server can stop sending without another read.
-        while True:
-            try:
-                frame = await asyncio.to_thread(viewer.next_message, 10)
-            except queue.Empty:
-                raise AssertionError(f"the open watch never reported the restart wait: {seen}") from None
-            assert frame.get("id") != watch_id, frame
-            if frame["params"]["event"] == "restarting":
-                break
-            seen.append(frame["params"]["data"].get("type"))
-        attached = await asyncio.to_thread(sidecar.result, "gateway.session", {**params, "action": "snapshot"})
-        assert attached["state"] == "attached" and attached["restarting"] is True, attached
-        assert attached["snapshot"]["prompts"][0]["prompt_id"] == prompt["prompt_id"], attached
         count = len(peer.requests)
-        for action, extra in (("submit", {"request_id": "restart-submit", "text": "MUST_NOT_RUN"}),
-                              ("mutate", {"request_id": "restart-mutate", "expected_revision": attached["snapshot"]["revision"],
-                                          "execution_generation": attached["snapshot"]["execution_generation"],
-                                          "operation": "rename", "payload": {"title": "never"}})):
-            refused = await asyncio.to_thread(sidecar.result, "gateway.session", {**params, "action": action, **extra})
-            assert (refused["state"], refused["reason"]) == ("refused", "gateway_restarting"), refused
+        if when_idle:
+            from gateway.status import read_runtime_status
+            # The owner publishes the waiting restart, and the work holding it, only in its runtime status.
+            deadline = time.monotonic() + 30
+            while not ((status := read_runtime_status(home / "gateway_state.json")) or {}).get("restart_requested"):
+                assert time.monotonic() < deadline, status
+                await asyncio.sleep(.05)
+            assert status["active_work"], status
+            # Discovery stays ready on the same owner, so Web keeps sending through it.
+            found = discover_gateway_endpoint(home)
+            assert (found.state, found.reason_code) == ("ready", None), found
+            assert (found.endpoint.instance_id, found.endpoint.authority_epoch) == \
+                (owner.endpoint.instance_id, owner.endpoint.authority_epoch), (owner, found)
+            attached = await asyncio.to_thread(sidecar.result, "gateway.session", {**params, "action": "snapshot"})
+            assert attached["state"] == "attached" and not attached["restarting"], attached
+            assert attached["snapshot"]["prompts"][0]["prompt_id"] == prompt["prompt_id"], attached
+            # Admission stays open while the parked turn holds the restart.
+            renamed = await asyncio.to_thread(sidecar.result, "gateway.session", {**params, "action": "mutate",
+                "request_id": "restart-mutate", "expected_revision": attached["snapshot"]["revision"],
+                "execution_generation": attached["snapshot"]["execution_generation"],
+                "operation": "rename", "payload": {"title": "Renamed while restarting"}})
+            assert renamed["state"] == "attached" and not renamed["restarting"], renamed
+            assert renamed["snapshot"]["revision"] > attached["snapshot"]["revision"], renamed
+            followup = await asyncio.to_thread(sidecar.result, "gateway.session", {**params, "action": "submit",
+                "request_id": "restart-submit", "text": "ADMITTED_WHILE_RESTARTING"})
+            assert followup["state"] == "attached" and followup["receipt"]["admission_id"], followup
+            assert proc.poll() is None, "the owner exited while its turn was parked"
+        else:
+            deadline = time.monotonic() + 30
+            while (found := discover_gateway_endpoint(home)).reason_code != "restart_wait":
+                assert time.monotonic() < deadline, found
+                await asyncio.sleep(.05)
+            # The watch learns the transition itself, so the server can stop sending without another read.
+            while True:
+                try:
+                    frame = await asyncio.to_thread(viewer.next_message, 10)
+                except queue.Empty:
+                    raise AssertionError(f"the open watch never reported the restart wait: {seen}") from None
+                assert frame.get("id") != watch_id, frame
+                if frame["params"]["event"] == "restarting":
+                    break
+                seen.append(frame["params"]["data"].get("type"))
+            attached = await asyncio.to_thread(sidecar.result, "gateway.session", {**params, "action": "snapshot"})
+            assert attached["state"] == "attached" and attached["restarting"] is True, attached
+            assert attached["snapshot"]["prompts"][0]["prompt_id"] == prompt["prompt_id"], attached
+            for action, extra in (("submit", {"request_id": "restart-submit", "text": "MUST_NOT_RUN"}),
+                                  ("mutate", {"request_id": "restart-mutate", "expected_revision": attached["snapshot"]["revision"],
+                                              "execution_generation": attached["snapshot"]["execution_generation"],
+                                              "operation": "rename", "payload": {"title": "never"}})):
+                refused = await asyncio.to_thread(sidecar.result, "gateway.session", {**params, "action": action, **extra})
+                assert (refused["state"], refused["reason"]) == ("refused", "gateway_restarting"), refused
         answered = await asyncio.to_thread(sidecar.result, "gateway.session", {**params, "action": "approval",
             "prompt_id": prompt["prompt_id"], "execution_generation": prompt["execution_generation"], "choice": "once"})
         assert answered["state"] == "attached", answered
-        # The restart waited only for that turn: the owner now exits on its own.
+        # The restart waited only for that work: the owner now exits on its own.
         await asyncio.to_thread(proc.wait, 60)
         # The watch opened before the wait observed the settlement and the turn's end until the owner exited.
+        events = []
         while (frame := await asyncio.to_thread(viewer.next_message, 20)).get("id") != watch_id:
+            events.append(frame["params"]["event"])
             seen.append(frame["params"]["data"].get("type"))
+        assert seen.count("approval.settled") == 1, seen
         assert seen.index("approval.settled") < seen.index("message.complete"), seen
         import sqlite3
         from contextlib import closing
         with closing(sqlite3.connect((home / "state.db").as_uri() + "?mode=ro", uri=True)) as db:
-            contents = [row[0] for row in db.execute("SELECT content FROM messages WHERE session_id=?", (sid,))]
+            contents = [row[0] for row in db.execute("SELECT content FROM messages WHERE session_id=? ORDER BY id", (sid,))]
         assert "APPROVAL_FINISHED" in contents, contents
         assert not (home / "owned-removal").exists()
-        assert "MUST_NOT_RUN" not in json.dumps(peer.requests[count:]), peer.requests[count:]
+        if when_idle:
+            # Nothing announced a restart to the watch, and the admitted follow-up ran to its end before the exit.
+            assert "restarting" not in events, events
+            assert "ADMITTED_WHILE_RESTARTING" in json.dumps(peer.requests[count:]), peer.requests[count:]
+            assert contents[contents.index("ADMITTED_WHILE_RESTARTING") + 1:].count("APPROVAL_FINISHED") == 1, contents
+            assert seen.count("message.complete") == 2, seen
+        else:
+            assert "MUST_NOT_RUN" not in json.dumps(peer.requests[count:]), peer.requests[count:]
     finally:
         sidecar.close()
         viewer.close()
