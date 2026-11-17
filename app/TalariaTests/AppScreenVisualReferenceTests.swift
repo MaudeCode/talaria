@@ -81,6 +81,24 @@ final class AppScreenVisualReferenceTests: XCTestCase {
         }
     }
 
+    /// TAL-2337: the run status chip naming the running call at phone width: its kind's icon and label, a long label cut
+    /// short before the elapsed time, and a held call's "Waiting for approval" in the warning colour.
+    func testRunStatusToolChipReferences() throws {
+        for scheme in [ColorScheme.light, .dark] {
+            try VisualReference.assertMatchesReference(
+                VStack(spacing: 8) {
+                    StatusChip(label: "Running npm test", icon: .symbol("circle.dotted"), toolIcon: "terminal", elapsed: "34s")
+                    StatusChip(label: "Searching the web for hermes agent 0.24 changelog", icon: .symbol("circle.dotted"), toolIcon: "globe", elapsed: "1m")
+                    StatusChip(label: "Waiting for approval", icon: .symbol("circle.dotted"), toolIcon: "terminal", emphasis: .attention, elapsed: "12s")
+                }
+                .padding(.horizontal, 16),
+                named: "run-status-tool-chip-\(name(for: scheme))",
+                size: CGSize(width: 390, height: 132),
+                colorScheme: scheme
+            )
+        }
+    }
+
     /// `ChatTranscriptLoadingSkeletonView` wraps these rows in a `ScrollView`,
     /// which `ImageRenderer` draws empty, so the reference covers the rows the
     /// loading state is actually made of.

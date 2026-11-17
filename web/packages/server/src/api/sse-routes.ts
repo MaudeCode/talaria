@@ -21,7 +21,7 @@ import type { WebAudioCompletion } from '@maudecode/talaria-web-contracts'
 import { filterAsync, str } from '../util.js'
 import { outsideSourcesShown } from '../settings.js'
 import { resolveStreamOwner, streamRunSummary, streamVisibleToRequest } from './session-visibility.js'
-import { completedToolIndex, publicToolFrame, withLookupVisibility, withToolId } from '../redact.js'
+import { completedToolIndex, publicToolFrame, redactedRunStatus, withLookupVisibility, withToolId } from '../redact.js'
 
 export const SSE_HEARTBEAT_INTERVAL_MS = 5_000
 /** A proxy can keep acknowledging a stream after its browser left, so a feed with no natural end stops here; a live client reconnects. */
@@ -220,6 +220,8 @@ async function settleServerOwner(ctx: RequestContext): Promise<void> {
  */
 function publicFramePayload(ctx: RequestContext, event: string, payload: unknown, redacted: boolean | undefined): unknown {
   if (event === 'clarify') return pendingForViewer(payload, serverOwners.get(ctx) === true)
+  // TAL-2337: a status's running call takes the redaction policy in force now, live, buffered or replayed.
+  if (event === 'run_status' && payload && typeof payload === 'object' && !Array.isArray(payload)) return { ...payload, status: redactedRunStatus((payload as Record<string, unknown>).status, ctx.deps.sessions.deps.redactEnabled()) }
   if (!payload || typeof payload !== 'object' || Array.isArray(payload) || (event !== 'tool' && event !== 'tool_complete' && event !== 'tool_progress')) return payload
   const frame = payload as Record<string, unknown>
   if (redacted !== true) return publicToolFrame(frame, ctx.deps.sessions.deps.redactEnabled())

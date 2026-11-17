@@ -11977,6 +11977,146 @@
                                   "properties": {
                                     "phase": {
                                       "const": "working"
+                                    },
+                                    "current_tool": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "shell",
+                                            "read",
+                                            "list",
+                                            "search",
+                                            "web",
+                                            "write",
+                                            "skill",
+                                            "memory",
+                                            "delegate",
+                                            "talaria",
+                                            "image",
+                                            "audio",
+                                            "video",
+                                            "image_analysis",
+                                            "video_analysis",
+                                            "session",
+                                            "schedule",
+                                            "connection",
+                                            "question",
+                                            "kanban",
+                                            "browser",
+                                            "computer",
+                                            "mcp",
+                                            "connector",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "target": {
+                                          "type": "string",
+                                          "maxLength": 64
+                                        },
+                                        "done": {
+                                          "type": "boolean"
+                                        },
+                                        "failed": {
+                                          "const": true
+                                        },
+                                        "verb": {
+                                          "enum": [
+                                            "create",
+                                            "view",
+                                            "list",
+                                            "update",
+                                            "complete",
+                                            "block",
+                                            "comment",
+                                            "run",
+                                            "send",
+                                            "answer",
+                                            "fill",
+                                            "capture",
+                                            "click",
+                                            "type"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "app": {
+                                          "type": "object",
+                                          "properties": {
+                                            "name": {
+                                              "type": "string",
+                                              "maxLength": 64
+                                            }
+                                          },
+                                          "required": [
+                                            "name"
+                                          ]
+                                        },
+                                        "outcome": {
+                                          "type": "object",
+                                          "properties": {
+                                            "key": {
+                                              "enum": [
+                                                "sent",
+                                                "approved",
+                                                "denied",
+                                                "goal_set",
+                                                "created",
+                                                "memory_added",
+                                                "memory_updated",
+                                                "memory_removed",
+                                                "skill_created",
+                                                "skill_updated",
+                                                "pending_approval",
+                                                "job_created",
+                                                "paused",
+                                                "resumed",
+                                                "removed",
+                                                "ran_now",
+                                                "moved_to",
+                                                "blocked",
+                                                "completed",
+                                                "commented",
+                                                "connected",
+                                                "needs_sign_in",
+                                                "answered",
+                                                "skipped",
+                                                "no_matches",
+                                                "no_results",
+                                                "exit",
+                                                "failed"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "tone": {
+                                              "enum": [
+                                                "neutral",
+                                                "error",
+                                                "attention"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "count": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            "value": {
+                                              "type": "string",
+                                              "maxLength": 64
+                                            }
+                                          },
+                                          "required": [
+                                            "key",
+                                            "tone"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "target",
+                                        "done"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -19453,6 +19593,146 @@
                                   "properties": {
                                     "phase": {
                                       "const": "working"
+                                    },
+                                    "current_tool": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "shell",
+                                            "read",
+                                            "list",
+                                            "search",
+                                            "web",
+                                            "write",
+                                            "skill",
+                                            "memory",
+                                            "delegate",
+                                            "talaria",
+                                            "image",
+                                            "audio",
+                                            "video",
+                                            "image_analysis",
+                                            "video_analysis",
+                                            "session",
+                                            "schedule",
+                                            "connection",
+                                            "question",
+                                            "kanban",
+                                            "browser",
+                                            "computer",
+                                            "mcp",
+                                            "connector",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "target": {
+                                          "type": "string",
+                                          "maxLength": 64
+                                        },
+                                        "done": {
+                                          "type": "boolean"
+                                        },
+                                        "failed": {
+                                          "const": true
+                                        },
+                                        "verb": {
+                                          "enum": [
+                                            "create",
+                                            "view",
+                                            "list",
+                                            "update",
+                                            "complete",
+                                            "block",
+                                            "comment",
+                                            "run",
+                                            "send",
+                                            "answer",
+                                            "fill",
+                                            "capture",
+                                            "click",
+                                            "type"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "app": {
+                                          "type": "object",
+                                          "properties": {
+                                            "name": {
+                                              "type": "string",
+                                              "maxLength": 64
+                                            }
+                                          },
+                                          "required": [
+                                            "name"
+                                          ]
+                                        },
+                                        "outcome": {
+                                          "type": "object",
+                                          "properties": {
+                                            "key": {
+                                              "enum": [
+                                                "sent",
+                                                "approved",
+                                                "denied",
+                                                "goal_set",
+                                                "created",
+                                                "memory_added",
+                                                "memory_updated",
+                                                "memory_removed",
+                                                "skill_created",
+                                                "skill_updated",
+                                                "pending_approval",
+                                                "job_created",
+                                                "paused",
+                                                "resumed",
+                                                "removed",
+                                                "ran_now",
+                                                "moved_to",
+                                                "blocked",
+                                                "completed",
+                                                "commented",
+                                                "connected",
+                                                "needs_sign_in",
+                                                "answered",
+                                                "skipped",
+                                                "no_matches",
+                                                "no_results",
+                                                "exit",
+                                                "failed"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "tone": {
+                                              "enum": [
+                                                "neutral",
+                                                "error",
+                                                "attention"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "count": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            "value": {
+                                              "type": "string",
+                                              "maxLength": 64
+                                            }
+                                          },
+                                          "required": [
+                                            "key",
+                                            "tone"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "target",
+                                        "done"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -25600,6 +25880,146 @@
                                   "properties": {
                                     "phase": {
                                       "const": "working"
+                                    },
+                                    "current_tool": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "shell",
+                                            "read",
+                                            "list",
+                                            "search",
+                                            "web",
+                                            "write",
+                                            "skill",
+                                            "memory",
+                                            "delegate",
+                                            "talaria",
+                                            "image",
+                                            "audio",
+                                            "video",
+                                            "image_analysis",
+                                            "video_analysis",
+                                            "session",
+                                            "schedule",
+                                            "connection",
+                                            "question",
+                                            "kanban",
+                                            "browser",
+                                            "computer",
+                                            "mcp",
+                                            "connector",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "target": {
+                                          "type": "string",
+                                          "maxLength": 64
+                                        },
+                                        "done": {
+                                          "type": "boolean"
+                                        },
+                                        "failed": {
+                                          "const": true
+                                        },
+                                        "verb": {
+                                          "enum": [
+                                            "create",
+                                            "view",
+                                            "list",
+                                            "update",
+                                            "complete",
+                                            "block",
+                                            "comment",
+                                            "run",
+                                            "send",
+                                            "answer",
+                                            "fill",
+                                            "capture",
+                                            "click",
+                                            "type"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "app": {
+                                          "type": "object",
+                                          "properties": {
+                                            "name": {
+                                              "type": "string",
+                                              "maxLength": 64
+                                            }
+                                          },
+                                          "required": [
+                                            "name"
+                                          ]
+                                        },
+                                        "outcome": {
+                                          "type": "object",
+                                          "properties": {
+                                            "key": {
+                                              "enum": [
+                                                "sent",
+                                                "approved",
+                                                "denied",
+                                                "goal_set",
+                                                "created",
+                                                "memory_added",
+                                                "memory_updated",
+                                                "memory_removed",
+                                                "skill_created",
+                                                "skill_updated",
+                                                "pending_approval",
+                                                "job_created",
+                                                "paused",
+                                                "resumed",
+                                                "removed",
+                                                "ran_now",
+                                                "moved_to",
+                                                "blocked",
+                                                "completed",
+                                                "commented",
+                                                "connected",
+                                                "needs_sign_in",
+                                                "answered",
+                                                "skipped",
+                                                "no_matches",
+                                                "no_results",
+                                                "exit",
+                                                "failed"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "tone": {
+                                              "enum": [
+                                                "neutral",
+                                                "error",
+                                                "attention"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "count": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            "value": {
+                                              "type": "string",
+                                              "maxLength": 64
+                                            }
+                                          },
+                                          "required": [
+                                            "key",
+                                            "tone"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "target",
+                                        "done"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -34879,6 +35299,146 @@
                                   "properties": {
                                     "phase": {
                                       "const": "working"
+                                    },
+                                    "current_tool": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "shell",
+                                            "read",
+                                            "list",
+                                            "search",
+                                            "web",
+                                            "write",
+                                            "skill",
+                                            "memory",
+                                            "delegate",
+                                            "talaria",
+                                            "image",
+                                            "audio",
+                                            "video",
+                                            "image_analysis",
+                                            "video_analysis",
+                                            "session",
+                                            "schedule",
+                                            "connection",
+                                            "question",
+                                            "kanban",
+                                            "browser",
+                                            "computer",
+                                            "mcp",
+                                            "connector",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "target": {
+                                          "type": "string",
+                                          "maxLength": 64
+                                        },
+                                        "done": {
+                                          "type": "boolean"
+                                        },
+                                        "failed": {
+                                          "const": true
+                                        },
+                                        "verb": {
+                                          "enum": [
+                                            "create",
+                                            "view",
+                                            "list",
+                                            "update",
+                                            "complete",
+                                            "block",
+                                            "comment",
+                                            "run",
+                                            "send",
+                                            "answer",
+                                            "fill",
+                                            "capture",
+                                            "click",
+                                            "type"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "app": {
+                                          "type": "object",
+                                          "properties": {
+                                            "name": {
+                                              "type": "string",
+                                              "maxLength": 64
+                                            }
+                                          },
+                                          "required": [
+                                            "name"
+                                          ]
+                                        },
+                                        "outcome": {
+                                          "type": "object",
+                                          "properties": {
+                                            "key": {
+                                              "enum": [
+                                                "sent",
+                                                "approved",
+                                                "denied",
+                                                "goal_set",
+                                                "created",
+                                                "memory_added",
+                                                "memory_updated",
+                                                "memory_removed",
+                                                "skill_created",
+                                                "skill_updated",
+                                                "pending_approval",
+                                                "job_created",
+                                                "paused",
+                                                "resumed",
+                                                "removed",
+                                                "ran_now",
+                                                "moved_to",
+                                                "blocked",
+                                                "completed",
+                                                "commented",
+                                                "connected",
+                                                "needs_sign_in",
+                                                "answered",
+                                                "skipped",
+                                                "no_matches",
+                                                "no_results",
+                                                "exit",
+                                                "failed"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "tone": {
+                                              "enum": [
+                                                "neutral",
+                                                "error",
+                                                "attention"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "count": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            "value": {
+                                              "type": "string",
+                                              "maxLength": 64
+                                            }
+                                          },
+                                          "required": [
+                                            "key",
+                                            "tone"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "target",
+                                        "done"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -43469,6 +44029,146 @@
                                   "properties": {
                                     "phase": {
                                       "const": "working"
+                                    },
+                                    "current_tool": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "shell",
+                                            "read",
+                                            "list",
+                                            "search",
+                                            "web",
+                                            "write",
+                                            "skill",
+                                            "memory",
+                                            "delegate",
+                                            "talaria",
+                                            "image",
+                                            "audio",
+                                            "video",
+                                            "image_analysis",
+                                            "video_analysis",
+                                            "session",
+                                            "schedule",
+                                            "connection",
+                                            "question",
+                                            "kanban",
+                                            "browser",
+                                            "computer",
+                                            "mcp",
+                                            "connector",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "target": {
+                                          "type": "string",
+                                          "maxLength": 64
+                                        },
+                                        "done": {
+                                          "type": "boolean"
+                                        },
+                                        "failed": {
+                                          "const": true
+                                        },
+                                        "verb": {
+                                          "enum": [
+                                            "create",
+                                            "view",
+                                            "list",
+                                            "update",
+                                            "complete",
+                                            "block",
+                                            "comment",
+                                            "run",
+                                            "send",
+                                            "answer",
+                                            "fill",
+                                            "capture",
+                                            "click",
+                                            "type"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "app": {
+                                          "type": "object",
+                                          "properties": {
+                                            "name": {
+                                              "type": "string",
+                                              "maxLength": 64
+                                            }
+                                          },
+                                          "required": [
+                                            "name"
+                                          ]
+                                        },
+                                        "outcome": {
+                                          "type": "object",
+                                          "properties": {
+                                            "key": {
+                                              "enum": [
+                                                "sent",
+                                                "approved",
+                                                "denied",
+                                                "goal_set",
+                                                "created",
+                                                "memory_added",
+                                                "memory_updated",
+                                                "memory_removed",
+                                                "skill_created",
+                                                "skill_updated",
+                                                "pending_approval",
+                                                "job_created",
+                                                "paused",
+                                                "resumed",
+                                                "removed",
+                                                "ran_now",
+                                                "moved_to",
+                                                "blocked",
+                                                "completed",
+                                                "commented",
+                                                "connected",
+                                                "needs_sign_in",
+                                                "answered",
+                                                "skipped",
+                                                "no_matches",
+                                                "no_results",
+                                                "exit",
+                                                "failed"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "tone": {
+                                              "enum": [
+                                                "neutral",
+                                                "error",
+                                                "attention"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "count": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            "value": {
+                                              "type": "string",
+                                              "maxLength": 64
+                                            }
+                                          },
+                                          "required": [
+                                            "key",
+                                            "tone"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "target",
+                                        "done"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -52691,6 +53391,146 @@
                                   "properties": {
                                     "phase": {
                                       "const": "working"
+                                    },
+                                    "current_tool": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "shell",
+                                            "read",
+                                            "list",
+                                            "search",
+                                            "web",
+                                            "write",
+                                            "skill",
+                                            "memory",
+                                            "delegate",
+                                            "talaria",
+                                            "image",
+                                            "audio",
+                                            "video",
+                                            "image_analysis",
+                                            "video_analysis",
+                                            "session",
+                                            "schedule",
+                                            "connection",
+                                            "question",
+                                            "kanban",
+                                            "browser",
+                                            "computer",
+                                            "mcp",
+                                            "connector",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "target": {
+                                          "type": "string",
+                                          "maxLength": 64
+                                        },
+                                        "done": {
+                                          "type": "boolean"
+                                        },
+                                        "failed": {
+                                          "const": true
+                                        },
+                                        "verb": {
+                                          "enum": [
+                                            "create",
+                                            "view",
+                                            "list",
+                                            "update",
+                                            "complete",
+                                            "block",
+                                            "comment",
+                                            "run",
+                                            "send",
+                                            "answer",
+                                            "fill",
+                                            "capture",
+                                            "click",
+                                            "type"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "app": {
+                                          "type": "object",
+                                          "properties": {
+                                            "name": {
+                                              "type": "string",
+                                              "maxLength": 64
+                                            }
+                                          },
+                                          "required": [
+                                            "name"
+                                          ]
+                                        },
+                                        "outcome": {
+                                          "type": "object",
+                                          "properties": {
+                                            "key": {
+                                              "enum": [
+                                                "sent",
+                                                "approved",
+                                                "denied",
+                                                "goal_set",
+                                                "created",
+                                                "memory_added",
+                                                "memory_updated",
+                                                "memory_removed",
+                                                "skill_created",
+                                                "skill_updated",
+                                                "pending_approval",
+                                                "job_created",
+                                                "paused",
+                                                "resumed",
+                                                "removed",
+                                                "ran_now",
+                                                "moved_to",
+                                                "blocked",
+                                                "completed",
+                                                "commented",
+                                                "connected",
+                                                "needs_sign_in",
+                                                "answered",
+                                                "skipped",
+                                                "no_matches",
+                                                "no_results",
+                                                "exit",
+                                                "failed"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "tone": {
+                                              "enum": [
+                                                "neutral",
+                                                "error",
+                                                "attention"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "count": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            "value": {
+                                              "type": "string",
+                                              "maxLength": 64
+                                            }
+                                          },
+                                          "required": [
+                                            "key",
+                                            "tone"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "target",
+                                        "done"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -58783,6 +59623,146 @@
                                   "properties": {
                                     "phase": {
                                       "const": "working"
+                                    },
+                                    "current_tool": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "shell",
+                                            "read",
+                                            "list",
+                                            "search",
+                                            "web",
+                                            "write",
+                                            "skill",
+                                            "memory",
+                                            "delegate",
+                                            "talaria",
+                                            "image",
+                                            "audio",
+                                            "video",
+                                            "image_analysis",
+                                            "video_analysis",
+                                            "session",
+                                            "schedule",
+                                            "connection",
+                                            "question",
+                                            "kanban",
+                                            "browser",
+                                            "computer",
+                                            "mcp",
+                                            "connector",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "target": {
+                                          "type": "string",
+                                          "maxLength": 64
+                                        },
+                                        "done": {
+                                          "type": "boolean"
+                                        },
+                                        "failed": {
+                                          "const": true
+                                        },
+                                        "verb": {
+                                          "enum": [
+                                            "create",
+                                            "view",
+                                            "list",
+                                            "update",
+                                            "complete",
+                                            "block",
+                                            "comment",
+                                            "run",
+                                            "send",
+                                            "answer",
+                                            "fill",
+                                            "capture",
+                                            "click",
+                                            "type"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "app": {
+                                          "type": "object",
+                                          "properties": {
+                                            "name": {
+                                              "type": "string",
+                                              "maxLength": 64
+                                            }
+                                          },
+                                          "required": [
+                                            "name"
+                                          ]
+                                        },
+                                        "outcome": {
+                                          "type": "object",
+                                          "properties": {
+                                            "key": {
+                                              "enum": [
+                                                "sent",
+                                                "approved",
+                                                "denied",
+                                                "goal_set",
+                                                "created",
+                                                "memory_added",
+                                                "memory_updated",
+                                                "memory_removed",
+                                                "skill_created",
+                                                "skill_updated",
+                                                "pending_approval",
+                                                "job_created",
+                                                "paused",
+                                                "resumed",
+                                                "removed",
+                                                "ran_now",
+                                                "moved_to",
+                                                "blocked",
+                                                "completed",
+                                                "commented",
+                                                "connected",
+                                                "needs_sign_in",
+                                                "answered",
+                                                "skipped",
+                                                "no_matches",
+                                                "no_results",
+                                                "exit",
+                                                "failed"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "tone": {
+                                              "enum": [
+                                                "neutral",
+                                                "error",
+                                                "attention"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "count": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            "value": {
+                                              "type": "string",
+                                              "maxLength": 64
+                                            }
+                                          },
+                                          "required": [
+                                            "key",
+                                            "tone"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "target",
+                                        "done"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -64937,6 +65917,146 @@
                                   "properties": {
                                     "phase": {
                                       "const": "working"
+                                    },
+                                    "current_tool": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "shell",
+                                            "read",
+                                            "list",
+                                            "search",
+                                            "web",
+                                            "write",
+                                            "skill",
+                                            "memory",
+                                            "delegate",
+                                            "talaria",
+                                            "image",
+                                            "audio",
+                                            "video",
+                                            "image_analysis",
+                                            "video_analysis",
+                                            "session",
+                                            "schedule",
+                                            "connection",
+                                            "question",
+                                            "kanban",
+                                            "browser",
+                                            "computer",
+                                            "mcp",
+                                            "connector",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "target": {
+                                          "type": "string",
+                                          "maxLength": 64
+                                        },
+                                        "done": {
+                                          "type": "boolean"
+                                        },
+                                        "failed": {
+                                          "const": true
+                                        },
+                                        "verb": {
+                                          "enum": [
+                                            "create",
+                                            "view",
+                                            "list",
+                                            "update",
+                                            "complete",
+                                            "block",
+                                            "comment",
+                                            "run",
+                                            "send",
+                                            "answer",
+                                            "fill",
+                                            "capture",
+                                            "click",
+                                            "type"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "app": {
+                                          "type": "object",
+                                          "properties": {
+                                            "name": {
+                                              "type": "string",
+                                              "maxLength": 64
+                                            }
+                                          },
+                                          "required": [
+                                            "name"
+                                          ]
+                                        },
+                                        "outcome": {
+                                          "type": "object",
+                                          "properties": {
+                                            "key": {
+                                              "enum": [
+                                                "sent",
+                                                "approved",
+                                                "denied",
+                                                "goal_set",
+                                                "created",
+                                                "memory_added",
+                                                "memory_updated",
+                                                "memory_removed",
+                                                "skill_created",
+                                                "skill_updated",
+                                                "pending_approval",
+                                                "job_created",
+                                                "paused",
+                                                "resumed",
+                                                "removed",
+                                                "ran_now",
+                                                "moved_to",
+                                                "blocked",
+                                                "completed",
+                                                "commented",
+                                                "connected",
+                                                "needs_sign_in",
+                                                "answered",
+                                                "skipped",
+                                                "no_matches",
+                                                "no_results",
+                                                "exit",
+                                                "failed"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "tone": {
+                                              "enum": [
+                                                "neutral",
+                                                "error",
+                                                "attention"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "count": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            "value": {
+                                              "type": "string",
+                                              "maxLength": 64
+                                            }
+                                          },
+                                          "required": [
+                                            "key",
+                                            "tone"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "target",
+                                        "done"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -71089,6 +72209,146 @@
                                   "properties": {
                                     "phase": {
                                       "const": "working"
+                                    },
+                                    "current_tool": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "shell",
+                                            "read",
+                                            "list",
+                                            "search",
+                                            "web",
+                                            "write",
+                                            "skill",
+                                            "memory",
+                                            "delegate",
+                                            "talaria",
+                                            "image",
+                                            "audio",
+                                            "video",
+                                            "image_analysis",
+                                            "video_analysis",
+                                            "session",
+                                            "schedule",
+                                            "connection",
+                                            "question",
+                                            "kanban",
+                                            "browser",
+                                            "computer",
+                                            "mcp",
+                                            "connector",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "target": {
+                                          "type": "string",
+                                          "maxLength": 64
+                                        },
+                                        "done": {
+                                          "type": "boolean"
+                                        },
+                                        "failed": {
+                                          "const": true
+                                        },
+                                        "verb": {
+                                          "enum": [
+                                            "create",
+                                            "view",
+                                            "list",
+                                            "update",
+                                            "complete",
+                                            "block",
+                                            "comment",
+                                            "run",
+                                            "send",
+                                            "answer",
+                                            "fill",
+                                            "capture",
+                                            "click",
+                                            "type"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "app": {
+                                          "type": "object",
+                                          "properties": {
+                                            "name": {
+                                              "type": "string",
+                                              "maxLength": 64
+                                            }
+                                          },
+                                          "required": [
+                                            "name"
+                                          ]
+                                        },
+                                        "outcome": {
+                                          "type": "object",
+                                          "properties": {
+                                            "key": {
+                                              "enum": [
+                                                "sent",
+                                                "approved",
+                                                "denied",
+                                                "goal_set",
+                                                "created",
+                                                "memory_added",
+                                                "memory_updated",
+                                                "memory_removed",
+                                                "skill_created",
+                                                "skill_updated",
+                                                "pending_approval",
+                                                "job_created",
+                                                "paused",
+                                                "resumed",
+                                                "removed",
+                                                "ran_now",
+                                                "moved_to",
+                                                "blocked",
+                                                "completed",
+                                                "commented",
+                                                "connected",
+                                                "needs_sign_in",
+                                                "answered",
+                                                "skipped",
+                                                "no_matches",
+                                                "no_results",
+                                                "exit",
+                                                "failed"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "tone": {
+                                              "enum": [
+                                                "neutral",
+                                                "error",
+                                                "attention"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "count": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            "value": {
+                                              "type": "string",
+                                              "maxLength": 64
+                                            }
+                                          },
+                                          "required": [
+                                            "key",
+                                            "tone"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "target",
+                                        "done"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -89847,6 +91107,146 @@
                                   "properties": {
                                     "phase": {
                                       "const": "working"
+                                    },
+                                    "current_tool": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "shell",
+                                            "read",
+                                            "list",
+                                            "search",
+                                            "web",
+                                            "write",
+                                            "skill",
+                                            "memory",
+                                            "delegate",
+                                            "talaria",
+                                            "image",
+                                            "audio",
+                                            "video",
+                                            "image_analysis",
+                                            "video_analysis",
+                                            "session",
+                                            "schedule",
+                                            "connection",
+                                            "question",
+                                            "kanban",
+                                            "browser",
+                                            "computer",
+                                            "mcp",
+                                            "connector",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "target": {
+                                          "type": "string",
+                                          "maxLength": 64
+                                        },
+                                        "done": {
+                                          "type": "boolean"
+                                        },
+                                        "failed": {
+                                          "const": true
+                                        },
+                                        "verb": {
+                                          "enum": [
+                                            "create",
+                                            "view",
+                                            "list",
+                                            "update",
+                                            "complete",
+                                            "block",
+                                            "comment",
+                                            "run",
+                                            "send",
+                                            "answer",
+                                            "fill",
+                                            "capture",
+                                            "click",
+                                            "type"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "app": {
+                                          "type": "object",
+                                          "properties": {
+                                            "name": {
+                                              "type": "string",
+                                              "maxLength": 64
+                                            }
+                                          },
+                                          "required": [
+                                            "name"
+                                          ]
+                                        },
+                                        "outcome": {
+                                          "type": "object",
+                                          "properties": {
+                                            "key": {
+                                              "enum": [
+                                                "sent",
+                                                "approved",
+                                                "denied",
+                                                "goal_set",
+                                                "created",
+                                                "memory_added",
+                                                "memory_updated",
+                                                "memory_removed",
+                                                "skill_created",
+                                                "skill_updated",
+                                                "pending_approval",
+                                                "job_created",
+                                                "paused",
+                                                "resumed",
+                                                "removed",
+                                                "ran_now",
+                                                "moved_to",
+                                                "blocked",
+                                                "completed",
+                                                "commented",
+                                                "connected",
+                                                "needs_sign_in",
+                                                "answered",
+                                                "skipped",
+                                                "no_matches",
+                                                "no_results",
+                                                "exit",
+                                                "failed"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "tone": {
+                                              "enum": [
+                                                "neutral",
+                                                "error",
+                                                "attention"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "count": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            "value": {
+                                              "type": "string",
+                                              "maxLength": 64
+                                            }
+                                          },
+                                          "required": [
+                                            "key",
+                                            "tone"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "target",
+                                        "done"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -95991,6 +97391,146 @@
                                   "properties": {
                                     "phase": {
                                       "const": "working"
+                                    },
+                                    "current_tool": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "shell",
+                                            "read",
+                                            "list",
+                                            "search",
+                                            "web",
+                                            "write",
+                                            "skill",
+                                            "memory",
+                                            "delegate",
+                                            "talaria",
+                                            "image",
+                                            "audio",
+                                            "video",
+                                            "image_analysis",
+                                            "video_analysis",
+                                            "session",
+                                            "schedule",
+                                            "connection",
+                                            "question",
+                                            "kanban",
+                                            "browser",
+                                            "computer",
+                                            "mcp",
+                                            "connector",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "target": {
+                                          "type": "string",
+                                          "maxLength": 64
+                                        },
+                                        "done": {
+                                          "type": "boolean"
+                                        },
+                                        "failed": {
+                                          "const": true
+                                        },
+                                        "verb": {
+                                          "enum": [
+                                            "create",
+                                            "view",
+                                            "list",
+                                            "update",
+                                            "complete",
+                                            "block",
+                                            "comment",
+                                            "run",
+                                            "send",
+                                            "answer",
+                                            "fill",
+                                            "capture",
+                                            "click",
+                                            "type"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "app": {
+                                          "type": "object",
+                                          "properties": {
+                                            "name": {
+                                              "type": "string",
+                                              "maxLength": 64
+                                            }
+                                          },
+                                          "required": [
+                                            "name"
+                                          ]
+                                        },
+                                        "outcome": {
+                                          "type": "object",
+                                          "properties": {
+                                            "key": {
+                                              "enum": [
+                                                "sent",
+                                                "approved",
+                                                "denied",
+                                                "goal_set",
+                                                "created",
+                                                "memory_added",
+                                                "memory_updated",
+                                                "memory_removed",
+                                                "skill_created",
+                                                "skill_updated",
+                                                "pending_approval",
+                                                "job_created",
+                                                "paused",
+                                                "resumed",
+                                                "removed",
+                                                "ran_now",
+                                                "moved_to",
+                                                "blocked",
+                                                "completed",
+                                                "commented",
+                                                "connected",
+                                                "needs_sign_in",
+                                                "answered",
+                                                "skipped",
+                                                "no_matches",
+                                                "no_results",
+                                                "exit",
+                                                "failed"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "tone": {
+                                              "enum": [
+                                                "neutral",
+                                                "error",
+                                                "attention"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "count": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            "value": {
+                                              "type": "string",
+                                              "maxLength": 64
+                                            }
+                                          },
+                                          "required": [
+                                            "key",
+                                            "tone"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "target",
+                                        "done"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -102821,6 +104361,146 @@
                                   "properties": {
                                     "phase": {
                                       "const": "working"
+                                    },
+                                    "current_tool": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "shell",
+                                            "read",
+                                            "list",
+                                            "search",
+                                            "web",
+                                            "write",
+                                            "skill",
+                                            "memory",
+                                            "delegate",
+                                            "talaria",
+                                            "image",
+                                            "audio",
+                                            "video",
+                                            "image_analysis",
+                                            "video_analysis",
+                                            "session",
+                                            "schedule",
+                                            "connection",
+                                            "question",
+                                            "kanban",
+                                            "browser",
+                                            "computer",
+                                            "mcp",
+                                            "connector",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "target": {
+                                          "type": "string",
+                                          "maxLength": 64
+                                        },
+                                        "done": {
+                                          "type": "boolean"
+                                        },
+                                        "failed": {
+                                          "const": true
+                                        },
+                                        "verb": {
+                                          "enum": [
+                                            "create",
+                                            "view",
+                                            "list",
+                                            "update",
+                                            "complete",
+                                            "block",
+                                            "comment",
+                                            "run",
+                                            "send",
+                                            "answer",
+                                            "fill",
+                                            "capture",
+                                            "click",
+                                            "type"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "app": {
+                                          "type": "object",
+                                          "properties": {
+                                            "name": {
+                                              "type": "string",
+                                              "maxLength": 64
+                                            }
+                                          },
+                                          "required": [
+                                            "name"
+                                          ]
+                                        },
+                                        "outcome": {
+                                          "type": "object",
+                                          "properties": {
+                                            "key": {
+                                              "enum": [
+                                                "sent",
+                                                "approved",
+                                                "denied",
+                                                "goal_set",
+                                                "created",
+                                                "memory_added",
+                                                "memory_updated",
+                                                "memory_removed",
+                                                "skill_created",
+                                                "skill_updated",
+                                                "pending_approval",
+                                                "job_created",
+                                                "paused",
+                                                "resumed",
+                                                "removed",
+                                                "ran_now",
+                                                "moved_to",
+                                                "blocked",
+                                                "completed",
+                                                "commented",
+                                                "connected",
+                                                "needs_sign_in",
+                                                "answered",
+                                                "skipped",
+                                                "no_matches",
+                                                "no_results",
+                                                "exit",
+                                                "failed"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "tone": {
+                                              "enum": [
+                                                "neutral",
+                                                "error",
+                                                "attention"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "count": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            "value": {
+                                              "type": "string",
+                                              "maxLength": 64
+                                            }
+                                          },
+                                          "required": [
+                                            "key",
+                                            "tone"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "target",
+                                        "done"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -109109,6 +110789,146 @@
                                       "properties": {
                                         "phase": {
                                           "const": "working"
+                                        },
+                                        "current_tool": {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "enum": [
+                                                "shell",
+                                                "read",
+                                                "list",
+                                                "search",
+                                                "web",
+                                                "write",
+                                                "skill",
+                                                "memory",
+                                                "delegate",
+                                                "talaria",
+                                                "image",
+                                                "audio",
+                                                "video",
+                                                "image_analysis",
+                                                "video_analysis",
+                                                "session",
+                                                "schedule",
+                                                "connection",
+                                                "question",
+                                                "kanban",
+                                                "browser",
+                                                "computer",
+                                                "mcp",
+                                                "connector",
+                                                "unknown"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "target": {
+                                              "type": "string",
+                                              "maxLength": 64
+                                            },
+                                            "done": {
+                                              "type": "boolean"
+                                            },
+                                            "failed": {
+                                              "const": true
+                                            },
+                                            "verb": {
+                                              "enum": [
+                                                "create",
+                                                "view",
+                                                "list",
+                                                "update",
+                                                "complete",
+                                                "block",
+                                                "comment",
+                                                "run",
+                                                "send",
+                                                "answer",
+                                                "fill",
+                                                "capture",
+                                                "click",
+                                                "type"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "app": {
+                                              "type": "object",
+                                              "properties": {
+                                                "name": {
+                                                  "type": "string",
+                                                  "maxLength": 64
+                                                }
+                                              },
+                                              "required": [
+                                                "name"
+                                              ]
+                                            },
+                                            "outcome": {
+                                              "type": "object",
+                                              "properties": {
+                                                "key": {
+                                                  "enum": [
+                                                    "sent",
+                                                    "approved",
+                                                    "denied",
+                                                    "goal_set",
+                                                    "created",
+                                                    "memory_added",
+                                                    "memory_updated",
+                                                    "memory_removed",
+                                                    "skill_created",
+                                                    "skill_updated",
+                                                    "pending_approval",
+                                                    "job_created",
+                                                    "paused",
+                                                    "resumed",
+                                                    "removed",
+                                                    "ran_now",
+                                                    "moved_to",
+                                                    "blocked",
+                                                    "completed",
+                                                    "commented",
+                                                    "connected",
+                                                    "needs_sign_in",
+                                                    "answered",
+                                                    "skipped",
+                                                    "no_matches",
+                                                    "no_results",
+                                                    "exit",
+                                                    "failed"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "tone": {
+                                                  "enum": [
+                                                    "neutral",
+                                                    "error",
+                                                    "attention"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "count": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "value": {
+                                                  "type": "string",
+                                                  "maxLength": 64
+                                                }
+                                              },
+                                              "required": [
+                                                "key",
+                                                "tone"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "target",
+                                            "done"
+                                          ]
                                         }
                                       },
                                       "required": [

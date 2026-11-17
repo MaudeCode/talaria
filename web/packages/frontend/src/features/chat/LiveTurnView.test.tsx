@@ -157,6 +157,27 @@ describe('live status', () => {
     expect(pills(view.container)[0]).toHaveTextContent('Reconnecting…')
   })
 
+  it('names the running call with its icon, a held call as waiting for approval in the warning tone, and Working between calls (TAL-2337)', async () => {
+    const run = liveRun()
+    const view = render(<LiveStatusPill sessionId={run.turn.sessionId} />)
+    const label = () => view.container.querySelector('.live-run-label')!
+    const tool = { kind: 'shell', target: 'npm test', done: false } as const
+    run.emit({ event: 'run_status', data: { session_id: 's', status: { phase: 'working', current_tool: tool } } })
+    view.rerender(<LiveStatusPill sessionId={run.turn.sessionId} />)
+    await waitFor(() => expect(label()).toHaveTextContent(/^Running npm test$/))
+    expect(label()).not.toHaveAttribute('data-tone')
+    expect(view.container.querySelector('.live-run-status svg.lucide-terminal')).not.toBeNull()
+    expect(view.container.querySelectorAll('.live-run-elapsed')).toHaveLength(1)
+    run.emit({ event: 'run_status', data: { session_id: 's', status: { phase: 'working', current_tool: { ...tool, outcome: { key: 'pending_approval', tone: 'attention' } as const } } } })
+    view.rerender(<LiveStatusPill sessionId={run.turn.sessionId} />)
+    await waitFor(() => expect(label()).toHaveTextContent(/^Waiting for approval$/))
+    expect(label()).toHaveAttribute('data-tone', 'attention')
+    run.emit({ event: 'run_status', data: { session_id: 's', status: { phase: 'working' } } })
+    view.rerender(<LiveStatusPill sessionId={run.turn.sessionId} />)
+    await waitFor(() => expect(label()).toHaveTextContent(/^Working$/))
+    expect(view.container.querySelector('.live-run-status svg.lucide-terminal')).toBeNull()
+  })
+
   it('shows the rate only while "Show tokens per second" is on (TAL-2150)', async () => {
     vi.mocked(api.fetchSettings).mockResolvedValue({ show_tps: false })
     const run = liveRun()

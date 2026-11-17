@@ -13,7 +13,7 @@ import type { AgentStorage, ChatReadiness, PendingSteer, RecoveryAudit, RunStatu
 import type { RunJournal } from './journal.js'
 import { str } from '../util.js'
 import { createHmac, randomUUID } from 'node:crypto'
-import { buildActiveTurnToken, copyJson, redactSessionData, redactValue, sessionFocusPath, stripPublicInternalFields, withSceneToolDisplay } from '../redact.js'
+import { buildActiveTurnToken, copyJson, redactedRunStatus, redactSessionData, redactValue, sessionFocusPath, stripPublicInternalFields, withSceneToolDisplay } from '../redact.js'
 import type { ContextWindowSource, DecisionReviewRef, OutboundDraft, OutboundDraftAction, OutboundDraftRef, SessionOutline, SessionSkills } from '@maudecode/talaria-web-contracts'
 import { addSkillUses, inheritedSkillUses, orderedSkillCounts, resetSkillUses, skillGeneration } from './skill-provenance.js'
 import type { DraftStore } from './drafts.js'
@@ -2810,7 +2810,8 @@ export class SessionService {
   /** The same live presentation for session detail and journal snapshot recovery. */
   currentRunStatus(sid: string, streamId: string | null): RunStatus | null {
     const job = this.compressionJobs.get(sid)
-    return job?.status === 'running' ? { phase: 'compressing' } : streamId ? (this.deps.runtime.runStatus?.(streamId) ?? null) : null
+    // TAL-2337: its running call under the redaction policy in force now.
+    return job?.status === 'running' ? { phase: 'compressing' } : streamId ? redactedRunStatus(this.deps.runtime.runStatus?.(streamId) ?? null, this.deps.redactEnabled()) : null
   }
 
   /** The session's compression job; a deleted session's finished result is dropped rather than served. */

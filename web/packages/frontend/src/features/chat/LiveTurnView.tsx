@@ -18,6 +18,8 @@ import { returnToComposer } from '../composer/composerReturn'
 import { rememberLiveTurnHeight, SteerMessage, TurnActivityView } from './TurnActivityView'
 import { liveActivity } from './turnActivity'
 import type { ActivityMode } from './blocks/Worklog'
+import { toolCardLabel, toolOutcomeText } from './blocks/ToolCard'
+import { ToolKindIcon } from './toolKind'
 
 /** The in-flight assistant turn: reasoning, tools and prose projected from the reducer, in event order. */
 /** `omitToolIds`: tools the running scene this turn continues already shows (TAL-374). */
@@ -129,11 +131,16 @@ export function LiveStatusPill({ sessionId, background = false }: { sessionId: s
   if (status?.phase === 'prompt_reading') {
     label = status.progress_percent === null ? m.live_prompt_reading() : m.live_prompt_reading_percent({ percent: new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 0 }).format(status.progress_percent / 100) })
   }
+  // TAL-2337: the call the run is in, as its transcript row names it; a call an approval holds reads "Waiting for approval".
+  const tool = status?.phase === 'working' ? status.current_tool : undefined
+  const held = tool?.outcome?.key === 'pending_approval'
+  if (tool) label = held && tool.outcome ? toolOutcomeText(tool.outcome, locale) : toolCardLabel({ kind: tool.kind, verb: tool.verb, app: tool.app && { name: tool.app.name, logo_url: null }, target: tool.target, done: tool.done, isError: tool.failed === true, name: '' }, locale)
   return (
     <div className="live-run-status flex flex-wrap items-center justify-center gap-2 text-muted" role="status" aria-live="polite">
       <LaurelSpinner />
       <ProviderQuotaPace gauge={turn.usage?.plan_gauge} compact />
-      <span className="live-run-label">{label}</span>
+      {tool && <ToolKindIcon kind={tool.kind} />}
+      <span className="live-run-label" data-tool={tool ? tool.kind : undefined} data-tone={held ? 'attention' : undefined} title={tool ? label : undefined}>{label}</span>
       {!reconnecting && !background && !wait && !compressing && (!status || status.phase === 'working') && <>{' '}<RunElapsed since={turn.startedAt} /></>}
       {compressing && turn.compressionStartedAt !== null && <>{' '}<RunElapsed since={turn.compressionStartedAt} /></>}
       {showTps && turn.tps != null && <span className="font-mono text-[11px] tabular-nums opacity-75" title="Tokens per second">{turn.tps.toFixed(1)} tok/s</span>}

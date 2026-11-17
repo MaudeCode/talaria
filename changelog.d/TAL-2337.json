@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "The status above the composer names the call a run is making with its icon, such as \"Running npm test\", instead of \"Working\", and shows \"Waiting for approval\" when a call needs you.",
+      "highlight": false,
+      "components": [
+        "web",
+        "app"
+      ],
+      "announce": false
+    }
+  ]
+}

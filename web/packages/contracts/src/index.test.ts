@@ -347,6 +347,10 @@ describe('contracts package', () => {
       expect(ChatEventSchema.safeParse({ event: 'run_status', data: { session_id: 's', status: { phase: 'prompt_reading', progress_percent } } }).success).toBe(false)
     }
   })
+  it('keeps the running call on the shared working run-status frames (TAL-2337)', () => {
+    const fixture = shared('fixtures/run-status-tool.json') as Record<'running' | 'held' | 'between', { data: unknown }>
+    for (const frame of Object.values(fixture)) expect(ChatEventSchema.parse(frame).data).toEqual(frame.data)
+  })
   it('parses the shared rate-limit wait run-status frames (TAL-821)', () => {
     const fixture = shared('fixtures/rate-limit-wait.json') as { wait: unknown; cleared: unknown }
     const wait = ChatEventSchema.parse(fixture.wait)

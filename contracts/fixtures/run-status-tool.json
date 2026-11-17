@@ -1,0 +1,43 @@
+{
+  "running": {
+    "event": "run_status",
+    "data": {
+      "session_id": "synthetic-run-status-tool",
+      "status": {
+        "phase": "working",
+        "current_tool": {
+          "kind": "shell",
+          "target": "npm test",
+          "done": false
+        }
+      }
+    }
+  },
+  "held": {
+    "event": "run_status",
+    "data": {
+      "session_id": "synthetic-run-status-tool",
+      "status": {
+        "phase": "working",
+        "current_tool": {
+          "kind": "shell",
+          "target": "npm test",
+          "done": false,
+          "outcome": {
+            "key": "pending_approval",
+            "tone": "attention"
+          }
+        }
+      }
+    }
+  },
+  "between": {
+    "event": "run_status",
+    "data": {
+      "session_id": "synthetic-run-status-tool",
+      "status": {
+        "phase": "working"
+      }
+    }
+  }
+}

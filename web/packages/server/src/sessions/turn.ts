@@ -30,7 +30,7 @@ import type { RunJournal, RunJournalWriter } from './journal.js'
 import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, COMPRESSION_RECOVERY_TERMINAL_STATE, CONTEXT_USAGE_FIELDS, Session, contextUsage, forgetModelFigures, promptCacheHitPercent, titleFrom, type Message } from './session.js'
 import { anchorMessageKey, markerSummary, insertCompactionRow, visibleMessagesForAnchor } from './compress.js'
 import { LiveActivityGroups } from './activity-groups.js'
-import { approvalTool, buildActiveTurnToken, completedToolIndex, publicToolFrame, redactNestedMessageContainers, redactString, withToolId } from '../redact.js'
+import { activityTool, approvalTool, buildActiveTurnToken, completedToolIndex, heldActivityTool, isApprovalTool, publicToolFrame, redactNestedMessageContainers, redactString, withToolId } from '../redact.js'
 import { dict, findPersonality, type Config, type PersonalityRow } from '../config/agent-config.js'
 import { ReasoningTitleTracker, reasoningDisclosureKey, reasoningEventPayload } from './reasoning-titles.js'
 import { UNSETTLED_TODO_KEY, parseTodoToolResult, type PlanProgress } from './todo.js'
@@ -840,6 +840,8 @@ export class TurnRunner {
     this.failureSettlers.set(streamId, settleFailure)
     let waitDetail: RateLimitWait | null = null
     let providerPhase: ProviderPhase | null = null
+    // TAL-2337: the session's workspace, once loaded, so the status names a running call's path as its row does.
+    let workspace: string | null = null
     let statusEnded = false
     // TAL-1006: the open compression span closes on the Agent's end of it, else on the next content frame.
     const closeCompression = async (createdAt?: number): Promise<void> => {
@@ -869,7 +871,7 @@ export class TurnRunner {
         await closeCompression(meta.createdAt)
       }
       const status: RunStatus | null = event === 'run_status' ? data.status as RunStatus | null : statusEnded ? null : this.compressionSpans.has(streamId) ? { phase: 'compressing' }
-        : waitDetail ? { phase: 'rate_limit_wait', wait: waitDetail } : providerPhase ?? { phase: 'working' }
+        : waitDetail ? { phase: 'rate_limit_wait', wait: waitDetail } : providerPhase ?? this.workingStatus(sessionId, streamId, workspace)
       if (JSON.stringify(this.runStatuses.get(streamId) ?? null) !== JSON.stringify(status)) {
         if (status) this.runStatuses.set(streamId, status)
         else this.runStatuses.delete(streamId)
@@ -920,6 +922,7 @@ export class TurnRunner {
     let s: Session
     try {
       s = (await deps.store.get(sessionId))
+      workspace = s.workspace ?? null
     } catch {
       await put('apperror', { type: 'error', terminal_state: 'error', message: 'Session not found', session_id: sessionId })
       await this.teardown(sessionId, streamId)
@@ -2550,6 +2553,19 @@ export class TurnRunner {
   liveToolProgress(streamId: string): Record<string, unknown>[] {
     if (this.registry.cancelled.has(streamId)) return []
     return (this.registry.liveToolCalls.get(streamId) ?? []).filter((call) => !call.done && call.progress).map((call) => ({ ...call, id: str(call.tid) }))
+  }
+
+  /**
+   * TAL-2337: the working status, naming the call the run is in as its transcript row does: the call an approval holds, else
+   * the latest running call the transcript shows. Between calls it names none.
+   */
+  private workingStatus(sessionId: string, streamId: string, workspace: string | null): RunStatus {
+    const running = (this.registry.liveToolCalls.get(streamId) ?? []).filter((call) => !call.done)
+    if (!running.length) return { phase: 'working' }
+    const held = this.deps.pending.approvalPending(sessionId).pending?.tool
+    const enabled = this.deps.redactEnabled()
+    const current = isApprovalTool(held) ? heldActivityTool(held) : running.reverse().map((call) => activityTool(call, enabled, workspace)).find(Boolean)
+    return current ? { phase: 'working', current_tool: current } : { phase: 'working' }
   }
 
   runStatus(streamId: string): RunStatus | null {

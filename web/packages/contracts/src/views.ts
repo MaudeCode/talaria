@@ -17,7 +17,7 @@ import { ShowBlockRefSchema } from './show.js'
 import { TerminalRefSchema } from './terminal.js'
 import { DiffLineSchema } from './diff-line.js'
 import { DisplayMediaSchema } from './display-media.js'
-import { RunStatusSchema } from './run-status.js'
+import { ProviderPhaseSchema, RateLimitWaitSchema } from './run-status.js'
 import { AgentRefreshConfirmationSchema, AgentUpdateOperationSchema } from './sidecar-shared.js'
 import { SpeedTierSchema } from './speed.js'
 import { ExecutionModeSchema, OwnerAttachmentSchema, MessageReactionViewSchema, SideLaunchStateSchema } from './gateway-session.js'
@@ -311,6 +311,19 @@ export const ActivityToolSchema = z.object({
   outcome: ToolOutcomeSchema.extend({ value: ActivityText.optional() }).optional(),
 })
 export type ActivityTool = z.infer<typeof ActivityToolSchema>
+
+/**
+ * Server-selected precedence: compression, rate-limit wait, prompt reading, working. Null ends the run status. TAL-2337: while
+ * the run works and a call runs, `current_tool` names it as its transcript row does (the one an approval holds carries the
+ * `pending_approval` outcome); absent between calls and from an older server, which keep "Working".
+ */
+export const RunStatusSchema = z.discriminatedUnion('phase', [
+  z.object({ phase: z.literal('compressing') }),
+  z.object({ phase: z.literal('rate_limit_wait'), wait: RateLimitWaitSchema }),
+  ProviderPhaseSchema,
+  z.object({ phase: z.literal('working'), current_tool: ActivityToolSchema.optional() }),
+])
+export type RunStatus = z.infer<typeof RunStatusSchema>
 
 /**
  * TAL-315: a tool result's display sections, decided by the server's one rule for live, replayed and persisted results

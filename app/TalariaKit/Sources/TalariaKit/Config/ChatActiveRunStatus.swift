@@ -3,6 +3,8 @@ public import Foundation
 public enum ChatActiveRunStatusKind: Equatable, Sendable {
     case starting
     case active
+    /// TAL-2337: the run is in this call; the chip names it as its transcript row does.
+    case tool(AgentRunActivityTool)
     /// A background result started the running turn (TAL-460).
     case background
     /// TAL-1006: the Agent is compressing the context; the elapsed time counts from the server's span start.
@@ -28,6 +30,9 @@ public enum ChatActiveRunStatusKind: Equatable, Sendable {
         case .active:
             // The elapsed time follows it: "Working 42s" (TAL-922).
             return String(localized: "Working")
+        case .tool(let tool):
+            // A call an approval holds reads "Waiting for approval".
+            return tool.toolOutcome?.key == .pendingApproval ? tool.outcomeText ?? tool.label : tool.label
         case .background:
             return String(localized: "Working on background results")
         case .compressing:
@@ -66,6 +71,8 @@ public enum ChatActiveRunStatusKind: Equatable, Sendable {
             return String(localized: "\(agentName) is starting a response")
         case .active:
             return String(localized: "\(agentName) is working on the response")
+        case .tool:
+            return label(agentName: agentName)
         case .background:
             return String(localized: "\(agentName) is working on background results")
         case .compressing:
@@ -110,7 +117,7 @@ public struct ChatActiveRunStatusPresentation: Equatable, Sendable {
     public init(kind: ChatActiveRunStatusKind, runStartedAt: Date? = nil) {
         self.kind = kind
         switch kind {
-        case .active, .compressing, .promptReading, .rateLimitWait, .checking, .reconnecting,
+        case .active, .tool, .compressing, .promptReading, .rateLimitWait, .checking, .reconnecting,
              .awaitingApproval, .awaitingAnswer, .awaitingDecision, .awaitingInput:
             self.runStartedAt = runStartedAt
         case .starting, .background, .waitingForNetwork, .stopping, .syncing:
@@ -164,6 +171,16 @@ public struct ChatActiveRunStatusPresentation: Equatable, Sendable {
     /// Whole seconds since the run started, never negative; nil without a start.
     private func elapsedSeconds(now: Date) -> Int? {
         runStartedAt.map { max(0, Int(now.timeIntervalSince($0))) }
+    }
+
+    /// TAL-2337: the call the run is in, for the chip's icon; nil for every other status.
+    public var tool: AgentRunActivityTool? {
+        if case .tool(let tool) = kind { tool } else { nil }
+    }
+
+    /// TAL-2337: the run's call waits on the user's approval, so the chip takes the warning colour.
+    public var isToolAwaitingApproval: Bool {
+        tool?.toolOutcome?.key == .pendingApproval
     }
 
     /// Whether the run waits on the user's approval or answer (TAL-1460).
@@ -231,6 +248,7 @@ public enum ChatActiveRunStatusPolicy: Sendable {
             case "prompt_reading": kind = .promptReading(progressPercent: status.progressPercent)
             case "compressing": kind = .compressing
             case "rate_limit_wait": kind = .rateLimitWait(providerLabel: status.wait?.providerLabel)
+            case "working": kind = status.currentTool.map { .tool($0) } ?? .active
             default: kind = .active
             }
             return ChatActiveRunStatusPresentation(kind: kind, runStartedAt: status.phase == "compressing" ? compressionStartedAt : activeRunStartedAt)

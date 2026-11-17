@@ -826,6 +826,8 @@ describe('chat turns through the sidecar', () => {
     const command = `curl -H "Authorization: Bearer ${bearer}" https://x && psql postgres://u:${pg}@h/db && GITHUB_TOKEN=${gh} gh api user`
     const secrets = [bearer, pg, gh]
     const leaks = (value: unknown) => secrets.filter((secret) => JSON.stringify(value).includes(secret))
+    // TAL-2337: a status names the running call with its target cut to a Live Activity's length, so it shows the bearer's start.
+    const callStatuses = (frames: { event: string; data: unknown }[]) => frames.filter((f) => f.event === 'run_status' && ((f.data as Json).status as Json | null)?.current_tool).map((f) => ((f.data as Json).status as Json).current_tool as Json)
     const run = async () => {
       const sid = await newSession(s)
       sidecar.respond('chat.start', (params, emit) => {
@@ -840,10 +842,11 @@ describe('chat turns through the sidecar', () => {
       })
       sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Tool run"', usage: null }))
       const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'run it' }))).stream_id)
-      const frames = (await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')).filter((f) => f.event === 'tool' || f.event === 'tool_complete')
+      const all = await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')
+      const frames = all.filter((f) => f.event === 'tool' || f.event === 'tool_complete')
       const journalPath = join(realpathSync(s.state), 'sessions', '_run_journal', sid, `${streamId}.jsonl`)
       const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
-      return { sid, streamId, frames, journalPath, detail }
+      return { sid, streamId, frames, statuses: callStatuses(all), journalPath, detail }
     }
 
     const { streamId, frames, journalPath, detail } = await run()
@@ -891,13 +894,18 @@ describe('chat turns through the sidecar', () => {
       offSid = off.sid
       expect(off.frames.map((f) => (f.data as Json).target)).toEqual([command, command].map((c) => c.slice(0, 200)))
       expect((off.detail.tool_calls as Json[])[0]).toMatchObject({ kind: 'shell', target: command.slice(0, 200) })
+      expect(off.statuses).toHaveLength(1)
+      expect(JSON.stringify(off.statuses)).toContain('synthetic-bearer')
     } finally {
       await s.deps.settings.save({ api_redact_enabled: true })
     }
     // Frames journaled while redaction was off are redacted when replayed after it is turned back on.
-    const reopened = (await s.sse(`/api/chat/stream?stream_id=${offStream}&after_event_id=${offStream}:0`, (f) => f.event === 'stream_end')).filter((f) => f.event === 'tool' || f.event === 'tool_complete')
+    const reopenedAll = await s.sse(`/api/chat/stream?stream_id=${offStream}&after_event_id=${offStream}:0`, (f) => f.event === 'stream_end')
+    const reopened = reopenedAll.filter((f) => f.event === 'tool' || f.event === 'tool_complete')
     expect(reopened).toHaveLength(2)
     expect(leaks(reopened.map((f) => f.data))).toEqual([])
+    expect(callStatuses(reopenedAll)).toHaveLength(1)
+    expect(JSON.stringify(callStatuses(reopenedAll))).not.toContain('synthetic-bearer')
     // The per-session journal relay replays the same rows through the same projection.
     const perSession = (await s.sse(`/api/sessions/${offSid}/events?after_event_id=${offStream}:1`, (f) => f.event === 'tool_complete', { timeoutMs: 3000 })).filter((f) => f.event === 'tool' || f.event === 'tool_complete')
     expect(perSession).toHaveLength(2)
@@ -913,20 +921,30 @@ describe('chat turns through the sidecar', () => {
       sidecar.respond('chat.start', (params, emit) => new Promise((resolve) => {
         emit({ event: 'tool', data: { event_type: 'tool.started', name: 'terminal', preview: command, args: { command }, tid: 'call_1' } })
         emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'terminal', preview: command, args: { command }, tid: 'call_1', is_error: false } })
+        // TAL-2337: a second call still runs, so the session's current status names it.
+        emit({ event: 'tool', data: { event_type: 'tool.started', name: 'terminal', preview: command, args: { command }, tid: 'call_2' } })
         release = () => { resolve(completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Done.' }])) }
       }))
       bufferedStream = String((await json(await post(s, '/api/chat/start', { session_id: bufferedSid, message: 'run it' }))).stream_id)
       const bufferedJournal = join(realpathSync(s.state), 'sessions', '_run_journal', bufferedSid, `${bufferedStream}.jsonl`)
       const deadline = Date.now() + 3000
-      while (!(existsSync(bufferedJournal) && readFileSync(bufferedJournal, 'utf8').includes('"tool_complete"')) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10))
+      while (!(existsSync(bufferedJournal) && readFileSync(bufferedJournal, 'utf8').split('\n').filter((line) => line.includes('"event":"tool"')).length >= 2) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10))
     } finally {
       await s.deps.settings.save({ api_redact_enabled: true })
     }
     try {
-      const delivered = (await s.sse(`/api/chat/stream?stream_id=${bufferedStream}`, (f) => f.event === 'tool_complete')).filter((f) => f.event === 'tool' || f.event === 'tool_complete')
-      expect(delivered).toHaveLength(2)
+      let started = 0
+      const deliveredAll = await s.sse(`/api/chat/stream?stream_id=${bufferedStream}`, (f) => f.event === 'tool' && ++started === 2)
+      const delivered = deliveredAll.filter((f) => f.event === 'tool' || f.event === 'tool_complete')
+      expect(delivered).toHaveLength(3)
       expect(leaks(delivered.map((f) => f.data))).toEqual([])
-      expect(delivered.map((f) => (f.data as Json).kind)).toEqual(['shell', 'shell'])
+      expect(delivered.map((f) => (f.data as Json).kind)).toEqual(['shell', 'shell', 'shell'])
+      // TAL-2337: the statuses built while redaction was off name their call redacted on delivery, and so does the session's.
+      expect(callStatuses(deliveredAll)).toHaveLength(2)
+      expect(JSON.stringify(callStatuses(deliveredAll))).not.toContain('synthetic-bearer')
+      const current = ((await json(await s.get(`/api/session?session_id=${bufferedSid}`))).session as Json).run_status as Json
+      expect(current).toMatchObject({ phase: 'working', current_tool: { kind: 'shell' } })
+      expect(JSON.stringify(current)).not.toContain('synthetic-bearer')
     } finally {
       release()
     }
@@ -3341,6 +3359,30 @@ describe('chat turns through the sidecar', () => {
     expect(pending.description).toBe('Protected')
     release()
     await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')
+  })
+
+  it('names the running call in the working status, the held one as waiting for approval, and none between calls (TAL-2337)', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.start', (params, emit) => {
+      emit({ event: 'token', data: { text: 'Testing. ' } })
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'terminal', preview: null, args: { command: 'npm test' }, tid: 'call-test' } })
+      emit({ event: 'approval', data: { request_id: 'held', command: 'npm test', tool_call_id: 'call-test', session_id: sid } })
+      emit({ event: 'approval_resolved', data: { approval_id: 'held' } })
+      emit({ event: 'tool_complete', data: { name: 'terminal', preview: 'ok', tid: 'call-test' } })
+      emit({ event: 'token', data: { text: 'Done.' } })
+      return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Testing. Done.' }])
+    })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'test' }))
+    const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    const running = { kind: 'shell', target: 'npm test', done: false }
+    expect(frames.filter((f) => f.event === 'run_status').map((f) => (f.data as Json).status)).toEqual([
+      { phase: 'working' },
+      { phase: 'working', current_tool: running },
+      { phase: 'working', current_tool: { ...running, outcome: { key: 'pending_approval', tone: 'attention' } } },
+      { phase: 'working', current_tool: running },
+      { phase: 'working' },
+      null,
+    ])
   })
 
   it.each([['once', 'allowed'], ['session', 'allowed'], ['always', 'allowed'], ['deny', 'denied']])('tells the turn which tool row an approval answered with %s unlocked: %s (TAL-1783)', async (choice, outcome) => {
