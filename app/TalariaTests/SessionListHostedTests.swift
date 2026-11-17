@@ -769,13 +769,13 @@ final class SessionListHostedTests: XCTestCase {
             var gaps = Set<String>()
             try await sampleCommittedLayouts {
                 samples += 1
-                let current = HostedAccessibility.titleMenuController(in: window)
+                // The linked chat's title and title menu can land a committed layout after its content; they are
+                // checked once the replacement settles.
+                let current = HostedAccessibility.titleMenuController(in: window, filled: false)
                 if current?.navigationController !== navigation { gaps.insert("navigation controller") }
                 if self.composerDraftText(in: window) == nil { gaps.insert("composer") }
                 if current?.navigationItem.titleView == nil { gaps.insert("principal title") }
                 if current?.navigationItem.largeTitleDisplayMode != .never { gaps.insert("inline title") }
-                if HostedAccessibility.element(in: window, identifier: "chat-detail:Fixture Session 01") != nil,
-                   current?.navigationItem.title != "Fixture Session 01" { gaps.insert("new chat title") }
                 for title in ["Notifications", "New Chat"] {
                     if HostedAccessibility.toolbarItem(title, in: window) == nil { gaps.insert(title) }
                 }
@@ -788,6 +788,10 @@ final class SessionListHostedTests: XCTestCase {
             }
             XCTAssertGreaterThan(samples, 0, "The transition must sample committed run-loop layouts")
             XCTAssertTrue(gaps.isEmpty, "Root replacement lost: \(gaps.sorted())")
+            let titled = await awaitCondition {
+                HostedAccessibility.titleMenuController(in: window)?.navigationItem.title == "Fixture Session 01"
+            }
+            XCTAssertTrue(titled, "The linked chat must take the bar's title and title menu")
             XCTAssertTrue(HostedAccessibility.titleMenuController(in: window)?.navigationController === navigation,
                           "A deep link must replace the chat without rebuilding its NavigationStack")
             XCTAssertNil(fixture.pendingSessionID)
